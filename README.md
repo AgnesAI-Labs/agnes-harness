@@ -62,9 +62,9 @@ Leave the Web server running and open a second terminal in the same source direc
 node packages/cli/dist/local/agnes.mjs -p "Briefly explain what this project does"
 ```
 
-Follow the [quickstart](docs/guide/quickstart.md) to inspect results, find the session, and continue working. Without a model account, you can try the [local simulated-model demo](docs/guide/demo.md#不配置模型账号先跑通本地链路) to explore plugins and task execution.
+Follow the [quickstart](docs/guide/quickstart.md) to inspect results, find the session, and continue working. Without a model account, you can try the [local simulated-model demo](docs/guide/demo.md#run-locally-without-a-model-account) to explore plugins and task execution.
 
-Detailed guides are currently in Chinese. This README provides the English overview and getting-started path.
+The full documentation is available in [English](docs/README.md) and [简体中文](docs/README.zh-CN.md). Each page links to the same topic in the other language.
 
 ## A runtime built to extend
 

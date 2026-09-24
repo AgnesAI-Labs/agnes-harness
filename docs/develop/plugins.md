@@ -1,44 +1,56 @@
-# 插件开发：把你的能力接入 AGH
+# Plugin development: bring your capabilities into AGH
 
-[文档导航](../README.md) · [后端工具教程](backend.md)
+English | [简体中文](plugins.zh-CN.md)
 
-把业务函数变成 Agent 工具，把任务方法整理为 Skill，或为工作台加上自己的界面。AGH 为这些能力提供扩展入口与包生命周期，帮助你从一个插件逐步组合出应用。本文先帮你选入口，再解释依赖与运行方式。
+<a id="插件开发把你的能力接入-agh"></a>
 
-## 在会话中创建第一个插件
+[Documentation](../README.md) · [Backend tool tutorial](backend.md)
 
-默认启用的 `@agnes/plugin-helper` 可以帮助你把需求变成 AGH 工具、Skill 或皮肤插件。例如：
+Turn a business function into an agent tool, capture a task method as a Skill, or add your own workbench interface. AGH provides extension entry points and a package lifecycle so you can grow from one plugin into an application. Choose an entry point below, then learn how dependencies and execution fit together.
 
-> 帮我写一个 AGH 插件，统计文本字数，并安装到当前 AGH。
+<a id="在会话中创建第一个插件"></a>
 
-助手先读取随版本分发的开发指南与模板，再把源码保存在当前工作区的 `.plugin-helper/<随机目录>` 中，并返回包身份、能力和内容摘要。确认安装后，AGH 通过同一套包管理流程安装、信任并启用这份代码；你可以在“设置 → 插件管理 → 已安装”查看实际状态。新能力在轮次边界生效，下一轮可查询状态并调用新工具验证结果。
+## Create your first plugin in a session
 
-创建源码本身不会安装插件。检查验证包结构与声明，安装确认针对该摘要的具体代码；启用插件会以本机进程权限执行 JavaScript。安装前可以审阅生成的源码。
+The default-enabled `@agnes/plugin-helper` can turn a request into an AGH tool, Skill, or skin plugin. For example:
 
-当前会话助手支持自包含、无外部依赖的文本 ESM 工具/Skill 插件，以及纯 CSS/token 皮肤，不覆盖已有同名包，也不自动发布。皮肤可在设置的外观选项中选择，支持浅色/深色，停用插件后恢复默认。创建皮肤时助手会读取 `kind: skin` 模板，无需定位源码示例。需要交互式前端界面、服务、依赖构建或版本更新时，继续使用下方对应教程与标准包管理流程。禁用或卸载助手不影响已安装的其他插件。
+> Create an AGH plugin that counts words in text, and install it in the current AGH instance.
 
-为工作台定制纯 CSS 与 token 外观，阅读[皮肤开发](skins.md)。
+The helper reads the development guide and templates bundled with the current version, saves source under `.plugin-helper/<random-directory>` in the current workspace, and returns package identity, capabilities, and content hashes. After installation confirmation, AGH installs, trusts, and enables that code through the normal package-management flow. Inspect actual state under Settings → Plugin management → Installed. New capabilities become available at turn boundaries; check status and call the new tool in the next turn.
 
-## 选择扩展方式
+Creating source does not install a plugin. Inspection validates package structure and declarations, and confirmation applies to the specific code identified by its hash. Enabling it runs JavaScript with local process privileges. Review the generated source before installation.
 
-| 你准备增加什么 | 适合的起点 | 完成后可以验证什么 |
+The session helper currently supports self-contained text ESM tool/Skill plugins without external dependencies, and pure CSS/token skins. It does not overwrite an existing package with the same name or publish packages automatically. Skins can be selected in appearance settings, support light/dark modes, and revert to the default when disabled. The helper reads the `kind: skin` template without needing to locate source examples. For interactive frontend interfaces, services, dependency builds, or version updates, use the relevant tutorial and standard package workflow below. Disabling or removing the helper does not affect other installed plugins.
+
+For CSS and token customization, see [skin development](skins.md).
+
+<a id="选择扩展方式"></a>
+
+## Choose an extension path
+
+| What you want to add | Starting point | What to verify |
 | --- | --- | --- |
-| 一项可被 Agent 调用的能力 | [后端工具插件](backend.md) | 参数、工具记录与结构化结果 |
-| 一套任务方法和背景知识 | [工作区 Skill](../guide/skills.md) | 来源、信任和会话中的使用 |
-| 已有的外部工具服务 | [MCP 接入](../guide/mcp.md) | 连接、目录和授权后的工具调用 |
-| 工作台中的一块界面 | [前端面板](frontend.md) | 挂载、版本更新和卸载恢复 |
-| 能读取后端业务结果的界面 | [前后端联动](fullstack.md) | 当前会话下的受限服务查询 |
+| An agent-callable capability | [Backend tool plugin](backend.md) | Arguments, tool record, and structured result |
+| Task methods and background knowledge | [Workspace Skill](../guide/skills.md) | Source, trust, and use in a session |
+| An existing external tool service | [MCP integration](../guide/mcp.md) | Connection, catalog, and authorized tool calls |
+| A workbench interface | [Frontend panel](frontend.md) | Mounting, version updates, and restoration after unload |
+| An interface that reads business results | [Full-stack integration](fullstack.md) | Constrained service queries in the current session |
 
-选择最贴近需求的一条路径。包的安装和信任过程统一见[插件管理](../guide/packages.md)，无需为每种界面重新实现后台。
+Choose the path closest to your need. [Plugin management](../guide/packages.md) covers the shared installation and trust flow, so each interface does not need its own backend infrastructure.
 
-物理设备接入的方向介绍见[MHS 与设备接入](../guide/mhs.md)，相关接入文档与示例即将开放；上表列出的是当前已有的软件扩展入口。
+See [MHS and devices](../guide/mhs.md) for the physical-device direction; integration documentation and examples are coming soon. The table covers existing software extension entry points.
 
-## Cordis 在其中做什么
+<a id="cordis-在其中做什么"></a>
 
-AGH 使用仓内 `@agnes/cordis` 的 Context、服务依赖和 fiber 生命周期组织可替换组件；Host 再施加安装、信任、快照和能力约束。上游 Cordis/DeepSeek 文档可解释框架思想，不能直接替代 AGH 的加载声明或接口。
+## Cordis's role
 
-## 一个插件包的形状
+AGH uses its in-repository `@agnes/cordis` Context, service dependencies, and fiber lifecycle to organize replaceable components. Host adds installation, trust, snapshot, and capability constraints. Upstream Cordis/DeepSeek documentation may explain framework concepts, but cannot substitute for AGH's loading declarations or interfaces.
 
-现行普通插件入口是 `package.json` 的 `agnes.plugins`，指向包模块的命名导出：
+<a id="一个插件包的形状"></a>
+
+## Shape of a plugin package
+
+The current ordinary plugin entry is `agnes.plugins` in `package.json`, referencing a named export from the package module:
 
 ```json
 {
@@ -55,7 +67,7 @@ AGH 使用仓内 `@agnes/cordis` 的 Context、服务依赖和 fiber 生命周�
 }
 ```
 
-这是示例自己的身份，不是可从 npm 安装的地址。`index.mjs`：
+This is the example's own identity, not a package address available from npm. Its `index.mjs`:
 
 ```js
 export const example = {
@@ -63,41 +75,47 @@ export const example = {
   apply(ctx) {
     ctx.skills.register({
       name: 'review-notes',
-      description: '只读检查说明文件',
-      body: '列出说明中的矛盾并引用文件，不修改内容。',
+      description: 'Review documentation without modifying files',
+      body: 'List contradictions with file references. Do not modify content.',
     })
   },
 }
 ```
 
-依赖名称必须在静态声明与导出元数据中一致，后端加载器在不执行任意模块的阶段就需知道依赖图。`provide` 同样要两边一致。模块需包含全部必要产物；直接把本机 TypeScript 深路径或未打包依赖交给不可变快照不构成可移植分发。
+Dependency names must agree between static declarations and exported metadata. The backend loader needs the dependency graph before executing arbitrary modules. `provide` must also match on both sides. Include every required build artifact. A local TypeScript deep path or an unpackaged dependency does not form a portable immutable snapshot.
 
-## 配置、依赖与清理
+<a id="配置依赖与清理"></a>
 
-`defineAgnesPlugin()` 是保留类型的辅助函数，不给插件增加权限。插件可声明 Standard Schema `Config`，由加载器验证配置。现成的[cordis-greeting](../../examples/packages/cordis-greeting/index.ts)展示配置校验、`provide` 和服务值；[hot-service](../../examples/packages/hot-service/v1/index.mjs)展示无外部 import 的可安装 ESM。
+## Configuration, dependencies, and cleanup
 
-`ctx.provide('name', value)` 的值属于当前 Context 服务空间，消费者声明 `inject`。加载顺序由服务依赖决定，不以数组顺序替代。手工申请的定时器、连接和监听器应登记到 `ctx.effect(() => disposer)`。卸载时 disposer 撤下资源，不把已经完成的外部业务动作当作可自动回滚。
+`defineAgnesPlugin()` preserves types; it grants no additional permissions. A plugin can declare Standard Schema `Config`, which the loader validates. [cordis-greeting](../../examples/packages/cordis-greeting/index.ts) demonstrates configuration validation, `provide`, and service values. [hot-service](../../examples/packages/hot-service/v1/index.mjs) demonstrates installable ESM without external imports.
 
-## 不同 API 不可混用
+A value published by `ctx.provide('name', value)` belongs to the current Context's service space, and consumers declare `inject`. Dependencies determine loading order; array order does not replace the graph. Register manually acquired timers, connections, and listeners with `ctx.effect(() => disposer)`. Disposers withdraw resources on unload; they cannot automatically reverse completed external business actions.
 
-| 接口 | 可以做什么 | 边界 |
+<a id="不同-api-不可混用"></a>
+
+## Keep API boundaries distinct
+
+| Interface | Capabilities | Boundary |
 | --- | --- | --- |
-| 普通 Cordis Context | 插件、服务、事件、effect 生命周期 | 进程内服务，不自动变成跨进程 RPC |
-| `ctx.extension()` / PluginExtensionAPI | 工具、`on` 观察 hook、`registerHook` 的 transform/intercept hook、受约束事件 | 不能通过这个 API 注册 Service/Projection/Slot/Resource；结果仍受运行时权限与顺序约束 |
-| `ctx.skills` | 运行时 Skill 贡献与 provider | 不能读取/枚举其他 Skill；与磁盘治理分离 |
-| 行上的 `ctx.services` / `ctx.slots` / `ctx.projections` / `ctx.resources` | 在已验证行上注册对应贡献，随行 fiber 清理 | 不是无条件全局对象；服务调用仍受身份、会话和客户端 allow-list 约束 |
-| 浏览器 ClientContext | 已声明槽位、前端服务/命令与受限 backend service relay | 没有 Host Context、Node 系统能力或 daemon 管理凭据 |
+| Ordinary Cordis Context | Plugins, services, events, and effect lifecycle | In-process services do not automatically become cross-process RPC |
+| `ctx.extension()` / PluginExtensionAPI | Tools, `on` observation hooks, `registerHook` transform/intercept hooks, and constrained events | Cannot register Service/Projection/Slot/Resource through this API; runtime permissions and ordering still apply |
+| `ctx.skills` | Runtime Skill contributions and providers | Cannot read/enumerate other Skills; separate from disk governance |
+| Row `ctx.services` / `ctx.slots` / `ctx.projections` / `ctx.resources` | Corresponding contributions on verified rows, cleaned up with the row fiber | Not unconditional global objects; service calls still require identity, session, and client allow-list checks |
+| Browser ClientContext | Declared slots, frontend services/commands, and constrained backend service relay | No Host Context, Node system capabilities, or daemon management credentials |
 
-[联动教程](fullstack.md)使用同一受信 Cordis 行上的 `ctx.services.register()` 和 `agnes.clientDescriptors`。它不把 `ctx.provide()` 伪装成远程方法，也不让 `ctx.extension().registerService()` 绕过限制。
+The [full-stack tutorial](fullstack.md) uses `ctx.services.register()` and `agnes.clientDescriptors` on the same trusted Cordis row. It does not turn `ctx.provide()` into a remote method or bypass restrictions with `ctx.extension().registerService()`.
 
-当前源码已开放 17 类 hook 的 `registerHook`，并收敛第三方后端插件到 `agnes.plugins` 行；旧 `agnes.extensions` 不能继续作为第三方普通后端入口。内置兼容清单与第三方作者入口的规则不同。具体注册和授权仍以当前源码、包预览与实际行状态为准。
+Current source exposes all 17 hook types through `registerHook` and routes ordinary third-party backends through `agnes.plugins` rows. Legacy `agnes.extensions` is no longer an ordinary third-party backend entry. Built-in compatibility rules differ from third-party authoring rules. Check current source, package preview, and actual row state for registration and authorization.
 
-## 前后端生命周期
+<a id="前后端生命周期"></a>
 
-Host 普通树与 Web 页面分别创建 Context。`web:` 是平台合成的客户端行命名空间，包作者不得在 `agnes.plugins` 中声明该前缀；这些行保留在完整 runtime target 中，但不作为 Host 普通行执行。
+## Frontend and backend lifecycles
 
-第三方运行来源要求受信不可变快照；不能把任意文件路径当作已安装受信行。Host 维护受限活树事务，Web 根据名册按 revision 对账；不支持的静态组件替换、孤立依赖、失效租约和越权操作应拒绝。
+Host's ordinary tree and the Web page create separate Contexts. `web:` is a platform-synthesized client-row namespace; package authors must not declare it in `agnes.plugins`. These rows remain in the complete runtime target but do not execute as ordinary Host rows.
 
-下一步：[后端工具](backend.md) · [前端面板](frontend.md) · [联动](fullstack.md) · [安装与更新](../guide/packages.md)。
+Third-party runtime sources require trusted immutable snapshots. An arbitrary file path is not an installed, trusted row. Host manages constrained live-tree transactions, while Web reconciles roster revisions. Unsupported static-component replacement, orphaned dependencies, expired leases, and unauthorized operations must be refused.
 
-事实源：[作者类型](../../packages/plugin-runtime/src/author.ts)、[manifest 解析](../../packages/package-manager/src/plugin-manifest.ts)、[PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts)、[行 API](../../packages/host/src/ext-host/row-extension-api.ts)、[ClientContext](../../packages/web-client/src/client-module.ts)。
+Next: [Backend tools](backend.md) · [Frontend panels](frontend.md) · [Full-stack integration](fullstack.md) · [Installation and updates](../guide/packages.md).
+
+Source: [author types](../../packages/plugin-runtime/src/author.ts), [manifest parsing](../../packages/package-manager/src/plugin-manifest.ts), [PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts), [row API](../../packages/host/src/ext-host/row-extension-api.ts), [ClientContext](../../packages/web-client/src/client-module.ts).

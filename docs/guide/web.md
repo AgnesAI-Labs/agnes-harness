@@ -1,47 +1,59 @@
-# Web 工作台：集中管理任务与扩展
+# Web workbench: manage tasks and extensions
 
-[文档导航](../README.md) · [首次配置](quickstart.md)
+English | [简体中文](web.zh-CN.md)
 
-Web 工作台把任务、历史和管理操作放在一个本地界面中。首次使用按[快速开始](quickstart.md)配置模型；本页带你理解一次任务的状态、日常管理和连接方式。
+<a id="web-工作台集中管理任务与扩展"></a>
 
-## 启动与连接
+[Documentation](../README.md) · [First-time configuration](quickstart.md)
+
+The Web workbench brings tasks, history, and administration into one local interface. Configure a model using the [quickstart](quickstart.md), then use this guide to understand task state, everyday management, and connections.
+
+<a id="启动与连接"></a>
+
+## Start and connect
 
 ```sh
 node packages/cli/dist/local/agnes.mjs serve
 ```
 
-Web 监听本机回环地址。当前页面不接收或保存本地连接 token；服务按启动时固定的 Origin 与 Host 校验连接。`localhost` 与 `127.0.0.1` 不能随意互换。改端口时设置一致的来源：
+Web listens on loopback. The current page does not accept or store a local connection token; the server checks connections against the Origin and Host fixed at startup. Do not interchange `localhost` and `127.0.0.1`. When changing the port, set a matching origin:
 
 ```sh
 export AGNES_WEB_ORIGIN=http://127.0.0.1:4180
 node packages/cli/dist/local/agnes.mjs serve --port 4180
 ```
 
-若旧后台使用不同 Origin，新启动会拒绝复用；先确认任务状态并显式停止该实例，再启动。它不是远程公开站点部署入口，也没有本文承诺的反向代理登录方案。
+If an existing daemon has a different Origin, startup refuses to reuse it. Check its tasks, explicitly stop that instance, and restart. This entry point is a local workbench; this guide does not provide a public deployment or reverse-proxy login setup.
 
-页面的会话与审批通信通过浏览器 SDK 的 WebSocket 直连 daemon；资源/插件管理和插件后端服务使用同源 HTTP BFF。两者都是本地工作台的一部分，详见[通信架构](../develop/architecture.md#web-的两条通信路径)。
+Session and approval traffic uses the browser SDK's direct WebSocket connection to the daemon. Resource/plugin management and plugin backend services use a same-origin HTTP BFF. Both belong to the local workbench; see the [communication architecture](../develop/architecture.md#the-two-web-communication-paths).
 
-## 完成一轮任务
+<a id="完成一轮任务"></a>
 
-1. 从侧栏新建任务，在创建面板确认工作目录；取消面板不会创建会话。
-2. 从模型选择器选当前会话使用的 route/model。Provider 默认配置和当前会话选择是不同操作。
-3. 输入消息，点击发送或 Cmd/Ctrl+Enter；运行中继续发送会排队为 follow-up。
-4. 按工具记录阅读参数、结果及错误详情。思考文本、工具状态和用量来自后台投影；没有返回的内容不会凭空补全。
-5. 需要审批时检查实时选项和授权范围。提交后等待后台确认，不用页面按钮是否消失判断工具已执行。
-6. 点击“停止”后等待实际终止状态。“正在请求停止”只表示已发起取消。
+## Complete a task
 
-## 日常管理
+1. Create a task from the sidebar and confirm the working directory in the creation dialog. Canceling the dialog does not create a session.
+2. Select the current session's route/model in the model picker. Changing a provider default and changing a session's selection are separate operations.
+3. Enter a message and click Send or press Cmd/Ctrl+Enter. Messages sent during a run are queued as follow-ups.
+4. Inspect tool arguments, results, and errors in their records. Reasoning text, tool state, and usage come from backend projections; the interface does not invent missing information.
+5. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
+6. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
 
-设置中管理模型账号、插件、Skills/MCP、外观及 Computer Use；可用项受后台能力和权限约束。插件安装后还要信任与启用，见[插件管理](packages.md)。侧栏可以重新选择历史会话；归档的任务从对应归档入口查找，归档并不等于删除历史。
+<a id="日常管理"></a>
 
-接入 MCP 时，可以在聊天中说明“帮我接入这个 MCP”并提供服务地址或连接信息，再到设置中查看详情；新建的服务需要依次信任和启用，详见[MCP 接入](mcp.md)。涉及凭据时使用 SecretRef 配置流程。
+## Everyday management
 
-页面通过 URL 的 `session` 参数选择会话。刷新和短暂断线后，SDK 从后台重新读取投影，不自行重发业务请求。重新连接失败时先查看 `daemon status`；后台重启后用当前 `serve` 输出的普通地址打开。当前本地模式无需从 sessionStorage 恢复启动 token。
+Settings manages model accounts, plugins, Skills/MCP, appearance, and Computer Use. Available actions depend on backend capabilities and permissions. Installed plugins still require trust and enablement; see [plugin management](packages.md). Reopen history from the sidebar, or use the archive view for archived tasks. Archiving does not delete session history.
 
-关闭浏览器、主动断开页面或结束 `serve` 只影响客户端/Web 服务。后台任务是否结束以会话事实为准。完全结束实验实例需要另行 `daemon stop`。
+To add MCP, describe the integration in chat and supply a service address or connection details, then inspect it in settings. New services must be trusted and enabled in sequence; see [MCP integration](mcp.md). Use the SecretRef configuration flow for credentials.
 
-## 当前交互边界
+The URL's `session` parameter selects the session. After a refresh or brief disconnection, the SDK reloads the projection from the backend without automatically resending business requests. If reconnection fails, inspect `daemon status`. After a daemon restart, open the normal URL printed by the current `serve` process. Local mode does not need to restore a startup token from sessionStorage.
 
-工具结果以受约束预览/详情呈现，不是任意 HTML。不要推定每种产物都支持上传、下载、重命名，或每条消息都有编辑/重新生成；界面只暴露当前后端支持的动作。真实浏览器全链路的验证范围见[验证记录](../maintainers/verification.md)。
+Closing the browser, disconnecting the page, or stopping `serve` affects the client/Web service. Session facts determine whether backend tasks have ended. Run `daemon stop` separately to fully stop a trial instance.
 
-实现依据：[Web 入口](../../packages/web/src/serve-entry.ts)、[应用](../../packages/web/src/app.ts)、[服务与来源校验](../../packages/web-server/src/server.ts)、[会话操作](../../packages/web/src/session-actions.ts)。
+<a id="当前交互边界"></a>
+
+## Current interaction boundaries
+
+Tool results use constrained previews and detail views. They cannot render arbitrary HTML. Do not assume every artifact supports upload, download, or rename, or that every message supports editing and regeneration. The interface exposes actions supported by the current backend. See [verification](../maintainers/verification.md) for the scope of real browser testing.
+
+Implementation: [Web entry](../../packages/web/src/serve-entry.ts), [application](../../packages/web/src/app.ts), [server and origin checks](../../packages/web-server/src/server.ts), [session actions](../../packages/web/src/session-actions.ts).

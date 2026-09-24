@@ -1,10 +1,14 @@
-# 排错：找到下一步可以检查的事
+# Troubleshooting: choose the next useful check
 
-[文档导航](../README.md) · [已知限制](../reference/limitations.md)
+English | [简体中文](troubleshooting.zh-CN.md)
 
-先分辨问题发生在构建、连接、模型配置还是插件运行，再选对应的检查。表格中的步骤尽量保留现场，方便定位原因。
+<a id="排错找到下一步可以检查的事"></a>
 
-先记下当前 commit、Node 版本、命令、错误码与所用 home/profile；不输出整个环境或凭据。下面的诊断默认仍使用你选定的隔离 AGH_HOME。
+[Documentation](../README.md) · [Known limitations](../reference/limitations.md)
+
+Identify whether the problem occurs during building, connection, model configuration, or plugin execution. The checks below aim to preserve evidence while locating the cause.
+
+Record the current commit, Node version, command, error code, and home/profile. Do not dump the full environment or credentials. These commands continue to use your selected isolated AGH_HOME.
 
 ```sh
 node packages/cli/dist/local/agnes.mjs --version
@@ -14,32 +18,32 @@ node packages/cli/dist/local/agnes.mjs doctor storage --json
 node packages/cli/dist/local/agnes.mjs doctor provider --json
 ```
 
-`doctor storage` 会建立并清理临时探测数据库；它不修复现有数据。`doctor provider --probe` 则会调用模型，排错时不要无意添加。
+`doctor storage` creates and cleans up a temporary probe database; it does not repair existing data. `doctor provider --probe` calls a model, so do not add it unintentionally.
 
-| 现象 | 核对与处理 |
+| Symptom | Check and next action |
 | --- | --- |
-| Node 太旧/SQLite 模块错误 | 确认 Node >=24.10；默认 shell 与构建使用的 Node 可能不同 |
-| 缺少 `dist/local/agnes.mjs` | 在仓库根运行完整 `build:local`；不是 daemon stop 能修复的问题 |
-| native helper 缺失/不兼容 | 保留完整分发，按当前 OS/架构/Node 重建；不复制其他平台的单文件 |
-| `listen EPERM` | 执行环境禁止 socket/回环监听；测试需允许相应权限，不通过修改产品安全策略绕过 |
-| daemon 启动后马上退出 / `E_DAEMON_SOCKET_PATH` | 核对 helper、版本及 home/profile。可用短 `/tmp/agh-*` 实验 home 排除路径因素；当前源码对过长默认 socket 路径有短目录回退，但过长显式路径、目录身份或权限不合格仍会拒绝 |
-| 端口占用 | 先确认哪个实验 Web listener 持有它，再结束自己启动的服务或换端口 |
-| Origin/Host 不匹配 | 地址与 `AGNES_WEB_ORIGIN` 严格一致，不混用 localhost/127.0.0.1；旧后台不同配置时显式停止对应实例 |
-| 页面问 token/文档要求复制 token | 检查是否混用旧 build/旧说明；当前本地 Web 打印普通 URL |
-| 缺 Provider / 非法 route/model | 运行 config 或 Web 设置，测试保存后从当前目录选模型；新默认不修改旧会话 |
-| `SANDBOX_UNAVAILABLE` | Linux 检查 bwrap 的真实执行及 user namespace，macOS 检查系统沙箱可用性；不可用时保留拒绝 |
-| 插件安装成功却没有工具 | 看 trusted、desired、actual、行错误、依赖和 manifest；单独旧 `agnes.extensions` 不是现行普通后端插件入口 |
-| 前端 v2、后端仍旧或 unavailable | 核对同包 anchor、web row、services ceiling/allow-list、当前会话与 runtime revision |
-| package/resource 操作超时 | 用返回的 operation ID 查询；超时不代表已取消 |
-| Skill 找不到或被 shadow | 看来源根、会话工作区、修订、trust/desired/actual、winner/stale；刷新相应根 |
-| 找不到 Skills 删除或优先级操作 | 使用 Web 管理页或 Node SDK；shell/TUI 没有对应命令。若管理页也缺少入口，核对前端与后台是否来自同一份完整构建 |
-| Skill 优先级已保存却不可用 | 检查 winner 的自身 trust/desired；数值改变不授予权限，保存冲突需刷新 revision 与 expectedPriority |
-| Skill 删除失败/不能重新启用 | 检查 operation 与 SKILL_REMOVAL_PENDING；可能已有部分文件删除，排除占用后显式重试，不能靠重启/刷新当作撤销 |
-| MCP 目录为空或不能调用 | 检查定义 revision、信任、期望启用、连接状态、tool allow-list 与可执行程序策略；当前逐服务器会话路径跳过 OAuth 绑定，管理面测试成功不能证明会话可调用 |
-| 工具报 E_LEASE_EXPIRED | 检查当前行是否已卸载、撤权或被新版本替换，并核对运行产物版本；旧版本曾有默认 24 小时到期问题，详见[支持范围](../reference/limitations.md)。保留会话与错误，按实际状态重新加载 |
-| 浏览器断线/停止后仍运行 | 关闭客户端与取消/停止后台不同；根据后台历史确认最终状态 |
-| 导入失败 | 保留输入和错误，用脱敏最小夹具复现；不要直接改数据库 |
+| Old Node / SQLite module error | Confirm Node >=24.10; your default shell and build may use different Node installations |
+| Missing `dist/local/agnes.mjs` | Run the complete `build:local` from the repository root; stopping the daemon will not create a missing build |
+| Missing or incompatible native helper | Keep the full distribution and rebuild for the current OS/architecture/Node; do not copy a single binary from another platform |
+| `listen EPERM` | The execution environment prohibits sockets/loopback listeners; tests need the appropriate environment permissions without bypassing product security policy |
+| Daemon exits immediately / `E_DAEMON_SOCKET_PATH` | Check helpers, versions, and home/profile. A short `/tmp/agh-*` trial home can isolate path issues. Long default paths have a short-directory fallback, but excessive explicit paths or invalid directory identity/permissions are refused |
+| Port in use | Identify the owning trial Web listener, then stop your service or choose another port |
+| Origin/Host mismatch | Match `AGNES_WEB_ORIGIN` exactly; do not mix localhost and 127.0.0.1. Explicitly stop an old instance with incompatible configuration |
+| Page asks for a token / guide asks you to copy one | Check for mixed old builds or instructions; current local Web prints a normal URL |
+| Missing provider / invalid route/model | Run config or Web settings, test and save, then choose from the current catalog; new defaults do not change existing sessions |
+| `SANDBOX_UNAVAILABLE` | On Linux, check actual bwrap execution and user namespaces; on macOS, check system sandbox availability. Preserve refusal when unavailable |
+| Plugin installed but no tools | Inspect trusted, desired, actual, row errors, dependencies, and manifest. A legacy `agnes.extensions` declaration alone is not a current ordinary backend entry |
+| Frontend v2, old or unavailable backend | Check package anchor, web row, services ceiling/allow-list, current session, and runtime revision |
+| Package/resource timeout | Query the returned operation ID; a timeout does not mean cancellation |
+| Skill missing or shadowed | Inspect source roots, session workspace, revision, trust/desired/actual, winner/stale, then refresh the relevant root |
+| Missing Skill deletion or priority action | Use Web management or the Node SDK; shell/TUI has no corresponding command. If Web also lacks the action, verify frontend and backend came from one complete build |
+| Skill priority saved but unavailable | Check the winner's own trust/desired state. Priority grants no permission; refresh revision and expectedPriority after a conflict |
+| Skill deletion failed / cannot re-enable | Inspect the operation and SKILL_REMOVAL_PENDING. Some files may already be deleted; resolve locks and explicitly retry. Restart/refresh is not undo |
+| Empty MCP catalog or failed calls | Inspect definition revision, trust, desired state, connection, tool allow-list, and executable policy. The session path skips OAuth bindings; management tests do not prove session availability |
+| Tool reports E_LEASE_EXPIRED | Check whether its row was unloaded, revoked, or replaced, and verify the build version. Older versions had a default 24-hour expiry; see [supported scope](../reference/limitations.md). Preserve the session and error, then reload according to actual state |
+| Browser disconnected / task still running after stopping a client | Closing a client and canceling/stopping backend work are different actions; inspect backend history for the final state |
+| Import failure | Preserve input and error and reproduce with a redacted minimal fixture; do not directly edit the database |
 
-意外 daemon 错误可能附 `diagnosticId`；用它匹配所选 dataDir 下 `audit/daemon.jsonl` 的记录。审计写入失败时可能返回 `diagnosticUnavailable`，不能因此声称不存在错误。记录应只含安全的 method/code/时间等，分享前仍检查私有上下文。
+Unexpected daemon errors may include a `diagnosticId`. Match it against `audit/daemon.jsonl` under the selected dataDir. Failed audit writes may instead return `diagnosticUnavailable`; this does not prove there was no error. Records should contain safe method/code/time fields, but still review them for private context before sharing.
 
-没有自动修复所有 home 迁移的命令。不要删除 owner、锁、SQLite 或回滚快照来让错误消失。要做版本切换，先结束任务、停止对应后台并备份自有数据，再按[安装指南](install.md)启动完整新分发。
+There is no command that automatically repairs every home migration. Do not delete owner records, locks, SQLite databases, or rollback snapshots to hide errors. Before switching versions, finish tasks, stop the relevant daemon, back up your data, and start a complete new distribution using the [installation guide](install.md).

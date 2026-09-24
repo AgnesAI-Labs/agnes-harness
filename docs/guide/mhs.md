@@ -1,47 +1,59 @@
-# MHS 与设备接入：让任务走进物理现场
+# MHS and device integration: bring tasks into the physical world
 
-[项目首页](../../README.md) · [文档导航](../README.md) · [FDE 与应用场景](why-agh.md)
+English | [简体中文](mhs.zh-CN.md)
 
-> **即将开放：AGH 的 MHS 接入文档与示例。**
+<a id="mhs-与设备接入让任务走进物理现场"></a>
 
-从巡检和运维到仪器协作，现场工作需要将设备状态、人的判断与业务流程连接起来。AGH 计划探索通过 MHS（Model Hardware Standard）接入物理设备，让状态读取、操作请求和执行回执进入同一套任务流程。
+[Project home](../../README.md) · [Documentation](../README.md) · [FDE and use cases](why-agh.md)
 
-我们将围绕这些场景逐步开放指南和可复现示例，帮助开发者把设备能力、人工确认与业务界面组织成应用。
+> **Coming soon: AGH's MHS integration documentation and examples.**
 
-## AGH 计划如何接入
+From inspection and maintenance to instrument coordination, field work connects device state, human judgment, and business workflows. AGH plans to explore physical device integration through MHS (Model Hardware Standard), bringing state reads, operation requests, and execution receipts into one task flow.
 
-下面是拟议的职责关系，具体接口尚待验证：
+We plan to publish guides and reproducible examples around these scenarios, helping developers combine device capabilities, human confirmation, and business interfaces into applications.
+
+<a id="agh-计划如何接入"></a>
+
+## How AGH plans to integrate
+
+The following is a proposed division of responsibilities. Concrete interfaces still need validation:
 
 ```mermaid
 flowchart LR
-  Task[业务任务与人工确认] --> AGH[AGH 任务编排与记录]
-  AGH --> Adapter[设备接入适配层]
-  Adapter --> Controller[设备控制器]
-  Controller --> Device[仪器与物理设备]
-  Device --> Receipt[状态与执行回执]
+  Task[Business tasks and human confirmation] --> AGH[AGH task orchestration and records]
+  AGH --> Adapter[Device integration adapters]
+  Adapter --> Controller[Device controllers]
+  Controller --> Device[Instruments and physical devices]
+  Device --> Receipt[State and execution receipts]
   Receipt --> AGH
 ```
 
-AGH 负责组织任务、授权交互和结果记录；适配层将设备能力接入任务流程；设备控制器负责实际动作与现场保护。适配层可研究 MHS，也可使用厂商 SDK 或其他设备接口。通过 SDK、ROS 或 MCP 完成一次连接，本身不构成 MHS 兼容性验证。
+AGH organizes tasks, authorization interactions, and result records. An adapter connects device capabilities to task execution, while the device controller owns actual motion and site protections. The adapter may explore MHS, a vendor SDK, or another device interface. A connection through an SDK, ROS, or MCP alone does not demonstrate MHS compatibility.
 
-例如，设备巡检场景可以按“读取状态 → 识别异常 → 人工确认 → 受控处置 → 核对回执”组织。这里描述的是目标流程，具体型号、动作和失败处理需要单独实现与验证。
+For example, an inspection task might follow: read status → detect an anomaly → obtain human confirmation → perform a constrained action → verify the receipt. This describes a target workflow. Each device model, action, and failure path needs its own implementation and validation.
 
-## 即将开放的内容
+<a id="即将开放的内容"></a>
 
-| 内容 | 计划说明的范围 | 当前状态 |
+## What is coming
+
+| Content | Planned scope | Status |
 | --- | --- | --- |
-| 接入指南 | 设备能力描述、适配位置、身份与权限配置 | 即将开放 |
-| 示例与复现步骤 | 从只读状态或模拟环境开始，说明前提与预期结果 | 即将开放 |
-| 设备验证说明 | 支持型号、软件版本、验证环境与已知限制 | 即将开放 |
+| Integration guide | Device capability descriptions, adapter placement, identity, and permissions | Coming soon |
+| Examples and reproduction steps | Start with read-only status or simulation; state prerequisites and expected results | Coming soon |
+| Device verification notes | Supported models, software versions, test environments, and known limits | Coming soon |
 
-具体适配方案、支持设备与示例将在验证后公布，开放日期尚未确定。当前处于接入探索阶段，仓库尚无已验证的通用 MHS 适配器或设备端到端示例。
+Adapter designs, supported devices, and examples will be announced after validation. No opening date is set. Integration is currently exploratory: the repository has no verified general-purpose MHS adapter or end-to-end device example.
 
-## 设备控制边界
+<a id="设备控制边界"></a>
 
-实时运动控制、互锁、急停和现场接管由相应设备与控制系统承担。AGH 中取消任务不等于设备已安全停止；连接中断或回执缺失时，需要核对设备状态，避免重复执行结果未知的动作。桌面 Computer Use 的验证也不代表物理设备已经接入。
+## Device control boundaries
 
-目前可以先从[后端插件](../develop/backend.md)、[MCP](mcp.md)和[前后端联动](../develop/fullstack.md)了解软件扩展方式。设备方向的需求可按[反馈规则](../develop/contributing.md)提供，代码与文档 PR 仍仅限受邀内部开发者。
+The device and its control system remain responsible for real-time motion control, interlocks, emergency stops, and local takeover. Canceling an AGH task does not establish that a device has stopped safely. After a connection loss or missing receipt, inspect device state before repeating an action whose outcome is unknown. Desktop Computer Use verification does not establish physical device integration.
 
-## English summary
+Start with [backend plugins](../develop/backend.md), [MCP](mcp.md), and [full-stack integration](../develop/fullstack.md) to understand the software extension paths. Share device requirements through the [feedback process](../develop/contributing.md). Code and documentation PRs remain limited to invited internal developers.
 
-**Coming soon: AGH's MHS integration documentation and examples.** AGH is exploring device integration for task orchestration, human confirmation, and result verification. No verified general-purpose MHS adapter, supported-device list, or end-to-end device example is currently available in AGH. No opening date has been announced. Device controllers retain responsibility for real-time control and physical safety.
+<a id="english-summary"></a>
+
+## Current status at a glance
+
+**AGH's MHS integration documentation and examples are coming soon.** The direction covers task orchestration, human confirmation, and result verification. A verified general-purpose adapter, supported-device list, and end-to-end device example are not yet available, and no opening date has been announced. Device controllers retain responsibility for real-time control and physical safety.

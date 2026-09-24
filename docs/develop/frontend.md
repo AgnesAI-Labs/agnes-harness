@@ -1,14 +1,20 @@
-# 前端插件：为工作台增加一个界面
+# Frontend plugins: add a workbench interface
 
-[文档导航](../README.md) · [插件生命周期](../guide/packages.md)
+English | [简体中文](frontend.zh-CN.md)
 
-做完本教程，你会在工作台里看到自己的面板，完成一次版本更新，并确认停用后内置界面恢复。先理解生命周期，再把版本文字替换成岗位需要的内容。
+<a id="前端插件为工作台增加一个界面"></a>
 
-复用 [client-panel/v1](../../examples/packages/client-panel/v1/package.json)。它在已支持的 `ui:sidebar` 槽展示版本文字，v2 用于验证页面更新。它是浏览器贡献路径，不是普通 Host `ctx.extension()` 的 slot 注册。
+[Documentation](../README.md) · [Plugin lifecycle](../guide/packages.md)
 
-## 声明和代码
+Display your own panel, update its version, and confirm that disabling it restores the built-in interface. Learn the lifecycle first, then replace the version label with content useful for the role.
 
-该包用 `agnes.plugins` 声明后端 Cordis 行，再用 `agnes.clientDescriptors` 将浏览器描述文件绑定到同一个 row ID。浏览器描述文件中的 `client` 部分为：
+Reuse [client-panel/v1](../../examples/packages/client-panel/v1/package.json). It displays a version label in the supported `ui:sidebar` slot; v2 tests page updates. This is a browser contribution path, distinct from slot registration through ordinary Host `ctx.extension()`.
+
+<a id="声明和代码"></a>
+
+## Declaration and code
+
+The package declares a backend Cordis row with `agnes.plugins`, then binds a browser descriptor to the same row ID through `agnes.clientDescriptors`. The descriptor's `client` section is:
 
 ```json
 {
@@ -23,7 +29,7 @@
 }
 ```
 
-包声明见[package.json](../../examples/packages/client-panel/v1/package.json)，完整客户端描述见[agnes.client.json](../../examples/packages/client-panel/v1/extensions/main/agnes.client.json)。客户端 entry 相对于描述文件定位，是浏览器可执行的原生 ESM：
+See [package.json](../../examples/packages/client-panel/v1/package.json) and the complete [agnes.client.json](../../examples/packages/client-panel/v1/extensions/main/agnes.client.json). The client entry is resolved relative to the descriptor and must be native ESM executable by the browser:
 
 ```js
 export function apply(ctx, config) {
@@ -35,31 +41,35 @@ export function apply(ctx, config) {
 }
 ```
 
-该单实例槽的较小 priority 优先，示例替换内置侧栏。停用后应恢复内置侧栏。正式插件选择合适槽位，不能指望覆盖未迁移区域，也不要依赖宿主私有 DOM/CSS 结构。
+For this singleton slot, a lower priority wins. The example replaces the built-in sidebar, which should return when the example is disabled. Choose a suitable slot for a production plugin. Do not assume unexposed regions can be replaced or depend on private Host DOM/CSS structure.
 
-`publicConfig` 来自随包内容，是公开展示元数据，不是后端 runtime config。客户端 entry/styles 必须是经过校验的包内路径；不能逃出快照、任意 import 本机模块或获取连接凭据。需要 React/第三方库时应生成可独立加载的浏览器产物。
+`publicConfig` is public presentation metadata from package contents, not backend runtime configuration. Client entry/styles must be validated paths inside the package. They cannot escape the snapshot, import arbitrary local modules, or obtain connection credentials. Bundle React or third-party libraries into independently loadable browser artifacts when needed.
 
-## 安装与观察
+<a id="安装与观察"></a>
 
-从仓库根和独立实例运行：
+## Install and inspect
+
+Run from the repository root using an isolated instance:
 
 ```sh
 node packages/cli/dist/local/agnes.mjs package inspect file:./examples/packages/client-panel/v1
 node packages/cli/dist/local/agnes.mjs install file:./examples/packages/client-panel/v1
 ```
 
-使用预览摘要完成 trust、enable，然后打开同一实例 Web。应看到 v1 字样。通过 Web 管理或 TUI 更新到 `file:./examples/packages/client-panel/v2`，检查 v2；最后 disable，确认内置侧栏恢复。示例可能替换管理导航，必要时保留终端使用 shell disable。
+Trust and enable using hashes from the preview, then open Web for the same instance. You should see v1. Update to `file:./examples/packages/client-panel/v2` through Web management or TUI and check v2. Finally, disable it and confirm the built-in sidebar returns. Because this example may replace management navigation, keep a terminal ready to disable it through the shell.
 
-包 desired=enabled、后端 web row ready 和本页面成功加载是不同阶段。浏览器未打开、脚本/CSS 读取失败、槽位越权或 apply 抛错都可能导致前端失败；查看逐行实际状态，不仅看包级 enabled。
+Package desired=enabled, backend web row ready, and successful loading in this page are distinct stages. A closed browser, failed script/CSS fetch, unauthorized slot, or exception in apply can prevent frontend activation. Inspect per-row actual state as well as package enablement.
 
-## 验证
+<a id="验证"></a>
+
+## Verification
 
 ```sh
 pnpm exec vitest run tools/public-docs/examples.test.ts packages/web/test/client-modules.reconcile.test.ts packages/web/test/client-modules.hot-reload.test.ts --maxWorkers=1
 ```
 
-这些测试验证实际示例 ESM、Cordis 绑定、槽位与清理，以及更新失败处理；没有浏览器参与时不称为真实渲染验收。浏览器验收边界与源码候选结果见[验证记录](../maintainers/verification.md)。
+These tests check actual example ESM, Cordis bindings, slots, cleanup, and update failure handling. Without a browser, they are not real rendering acceptance. See [verification](../maintainers/verification.md) for browser coverage and source-candidate results.
 
-下一步：[为面板接入后端服务](fullstack.md)。需要公开配置的字段和可调用服务要分别声明；密钥留在后端。
+Next: [Connect a backend service to the panel](fullstack.md). Declare public configuration fields and callable services separately. Keep secrets on the backend.
 
-实现依据：[加载协调](../../packages/web/src/client-modules/reconcile.ts)、[ClientContext](../../packages/web-client/src/client-module.ts)、[资源检查](../../packages/package-manager/src/client-assets.ts)、[槽位](../../packages/web-client/src/slots.ts)。
+Implementation: [loading coordination](../../packages/web/src/client-modules/reconcile.ts), [ClientContext](../../packages/web-client/src/client-module.ts), [asset checks](../../packages/package-manager/src/client-assets.ts), [slots](../../packages/web-client/src/slots.ts).

@@ -16,4 +16,4 @@ GitHub 的该功能面向**公开仓库**。仓库公开后，管理员需要在
 
 The [security guide](docs/guide/security.md) explains the current trust and execution boundaries. Ordinary third-party Cordis plugins are trusted in-process code; installing one is not equivalent to running untrusted code in a sandbox. Please report a bypass of a documented boundary privately, with the smallest reproducible case you can share.
 
-[安全与信任指南](docs/guide/security.md)说明当前的信任与执行边界。普通第三方 Cordis 插件属于受信进程内代码，安装插件不等于把恶意代码放进隔离沙箱。发现已声明边界被绕过时，请按上述方式私密报告，并提供可分享的最小复现。
+[安全与信任指南](docs/guide/security.zh-CN.md)说明当前的信任与执行边界。普通第三方 Cordis 插件属于受信进程内代码，安装插件不等于把恶意代码放进隔离沙箱。发现已声明边界被绕过时，请按上述方式私密报告，并提供可分享的最小复现。

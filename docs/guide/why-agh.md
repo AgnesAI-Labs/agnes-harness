@@ -1,66 +1,82 @@
-# 为什么选择 AGH：让每次交付成为下一次的起点
+# Why AGH: make each deployment a starting point for the next
 
-[项目首页](../../README.md) · [文档导航](../README.md) · [体验示例](demo.md)
+English | [简体中文](why-agh.zh-CN.md)
 
-**把现场差异写进插件，把任务执行交给 Harness，把经过验证的能力带到下一个项目。**
+<a id="为什么选择-agh让每次交付成为下一次的起点"></a>
 
-做一个业务 Agent，需要连接模型与系统，也需要把任务记录、授权交互和使用界面组织起来。AGH 将这些共同能力放进一套可扩展的运行基础，让开发者围绕业务问题构建工具、知识和界面。
+[Project home](../../README.md) · [Documentation](../README.md) · [Try the examples](demo.md)
 
-## 一套基础，组合你的应用
+**Put the differences into plugins. Let the harness handle execution. Reuse validated capabilities in the next deployment.**
 
-AGH 面向 Forward Deployed Engineering（FDE）：工程师深入业务现场，通过系统集成、验证和迭代完成交付。每个现场都有自己的数据、流程和岗位，AGH 提供将这些差异组织为扩展的方式。
+A business agent needs models and system integrations, along with task records, authorization, and an interface people can use. AGH brings these shared capabilities into an extensible runtime so developers can focus on business tools, knowledge, and interfaces.
 
-| 构建的一部分 | AGH 的能力 | 交付时的用途 |
+<a id="一套基础组合你的应用"></a>
+
+## One runtime for your application
+
+AGH is built for Forward Deployed Engineering (FDE): working in users' environments to deliver software through integration, validation, and iteration. Each environment has its own data, workflows, and roles. AGH provides a way to organize those differences as extensions.
+
+| Application component | AGH capability | Use in a deployment |
 | --- | --- | --- |
-| 业务工具 | 后端插件、MCP 工具接入 | 让 Agent 查询数据、调用已有业务服务 |
-| 任务方法 | Skills 的发现、管理与会话选择 | 把经过整理的方法带入后续任务 |
-| 岗位界面 | Web 前端槽位、受限服务调用 | 展示业务状态，连接用户交互与服务结果 |
-| 持续工作 | 共享后台、会话历史与恢复入口 | 在 CLI、Web 和 SDK 中找到并继续任务 |
-| 执行控制 | 包信任、工具审批、执行约束 | 明确加载什么代码、允许什么操作、如何检查结果 |
+| Business tools | Backend plugins and MCP integration | Let agents query data and call existing business services |
+| Task methods | Skill discovery, management, and session selection | Bring documented methods into subsequent tasks |
+| Role-specific interfaces | Web slots and controlled service calls | Display business state and connect user actions to service results |
+| Ongoing work | Shared daemon, session history, and recovery entry points | Find and continue tasks through CLI, Web, and SDK |
+| Execution control | Package trust, tool approvals, and execution constraints | Decide which code loads, which actions are allowed, and how to inspect results |
 
-每一部分都有独立的入口与示例。你可以先接入一个查询工具，再补充 Skill 和业务面板，逐步形成适合现场的应用。
+Each part has its own entry points and examples. Start with one query tool, add a Skill and a business panel, and grow the application around the needs of the deployment.
 
-## 从一次集成，积累可复用能力
+<a id="从一次集成积累可复用能力"></a>
+
+## Turn one integration into reusable capabilities
 
 ```mermaid
 flowchart LR
-  Need[现场问题] --> Integration[业务工具与岗位界面]
-  Integration --> Run[AGH 任务执行]
-  Run --> Evidence[结果检查与场景验收]
-  Evidence --> Reuse[可复用插件与 Skills]
-  Reuse --> Next[下一个场景]
+  Need[Field requirement] --> Integration[Business tools and role-specific interfaces]
+  Integration --> Run[AGH task execution]
+  Run --> Evidence[Review results and validate the scenario]
+  Evidence --> Reuse[Reusable plugins and Skills]
+  Reuse --> Next[Next use case]
   Next --> Integration
 ```
 
-工具实现可以随插件包分发，任务方法可以整理为 Skill，界面可以作为前端模块复用。现场地址、凭据与政策留在部署配置中，每次接入分别确认授权与验收要求。
+Distribute tool implementations as plugin packages, capture task methods as Skills, and reuse interfaces as frontend modules. Keep site addresses, credentials, and policies in deployment configuration. Confirm authorization and acceptance criteria for each integration.
 
-## 从采购异常处理，看一个场景如何组合
+<a id="从采购异常处理看一个场景如何组合"></a>
 
-下面是一个构建示意：采购人员希望了解哪些订单受到库存变化影响，并据此安排下一步。可以从只读查询起步，逐步形成岗位工作台。
+## Example: handling a procurement exception
 
-| 交付步骤 | 可以复用的部分 | 现场集成重点 |
+Consider a procurement team that wants to identify orders affected by inventory changes and decide what to do next. This is an illustrative application design: begin with read-only queries, then build a workbench for the role.
+
+| Delivery step | Reusable parts | Integration work |
 | --- | --- | --- |
-| 查询订单与库存 | 后端工具的注册、输入校验与结果返回 | 业务接口、账号权限和数据完整性 |
-| 整理处置建议 | Skill 中的任务方法和核验步骤 | 企业规则、适用条件与任务样例 |
-| 展示状态和依据 | 前端面板与受限服务查询 | 订单、版本、更新时间和岗位体验 |
-| 确认并执行变更 | 审批交互、执行记录与回执处理 | 写入授权、幂等性、失败处置和结果核对 |
+| Query orders and inventory | Backend tool registration, input validation, and results | Business APIs, account permissions, and data integrity |
+| Prepare recommendations | Task methods and checks in a Skill | Business rules, applicability, and representative tasks |
+| Show status and evidence | Frontend panel and controlled service query | Orders, versions, update times, and the user experience |
+| Confirm and execute changes | Approval interaction, execution records, and receipts | Write authorization, idempotency, failure handling, and result checks |
 
-业务接口由接入者实现。仓库提供的[后端工具](../develop/backend.md)和[联动面板](../develop/fullstack.md)是这条路径的软件起点，可以先运行示例，再替换为自己的业务逻辑。
+Integrators implement the business APIs. The repository's [backend tool](../develop/backend.md) and [connected panel](../develop/fullstack.md) provide software starting points: run them first, then replace their logic with your own.
 
-## 以可信为根基
+<a id="以可信为根基"></a>
 
-让人能够检查与控制执行，是 AGH 的工程重点。包信任绑定具体内容与能力声明，工具操作通过审批与执行策略约束，会话记录保留任务过程，便于核对结果和处理中断。
+## Built for trust
 
-普通第三方插件运行在受信进程中；选择插件时需要审核其代码与来源。各机制的职责和平台适用范围见[安全与信任](security.md)。
+Making execution inspectable and controllable is an engineering priority for AGH. Package trust binds to specific content and declared capabilities. Approvals and execution policies constrain tool operations, while session records retain the task history for result checks and recovery.
 
-## 从数字业务走向设备现场
+Ordinary third-party plugins run as trusted in-process code. Review their source and provenance before installing them. See [security and trust](security.md) for each mechanism's responsibilities and platform boundaries.
 
-AGH 计划探索 MHS（Model Hardware Standard）接入，将设备状态、人工确认和执行回执组织进任务流程，面向巡检、仪器协作和现场运维积累可复用的集成方式。
+<a id="从数字业务走向设备现场"></a>
 
-**MHS 接入文档与示例即将开放。** [了解设备接入方向 →](mhs.md)
+## From business systems to physical devices
 
-## 带着你的问题开始
+AGH plans to explore integration through MHS (Model Hardware Standard), bringing device state, human confirmation, and execution receipts into task workflows. The aim is to make integrations reusable across inspection, instrument coordination, and field operations.
 
-- **先体验**：[三个示例](demo.md) → [首次运行](quickstart.md)。
-- **开始构建**：[选择扩展方式](../develop/plugins.md) → [业务工具](../develop/backend.md) / [岗位面板](../develop/frontend.md)。
-- **分享场景**：[反馈与关注](../develop/contributing.md)。你的集成需求与使用体验，可以帮助 AGH 找到下一步值得完善的方向。
+**MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](mhs.md)
+
+<a id="带着你的问题开始"></a>
+
+## Start with your use case
+
+- **Try it:** [Three examples](demo.md) → [First run](quickstart.md).
+- **Build:** [Choose an extension path](../develop/plugins.md) → [Business tool](../develop/backend.md) / [Role-specific panel](../develop/frontend.md).
+- **Share your scenario:** [Feedback and project updates](../develop/contributing.md). Your integration needs and experience help identify what AGH should improve next.

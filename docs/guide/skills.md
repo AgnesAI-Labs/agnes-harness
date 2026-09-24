@@ -1,25 +1,31 @@
-# Skills：把团队方法带进每一次任务
+# Skills: bring your team's methods into each task
 
-[文档导航](../README.md) · [插件开发](../develop/plugins.md)
+English | [简体中文](skills.zh-CN.md)
 
-将项目约定、检查步骤和常用方法整理为 Skill，让 Agent 在任务中使用这些知识。本页从一个工作区示例开始，再介绍来源管理、同名选择和维护方式。
+<a id="skills把团队方法带进每一次任务"></a>
 
-Skill 提供任务说明与资源，不等于执行权限。AGH 发现候选、审核版本、选择同名胜出项，再向会话暴露可用内容；不能只因磁盘上存在文件就声称模型已读取。
+[Documentation](../README.md) · [Plugin development](../develop/plugins.md)
 
-## 创建一个工作区 Skill
+Capture project conventions, checks, and common methods as a Skill for agents to use during tasks. Start with a workspace example, then learn how sources, name conflicts, and maintenance work.
 
-在目标项目（不是必须在 AGH 源码库）创建 `.agh/skills/review-notes/SKILL.md`：
+A Skill provides instructions and resources; it does not grant execution permission. AGH discovers candidates, reviews revisions, resolves same-name candidates, and exposes usable content to a session. A file's existence does not prove that the model has read it.
+
+<a id="创建一个工作区-skill"></a>
+
+## Create a workspace Skill
+
+In the target project, which need not be the AGH source repository, create `.agh/skills/review-notes/SKILL.md`:
 
 ```markdown
 ---
 name: review-notes
-description: 只读整理项目说明中的不一致之处
+description: Review inconsistencies in project documentation without modifying files
 ---
-先读取 README 与相关说明，列出互相冲突的描述和对应文件。
-只提出修改建议，不写文件，不安装依赖。
+Read the README and related documentation, then list conflicting statements and their files.
+Suggest changes only. Do not write files or install dependencies.
 ```
 
-在 Web 为该项目创建会话，然后进入 Skills 管理，刷新对应工作区，核对来源、内容修订与信任状态。命令行可以查看和管理：
+Create a Web session for the project. In Skills management, refresh that workspace and check the source, content revision, and trust state. You can also inspect and manage it from the CLI:
 
 ```sh
 node packages/cli/dist/local/agnes.mjs resources list --kind skill
@@ -29,77 +35,87 @@ node packages/cli/dist/local/agnes.mjs skills trust SKILL_RESOURCE_ID REVISION t
 node packages/cli/dist/local/agnes.mjs resources enable SKILL_RESOURCE_ID --expected-revision REVISION
 ```
 
-`WORKSPACE_ID` 是当前已登记工作区的 64 位十六进制标识，可从工作区/资源数据读取；不要把路径或另一个会话的 ID 填进去。对用户 home 的 Skill 可选择 `--root-key user-agnes`，无需把项目 Skill 移过去。读取最新资源数据后再作写入。
+`WORKSPACE_ID` is the registered workspace's 64-character hexadecimal identifier, available in workspace/resource data. Do not use a path or another session's ID. Use `--root-key user-agnes` for a Skill under your AGH home; there is no need to move a project Skill there. Read current resource data before writing.
 
-确认 `trust=trusted`、`desired=enabled`、`actual=ready`、`winner`，再在该工作区会话明确说“使用 review-notes 整理项目说明”。当前 Host 对明确提名且唯一匹配的可用 Skill 有预加载路径；模糊描述不是确定性的激活语法。
+Confirm `trust=trusted`, `desired=enabled`, `actual=ready`, and `winner`, then explicitly ask the workspace session to use `review-notes`. Host can preload an explicitly named, uniquely matched, available Skill. A vague description is not a deterministic activation syntax.
 
-## 来源与冲突
+<a id="来源与冲突"></a>
 
-磁盘来源包括工作区 `.agh/skills`、`AGH_HOME/skills`，以及操作系统用户目录下的 `.agents/skills`、`.claude/skills`、`.codex/skills`；包也可以贡献 Skill。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。
+## Sources and conflicts
 
-默认优先级如下，数字越大越优先：
+Disk sources include workspace `.agh/skills`, `AGH_HOME/skills`, and `.agents/skills`, `.claude/skills`, and `.codex/skills` under the operating-system user's home. Packages can also contribute Skills. `AGH_HOME` does not relocate other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory.
 
-| 来源 | 默认值 | 可设置用户覆盖 | 可永久删除 |
+Default priorities, with higher values taking precedence:
+
+| Source | Default | User override | Permanent deletion |
 | --- | --- | --- | --- |
-| 工作区 `.agh/skills` | 500 | 是 | 是，仅所选 Skill 目录 |
-| Cordis 运行时贡献 | 450 | 否 | 否，由插件生命周期撤下 |
-| `AGH_HOME/skills` | 400 | 是 | 是 |
-| 用户 `.agents/skills` | 300 | 是 | 是，可能影响共用它的其他应用 |
-| 用户 `.claude/skills` | 200 | 是 | 是，可能影响共用它的其他应用 |
-| 用户 `.codex/skills` | 100 | 是 | 是，可能影响共用它的其他应用 |
-| 包贡献 | 50 | 是 | 否，通过插件管理处理 |
+| Workspace `.agh/skills` | 500 | Yes | Yes, only the selected Skill directory |
+| Cordis runtime contribution | 450 | No | No; removed through the plugin lifecycle |
+| `AGH_HOME/skills` | 400 | Yes | Yes |
+| User `.agents/skills` | 300 | Yes | Yes; may affect other applications sharing it |
+| User `.claude/skills` | 200 | Yes | Yes; may affect other applications sharing it |
+| User `.codex/skills` | 100 | Yes | Yes; may affect other applications sharing it |
+| Package contribution | 50 | Yes | No; manage through its plugin |
 
-同名按去除首尾空白并忽略大小写分组；非删除候选先按有效优先级降序，同分按 `sourceId` 排序。`winner` 是解析结果，仍须通过自己的 trust/desired 检查才会 ready。高优先级项未信任、被拒绝或停用时，不会仅因不可用就自动选择低优先级项。
+Names are grouped after trimming whitespace and ignoring case. Candidates not marked for deletion are ordered by effective priority descending, then by `sourceId` for ties. The resolved `winner` must still pass its own trust/desired checks to become ready. A higher-priority candidate that is untrusted, rejected, or disabled does not automatically yield to a lower-priority candidate merely because it is unavailable.
 
-刷新失败可能留下 stale/最近已知内容，不把 stale 当作本次扫描成功。磁盘内容改变需要重新核对 revision 与信任。
+A failed refresh may leave stale or last-known content. Stale data is not evidence of a successful scan. Disk changes require revision and trust review again.
 
-## 调整同名候选优先级
+<a id="调整同名候选优先级"></a>
 
-1. 在 Web 设置 → Skills，选对应工作区并打开 Skill 详情，查看来源、当前 winner、被覆盖候选和有效优先级。
-2. 在“同名覆盖优先级”输入 **50–500 的整数**，点击“保存优先级”并确认。它只改变该 resourceId 在当前 profile 中的持久覆盖，不改文件内容、不授予信任或启用。
-3. 等待操作完成，重新查看 winner 与 actual。若新 winner 尚未信任或启用，分别审核并处理；不要只看优先级保存成功。
-4. “恢复默认优先级”清除该项覆盖，恢复上表的来源默认值。已有内容 revision 相同也可能有并行优先级修改，因此保存还校验 `expectedPriority`；冲突时刷新，不盲重试。
+## Change same-name candidate priority
 
-例如 `AGH_HOME/skills` 的用户候选默认 400、工作区候选默认 500。要使用用户项，可把工作区项降到 350；不要靠双方同为 500 来猜谁会胜出。删除高优先级项后，剩余同名候选可能接替，但不会继承已删项的信任或启用状态。活动轮次持有不可变快照，控制面成功不证明进行中的轮次已经切换；在操作结束后检查下一轮/新会话的实际状态。
+1. Open Settings → Skills, choose the workspace, and inspect the Skill's source, current winner, shadowed candidates, and effective priority.
+2. Enter an **integer from 50 to 500** in the priority field, save, and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files, grant trust, or enable the Skill.
+3. Wait for completion and check the winner and actual state again. Review and enable a new winner separately if necessary; saving a priority is not enough.
+4. Restoring default priority removes the override and uses the source's default from the table. Concurrent priority edits can happen without a content revision change, so saving also checks `expectedPriority`. Refresh on conflict rather than retrying blindly.
 
-## 永久删除一个磁盘 Skill
+For example, an `AGH_HOME/skills` candidate defaults to 400 and a workspace candidate to 500. To use the home candidate, lower the workspace candidate to 350. Do not set both to 500 and guess the winner. Deleting a higher-priority item may allow another candidate to take its place, but the remaining item does not inherit trust or enablement. Active turns hold immutable snapshots. Management success does not prove that an in-progress turn has switched; inspect the next turn or a new session after completion.
 
-需要暂时停用时选择“停用”。**“永久删除”会删除选中的 Skill 目录及其中全部文件，不只删除 SKILL.md，也不是移入回收站。** 用户目录可能同时供其他应用使用。
+<a id="永久删除一个磁盘-skill"></a>
 
-1. 只在隔离实验目录演练；刷新并核对详情中的来源、工作区、内容修订和同名候选。
-2. 对 workspace 或 user 来源点击“永久删除”，阅读目录整体删除和同名接替提示后确认。package/runtime 来源不能在此单独删除。
-3. 保存 operation ID，等待状态 `succeeded`，核对列表/目录与剩余同名候选。API 返回 receipt 仅表示受理；部分删除后仍可能失败。
-4. 若报告 `SKILL_REMOVAL_PENDING`，条目已被阻止重新启用。保留状态，排除文件占用等原因后显式重试删除；不要将失败理解为已恢复原文件。删除操作受理后不支持取消，重启也不是撤销。
+## Permanently delete a disk Skill
 
-后台不接受调用者提供的任意删除路径：从已登记来源与 resourceId 推导目标，核对 workspace 身份、revision、目录与文件身份。过期扫描、符号链接/目录连接、硬链接或路径替换等情况会拒绝；预检失败不会先写删除标记。执行中途失败会保留身份进度与删除标记供受限重试，进度不保存文件内容，不是备份。删除标记跨重启保留，刷新不会把同一个被删 resourceId 自动复活；当前没有恢复已删除 Skill 的接口。
+Use Disable for a temporary change. **Permanent deletion removes the entire selected Skill directory and every file in it, not just SKILL.md. It does not move files to Trash.** User-level directories may be shared with other applications.
 
-## API、权限与 CLI 边界
+1. Practice only in an isolated trial directory. Refresh and inspect the source, workspace, content revision, and same-name candidates.
+2. For a workspace or user source, choose permanent deletion, review the full-directory and replacement-candidate notices, and confirm. Package/runtime sources cannot be deleted individually here.
+3. Save the operation ID, wait for `succeeded`, and inspect the list, directory, and remaining candidates. A receipt only acknowledges acceptance; an operation can fail after partially deleting files.
+4. `SKILL_REMOVAL_PENDING` means the item is blocked from re-enabling. Preserve the state, address causes such as file locks, then explicitly retry deletion. Failure does not mean files were restored. Once accepted, deletion cannot be canceled; restarting is not undo.
 
-这些管理动作可从 Web 或 Node SDK 执行；当前 shell/TUI Skills 命令不包含 `remove` / `priority` 子命令，不能把方法名直接当 CLI 语法。
+The backend does not accept arbitrary caller-supplied deletion paths. It derives the target from the registered source and resourceId, then verifies workspace identity, revision, and directory/file identity. Stale scans, symbolic links/junctions, hard links, or path replacement are rejected. A failed preflight does not write a deletion marker. Failure during execution retains identity progress and deletion markers for a constrained retry. Progress contains no file contents and is not a backup. Markers survive restarts, and refresh does not revive the same deleted resourceId. There is currently no API to restore a deleted Skill.
 
-- `client.skills.remove({ profile, clientId, commandId, resourceId, expectedRevision })` → `_agnes/v1/skills.remove`。
-- `client.skills.prioritySet({ profile, clientId, commandId, resourceId, expectedRevision, expectedPriority, priority })` → `_agnes/v1/skills.priority.set`；`priority: null` 恢复默认。
-- 两者需要服务端授予的 admin authority 与 `resources.skills.write`；JSON 参数不能授予权限。浏览器管理页通过受约束的同源 BFF 调用，不把管理 SDK 给插件。
-- 使用当前实例返回的身份、revision、priority，保存 commandId 和 operation receipt；相同已受理请求使用相同 commandId 查询/重放，删除失败后的新重试则显式发起新操作。用 `client.resources.operation.get({ profile, operationId })` 或 shell `resources operation OPERATION_ID` 查询结果。
+<a id="api权限与-cli-边界"></a>
 
-合同依据：[资源 Schema](../../packages/protocol/schema/resource-control.json)、[方法与权限](../../packages/resource-control-contracts/src/resource-control.ts)、[Node 客户端](../../packages/resource-control-client-node/src/resource-control.ts)、[持久控制与删除标记](../../packages/resource-control-store/src/skills.ts)、[Web 操作](../../packages/resource-control-web/src/admin.ts)、[Worker 接线](../../packages/resource-control-worker/src/runtime-bootstrap.ts)。原生删除由[Worker 删除实现](../../packages/resource-control-worker/src/skill-remove.ts)调用 system-node 完成。源码链接对应所在文档版本；运行旧产物时应核对相应版本的合同。
+## API, permissions, and CLI boundaries
 
-## Cordis 运行时贡献
+These management actions are available through Web and the Node SDK. Current shell/TUI Skills commands have no `remove` or `priority` subcommand. Do not treat SDK method names as CLI syntax.
 
-普通受信插件可声明 `inject: ['skills']`，在 `apply` 中使用：
+- `client.skills.remove({ profile, clientId, commandId, resourceId, expectedRevision })` → `_agnes/v1/skills.remove`.
+- `client.skills.prioritySet({ profile, clientId, commandId, resourceId, expectedRevision, expectedPriority, priority })` → `_agnes/v1/skills.priority.set`; `priority: null` restores the default.
+- Both require server-granted admin authority and `resources.skills.write`. JSON arguments cannot grant permission. The browser management page uses a constrained same-origin BFF without giving plugins the management SDK.
+- Use identity, revision, and priority returned by the current instance, and retain commandId and operation receipts. Reuse a commandId to query/replay the same accepted request. A fresh retry after failed deletion is a new explicit operation. Query results with `client.resources.operation.get({ profile, operationId })` or shell `resources operation OPERATION_ID`.
+
+Contracts: [resource schema](../../packages/protocol/schema/resource-control.json), [methods and permissions](../../packages/resource-control-contracts/src/resource-control.ts), [Node client](../../packages/resource-control-client-node/src/resource-control.ts), [persistent control and deletion markers](../../packages/resource-control-store/src/skills.ts), [Web actions](../../packages/resource-control-web/src/admin.ts), [worker wiring](../../packages/resource-control-worker/src/runtime-bootstrap.ts). The [worker deletion implementation](../../packages/resource-control-worker/src/skill-remove.ts) calls system-node for native deletion. Source links match this document's revision; check the matching contract when running an older build.
+
+<a id="cordis-运行时贡献"></a>
+
+## Cordis runtime contributions
+
+An ordinary trusted plugin can declare `inject: ['skills']` and use this in `apply`:
 
 ```js
 ctx.skills.register({
   name: 'review-notes',
-  description: '只读整理说明冲突',
-  body: '读取相关说明，列出矛盾与证据，不修改文件。',
+  description: 'Review conflicting documentation without modifying files',
+  body: 'Read related documentation and list contradictions with evidence. Do not modify files.',
 })
 ```
 
-`register()` 返回 disposer，注册随调用方 fiber 清理。动态集合用 `registerProvider(control => ({ skills() { return [...] } }))`；数据改变后调用 `control.invalidate()`，卸载会中止 `control.signal`。服务只允许贡献，不提供列出或读取其他 Skill 的接口。
+`register()` returns a disposer, and registration is cleaned up with the caller's fiber. For dynamic collections, use `registerProvider(control => ({ skills() { return [...] } }))`. Call `control.invalidate()` after data changes; unloading aborts `control.signal`. The service supports contributions, without an API to list or read other Skills.
 
-运行时贡献不进入磁盘 trust/desired 管理流程；其信任来自受信代码。与磁盘刷新、包 Skill 的加载方式区分。相同层级的独立插件重名会失败；同一行替换的后继 fiber 有专门处理，不能概括成允许任意覆盖同名 Skill。
+Runtime contributions do not enter the disk trust/desired workflow; their trust comes from trusted code. Keep them distinct from disk refresh and package Skill loading. Same-name contributions from independent plugins at the same level fail. Successor fibers replacing the same row have specific handling, which does not permit arbitrary name overrides.
 
-随分发提供的 Skill Helper 插件有自己的安装请求流程；工具可申请，不意味着能绕过用户确认、来源审核和写入边界。子 agent 不能借此申请 Skill 安装。
+The bundled Skill Helper has its own installation request flow. A tool may request installation, but cannot bypass user confirmation, source review, or write boundaries. Subagents cannot request Skill installation through it.
 
-实现依据：[发现根](../../packages/base/extensions/skills/src/discover.ts)、[候选注册表](../../packages/resource-control-runtime/src/skills.ts)、[Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts)、[会话预加载](../../packages/host/src/resources/skill-preload.ts)、[Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md)。
+Implementation: [discovery roots](../../packages/base/extensions/skills/src/discover.ts), [candidate registry](../../packages/resource-control-runtime/src/skills.ts), [Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts), [session preloading](../../packages/host/src/resources/skill-preload.ts), [Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md).

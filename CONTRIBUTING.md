@@ -1,6 +1,6 @@
 # Development and feedback
 
-[中文指南](docs/develop/contributing.md) · [English overview](README.md)
+[Development guide](docs/develop/contributing.md) · [中文指南](docs/develop/contributing.zh-CN.md)
 
 Real use cases help shape AGH. Try an example, build a plugin, and tell us what worked or where you got stuck. Star the project to save it and use Watch to follow updates.
 

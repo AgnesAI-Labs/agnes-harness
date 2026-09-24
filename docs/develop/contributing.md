@@ -1,60 +1,76 @@
-# 开发协作与问题反馈
+# Development and feedback
 
-[文档导航](../README.md) · [源码导航](source-map.md)
+English | [简体中文](contributing.zh-CN.md)
 
-AGH 的发展需要真实场景中的使用体验。欢迎试用、研究源码，并按适用许可证在自己的项目中开发插件。
+<a id="开发协作与问题反馈"></a>
 
-## 关注项目，分享你的场景
+[Documentation](../README.md) · [Source map](source-map.md)
 
-- **Star 收藏**：方便再次找到项目，也让更多开发者发现 AGH。
-- **Watch 关注更新**：跟进你关心的项目动态。
-- **试用与分享**：跑通一个示例，把经验分享给做 Agent 应用和业务集成的人。
-- **反馈问题与需求**：通过 Issues 描述使用目标、遇到的问题或希望接入的场景。报告结构见[下方模板](#提供一个有用的问题报告)。
+AGH benefits from experience in real deployments. Try it, study the source, and build plugins for your own projects under the applicable licenses.
 
-安全问题请按[安全报告政策](../../SECURITY.md)私密提交。
+<a id="关注项目分享你的场景"></a>
 
-## 当前代码协作方式
+## Follow the project and share your scenario
 
-**本仓库目前只接受受邀内部开发者提交代码和文档 PR，暂不接收外部 PR。** 使用、研究源码及在自己的项目中扩展 AGH，遵循相应许可证。下面的代码协作流程面向受邀开发者。
+- **Star:** Save the project and help other developers discover AGH.
+- **Watch:** Follow the updates that matter to you.
+- **Try and share:** Run an example and share your experience with developers building agent applications and business integrations.
+- **Report issues and requests:** Describe your goal, the problem, or a scenario you want to integrate through Issues. See the [report template](#write-a-useful-issue-report) below.
 
-## 受邀开发者的工作入口
+Report vulnerabilities privately through the [security policy](../../SECURITY.md).
 
-| 从哪里开始 | 准备什么 | 完成标准 |
+<a id="当前代码协作方式"></a>
+
+## Current development policy
+
+**Code and documentation PRs are currently limited to invited internal developers. External PRs are not accepted at this stage.** You may use, study, and extend AGH in your own projects under the applicable licenses. The development workflow below is for invited collaborators.
+
+<a id="受邀开发者的工作入口"></a>
+
+## Starting points for invited developers
+
+| Work area | Prepare | Acceptance criteria |
 | --- | --- | --- |
-| 改善上手体验 | 记录卡住的步骤、环境和实际错误 | 修改后的说明能被另一个人跟着完成 |
-| 提供插件示例 | 一个小场景、完整源码和配置方法 | 能安装、验证结果并清理；没有私有凭据或业务数据 |
-| 修复运行时问题 | 最小复现、预期行为与实际行为 | 修改落在对应模块，相关行为和拒绝路径有验证 |
-| 验证新环境 | OS/架构、Node、源码版本和执行命令 | 保留真实结果及失败项，不把一个环境推广到全部平台 |
-| 探索行业或设备接入 | 明确需求、接口与验收条件 | 先提交可讨论的方案或只读模拟，不把设想当成交付 |
+| Improve onboarding | The blocking step, environment, and actual error | Another reader can follow the revised instructions |
+| Add a plugin example | A small use case, complete source, and configuration | Install, verify, and clean it up without private credentials or business data |
+| Fix a runtime issue | Minimal reproduction, expected and actual behavior | Change the owning module and verify relevant behavior and refusal paths |
+| Validate an environment | OS/architecture, Node, source revision, commands | Preserve actual results and failures; do not generalize one platform to all |
+| Explore domain/device integration | Requirements, interfaces, and acceptance criteria | Begin with a reviewable proposal or read-only simulation; keep plans distinct from delivery |
 
-## 一个小而完整的内部改动
+<a id="一个小而完整的内部改动"></a>
 
-1. 按[源码构建](../guide/install.md)准备环境，用[演示](../guide/demo.md)理解现有行为。
-2. 用[源码地图](source-map.md)找到所属模块，检查相邻示例和测试。
-3. 写清准备解决的问题与范围，再修改实现或文档。新增公开合同、安全边界或跨模块行为时先讨论设计。
-4. 运行与改动相关的检查，记录失败与未验证环境，并同步受影响的使用指南。
-5. 准备可审阅的差异：问题、改动后的行为、复现方法和验证结果。避免把多个无关改动放在一起。
+## A small, complete internal change
 
-项目自有代码采用 [Apache-2.0](../../LICENSE)，第三方和部分示例的独立声明见[许可说明](../maintainers/provenance.md)。受邀开发者有意提交纳入项目的贡献，适用 Apache-2.0 的贡献条款，除非明确另行声明；同时使用仓库现有协作和审查流程，不把私有仓地址、账号或内部任务记录复制进公开问题报告。开放外部 PR 是未来需要另行决定的政策变化。
+1. Prepare the [source build](../guide/install.md) and use the [demo](../guide/demo.md) to understand existing behavior.
+2. Locate the owning module through the [source map](source-map.md), then inspect neighboring examples and tests.
+3. State the problem and scope before changing code or documentation. Discuss new public contracts, security boundaries, or cross-module behavior first.
+4. Run relevant checks, record failures and untested environments, and update affected guides.
+5. Prepare a reviewable diff describing the problem, new behavior, reproduction steps, and verification. Keep unrelated changes separate.
 
-## 提供一个有用的问题报告
+Project-authored code uses [Apache-2.0](../../LICENSE); see [licensing](../maintainers/provenance.md) for third-party and example exceptions. Contributions intentionally submitted for inclusion are covered by Apache-2.0 contribution terms unless explicitly stated otherwise. Use the repository's collaboration and review process, and keep private repository URLs, accounts, and internal task records out of public reports. Accepting external PRs would be a separate policy decision.
 
-仓库已准备[问题报告](../../.github/ISSUE_TEMPLATE/bug_report.yml)和[场景建议](../../.github/ISSUE_TEMPLATE/feature_request.yml)两类表单。从 Issues → New issue 选择，支持中文或英文；只需反馈体验，无需提交代码 PR。
+<a id="提供一个有用的问题报告"></a>
 
-也可以按下面的结构整理，删除无关字段即可：
+## Write a useful issue report
+
+The repository includes [bug report](../../.github/ISSUE_TEMPLATE/bug_report.yml) and [use-case suggestion](../../.github/ISSUE_TEMPLATE/feature_request.yml) forms under Issues → New issue. Chinese and English are welcome. Feedback does not require a code PR.
+
+You can also use this structure, removing irrelevant fields:
 
 ```text
-目标：我原本希望完成什么
-版本：源码 commit、Node/pnpm、OS/架构
-步骤：最少的复现命令和必要配置（脱敏）
-预期：应该出现什么结果
-实际：错误码、操作状态或相关日志片段
-验证：是否在独立 home 中复现、已经排查什么
+Goal: what I wanted to accomplish
+Version: source commit, Node/pnpm, OS/architecture
+Steps: minimal reproduction commands and required configuration (redacted)
+Expected: the result that should occur
+Actual: error code, operation status, or relevant log excerpt
+Checks: whether it reproduces in an isolated home and what I have already checked
 ```
 
-只附最小必要信息。会话正文、完整数据库、环境变量和截图可能包含业务数据；安全问题请按根目录的[安全报告政策](../../SECURITY.md)私密提交，GitHub 入口须在仓库公开时启用并核验。
+Include only the minimum information needed. Conversations, complete databases, environment variables, and screenshots may contain business data. Send security reports privately through the repository's [security policy](../../SECURITY.md).
 
-## 日常命令
+<a id="日常命令"></a>
+
+## Everyday commands
 
 ```sh
 pnpm install --frozen-lockfile
@@ -66,7 +82,7 @@ pnpm gen:check
 pnpm test
 ```
 
-两条 `build:native` 是包级脚本，与 [CI](../../.github/workflows/ci.yml) 的测试前置步骤一致。macOS 的进程身份测试需要 Host helper，Skill 安装的原子发布测试需要 system-node helper；源码测试前若缺少它们，会得到与产品缺陷不同的环境失败。`pnpm test` 是根目录脚本，默认单 worker 全仓执行，包含 guards；本地只改一个模块时先选择该模块相关测试，再按风险决定是否扩大范围。纯文档变更通常不需要重跑模型或全仓端到端。
+Both `build:native` commands are package-level scripts matching [CI](../../.github/workflows/ci.yml) prerequisites. On macOS, process-identity tests need the Host helper and atomic Skill publication tests need the system-node helper. Missing helpers cause environment failures, which should be distinguished from product defects. Root `pnpm test` runs the full suite with one worker by default, including guards. For a local module change, start with relevant tests and expand according to risk. Documentation-only changes usually do not require model or full end-to-end reruns.
 
 ```sh
 pnpm exec vitest run packages/cli/test/args.test.ts --maxWorkers=1
@@ -76,30 +92,36 @@ node tools/public-docs/verify.mjs
 pnpm exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
 ```
 
-完整构建需要在源码或资源改变后重新执行；Web 单包构建不是完整 daemon/worker 分发。不要重建用户正在运行的目录。
+Rebuild the full distribution after source or resource changes. A Web-only build is not a complete daemon/worker distribution. Do not rebuild a directory currently used by someone's running instance.
 
-## 合同与测试层级
+<a id="合同与测试层级"></a>
 
-Schema 手写源在 `packages/protocol/schema`，生成 TS 位于 `gen/ts`；不要直接改生成物绕开校验。API 改动同时检查提供方、SDK、CLI/Web 消费方与负例。`gen:check` 是一致性检查，不是运行行为证明。
+## Contracts and verification levels
 
-| 证据 | 能证明 | 不能证明 |
+Handwritten schemas live in `packages/protocol/schema`, with generated TypeScript in `gen/ts`. Do not edit generated output to bypass checks. For API changes, review providers, SDK, CLI/Web consumers, and negative cases together. `gen:check` establishes consistency, not runtime behavior.
+
+| Evidence | Establishes | Does not establish |
 | --- | --- | --- |
-| lint/typecheck/link check | 语法、类型、引用与部分规则 | 真正启动、模型效果 |
-| 单元/组件测试 | 指定输入下的局部行为与失败处理 | 所有真实平台/网络环境 |
-| 本地进程集成 | 真实分发、daemon/worker/SQLite/回环通信 | 真实模型选择能力、远程部署 |
-| 浏览器验收 | 指定浏览器的界面交互和调用链 | 所有浏览器/辅助技术/平台 |
-| 外部模型/设备/部署验收 | 指定账户、环境、版本的结果 | 自动推广到其他环境 |
+| Lint / types / links | Syntax, types, references, and selected rules | Actual startup or model quality |
+| Unit/component tests | Local behavior and failure handling for specified inputs | All platforms or network environments |
+| Local process integration | Real distribution, daemon/worker/SQLite/loopback communication | Real model tool selection or remote deployment |
+| Browser acceptance | Interaction and call chains in a specified browser | All browsers, assistive technologies, or platforms |
+| External model/device/deployment acceptance | Results for a specified account, environment, and revision | Automatic applicability to other environments |
 
-修改执行效果时覆盖权限拒绝、取消、重复请求、未知回执、恢复与清理。修改插件更新时验证旧行保留/撤下、失败候选清理、浏览器 stale revision 与依赖处置。只写一个与实现同构的 happy-path 断言不足以证明这些边界。
+Execution changes should cover permission denial, cancellation, duplicate requests, unknown receipts, recovery, and cleanup. Plugin update changes should verify old-row retention/removal, failed-candidate cleanup, stale browser revisions, and dependencies. A happy-path assertion that merely mirrors the implementation is insufficient evidence for these boundaries.
 
-## 代码与审查
+<a id="代码与审查"></a>
 
-采用仓库 TypeScript strict、ESM 和 Biome 配置；使用公开 exports，维护依赖方向，避免在 UI 深导入 Host。副作用、定时器和监听器有明确 disposer/取消；错误和日志避免原始密钥及输入泄漏。第三方复用保留来源与许可，固定锁文件。
+## Code and review
 
-一份可评审变更应说明：具体问题、前后行为、修改范围、实际验证与失败项，以及外部验证缺口。新公开合同或安全边界变化需要设计先行；文档更新与代码一起交付，不事后猜测接口。
+Use the repository's TypeScript strict, ESM, and Biome settings. Consume public exports, preserve dependency direction, and avoid deep-importing Host from UI. Side effects, timers, and listeners need explicit disposal/cancellation. Errors and logs must not expose raw secrets or inputs. Preserve provenance and licenses when reusing third-party code, and maintain the lockfile.
 
-在独立临时 AGH_HOME 中测试。真实模型和系统权限验证需要明确环境与授权；禁止从个人默认配置自动取真实密钥填充测试。问题报告保留错误码、版本、复现步骤和脱敏最小输入，不附完整 home、数据库或私有 trace。
+A reviewable change states the problem, before/after behavior, scope, actual verification, failures, and external coverage gaps. New public contracts or security-boundary changes need prior design discussion. Deliver documentation with the code instead of reconstructing interfaces afterward.
 
-## 文档维护
+Test in an isolated temporary AGH_HOME. Real-model and system-permission checks require a specified environment and authorization. Never automatically copy real keys from personal defaults into tests. Reports should include error codes, versions, reproduction steps, and redacted minimal input rather than a complete home, database, or private trace.
 
-用[模块映射](../maintainers/maintenance.md)找到需要更新的页面。新增命令时同时改参考、教程与验证；README 中文和英文入口含义一致，深度文档不强制机械翻译。修改后运行文档链接与源码锚点检查。
+<a id="文档维护"></a>
+
+## Documentation maintenance
+
+Use the [module mapping](../maintainers/maintenance.md) to find affected pages. Update reference, tutorial, and verification together when adding a command. Every page under `docs/` has complete English and Simplified Chinese editions; update both in the same change, including examples and limits. Run the documentation checks for translation pairs, language navigation, local links, and source anchors.

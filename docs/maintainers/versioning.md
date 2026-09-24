@@ -1,15 +1,21 @@
-# 版本与兼容性
+# Versions and compatibility
 
-[文档导航](../README.md) · [发布检查](release.md)
+English | [简体中文](versioning.zh-CN.md)
 
-AGH 当前以 pre-alpha 源码版本提供。使用时记录 Git revision，文档、示例与构建产物应来自同一版本；预览阶段的配置、协议和扩展接口可能出现破坏兼容性的变化。
+<a id="版本与兼容性"></a>
 
-## 包版本
+[Documentation](../README.md) · [Release checks](release.md)
 
-面向独立分发的包采用 Semantic Versioning，并按各自接口分别管理版本。`0.0.0` 标记未发布的开发包，不能直接发布到 npm；`private: true` 防止意外发布，不影响源码的开源许可。
+AGH currently ships as pre-alpha source revisions. Record the Git revision and use documentation, examples, and build artifacts from the same version. Configuration, protocols, and extension interfaces may introduce breaking changes during preview.
 
-Extension API 已有单独的版本与[变更记录](../../packages/extension-api/docs/CHANGELOG.md)。包版本号不表示整个产品已经稳定或完成所有平台验收。
+<a id="包版本"></a>
 
-首次 npm 分发需要明确包集合、正式版本、兼容说明和依赖解析，只对选定包移除 `private`。破坏已发布接口的变化升 major，兼容功能升 minor，兼容修复升 patch；发布标签采用 `<package-name>@v<version>`。`workspace:*` 依赖在发布时解析为兼容版本，仓内锁文件继续固定开发与 CI 的依赖图。
+## Package versions
 
-升级前阅读变更说明并保留所需数据。用户配置迁移、运行时目录替换和 Git 源码切换应按各自文档操作，不能只靠修改版本号完成。
+Independently distributed packages use Semantic Versioning, managed according to each package's interface. `0.0.0` marks unpublished development packages and must not be published directly to npm. `private: true` prevents accidental package publication without changing the source license.
+
+Extension API has its own version and [changelog](../../packages/extension-api/docs/CHANGELOG.md). A package version does not establish overall product stability or acceptance across platforms.
+
+The first npm distribution requires a selected package set, release versions, compatibility notes, and dependency resolution. Remove `private` only from selected packages. Breaking published interfaces requires a major increment, compatible features a minor increment, and compatible fixes a patch increment. Release tags use `<package-name>@v<version>`. Publishing resolves `workspace:*` dependencies to compatible versions, while the repository lockfile continues to pin development and CI dependencies.
+
+Read change notes and preserve required data before upgrading. Follow the appropriate procedures for user-configuration migration, runtime-directory replacement, and Git source changes; changing a version number does not perform those operations.

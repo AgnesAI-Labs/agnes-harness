@@ -1,33 +1,41 @@
-# MCP：连接外部工具
+# MCP: connect external tools
 
-[文档导航](../README.md) · [安全](security.md)
+English | [简体中文](mcp.zh-CN.md)
 
-已有 MCP 工具服务时，可以把它接入 AGH 的任务流程。本页带你添加服务、审核工具范围、建立连接，并在配置变化后检查实际状态。
+<a id="mcp连接外部工具"></a>
 
-定义、信任、期望启用状态与实际连接状态分别管理。完成下面流程并看到工具目录后，再验证具体调用。
+[Documentation](../README.md) · [Security](security.md)
 
-**当前源码：** 会话中的 MCP 服务以逐服务器 Host 行运行；OAuth 绑定仍会在该会话路径被跳过，详见[运行方式与版本](#运行方式与版本)。已执行的版本化验证见[验证记录](../maintainers/verification.md)。
+Connect an existing MCP tool service to AGH's task flow. This guide covers adding a service, reviewing its tool scope, connecting, and checking actual state after configuration changes.
 
-## 在会话中接入
+Definitions, trust, desired enablement, and actual connection state are managed separately. Complete the flow, inspect the catalog, then verify a real tool call.
 
-在本地 AGH 会话中，可以直接说“帮我接入这个 MCP”，并提供项目地址或连接信息。助手默认将服务接入当前 AGH；确认具体配置后，你可以在 **设置 → MCP** 查看登记与连接状态。连接和工具列表在轮次边界更新，接入后可在同一会话的下一轮继续使用。
+**Current implementation:** Session MCP services run as individual Host rows. OAuth bindings are still skipped on this session path; see [runtime behavior and versions](#runtime-behavior-and-versions). See [verification](../maintainers/verification.md) for versioned results.
 
-此入口由 `@agnes/mcp-helper` 插件提供，默认安装并启用；已有配置首次升级也会补装缺失的助手。曾禁用或移除该插件时，可从[插件管理](packages.md)检查或安装。禁用此插件会撤下会话管理工具，已经接入的 MCP 服务保持独立管理。
+<a id="在会话中接入"></a>
 
-会话接入目前支持无需凭据的 stdio、HTTP 和 SSE 配置。需要凭据时，通过下方命令行的 SecretRef 配置流程完成，勿在聊天中粘贴密钥。没有会话管理能力的宿主也可使用命令行添加。Blender 等应用所需的插件安装、应用启动与 MCP 连接是独立步骤；以实际工具调用确认最终可用。
+## Add a service in a session
 
-本地 stdio 服务的确认仅授权该服务的具体配置启动。显式配置的部署 allowlist 始终有效；会话不能覆盖管理员的限制。更新定义或撤销信任后，原配置的本地启动批准失效，需要重新审核。
+In a local AGH session, ask to connect an MCP service and provide its project URL or connection details. The helper targets the current AGH instance by default. After confirming the configuration, inspect registration and connection state under **Settings → MCP**. Connections and tool lists update at turn boundaries; you can use the service in the next turn of the same session.
 
-## 配置并验证
+This entry point is provided by `@agnes/mcp-helper`, installed and enabled by default. The first upgrade of an existing configuration also installs missing default helpers. If you disabled or removed it, inspect or install it through [plugin management](packages.md). Disabling the helper removes its session management tools; existing MCP services remain independently managed.
 
-Web 设置的 MCP 页面可查看服务、连接与工具目录。需要手动配置 stdio、HTTP 或 SSE 服务时，可使用命令行；`MCP_URL` 应是你已审核并可访问的 MCP endpoint，不是普通网页或模型 Base URL：
+The session helper currently supports credential-free stdio, HTTP, and SSE definitions. For credentials, use the SecretRef command-line flow below rather than pasting secrets into chat. Hosts without session management tools can also use the CLI. For applications such as Blender, installing the application plugin, starting the application, and connecting MCP are separate steps. Verify availability with an actual tool call.
+
+Confirmation for a local stdio service authorizes startup of that specific configuration. An explicit deployment allowlist remains binding; sessions cannot override administrator restrictions. Updating the definition or revoking trust invalidates the previous local startup approval and requires review again.
+
+<a id="配置并验证"></a>
+
+## Configure and verify
+
+The MCP settings page shows services, connection state, and tool catalogs. Use the CLI to configure stdio, HTTP, or SSE manually. `MCP_URL` must be a reviewed, reachable MCP endpoint, rather than a normal webpage or model Base URL:
 
 ```sh
 node packages/cli/dist/local/agnes.mjs mcp add docs-tools --name docs-tools --http "$MCP_URL"
 node packages/cli/dist/local/agnes.mjs mcp get docs-tools
 ```
 
-创建默认为 untrusted、disabled。记录输出的当前 revision，审核地址/进程、凭据引用与工具范围后，交互确认：
+New services start untrusted and disabled. Record the current revision, review the endpoint/process, secret references, and tool scope, then confirm interactively:
 
 ```sh
 node packages/cli/dist/local/agnes.mjs mcp trust docs-tools --expected-revision REVISION
@@ -37,13 +45,15 @@ node packages/cli/dist/local/agnes.mjs mcp status docs-tools
 node packages/cli/dist/local/agnes.mjs mcp tools docs-tools
 ```
 
-每次写操作前都以 `get` 的最新 revision 为准，不假定上一步不会修改它。revision 冲突意味着并行或在途变更，应重新读取，不能反复盲重试。
+Before each write, obtain the latest revision with `get`. Do not assume the previous operation left it unchanged. A revision conflict indicates a concurrent or in-flight change; read again instead of retrying blindly.
 
-stdio 使用 `--stdio EXECUTABLE` 与重复的 `--arg VALUE`；不要把完整 shell 命令当 executable，也不能通过 `--arg -c` 绕到 shell。可用 executable 还由部署策略决定。HTTP/SSE 的地址、重定向和 loopback 可达性也受 Host 策略约束。
+For stdio, use `--stdio EXECUTABLE` and repeat `--arg VALUE` as needed. Do not pass a complete shell command as the executable or bypass the policy through `--arg -c`. Deployment policy also controls allowed executables. Host policy constrains HTTP/SSE addresses, redirects, and loopback reachability.
 
-凭据使用已有 secret 引用：`--secret-env NAME=secret://namespace/name`（stdio）、`--bearer-ref secret://namespace/name` 或 `--header-ref x-api-key=secret://namespace/name`（HTTP/SSE）。不把真实密钥放在命令行、截图或文档中。`--allow-tool TOOL_NAME` 可以重复指定允许的工具。
+Use existing secret references: `--secret-env NAME=secret://namespace/name` for stdio, or `--bearer-ref secret://namespace/name` and `--header-ref x-api-key=secret://namespace/name` for HTTP/SSE. Keep real keys out of command lines, screenshots, and documentation. Repeat `--allow-tool TOOL_NAME` to restrict allowed tools.
 
-## 调试、变更与清理
+<a id="调试变更与清理"></a>
+
+## Diagnose, change, and clean up
 
 ```sh
 node packages/cli/dist/local/agnes.mjs mcp test docs-tools --expected-revision REVISION
@@ -52,18 +62,20 @@ node packages/cli/dist/local/agnes.mjs mcp disable docs-tools --expected-revisio
 node packages/cli/dist/local/agnes.mjs mcp remove docs-tools --expected-revision REVISION
 ```
 
-`test/reconnect` 会真的连接目标，读取到目录不等于每个工具效果都已验证。更新用 `mcp update`，携带最新 revision 及完整的新定义，更新后重新审核信任。操作会返回 operation ID；超时后先用 `resources operation OPERATION_ID` 查询，可用 `resources cancel OPERATION_ID` 请求取消。
+`test/reconnect` actually connects to the target. Reading a catalog does not verify every tool's effects. Use `mcp update` with the latest revision and the complete new definition, then review trust again. Operations return an operation ID. After a timeout, query `resources operation OPERATION_ID`; request cancellation with `resources cancel OPERATION_ID` if applicable.
 
-模型可通过已启用目录搜索/调用工具，但服务端内容仍是外部输入。断线、凭据失效或工具列表变化时，先看 `status` 的连接状态、观测 revision、catalog revision 和安全错误，不用重装包代替诊断。
+The model can search and invoke tools from enabled catalogs, but server content remains external input. On disconnection, credential failure, or tool-list changes, inspect connection state, observed revision, catalog revision, and safe error details in `status`. Reinstalling a package is not a substitute for diagnosis.
 
-## 运行方式与版本
+<a id="运行方式与版本"></a>
 
-session worker 启动及资源变化后的轮次边界调用 `createMcpRowRuntime()` 所创建运行器的 `apply()`，从快照为每个启用且受信的服务器派生 Host `ext:` 行。各行拥有自己的连接，管理命令经共享 worker 处理。验证方法与范围见[验证记录](../maintainers/verification.md)。
+## Runtime behavior and versions
 
-修改定义会改变该行的 revision，未改变的服务器可以保留连接；禁用或删除会撤下对应行。派生前逐服务器校验，不合格定义被跳过并附原因。首轮连接等待有上限，行挂载完成不等于远端一定连接成功。跨服务器的工具搜索由 `agnes/mcp-search` 与 catalog hub 提供，旧 `agnes/mcp-client` 聚合扩展已从该主线移除。
+At session-worker startup and turn boundaries after resource changes, the runner created by `createMcpRowRuntime()` calls `apply()`. It derives one Host `ext:` row per trusted and enabled server from a snapshot. Each row owns its connection; management commands run through the shared worker. See [verification](../maintainers/verification.md) for methods and scope.
 
-**OAuth 限制：** 当前逐服务器行路径跳过 `secretBinding.kind === 'oauth'` 的定义。专用资源管理 service worker 保留 manager 路径，所以管理面连接/测试成功不等于该服务在会话内可调用。需要在目标会话验证实际工具调用；不要把管理状态当作 OAuth 会话支持证明。
+Changing a definition changes the row's revision, while unchanged servers can retain their connections. Disabling or removing a server withdraws its row. Each definition is checked before derivation; invalid ones are skipped with a reason. Initial connection waiting is bounded, so a mounted row does not prove a successful remote connection. `agnes/mcp-search` and the catalog hub provide cross-server tool discovery. The legacy aggregate `agnes/mcp-client` extension has been removed from this mainline.
 
-逐服务器运行器的源码与测试可在下方查阅。实际运行版本及外部服务验证范围见[验证记录](../maintainers/verification.md)。
+**OAuth limitation:** The current per-server row path skips definitions with `secretBinding.kind === 'oauth'`. The dedicated resource-management service worker retains the manager path. Successful connection/testing in the management interface therefore does not establish session tool availability. Verify an actual call in the target session; management status alone does not prove OAuth session support.
 
-源码入口：[管理命令](../../packages/resource-control-cli/src/resources.ts)、[Schema](../../packages/protocol/schema/resource-control.json)、[资源启动](../../packages/resource-control-worker/src/runtime-bootstrap.ts)、[Worker 启动](../../packages/worker-runtime/src/main.ts)、[轮次重载](../../packages/worker-runtime/src/commands.ts)、[逐服务器运行器](../../packages/worker-runtime/src/mcp-row-runtime.ts)与[派生](../../packages/worker-runtime/src/mcp-server-rows.ts)。校验位置记录在[源码锚点清单](../../tools/public-docs/source-checks.json)。
+The runner's source and tests are linked below. Check [verification](../maintainers/verification.md) for the actual runtime version and external-service coverage.
+
+Source: [management commands](../../packages/resource-control-cli/src/resources.ts), [schema](../../packages/protocol/schema/resource-control.json), [resource bootstrap](../../packages/resource-control-worker/src/runtime-bootstrap.ts), [worker startup](../../packages/worker-runtime/src/main.ts), [turn reload](../../packages/worker-runtime/src/commands.ts), [per-server runner](../../packages/worker-runtime/src/mcp-row-runtime.ts), and [row derivation](../../packages/worker-runtime/src/mcp-server-rows.ts). Verified anchors are recorded in the [source-check manifest](../../tools/public-docs/source-checks.json).

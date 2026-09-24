@@ -1,20 +1,24 @@
-# 皮肤作者指南
+# Skin authoring guide
 
-皮肤让 Agnes 的 Web 界面换一套外观。一份皮肤是**纯数据**：一份样式表、可选的图片/字体资产，
-以及可选的语义 token 覆盖。它**不执行代码**。
+English | [简体中文](skins.zh-CN.md)
 
-[文档导航](../README.md) · [插件开发](plugins.md)
+<a id="皮肤作者指南"></a>
 
-区域钩子、语义 token 和示例包由仓库测试与实际界面合同交叉校验。
+A skin changes the appearance of the Agnes Web interface. It is **data only**: a stylesheet, optional image/font assets, and optional semantic token overrides. A skin **does not execute code**.
 
-## 1. 快速开始
+[Documentation](../README.md) · [Plugin development](plugins.md)
 
-**可直接安装运行的完整示例**在 [`examples/packages/skin-example/v1`](../../examples/packages/skin-example/v1)：
-那份清单与样式表就是本节所说的形态，且由测试对着真实契约校验，不会与本文漂移。
+Repository tests check region hooks, semantic tokens, and example packages against the actual interface contracts.
 
-会话中创建时先调用 `plugin_helper_guide`，选择 `kind: "skin"`，会得到完整文件模板；无需在当前工作区找到 AGH 源码。
+<a id="1-快速开始"></a>
 
-当前包格式使用 `package.json` 注册插件行并绑定纯数据客户端描述：
+## 1. Quickstart
+
+A **complete installable example** is available at [`examples/packages/skin-example/v1`](../../examples/packages/skin-example/v1). Its manifest and stylesheet demonstrate the format below and are tested against the real contract.
+
+When creating a skin in a session, call `plugin_helper_guide` with `kind: "skin"` to obtain a complete template. The current workspace does not need to contain AGH source.
+
+The current package format registers a plugin row through `package.json` and binds a data-only client descriptor:
 
 ```json
 {
@@ -29,20 +33,20 @@
 }
 ```
 
-`index.mjs` 导出空插件行：`export const main = { apply() {} }`。
+`index.mjs` exports an empty plugin row: `export const main = { apply() {} }`.
 
-`extensions/main/agnes.client.json`：
+`extensions/main/agnes.client.json`:
 
 ```json
 {
-  "skins": [{ "id": "midnight", "name": "午夜", "css": "./skins/midnight/skin.css" }]
+  "skins": [{ "id": "midnight", "name": "Midnight", "css": "./skins/midnight/skin.css" }]
 }
 ```
 
-`extensions/main/skins/midnight/skin.css`：
+`extensions/main/skins/midnight/skin.css`:
 
 ```css
-/* 只依赖 data-agnes-region 钩子，这样 Agnes 重构内部 class 也不会让你失效。 */
+/* Use data-agnes-region hooks so changes to internal classes do not break the skin. */
 [data-agnes-region="app"] {
   background-image: linear-gradient(180deg, #10151c, #1c2430);
 }
@@ -54,46 +58,47 @@
 }
 ```
 
-要点：
+Key rules:
 
-- `clientDescriptors.rowId` 必须与插件行 id 相同；描述中的 `skins` 注册皮肤。旧 `agnes.extension.json` 格式不作为新包入口。
-- `css` 必须是**包内相对路径**（以 `./` 开头，不含 `..`、盘符、反斜杠）。
-- 皮肤 id 不能用 `light` / `dark` / `system` / `none`（内置主题保留字），且在**已安装的整套皮肤里唯一**。
+- `clientDescriptors.rowId` must match the plugin row ID. The descriptor's `skins` field registers skins. The legacy `agnes.extension.json` format is not the entry point for new packages.
+- `css` must be a **package-relative path**, starting with `./` and containing no `..`, drive letters, or backslashes.
+- Skin IDs cannot be `light`, `dark`, `system`, or `none`, which are reserved for built-in themes. IDs must be **unique across installed skins**.
 
-## 2. 区域钩子（稳定的选择器契约）
+<a id="2-区域钩子稳定的选择器契约"></a>
 
-**只依赖 `data-agnes-region`。** 内部 class 与 id（`.sidebar`、`#composer`、`turn-*` …）**不是**契约，
-Agnes 可以随时重命名它们；钩子则是版本化契约，改名会让机检变红而不是让你的皮肤悄悄失效。
+## 2. Region hooks: the stable selector contract
 
-| 钩子 | 承载元素 | 出现在 |
+**Use `data-agnes-region`.** Internal classes and IDs such as `.sidebar`, `#composer`, and `turn-*` are not a public contract and may change. Region hooks are versioned contracts: a rename must be reflected in contract checks.
+
+| Hook | Element | Pages |
 | --- | --- | --- |
-| `app` | `body` | 三页 |
-| `topbar` | 页头 `header` | 三页 |
-| `dialog` | `dialog`（工作台 9 个 / 插件管理 4 个 / 技能与 MCP 3 个） | 三页 |
-| `sidebar` | `aside.sidebar` | 工作台 |
-| `conversation` | 会话区外框 | 工作台 |
-| `trace` | 运行轨迹面板 `aside` | 工作台 |
-| `rightbar` | 右侧扩展面板 `aside` | 工作台 |
-| `transcript` | 对话列表容器 | 工作台 |
-| `empty-state` | 空状态 | 工作台 |
-| `approval` | 审批区 | 工作台 |
-| `composer` | 输入框外框 `form` | 工作台 |
-| `composer-input` | 输入文本域 `textarea` | 工作台 |
-| `icon` | 界面图标 `svg`（工作台 21 个） | 工作台 |
-| `settings-pane` | 设置分页（工作台 3 个） | 工作台 |
+| `app` | `body` | All three |
+| `topbar` | Page `header` | All three |
+| `dialog` | `dialog` (9 in workbench / 4 in plugin management / 3 in Skills and MCP) | All three |
+| `sidebar` | `aside.sidebar` | Workbench |
+| `conversation` | Conversation wrapper | Workbench |
+| `trace` | Execution trace `aside` | Workbench |
+| `rightbar` | Right extension panel `aside` | Workbench |
+| `transcript` | Conversation list container | Workbench |
+| `empty-state` | Empty state | Workbench |
+| `approval` | Approval area | Workbench |
+| `composer` | Input wrapper `form` | Workbench |
+| `composer-input` | Input `textarea` | Workbench |
+| `icon` | Interface icon `svg` (26 in workbench) | Workbench |
+| `settings-pane` | Settings section (6 in workbench) | Workbench |
 
-- 皮肤在**三个页面**都会生效（工作台 `/`、插件管理 `/admin/plugins`、技能与 MCP `/admin/resources`），
-  所以 `app` / `topbar` / `dialog` 上的规则在所有页面都适用。
-- **消息级内部结构不是契约**：`turn-*` / `node-*` 等由渲染器动态生成，当前可用但**不保证稳定**。
+- Skins apply on **three pages**: workbench `/`, plugin management `/admin/plugins`, and Skills/MCP `/admin/resources`. Rules on `app`, `topbar`, and `dialog` therefore apply across these pages.
+- **Message-level internals are not part of the contract.** Renderers generate `turn-*`, `node-*`, and similar structures dynamically; their current availability does not guarantee stability.
 
-### 2.1 换掉图标：用 `mask` 而不是贴图
+<a id="21-换掉图标用-mask-而不是贴图"></a>
 
-`icon` 钩子挂在每个界面图标上，而图标本体是**描边式 SVG**（`stroke: currentColor`）。
-想把它换成图片，标准做法是**用图片当遮罩**，让图标的颜色仍然跟着主题走：
+### 2.1 Replace icons with masks
+
+Every interface icon has the `icon` hook. Icons are **stroke-based SVGs** using `stroke: currentColor`. To replace one with an image, use the image as a mask so its color continues to follow the theme:
 
 ```css
 [data-agnes-region="icon"] {
-  /* 先让原始描边消失，再用图片当遮罩，底色取 currentColor。 */
+  /* Hide the original stroke, use the image as a mask, and fill with currentColor. */
   stroke: none;
   background-color: currentColor;
   mask: url("assets/glyph.png") center / contain no-repeat;
@@ -103,14 +108,15 @@ Agnes 可以随时重命名它们；钩子则是版本化契约，改名会让�
 }
 ```
 
-只改线条粗细/颜色也一样简单：`stroke-width: 2.5; stroke: var(--agnes-brand-primary);`。
+To change only line weight/color, use `stroke-width: 2.5; stroke: var(--agnes-brand-primary);`.
 
-> 注意：`.icon` 这类内部 class **不是契约**，只有 `data-agnes-region` 是。所以请始终写
-> `[data-agnes-region="icon"]`，不要写 `.icon`。
+> Internal classes such as `.icon` are not the contract. Always target `[data-agnes-region="icon"]`.
 
-### 2.2 换字体
+<a id="22-换字体"></a>
 
-字体文件（`.woff2` / `.woff`）和图片走同一套 `assets/` 与同样的体积上限，用 `@font-face` 引入即可：
+### 2.2 Change fonts
+
+Font files (`.woff2` / `.woff`) use the same `assets/` directory and size limits as images. Load them with `@font-face`:
 
 ```css
 @font-face {
@@ -125,38 +131,35 @@ textarea {
 }
 ```
 
-**不改资产也能换字体**：直接写系统字体栈（无需额外分发字体文件），例如
-`font-family: "Chalkboard SE", "Comic Sans MS", cursive;`。
+You can also use a system font stack without distributing assets, for example `font-family: "Chalkboard SE", "Comic Sans MS", cursive;`.
 
-### 2.3 特异性：为什么用钩子选择器就够，不需要 `!important`
+<a id="23-特异性为什么用钩子选择器就够不需要-important"></a>
 
-皮肤样式表以 `adoptedStyleSheets` 注入，层叠顺序**永远在所有文档样式表之后**；
-而层叠顺序只在**特异性相同**时才决定胜负。所以基础样式表里凡是你可能想覆盖的表面属性，
-都**故意声明在 `data-agnes-region` 选择器 (0,1,0) 上**，而不是元素自己的 `#id` (1,0,0) 上。
-你和基础样式同为 (0,1,0)，由顺序决定——你必胜。**因此不需要 `!important`。**
+### 2.3 Specificity and stylesheet order
+
+Skin stylesheets are inserted through `adoptedStyleSheets`, after document stylesheets in cascade order. Order resolves a conflict only when specificity is equal. Base styles therefore place skin-facing surface properties on `data-agnes-region` selectors with specificity (0,1,0), rather than element IDs with specificity (1,0,0). With the same specificity, the later skin rule wins, so `!important` is unnecessary for those surfaces.
 
 ```css
-/* 这样写就能生效：改输入框背景图 */
+/* Override the composer background using its region hook. */
 [data-agnes-region="composer"] {
   background-image: linear-gradient(160deg, #101820, #1d2b3a);
 }
 ```
 
-这条不变量有机检守卫（`packages/web/test/skin-regions.test.ts`）：谁把表面属性写回 `#id`，
-守卫就会变红。
+The guard in `packages/web/test/skin-regions.test.ts` checks this invariant and fails if those surface properties move back to ID selectors.
 
-**一个例外：工作台设置弹窗。** 七个弹窗共用一个 `dialog` 钩子，而工作台设置（`#config`）
-有自己不同的表面，因此它仍以 `#id` 声明。要覆盖它的表面：
+**Exception: the workbench settings dialog.** Workbench dialogs share the `dialog` hook, but settings (`#config`) has a distinct surface declared through an ID selector. To override that surface:
 
-- 优先用 **token**（`--agnes-bg-surface`、`--agnes-bg-page` 等在白名单里，改 token 一定生效）；
-- 只有需要给它加**任意 CSS**（例如背景图）时才需要 `!important`。
+- Prefer **tokens**, such as allowlisted `--agnes-bg-surface` and `--agnes-bg-page`.
+- Use `!important` only when an arbitrary CSS surface rule, such as a background image, needs to override that ID rule.
 
-其余弹窗、`settings-pane` 以及上表所有钩子都不需要 `!important`。
+Other dialogs, `settings-pane`, and the listed hook surfaces do not require `!important` for these overrides.
 
-## 3. 语义 token 清单
+<a id="3-语义-token-清单"></a>
 
-这些是可以写进 `tokens` 的变量名。它们由 `packages/web/public/style.css` 生成，
-**该样式表是唯一色彩权威**；增删 token 会让生成物失配并使 `gen:check` 失败。
+## 3. Semantic tokens
+
+The following variable names can appear in `tokens`. The allowlist is generated from `packages/web/public/style.css`, which is the authoritative theme color source. Adding/removing tokens without updating generated output fails `gen:check`; documentation tests compare this list with the generated allowlist.
 
 <!-- theme-tokens:begin -->
 --agnes-brand-primary
@@ -227,7 +230,7 @@ textarea {
 --agnes-trace-badge-compaction-bg
 <!-- theme-tokens:end -->
 
-每个 token 都要**同时**给出 `light` 与 `dark` 两个值：
+Every token must provide **both** `light` and `dark` values:
 
 ```json
 {
@@ -237,30 +240,31 @@ textarea {
 }
 ```
 
-值必须是合法的 CSS 颜色或阴影，**不得**包含 `;` `{` `}` `@`，也**不得**使用 `url(...)`
-（`url()` 在 `skin.css` 里可以，在 token 值里不行）。渐变是允许的，例如
-`linear-gradient(180deg, #ffffff, #f0f0f0)`。
+Values must be valid CSS color or shadow expressions, with no `;`, `{`, `}`, or `@`, and no `url(...)`. URLs are permitted in `skin.css`, but not in token values. Gradients such as `linear-gradient(180deg, #ffffff, #f0f0f0)` are allowed.
 
-覆盖**可以只写一部分**——没写的回落当前内置主题。想让皮肤更抗未来变更，优先用 token；
-需要 token 表达不了的形状时再用 `skin.css`。
+You may override only a subset; omitted values fall back to the current built-in theme. Prefer tokens for resilience across changes, then use `skin.css` for styling they cannot express.
 
-## 4. 深浅色
+<a id="4-深浅色"></a>
 
-Agnes 的深浅模式由根元素上的 `.dark` 类切换，并跟随 `prefers-color-scheme`。
+## 4. Light and dark modes
 
-- **token** 天然两套：你为每个 token 同时提供 `light`/`dark`，Agnes 按当前模式挑值。
-- **`skin.css`** 需要你自己两套都写：
+Agnes switches modes through `.dark` on the root element and follows `prefers-color-scheme`.
+
+- **Tokens:** Provide both `light` and `dark`; Agnes selects the value for the current mode.
+- **`skin.css`:** Write rules for both modes yourself:
 
 ```css
 [data-agnes-region="app"] { background-image: linear-gradient(180deg, #f7f8fa, #eef1f5); }
 .dark [data-agnes-region="app"] { background-image: linear-gradient(180deg, #10151c, #1c2430); }
 ```
 
-两套都要给，不要只写一套——只写一套会让另一半模式难读。
+Check readability in both modes. Styling only one can make the other difficult to use.
 
-## 5. 资产（图片与字体）
+<a id="5-资产图片与字体"></a>
 
-放在样式表**同级的 `assets/` 目录**里，用相对路径引用：
+## 5. Assets: images and fonts
+
+Place assets in an **`assets/` directory beside the stylesheet** and reference them relatively:
 
 ```text
 skins/aurora/
@@ -282,34 +286,32 @@ skins/aurora/
 }
 ```
 
-规则：
+Rules:
 
-- 允许的扩展名：`.webp` `.png` `.jpg` `.jpeg` `.avif` `.woff2` `.woff`。
-- 单资产 ≤ 2 MB，单皮肤资产合计 ≤ 8 MB，样式表 ≤ 128 KB。超限**装不进来**。
-- **不能引用网络资源，也不能内联 base64。** 页面策略是 `default-src 'self'`，
-  远程图片/字体与 `data:` URI 都会被浏览器拦掉。图片必须放进包里。
-- 只有 `assets/` 目录下的文件可以被取到；与样式表同级的其他文件**取不到**。
-- **相对路径按样式表自身的位置解析**，和普通 CSS 一样：`url('assets/x.png')` →
-  `/skins/<你的皮肤 id>/assets/x.png`。你不需要写绝对路径，也不该把皮肤 id 硬编码进去。
-  宿主在下发样式表文本时会替你把它绝对化（因为首帧用的是内联文本，其基准是页面而不是样式表），
-  所以**相对引用与绝对路径两种写法都可靠**。
+- Allowed extensions: `.webp`, `.png`, `.jpg`, `.jpeg`, `.avif`, `.woff2`, `.woff`.
+- Maximum 2 MB per asset, 8 MB total assets per skin, and 128 KB per stylesheet. Packages exceeding limits are rejected.
+- **No remote resources or inline base64.** Page policy includes `default-src 'self'`; remote images/fonts and `data:` URIs are blocked. Include images in the package.
+- Only files under `assets/` are served. Other files next to the stylesheet are unavailable through the asset route.
+- **Relative paths resolve from the stylesheet**, as in ordinary CSS: `url('assets/x.png')` maps to `/skins/<SKIN_ID>/assets/x.png`. Do not hard-code the skin ID or a machine path. The host converts asset references to absolute served URLs when delivering stylesheet text because initial inline text otherwise resolves against the page. Author package-relative references; the host handles the served URL.
 
-## 6. 能力与限制
+<a id="6-能力与限制"></a>
 
-| 想做的 | 能否 |
+## 6. Capabilities and limits
+
+| Change | Supported? |
 | --- | --- |
-| 改颜色、渐变、阴影 | ✅ |
-| 改背景图（页面 / 侧边栏 / **会话区** / **输入框** / 弹窗） | ✅ |
-| 换字体 | ✅（字体文件放进 `assets/`） |
-| 改圆角、间距、动效、布局 | ✅（就是普通 CSS） |
-| 执行 JavaScript、改交互行为 | ❌ 皮肤是纯数据 |
-| 引用网络上的图片/字体 | ❌ CSP 拦截 |
-| 内联 base64 图片 | ❌ `data:` 被 CSP 拦截 |
+| Colors, gradients, shadows | Yes |
+| Background images for the page, sidebar, conversation, composer, or dialogs | Yes |
+| Fonts | Yes; include font files under `assets/` |
+| Border radii, spacing, motion, layout | Yes; ordinary CSS |
+| JavaScript execution or interaction changes | No; skins are data only |
+| Remote images/fonts | No; blocked by CSP |
+| Inline base64 images | No; `data:` blocked by CSP |
 
-## 7. 调试
+<a id="7-调试"></a>
 
-- **临时关掉皮肤**：在页面网址后面加 `?skin=none`，强制回到内置外观；
-  用 `?skin=<id>` 可以强制指定一份皮肤。两者都是**一次性**覆盖，不写缓存——刷新到不带参数的网址就回到原来的选择。
-  如果某份皮肤让设置入口变得点不到，用这个办法恢复。
-- **改完 CSS 不生效**：皮肤样式表按清单的 `revision` 缓存。停用再启用该包，或重新选择一次皮肤，即可拿到新内容。
-- **看当前有哪些皮肤**：设置 →「通用」→ 外观 → 皮肤。清单只包含**已启用且已信任**的包里声明的皮肤。
+## 7. Debugging
+
+- **Temporarily disable a skin:** Add `?skin=none` to the page URL to force the built-in appearance, or `?skin=<id>` to select a specific skin. These are one-time overrides without a cached preference change. Reopen the URL without the parameter to return to your saved selection. Use this if a skin makes settings inaccessible.
+- **CSS changes do not appear:** Stylesheets are cached by manifest `revision`. Disable/re-enable the package or reselect the skin to load current content.
+- **Inspect available skins:** Open Settings → General → Appearance → Skin. The list includes skins declared by **enabled and trusted** packages.

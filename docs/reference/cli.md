@@ -1,58 +1,68 @@
-# CLI 命令参考
+# CLI command reference
 
-[文档导航](../README.md) · [使用指南](../guide/cli.md)
+English | [简体中文](cli.zh-CN.md)
 
-按“会话运行 → 管理 → 扩展”查找命令。想看连续操作示例，先读[CLI / TUI 指南](../guide/cli.md)。
+<a id="cli-命令参考"></a>
 
-下表的 `agh` 是阅读简写；源码分发实际执行为 `node packages/cli/dist/local/agnes.mjs`。以下均按源码分发方式使用。
+[Documentation](../README.md) · [Usage guide](../guide/cli.md)
 
-## 会话与运行
+Find commands by session execution, administration, or extensions. For an end-to-end sequence, read the [CLI / TUI guide](../guide/cli.md).
 
-| 语法 | 用途/注意 |
+`agh` below is shorthand. In a source distribution, run `node packages/cli/dist/local/agnes.mjs` instead. All entries assume this distribution method.
+
+<a id="会话与运行"></a>
+
+## Sessions and execution
+
+| Syntax | Purpose / notes |
 | --- | --- |
-| `agh [prompt]` | TTY 为 TUI；非 TTY 为 print |
-| `agh -p [prompt]` | 一次性任务，读取管道输入 |
-| `agh --mode text\|json` | 自动 print；ACP 为单独模式 |
-| `agh --model main=ROUTE/MODEL` | 显式槽位与运行目录中的路由/模型 |
-| `agh --profile NAME --preset NAME --cwd DIR` | 普通运行选项，不是所有转发子命令均支持 |
-| `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话 |
-| `agh resume ID [-p prompt]` | 恢复入口 |
-| `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | 列表/详情 |
-| `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw` |
-| `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | 转换导入 |
-| `agh --connect TARGET` | 只连接目标，失败不回退 |
-| `agh --standalone` / `agh --ephemeral` | 嵌入/临时执行 |
-| `agh acp` / `agh --mode acp` | ACP 协议入口 |
+| `agh [prompt]` | TUI in a TTY; print outside a TTY |
+| `agh -p [prompt]` | One-shot task with piped input support |
+| `agh --mode text\|json` | Selects print automatically; ACP is separate |
+| `agh --model main=ROUTE/MODEL` | Explicit slot and route/model from the runtime catalog |
+| `agh --profile NAME --preset NAME --cwd DIR` | Ordinary run options; not all forwarded subcommands accept them |
+| `agh --continue` / `agh --resume ID` | Mutually exclusive; resume recent/specified session |
+| `agh resume ID [-p prompt]` | Resume entry point |
+| `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | List/details |
+| `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` |
+| `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | Convert and import |
+| `agh --connect TARGET` | Connect only to that target; no fallback on failure |
+| `agh --standalone` / `agh --ephemeral` | Embedded / temporary execution |
+| `agh acp` / `agh --mode acp` | ACP protocol entry point |
 
-Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[CLI 指南](../guide/cli.md)。当前无 `--session` 或命令行明文 API key 开关。
+Print options `--park`, `--chunks`, and `--meta` control waiting and output. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
 
-## 控制面
+<a id="控制面"></a>
 
-| 语法 | 用途 |
+## Control plane
+
+| Syntax | Purpose |
 | --- | --- |
-| `agh config` | 模型/账号配置交互 |
-| `agh daemon start\|status\|stop` | 显式后台生命周期 |
-| `agh serve [--home DIR] [--profile NAME] [--cwd DIR] [--port N]` | 本地 Web |
-| `agh profile list` / `inspect NAME --resolved` / `trust DEPLOY_DIR` | 配置检查与部署信任 |
-| `agh doctor [platform\|provider\|storage\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | 诊断 |
-| `agh doctor provider --probe` | 明确发起最小推理，可能计费 |
-| `agh doctor subagents [--repair] --json` | 子 agent 检查；repair 会修改状态 |
-| `agh consent DISABLED\|LOCAL\|ANON\|FULL` | 保存遥测同意档位；不等于已验证所有外部采集 |
-| `agh stats deviation --json` | 偏差统计 |
-| `agh conformance gateway --json` | 网关一致性检查入口 |
+| `agh config` | Interactive model/account configuration |
+| `agh daemon start\|status\|stop` | Explicit daemon lifecycle |
+| `agh serve [--home DIR] [--profile NAME] [--cwd DIR] [--port N]` | Local Web |
+| `agh profile list` / `inspect NAME --resolved` / `trust DEPLOY_DIR` | Configuration inspection and deployment trust |
+| `agh doctor [platform\|provider\|storage\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | Diagnostics |
+| `agh doctor provider --probe` | Explicit minimal inference; may incur charges |
+| `agh doctor subagents [--repair] --json` | Subagent checks; repair changes state |
+| `agh consent DISABLED\|LOCAL\|ANON\|FULL` | Save a telemetry consent level; does not establish all external collection has been verified |
+| `agh stats deviation --json` | Deviation statistics |
+| `agh conformance gateway --json` | Gateway conformance entry point |
 
-`daemon/ext/mcp/resources/skills/serve` 将剩余参数交给各自解析器，不可任意混用普通运行参数。`--data-dir` 在普通 parser 中只对 `computer-use rescue` 开放，不作为一般 daemon 选择捷径。
+`daemon/ext/mcp/resources/skills/serve` forward remaining arguments to their own parsers. Do not freely mix ordinary run options into them. In the ordinary parser, `--data-dir` is available only to `computer-use rescue`, rather than as a general daemon-selection shortcut.
 
-## 包、资源与 Computer Use
+<a id="包资源与-computer-use"></a>
 
-包：`package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel`；`install SOURCE` 是 add 别名；`packages pins inspect|release` 管理保留引用。更新走 Web、TUI `/package update ID SOURCE INTEGRITY` 或 SDK；TUI update 直接提交所指定摘要，先 inspect，不声称它有额外 preview/confirm 向导。
+## Packages, resources, and Computer Use
 
-资源：`resources list|get|operation|cancel|enable|disable`；`skills refresh|trust`；`mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools`。变更操作通常要求 expected revision 与交互确认，详见[Skills](../guide/skills.md)、[MCP](../guide/mcp.md)。
+Packages: `package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel`; `install SOURCE` aliases add, and `packages pins inspect|release` manages retained references. Updates use Web, TUI `/package update ID SOURCE INTEGRITY`, or SDK. The TUI update submits the specified hash directly: inspect first, without assuming an extra preview/confirmation wizard.
 
-当前源码包含的 Skills 永久删除/优先级动作使用 Web 或 Node SDK；shell/TUI 的 Skills 语法仍是 refresh/trust 等既有命令，不能执行猜测的 `skills remove` 或 `skills priority`。见[Skills 指南](../guide/skills.md)。
+Resources: `resources list|get|operation|cancel|enable|disable`; `skills refresh|trust`; `mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools`. Writes commonly need expected revision and interactive confirmation. See [Skills](../guide/skills.md) and [MCP](../guide/mcp.md).
 
-Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`、`cancel ID`、`permissions status|grant`、`rescue status|install|repair`。诊断用 `doctor computer-use [--include CHECK] [--skip CHECK] --json`。有写入/安装/权限副作用的命令不能当作普通只读 doctor 自动运行。
+Permanent Skill deletion and priority actions use Web or the Node SDK. Shell/TUI Skills syntax remains the existing refresh/trust commands. Guessed `skills remove` and `skills priority` commands are invalid; see [Skills](../guide/skills.md).
 
-低层 `ext`、`mcp serve` 与 `serve model-api` 是专用接入面，不能替代前述本地工作台命令或被当作已验证公网服务。
+Computer Use: `status`, `install [--upgrade]`, `restart`, `operation [ID]`, `cancel ID`, `permissions status|grant`, and `rescue status|install|repair`. Diagnostics use `doctor computer-use [--include CHECK] [--skip CHECK] --json`. Commands with write, installation, or permission effects must not be run automatically as read-only diagnostics.
 
-权威语法：[args/usage](../../packages/cli/src/args.ts)、[package](../../packages/cli/src/commands/package.ts)、[resources](../../packages/resource-control-cli/src/resources.ts)、[TUI package](../../packages/cli-tui/src/package-controller.ts)。
+Low-level `ext`, `mcp serve`, and `serve model-api` are specialized integration surfaces. They do not replace the local workbench commands or establish a verified public service.
+
+Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](../../packages/cli/src/commands/package.ts), [resources](../../packages/resource-control-cli/src/resources.ts), [TUI package](../../packages/cli-tui/src/package-controller.ts).

@@ -1,5 +1,7 @@
 # Capability matrix
 
+English | [简体中文](capabilities.zh-CN.md)
+
 [Documentation](../README.md) · [Known limitations](limitations.md)
 
 This is the current inventory of production paths that deliberately refuse, defer, or conditionally

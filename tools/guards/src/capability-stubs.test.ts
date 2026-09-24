@@ -119,7 +119,6 @@ const root = repoRoot()
 const registry = JSON.parse(
   readFileSync(join(root, 'tools/guards/capability-stubs.json'), 'utf8'),
 ) as Registry
-const document = readFileSync(join(root, 'docs/reference/capabilities.md'), 'utf8')
 const occurrences = findGapOccurrences(root)
 
 describe('capability stub registry', () => {
@@ -128,10 +127,14 @@ describe('capability stub registry', () => {
     expect(errors, errors.join('\n')).toEqual([])
   })
 
-  it('keeps the human capability matrix in exact sync with the registry', () => {
-    const errors = auditMatrix(document, registry)
-    expect(errors, errors.join('\n')).toEqual([])
-  })
+  it.each(['capabilities.md', 'capabilities.zh-CN.md'])(
+    'keeps %s in exact sync with the registry',
+    (name) => {
+      const document = readFileSync(join(root, 'docs/reference', name), 'utf8')
+      const errors = auditMatrix(document, registry)
+      expect(errors, errors.join('\n')).toEqual([])
+    },
+  )
 
   it('rejects an unregistered source gap', () => {
     const synthetic = [

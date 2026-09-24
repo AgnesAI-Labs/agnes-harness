@@ -2,7 +2,7 @@
 // Read-only documentation, link and source-anchor checks for the current source tree.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { dirname, relative, resolve, sep } from 'node:path'
+import { basename, dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -16,6 +16,7 @@ function walk(dir) {
   }
 }
 walk(docs)
+const documentation = new Set(files)
 const errors = []
 const fail = (file, message) => errors.push(`${relative(root, file)}: ${message}`)
 const entrypoints = new Set(
@@ -34,6 +35,19 @@ if (existsSync(securityFile)) {
 }
 const content = new Map(files.map((file) => [file, readFileSync(file, 'utf8')]))
 const noCode = (text) => text.replace(/^```[^\n]*\n[\s\S]*?^```\s*$/gm, '')
+const chinese = (file) => file.endsWith('.zh-CN.md')
+const counterpart = (file) =>
+  chinese(file) ? file.replace(/\.zh-CN\.md$/, '.md') : file.replace(/\.md$/, '.zh-CN.md')
+const languageLink = (file) => `[${chinese(file) ? 'English' : '简体中文'}](${basename(counterpart(file))})`
+for (const file of documentation) {
+  if (!documentation.has(counterpart(file))) fail(file, 'missing translation counterpart')
+  const lines = content.get(file).split('\n')
+  const languageSwitch = chinese(file)
+    ? `${languageLink(file)} | 简体中文`
+    : `English | ${languageLink(file)}`
+  if (!/^# .+/.test(lines[0]) || lines[1] !== '' || lines[2] !== languageSwitch)
+    fail(file, `expected language switch immediately after the title: ${languageSwitch}`)
+}
 function anchors(text) {
   const seen = new Map()
   const result = new Set()
@@ -61,7 +75,9 @@ for (const [file, text] of content) {
   if (/\bTODO\b|\bTBD\b/.test(text)) fail(file, 'unfinished placeholder')
   if (/\b(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b/.test(text))
     fail(file, 'credential-like value')
-  for (const match of noCode(text).matchAll(/!?\[[^\]\n]*\]\(([^)\n]+)\)/g)) {
+  // Inline code can demonstrate Markdown syntax without declaring a real link.
+  const prose = noCode(text).replace(/(`+)[^\n]*?\1/g, '')
+  for (const match of prose.matchAll(/!?\[[^\]\n]*\]\(([^)\n]+)\)/g)) {
     const link = match[1].replace(/^<|>$/g, '').split(/\s+"/)[0]
     if (/^(?:https?:|mailto:)/.test(link)) {
       externalLinks++
@@ -77,6 +93,10 @@ for (const [file, text] of content) {
     if (!existsSync(target)) {
       fail(file, `missing target: ${link}`)
       continue
+    }
+    if (documentation.has(file) && documentation.has(target) && chinese(file) !== chinese(target)) {
+      const isLanguageSwitch = target === counterpart(file) && match[0] === languageLink(file)
+      if (!isLanguageSwitch) fail(file, `navigation changes language: ${link}`)
     }
     if (fragment && statSync(target).isFile() && target.endsWith('.md')) {
       if (!anchors(readFileSync(target, 'utf8')).has(decodeURIComponent(fragment)))
@@ -127,6 +147,6 @@ for (const check of manifest) {
 for (const [baseline, count] of sourceBaselines) console.log(`Source checks: ${baseline}: ${count}`)
 for (const error of errors) console.error(error)
 console.log(
-  `${files.length} Markdown files; ${checkedLinks} local links; ${externalLinks} external links (not fetched); ${manifest.length} source checks; ${errors.length} errors`,
+  `${files.length} Markdown files; ${[...documentation].filter((file) => !chinese(file)).length} translation pairs; ${checkedLinks} local links; ${externalLinks} external links (not fetched); ${manifest.length} source checks; ${errors.length} errors`,
 )
 process.exitCode = errors.length ? 1 : 0

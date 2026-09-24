@@ -1,56 +1,66 @@
-# CLI 与 TUI
+# CLI and TUI
 
-[文档导航](../README.md) · [完整命令参考](../reference/cli.md)
+English | [简体中文](cli.zh-CN.md)
 
-CLI 适合把 AGH 接到日常终端和脚本中；TUI 适合持续对话、检查上下文和处理审批。先用一次性任务获得结果，再按需使用交互式会话。
+<a id="cli-与-tui"></a>
 
-以下以仓库根为工作目录；从其他目录使用构建入口的绝对路径。命令首个位置应是子命令，之后才是该子命令支持的选项。
+[Documentation](../README.md) · [Full command reference](../reference/cli.md)
 
-## 一次性输出
+Use the CLI in terminals and scripts, and the TUI for ongoing conversations, context inspection, and approvals. Begin with a one-shot task, then use an interactive session when needed.
+
+Examples assume the repository root as the working directory. From another directory, use an absolute path to the built entry point. Put a subcommand before the options that belong to it.
+
+<a id="一次性输出"></a>
+
+## One-shot output
 
 ```sh
-node packages/cli/dist/local/agnes.mjs -p "解释当前项目"
-printf '%s\n' '请总结这段文本' | node packages/cli/dist/local/agnes.mjs -p
-node packages/cli/dist/local/agnes.mjs --mode json --chunks --meta "解释当前项目"
+node packages/cli/dist/local/agnes.mjs -p "Explain this project"
+printf '%s\n' 'Summarize this text' | node packages/cli/dist/local/agnes.mjs -p
+node packages/cli/dist/local/agnes.mjs --mode json --chunks --meta "Explain this project"
 ```
 
-`--mode json` 自动选择 print 模式；JSON 输出适合程序消费，stderr 仍可能含运行时警告。检查进程退出码，不能把收到部分文本当成功。`--park` 支持让一次性调用在等待审批时停驻；不带可用审批交互的脚本不能自行批准危险操作。
+`--mode json` automatically selects print mode. JSON output is suitable for programmatic consumption, but stderr may still contain runtime warnings. Check the exit code: partial text is not proof of success. `--park` lets a one-shot call wait for approval. A script without an available approval interaction cannot approve dangerous actions on its own.
 
-默认连接或启动本地共享 daemon。`--connect TARGET` 是显式连接，失败不回退；`--standalone` 为嵌入式，`--ephemeral` 为显式临时执行。ACP 入口为 `acp` 或 `--mode acp`，不能推定其生命周期与普通共享 daemon 模式一致。
+By default, the CLI connects to or starts the shared local daemon. `--connect TARGET` selects an explicit target and does not fall back on failure. `--standalone` uses an embedded runtime; `--ephemeral` selects temporary execution. ACP is available through `acp` or `--mode acp`; do not assume it shares the ordinary daemon mode's lifecycle.
 
-## 交互式终端
+<a id="交互式终端"></a>
+
+## Interactive terminal
 
 ```sh
 node packages/cli/dist/local/agnes.mjs
 ```
 
-输入 `/` 可查看当前菜单。常用操作：
+Type `/` to see the current menu. Common actions:
 
-| 操作 | 用法 |
+| Action | Usage |
 | --- | --- |
-| 新任务/选择历史 | `/new`、`/sessions`、`/resume [id]` |
-| 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
-| 上下文/用量 | `/context`、`/usage`、`/cost` |
-| 压缩 | `/compact [instructions]`，结果可能是执行、跳过或失败，按回执判断 |
-| 分叉 | `/rewind SEQ`，创建新会话，不是文件系统回滚 |
-| 插件 | `/packages`、`/install SOURCE`、`/package ...` |
-| 资源 | `/skills`、`/skill refresh ...`、`/mcp ...` |
-| 显示/退出 | `/theme [light\|dark\|mono]`、`/help`、`/quit` |
+| New task / history | `/new`, `/sessions`, `/resume [id]` |
+| Model / preset | `/model`, `/model main ROUTE/MODEL`, `/preset NAME` |
+| Context / usage | `/context`, `/usage`, `/cost` |
+| Compaction | `/compact [instructions]`; inspect the receipt for execution, skip, or failure |
+| Fork | `/rewind SEQ` creates a new session; it does not roll back the filesystem |
+| Plugins | `/packages`, `/install SOURCE`, `/package ...` |
+| Resources | `/skills`, `/skill refresh ...`, `/mcp ...` |
+| Display / exit | `/theme [light\|dark\|mono]`, `/help`, `/quit` |
 
-TUI `/package` 与 shell `package` 的子命令集合不完全相同，例如更新可以从 TUI/Web 发起，shell `package update` 当前没有实现。以[生命周期指南](packages.md)为准。
+TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
-审批卡显示后检查工具、参数和授权范围，再选当前提供的 allow/deny/abort 等选项。`/yolo` 会让当前会话剩余部分跳过审批，开启后不能在该会话撤销；不作为新手默认路径，且它不等于解除沙箱和其他权限约束。
+When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` skips approvals for the remainder of the current session and cannot be undone in that session. It is not a beginner default and does not remove sandbox or other permission constraints.
 
-## 退出码
+<a id="退出码"></a>
 
-| 码 | 意义 |
+## Exit codes
+
+| Code | Meaning |
 | --- | --- |
-| 0 | 完成 |
-| 1 | 执行失败或未知错误 |
-| 2 | 参数或启动错误 |
-| 3 | 已停驻等待 |
-| 4 | 预算/阻断 |
-| 5 | 到达最大步数 |
+| 0 | Completed |
+| 1 | Execution failure or unknown error |
+| 2 | Argument or startup error |
+| 3 | Parked and waiting |
+| 4 | Budget limit / blocked |
+| 5 | Maximum steps reached |
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
-实现依据：[参数与 usage](../../packages/cli/src/args.ts)、[退出码](../../packages/cli/src/errors.ts)、[TUI 命令](../../packages/cli-tui/src/commands.ts)。
+Implementation: [arguments and usage](../../packages/cli/src/args.ts), [exit codes](../../packages/cli/src/errors.ts), [TUI commands](../../packages/cli-tui/src/commands.ts).

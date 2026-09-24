@@ -1,33 +1,41 @@
-# 安装与源码构建
+# Installation and source builds
 
-[文档导航](../README.md) · 下一步：[模型配置与首次运行](quickstart.md)
+English | [简体中文](install.zh-CN.md)
 
-从源码构建后，你会得到一套包含 CLI、后台和 Web 工作台的本地运行目录。按本页准备环境、完成构建，再进入[首次运行](quickstart.md)。想先看预期结果，可以阅读[演示指南](demo.md)。
+<a id="安装与源码构建"></a>
 
-当前分发方式为源码构建，尚无正式公共安装包。
+[Documentation](../README.md) · Next: [Model configuration and first run](quickstart.md)
 
-## 获取源码
+A source build produces a local runtime directory containing the CLI, background services, and Web workbench. Prepare your environment, build the runtime, then follow the [quickstart](quickstart.md). For a preview of the expected results, see the [demo guide](demo.md).
 
-项目公开入口为 [AgnesAI-Labs/agnes-harness](https://github.com/AgnesAI-Labs/agnes-harness)。从该仓库的 Code 菜单复制克隆地址，或运行：
+Source builds are the current distribution method. No official public installer is available yet.
+
+<a id="获取源码"></a>
+
+## Get the source
+
+The public repository is [AgnesAI-Labs/agnes-harness](https://github.com/AgnesAI-Labs/agnes-harness). Copy its clone URL from the Code menu, or run:
 
 ```sh
 git clone https://github.com/AgnesAI-Labs/agnes-harness.git
 cd agnes-harness
 ```
 
-已有源码的开发者直接进入对应 checkout；下面命令均在包含根 `package.json` 的目录执行。
+If you already have a checkout, enter that directory. Run the following commands from the directory containing the root `package.json`.
 
-## 环境
+<a id="环境"></a>
 
-| 项目 | 要求 |
+## Requirements
+
+| Component | Requirement |
 | --- | --- |
-| Node.js | `>=24.10`；已记录的验证环境见[验证记录](../maintainers/verification.md) |
-| pnpm | `10.34.5`，见根 `packageManager`；可以通过 Corepack 调用 |
-| macOS | 构建原生 helper 需要 Xcode Command Line Tools；命令沙箱使用 Seatbelt |
-| Linux | 命令工具需要 bubblewrap 和可用的 user namespace；仅存在 bwrap 文件不代表可用 |
-| Windows | Node 同版本 headers/import library、Visual Studio C++ Build Tools 与 Windows SDK；平台限制见后文 |
+| Node.js | `>=24.10`; see [verification](../maintainers/verification.md) for recorded environments |
+| pnpm | `10.34.5`, pinned by the root `packageManager`; it can be invoked through Corepack |
+| macOS | Xcode Command Line Tools to build native helpers; command sandboxing uses Seatbelt |
+| Linux | Command tools require bubblewrap and usable user namespaces; the presence of a bwrap binary alone is insufficient |
+| Windows | Headers/import library matching Node, Visual Studio C++ Build Tools, and the Windows SDK; see the platform limits below |
 
-在仓库根先检查：
+Start with these commands at the repository root:
 
 ```sh
 node --version
@@ -37,15 +45,17 @@ pnpm --filter @agnes/cli build:local
 node packages/cli/dist/local/agnes.mjs --help
 ```
 
-没有可用的 `pnpm` 命令时，把下文 `pnpm` 换成 `corepack pnpm`。根目录没有 `pnpm build` 脚本；完整运行目录由 CLI 包的 `build:local` 构建。
+If `pnpm` is unavailable, substitute `corepack pnpm` in the following commands. There is no root `pnpm build` script. The CLI package's `build:local` creates the complete local distribution.
 
-输出位于 `packages/cli/dist/local/`，包括 `agnes.mjs`、daemon、worker、Web 与平台所需辅助资源。搬运时保持整个目录，不要只复制入口文件。`@agnes/web build` 仅构建 Web，不能替代完整本地分发。
+Output is written to `packages/cli/dist/local/`, including `agnes.mjs`, daemon, worker, Web, and platform resources. Move the entire directory when relocating a build. `@agnes/web build` builds only the Web package and cannot replace the full local distribution.
 
-Linux 可由系统包管理器安装 bubblewrap（例如 Debian/Ubuntu 的 `apt install bubblewrap`）；若运行环境禁用 user namespace，默认沙箱会拒绝命令工具，见[排错](troubleshooting.md)。
+On Linux, install bubblewrap through your system package manager, for example `apt install bubblewrap` on Debian/Ubuntu. If user namespaces are disabled, the default sandbox refuses command tools; see [troubleshooting](troubleshooting.md).
 
-## Windows 构建
+<a id="windows-构建"></a>
 
-先安装依赖，在同一个 PowerShell 会话中运行：
+## Build on Windows
+
+Install dependencies first, then run the following in the same PowerShell session:
 
 ```powershell
 $ErrorActionPreference = 'Stop'
@@ -56,11 +66,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 node .\packages\cli\dist\local\agnes.mjs --help
 ```
 
-headers 准备需要网络和包含 npm 的 Node 安装。升级 Node 后应重建原生 helper。Windows 已有构建与部分验收代码。文档中的 PowerShell 示例尚未在 Windows 实机执行；符号链接、受限 token、网络沙箱、安装升级及签名仍需分别验证。已记录的本地进程验证平台为 macOS。
+Preparing headers requires network access and a Node installation that includes npm. Rebuild native helpers after upgrading Node. Windows build support and some acceptance code exist, but the PowerShell examples here have not been executed on a Windows machine in the recorded documentation verification. Symbolic links, restricted tokens, network sandboxing, installation, upgrades, and signing require separate validation. Recorded local process verification was performed on macOS.
 
-## 独立试用目录
+<a id="独立试用目录"></a>
 
-开始文档实验时用独立绝对路径，避免连接已有实例。POSIX shell：
+## Use an isolated trial directory
+
+Use a separate absolute path for documentation experiments so you do not connect to an existing instance. In a POSIX shell:
 
 ```sh
 export AGH_HOME="$(mktemp -d /tmp/agh-docs.XXXXXX)"
@@ -69,7 +81,7 @@ node packages/cli/dist/local/agnes.mjs daemon status
 node packages/cli/dist/local/agnes.mjs serve
 ```
 
-PowerShell：
+In PowerShell:
 
 ```powershell
 $env:AGH_HOME = Join-Path ([IO.Path]::GetTempPath()) ('agh-docs-' + [guid]::NewGuid().ToString('N'))
@@ -78,13 +90,15 @@ $env:AGNES_PROFILE = 'local-dev'
 node .\packages\cli\dist\local\agnes.mjs serve
 ```
 
-普通长期使用可以不设置 `AGH_HOME`，默认是 `~/.agh`。同一 home/profile/dataDir 共享后台；不同项目目录不是自动隔离的账号或后台。Unix socket 路径有限，实验 home 尽量短。默认 socket 路径过长时，后台会选择经过身份与权限校验的短临时目录；显式指定的 socket 路径过长时仍会拒绝启动。
+For regular use, you may leave `AGH_HOME` unset; the default is `~/.agh`. Instances with the same home/profile/dataDir share a daemon. Different project directories do not automatically isolate accounts or background services. Keep experimental home paths short because Unix sockets have path limits. When the default socket path is too long, the daemon selects a short temporary directory after checking identity and permissions. An explicitly configured socket path that is too long is still rejected.
 
-## 重建与版本切换
+<a id="重建与版本切换"></a>
 
-不要覆盖正在运行的分发目录，尤其是 Windows 原生 DLL 被占用时。可以先在新的输出目录构建：
+## Rebuild or switch versions
 
-从源码仓库根目录执行。`--output-dir` 必须是绝对路径；pnpm 的 `--filter` 会改变脚本工作目录，不能传仓库相对路径。POSIX shell（每次创建新的输出位置）：
+Do not overwrite a running distribution, particularly while Windows has a native DLL open. Build to a new output directory first.
+
+Run from the source repository root. `--output-dir` must be absolute: pnpm's `--filter` changes the script's working directory, so a repository-relative path is invalid. In a POSIX shell, create a fresh output location each time:
 
 ```sh
 AGH_BUILD_ROOT="$(mktemp -d /tmp/agh-build.XXXXXX)"
@@ -92,7 +106,7 @@ corepack pnpm --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runt
 node "$AGH_BUILD_ROOT/runtime/agnes.mjs" --help
 ```
 
-PowerShell（同样从源码仓库根执行）：
+In PowerShell, also from the source repository root:
 
 ```powershell
 $aghBuildRoot = Join-Path ([IO.Path]::GetTempPath()) ('agh-build-' + [guid]::NewGuid().ToString('N'))
@@ -103,8 +117,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 node (Join-Path $aghBuildOutput 'agnes.mjs') --help
 ```
 
-上述 POSIX 构建流程已有按版本保存的运行证据；PowerShell 示例仅核对了参数与路径构造。环境与结果见[验证记录](../maintainers/verification.md)。
+The POSIX build flow has versioned runtime evidence. The PowerShell example has only had its arguments and path construction reviewed. See [verification](../maintainers/verification.md) for environments and results.
 
-在原实例结束任务后，用原分发的入口显式 `daemon stop`，结束旧 Web 服务，再启动新分发。构建锁、失败暂存目录和 owner 记录属于恢复证据，不能用删除它们来掩盖构建或后台问题。没有自动安装、自动更新或开机启动承诺。
+After tasks finish in the old instance, run `daemon stop` through the old distribution, stop its Web service, and then launch the new distribution. Build locks, failed staging directories, and owner records are recovery evidence; deleting them is not a fix for build or daemon errors. Automatic installation, updates, and startup registration are not promised.
 
-实现依据：[工具链](../../package.json)、[本地构建](../../packages/cli/tools/build-local.ts)、[Windows headers](../../.github/scripts/prepare-windows-native.ps1)。
+Implementation: [toolchain](../../package.json), [local build](../../packages/cli/tools/build-local.ts), [Windows headers](../../.github/scripts/prepare-windows-native.ps1).

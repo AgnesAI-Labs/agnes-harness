@@ -1,44 +1,54 @@
-# 插件安装、信任、更新与清理
+# Install, trust, update, and remove plugins
 
-[文档导航](../README.md) · [开发插件](../develop/plugins.md)
+English | [简体中文](packages.zh-CN.md)
 
-本页带你走完一个插件从检查、安装到更新和卸载的过程。先使用仓库自带的文本统计插件，跑通后再换成自己的包。
+<a id="插件安装信任更新与清理"></a>
 
-## 开箱可用的助手插件
+[Documentation](../README.md) · [Develop plugins](../develop/plugins.md)
 
-AGH 默认提供三个官方助手插件。新建本地配置，以及已有配置首次升级到支持默认助手的版本时，会自动安装、信任并启用尚未安装的助手，无需联网下载：
+Follow a plugin from inspection and installation through updates and removal. Start with the repository's text-statistics plugin, then apply the same process to your own package.
 
-| 插件 | 用途 |
+<a id="开箱可用的助手插件"></a>
+
+## Built-in helper plugins
+
+AGH includes three official helpers. On a new local configuration, or the first upgrade of an existing configuration to a version with default helpers, missing helpers are automatically installed, trusted, and enabled without a network download:
+
+| Plugin | Purpose |
 | --- | --- |
-| `@agnes/skill-helper` | 在会话中创建、导入和安装 Skill |
-| `@agnes/mcp-helper` | 在会话中准备和接入 MCP，查询真实连接状态 |
-| `@agnes/plugin-helper` | 在会话中创建工具或 Skill 插件、检查包，并在确认后安装启用 |
+| `@agnes/skill-helper` | Create, import, and install Skills in a session |
+| `@agnes/mcp-helper` | Prepare MCP integrations and query actual connection state |
+| `@agnes/plugin-helper` | Create tool or Skill plugins, inspect packages, and install/enable them after confirmation |
 
-三个助手出现在“设置 → 插件管理 → 已安装”，可以禁用或卸载。后续启动与升级尊重你的选择，不自动恢复；移除助手插件不会删除它先前创建或接入的插件、Skill 或 MCP。安装第三方能力仍需要相应确认。
+They appear under Settings → Plugin management → Installed and can be disabled or removed. Later startups and upgrades respect that choice. Removing a helper does not delete plugins, Skills, or MCP services it previously created or integrated. Installing third-party capabilities still requires the relevant confirmation.
 
-从只有 Skill/MCP Helper 的版本升级时，只补装新增的 Plugin Helper，不恢复此前已移除的两个助手。已有同名插件保留原版本和启用/信任状态。首次默认安装完成后，主动移除的助手可在“发现”中重新安装。首次初始化受部署策略约束，失败时保留记录，恢复后继续处理，不把失败标记为已启用。
+When upgrading from a version with only Skill/MCP Helper, AGH adds the new Plugin Helper without restoring the two older helpers if you removed them. Existing packages with the same IDs retain their versions and enabled/trusted state. After initial setup, you can reinstall a removed helper from discovery. Initial installation follows deployment policy, preserves failure records, and resumes after recovery without marking a failed installation as enabled.
 
-## 管理其他插件
+<a id="管理其他插件"></a>
 
-| 阶段 | 你要确认什么 |
+## Manage other plugins
+
+| Stage | What to check |
 | --- | --- |
-| 检查与安装 | 来源、版本、内容摘要与能力声明是否符合预期 |
-| 信任与启用 | 是否允许这一版代码在当前实例中提供能力 |
-| 核对实际状态 | 相关后端行是否 ready，前端贡献是否在页面加载 |
-| 更新或移除 | 新版本是否生效，旧能力是否正确撤下 |
+| Inspect and install | Source, version, content hash, and capability declarations |
+| Trust and enable | Whether this version may provide capabilities in the current instance |
+| Inspect actual state | Whether backend rows are ready and frontend contributions loaded |
+| Update or remove | Whether the new version is active and old capabilities were removed |
 
-安装成功默认仍为 untrusted、installed-disabled。`desired` 表示期望启用状态，`actual` 表示实际运行状态；分别查看它们，才能区分“已提出请求”和“已经可用”。
+A successful ordinary installation starts untrusted and installed-disabled. `desired` is the requested state; `actual` is the runtime state. Inspect both to distinguish a request from an available capability.
 
-## 安装后端示例
+<a id="安装后端示例"></a>
 
-建议先按[安装指南](install.md)建立临时 AGH_HOME，从仓库根启动该实例。`file:` 相对路径由后台的工作区来源解析；复用不同 cwd 启动的 daemon 时应核对来源，最简单的是在隔离实例的启动目录操作。
+## Install the backend example
+
+Use the [installation guide](install.md) to create a temporary AGH_HOME and start the instance from the repository root. The daemon resolves relative `file:` paths against its workspace source. If reusing a daemon started from a different cwd, check that source; working from an isolated instance's startup directory is the simplest option.
 
 ```sh
 node packages/cli/dist/local/agnes.mjs package inspect file:./examples/packages/hot-tool-plugin
 node packages/cli/dist/local/agnes.mjs install file:./examples/packages/hot-tool-plugin
 ```
 
-安装命令展示预览并要求交互确认。检查 package ID、版本、来源、integrity、capabilityHash、警告与 blockers；不能给有 blocker 的包直接授权。然后使用预览实际值：
+Installation shows a preview and requests interactive confirmation. Check package ID, version, source, integrity, capabilityHash, warnings, and blockers. A blocked package cannot simply be authorized. Use the actual preview values:
 
 ```sh
 node packages/cli/dist/local/agnes.mjs package trust @agnes-examples/hot-tool-plugin INTEGRITY CAPABILITY_HASH
@@ -46,24 +56,28 @@ node packages/cli/dist/local/agnes.mjs package enable @agnes-examples/hot-tool-p
 node packages/cli/dist/local/agnes.mjs package status
 ```
 
-Web 对应“设置 → 插件 → 从来源安装 → 检查/安装 → 信任 → 启用”。包状态和逐行 actual 要一起看；存在服务依赖、浏览器未打开、策略拒绝或候选加载失败时，启用状态与实际可用状态可能不同。
+In Web, use Settings → Plugins → Install from source → Inspect/Install → Trust → Enable. Check package state together with each row's actual state. Service dependencies, a closed browser, policy refusal, or failed candidate loading can keep an enabled package from being usable.
 
-## 更新与回滚
+<a id="更新与回滚"></a>
 
-当前 shell `package` 没有 `update` 子命令；请在 Web 插件页选已安装包的“从新来源更新”，或先检查来源后用 TUI `/package update <id> <source> <integrity>` 提交操作（该命令不提供安装式交互确认），程序调用则用 Node SDK `client.packages.update`。
+## Update and roll back
 
-可以用 `hot-service/v1` 与 `v2`，或 `client-panel/v1` 与 `v2` 演练。先安装、信任、启用 v1；更新时选择同 ID 的 v2 来源，核对新摘要和能力变化，按界面提示确认信任与激活。观察 actual 和界面/服务值，而不只看操作进度为 100%。
+The shell `package` command has no `update` subcommand. Use the installed package's update-from-source action in Web, or inspect the source and submit TUI `/package update <id> <source> <integrity>`. The TUI command does not provide the installation confirmation wizard. Programmatic callers use Node SDK `client.packages.update`.
+
+Practice with `hot-service/v1` and `v2`, or `client-panel/v1` and `v2`. Install, trust, and enable v1, then select the v2 source with the same package ID. Check new hashes and capability changes, and follow the interface's trust/activation prompts. Inspect actual state and interface/service values, rather than relying only on 100% operation progress.
 
 ```sh
 node packages/cli/dist/local/agnes.mjs package rollback PACKAGE_ID
 node packages/cli/dist/local/agnes.mjs package operation OPERATION_ID
 ```
 
-不携带 activation 的普通回滚会把目标设为未信任、禁用；shell 回滚后重新检查目标摘要，执行 trust、enable，再核对实际服务或界面。SDK 可携带当前安装/活动摘要与明确的目标信任决策进行 activation，不能省略相应校验。
+An ordinary rollback without activation leaves the target untrusted and disabled. After a shell rollback, inspect the target hashes, trust and enable it, then check the service or interface. SDK activation can include current installed/active hashes and an explicit trust decision for the target; these checks cannot be omitted.
 
-回滚依赖保留的上一版本和当前许可，不是任意历史版本管理。当前上一版本槽有界；已撤信任、被删除或无法核验的快照不能被回滚自动复活。失败候选可能自动回退，但必须读取真实 operation 状态和 actual，不能从“已请求”推断成功。
+Rollback depends on the retained previous version and current authorization. Retention is bounded and is not a repository of arbitrary past versions. Revoked, deleted, or unverifiable snapshots cannot be automatically revived. A failed candidate may trigger fallback, but inspect the operation and actual state rather than inferring success from a submitted request.
 
-## 禁用、撤信任与删除
+<a id="禁用撤信任与删除"></a>
+
+## Disable, revoke trust, and remove
 
 ```sh
 node packages/cli/dist/local/agnes.mjs package disable PACKAGE_ID
@@ -72,12 +86,14 @@ node packages/cli/dist/local/agnes.mjs package cancel OPERATION_ID
 node packages/cli/dist/local/agnes.mjs packages pins inspect
 ```
 
-撤信任使用 Web 中相应动作或 Node SDK；shell 没有通用 `package untrust` 命令。禁用撤下能力，删除处理安装状态与自有文件；正在被使用的快照可能有 pin，不能手动删除引用中的目录。`packages pins release PIN_ID` 是针对核验过的孤儿 pin 的显式清理动作，不用它绕开运行安全门。已有隔离演示验证禁用后三个示例包均可删除；仍需以目标平台和最终发行构建复验，具体基线见[验证记录](../maintainers/verification.md)。
+Revoke trust through Web or the Node SDK; there is no general shell `package untrust` command. Disabling withdraws capabilities. Removal handles installation state and owned files, but in-use snapshots may retain pins. Do not manually delete referenced directories. `packages pins release PIN_ID` explicitly cleans up a verified orphan pin; it must not bypass runtime safety gates. An isolated demo has verified removal of all three example packages after disabling them. Revalidate the target platform and final distribution; see [verification](../maintainers/verification.md) for the recorded baseline.
 
-取消是请求，收到回执后继续查 operation；部分有副作用操作不能当作从未发生。工具、事件监听、Cordis 服务与前端槽位应随所属 fiber 清理，外部业务数据不因插件卸载自动撤销。
+Cancellation is a request: continue checking the operation after its receipt. An operation with side effects cannot always be treated as if it never happened. Tools, event listeners, Cordis services, and frontend slots should be cleaned up with their owning fiber. Plugin removal does not undo external business data changes.
 
-## 更新为何不总是立即切换
+<a id="更新为何不总是立即切换"></a>
 
-Runtime target 带完整身份/修订信息。Host 已有受限活树事务和增量调和；合格变更可以复用未改变行，不能承诺任何插件都无中断热更新。依赖、身份变更、超时、事务补偿失败和污染树都可能触发拒绝或整体重建。浏览器再根据自己的名册更新和清理，Host active 不等于浏览器已加载。
+## Why an update may not switch immediately
 
-实现依据：[shell 命令](../../packages/cli/src/commands/package.ts)、[SDK](../../packages/sdk/src/package-admin.node.ts)、[Web 管理](../../packages/web/src/admin/plugins/admin.ts)、[EntryTree](../../packages/cordis-loader/src/entry-tree.ts)、[Host 发布](../../packages/host/src/runtime-target-publisher.ts)。
+A runtime target carries complete identity and revision information. Host supports constrained live-tree transactions and incremental reconciliation; eligible changes can reuse unchanged rows. Seamless hot updates are not guaranteed for every plugin. Dependencies, identity changes, timeouts, failed compensation, and tainted trees can lead to refusal or a full rebuild. The browser updates and cleans up its own roster, so Host activation does not prove browser loading.
+
+Implementation: [shell commands](../../packages/cli/src/commands/package.ts), [SDK](../../packages/sdk/src/package-admin.node.ts), [Web administration](../../packages/web/src/admin/plugins/admin.ts), [EntryTree](../../packages/cordis-loader/src/entry-tree.ts), [Host publication](../../packages/host/src/runtime-target-publisher.ts).

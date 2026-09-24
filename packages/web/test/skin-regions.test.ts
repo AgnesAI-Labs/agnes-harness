@@ -107,14 +107,14 @@ describe('skin region hooks', () => {
     }
   })
 
-  it('matches the region table in the skin authoring guide', () => {
+  it.each(['skins.md', 'skins.zh-CN.md'])('matches the region table in %s', (docName) => {
     // The guide's table is the contract a skin author reads; it must list exactly the regions this
     // file pins. Several workbench regions are component-rendered, so the table is compared against
     // the EXPECTED contract rather than the static markup.
     const packageRoot = process.cwd().endsWith('/packages/web')
       ? process.cwd()
       : resolve(process.cwd(), 'packages/web')
-    const doc = readFileSync(resolve(packageRoot, '../../docs/develop/skins.md'), 'utf8')
+    const doc = readFileSync(resolve(packageRoot, '../../docs/develop', docName), 'utf8')
     const listed = new Set([...doc.matchAll(/^\| `([a-z-]+)` \|/gm)].map((match) => match[1] as string))
     const contracted = new Set<string>()
     for (const page of Object.keys(EXPECTED))
