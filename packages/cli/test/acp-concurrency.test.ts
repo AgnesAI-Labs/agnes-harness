@@ -47,7 +47,7 @@ describe.skipIf(!enabled)('--ephemeral ACP concurrency', () => {
 
     const version = await run(['--version'])
     expect(version.code).toBe(0)
-    expect(version.stdout).toMatch(/^agnes \S+ node \S+ protocol _agnes\/v1\n$/)
+    expect(version.stdout).toMatch(/^agh \S+ node \S+ protocol _agnes\/v1\n$/)
 
     const invalid = await run(['--not-an-agnes-option'])
     expect(invalid.code).not.toBe(0)
