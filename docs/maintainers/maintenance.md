@@ -2,7 +2,7 @@
 
 [文档导航](../README.md) · [验证与复现](verification.md) · [发布检查](release.md) · [许可说明](provenance.md)
 
-根 [README.md](../../README.md) 是中文项目入口，[README.en.md](../../README.en.md) 提供英文介绍；`docs/` 保存使用指南、开发教程和技术参考。包内生成文档由各包的生成器维护。
+根 [README.md](../../README.md) 是默认英文项目入口，[README.zh-CN.md](../../README.zh-CN.md) 提供中文介绍；[README.en.md](../../README.en.md) 保留为旧链接的导航入口，不再维护重复正文。`docs/` 保存使用指南、开发教程和技术参考。包内生成文档由各包的生成器维护。
 
 ## 项目表达
 

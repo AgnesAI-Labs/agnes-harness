@@ -1,50 +1,50 @@
 # Agnes Harness
 
-**面向前线交付工程（FDE）的插件化智能体框架。**
+**A pluggable agent harness for Forward Deployed Engineering (FDE).**
 
-### 以可信为根基，为真实世界而生。
+### Built for trust. Made for the real world.
 
-**把 AI 接入真实业务，让每一次交付沉淀为可复用的能力。**
+**Bring AI into real workflows. Turn each deployment into capabilities you can reuse.**
 
-Agnes Harness（AGH）将模型、工具、任务状态和业务界面连接在一起。你可以用 CLI 和 Web 开始工作，用插件接入业务系统，用 Skills 沉淀任务方法，再把这些能力组合成自己的 Agent 应用。
+Agnes Harness (AGH) connects models, tools, task state, and business interfaces. Start working through CLI and Web, integrate business systems with plugins, capture task methods in Skills, and combine them into your own agent application.
 
-中文 | [English](README.en.md)
+English | [简体中文](README.zh-CN.md)
 
-[快速开始](docs/guide/quickstart.md) · [体验示例](docs/guide/demo.md) · [开发插件](docs/develop/plugins.md) · [完整文档](docs/README.md) · [MHS（即将开放）](docs/guide/mhs.md)
+[Quickstart](docs/guide/quickstart.md) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS (coming soon)](docs/guide/mhs.md)
 
-开发者预览（pre-alpha） · [源码构建](#从源码开始) · [Apache-2.0](LICENSE)
+Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0](LICENSE)
 
-## 为什么选择 AGH
+## Why AGH
 
-从一个业务工具，到一个岗位工作台，再到持续迭代的现场交付，AGH 为它们提供共同的运行基础。
+From a business tool to a workbench for a particular role, AGH provides a shared runtime that you can build on throughout a deployment.
 
-| 你要做的事 | AGH 为你提供 | 深入了解 |
+| What you want to build | What AGH provides | Explore |
 | --- | --- | --- |
-| **把业务能力交给 Agent** | 通过后端插件注册工具，通过 MCP 连接已有工具服务；把输入、调用与结果接入任务过程 | [后端插件](docs/develop/backend.md) · [MCP](docs/guide/mcp.md) |
-| **做出适合业务的界面** | 在 Web 工作台中加入前端面板，并通过受限服务调用连接后端 | [前端面板](docs/develop/frontend.md) · [前后端联动](docs/develop/fullstack.md) |
-| **让经验成为下一次任务的起点** | 用 Skills 保存任务方法，用插件包管理可复用的业务实现 | [Skills](docs/guide/skills.md) · [插件生命周期](docs/guide/packages.md) |
-| **在熟悉的入口中继续工作** | CLI、Web 与 SDK 共享后台会话，查看历史、继续任务、处理中断 | [会话与恢复](docs/guide/sessions.md) |
-| **把授权与结果放进执行过程** | 包信任、工具审批、执行约束与会话记录，让集成有明确的控制点 | [安全与信任](docs/guide/security.md) |
+| **Business capabilities an agent can use** | Register tools through backend plugins or connect existing services through MCP, with inputs, calls, and results in the task flow | [Backend plugins](docs/develop/backend.md) · [MCP](docs/guide/mcp.md) |
+| **An interface that fits the work** | Add panels to the Web workbench and connect them to the backend through controlled service calls | [Frontend panels](docs/develop/frontend.md) · [Full-stack plugins](docs/develop/fullstack.md) |
+| **Experience you can reuse** | Capture task methods in Skills and package reusable business logic as plugins | [Skills](docs/guide/skills.md) · [Plugin lifecycle](docs/guide/packages.md) |
+| **Work that continues across entry points** | CLI, Web, and SDK share backend sessions for reading history, continuing tasks, and handling interruptions | [Sessions and recovery](docs/guide/sessions.md) |
+| **Authorization and results within the execution flow** | Package trust, tool approvals, execution constraints, and session records provide explicit points of control | [Security and trust](docs/guide/security.md) |
 
-我们面向 Forward Deployed Engineering（FDE）：深入业务现场，把系统集成、使用体验和持续迭代做成可交付的软件。**把现场差异写进插件，把任务执行交给 Harness，把经过验证的能力带到下一个项目。** [了解 FDE 与应用场景 →](docs/guide/why-agh.md)
+AGH is built for Forward Deployed Engineering (FDE): working in users' environments to turn systems integration, a usable interface, and ongoing iteration into delivered software. **Put the differences into plugins. Let the harness handle execution. Reuse validated capabilities in the next deployment.** [Explore FDE and application scenarios →](docs/guide/why-agh.md)
 
-## 从三个示例，开始构建你的应用
+## Three examples to start building
 
-仓库提供三个可运行示例，分别展示业务能力、专属界面与前后端联动。每个教程都包含源码入口、操作步骤和预期结果。
+The repository includes runnable examples for backend capabilities, custom interfaces, and full-stack integration. Each tutorial includes source code, steps, and expected results.
 
-| 示例 | 先看到什么 | 然后可以构建什么 |
+| Example | What you will see | What you can build from it |
 | --- | --- | --- |
-| [一个工具](docs/develop/backend.md) | 调用 `demo_text_stats`，得到字符数与词数 | 为 Agent 接入订单查询、数据检索等业务函数 |
-| [一个面板](docs/develop/frontend.md) | 在工作台侧栏加载自己的面板，更新版本 | 为岗位展示任务信息和业务状态 |
-| [一套联动](docs/develop/fullstack.md) | 面板读取后端服务结果，观察升级与回滚 | 把业务服务与操作界面组合成插件 |
+| [A tool](docs/develop/backend.md) | Invoke `demo_text_stats` and receive character and word counts | Connect order lookup, data retrieval, or another business function |
+| [A panel](docs/develop/frontend.md) | Load your own sidebar panel and update its version | Show task information and business state for a particular role |
+| [A full-stack plugin](docs/develop/fullstack.md) | Read a backend result from a panel, then inspect updates and rollback | Package a business service together with its interface |
 
-**先选一个示例，再换成你的业务逻辑。** [打开演示指南 →](docs/guide/demo.md)
+**Choose an example, then add your business logic.** [Open the demo guide →](docs/guide/demo.md)
 
-## 从源码开始
+## Run from source
 
-当前为 **开发者预览（pre-alpha）**，通过源码构建体验。准备 Node.js 24.10+、pnpm 10.34.5，以及平台所需的原生构建工具，获取源码与完整步骤见[安装指南](docs/guide/install.md)。API、配置与插件接口仍在演进，可能出现破坏兼容性的变更。
+AGH is a **developer preview (pre-alpha)**, available through a source build. You need Node.js 24.10+, pnpm 10.34.5, and the native build tools for your platform. See [getting the source and installation](docs/guide/install.md). APIs, configuration, and plugin interfaces are evolving and may introduce breaking changes.
 
-首次运行前阅读[安全与信任](docs/guide/security.md)，确认工作目录和授权范围。在源码仓库根目录运行：
+Before running AGH, read [security and trust](docs/guide/security.md) and choose the working directory and permissions. From the source repository root:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -52,42 +52,44 @@ pnpm --filter @agnes/cli build:local
 node packages/cli/dist/local/agnes.mjs serve
 ```
 
-打开终端打印的本机地址，配置模型，创建任务并确认工作目录。试着发出第一个请求：
+Open the printed loopback URL, configure a model, create a task, and confirm its working directory. Try your first request:
 
-> 请只读取当前项目，说明它解决什么问题、主要目录如何组织；不要修改文件。
+> Read this project and explain the problem it solves and how its main directories are organized. Do not modify files.
 
-保持 Web 服务运行，另开一个终端并进入同一源码目录。CLI 使用同一后台与配置；如果设置过 `AGH_HOME` / `AGNES_PROFILE`，在新终端使用相同值：
+Leave the Web server running and open a second terminal in the same source directory. The CLI uses the same backend and configuration; if you set `AGH_HOME` or `AGNES_PROFILE`, use the same values in this terminal:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs -p "简要说明当前项目的用途"
+node packages/cli/dist/local/agnes.mjs -p "Briefly explain what this project does"
 ```
 
-跟随[首次运行](docs/guide/quickstart.md)查看结果、找到会话，并继续任务。没有模型账号，也可以运行[本地模拟模型演示](docs/guide/demo.md#不配置模型账号先跑通本地链路)，先体验插件与任务执行流程。
+Follow the [quickstart](docs/guide/quickstart.md) to inspect results, find the session, and continue working. Without a model account, you can try the [local simulated-model demo](docs/guide/demo.md#不配置模型账号先跑通本地链路) to explore plugins and task execution.
 
-## 为扩展而组织的运行基础
+Detailed guides are currently in Chinese. This README provides the English overview and getting-started path.
 
-AGH 的 App Server 架构将任务状态保存在后台。CLI、Web 和 SDK 围绕同一套会话接口工作；Cordis 组织插件依赖与生命周期，后端能力和前端界面通过各自的入口扩展。
+## A runtime built to extend
 
-这让业务工具、任务知识和岗位界面可以分别开发，再组合进同一个应用。想了解一次请求如何从界面走到工具执行，阅读[架构说明](docs/develop/architecture.md)；准备深入实现，从[源码地图](docs/develop/source-map.md)开始。
+AGH's App Server architecture keeps task state in the backend. CLI, Web, and SDK work through a shared set of session interfaces. Cordis organizes plugin dependencies and lifecycles, with dedicated extension paths for backend capabilities and frontend interfaces.
 
-## MHS：向物理世界延伸
+You can develop business tools, task knowledge, and role-specific interfaces separately, then combine them into an application. Follow a request from the interface to tool execution in the [architecture guide](docs/develop/architecture.md), or explore the implementation through the [source map](docs/develop/source-map.md).
 
-AGH 计划探索通过 MHS（Model Hardware Standard）接入物理设备，将设备状态、人工确认和执行回执纳入任务流程，面向巡检、仪器协作和现场运维积累可复用的集成方式。
+## MHS: extending into the physical world
 
-**MHS 接入文档与示例即将开放。** [了解设备接入方向 →](docs/guide/mhs.md)
+AGH plans to explore physical device integration through the Model Hardware Standard (MHS), bringing device state, human confirmation, and execution receipts into task workflows. The goal is to make integrations reusable across inspection, instrument coordination, and field operations.
 
-## 关注 AGH，把你的场景带进来
+**MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](docs/guide/mhs.md)
 
-如果你也在探索 AI 的现场交付，欢迎 **Star 收藏项目**，用 **Watch 关注更新**，或把 AGH 分享给正在做 Agent 应用和业务集成的开发者。
+## Follow AGH and bring your use case
 
-- **试用与反馈**：跑通一个示例，分享使用体验；可通过 Issues 提交普通问题与场景建议。
-- **构建与复用**：按适用许可证，在自己的项目中开发插件、接入工具、打造工作台。
-- **开发协作**：当前代码与文档 PR 仅限受邀内部开发者，暂不接收外部 PR。详见[反馈与协作规则](docs/develop/contributing.md)。
+If you are exploring AI deployment in the field, **Star the project**, use **Watch to follow updates**, and share AGH with developers building agent applications and business integrations.
 
-安全问题请按[安全报告政策](SECURITY.md)私密提交。
+- **Try it and give feedback:** Run an example and share your experience. Use Issues for ordinary bug reports and use-case suggestions.
+- **Build and reuse:** Develop plugins, connect tools, and create a workbench in your own project under the applicable licenses.
+- **Develop with the team:** Code and documentation pull requests are currently limited to invited internal developers. External PRs are not accepted for now. See the [feedback and development policy](CONTRIBUTING.md).
 
-## 状态与许可
+Report vulnerabilities privately under the [security policy](SECURITY.md).
 
-AGH 当前为开发者预览。[支持范围与已知限制](docs/reference/limitations.md)帮助你选择试用环境；[验证与复现](docs/maintainers/verification.md)提供检查命令与验收范围。
+## Status and license
 
-项目自有代码采用 [Apache License 2.0](LICENSE)。第三方组件、改编文件及部分示例保留各自的许可声明，详见 [NOTICE](NOTICE) 与[许可说明](docs/maintainers/provenance.md)。
+AGH is a developer preview. Use [supported scope and known limitations](docs/reference/limitations.md) to choose your trial environment, and the [verification guide](docs/maintainers/verification.md) for reproducible checks and their scope.
+
+Project-authored code is licensed under the [Apache License 2.0](LICENSE). Third-party components, adapted files, and some examples retain their own license terms; see [NOTICE](NOTICE) and [licensing details](docs/maintainers/provenance.md).

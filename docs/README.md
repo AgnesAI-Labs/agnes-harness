@@ -4,7 +4,7 @@
 
 用 CLI 和 Web 跑通任务，用插件接入业务能力，用 Skills 积累方法，再为岗位打造自己的界面。从下面选择一条路径开始。
 
-[项目首页](../README.md) · [English overview](../README.en.md) · [为什么选择 AGH](guide/why-agh.md) · [体验示例](guide/demo.md) · [MHS（即将开放）](guide/mhs.md)
+[项目首页 / English](../README.md) · [中文介绍](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.md) · [体验示例](guide/demo.md) · [MHS（即将开放）](guide/mhs.md)
 
 ## 选择你的起点
 
