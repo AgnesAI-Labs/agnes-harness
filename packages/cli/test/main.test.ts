@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { resolveDaemonScope } from '@agnes/daemon'
-import { defaultProcessIdentity } from '@agnes/host'
+import {
+  type ComputerUseDriverArchitecture,
+  type ComputerUseDriverPlatform,
+  defaultProcessIdentity,
+  evaluateFixedComputerUsePlatformAdmission,
+} from '@agnes/host'
 import { appendRowAsOlderBuild, createTestHost } from '@agnes/host/testkit'
 import { ResourceOperationFailure } from '@agnes/resource-control-cli'
 import { JsonRpcError, TransportClosed } from '@agnes/sdk'
@@ -23,6 +28,15 @@ import {
 import type { LocalBootDeps } from '../src/boot/local.js'
 import { bootLocal } from '../src/boot/local.js'
 import { say, stalledProvider, TEST_LOCK, testDeps } from './boot-host.js'
+
+// The lazy runtime reports first-use preparation only where the pinned driver is admitted for this
+// platform; everywhere else (Linux today) it reports the platform as unsupported instead.
+const runtimeBlocker = evaluateFixedComputerUsePlatformAdmission(
+  process.platform as ComputerUseDriverPlatform,
+  process.arch as ComputerUseDriverArchitecture,
+).allowed
+  ? 'driver-not-prepared'
+  : 'platform-unsupported'
 
 const tmp: string[] = []
 afterEach(() => {
@@ -236,7 +250,7 @@ describe('main', () => {
               status: 'blocked',
               admission: { state: 'blocked', reason: 'runtime-unavailable' },
               runtime: { state: 'not-started', startAttempted: false },
-              blockers: ['driver-not-prepared'],
+              blockers: [runtimeBlocker],
               lockedPackageMutations,
             },
       )
