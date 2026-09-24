@@ -1,5 +1,5 @@
-# Local-only helper: build, stop the old local server, and run the new build.
-# Run from PowerShell: .\update-local.ps1
+# Local-only helper: install missing dependencies, build, stop the old local server, and run the new build.
+# Run from PowerShell: .\start-local-windows.ps1
 # Old builds and conversation data are retained. No git operations are performed.
 
 $ErrorActionPreference = 'Stop'
@@ -87,7 +87,19 @@ function Stop-VerifiedLocalProcess($Candidate, [string]$Kind) {
 
 Push-Location -LiteralPath $repoDir
 try {
-    Write-Host '[1/4] Building the current local code...'
+    Write-Host '[1/5] Checking local dependencies...'
+    $tsxCommand = Join-Path $repoDir 'node_modules\.bin\tsx.cmd'
+    if (-not (Test-Path -LiteralPath $tsxCommand -PathType Leaf)) {
+        & pnpm install --frozen-lockfile
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Dependency install failed. The existing server has not been stopped.'
+        }
+        if (-not (Test-Path -LiteralPath $tsxCommand -PathType Leaf)) {
+            throw 'tsx is still missing after install. The existing server has not been stopped.'
+        }
+    }
+
+    Write-Host '[2/5] Building the current local code...'
     & pnpm --filter @agnes/cli build:local --output-dir $outputDir
     if ($LASTEXITCODE -ne 0) {
         throw 'Build failed. The existing server has not been stopped.'
@@ -96,7 +108,7 @@ try {
         throw 'Build output is missing. The existing server has not been stopped.'
     }
 
-    Write-Host '[2/4] Checking the existing server on port 4180...'
+    Write-Host '[3/5] Checking the existing server on port 4180...'
     $listeners = @(Get-NetTCPConnection -LocalPort 4180 -State Listen -ErrorAction SilentlyContinue)
     $processIds = @($listeners | Select-Object -ExpandProperty OwningProcess -Unique)
     foreach ($processId in $processIds) {
@@ -105,7 +117,7 @@ try {
             throw "Port 4180 belongs to another application (PID $processId). Nothing was stopped."
         }
     }
-    Write-Host '[3/4] Stopping the old daemon and cleaning verified local leftovers...'
+    Write-Host '[4/5] Stopping the old daemon and cleaning verified local leftovers...'
     & node $entry daemon stop --profile local-dev --workspace $repoDir --data-dir $dataDir
     if ($LASTEXITCODE -ne 0) {
         Write-Warning 'Normal daemon stop failed; checking for verified local leftovers.'
@@ -120,7 +132,7 @@ try {
         throw 'Port 4180 is still occupied. The new server was not started.'
     }
 
-    Write-Host '[4/4] Starting the new build. Keep this terminal open.'
+    Write-Host '[5/5] Starting the new build. Keep this terminal open.'
     Write-Host 'Open the FULL new URL printed below. Re-running this script replaces this local instance.'
     & node $entry serve --port 4180 --profile local-dev --cwd $repoDir --data-dir $dataDir
     if ($LASTEXITCODE -ne 0) {

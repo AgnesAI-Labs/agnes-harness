@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $repoDir = Split-Path $PSScriptRoot -Parent
 $errors = $null
 $tokens = $null
-$ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repoDir 'update-local.ps1'), [ref]$tokens, [ref]$errors)
+$ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repoDir 'start-local-windows.ps1'), [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
 foreach ($definition in $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
     . ([scriptblock]::Create($definition.Extent.Text))
