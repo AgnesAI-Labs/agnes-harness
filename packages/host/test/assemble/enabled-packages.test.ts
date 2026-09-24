@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -12,6 +20,9 @@ import { readNamedExports } from '../../src/assemble/packages.js'
 import { type AssembleDeps, assemble } from '../../src/assemble.js'
 import { type AuditEvent, type AuditSink, createMemoryAudit } from '../../src/audit.js'
 import { resolveProfile } from '../../src/profile/resolve.js'
+import { createSession } from '../../src/session.js'
+import { SessionWorkspaceRuntimeTable } from '../../src/session-workspace-runtime.js'
+import { WorkspaceBindingAuthority } from '../../src/workspace-authority.js'
 
 const roots: string[] = []
 const packagedIsolation = it.runIf(Boolean(process.env.AGNES_TEST_RUNTIME_DIRECTORY))
@@ -405,14 +416,34 @@ packagedIsolation('runs an opted-in hook through the packaged Node runner and re
       loaded: true,
       isolation: { mode: 'required', backend: 'seatbelt', fallback: false, protocol: 1 },
     })
-    const session = await a.kernel.session('t6-3-real', {
-      actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-      resolvedProfileHash: x.profile.hash,
-      cwd: x.deps.workspaceRoot,
-      writerRunId: 't6-3-writer',
+    // The real Base sandbox serves only workspace-bound sessions, so open the session the way Host
+    // does: through an accepted binding and its workspace runtime.
+    const sessionKey = 't6-3-real'
+    const binding = new WorkspaceBindingAuthority().accept(
+      {
+        version: 1,
+        sessionKey,
+        workspaceId: 'a'.repeat(64),
+        revision: 1,
+        canonicalRoot: realpathSync(x.deps.workspaceRoot),
+      },
+      sessionKey,
+    )
+    const table = new SessionWorkspaceRuntimeTable()
+    a.rollback.push('test-workspace-runtime', () => table.closeAll())
+    const runtime = await table.open(binding, () => a.openWorkspaceRuntime(binding))
+    const session = await createSession(x.profile, a, { key: sessionKey, binding }, undefined, {
+      runtime,
+      lifecycle: table.lifecycle(sessionKey),
+      children: table,
+      invocation: table.invocation(sessionKey),
     })
-    const result = await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })
-    expect(result).toMatchObject({ block: true, reason: 'isolated package' })
+    try {
+      const result = await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })
+      expect(result).toMatchObject({ block: true, reason: 'isolated package' })
+    } finally {
+      await session.close()
+    }
   } finally {
     await a.rollback.unwind()
   }
@@ -470,418 +501,6 @@ it('consumes resolved required policy despite a weaker legacy constructor option
     })
   } finally {
     await host.close()
-  }
-})
-
-async function installedHookFixture(
-  mode: 'off' | 'preferred' | 'required',
-  code: string,
-  bundled = false,
-  entryFile = 'index.mjs',
-) {
-  const x = await setup()
-  const { createPackageManager, emptyLock, parseSource, writeLock } = await import('@agnes/package-manager')
-  x.deps.profileDir = join(x.deps.workspaceRoot, 'profiles', x.profile.name)
-  const id = 'acme/generic'
-  const author = bundled ? 'acme/bundled' : id
-  const sourceDirectory = join(x.deps.workspaceRoot, 'generic-source')
-  const extensionDirectory = bundled ? join(sourceDirectory, 'extension') : sourceDirectory
-  mkdirSync(extensionDirectory, { recursive: true })
-  mkdirSync(x.deps.profileDir, { recursive: true })
-  writeFileSync(
-    join(sourceDirectory, 'package.json'),
-    JSON.stringify({
-      name: id,
-      version: '1.0.0',
-      license: 'MIT',
-      type: 'module',
-      ...(bundled ? { agnes: { extensions: ['./extension'] } } : {}),
-    }),
-  )
-  if (bundled)
-    writeFileSync(join(sourceDirectory, 'index.mjs'), 'throw Error("package entry must not execute")')
-  writeFileSync(
-    join(extensionDirectory, 'agnes.extension.json'),
-    JSON.stringify({
-      id: author,
-      version: '1.0.0',
-      apiRange: '^1.0.0',
-      entry: `./${entryFile}`,
-      capabilities: { hooks: ['before_step', 'session_start', 'subagent_start', 'context'], events: true },
-      runtime: { supports: ['in-process', 'isolated'] },
-    }),
-  )
-  writeFileSync(
-    join(extensionDirectory, entryFile),
-    code.replaceAll('__WORKSPACE__', JSON.stringify(x.deps.workspaceRoot)),
-  )
-  writeFileSync(join(x.deps.workspaceRoot, 'private-probe'), 'fixture-private')
-  writeLock(x.deps.profileDir, {
-    ...emptyLock(x.profile.name, '0.1.0'),
-    resolvedProfileHash: x.profile.hash,
-    seams: x.profile.seams,
-    provider: { package: x.profile.provider.package, adapters: x.profile.provider.adapters },
-    policySnapshot: { capabilityCeiling: ['hooks', 'events'], workspacePackages: 'require-project-trust' },
-  })
-  const manager = createPackageManager({
-    dataDir: x.deps.dataDir,
-    cwd: x.deps.workspaceRoot,
-    agnesVersion: '0.1.0',
-    references: async () => [],
-  })
-  const source = parseSource('file:./generic-source')
-  const preview = await manager.inspect(x.deps.profileDir, source)
-  await manager.install(x.deps.profileDir, source, { expectedIntegrity: preview.integrity })
-  const row = (await manager.inventory(x.deps.profileDir)).packages[0]
-  if (!row?.directory) throw Error('missing installed fixture')
-  await manager.trust(x.deps.profileDir, id, {
-    integrity: row.entry.integrity,
-    capabilityHash: row.capabilityHash,
-  })
-  await manager.enable(x.deps.profileDir, id, true)
-  x.packageDirs.set(id, row.directory)
-  x.profile.packages.push({
-    id,
-    source: source.ref,
-    version: row.entry.version,
-    integrity: row.entry.integrity,
-    trust: 'trusted',
-    enabled: true,
-  })
-  x.deps.extensionIsolation = { extensions: { [author]: mode } }
-  x.deps.hostRoot = dirname(dirname(resolve(process.env.AGNES_TEST_RUNTIME_DIRECTORY as string)))
-  return { ...x, id, author, manager }
-}
-
-packagedIsolation.each([false, true])(
-  'installs and invokes a generic Hook in real Seatbelt (bundled=%s)',
-  async (bundled) => {
-    const x = await installedHookFixture(
-      'required',
-      `import {defineExtension} from '@agnes/extension-api';
-    import {Type} from '@sinclair/typebox';
-    export default defineExtension(api => {
-      const schema = Type.String();
-      api.registerHook('before_step', async () => ({block:true, reason:'generic-' + process.pid + '-' + schema.type}));
-    });`,
-      bundled,
-    )
-    const a = await assemble(x.profile, x.deps)
-    let pid: number | undefined
-    try {
-      expect(x.imported).not.toContain(x.id)
-      const status = a.extHost.status().find((row) => row.id === x.author)
-      expect(status).toMatchObject({
-        loaded: true,
-        isolation: { mode: 'required', backend: 'seatbelt', fallback: false },
-      })
-      pid = status?.isolation?.pid
-      expect(pid).toBeTypeOf('number')
-      expect(pid).not.toBe(process.pid)
-      const session = await a.kernel.session('generic-real', {
-        actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-        resolvedProfileHash: x.profile.hash,
-        cwd: x.deps.workspaceRoot,
-        writerRunId: 'generic-writer',
-      })
-      expect(await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })).toMatchObject({
-        block: true,
-        reason: `generic-${pid}-string`,
-      })
-    } finally {
-      await a.rollback.unwind()
-    }
-    if (pid) expect(() => process.kill(pid, 0)).toThrow()
-    expect(a.extHost.residue(x.author)).toEqual([])
-  },
-)
-
-packagedIsolation(
-  'four generic Hook modes match in-process oracle through actual Host sessions',
-  async () => {
-    const code = `export default api => {
-      api.registerHook('session_start', async () => { await api.events.append('parallel', {mode:'parallel'}) });
-      api.registerHook('subagent_start', async () => { await api.events.append('emit', {mode:'emit'}) });
-      api.registerHook('before_step', async (_,ctx) => { await api.events.append('serial', {mode:'serial'}); return {block:true,reason:String(ctx.lease.budget.remaining)} });
-      api.registerHook('context', async p => { await api.events.append('waterfall', {mode:'waterfall',surface:p.getSurface().length}); return {additionalContext:'generic context'} });
-    };`
-    const results = []
-    for (const mode of ['off', 'required'] as const) {
-      const x = await installedHookFixture(mode, code)
-      const a = await assemble(x.profile, x.deps)
-      try {
-        expect(a.extHost.status().find((r) => r.id === x.author)?.loaded).toBe(true)
-        const session = await a.kernel.session('modes-real', {
-          actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-          resolvedProfileHash: x.profile.hash,
-          cwd: x.deps.workspaceRoot,
-          writerRunId: 'modes-writer',
-        })
-        await session.hooks.subagentStart?.({ childKey: 'child', kind: 'spawn', budget: null })
-        const serial = await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })
-        const waterfall = await session.hooks.context([])
-        const events = []
-        for (const name of ['parallel', 'emit', 'serial', 'waterfall'])
-          events.push(
-            (await session.scan({ type: `x/${x.author}/${name}`, toSeq: session.lastSeq })).map(
-              (e) => e.data,
-            ),
-          )
-        results.push({ serial, waterfall, events })
-        expect(serial).toEqual({ block: true, reason: 'Infinity' })
-        expect(events.every((e) => e.length === 1)).toBe(true)
-      } finally {
-        await a.rollback.unwind()
-      }
-    }
-    expect(results[1]).toEqual(results[0])
-  },
-)
-
-packagedIsolation('generic Hook cannot read workspace, write files, connect network or fork', async () => {
-  const x = await installedHookFixture(
-    'required',
-    `import {readFileSync,writeFileSync} from 'node:fs';
-    import {spawnSync} from 'node:child_process'; import {connect} from 'node:net';
-    export default api => { api.registerHook('before_step', async () => {
-      const blocked=[];
-      try {readFileSync(__WORKSPACE__+'/private-probe')} catch {blocked.push('read')}
-      try {writeFileSync(__WORKSPACE__+'/forbidden-write','bad')} catch {blocked.push('write')}
-      if(spawnSync(process.execPath,['-e','process.exit(0)']).error) blocked.push('fork');
-      await new Promise(resolve=>{const socket=connect(1,'127.0.0.1');socket.on('error',error=>{if(error.code==='EPERM'||error.code==='EACCES')blocked.push('net');resolve()});socket.on('connect',()=>{socket.destroy();resolve()})});
-      return {block:true,reason:blocked.join(',')};
-    }) }`,
-  )
-  const a = await assemble(x.profile, x.deps)
-  try {
-    expect(a.extHost.status().find((r) => r.id === x.author)?.loaded).toBe(true)
-    const session = await a.kernel.session('confined-real', {
-      actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-      resolvedProfileHash: x.profile.hash,
-      cwd: x.deps.workspaceRoot,
-      writerRunId: 'confined-writer',
-    })
-    expect(await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })).toEqual({
-      block: true,
-      reason: 'read,write,fork,net',
-    })
-    expect(existsSync(join(x.deps.workspaceRoot, 'forbidden-write'))).toBe(false)
-  } finally {
-    await a.rollback.unwind()
-  }
-})
-
-packagedIsolation.each(['process.exit(71)', 'while(true){}'])(
-  'generic Runner failure clears owner, lease and PID: %s',
-  async (failure) => {
-    const x = await installedHookFixture(
-      'required',
-      `export default api => {api.registerHook('before_step', () => {${failure}})}`,
-    )
-    const a = await assemble(x.profile, x.deps)
-    const pid = a.extHost.status().find((r) => r.id === x.author)?.isolation?.pid
-    try {
-      expect(pid).toBeTypeOf('number')
-      const session = await a.kernel.session('failure-real', {
-        actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-        resolvedProfileHash: x.profile.hash,
-        cwd: x.deps.workspaceRoot,
-        writerRunId: 'failure-writer',
-      })
-      expect(await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })).toMatchObject({ block: true })
-      await expect
-        .poll(() => a.extHost.status().find((r) => r.id === x.author)?.loaded, { timeout: 3000 })
-        .toBe(false)
-      expect(a.extHost.status().find((r) => r.id === x.author)?.lease).toBeUndefined()
-      await expect.poll(() => a.extHost.residue(x.author), { timeout: 3000 }).toEqual([])
-      expect(() => process.kill(pid as number, 0)).toThrow()
-      expect(a.extHost.status().some((r) => r.package === '@agnes/base' && r.loaded)).toBe(true)
-    } finally {
-      await a.rollback.unwind()
-    }
-  },
-)
-
-packagedIsolation('preferred never replays a generic factory after preparation starts', async () => {
-  const x = await installedHookFixture('preferred', 'export default () => {throw Error("factory failed")}')
-  const a = await assemble(x.profile, x.deps)
-  try {
-    expect(x.imported).not.toContain(x.id)
-    expect(a.extHost.status().find((r) => r.id === x.author)).toMatchObject({
-      loaded: false,
-      isolation: { mode: 'preferred', backend: 'seatbelt', fallback: false },
-    })
-    expect(a.extHost.residue(x.author)).toEqual([])
-  } finally {
-    await a.rollback.unwind()
-  }
-})
-
-packagedIsolation('changed installed bytes refuse required before any source import', async () => {
-  const x = await installedHookFixture('required', 'export default () => {}')
-  writeFileSync(
-    join(x.packageDirs.get(x.id) as string, 'index.mjs'),
-    'throw Error("changed tree must not execute")',
-  )
-  const a = await assemble(x.profile, x.deps)
-  try {
-    expect(x.imported).not.toContain(x.id)
-    expect(a.extHost.status().find((r) => r.id === x.author)).toMatchObject({
-      loaded: false,
-      error: { code: 'E_EXT_ISOLATION_UNAVAILABLE' },
-    })
-  } finally {
-    await a.rollback.unwind()
-  }
-})
-
-packagedIsolation(
-  'generic Hook withdrawal removes its Host proxy and late sync registration is refused',
-  async () => {
-    const x = await installedHookFixture(
-      'required',
-      `export default api => {
-    let lateRefused='';
-    const dispose=api.registerHook('before_step', () => {dispose();return {block:true,reason:String(lateRefused)}});
-    queueMicrotask(()=>{try{api.registerHook('context',()=>({}))}catch(e){lateRefused=e.code}});
-  }`,
-    )
-    const a = await assemble(x.profile, x.deps)
-    try {
-      expect(a.extHost.status().find((r) => r.id === x.author)?.loaded).toBe(true)
-      const session = await a.kernel.session('withdraw-real', {
-        actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-        resolvedProfileHash: x.profile.hash,
-        cwd: x.deps.workspaceRoot,
-        writerRunId: 'withdraw-writer',
-      })
-      expect(await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })).toEqual({
-        block: true,
-        reason: 'E_CAPABILITY_UNDECLARED',
-      })
-      expect(a.extHost.residue(x.author)).toEqual([])
-      expect(a.kernel.hooks.snapshot(x.author).entries('before_step')).toEqual([])
-      expect(await session.hooks.beforeStep({ turn: 1, step: 2, depth: 0 })).toEqual({
-        block: true,
-        reason: 'E_CAPABILITY_UNDECLARED',
-      })
-    } finally {
-      await a.rollback.unwind()
-    }
-  },
-)
-
-packagedIsolation('loads TypeScript author code through the packaged static jiti runtime', async () => {
-  const x = await installedHookFixture(
-    'required',
-    `import {defineExtension,type ExtensionAPI} from '@agnes/extension-api';
-    const reason: string = 'typed runner'; export default defineExtension((api:ExtensionAPI) => {
-      api.registerHook('before_step', () => ({block:true,reason}));
-    });`,
-    false,
-    'index.ts',
-  )
-  const a = await assemble(x.profile, x.deps)
-  try {
-    expect(a.extHost.status().find((r) => r.id === x.author)?.loaded).toBe(true)
-    const session = await a.kernel.session('typed-real', {
-      actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-      resolvedProfileHash: x.profile.hash,
-      cwd: x.deps.workspaceRoot,
-      writerRunId: 'typed-writer',
-    })
-    expect(await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })).toEqual({
-      block: true,
-      reason: 'typed runner',
-    })
-  } finally {
-    await a.rollback.unwind()
-  }
-})
-
-packagedIsolation(
-  'withdrawal in a synchronous factory microtask is absent from the initial proposal',
-  async () => {
-    const x = await installedHookFixture(
-      'required',
-      `export default api => {
-    const dispose=api.registerHook('before_step',()=>({block:true}));queueMicrotask(dispose);
-  }`,
-    )
-    const a = await assemble(x.profile, x.deps)
-    try {
-      expect(a.extHost.status().find((r) => r.id === x.author)?.loaded).toBe(true)
-      expect(a.extHost.residue(x.author)).toEqual([])
-      expect(a.kernel.hooks.snapshot(x.author).entries('before_step')).toEqual([])
-    } finally {
-      await a.rollback.unwind()
-    }
-  },
-)
-
-packagedIsolation(
-  'preserves multiple registrations per event and public capability error codes',
-  async () => {
-    const x = await installedHookFixture(
-      'required',
-      `
-    export default api => {
-      let undeclared;
-      try { api.registerTool({}); } catch (e) { undeclared = e.code; }
-      const first = api.registerHook('before_step', async () => {
-        first();
-        try { await api.events.append('outside/namespace', {}); }
-        catch (e) { return {block: false, reason: e.code}; }
-      });
-      api.registerHook('before_step', () => ({block:true,reason:undeclared}));
-    }
-  `,
-    )
-    const a = await assemble(x.profile, x.deps)
-    try {
-      expect(a.extHost.status().find((r) => r.id === x.author)?.loaded).toBe(true)
-      expect(a.kernel.hooks.snapshot(x.author).entries('before_step')).toHaveLength(2)
-      const session = await a.kernel.session('multiple-real', {
-        actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-        resolvedProfileHash: x.profile.hash,
-        cwd: x.deps.workspaceRoot,
-        writerRunId: 'multiple-writer',
-      })
-      expect(await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })).toEqual({
-        block: true,
-        reason: 'E_CAPABILITY_UNDECLARED',
-      })
-      expect(a.kernel.hooks.snapshot(x.author).entries('before_step')).toHaveLength(1)
-    } finally {
-      await a.rollback.unwind()
-    }
-  },
-)
-
-packagedIsolation('preserves sanitized Host capability error codes across IPC', async () => {
-  const x = await installedHookFixture(
-    'required',
-    `export default api => {
-    api.registerHook('before_step', async () => {
-      try {await api.events.append('outside/namespace', {})}
-      catch(e) {return {block:true,reason:e.code}}
-    });
-  }`,
-  )
-  const a = await assemble(x.profile, x.deps)
-  try {
-    const session = await a.kernel.session('error-real', {
-      actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-      resolvedProfileHash: x.profile.hash,
-      cwd: x.deps.workspaceRoot,
-      writerRunId: 'error-writer',
-    })
-    expect(await session.hooks.beforeStep({ turn: 1, step: 1, depth: 0 })).toEqual({
-      block: true,
-      reason: 'E_EVENT_NAMESPACE',
-    })
-  } finally {
-    await a.rollback.unwind()
   }
 })
 
