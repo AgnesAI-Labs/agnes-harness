@@ -2,7 +2,7 @@
 
 import type { UsageView } from '@agnes/protocol'
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -115,16 +115,18 @@ describe('rendered composer region', () => {
       { name: COMPOSER_SLOT as string, id: 'fixture-composer-shadow', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'shadow-composer' }, '替换输入区'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(document.querySelector('#shadow-composer')?.textContent).toBe('替换输入区')
-    expect(document.querySelector('#composer')).toBeNull()
-    expect(document.querySelector('#prompt')).toBeNull()
+    await vi.waitFor(() => {
+      expect(document.querySelector('#shadow-composer')?.textContent).toBe('替换输入区')
+      expect(document.querySelector('#composer')).toBeNull()
+      expect(document.querySelector('#prompt')).toBeNull()
+    })
 
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(document.querySelector('#composer')).toBeTruthy()
-    expect(document.querySelector<HTMLTextAreaElement>('#prompt')?.value).toBe('保留草稿')
-    expect(document.querySelector('#session-usage')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(document.querySelector('#composer')).toBeTruthy()
+      expect(document.querySelector<HTMLTextAreaElement>('#prompt')?.value).toBe('保留草稿')
+      expect(document.querySelector('#session-usage')).toBeTruthy()
+    })
   })
 
   it('places session input DSH contributions alongside the native composer controls', async () => {
@@ -138,12 +140,14 @@ describe('rendered composer region', () => {
       () => createElement('span', { id: 'fixture-input-overlay-content' }, '输入层扩展'),
     )
     runtime.registry.setSession('session-1')
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(document.querySelector('#fixture-input-left-content')?.closest('.composer-controls')).toBeTruthy()
-    expect(document.querySelector('#fixture-input-overlay-content')?.closest('#composer')).toBeTruthy()
-    expect(document.querySelector('#composer-workspace')).toBeTruthy()
-    expect(document.querySelector('#send')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector('#fixture-input-left-content')?.closest('.composer-controls'),
+      ).toBeTruthy()
+      expect(document.querySelector('#fixture-input-overlay-content')?.closest('#composer')).toBeTruthy()
+      expect(document.querySelector('#composer-workspace')).toBeTruthy()
+      expect(document.querySelector('#send')).toBeTruthy()
+    })
     removeLeft()
     removeOverlay()
   })
@@ -155,12 +159,12 @@ describe('rendered composer region', () => {
       { name: 'conversation.composer.dock', id: 'fixture-composer-dock', owner: 'fixture' },
       () => createElement('span', { id: 'fixture-composer-dock-content' }, '扩展 dock'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(
-      document.querySelector('#fixture-composer-dock-content')?.closest('[data-agnes-composer-dock]'),
-    ).toBeTruthy()
-    expect(document.querySelector('#send')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector('#fixture-composer-dock-content')?.closest('[data-agnes-composer-dock]'),
+      ).toBeTruthy()
+      expect(document.querySelector('#send')).toBeTruthy()
+    })
     remove()
   })
 })

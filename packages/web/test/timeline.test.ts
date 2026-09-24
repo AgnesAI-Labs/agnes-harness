@@ -45,15 +45,17 @@ describe('timeline reader semantics', () => {
     const node: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: '原生回答' }
 
     timeline.render([node])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#custom-chat-node')?.textContent).toBe('扩展 assistant 节点')
-    expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(true)
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#custom-chat-node')?.textContent).toBe('扩展 assistant 节点')
+      expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(true)
+    })
 
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#custom-chat-node')).toBeNull()
-    expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
-    expect(transcript.textContent).toContain('原生回答')
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#custom-chat-node')).toBeNull()
+      expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
+      expect(transcript.textContent).toContain('原生回答')
+    })
 
     const tool: UINode = {
       kind: 'tool',
@@ -68,11 +70,12 @@ describe('timeline reader semantics', () => {
       slots: [],
     }
     timeline.render([node, tool])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#custom-tool-view')?.textContent).toBe('扩展 bash 工具视图')
-    expect(transcript.querySelector<HTMLElement>('[data-agnes-dsh-slot="tool.call.toolview"]')?.hidden).toBe(
-      false,
-    )
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#custom-tool-view')?.textContent).toBe('扩展 bash 工具视图')
+      expect(
+        transcript.querySelector<HTMLElement>('[data-agnes-dsh-slot="tool.call.toolview"]')?.hidden,
+      ).toBe(false)
+    })
 
     removeTool()
 
@@ -84,15 +87,16 @@ describe('timeline reader semantics', () => {
       summary: '未知工具仍使用原生展示',
     }
     timeline.render([node, unknownTool])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#custom-tool-view')).toBeNull()
-    expect(
-      transcript.querySelector<HTMLElement>('[data-node-id="tool-unknown"] [data-agnes-timeline-native]')
-        ?.hidden,
-    ).toBe(false)
-    expect(transcript.querySelector('[data-node-id="tool-unknown"]')?.textContent).toContain(
-      '未知工具仍使用原生展示',
-    )
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#custom-tool-view')).toBeNull()
+      expect(
+        transcript.querySelector<HTMLElement>('[data-node-id="tool-unknown"] [data-agnes-timeline-native]')
+          ?.hidden,
+      ).toBe(false)
+      expect(transcript.querySelector('[data-node-id="tool-unknown"]')?.textContent).toContain(
+        '未知工具仍使用原生展示',
+      )
+    })
 
     const unknownMessage = {
       kind: 'unknown-message',
@@ -100,14 +104,15 @@ describe('timeline reader semantics', () => {
       seq: 3,
     } as unknown as UINode
     timeline.render([unknownMessage])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(
-      transcript.querySelector<HTMLElement>('[data-node-id="message-unknown"] [data-agnes-timeline-native]')
-        ?.hidden,
-    ).toBe(false)
-    expect(transcript.querySelector('[data-node-id="message-unknown"]')?.textContent).toContain(
-      '暂不支持的内容',
-    )
+    await vi.waitFor(() => {
+      expect(
+        transcript.querySelector<HTMLElement>('[data-node-id="message-unknown"] [data-agnes-timeline-native]')
+          ?.hidden,
+      ).toBe(false)
+      expect(transcript.querySelector('[data-node-id="message-unknown"]')?.textContent).toContain(
+        '暂不支持的内容',
+      )
+    })
 
     timeline.reset()
     await ctx.fiber.dispose()
