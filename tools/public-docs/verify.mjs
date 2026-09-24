@@ -19,8 +19,8 @@ walk(docs)
 const errors = []
 const fail = (file, message) => errors.push(`${relative(root, file)}: ${message}`)
 const entrypoints = new Set(
-  ['README.md', 'README.zh-CN.md', 'README.en.md', 'CONTRIBUTING.md', 'AGENTS.md', 'CLAUDE.md'].map(
-    (name) => resolve(root, name),
+  ['README.md', 'README.zh-CN.md', 'README.en.md', 'CONTRIBUTING.md', 'AGENTS.md', 'CLAUDE.md'].map((name) =>
+    resolve(root, name),
   ),
 )
 for (const file of entrypoints) {
