@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { availableParallelism, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -8,7 +8,10 @@ import { describe, expect, it } from 'vitest'
 
 const configured = process.env.AGNES_ACP_CONCURRENCY
 const enabled = configured !== undefined || process.env.CI !== undefined
-const concurrency = Number(configured ?? 200)
+// Each child is a CPU-bound cold start of the whole CLI bundle, so a simultaneous batch larger than
+// the machine can run in parallel measures the scheduler rather than startup. Size the batch to the
+// host (two children per core, at most 200); AGNES_ACP_CONCURRENCY still sets it explicitly.
+const concurrency = Number(configured ?? Math.min(200, availableParallelism() * 2))
 const fixture = fileURLToPath(new URL('./fixtures/acp-cli.ts', import.meta.url))
 const productionBin = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
 const profileTemplate = fileURLToPath(new URL('../../host/templates/local-dev.yaml', import.meta.url))
