@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { importSession } from '@agnes/bridges/convert'
+import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
 import type { Host, HostSession } from '@agnes/host'
 import type { EventEnvelope } from '@agnes/protocol'
@@ -83,7 +83,9 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
   const hole = converted.report.source === 'agnes' ? converted.report.skipped[0] : undefined
   if (hole)
     throw new CommandError(
-      `${file} line ${hole.line}: ${hole.reason}; an agnes export must keep every row -- re-export it with this build`,
+      hole.reason.startsWith(OLDER_EXPORT_FORMAT)
+        ? `${file} line ${hole.line}: this export comes from an older format (${hole.reason}); an agnes export must keep every row, and this build cannot import it`
+        : `${file} line ${hole.line}: ${hole.reason}; an agnes export must keep every row -- re-export it with this build`,
     )
   // No session_start hooks: an extension may record a row there (code-mode notes that no kernel is
   // alive yet), and anything after session/start would move the imported body off its sequence.

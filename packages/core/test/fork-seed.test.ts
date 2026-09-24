@@ -4,7 +4,7 @@ import { batchTrigger, type ForkBase, forkBaseProviders } from '../src/log/fork-
 import { verifyLedger } from '../src/log/integrity.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { SessionLogImpl } from '../src/log/session-log.js'
-import type { IntegrityCommit } from '../src/log/storage.js'
+import type { IntegrityCommit, OpWrite } from '../src/log/storage.js'
 import { SurfaceCache, seedSurface } from '../src/project/surface.js'
 import { markIncomplete, UIProjectionCell } from '../src/project/ui.js'
 import { openTracked } from '../src/reduce/tracker.js'
@@ -22,7 +22,7 @@ describe('surface watermark, snapshot and seeding', () => {
   it('advances its watermark on every row it is handed, any lane or type', () => {
     const surface = new SurfaceCache('main')
     expect(surface.upto).toBe(0)
-    surface.push([row(1, 'user/message'), row(2, 'op.state'), row(3, 'user/message', 'side')])
+    surface.push([row(1, 'user/message'), row(2, 'x/core/op-mark'), row(3, 'user/message', 'side')])
     expect(surface.upto).toBe(3)
   })
 
@@ -79,7 +79,7 @@ describe('onAppended carries the committed integrity entries', () => {
       ids: defaultIds(),
       clock: () => 0,
       timers: { setTimeout: () => 0, clearTimeout: () => undefined },
-      onAppended: (_events, integrity) => {
+      onAppended: (_events, { integrity }) => {
         seen.push(integrity)
       },
     })
@@ -98,11 +98,12 @@ describe('onAppended carries the committed integrity entries', () => {
 })
 
 describe('a batch that opens a turn names its trigger', () => {
-  it('reads the trigger from an op.state row whose trigger lies inside the batch', () => {
-    const op = (triggerSeq: Seq) => ({ meta: { triggerSeq } })
-    expect(batchTrigger([row(4, 'user/message'), row(5, 'op.state', 'main', op(4))])).toBe(4)
-    expect(batchTrigger([row(9, 'op.state', 'main', op(4))])).toBeUndefined()
-    expect(batchTrigger([row(9, 'op.state', 'main', null)])).toBeUndefined()
+  it('reads the trigger from the op write when that trigger lies inside the batch', () => {
+    const op = (triggerSeq: Seq) => ({ lane: 'main', data: { meta: { triggerSeq } } }) as unknown as OpWrite
+    expect(batchTrigger([row(4, 'user/message'), row(5, 'turn/start')], op(4))).toBe(4)
+    expect(batchTrigger([row(9, 'x/core/op-mark')], op(4))).toBeUndefined()
+    expect(batchTrigger([row(9, 'turn/end')], { lane: 'main', data: null })).toBeUndefined()
+    expect(batchTrigger([row(4, 'user/message')], undefined)).toBeUndefined()
   })
 })
 
@@ -211,6 +212,9 @@ describe('the parent keeps a fork point', () => {
     expect((await h.session.run({ until: 'turn-end', signal })).reason).toBe('parked')
     await h.session.resumeApproval('review', 'allowed-once', { ...actor, id: 'reviewer' })
     await h.session.step()
+    // The continuation's turn/start is its trigger and the head; one more row moves the head past it.
+    expect(h.log.lastSeq).toBe(triggerOf(h))
+    await h.session.diag('contribute-conflict', {})
     await expectTriggerAt(h, triggerOf(h))
     await h.session.close()
   })
@@ -232,14 +236,8 @@ describe('the parent keeps a fork point', () => {
       type: 'user/message',
       data: { content: [{ type: 'text', text: 'x' }] },
     }
-    const opState = (triggerSeq: Seq): EventInput => ({
-      actor,
-      origin: 'system',
-      trust: 'trusted',
-      type: 'op.state',
-      register: 'op.state',
-      lane: 'main',
-      data: newOpState(
+    const opState = (triggerSeq: Seq) =>
+      newOpState(
         {
           turn: 1,
           lane: 'main',
@@ -250,8 +248,7 @@ describe('the parent keeps a fork point', () => {
           depthLimit: 3,
         },
         triggerSeq,
-      ),
-    })
+      )
     const turnStart: EventInput = {
       actor,
       origin: 'system',
@@ -259,7 +256,7 @@ describe('the parent keeps a fork point', () => {
       type: 'turn/start',
       data: { turn: 1, trigger: 'prompt' },
     }
-    await log.append([message, turnStart, opState(1)])
+    await log.append([message, turnStart], { opState: { lane: 'main', data: opState(1) } })
     expect(forkBaseProviders.get(log)?.(1, 'main')).toMatchObject({ kind: 'trigger', seq: 1 })
     surfaces.set('side', new SurfaceCache('side'))
     expect(forkBaseProviders.get(log)?.(1, 'main')).toBeUndefined()

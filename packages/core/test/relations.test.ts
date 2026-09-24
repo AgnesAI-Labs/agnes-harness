@@ -20,27 +20,11 @@ const ev = (type: string, data: unknown, extra: Partial<Event> = {}): Event =>
     v: 1,
     ...extra,
   }) as Event
+// The row a transition with no row of its own writes; the program counter itself is a cell, which
+// the batch-end check is handed as the lanes holding one.
 const opstate = (extra: Partial<Event> = {}) =>
-  ev(
-    'op.state',
-    {
-      meta: {
-        turn: 1,
-        lane: 'main',
-        acceptedAt: 't',
-        triggerSeq: 1,
-        presetName: 's',
-        profileHash: null,
-        depthLimit: 1,
-      },
-      control: { status: 'running' },
-      step: 0,
-      latestAssistantSeq: null,
-      taint: false,
-      phase: { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: 1 },
-    },
-    { register: 'op.state', ...extra },
-  )
+  ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true, ...extra })
+const main = new Set(['main'])
 const result = (toolUseId: string, extra: Record<string, unknown> = {}, env: Partial<Event> = {}) =>
   ev(
     'tool/result',
@@ -227,7 +211,7 @@ describe('checkRelations', () => {
       ev('step/start', { turn: 1, step: 1 }),
       ev('step/end', { turn: 1, step: 1 }),
       ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
-      ev('op.state', null, { register: 'op.state' }),
+      ev('x/core/note', {}, { ignorable: true }),
     ])
     const nextTurn = [
       ev('turn/start', { turn: 2, trigger: 'prompt' }),
@@ -283,7 +267,7 @@ describe('checkRelations', () => {
       ev('step/start', { turn: 1, step: 1 }),
       ev('tool/call', { toolUseId: 't1', name: 'shell', args: {}, ordinal: 0 }),
       ev('turn/end', { reason: 'parked', lastAssistantSeq: null }),
-      ev('op.state', null, { register: 'op.state' }),
+      ev('x/core/note', {}, { ignorable: true }),
     ])
     const cont = [
       ev('turn/start', {
@@ -327,15 +311,24 @@ describe('checkRelations', () => {
       ev('step/start', { turn: 1, step: 1 }),
     ])
     expect(() =>
-      checkRelations([ev('turn/end', { reason: 'completed', lastAssistantSeq: null })], open),
+      checkRelations(
+        [ev('turn/end', { reason: 'completed', lastAssistantSeq: null })],
+        open,
+        undefined,
+        main,
+      ),
     ).toThrow('E_RELATION: turn/end with open step')
     seq = 0
-    expect(() => checkRelations([ev('turn/start', { turn: 1, trigger: 'prompt' })], foldEvents([]))).toThrow(
-      /op\.state/,
-    )
+    const start = [ev('turn/start', { turn: 1, trigger: 'prompt' })]
+    expect(() => checkRelations(start, foldEvents([]), undefined, new Set())).toThrow(/op\.state/)
+    expect(() => checkRelations(start, foldEvents([]), undefined, main)).not.toThrow()
     // The rule runs in both directions: an op.state cell with no open turn is just as wrong.
+    expect(() => checkRelations([], foldEvents([]), undefined, main)).toThrow(/op\.state/)
+    // A mark is only ever written inside an open turn.
     seq = 0
-    expect(() => checkRelations([opstate()], foldEvents([]))).toThrow(/op\.state/)
+    expect(() => checkRelations([opstate()], foldEvents([]), undefined, main)).toThrow(
+      'E_RELATION: x/core/op-mark outside an open turn',
+    )
     // Closing a turn without retiring its op.state is caught at the end of the batch.
     seq = 0
     const stepClosed = foldEvents([
@@ -344,9 +337,15 @@ describe('checkRelations', () => {
       ev('step/start', { turn: 1, step: 1 }),
       ev('step/end', { turn: 1, step: 1 }),
     ])
+    const end = [ev('turn/end', { reason: 'completed', lastAssistantSeq: null })]
+    expect(() => checkRelations(end, stepClosed, undefined, main)).toThrow(/op\.state/)
+    expect(() => checkRelations(end, stepClosed, undefined, new Set())).not.toThrow()
+    // A mark on another lane is judged against that lane's turn.
+    seq = 0
+    const sideOpen = foldEvents([ev('turn/start', { turn: 1, trigger: 'job' }, { lane: 'side' })])
     expect(() =>
-      checkRelations([ev('turn/end', { reason: 'completed', lastAssistantSeq: null })], stepClosed),
-    ).toThrow(/op\.state/)
+      checkRelations([opstate({ lane: 'side' })], sideOpen, undefined, new Set(['side'])),
+    ).not.toThrow()
   })
 
   it('numbers an unnumbered batch so a rejection names the row that caused it', () => {
@@ -458,7 +457,7 @@ describe('checkRelations', () => {
       ev('step/start', { turn: 1, step: 1 }),
       ev('step/end', { turn: 1, step: 1 }),
       ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
-      ev('op.state', null, { register: 'op.state' }),
+      ev('x/core/note', {}, { ignorable: true }),
     ].map(unnumbered)
     expect(() => checkRelations(wellFormed, open)).not.toThrow()
     const badOrder = [

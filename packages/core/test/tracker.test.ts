@@ -18,29 +18,27 @@ const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const noTimers = { setTimeout: () => 0, clearTimeout: () => undefined }
 const base = { actor, origin: 'system', trust: 'trusted' } as const
 // Every batch has to satisfy the batch-end rule "an open turn on a lane iff an op.state cell on it",
-// so the fixture writes op.state from the start.
-const opstate = (): EventInput => ({
-  ...base,
-  type: 'op.state',
-  register: 'op.state',
-  data: {
-    meta: {
-      turn: 1,
-      lane: 'main',
-      acceptedAt: 't',
-      triggerSeq: 1,
-      presetName: 'standard',
-      profileHash: null,
-      depthLimit: 1,
-    },
-    control: { status: 'running' },
-    step: 0,
-    latestAssistantSeq: null,
-    taint: false,
-    phase: { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: 1 },
+// so a batch that opens a turn writes the program counter too. The counter is a cell, not a row: the
+// batch carries a neutral row where the old row stood, so seqs stay where they were.
+const opData = {
+  meta: {
+    turn: 1,
+    lane: 'main',
+    acceptedAt: 't',
+    triggerSeq: 1,
+    presetName: 'standard',
+    profileHash: null,
+    depthLimit: 1,
   },
-})
-const tombstone = (): EventInput => ({ ...base, type: 'op.state', register: 'op.state', data: null })
+  control: { status: 'running' as const },
+  step: 0,
+  latestAssistantSeq: null,
+  taint: false,
+  phase: { kind: 'checkpoint' as const, continuation: 'need_assistant' as const, triggerSeq: 1 },
+}
+const running = { opState: { lane: 'main', data: opData } }
+const idle = { opState: { lane: 'main', data: null } }
+const note = (): EventInput => ({ ...base, type: 'x/core/note', ignorable: true, data: {} })
 const common = { key: 'k', ttlMs: 900, clock: () => Date.now(), timers: noTimers }
 const wrapped = (storage: MemoryStorage, over: Partial<StorageAdapter>): StorageAdapter => ({
   open: storage.open.bind(storage),
@@ -60,15 +58,18 @@ describe('StateTracker', () => {
   it('rebuilds state from storage and keeps it live on append', async () => {
     const storage = new MemoryStorage()
     const { log, tracker } = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await log.append([
-      { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
-      {
-        ...base,
-        type: 'effect/intent',
-        data: { effectId: 'e1', kind: 'tool', tool: { toolUseId: 't1', name: 'shell' }, replay: 'never' },
-      },
-      opstate(),
-    ])
+    await log.append(
+      [
+        { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        {
+          ...base,
+          type: 'effect/intent',
+          data: { effectId: 'e1', kind: 'tool', tool: { toolUseId: 't1', name: 'shell' }, replay: 'never' },
+        },
+        note(),
+      ],
+      running,
+    )
     expect(tracker.state.openTurn.get('main')?.turn).toBe(1)
     expect(effectTree(tracker.state).map((n) => n.effectId)).toEqual(['e1'])
     await log.close()
@@ -84,7 +85,10 @@ describe('StateTracker', () => {
     // indistinguishable from a correct rebuild on any fixture that fits in a page.
     const storage = new MemoryStorage()
     const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await first.log.append([{ ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } }, opstate()])
+    await first.log.append(
+      [{ ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } }, note()],
+      running,
+    )
     for (let i = 0; i < 12; i++) {
       await first.log.append([
         {
@@ -109,15 +113,18 @@ describe('StateTracker', () => {
   it('detects a drifted register table and rebuilds', async () => {
     const storage = new MemoryStorage()
     const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await first.log.append([
-      { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
-      { ...base, type: 'plan.items', register: 'plan.items', data: { items: [] } },
-      opstate(),
-    ])
-    await first.log.append([
-      { ...base, type: 'turn/end', data: { reason: 'completed', lastAssistantSeq: null } },
-      tombstone(),
-    ])
+    await first.log.append(
+      [
+        { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        { ...base, type: 'plan.items', register: 'plan.items', data: { items: [] } },
+        note(),
+      ],
+      running,
+    )
+    await first.log.append(
+      [{ ...base, type: 'turn/end', data: { reason: 'completed', lastAssistantSeq: null } }, note()],
+      idle,
+    )
     await first.log.close()
     // Corrupt the register table: the seq is wrong. op.state is gone by tombstone, so plan.items is
     // the only row left in the table.
@@ -142,11 +149,14 @@ describe('StateTracker', () => {
   it('names both directions of drift, and passes a table that agrees', async () => {
     const storage = new MemoryStorage()
     const { log, tracker } = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await log.append([
-      { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
-      { ...base, type: 'plan.items', register: 'plan.items', data: { items: [] } },
-      opstate(),
-    ])
+    await log.append(
+      [
+        { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        { ...base, type: 'plan.items', register: 'plan.items', data: { items: [] } },
+        note(),
+      ],
+      running,
+    )
     expect(verifyRegisters(tracker, log.allRegisters())).toEqual({ ok: true, mismatches: [] })
     // A row the rebuild does not produce, and a cell the table has lost, are both reported.
     expect(
@@ -155,10 +165,8 @@ describe('StateTracker', () => {
         { register: 'inbox', key: 'main', seq: 7, data: { items: [] } },
       ]).mismatches,
     ).toContain('inbox main: not in rebuild')
-    expect(verifyRegisters(tracker, []).mismatches.sort()).toEqual([
-      'op.state main: missing from table',
-      'plan.items main: missing from table',
-    ])
+    // The program counter is not folded from rows, so it is not part of this comparison.
+    expect(verifyRegisters(tracker, []).mismatches.sort()).toEqual(['plan.items main: missing from table'])
     await log.close()
   })
 
@@ -191,42 +199,45 @@ describe('StateTracker', () => {
     // cache with none of that register's cells in it. Fixture: one live cell in each of the six.
     const storage = new MemoryStorage()
     const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await first.log.append([
-      { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
-      opstate(),
-      {
-        ...base,
-        type: 'plan.items',
-        register: 'plan.items',
-        data: { items: [{ id: 'p1', text: 'do', status: 'todo' }] },
-      },
-      {
-        ...base,
-        type: 'budget.state',
-        register: 'budget.state',
-        data: { slot: 'primary', escalate: false, creditsUsed: 3, creditsCap: null },
-      },
-      { ...base, type: 'artifact/job', register: 'artifact/job', data: { jobId: 'j1', status: 'queued' } },
-      { ...base, type: 'inbox', register: 'inbox', data: { items: [] } },
-      {
-        ...base,
-        type: 'harness/entry',
-        register: 'harness/entry',
-        data: {
-          kind: 'memory',
-          id: 'm1',
-          title: 't',
-          content: 'c',
-          scope: 'local',
-          version: 1,
-          source: 'test',
+    await first.log.append(
+      [
+        { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        note(),
+        {
+          ...base,
+          type: 'plan.items',
+          register: 'plan.items',
+          data: { items: [{ id: 'p1', text: 'do', status: 'todo' }] },
         },
-      },
-    ])
+        {
+          ...base,
+          type: 'budget.state',
+          register: 'budget.state',
+          data: { slot: 'primary', escalate: false, creditsUsed: 3, creditsCap: null },
+        },
+        { ...base, type: 'artifact/job', register: 'artifact/job', data: { jobId: 'j1', status: 'queued' } },
+        { ...base, type: 'inbox', register: 'inbox', data: { items: [] } },
+        {
+          ...base,
+          type: 'harness/entry',
+          register: 'harness/entry',
+          data: {
+            kind: 'memory',
+            id: 'm1',
+            title: 't',
+            content: 'c',
+            scope: 'local',
+            version: 1,
+            source: 'test',
+          },
+        },
+      ],
+      running,
+    )
     await first.log.close()
     // Each cell named the way a consumer addresses it: register plus the key half storage spells.
     const cells: [string, string, unknown][] = [
-      ['op.state', 'main', 2],
+      ['op.state', 'main', 7],
       ['plan.items', 'main', 3],
       ['budget.state', 'main', 4],
       ['artifact/job', 'j1', 5],
@@ -282,7 +293,7 @@ describe('StateTracker', () => {
   it('rebuild() folds a log without touching its caches', async () => {
     const storage = new MemoryStorage()
     const { log } = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await log.append([{ ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } }, opstate()])
+    await log.append([{ ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } }, note()], running)
     const standalone = await StateTracker.rebuild(log)
     expect(standalone.state.lastSeq).toBe(2)
     expect(standalone.state.openTurn.get('main')?.turn).toBe(1)
@@ -292,15 +303,18 @@ describe('StateTracker', () => {
   it('rebuild() resumes strictly after a supplied fold-cache line', async () => {
     const storage = new MemoryStorage()
     const { log } = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await log.append([
-      { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
-      opstate(),
-      {
-        ...base,
-        type: 'effect/intent',
-        data: { effectId: 'tail', kind: 'job', replay: 'safe' },
-      },
-    ])
+    await log.append(
+      [
+        { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        note(),
+        {
+          ...base,
+          type: 'effect/intent',
+          data: { effectId: 'tail', kind: 'job', replay: 'safe' },
+        },
+      ],
+      running,
+    )
     const prefix = foldEvents(await log.scan({ toSeq: 2 }))
     const scans: number[] = []
     const originalScan = log.scan.bind(log)
@@ -335,7 +349,7 @@ describe('StateTracker', () => {
         data: { content: [{ type: 'text', text: `message-${index}` }] },
       })),
     )
-    expect(await storage.foldCache('k')).toMatchObject({ version: 2, seq: 200 })
+    expect(await storage.foldCache('k')).toMatchObject({ version: 3, seq: 200 })
     await first.log.close()
 
     const scannedFrom: number[] = []
@@ -569,7 +583,7 @@ describe('StateTracker', () => {
         trust: 'untrusted',
         data: { content: [{ type: 'text', text: 'taint' }] },
       },
-      opstate(),
+      note(),
       {
         ...base,
         type: 'plan.items',
@@ -618,7 +632,7 @@ describe('StateTracker', () => {
     }))
     for (const [index, event] of rich.entries()) {
       try {
-        await first.log.append([event])
+        await first.log.append([event], running)
       } catch (error) {
         throw new Error(`rich fold fixture event ${index} (${event.type}) was rejected`, { cause: error })
       }
@@ -737,7 +751,7 @@ describe('StateTracker', () => {
       { ...base, type: 'user/message', data: { content: [{ type: 'text', text: 'child-only' }] } },
     ])
     expect(await storage.foldCache('k')).toMatchObject({ seq: 200 })
-    expect(await storage.foldCache('child')).toMatchObject({ seq: 205 })
+    expect(await storage.foldCache('child')).toMatchObject({ seq: 204 })
     expect(parent.surface.nodes()).toHaveLength(200)
     expect(child.surface.nodes()).toHaveLength(201)
     await child.log.close()

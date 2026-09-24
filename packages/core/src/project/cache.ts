@@ -45,7 +45,6 @@ export function encodeLedgerState(state: LedgerState): EncodedLedgerState {
   return {
     ...state,
     registers: {
-      opState: [...state.registers.opState],
       planItems: [...state.registers.planItems],
       budgetState: [...state.registers.budgetState],
       artifactJobs: [...state.registers.artifactJobs],
@@ -90,7 +89,6 @@ export function decodeLedgerState(value: unknown, seq: Seq): LedgerState {
     ...blank,
     ...(raw as unknown as LedgerState),
     registers: {
-      opState: new Map(entries(registers.opState, 'registers.opState') as never),
       planItems: new Map(entries(registers.planItems, 'registers.planItems') as never),
       budgetState: new Map(entries(registers.budgetState, 'registers.budgetState') as never),
       artifactJobs: new Map(entries(registers.artifactJobs, 'registers.artifactJobs') as never),
@@ -125,7 +123,7 @@ export function encodeFoldCache(
   integrity: IntegrityState,
 ): FoldCacheRecord {
   const record = {
-    version: 2 as const,
+    version: 3 as const,
     seq: state.lastSeq,
     payload: canonicalJson(encodeLedgerState(state)),
     integrity: { ...integrity },
@@ -138,7 +136,7 @@ export function decodeFoldCache(
   record: FoldCacheRecord,
   lastSeq: Seq,
 ): { state: LedgerState; integrity: IntegrityState } {
-  if (record.version !== 2 || !Number.isSafeInteger(record.seq) || record.seq < 0 || record.seq > lastSeq)
+  if (record.version !== 3 || !Number.isSafeInteger(record.seq) || record.seq < 0 || record.seq > lastSeq)
     throw new TypeError('fold cache envelope is invalid')
   const { checksum, ...unsigned } = record
   if (checksum !== cacheChecksum(key, unsigned)) throw new TypeError('fold cache checksum mismatch')

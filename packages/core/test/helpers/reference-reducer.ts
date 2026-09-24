@@ -1,8 +1,9 @@
 // The ledger reducer as it stood before the fold stopped copying every table on every row, kept
 // verbatim as the reference the equivalence tests compare the product reducer against. Do not change
 // it along with the product code; change it only when the ledger format itself changes, so it keeps
-// describing the fold the product must still produce.
-import { isEventType, normalize, type OpState, type SessionStart } from '@agnes/protocol'
+// describing the fold the product must still produce. (Changed once for that reason: the program
+// counter left the ledger rows and the fold.)
+import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
 import { isRegisterTombstone, registerKey } from '../../src/log/storage.js'
 import type {
   ApprovalAsked,
@@ -23,7 +24,6 @@ export type LedgerState = {
   lastSeq: Seq
   session: SessionStart | null
   registers: {
-    opState: Map<string, RegisterCell<OpState>>
     planItems: Map<string, RegisterCell<PlanItems>>
     budgetState: Map<string, RegisterCell<BudgetState>>
     artifactJobs: Map<string, RegisterCell<ArtifactJob>>
@@ -62,7 +62,6 @@ function cloneMaps(s: LedgerState): LedgerState {
   return {
     ...s,
     registers: {
-      opState: new Map(s.registers.opState),
       planItems: new Map(s.registers.planItems),
       budgetState: new Map(s.registers.budgetState),
       artifactJobs: new Map(s.registers.artifactJobs),
@@ -83,8 +82,8 @@ function cloneMaps(s: LedgerState): LedgerState {
 }
 
 /**
- * The five registers whose payload nothing else checks. `op.state` is left out because its data has
- * a schema and is validated on the way in; these five reach the fold as an unchecked payload that is
+ * The five registers the fold materializes, whose payload nothing else checks (the program counter
+ * is a register cell written beside the rows, never folded from them); these five reach the fold as an unchecked payload that is
  * then presented under a precise type. The cast below cannot be made sound here — that is a schema's
  * job, and until these five have one, a cell can still read back as a shape it does not have: an
  * `inbox` of `{}` whose `.items` is undefined, a `harness/entry` whose `version` is a string. What
@@ -146,9 +145,6 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     const key = registerKey(e)
     const reg = e.register
     switch (reg) {
-      case 'op.state':
-        setRegister<OpState>(s.registers.opState, reg, key, e.seq, d)
-        break
       case 'plan.items':
         setRegister<PlanItems>(s.registers.planItems, reg, key, e.seq, d)
         break
@@ -170,7 +166,6 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     case 'session/start': {
       const start = d as unknown as SessionStart
       if (start.parent) {
-        s.registers.opState.clear()
         s.registers.budgetState.clear()
         s.registers.inbox.clear()
         s.openTurn.clear()
@@ -373,7 +368,6 @@ export function initialState(): LedgerState {
     lastSeq: 0,
     session: null,
     registers: {
-      opState: new Map(),
       planItems: new Map(),
       budgetState: new Map(),
       artifactJobs: new Map(),

@@ -152,7 +152,11 @@ describe('delegated child creation on SQLite: what is still detected', () => {
     const l = ledger()
     const storage = l.open()
     const { k, parent, c } = await parentReady(storage, script())
+    // The accepted turn ends on its turn/start; one more row gives a boundary after the trigger and
+    // before the head.
+    await parent.diag('contribute-conflict', {})
     const b = parent.lastSeq - 1
+    expect(b).toBeGreaterThan(c)
     rewrite(l.file, 'parent', c + 1, (data) => ({ ...(data as object), turn: 99 }))
     await expect(
       createChild(parent, 'spawn', { parent: parent.key, cwd: '/w', input: 'x', forkAt: b }),

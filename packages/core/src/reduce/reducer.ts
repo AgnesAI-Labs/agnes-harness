@@ -1,4 +1,4 @@
-import { isEventType, normalize, type OpState, type SessionStart } from '@agnes/protocol'
+import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
 import { isRegisterTombstone, registerKey } from '../log/storage.js'
 import { CoreError, type Event, type Seq } from '../types.js'
 import { ChunkedMap } from './chunked-map.js'
@@ -78,9 +78,9 @@ function successor(prev: LedgerState) {
 }
 
 /**
- * The five registers whose payload nothing else checks. `op.state` is left out because its data has
- * a schema and is validated on the way in; these five reach the fold as an unchecked payload that is
- * then presented under a precise type. The cast below cannot be made sound here — that is a schema's
+ * The five registers the fold materializes, whose payload nothing else checks. (The program counter
+ * is not among them: it is a register cell written beside the rows, never folded from them.) These
+ * reach the fold as an unchecked payload that is then presented under a precise type. The cast below cannot be made sound here — that is a schema's
  * job, and until these five have one, a cell can still read back as a shape it does not have: an
  * `inbox` of `{}` whose `.items` is undefined, a `harness/entry` whose `version` is a string. What
  * is refused here is only the cheap half, a payload that is not even an object, which turns a
@@ -142,9 +142,6 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     const key = registerKey(e)
     const reg = e.register
     switch (reg) {
-      case 'op.state':
-        setRegister<OpState>(s.registers.opState, () => register('opState'), reg, key, e.seq, d)
-        break
       case 'plan.items':
         setRegister<PlanItems>(s.registers.planItems, () => register('planItems'), reg, key, e.seq, d)
         break
@@ -175,7 +172,6 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       if (start.parent) {
         // A fork starts these over; lastTurn, planItems, artifactJobs, harnessEntries and the last
         // ledger tokens carry across from the parent.
-        reset('registers.opState')
         reset('registers.budgetState')
         reset('registers.inbox')
         reset('openTurn')

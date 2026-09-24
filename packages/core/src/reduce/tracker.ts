@@ -9,13 +9,14 @@ import {
 } from '../log/fork-seed.js'
 import { makeRelationCheck } from '../log/relations.js'
 import { scanPages } from '../log/scan-pages.js'
-import { type OpenLogOptions, SessionLogImpl } from '../log/session-log.js'
-import { type IntegrityCommit, type RegisterRow, SCAN_PAGE_MAX } from '../log/storage.js'
+import { type AppendedExtra, type OpenLogOptions, SessionLogImpl } from '../log/session-log.js'
+import { type RegisterRow, SCAN_PAGE_MAX } from '../log/storage.js'
 import { encodeFoldCache, FoldCache } from '../project/cache.js'
 import { SurfaceCache, seedSurface } from '../project/surface.js'
 import { markIncomplete, UIProjectionCell } from '../project/ui.js'
 import { canonicalJson } from '../request/hash.js'
 import { CoreError, type Event, type Seq } from '../types.js'
+import { verifyOpCells } from './op-check.js'
 import { reduce } from './reducer.js'
 import { type EffectTree, effectTree, initialState, type LedgerState } from './state.js'
 
@@ -49,7 +50,6 @@ export class StateTracker {
  * list, stays green while quietly leaving the new register out of both halves of the resume path.
  */
 export const REGISTER_NAMES: Record<keyof LedgerState['registers'], string> = {
-  opState: 'op.state',
   planItems: 'plan.items',
   budgetState: 'budget.state',
   artifactJobs: 'artifact/job',
@@ -81,6 +81,7 @@ const show = (key: string) => key.replaceAll('\u0000', ' / ')
  * Compares the materialized register table against a rebuild of the same log. The table is only a
  * shortcut for the fold, so any disagreement — a row the fold does not produce, a cell the table has
  * lost, a differing seq or a differing value at the same seq — means the table is the copy to discard.
+ * The program counter's cells are not folded from rows, so they are not part of this comparison.
  */
 export function verifyRegisters(
   tracker: StateTracker,
@@ -98,6 +99,7 @@ export function verifyRegisters(
   const mismatches: string[] = []
   const seen = new Map<string, Set<string>>()
   for (const row of rows) {
+    if (row.register === 'op.state') continue
     let keys = seen.get(row.register)
     if (!keys) {
       keys = new Set()
@@ -172,8 +174,9 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
   // The state and surface at the trigger of the last turn this process opened, kept so a delegated
   // child forked there can start from them instead of refolding the parent's history.
   let forkPoint: ForkBase | undefined
-  const onAppended = (events: Event[], integrity?: readonly IntegrityCommit[]): void => {
-    const trigger = integrity && surfaces.size === 1 ? batchTrigger(events) : undefined
+  const onAppended = (events: Event[], extra: AppendedExtra): void => {
+    const { integrity } = extra
+    const trigger = integrity && surfaces.size === 1 ? batchTrigger(events, extra.op) : undefined
     const digest =
       trigger === undefined ? undefined : integrity?.find((entry) => entry.seq === trigger)?.digest
     const cut = digest === undefined ? -1 : events.findIndex((e) => e.seq > (trigger as Seq))
@@ -198,7 +201,7 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
         headDigest: digest,
       }
     for (const c of surfaces.values()) c.push(after)
-    o.onAppended?.(events, integrity)
+    o.onAppended?.(events, extra)
   }
   // Folds ledger rows into the tracker, the surface and the UI cell. The tracker resumes after a
   // verified fold cache; the surface and the UI cell fold every row.
@@ -257,7 +260,7 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
       ui.apply(own)
     } else if (o.existing) await replay()
     ui.sealReplay()
-    return finishOpen()
+    return await finishOpen()
   } catch (error) {
     // A log this call opened is its own to give back; a writer handed in by a fork belongs to the
     // caller, which gives it back on this same failure. The open's own error is the one reported.
@@ -277,7 +280,7 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
     }
   }
 
-  function finishOpen() {
+  async function finishOpen() {
     const mode = o.verify ?? 'always'
     const doVerify =
       mode === 'always' || (mode === 'sample' && (o.random ?? Math.random)() < (o.sampleRate ?? 0.05))
@@ -285,10 +288,14 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
     if (doVerify) {
       const check = verifyRegisters(tracker, log.allRegisters())
       if (!check.ok) {
-        log.replaceRegisterCache(registerRows(tracker.state))
+        // The fold knows nothing of the program counter, so its cells are kept, not rebuilt away.
+        const opCells = log.allRegisters().filter((row) => row.register === 'op.state')
+        log.replaceRegisterCache([...registerRows(tracker.state), ...opCells])
         registersRebuilt = true
       }
     }
+    // Always, whatever the sampling: a wrong program counter drives execution and nothing repairs it.
+    await verifyOpCells(log, tracker.state)
     // Seeded after the check, so a table that was just rebuilt is the one the summary shows.
     ui.setOp(currentOp(log, lane))
     forkBaseProviders.set(log, (boundarySeq, childLane) => {

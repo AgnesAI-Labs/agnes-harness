@@ -1188,7 +1188,8 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       }, // dispatch_pending may only be unobserved or host-attested not_sent
     ],
     note:
-      'valid reuses .data.phase.batch.calls[0] from the op.state fixture, which was written with ' +
+      'valid reuses .data.phase.batch.calls[0] from the op.state fixture (an event type no longer, ' +
+      'kept for its data), which was written with ' +
       "phase.kind='tools' precisely to cover this $def; invalid are hand-written",
   },
   SurfaceOp: {

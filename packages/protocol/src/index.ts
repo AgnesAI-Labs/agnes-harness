@@ -444,5 +444,12 @@ export { validateExtensionCall, validateExtensionCallError, validateServiceCapab
 export * from './slots.js'
 export * from './surfaces.js'
 export type { ValidationError, ValidationResult } from './validate.js'
-export { isDateTime, toRpcError, validateAgainst, validateEvent, validateToolDef } from './validate.js'
+export {
+  isDateTime,
+  toRpcError,
+  validateAgainst,
+  validateEvent,
+  validateOpState,
+  validateToolDef,
+} from './validate.js'
 export * from './worker-generation.js'

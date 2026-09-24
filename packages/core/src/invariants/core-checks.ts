@@ -1,4 +1,3 @@
-import type { OpState } from '@agnes/protocol'
 import type { CostLedger } from '../reduce/shapes.js'
 import type { LedgerState } from '../reduce/state.js'
 import type { Event, Seq } from '../types.js'
@@ -20,13 +19,13 @@ const EXEC_TYPES = new Set(['request/header', 'request/sent', 'plan.items', 'ass
  * boundary the registry dispatches on.
  *
  * Seeded from `state` rather than starting cold, so a check run incrementally after a single append
- * still sees the turn/step/tool-call bookkeeping a full replay would have built by that point.
+ * still sees the turn/step/tool-call bookkeeping a full replay would have built by that point. The
+ * one exception is `aborted-after-cancel`: see where its stop requests are collected.
  */
 function walk(events: readonly Event[], state: LedgerState): Violation[] {
   const out: Violation[] = []
   const openTurn = new Map(state.openTurn)
   const openStep = new Map(state.openStep)
-  const opStateLanes = new Set(state.registers.opState.keys())
   const toolCalls = new Map(state.toolCalls)
   const intentsSeen = new Set(state.pendingEffects.keys())
   const inferenceIntents = new Map<
@@ -41,21 +40,18 @@ function walk(events: readonly Event[], state: LedgerState): Violation[] {
         ...(effect.receiptSeq === undefined ? {} : { receiptSeq: effect.receiptSeq }),
         ...(effect.firstOutputSeq === undefined ? {} : { firstOutputSeq: effect.firstOutputSeq }),
       })
+  // A stop request is recorded by the op-mark of the transition that makes it, and the fold does not
+  // carry it: the program counter is not part of the fold. So `aborted-after-cancel` holds only over
+  // a batch that replays the lane from its turn start. Run on a later batch alone, an aborted
+  // settlement whose cancel came earlier reports falsely; callers must not run it that way.
   const cancelRequested = new Map<string, boolean>()
-  for (const [lane, cell] of state.registers.opState) {
-    if (cell.value?.control?.status === 'cancel_requested') cancelRequested.set(lane, true)
-  }
   // A compaction bracket is log-wide, not per-lane: it brackets a range of the one ledger the way
   // `surfaceOp: 'replace'` brackets a range of a surface, so only one may be open at a time.
   let openBracket: { lane: string; seq: Seq } | null = null
   let expectedSeq = state.lastSeq + 1
-  const touchedLanes = new Set<string>()
-  const lastTouch = new Map<string, Seq>()
 
   for (const e of events) {
     const lane = e.lane ?? 'main'
-    touchedLanes.add(lane)
-    lastTouch.set(lane, e.seq)
 
     // Resyncs off the row's own seq after flagging a gap, so one missing row produces one violation
     // instead of every row after it reading as out of place too.
@@ -157,14 +153,7 @@ function walk(events: readonly Event[], state: LedgerState): Violation[] {
         })
     }
 
-    if (e.type === 'op.state') {
-      const op = e.data as OpState
-      if (op === null) opStateLanes.delete(lane)
-      else {
-        opStateLanes.add(lane)
-        if (op.control?.status === 'cancel_requested') cancelRequested.set(lane, true)
-      }
-    }
+    if (e.type === 'x/core/op-mark' && d(e)?.control === 'cancel_requested') cancelRequested.set(lane, true)
 
     if (e.type === 'effect/intent') {
       const effectId = String(d(e)?.effectId)
@@ -238,19 +227,6 @@ function walk(events: readonly Event[], state: LedgerState): Violation[] {
     }
   }
 
-  // Checked once at the end per lane rather than per row, the same way `checkRelations` closes this
-  // out: a batch legitimately opens a turn and writes its op.state as two separate rows.
-  for (const lane of touchedLanes) {
-    const hasTurn = openTurn.has(lane)
-    const hasOp = opStateLanes.has(lane)
-    if (hasTurn !== hasOp)
-      out.push({
-        rule: 'op-state-iff-turn',
-        seq: lastTouch.get(lane) ?? state.lastSeq,
-        message: `lane ${lane}: open turn (${hasTurn}) does not match op.state register presence (${hasOp})`,
-      })
-  }
-
   return out
 }
 
@@ -260,7 +236,6 @@ const RULES = [
   'step-in-turn',
   'tool-result-paired',
   'exec-events-in-turn',
-  'op-state-iff-turn',
   'settled-has-intent',
   'aborted-after-cancel',
   'replace-brackets',

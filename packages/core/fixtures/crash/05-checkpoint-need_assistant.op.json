@@ -1,0 +1,29 @@
+[
+  {
+    "register": "op.state",
+    "key": "main",
+    "seq": 23,
+    "data": {
+      "meta": {
+        "turn": 2,
+        "lane": "main",
+        "acceptedAt": "2025-09-07T00:00:00.000Z",
+        "triggerSeq": 22,
+        "presetName": "standard",
+        "profileHash": null,
+        "depthLimit": 2
+      },
+      "control": {
+        "status": "running"
+      },
+      "step": 0,
+      "latestAssistantSeq": null,
+      "taint": false,
+      "phase": {
+        "kind": "checkpoint",
+        "continuation": "need_assistant",
+        "triggerSeq": 22
+      }
+    }
+  }
+]

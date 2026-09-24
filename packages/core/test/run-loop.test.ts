@@ -45,7 +45,7 @@ describe('run loop', () => {
     const types = (await log.scan({ fromSeq: 1, limit: 200 })).map((e) => e.type)
     expect(types.filter((t) => t === 'step/start')).toHaveLength(2)
     expect(types.filter((t) => t === 'step/end')).toHaveLength(2)
-    expect(types[types.length - 2]).toBe('turn/end')
+    expect(types.at(-1)).toBe('turn/end')
     expect(session.op()).toBeNull()
     expect(session.surface().map((n) => n.kind)).toEqual(['user', 'assistant', 'tool_result', 'assistant'])
     expect(session.pendingEffects()).toEqual([])
@@ -408,7 +408,9 @@ describe('run loop', () => {
   })
 
   it('a threshold that keeps saying yes compacts once per checkpoint, and the turn still ends', async () => {
-    const { session, log } = await openSession({ provider: fakeProvider([textTurn('a'), textTurn('b')]) })
+    const { session, log, opWrites } = await openSession({
+      provider: fakeProvider([textTurn('a'), textTurn('b')]),
+    })
     session.compaction = { shouldCompact: () => true, onOverflow: () => 'failure' }
     session.hooks = {
       ...session.hooks,
@@ -416,7 +418,7 @@ describe('run loop', () => {
     }
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
-    const phases = (await log.scan({ type: 'op.state', limit: 100 }))
+    const phases = opWrites()
       .map((e) => (e.data as { phase?: { kind: string } } | null)?.phase?.kind)
       .filter((k) => k === 'compaction')
     // Two checkpoints in this turn, each asking once. The flag stops a resumed checkpoint from
@@ -429,7 +431,9 @@ describe('run loop', () => {
 
   it('a compaction phase resumes the phase it recorded, and the threshold is checked once', async () => {
     let asked = 0
-    const { session, log } = await openSession({ provider: fakeProvider([textTurn('a'), textTurn('b')]) })
+    const { session, log, opWrites } = await openSession({
+      provider: fakeProvider([textTurn('a'), textTurn('b')]),
+    })
     session.compaction = {
       shouldCompact: () => asked++ === 0,
       onOverflow: () => 'failure',
@@ -437,7 +441,7 @@ describe('run loop', () => {
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
     // One compaction phase was entered and left; the threshold was not re-asked on the same trigger.
-    const phases = (await log.scan({ type: 'op.state', limit: 50 }))
+    const phases = opWrites()
       .map((e) => (e.data as { phase?: { kind: string } } | null)?.phase?.kind)
       .filter((k) => k === 'compaction')
     expect(phases).toHaveLength(1)
@@ -497,7 +501,7 @@ describe('run loop safety', () => {
     expect(rows.length).toBeLessThan(25)
     // The turn is closed on the ledger and the reason it was closed is written down beside it.
     expect(rows.filter((e) => e.type === 'x/core/invariant')).toHaveLength(1)
-    expect(rows[rows.length - 2]?.type).toBe('turn/end')
+    expect(rows.at(-1)?.type).toBe('turn/end')
     expect(session.op()).toBeNull()
   })
 

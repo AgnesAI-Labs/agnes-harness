@@ -108,7 +108,10 @@ export function errorNotice(
   diagnosticId?: unknown,
   diagnosticUnavailable?: unknown,
   turnErrorCode?: unknown,
+  reason?: unknown,
 ): string {
+  // Not a fault to retry or report: the session was written by an older build and cannot be read.
+  if (reason === 'legacy-ledger-format') return '该会话由旧版本创建，当前版本无法打开，请新建会话。'
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'AUTH')
     return '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。'
   if (message !== 'INTERNAL_ERROR (-32603)') return message

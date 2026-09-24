@@ -1,4 +1,4 @@
-import type { OpState, SessionStart } from '@agnes/protocol'
+import type { SessionStart } from '@agnes/protocol'
 import type { Seq } from '../types.js'
 import { ChunkedMap } from './chunked-map.js'
 import type {
@@ -33,7 +33,7 @@ export type EffectNode = {
 export type EffectTree = EffectNode[]
 
 /**
- * Everything the ledger folds to. The six registers are the materialized cells; the rest is derived
+ * Everything the ledger folds to. The five registers are the cells folded from rows; the rest is derived
  * bookkeeping the step machine and the relation check read. Registers are keyed the way storage
  * keys them, so a rebuilt state and the register table can be compared cell for cell.
  *
@@ -44,7 +44,6 @@ export type LedgerState = {
   lastSeq: Seq
   session: SessionStart | null
   registers: {
-    opState: ReadonlyMap<string, RegisterCell<OpState>>
     planItems: ReadonlyMap<string, RegisterCell<PlanItems>>
     budgetState: ReadonlyMap<string, RegisterCell<BudgetState>>
     artifactJobs: ReadonlyMap<string, RegisterCell<ArtifactJob>>
@@ -79,7 +78,6 @@ export function initialState(): LedgerState {
     lastSeq: 0,
     session: null,
     registers: {
-      opState: new Map(),
       planItems: new Map(),
       budgetState: new Map(),
       artifactJobs: new Map(),

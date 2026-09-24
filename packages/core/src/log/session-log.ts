@@ -1,3 +1,4 @@
+import { validateOpState } from '@agnes/protocol'
 import { decodeFoldCache } from '../project/cache.js'
 import {
   type Clock,
@@ -19,8 +20,10 @@ import {
   verifyLedger,
 } from './integrity.js'
 import {
+  type CommitReceipt,
   type IntegrityCommit,
   type IntegrityRow,
+  type OpWrite,
   RegisterMap,
   type RegisterRow,
   registerKey,
@@ -32,6 +35,16 @@ import { prepareEvents } from './validate.js'
 export type AppendOptions = {
   expectedRegisterSeq?: { register: string; key: string; seq: Seq | null }
   refineCaller?: boolean
+  /** The program counter of one lane, committed as a register cell at the seq of the batch's last row. */
+  opState?: OpWrite
+}
+
+/** What one committed batch carried besides its rows. */
+export type AppendedExtra = {
+  /** One entry per event; implementers may ignore it. */
+  integrity?: readonly IntegrityCommit[]
+  /** The program-counter cell this batch wrote, when it wrote one. */
+  op?: OpWrite
 }
 
 /** Injectable timer pair, so lease renewal can be driven by hand in tests. */
@@ -48,9 +61,9 @@ export type OpenLogOptions = {
   ids: IdMinter
   clock: Clock
   timers?: Timers
-  relationCheck?: (events: PreparedEvent[], log: SessionLogImpl) => void
-  /** `integrity` is what this batch committed, one entry per event; implementers may ignore it. */
-  onAppended?: (events: Event[], integrity?: readonly IntegrityCommit[]) => void
+  /** `op` is the program-counter cell the batch will write, when it writes one. */
+  relationCheck?: (events: PreparedEvent[], log: SessionLogImpl, op: OpWrite | undefined) => void
+  onAppended?: (events: Event[], extra: AppendedExtra) => void
   prepareFoldCache?: (
     events: Event[],
     integrity: IntegrityState,
@@ -333,7 +346,7 @@ export class SessionLogImpl {
    * no turn open every write renews the lease, or takes a lapsed one back.
    */
   private syncRenewal(): void {
-    const wanted = this.registersCache.values().some((row) => row.register === 'op.state')
+    const wanted = this.registersCache.hasOpLane
     if (wanted && this.timer === undefined) this.scheduleRenew()
     if (!wanted && this.timer !== undefined) {
       this.timers().clearTimeout(this.timer)
@@ -381,7 +394,15 @@ export class SessionLogImpl {
       clock: this.o.clock,
       refineCaller: opts.refineCaller === true,
     })
-    this.o.relationCheck?.(events, this)
+    const op = opts.opState
+    if (op) {
+      const checked = validateOpState(op.data)
+      if (!checked.ok)
+        throw new CoreError('E_ENVELOPE', checked.errors[0]?.message ?? 'invalid op state', {
+          errors: checked.errors,
+        })
+    }
+    this.o.relationCheck?.(events, this, op)
     let release!: () => void
     const gate = new Promise<void>((res) => {
       release = res
@@ -394,7 +415,7 @@ export class SessionLogImpl {
       // one must not reach storage if that earlier batch sealed the session while this one waited.
       // `closed` is deliberately not re-checked, because close() promises to drain what it admitted.
       this.sealCheck()
-      let committed: { firstSeq: Seq; seqs: Seq[] }
+      let committed: CommitReceipt
       const stamped = events.map((e, i) => ({ ...e, seq: this.lastSeqValue + i + 1 }))
       const nextIntegrity = prepareIntegrity(this.o.key, stamped, this.integrityState)
       const foldCache = this.o.prepareFoldCache?.(stamped, nextIntegrity.state)
@@ -407,6 +428,7 @@ export class SessionLogImpl {
           expectedWriterRunId: this.o.writerRunId,
           ...(opts.expectedRegisterSeq ? { expectedRegisterSeq: opts.expectedRegisterSeq } : {}),
           ...(foldCache ? { foldCache } : {}),
+          ...(op ? { opState: op } : {}),
           claim,
         })
       } catch (err) {
@@ -419,7 +441,9 @@ export class SessionLogImpl {
       this.leaseRenewedAt = writtenAt
       if (
         committed.seqs.length !== stamped.length ||
-        committed.seqs.some((seq, i) => seq !== stamped[i]?.seq)
+        committed.seqs.some((seq, i) => seq !== stamped[i]?.seq) ||
+        // An adapter that ignores the op write would drop the program counter without a word.
+        (op !== undefined && committed.opState?.seq !== stamped.at(-1)?.seq)
       ) {
         const fault = new CoreError('E_STORAGE_FAULT', 'storage assigned unexpected ledger sequence')
         this.markFaulted(fault)
@@ -434,10 +458,19 @@ export class SessionLogImpl {
             data: e.data,
           })
       }
-      if (stamped.some((e) => e.register === 'op.state')) this.syncRenewal()
       this.lastSeqValue = committed.seqs[committed.seqs.length - 1] as Seq
+      if (op) {
+        this.registersCache.apply({
+          register: 'op.state',
+          key: op.lane,
+          seq: this.lastSeqValue,
+          data: op.data,
+        })
+        this.syncRenewal()
+      }
       this.integrityState = nextIntegrity.state
-      if (this.o.onAppended) this.o.onAppended(stamped, nextIntegrity.entries)
+      if (this.o.onAppended)
+        this.o.onAppended(stamped, { integrity: nextIntegrity.entries, ...(op ? { op } : {}) })
       else seededLogs.get(this)?.tail.push(...stamped)
       for (const observer of this.observers) {
         const { types } = observer
@@ -501,6 +534,11 @@ export class SessionLogImpl {
 
   allRegisters(): RegisterRow[] {
     return this.registersCache.values()
+  }
+
+  /** The lanes holding a program-counter cell, without copying the register table. */
+  opLanes(): Set<string> {
+    return this.registersCache.opLanes()
   }
 
   /**
@@ -616,15 +654,6 @@ export class SessionLogImpl {
           },
         },
         {
-          type: 'op.state',
-          actor: opener.actor,
-          origin: 'system',
-          trust: 'trusted',
-          lane: opener.lane,
-          register: 'op.state',
-          data: null,
-        },
-        {
           type: 'budget.state',
           actor: opener.actor,
           origin: 'system',
@@ -690,7 +719,7 @@ export class SessionLogImpl {
   }
 
   /** Idempotent. Seals the log against new work, lets what is already admitted finish, then hands
-   * the lease back. It writes no event: reopening recovers from op.state, exactly as after a kill. */
+   * the lease back. It writes no event: reopening recovers from the program counter's cell, exactly as after a kill. */
   async close(release = true): Promise<void> {
     if (this.closed) return
     this.closed = true
