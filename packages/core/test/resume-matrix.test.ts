@@ -1,8 +1,6 @@
 // Exercises core Task 39's full-phase resume matrix against prefixes cut from real sessions. The
 // deferred fixture proves a returned job survives the tools -> deferred phase edge before the
 // poller gets a chance to finish it.
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { defaultIds } from '../src/ids.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
@@ -12,19 +10,13 @@ import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { deferredEffectId } from '../src/step/deferred.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { Event } from '../src/types.js'
+import { crashEvents, crashFixtures, crashOpCells, crashStorage } from './helpers/crash-fixtures.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { noTimers, openSession, readTool, shellTool } from './helpers/open-session.js'
 
-const dir = fileURLToPath(new URL('../fixtures/crash/', import.meta.url))
-const fixtures = readdirSync(dir)
-  .filter((f) => f.endsWith('.jsonl'))
-  .sort()
-const load = (f: string): Event[] =>
-  readFileSync(dir + f, 'utf8')
-    .trim()
-    .split('\n')
-    .map((l) => JSON.parse(l) as Event)
+const fixtures = crashFixtures()
+const load = crashEvents
 
 const PHASE_KINDS = ['checkpoint', 'inference', 'tools', 'compaction', 'deferred', 'failure_drain']
 const EXPECTED_REASON: Record<string, readonly string[]> = {
@@ -60,13 +52,14 @@ describe('resume matrix (core Task 39)', () => {
     expect(deferredEffectId('t'.repeat(128), 'j'.repeat(128))).not.toBe(id)
   })
 
-  it('at least one fixture exists for every op.state phase kind', () => {
+  it('at least one fixture exists for every program-counter phase kind', () => {
     expect(fixtures.length).toBeGreaterThan(0)
     const kinds = new Set<string>()
     for (const f of fixtures) {
       const rows = load(f)
-      const cut = rows.at(-1)
-      expect(cut?.type, f).toBe('op.state')
+      // Each fixture is cut at the end of a commit that wrote the counter, so its cell is at the head.
+      const cut = crashOpCells(f).find((cell) => cell.seq === rows.at(-1)?.seq)
+      expect(cut, f).toBeDefined()
       const kind = ((cut?.data as { phase?: { kind?: unknown } } | null)?.phase?.kind ?? null) as
         | string
         | null
@@ -78,7 +71,7 @@ describe('resume matrix (core Task 39)', () => {
 
   it('every fixture folds cleanly: the register table needs no rebuild on open', async () => {
     for (const f of fixtures) {
-      const storage = MemoryStorage.fromEvents('k', load(f))
+      const storage = crashStorage(f)
       const ids = defaultIds(() => 1_757_203_200_000)
       const { registersRebuilt } = await openTracked({
         storage,
@@ -95,7 +88,7 @@ describe('resume matrix (core Task 39)', () => {
 
   it('a crash fixture with a live writer lease refuses takeover through its deadline, then resumes', async () => {
     let now = 100
-    const storage = MemoryStorage.fromEvents('k', load(fixtures[0] as string), {
+    const storage = crashStorage(fixtures[0] as string, {
       clock: () => now,
       lease: { writerRunId: 'dead-writer', ttlMs: 50 },
     })
@@ -123,7 +116,7 @@ describe('resume matrix (core Task 39)', () => {
 
   for (const f of fixtures) {
     it(`${f}: continue resume does not throw and leaves no call unresolved outside a park`, async () => {
-      const storage = MemoryStorage.fromEvents('k', load(f))
+      const storage = crashStorage(f)
       const { session, log } = await openSession({
         provider: fakeProvider([textTurn('after'), textTurn('after2'), textTurn('after3')]),
         registry: registry(),
@@ -153,8 +146,8 @@ describe('resume matrix (core Task 39)', () => {
       }
     })
 
-    it(`${f}: close mode synthesizes closers, tombstones op.state, and leaves no open turn`, async () => {
-      const storage = MemoryStorage.fromEvents('k', load(f))
+    it(`${f}: close mode synthesizes closers, clears the program counter, and leaves no open turn`, async () => {
+      const storage = crashStorage(f)
       const { session, log } = await openSession({
         provider: fakeProvider([]),
         registry: registry(),
@@ -181,7 +174,7 @@ describe('resume matrix (core Task 39)', () => {
     const f = fixtures.find((x) => x.includes('-tools-child'))
     expect(f, 'a tools-child fixture must exist').toBeDefined()
     const events = load(f as string)
-    const storage = MemoryStorage.fromEvents('k', events)
+    const storage = crashStorage(f as string)
     const childIntent = events.find(
       (e) => e.type === 'effect/intent' && dataOf(e).parentEffectId !== undefined,
     )
@@ -222,7 +215,7 @@ describe('resume matrix (core Task 39)', () => {
     const preset = { ...presetDefaults(), recovery: { unknownChild: 'human' as const } }
     const { session, log } = await openSession({
       provider: fakeProvider([]),
-      storage: MemoryStorage.fromEvents('k', load(f as string)),
+      storage: crashStorage(f as string),
       key: 'k',
       preset,
       seams: fakeSeams({ approval: { ask: async () => 'rejected' } }),
@@ -257,7 +250,7 @@ describe('resume matrix (core Task 39)', () => {
       )
     })
     expect(f, 'a tools-batch fixture must exist').toBeDefined()
-    const storage = MemoryStorage.fromEvents('k', load(f as string))
+    const storage = crashStorage(f as string)
     const { session, log } = await openSession({
       provider: fakeProvider([textTurn('after')]),
       // Empty: simulates the tool having been removed from the profile since the crash.
@@ -302,7 +295,8 @@ describe('resume matrix (core Task 39)', () => {
     await started
 
     const crashPrefix = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq, limit: 10_000 })
-    expect(crashPrefix.at(-1)?.type).toBe('op.state')
+    const opCells = original.log.allRegisters().filter((row) => row.register === 'op.state')
+    expect(opCells.map((cell) => cell.seq)).toEqual([crashPrefix.at(-1)?.seq])
     expect(original.session.pendingEffects()).toHaveLength(1)
 
     const reopenedExecute = vi.fn(async () => ({
@@ -313,7 +307,7 @@ describe('resume matrix (core Task 39)', () => {
     const reopened = await openSession({
       provider: fakeProvider([]),
       registry: reopenedTools,
-      storage: MemoryStorage.fromEvents('k', crashPrefix),
+      storage: MemoryStorage.fromEvents('k', crashPrefix, { opCells }),
       writerRunId: 'reopened',
     })
     try {
@@ -363,8 +357,8 @@ describe('resume matrix (core Task 39)', () => {
     const crashPrefix = structuredClone(
       await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq, limit: 10_000 }),
     )
-    const stateRow = [...crashPrefix].reverse().find((row) => row.type === 'op.state')
-    const state = stateRow?.data as {
+    const opCells = structuredClone(original.log.allRegisters().filter((row) => row.register === 'op.state'))
+    const state = opCells[0]?.data as {
       phase?: {
         kind?: string
         batch?: { calls?: Array<{ policyHash?: string; resolvedPolicy?: Record<string, unknown> }> }
@@ -380,7 +374,7 @@ describe('resume matrix (core Task 39)', () => {
     const reopened = await openSession({
       provider: fakeProvider([]),
       registry: tools,
-      storage: MemoryStorage.fromEvents('k', crashPrefix),
+      storage: MemoryStorage.fromEvents('k', crashPrefix, { opCells }),
       writerRunId: 'reopened-tampered',
     })
     try {
@@ -417,7 +411,7 @@ describe('resume matrix (core Task 39)', () => {
     const preset = { ...presetDefaults(), deferred: { pollMs: 7 } }
     const { session, log } = await openSession({
       provider: fakeProvider([textTurn('after job')]),
-      storage: MemoryStorage.fromEvents('k', load(f as string)),
+      storage: crashStorage(f as string),
       key: 'k',
       preset,
       timers,
@@ -449,7 +443,9 @@ describe('resume matrix (core Task 39)', () => {
       isError: false,
       content: [{ type: 'resource_link', uri: `artifact://${'d'.repeat(64)}`, mimeType: 'text/csv' }],
     })
-    expect(result?.trust).toBe('untrusted')
+    // The fixture's tool/call carries a complete policy envelope for a tool that is not open-world,
+    // so the output keeps the call's trust.
+    expect(result?.trust).toBe('trusted')
     expect(session.latest('artifact/job', 'job-1')).toMatchObject({ status: 'done' })
     expect(session.pendingEffects()).toEqual([])
   })
@@ -460,7 +456,7 @@ describe('resume matrix (core Task 39)', () => {
     let polls = 0
     const { session, log } = await openSession({
       provider: fakeProvider([textTurn('after job')]),
-      storage: MemoryStorage.fromEvents('k', load(f as string)),
+      storage: crashStorage(f as string),
       key: 'k',
       seams: fakeSeams({
         artifacts: {
@@ -496,7 +492,7 @@ describe('resume matrix (core Task 39)', () => {
     expect(f, 'a deferred fixture must exist').toBeDefined()
     const { session, log } = await openSession({
       provider: fakeProvider([]),
-      storage: MemoryStorage.fromEvents('k', load(f as string)),
+      storage: crashStorage(f as string),
       key: 'k',
       seams: fakeSeams({
         artifacts: {
@@ -519,7 +515,7 @@ describe('resume matrix (core Task 39)', () => {
     expect(f, 'a deferred fixture must exist').toBeDefined()
     const { session, log } = await openSession({
       provider: fakeProvider([]),
-      storage: MemoryStorage.fromEvents('k', load(f as string)),
+      storage: crashStorage(f as string),
       key: 'k',
       seams: fakeSeams({
         artifacts: {
@@ -562,7 +558,7 @@ describe('resume matrix (core Task 39)', () => {
     }
     const { session } = await openSession({
       provider: fakeProvider([textTurn('after job')]),
-      storage: MemoryStorage.fromEvents('k', load(f as string)),
+      storage: crashStorage(f as string),
       key: 'k',
       preset,
       timers,
@@ -592,7 +588,7 @@ describe('resume matrix (core Task 39)', () => {
     expect(f, 'a deferred fixture must exist').toBeDefined()
     const { session, log } = await openSession({
       provider: fakeProvider([]),
-      storage: MemoryStorage.fromEvents('k', load(f as string)),
+      storage: crashStorage(f as string),
       key: 'k',
     })
 
@@ -605,7 +601,6 @@ describe('resume matrix (core Task 39)', () => {
       'x/core/resume-closed',
       'step/end',
       'turn/end',
-      'op.state',
     ])
     expect(tail.find((row) => row.type === 'tool/result')?.data).toMatchObject({
       code: 'TOOL_OUTCOME_UNKNOWN',
@@ -621,7 +616,7 @@ describe('resume matrix (core Task 39)', () => {
     expect(f, 'a deferred fixture must exist').toBeDefined()
     const { session, log } = await openSession({
       provider: fakeProvider([]),
-      storage: MemoryStorage.fromEvents('k', load(f as string)),
+      storage: crashStorage(f as string),
       key: 'k',
     })
     await session.resume()

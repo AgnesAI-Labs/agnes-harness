@@ -228,11 +228,12 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     const note = (text: string) => session.append([session.ev('x/test/note', { text }, { ignorable: true })])
     await note('first')
     // A commit whose notice never goes out leaves a row behind that no later batch will fill.
-    const o = (session.d.log as unknown as { o: { onAppended: ((evs: unknown[]) => void) | undefined } }).o
+    const o = (session.d.log as unknown as { o: { onAppended: ((...args: unknown[]) => void) | undefined } })
+      .o
     const original = o.onAppended
-    o.onAppended = (evs) => {
+    o.onAppended = (...args) => {
       o.onAppended = original
-      original?.(evs)
+      original?.(...args)
       throw new Error('host callback failed')
     }
     await expect(note('unannounced')).rejects.toThrow('host callback failed')

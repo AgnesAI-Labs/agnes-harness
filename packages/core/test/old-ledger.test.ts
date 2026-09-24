@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { defaultIds } from '../src/ids.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
+import { SessionLogImpl } from '../src/log/session-log.js'
+import type { FoldCacheRecord } from '../src/log/storage.js'
 import { decodeFoldCache, encodeFoldCache } from '../src/project/cache.js'
 import { foldEvents } from '../src/reduce/reducer.js'
 import { openTracked } from '../src/reduce/tracker.js'
@@ -32,11 +34,11 @@ function oldLedger(): Event[] {
   return rows
 }
 
-const open = (storage: MemoryStorage) =>
+const open = (storage: MemoryStorage, writerRunId = 'r') =>
   openTracked({
     storage,
     key: 'k',
-    writerRunId: 'r',
+    writerRunId,
     ttlMs: 60_000,
     ids: defaultIds(clock),
     clock,
@@ -65,7 +67,8 @@ describe('a ledger with the removed assistant/chunk type', () => {
   })
 
   it('opens the same ledger once the row is one this build writes', async () => {
-    await expect(open(MemoryStorage.fromEvents('k', readLedger()))).resolves.toBeDefined()
+    const cells = JSON.parse(readFileSync(fixture.replace(/\.jsonl$/, '.op.json'), 'utf8'))
+    await expect(open(MemoryStorage.fromEvents('k', readLedger(), { opCells: cells }))).resolves.toBeDefined()
   })
 })
 
@@ -75,3 +78,72 @@ function readLedger(): Event[] {
     .split('\n')
     .map((line) => JSON.parse(line) as Event)
 }
+
+/**
+ * A ledger written before the program counter left the rows holds `op.state` rows. That type no
+ * longer exists either, so the same holds: the ledger does not open, and no fold cache written by
+ * that build lets a replay step over the row.
+ */
+const opFixture = fileURLToPath(new URL('../fixtures/crash/05-checkpoint-need_assistant', import.meta.url))
+
+function opLedger(): Event[] {
+  const rows = readFileSync(`${opFixture}.jsonl`, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as Event)
+  const [cell] = JSON.parse(readFileSync(`${opFixture}.op.json`, 'utf8')) as Array<{ data: unknown }>
+  const last = rows.at(-1) as Event
+  // What that build wrote at the end of the batch: the program counter as a row.
+  rows.push({ ...last, seq: last.seq + 1, type: 'op.state', register: 'op.state', data: cell?.data } as Event)
+  return rows
+}
+
+/** A fold cache at the head of `rows`, stamped with `version`. */
+function foldAt(rows: Event[], version: number): FoldCacheRecord {
+  const state = foldEvents(rows.filter((row) => row.type !== 'op.state'))
+  const record = encodeFoldCache(
+    'k',
+    { ...state, lastSeq: rows.length },
+    {
+      lastSeq: rows.length,
+      legacyThroughSeq: rows.length,
+      headDigest: null,
+    },
+  )
+  return { ...record, version } as unknown as FoldCacheRecord
+}
+
+describe('a ledger with the removed op.state row type', () => {
+  it('fails to open, and hands the lease straight back', async () => {
+    const storage = MemoryStorage.fromEvents('k', opLedger())
+    await expect(open(storage)).rejects.toThrow('E_UNKNOWN_EVENT')
+    // A second writer is refused for the same reason, not for a lease the first one kept.
+    await expect(open(storage, 'r2')).rejects.toThrow('E_UNKNOWN_EVENT')
+  })
+
+  it('refuses the fold cache that build wrote, so the replay starts from the first row', async () => {
+    const rows = opLedger()
+    const storage = MemoryStorage.fromEvents('k', rows)
+    const book = (storage as unknown as { book(key: string): { foldCache?: unknown } }).book('k')
+    const starts: unknown[] = []
+    const openLog = (writerRunId: string) =>
+      SessionLogImpl.open({
+        storage,
+        key: 'k',
+        writerRunId,
+        ttlMs: 60_000,
+        ids: defaultIds(clock),
+        clock,
+        timers: noTimers,
+        replay: { start: (fold) => starts.push(fold), page: () => undefined },
+      })
+    book.foldCache = foldAt(rows, 2)
+    await (await openLog('old')).close()
+    // The current version is accepted, which is what makes the refusal above the version's doing.
+    book.foldCache = foldAt(rows, 3)
+    await (await openLog('current')).close()
+    expect(starts[0]).toBeUndefined()
+    expect(starts[1]).toMatchObject({ seq: rows.length })
+    await expect(open(storage)).rejects.toThrow('E_UNKNOWN_EVENT')
+  })
+})

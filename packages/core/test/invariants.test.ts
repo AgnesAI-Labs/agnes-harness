@@ -37,7 +37,7 @@ describe('invariants', () => {
     seq = 0
     const events = [
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
-      ev('op.state', { meta: {} }, { register: 'op.state' }),
+      ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
       ev('step/start', { turn: 1, step: 1 }),
     ]
     events.push({
@@ -69,11 +69,36 @@ describe('invariants', () => {
     ])
   })
 
+  it('reads a stop request from the op-mark that recorded it', () => {
+    seq = 0
+    const events = [
+      ev('turn/start', { turn: 1, trigger: 'prompt' }),
+      ev('effect/intent', { effectId: 'e', kind: 'tool', replay: 'safe' }),
+      ev(
+        'x/core/op-mark',
+        { phase: 'tools', control: 'cancel_requested', by: actor, requestedAt: 't' },
+        { ignorable: true },
+      ),
+      ev('effect/settled', { effectId: 'e', outcome: 'aborted' }),
+    ]
+    const r = new InvariantRegistry()
+    r.register('@agnes/core', CORE_CHECKS)
+    expect(r.run(events, foldEvents([])).map((v) => v.rule)).toEqual([])
+    expect(
+      r
+        .run(
+          events.filter((e) => e.type !== 'x/core/op-mark'),
+          foldEvents([]),
+        )
+        .map((v) => v.rule),
+    ).toContain('aborted-after-cancel')
+  })
+
   it('a clean session produces no violations', () => {
     seq = 0
     const events = [
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
-      ev('op.state', { meta: {} }, { register: 'op.state' }),
+      ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
       ev('step/start', { turn: 1, step: 1 }),
       ev('tool/call', { toolUseId: 't', name: 'read', args: {}, ordinal: 0 }),
       ev('tool/result', {
@@ -85,7 +110,7 @@ describe('invariants', () => {
       }),
       ev('step/end', { turn: 1, step: 1 }),
       ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
-      ev('op.state', null, { register: 'op.state' }),
+      ev('x/core/note', {}, { ignorable: true }),
     ]
     const r = new InvariantRegistry()
     r.register('@agnes/core', CORE_CHECKS)
@@ -101,7 +126,7 @@ describe('invariants', () => {
     seq = 0
     const prefix = [
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
-      ev('op.state', { meta: {} }, { register: 'op.state' }),
+      ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
       ev('step/start', { turn: 1, step: 1 }),
       ev('request/header', { model: 'm' }),
       ev('effect/intent', { effectId: 'inf', kind: 'inference', replay: 'never' }),
@@ -114,7 +139,7 @@ describe('invariants', () => {
     seq = 0
     const reordered = [
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
-      ev('op.state', { meta: {} }, { register: 'op.state' }),
+      ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
       ev('step/start', { turn: 1, step: 1 }),
       ev('request/header', { model: 'm' }),
       ev('effect/intent', { effectId: 'inf', kind: 'inference', replay: 'never' }),
@@ -127,7 +152,7 @@ describe('invariants', () => {
     seq = 0
     const orphaned = [
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
-      ev('op.state', { meta: {} }, { register: 'op.state' }),
+      ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
       ev('step/start', { turn: 1, step: 1 }),
       ev('request/header', { model: 'm' }),
       ev('assistant/output', {
@@ -144,7 +169,7 @@ describe('invariants', () => {
       seq = 0
       const late = [
         ev('turn/start', { turn: 1, trigger: 'prompt' }),
-        ev('op.state', { meta: {} }, { register: 'op.state' }),
+        ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
         ev('step/start', { turn: 1, step: 1 }),
         ev('request/header', { model: 'm' }),
         ev('effect/intent', { effectId: 'inf', kind: 'inference', replay: 'never' }),
@@ -187,7 +212,7 @@ describe('invariants', () => {
     seq = 0
     const fixed = [
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
-      ev('op.state', { meta: {} }, { register: 'op.state' }),
+      ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
       ev('effect/intent', { effectId: 'y', kind: 'tool', replay: 'idempotent' }),
       ev('effect/settled', { effectId: 'y', outcome: 'completed' }),
       ev('request/header', { model: 'm' }),
@@ -196,7 +221,7 @@ describe('invariants', () => {
     expect(r.run(fixed, foldEvents([]))).toEqual([])
   })
 
-  it('flags an open turn missing its op.state register and a replace whose sourceEventSeqs miss its range', () => {
+  it('flags a replace whose sourceEventSeqs miss its range', () => {
     seq = 0
     const broken = [
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
@@ -213,12 +238,12 @@ describe('invariants', () => {
         .run(broken, foldEvents([]))
         .map((v) => v.rule)
         .sort(),
-    ).toEqual(['op-state-iff-turn', 'replace-brackets'])
+    ).toEqual(['replace-brackets'])
 
     seq = 0
     const fixed = [
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
-      ev('op.state', { meta: {}, control: { status: 'running' } }, { register: 'op.state' }),
+      ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
       ev(
         'assistant/message',
         { role: 'assistant', content: [] },

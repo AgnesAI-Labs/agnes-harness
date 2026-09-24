@@ -96,7 +96,7 @@ function* forkedAfterToolCalls(): Generator<Event> {
 
 describe('the fold matches the reference reducer row for row', () => {
   it('a fork started after tool calls', () => {
-    expect(compare(forkedAfterToolCalls())).toBeGreaterThan(1300)
+    expect(compare(forkedAfterToolCalls())).toBeGreaterThan(1000)
   })
 
   for (const name of TRANSITION_SCENARIOS)
@@ -108,6 +108,6 @@ describe('the fold matches the reference reducer row for row', () => {
       expect(compare(readLedger(`${crashDir}${name}`))).toBeGreaterThan(0)
     })
   it('a thousand-call tool-heavy ledger, and its fold-cache bytes', () => {
-    expect(compare(toolHeavyLedger({ calls: 1000 }), 97)).toBeGreaterThan(25_000)
+    expect(compare(toolHeavyLedger({ calls: 1000 }), 97)).toBeGreaterThan(19_000)
   })
 })

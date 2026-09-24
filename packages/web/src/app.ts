@@ -413,6 +413,7 @@ function errorMessage(error: unknown): string {
     error instanceof Error && 'data' in error && error.data && typeof error.data === 'object'
       ? (error.data as {
           code?: unknown
+          reason?: unknown
           diagnosticId?: unknown
           diagnosticUnavailable?: unknown
           error?: { code?: unknown }
@@ -423,6 +424,7 @@ function errorMessage(error: unknown): string {
     diagnostic?.diagnosticId,
     diagnostic?.diagnosticUnavailable,
     diagnostic?.code === 'TURN_ERROR' ? diagnostic.error?.code : undefined,
+    diagnostic?.reason,
   )
 }
 function showError(error: unknown): void {
@@ -452,7 +454,9 @@ function showSessionRecovery(error: unknown, id: string): void {
     message:
       data && typeof data === 'object' && 'code' in data && data.code === 'SESSION_PROFILE_MISSING'
         ? '这个历史任务的旧配置文件已缺失，暂时无法打开。记录仍保留，未切换为当前配置。'
-        : `历史任务打开失败。${errorMessage(error)}`,
+        : data && typeof data === 'object' && 'reason' in data && data.reason === 'legacy-ledger-format'
+          ? errorMessage(error)
+          : `历史任务打开失败。${errorMessage(error)}`,
   }
   renderSessionRecovery()
 }

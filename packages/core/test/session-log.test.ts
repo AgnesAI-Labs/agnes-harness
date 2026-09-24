@@ -12,28 +12,35 @@ const user = (text: string): EventInput => ({
   type: 'user/message',
   data: { content: [{ type: 'text', text }] },
 })
-const opstate = (step: number): EventInput => ({
+const opData = (step: number) => ({
+  meta: {
+    turn: 1,
+    lane: 'main',
+    acceptedAt: 't',
+    triggerSeq: 1,
+    presetName: 'standard',
+    profileHash: null,
+    depthLimit: 1,
+  },
+  control: { status: 'running' as const },
+  step,
+  latestAssistantSeq: null,
+  taint: false,
+  phase: { kind: 'checkpoint' as const, continuation: 'need_assistant' as const, triggerSeq: 1 },
+})
+/** Append options writing the program counter of `lane`: a value for `step`, or the tombstone. */
+const op = (step: number | null, lane = 'main') => ({
+  opState: { lane, data: step === null ? null : opData(step) },
+})
+/** A row with no meaning of its own, for a batch that only has to carry the counter. */
+const note = (lane = 'main'): EventInput => ({
   actor,
   origin: 'system',
   trust: 'trusted',
-  type: 'op.state',
-  register: 'op.state',
-  data: {
-    meta: {
-      turn: 1,
-      lane: 'main',
-      acceptedAt: 't',
-      triggerSeq: 1,
-      presetName: 'standard',
-      profileHash: null,
-      depthLimit: 1,
-    },
-    control: { status: 'running' },
-    step,
-    latestAssistantSeq: null,
-    taint: false,
-    phase: { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: 1 },
-  },
+  type: 'x/core/note',
+  lane,
+  ignorable: true,
+  data: {},
 })
 
 // A hand-driven timer queue: nothing fires until flush() is called, so the renewal schedule is
@@ -116,11 +123,11 @@ describe('SessionLogImpl', () => {
   })
   it('appends atomically and exposes latest register', async () => {
     const { log } = await openLog()
-    const r = await log.append([user('a'), opstate(1)])
-    expect(r.seqs).toEqual([1, 2])
-    expect(log.lastSeq).toBe(2)
+    const r = await log.append([user('a')], op(1))
+    expect(r.seqs).toEqual([1])
+    expect(log.lastSeq).toBe(1)
     expect(log.latest('op.state')).toMatchObject({ step: 1 })
-    await log.append([{ ...opstate(2), data: null }])
+    await log.append([note()], op(null))
     expect(log.latest('op.state')).toBeUndefined()
   })
 
@@ -143,7 +150,7 @@ describe('SessionLogImpl', () => {
     })
     const { log, t } = await openLog(spy)
     // The timer runs while a turn is open.
-    await log.append([opstate(1)])
+    await log.append([note()], op(1))
     const [first] = t.pending()
     expect(t.pending()).toHaveLength(1)
     t.flush()
@@ -318,7 +325,7 @@ describe('SessionLogImpl', () => {
     // composite key differently, every register would silently read back as absent here.
     const storage = new MemoryStorage()
     const { log } = await openLog(storage)
-    await log.append([opstate(7)])
+    await log.append([note()], op(7))
     await log.append([
       {
         actor,
@@ -425,16 +432,15 @@ describe('SessionLogImpl push and fault notice', () => {
       for (const e of events) seen.push([e.seq, e.type])
       if (events[0]) events[0].data = null
     })
-    await log.append([user('a'), opstate(1)])
+    await log.append([user('a')], op(1))
     await log.append([user('b')])
     expect(seen).toEqual([
       [1, 'user/message'],
-      [2, 'op.state'],
-      [3, 'user/message'],
+      [2, 'user/message'],
     ])
     expect((await log.scan({ fromSeq: 1, toSeq: 1 }))[0]?.data).not.toBeNull()
     await log.close()
-    expect(seen).toHaveLength(3)
+    expect(seen).toHaveLength(2)
   })
 
   it('notifies a fault once when a lease renewal fails', async () => {
@@ -445,7 +451,7 @@ describe('SessionLogImpl push and fault notice', () => {
       },
     })
     const { log, t } = await openLog(failing)
-    await log.append([opstate(1)])
+    await log.append([note()], op(1))
     const faults: unknown[] = []
     log.onFault((e) => faults.push(e))
     t.flush()
@@ -503,7 +509,7 @@ describe('SessionLogImpl push and fault notice', () => {
       },
     })
     const a = await openLog(flaky)
-    await a.log.append([opstate(1)])
+    await a.log.append([note()], op(1))
     const removed: unknown[] = []
     a.log.onFault((e) => removed.push(e))()
     fail = true
@@ -547,18 +553,17 @@ describe('SessionLogImpl renews its lease during turns and on writes', () => {
     const armed = () => t.pending().filter((h) => !t.cleared.includes(h))
     return { log, storage, t, clock, armed }
   }
-  const idleOp = (lane = 'main'): EventInput => ({ ...opstate(1), lane, data: null })
 
   it('keeps no renewal timer while no turn is open, and one while a turn is open', async () => {
     const { log, armed } = await openAt()
     expect(armed()).toHaveLength(0)
     await log.append([user('a')])
     expect(armed()).toHaveLength(0)
-    await log.append([opstate(1)])
+    await log.append([note()], op(1))
     expect(armed()).toHaveLength(1)
-    await log.append([opstate(2)])
+    await log.append([note()], op(2))
     expect(armed()).toHaveLength(1)
-    await log.append([idleOp()])
+    await log.append([note()], op(null))
     expect(armed()).toHaveLength(0)
   })
 
@@ -572,28 +577,29 @@ describe('SessionLogImpl renews its lease during turns and on writes', () => {
       },
     })
     const { log, t } = await openAt(counted)
-    await log.append([opstate(1)])
+    await log.append([note()], op(1))
     t.flush()
     t.flush()
     expect(renewals).toBe(2)
-    await log.append([idleOp()])
+    await log.append([note()], op(null))
     t.flush()
     expect(renewals).toBe(2)
   })
 
   it('keeps renewing while any lane has a turn open', async () => {
     const { log, armed } = await openAt()
-    await log.append([opstate(1), { ...opstate(1), lane: 'side' }])
-    await log.append([idleOp()])
+    await log.append([note()], op(1))
+    await log.append([note('side')], op(1, 'side'))
+    await log.append([note()], op(null))
     expect(armed()).toHaveLength(1)
-    await log.append([idleOp('side')])
+    await log.append([note('side')], op(null, 'side'))
     expect(armed()).toHaveLength(0)
   })
 
   it('renews at once when it opens on a turn left open', async () => {
     const storage = fresh()
     const first = await openAt(storage)
-    await first.log.append([opstate(1)])
+    await first.log.append([note()], op(1))
     await first.log.close()
     const { armed } = await openAt(storage)
     expect(armed()).toHaveLength(1)

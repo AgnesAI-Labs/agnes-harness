@@ -91,7 +91,7 @@ export type CommitReceipt = { firstSeq: Seq; seqs: Seq[]; opState?: { seq: Seq }
 export type LeaseClaim = { ttlMs: number; expectedLastSeq: Seq }
 
 export type FoldCacheRecord = {
-  version: 2
+  version: 3
   seq: Seq
   payload: string
   checksum: string
@@ -147,6 +147,9 @@ export class RegisterMap {
   // values() but not in get(), because only get() spells the key — the write side put a raw string
   // there. #cells makes that write a syntax-level impossibility rather than a convention.
   readonly #cells = new Map<string, RegisterRow>()
+  // Lanes holding a program-counter cell, kept beside the cells so a per-append question about
+  // open turns never has to copy the whole table.
+  readonly #opLanes = new Set<string>()
 
   get(register: string, key: string): RegisterRow | undefined {
     return this.#cells.get(cacheKey(register, key))
@@ -155,18 +158,33 @@ export class RegisterMap {
   /** Applies one materialized row in commit order; a tombstone removes the cell. */
   apply(row: RegisterRow): void {
     const k = cacheKey(row.register, row.key)
-    if (isRegisterTombstone(row.register, row.data)) this.#cells.delete(k)
+    const gone = isRegisterTombstone(row.register, row.data)
+    if (gone) this.#cells.delete(k)
     else this.#cells.set(k, row)
+    if (row.register === 'op.state') {
+      if (gone) this.#opLanes.delete(row.key)
+      else this.#opLanes.add(row.key)
+    }
   }
 
   /** Discards every cell and re-folds from `rows`, which is what reseeding a cache means. */
   replaceAll(rows: Iterable<RegisterRow>): void {
     this.#cells.clear()
+    this.#opLanes.clear()
     for (const r of rows) this.apply(r)
   }
 
   values(): RegisterRow[] {
     return [...this.#cells.values()]
+  }
+
+  /** The lanes that currently hold a program-counter cell, as a fresh set the caller may change. */
+  opLanes(): Set<string> {
+    return new Set(this.#opLanes)
+  }
+
+  get hasOpLane(): boolean {
+    return this.#opLanes.size > 0
   }
 }
 

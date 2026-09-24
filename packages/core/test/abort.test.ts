@@ -88,13 +88,13 @@ describe('abort during the tools phase', () => {
 
     // The cancellation is on the counter before anything is settled off it.
     const t = await types(log as never)
-    const cancelSeq = (await log.scan({ type: 'op.state', limit: 100 })).findIndex(
-      (e) => (e.data as { control?: { status: string } } | null)?.control?.status === 'cancel_requested',
+    const cancelSeq = (await log.scan({ type: 'x/core/op-mark', limit: 100 })).findIndex(
+      (e) => (e.data as { control?: string } | null)?.control === 'cancel_requested',
     )
     expect(cancelSeq).toBeGreaterThan(-1)
 
     // The terminal rows the next reader needs: the step closes, then the turn.
-    expect(t.slice(-3)).toEqual(['step/end', 'turn/end', 'op.state'])
+    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'aborted' })
     expect(session.op()).toBeNull()
   })
@@ -219,7 +219,7 @@ describe('the run loop bounds', () => {
     const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(out.reason).toBe('error')
     const t = await types(log as never)
-    expect(t.slice(-3)).toEqual(['step/end', 'turn/end', 'op.state'])
+    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'error' })
     expect(session.op()).toBeNull()
   })
@@ -241,7 +241,7 @@ describe('the run loop bounds', () => {
     expect(out.reason).toBe('error')
     expect(out.error?.message).toContain('boom')
     const t = await types(log as never)
-    expect(t.slice(-3)).toEqual(['step/end', 'turn/end', 'op.state'])
+    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
     expect(session.op()).toBeNull()
   })
 })

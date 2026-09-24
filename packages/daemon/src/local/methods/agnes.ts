@@ -57,7 +57,7 @@ import type {
   JournalResult,
   SessionLister,
 } from '../ports.js'
-import type { Feed, LocalContext } from './acp.js'
+import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
 export type CredentialKind = 'local' | 'jwt' | 'portal-identity' | 'sso' | 'channel'
@@ -732,7 +732,12 @@ export function registerAgnes(
           reason: 'ticket workspace unavailable',
         })
       }
-      await cx.registry.open({ key: indexed, cwd: binding.canonicalRoot, binding })
+      try {
+        await cx.registry.open({ key: indexed, cwd: binding.canonicalRoot, binding })
+      } catch (error) {
+        if ((error as { code?: unknown } | null)?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+        throw error
+      }
     }
     const candidates = indexed ? [indexed] : cx.registry.keys()
     // An index miss retains Task 11's compatibility fallback over open sessions. Refuse ambiguity

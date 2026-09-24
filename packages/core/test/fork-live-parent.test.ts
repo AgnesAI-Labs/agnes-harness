@@ -147,6 +147,9 @@ async function delegate(sc: Scenario, path: Path) {
   await readTurn(parent, 'second')
   await parent.enqueue('next-turn', { content: [{ type: 'text', text: 'delegate' }], actor })
   await parent.acceptInput()
+  // The accepted turn ends on its turn/start; one more row gives a boundary after the trigger and
+  // before the head.
+  if (sc.beforeHead) await parent.diag('contribute-conflict', {})
   const c = (parent.d.log.latest('op.state', 'main') as { meta: { triggerSeq: Seq } }).meta.triggerSeq
   if (path === 'cold') forkBaseProviders.delete(parent.d.log)
   // A first child seeded from the same fork point must leave that point as it found it.

@@ -1,4 +1,4 @@
-import { type EventEnvelope, type JsonValue, validateEvent } from '@agnes/protocol'
+import { type EventEnvelope, isEventType, type JsonValue, validateEvent } from '@agnes/protocol'
 import { detectSource } from './detect.js'
 import { EnvelopeBuilder } from './envelope.js'
 import { importClaudeCode, readClaudeCodeHeader } from './import/claude-code.js'
@@ -16,6 +16,9 @@ const IMPORTERS = {
 const isCliResult = (value: unknown): boolean =>
   value !== null && typeof value === 'object' && (value as { v?: unknown }).v === 'agnes-cli-result/v1'
 
+/** How a skipped row an older build wrote is reported, so an importer can say so plainly. */
+export const OLDER_EXPORT_FORMAT = 'older export format'
+
 function passThroughAgnes(rows: JsonlRow[], report: Tolerance): EventEnvelope[] {
   const events: EventEnvelope[] = []
   let previousSeq = 0
@@ -26,7 +29,14 @@ function passThroughAgnes(rows: JsonlRow[], report: Tolerance): EventEnvelope[] 
     }
     const result = validateEvent(value)
     if (!result.ok) {
-      report.skip(line, `invalid agnes event: ${result.errors[0]?.message ?? 'unknown'}`)
+      // A row type this build does not know was written by an older build: the export has an older format.
+      const type = (value as { type?: unknown } | null)?.type
+      report.skip(
+        line,
+        typeof type === 'string' && !isEventType(type)
+          ? `${OLDER_EXPORT_FORMAT}: row type ${JSON.stringify(type.slice(0, 64))} is not one this build reads`
+          : `invalid agnes event: ${result.errors[0]?.message ?? 'unknown'}`,
+      )
       continue
     }
     if (result.value.seq !== previousSeq + 1) {

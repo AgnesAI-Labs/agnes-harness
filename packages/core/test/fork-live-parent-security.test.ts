@@ -84,7 +84,7 @@ function tamper(storage: MemoryStorage, key: string, seq: Seq, edit: (e: Event) 
 }
 
 /** A parent that read two files, then accepted a turn to delegate from. */
-async function parentReady(storage: StorageAdapter, provider: FakeProvider) {
+async function parentReady(storage: StorageAdapter, provider: FakeProvider, pastTrigger = false) {
   const k = kernel(storage, provider)
   const parent = await k.session('parent', { ...sessionOpts, writerRunId: 'r1' })
   await parent.enqueue('next-turn', { content: [{ type: 'text', text: 'read' }], actor })
@@ -92,6 +92,9 @@ async function parentReady(storage: StorageAdapter, provider: FakeProvider) {
   await parent.enqueue('next-turn', { content: [{ type: 'text', text: 'delegate' }], actor })
   await parent.acceptInput()
   const c = (parent.d.log.latest('op.state', 'main') as { meta: { triggerSeq: Seq } }).meta.triggerSeq
+  // The accepted turn ends on its turn/start; one more row gives a boundary after the trigger and
+  // before the head.
+  if (pastTrigger) await parent.diag('contribute-conflict', {})
   return { k, parent, c }
 }
 
@@ -107,7 +110,7 @@ const script = () =>
 describe('what creating a delegated child still detects', () => {
   it('a rewritten parent row between the fork point and the boundary: no child rows, attempt cancelled', async () => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
-    const { k, parent, c } = await parentReady(storage, script())
+    const { k, parent, c } = await parentReady(storage, script(), true)
     const b = parent.lastSeq - 1
     expect(c).toBeLessThan(b)
     tamper(storage, 'parent', c + 1, (e) => ({ ...e, data: { ...(e.data as object), turn: 99 } }))
@@ -265,7 +268,7 @@ describe('rows storage hands back for a range are held to the key and range aske
           storage.scanIntegrity(swapTo && key === 'parent' ? swapTo : key, q),
       },
     })
-    const { k, parent, c } = await parentReady(swapping, script())
+    const { k, parent, c } = await parentReady(swapping, script(), true)
     // A sibling forked at the same trigger chains its own rows from the same digest.
     const sibling = await createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'sibling' })
     const b = parent.lastSeq - 1
@@ -287,7 +290,7 @@ describe('rows storage hands back for a range are held to the key and range aske
           storage.scanIntegrity(key, overshoot ? { ...q, toSeq: q.toSeq + 5 } : q),
       },
     })
-    const { k, parent } = await parentReady(loose, script())
+    const { k, parent } = await parentReady(loose, script(), true)
     const b = parent.lastSeq - 1
     overshoot = true
     await expect(

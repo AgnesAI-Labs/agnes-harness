@@ -53,15 +53,14 @@ describe('SessionLogImpl.forkInto', () => {
     const child = await parent.forkInto(2, 'child', opener)
 
     expect(child.parent).toEqual({ key: 'parent', boundarySeq: 2 })
-    expect(child.lastSeq).toBe(6)
+    expect(child.lastSeq).toBe(5)
     const initial = await child.scan({ fromSeq: 1, limit: 10 })
     expect(initial.map((event) => [event.seq, event.type])).toEqual([
       [1, 'user/message'],
       [2, 'user/message'],
       [3, 'session/start'],
-      [4, 'op.state'],
-      [5, 'budget.state'],
-      [6, 'inbox'],
+      [4, 'budget.state'],
+      [5, 'inbox'],
     ])
     expect(initial[2]?.data).toEqual({
       key: 'child',
@@ -77,7 +76,6 @@ describe('SessionLogImpl.forkInto', () => {
     expect((await child.scan({ fromSeq: 1, limit: 10 })).map(textOf)).toEqual([
       'one',
       'two',
-      undefined,
       undefined,
       undefined,
       undefined,
@@ -128,7 +126,6 @@ describe('SessionLogImpl.forkInto', () => {
     expect((await reopened.scan({ fromSeq: 1, limit: 10 })).map((event) => event.type)).toEqual([
       'user/message',
       'session/start',
-      'op.state',
       'budget.state',
       'inbox',
     ])
@@ -154,7 +151,7 @@ describe('SessionLogImpl.forkInto', () => {
     const third = await parent.forkInto(1, 'child', { ...opener, writerRunId: 'child-run-3' })
     const own = await third.scan({ fromSeq: 2, limit: 20 })
     expect(own.filter((event) => event.type === 'session/start')).toHaveLength(1)
-    expect(own.map((event) => event.type)).toEqual(['session/start', 'op.state', 'budget.state', 'inbox'])
+    expect(own.map((event) => event.type)).toEqual(['session/start', 'budget.state', 'inbox'])
 
     await third.close()
     await parent.close()

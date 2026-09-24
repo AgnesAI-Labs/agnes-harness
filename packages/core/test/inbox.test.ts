@@ -24,19 +24,13 @@ describe('Inbox segment', () => {
     ).toEqual([1, 2])
   })
 
-  it('acceptInput claims one next-turn item into user/message + turn/start + op.state in one tx', async () => {
+  it('acceptInput claims one next-turn item into user/message + turn/start + the program counter in one tx', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect(await session.acceptInput()).toBe(true)
     const rows = await log.scan({ fromSeq: 1, limit: 20 })
-    expect(rows.map((e) => e.type)).toEqual([
-      'session/start',
-      'inbox',
-      'inbox',
-      'user/message',
-      'turn/start',
-      'op.state',
-    ])
+    expect(rows.map((e) => e.type)).toEqual(['session/start', 'inbox', 'inbox', 'user/message', 'turn/start'])
+    expect(log.registerRow('op.state')?.seq).toBe(5)
     expect(session.op()).toMatchObject({
       step: 0,
       control: { status: 'running' },
@@ -124,16 +118,19 @@ describe('Inbox segment', () => {
       .append(
         [
           {
-            type: 'op.state',
-            register: 'op.state',
+            type: 'x/core/op-mark',
             lane: 'main',
             origin: 'system',
             trust: 'trusted',
             actor,
-            data: { ...(stale as NonNullable<typeof stale>), step: 5 },
+            ignorable: true,
+            data: { phase: 'checkpoint' },
           },
         ],
-        { expectedRegisterSeq: { register: 'op.state', key: 'main', seq: 1 } },
+        {
+          expectedRegisterSeq: { register: 'op.state', key: 'main', seq: 1 },
+          opState: { lane: 'main', data: { ...(stale as NonNullable<typeof stale>), step: 5 } },
+        },
       )
       .then(
         () => null,
@@ -152,9 +149,12 @@ describe('Inbox segment', () => {
       override async commit(key: string, tx: CommitTx) {
         if (this.armed && tx.expectedRegisterSeq) {
           this.armed = false
-          const stolen = tx.events.find((e) => e.register === 'op.state')
-          if (stolen)
-            await super.commit(key, { events: [stolen], expectedWriterRunId: tx.expectedWriterRunId })
+          if (tx.opState)
+            await super.commit(key, {
+              events: tx.events.slice(0, 1),
+              opState: tx.opState,
+              expectedWriterRunId: tx.expectedWriterRunId,
+            })
         }
         return super.commit(key, tx)
       }

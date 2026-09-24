@@ -384,16 +384,13 @@ describe('resume', () => {
     await original.session.runInference()
     await original.session.runToolsPhase()
     const rows = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq, limit: 10_000 })
-    const respondedAt = rows.findIndex((row) => {
-      const data = row.data as {
+    const responded = original.opWrites().find((write) => {
+      const data = write.data as {
         phase?: { kind?: string; batch?: { calls?: Array<{ status?: string }> } }
       } | null
-      return (
-        row.type === 'op.state' &&
-        data?.phase?.kind === 'tools' &&
-        data.phase.batch?.calls?.[0]?.status === 'responded'
-      )
+      return data?.phase?.kind === 'tools' && data.phase.batch?.calls?.[0]?.status === 'responded'
     })
+    const respondedAt = rows.findIndex((row) => row.seq === responded?.seq)
     expect(respondedAt).toBeGreaterThan(0)
 
     let redispatches = 0
@@ -408,7 +405,9 @@ describe('resume', () => {
     const reopened = await openSession({
       provider: fakeProvider([]),
       registry: reopenedRegistry,
-      storage: MemoryStorage.fromEvents('k', rows.slice(0, respondedAt + 1)),
+      storage: MemoryStorage.fromEvents('k', rows.slice(0, respondedAt + 1), {
+        opCells: original.opCellsBefore((responded?.seq ?? 0) + 1),
+      }),
       key: 'k',
       writerRunId: 'responded-reopen',
     })

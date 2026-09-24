@@ -13,6 +13,7 @@ import { type SessionDeps, SessionImpl } from '../../src/step/session.js'
 import { createWorkspaceInvocationPort } from '../../src/workspace/runtime.js'
 import { fencedFs, testFsPolicy } from '../../testkit/fenced-fs.js'
 import { fakeSeams } from './fake-seams.js'
+import { opHistory } from './op-history.js'
 
 export const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 
@@ -163,6 +164,8 @@ export async function openSession(
     timers: noTimers,
     ...(over.lane ? { lane: over.lane } : {}),
   })
+  // Program-counter cells after every commit, for a test that cuts the ledger short to fake a crash.
+  const ops = opHistory(log)
   const preset = over.preset ?? presetDefaults()
   const seams = over.seams ?? fakeSeams()
   const fsOps = over.fsOps ?? testFsOps()
@@ -202,5 +205,5 @@ export async function openSession(
     ...sessionOver,
   })
   await session.start()
-  return { session, storage, log, tracker, ui }
+  return { session, storage, log, tracker, ui, opCellsBefore: ops.before, opWrites: ops.writes }
 }

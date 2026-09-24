@@ -14,8 +14,7 @@ export const EVENT_TYPES = [
   'tool/call',
   'request/header',
   'request/sent',
-  // Registers (6)
-  'op.state',
+  // Registers written as rows (5); the program counter is written as a register cell only
   'plan.items',
   'budget.state',
   'artifact/job',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateEvent, validateHook, validateToolDef } from '../src/index.js'
+import { validateEvent, validateHook, validateOpState, validateToolDef } from '../src/index.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const legacyPolicy = {
@@ -20,7 +20,7 @@ const policyEnvelope = {
   policyHash,
 }
 
-function event(type: 'tool/call' | 'op.state', data: unknown): Record<string, unknown> {
+function event(type: 'tool/call', data: unknown): Record<string, unknown> {
   return {
     seq: 1,
     ts: '2026-09-16T00:00:00Z',
@@ -115,8 +115,8 @@ describe('resolved tool-call policy protocol', () => {
       ).ok,
     ).toBe(true)
     expect(validateEvent(event('tool/call', fullToolCall)).ok).toBe(true)
-    expect(validateEvent(event('op.state', opState(legacyToolCallState))).ok).toBe(true)
-    expect(validateEvent(event('op.state', opState(fullToolCallState))).ok).toBe(true)
+    expect(validateOpState(opState(legacyToolCallState)).ok).toBe(true)
+    expect(validateOpState(opState(fullToolCallState)).ok).toBe(true)
     expect(validateHook('tool_call', 'payload', legacyHookPayload).ok).toBe(true)
     expect(
       validateHook('tool_call', 'payload', {
@@ -138,9 +138,7 @@ describe('resolved tool-call policy protocol', () => {
 
       const state = { ...fullToolCallState }
       delete state[omitted]
-      expect(validateEvent(event('op.state', opState(state))).ok, `ToolCallState missing ${omitted}`).toBe(
-        false,
-      )
+      expect(validateOpState(opState(state)).ok, `ToolCallState missing ${omitted}`).toBe(false)
 
       const hook = {
         ...legacyHookPayload,
@@ -210,9 +208,7 @@ describe('resolved tool-call policy protocol', () => {
       false,
     )
     expect(validateEvent(event('tool/call', { ...fullToolCall, policyHash: 'short' })).ok).toBe(false)
-    expect(
-      validateEvent(event('op.state', opState({ ...fullToolCallState, dispatchPhase: 'dispatched' }))).ok,
-    ).toBe(false)
+    expect(validateOpState(opState({ ...fullToolCallState, dispatchPhase: 'dispatched' })).ok).toBe(false)
   })
 
   it('accepts every durable dispatch state and the legacy effect_pending shape', () => {
@@ -266,7 +262,7 @@ describe('resolved tool-call policy protocol', () => {
       },
     ]
     for (const state of states) {
-      expect(validateEvent(event('op.state', opState(state))).ok, JSON.stringify(state)).toBe(true)
+      expect(validateOpState(opState(state)).ok, JSON.stringify(state)).toBe(true)
     }
   })
 
@@ -372,7 +368,7 @@ describe('resolved tool-call policy protocol', () => {
       },
     ]
     for (const state of invalidStates) {
-      expect(validateEvent(event('op.state', opState(state))).ok, JSON.stringify(state)).toBe(false)
+      expect(validateOpState(opState(state)).ok, JSON.stringify(state)).toBe(false)
     }
   })
 

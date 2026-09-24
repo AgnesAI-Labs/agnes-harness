@@ -109,7 +109,7 @@ describe('storage-sqlite', () => {
         data: { content: [{ type: 'text' as const, text: `message-${index}` }] },
       })),
     )
-    expect(await s.foldCache?.('cached')).toMatchObject({ version: 2, seq: 1_001 })
+    expect(await s.foldCache?.('cached')).toMatchObject({ version: 3, seq: 1_001 })
     await first.log.close()
     await s.close()
 

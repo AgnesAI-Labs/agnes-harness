@@ -428,7 +428,22 @@ export class LocalEndpoint implements RpcEndpoint {
       return ok(id, result)
     } catch (e) {
       if (id === undefined) return undefined
-      if (isRpcError(e)) return fail(id, e)
+      if (isRpcError(e)) {
+        // A refusal the caller can act on that an operator still has to be able to find.
+        if (e.data.code === 'LEGACY_LEDGER_FORMAT') {
+          const diagnosticId = randomUUID()
+          try {
+            this.o.audit?.({
+              kind: 'daemon.request_failed',
+              detail: { diagnosticId, method: call.method, errorCode: e.data.code },
+            })
+          } catch {
+            /* Diagnostic failures must not replace the refusal. */
+          }
+          return fail(id, { ...e, data: { ...e.data, ...(this.o.audit ? { diagnosticId } : {}) } })
+        }
+        return fail(id, e)
+      }
       const diagnosticId = randomUUID()
       // Never persist params, exception messages, stacks or arbitrary exception properties.
       let errorCode = 'UNKNOWN'

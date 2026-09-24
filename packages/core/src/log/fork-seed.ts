@@ -2,6 +2,7 @@ import type { SurfaceSnapshot } from '../project/surface.js'
 import type { LedgerState } from '../reduce/state.js'
 import type { Event, Seq } from '../types.js'
 import type { SessionLogImpl } from './session-log.js'
+import type { OpWrite } from './storage.js'
 
 /** Called between two pages of a long ledger read; may wait so other work gets the event loop. */
 export type PageYield = () => void | Promise<void>
@@ -48,18 +49,13 @@ export const forkBaseProviders = new WeakMap<
   (boundarySeq: Seq, lane: string) => ForkBase | undefined
 >()
 
-/** The trigger a batch opens a turn at: the seq an op.state row in it names, if that seq is in the batch. */
-export function batchTrigger(events: readonly Event[]): Seq | undefined {
+/** The trigger a batch opens a turn at: the seq its op write names, if that seq is in the batch. */
+export function batchTrigger(events: readonly Event[], op: OpWrite | undefined): Seq | undefined {
   const first = events[0]?.seq
   const last = events.at(-1)?.seq
   if (first === undefined || last === undefined) return undefined
-  let trigger: Seq | undefined
-  for (const e of events) {
-    if (e.type !== 'op.state') continue
-    const seq = (e.data as { meta?: { triggerSeq?: unknown } } | null)?.meta?.triggerSeq
-    if (typeof seq === 'number' && seq >= first && seq <= last) trigger = seq
-  }
-  return trigger
+  const seq = op?.data?.meta.triggerSeq
+  return typeof seq === 'number' && seq >= first && seq <= last ? seq : undefined
 }
 
 /**

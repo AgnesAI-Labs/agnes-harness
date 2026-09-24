@@ -28,12 +28,21 @@ export type ResumeReport = {
   actions: Array<{ effectId: string; action: ResumeAction }>
 }
 
+/**
+ * A call closed on resume, keeping its dispatch audit fields when they are complete. A call left in
+ * `dispatch_pending` has an attempt but no transport phase yet; a terminal call records both or
+ * neither, so the half-written pair is dropped rather than completed with a guessed phase.
+ */
+function completedCall(call: ToolCallState): ToolCallState {
+  const done = { ...call, status: 'completed' } as ToolCallState & { dispatchAttempt?: unknown }
+  if (call.dispatchPhase === undefined) delete done.dispatchAttempt
+  return done
+}
+
 /** Marks one call terminal while preserving any completed dispatch audit fields. */
 function setCallCompleted(o: OpStateObj, toolUseId: string): OpStateObj {
   if (o.phase.kind !== 'tools') return o
-  const calls = o.phase.batch.calls.map((call) =>
-    call.toolUseId === toolUseId ? ({ ...call, status: 'completed' } as ToolCallState) : call,
-  )
+  const calls = o.phase.batch.calls.map((call) => (call.toolUseId === toolUseId ? completedCall(call) : call))
   return withPhase(o, { ...o.phase, batch: { ...o.phase.batch, calls } })
 }
 
@@ -43,9 +52,7 @@ function setCallsCompleted(o: OpStateObj, toolUseIds: ReadonlySet<string>): OpSt
     ...o.phase,
     batch: {
       ...o.phase.batch,
-      calls: o.phase.batch.calls.map((call) =>
-        toolUseIds.has(call.toolUseId) ? { ...call, status: 'completed' as const } : call,
-      ),
+      calls: o.phase.batch.calls.map((call) => (toolUseIds.has(call.toolUseId) ? completedCall(call) : call)),
     },
   })
 }

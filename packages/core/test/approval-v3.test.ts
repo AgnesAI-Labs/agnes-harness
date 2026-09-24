@@ -358,7 +358,7 @@ describe('v3 approval modes and grants', () => {
             return { content: [{ type: 'text', text: 'ok' }] }
           }),
         ),
-        storage: MemoryStorage.fromEvents('k', crashed),
+        storage: MemoryStorage.fromEvents('k', crashed, { opCells: original.opCellsBefore(activation.seq) }),
         key: 'k',
         writerRunId: `permanent-reopen-${alreadyStored}`,
         approvalMode: 'manual',
@@ -428,7 +428,7 @@ describe('v3 approval modes and grants', () => {
           return { content: [{ type: 'text', text: 'ok' }] }
         }),
       ),
-      storage: MemoryStorage.fromEvents('k', crashed),
+      storage: MemoryStorage.fromEvents('k', crashed, { opCells: original.opCellsBefore(boundary.seq) }),
       key: 'k',
       writerRunId: `guardian-${scenario.name}-reopen`,
       approvalMode: 'smart',
@@ -493,7 +493,7 @@ describe('v3 approval modes and grants', () => {
             return { content: [{ type: 'text', text: 'ok' }] }
           }),
         ),
-        storage: MemoryStorage.fromEvents('k', crashed),
+        storage: MemoryStorage.fromEvents('k', crashed, { opCells: original.opCellsBefore(asked.seq) }),
         key: 'k',
         writerRunId: `guardian-${mode}-reopen`,
         approvalMode: 'smart',

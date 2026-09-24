@@ -278,7 +278,7 @@ describe('re-entry and slots', () => {
       } as never,
       { source: 's', trust: 'builtin' },
     )
-    const { session, log } = await openSession({
+    const { session, log, opWrites } = await openSession({
       provider: fakeProvider([toolTurn('run_code', { code: '…' }), textTurn('ok')]),
       registry: r,
       // 'run_code' is the one tool name the default 'standard' disclosure policy withholds
@@ -298,7 +298,7 @@ describe('re-entry and slots', () => {
     expect(tools[1]?.parentEffectId).toBe(tools[0]?.effectId)
     const results = await log.scan({ type: 'tool/result', limit: 10 })
     expect(results.map((e) => (e.data as { toolUseId: string }).toolUseId.slice(0, 2))).toEqual(['t1', 't0'])
-    const states = await log.scan({ type: 'op.state', limit: 100 })
+    const states = opWrites()
     expect(
       states.some((row) => {
         const state = row.data as {
@@ -482,7 +482,9 @@ describe('re-entry and slots', () => {
     const reopened = await openSession({
       provider: fakeProvider([]),
       registry: r,
-      storage: MemoryStorage.fromEvents('k', crashPrefix),
+      storage: MemoryStorage.fromEvents('k', crashPrefix, {
+        opCells: original.opCellsBefore((crashPrefix.at(-1)?.seq ?? 0) + 1),
+      }),
       writerRunId: 'nested-reopen',
       preset: { ...presetDefaults(), disclosure: 'code' },
     })
@@ -583,7 +585,9 @@ describe('re-entry and slots', () => {
     const reopened = await openSession({
       provider: fakeProvider([]),
       registry: r,
-      storage: MemoryStorage.fromEvents('k', crashPrefix),
+      storage: MemoryStorage.fromEvents('k', crashPrefix, {
+        opCells: original.opCellsBefore((crashPrefix.at(-1)?.seq ?? 0) + 1),
+      }),
       writerRunId: 'depth-2-reopen',
       preset: { ...presetDefaults(), disclosure: 'code', depthLimit: 2 },
     })
@@ -692,7 +696,7 @@ describe('re-entry and slots', () => {
     if (!shellCall || !middleCall) throw new Error('missing nested calls')
     const shellToolUseId = (shellCall.data as { toolUseId: string }).toolUseId
     const middleToolUseId = (middleCall.data as { toolUseId: string }).toolUseId
-    const crashState = [...crashPrefix].reverse().find((row) => row.type === 'op.state')?.data as
+    const crashState = original.opCellsBefore((crashPrefix.at(-1)?.seq ?? 0) + 1)[0]?.data as
       | {
           phase?: {
             kind?: string
@@ -707,7 +711,9 @@ describe('re-entry and slots', () => {
     const reopened = await openSession({
       provider: fakeProvider([]),
       registry: r,
-      storage: MemoryStorage.fromEvents('k', crashPrefix),
+      storage: MemoryStorage.fromEvents('k', crashPrefix, {
+        opCells: original.opCellsBefore((crashPrefix.at(-1)?.seq ?? 0) + 1),
+      }),
       writerRunId: 'depth-2-approval-reopen',
       preset: { ...presetDefaults(), disclosure: 'code', depthLimit: 2 },
     })

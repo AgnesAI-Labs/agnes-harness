@@ -220,7 +220,7 @@ export type {
   ToolCallState,
   ToolsPhase,
 } from './step/op-state.js'
-export { newOpState, opStateEvent, withPhase } from './step/op-state.js'
+export { newOpState, withPhase } from './step/op-state.js'
 export type { PresetView } from './step/preset.js'
 export { presetDefaults, readPreset } from './step/preset.js'
 export type { PreviewDelta, PreviewSnapshot } from './step/preview.js'

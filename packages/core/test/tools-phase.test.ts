@@ -305,19 +305,17 @@ describe('tools phase', () => {
     expect(await session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
     const types = (await log.scan({ fromSeq: 1, limit: 100 })).map((e) => e.type)
     const i = types.indexOf('tool/call')
-    expect(types.slice(i + 4)).toEqual([
-      'op.state',
+    // A transition with no row of its own leaves an op-mark (approved, then dispatched); the others
+    // carry the counter as a cell beside their rows.
+    expect(types.slice(i + 3)).toEqual([
+      'x/core/op-mark',
       'effect/intent',
-      'op.state',
-      'op.state',
+      'x/core/op-mark',
       'tool/result',
-      'op.state',
       'effect/settled',
       'verifier/signal',
-      'op.state',
       'verifier/signal',
       'step/end',
-      'op.state',
     ])
     const res = (await log.scan({ type: 'tool/result', limit: 5 }))[0]
     expect(res?.data).toMatchObject({
@@ -510,8 +508,8 @@ describe('tools phase', () => {
       }),
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
-    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 3, limit: 4 })).map((e) => e.type)
-    expect(tail).toEqual(['approval/asked', 'step/end', 'turn/end', 'op.state'])
+    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 2, limit: 3 })).map((e) => e.type)
+    expect(tail).toEqual(['approval/asked', 'step/end', 'turn/end'])
     expect(s.session.op()).toBeNull()
     expect((await s.log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data).toMatchObject({
       pending: { ticket: 'T1' },
@@ -831,8 +829,8 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
     expect(s.session.op()).toBeNull()
-    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 4, limit: 5 })).map((e) => e.type)
-    expect(tail).toEqual(['approval/asked', 'approval/asked', 'step/end', 'turn/end', 'op.state'])
+    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 3, limit: 4 })).map((e) => e.type)
+    expect(tail).toEqual(['approval/asked', 'approval/asked', 'step/end', 'turn/end'])
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
     // Exactly one step/end and one turn/end: the batch is closed once, not once per member.
     expect(await s.log.scan({ type: 'step/end', limit: 10 })).toHaveLength(1)

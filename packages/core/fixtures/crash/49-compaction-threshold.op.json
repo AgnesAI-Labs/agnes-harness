@@ -1,0 +1,34 @@
+[
+  {
+    "register": "op.state",
+    "key": "main",
+    "seq": 20,
+    "data": {
+      "meta": {
+        "turn": 1,
+        "lane": "main",
+        "acceptedAt": "2025-09-07T00:00:00.000Z",
+        "triggerSeq": 4,
+        "presetName": "standard",
+        "profileHash": null,
+        "depthLimit": 2
+      },
+      "control": {
+        "status": "running"
+      },
+      "step": 1,
+      "latestAssistantSeq": 16,
+      "taint": false,
+      "phase": {
+        "kind": "compaction",
+        "reason": "threshold",
+        "resumeAfter": {
+          "kind": "checkpoint",
+          "continuation": "may_finish",
+          "triggerSeq": 4,
+          "thresholdCheckedSeq": 4
+        }
+      }
+    }
+  }
+]

@@ -22,7 +22,8 @@ const ev = (type: string, data: unknown, extra: Partial<Event> = {}): Event =>
     ...extra,
   }) as Event
 // Every batch must satisfy the batch-end rule "an open turn on a lane iff an op.state cell on it",
-// so a fixture that opens a turn writes this alongside it.
+// so a fixture that opens a turn writes this cell with it. The cell is not a row; the batch carries a
+// neutral row where the old program-counter row stood, so seqs stay where they were.
 const opstateData = (lane = 'main') => ({
   meta: {
     turn: 1,
@@ -321,17 +322,20 @@ describe('surface', () => {
     expect(surfaces.get('main')).toBe(surface)
     const side = new SurfaceCache('side')
     surfaces.set('side', side)
-    await log.append([
-      { ...sys, type: 'turn/start', data: { turn: 1, trigger: 'job' }, lane: 'side' },
-      { ...sys, type: 'op.state', register: 'op.state', lane: 'side', data: opstateData('side') },
-      { ...sys, type: 'user/message', lane: 'side', data: { content: [{ type: 'text', text: 'a' }] } },
-      {
-        ...sys,
-        type: 'assistant/message',
-        lane: 'side',
-        data: { content: [{ type: 'text', text: 'b' }], stopReason: 'end_turn' },
-      },
-    ])
+    await log.append(
+      [
+        { ...sys, type: 'turn/start', data: { turn: 1, trigger: 'job' }, lane: 'side' },
+        { ...sys, type: 'x/core/note', ignorable: true, lane: 'side', data: {} },
+        { ...sys, type: 'user/message', lane: 'side', data: { content: [{ type: 'text', text: 'a' }] } },
+        {
+          ...sys,
+          type: 'assistant/message',
+          lane: 'side',
+          data: { content: [{ type: 'text', text: 'b' }], stopReason: 'end_turn' },
+        },
+      ],
+      { opState: { lane: 'side', data: opstateData('side') as never } },
+    )
     // Fed: the registered cache saw the batch, and the opened lane's did not take side's rows.
     expect(side.nodes().map((n) => n.seq)).toEqual([3, 4])
     expect(surface.nodes()).toEqual([])
@@ -364,24 +368,23 @@ describe('surface', () => {
       timers: noTimers,
     }
     const sys = { actor, origin: 'system' as const, trust: 'trusted' as const }
-    const opstate = (): EventInput => ({
-      ...sys,
-      type: 'op.state',
-      register: 'op.state',
-      data: opstateData(),
-    })
+    const opstate = (): EventInput => ({ ...sys, type: 'x/core/note', ignorable: true, data: {} })
+    const running = { opState: { lane: 'main', data: opstateData() as never } }
     const first = await openTracked({ ...common, writerRunId: 'r1' })
-    await first.log.append([
-      { ...sys, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
-      {
-        actor,
-        origin: 'principal',
-        trust: 'trusted',
-        type: 'user/message',
-        data: { content: [{ type: 'text', text: 'hi' }] },
-      },
-      opstate(),
-    ])
+    await first.log.append(
+      [
+        { ...sys, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        {
+          actor,
+          origin: 'principal',
+          trust: 'trusted',
+          type: 'user/message',
+          data: { content: [{ type: 'text', text: 'hi' }] },
+        },
+        opstate(),
+      ],
+      running,
+    )
     // onAppended has already fed it.
     expect(first.surface.nodes().map((n) => n.kind)).toEqual(['user'])
     await first.log.close()
@@ -402,12 +405,8 @@ describe('surface', () => {
       type: 'user/message',
       data: { content: [{ type: 'text', text }] },
     })
-    const opstate = (): EventInput => ({
-      ...sys,
-      type: 'op.state',
-      register: 'op.state',
-      data: opstateData(),
-    })
+    const opstate = (): EventInput => ({ ...sys, type: 'x/core/note', ignorable: true, data: {} })
+    const running = { opState: { lane: 'main', data: opstateData() as never } }
     const summary = (text: string, start: number, end: number): EventInput => ({
       ...sys,
       type: 'assistant/message',
@@ -424,12 +423,15 @@ describe('surface', () => {
       clock: () => Date.now(),
       timers: noTimers,
     })
-    await log.append([
-      { ...sys, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
-      opstate(),
-      said('one'),
-      said('two'),
-    ])
+    await log.append(
+      [
+        { ...sys, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        opstate(),
+        said('one'),
+        said('two'),
+      ],
+      running,
+    )
     expect(surface.nodes().map((n) => n.seq)).toEqual([3, 4])
     // A range naming rows that are on the surface is accepted and masks them.
     await log.append([summary('sum', 3, 4)])
