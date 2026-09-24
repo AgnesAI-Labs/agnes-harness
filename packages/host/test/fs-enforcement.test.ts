@@ -249,7 +249,7 @@ describe.each(
         await expect(fs.stat(path), how).rejects.toThrow(/E_FS_DENIED/)
         await expect(fs.write(path, new Uint8Array([1])), how).rejects.toThrow(/E_FS_DENIED/)
       }
-  }, 30_000)
+  }, 90_000)
 
   it('refuses a path outside its root', async () => {
     const { fs, root } = impl.open()

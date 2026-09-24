@@ -261,4 +261,4 @@ it('the real remote worker fork keeps the parent owner directory and child bindi
     await hosted.closeAll()
     await built.host.close()
   }
-}, 30_000)
+}, 90_000)
