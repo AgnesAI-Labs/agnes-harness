@@ -16,11 +16,12 @@ import type {
   SeamWorkspace,
   Verdict,
 } from '@agnes/core'
-import { scanAll } from '@agnes/core'
+import { type Event, prepareIntegrity, scanAll, verifyLedger } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import type { CapabilityLevel, PlatformBackend } from '../src/adapters/platform.js'
 import { createPlatform } from '../src/adapters/platform.js'
+import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
 import { MemoryPackageLoader, type PackageModule } from '../src/assemble/packages.js'
 import type { ProviderBuildOptions } from '../src/assemble/provider.js'
 import { ASSEMBLY_STEPS, type AssemblyStep } from '../src/assemble.js'
@@ -568,4 +569,33 @@ async function readTurn(
     }
   }
   return { reason: out.reason, toolCalls, finalText, events }
+}
+
+/**
+ * Appends one row to a stored session exactly as given, chained onto its head: what an older build
+ * that wrote a row type this one no longer knows left behind. It bypasses every check core makes
+ * on the way in, which is the point.
+ */
+export async function appendRowAsOlderBuild(
+  dataDir: string,
+  key: string,
+  make: (last: Event) => Omit<Event, 'seq'>,
+): Promise<void> {
+  const storage = createSqliteStorage({
+    file: join(dataDir, 'sessions.db'),
+    tablesDir: join(dataDir, 'older-build'),
+  })
+  try {
+    const { lastSeq } = await storage.open(key, { writerRunId: 'older-build', ttlMs: 60_000 })
+    const state = await verifyLedger(storage, key, lastSeq)
+    const [last] = await storage.scan(key, { fromSeq: lastSeq, toSeq: lastSeq, limit: 1 })
+    if (!last) throw new Error(`session ${key} has no rows`)
+    const row = { ...make(last), seq: lastSeq + 1 } as Event
+    const { entries } = prepareIntegrity(key, [row], state)
+    const { seq: _seq, ...event } = row
+    await storage.commit(key, { events: [event], integrity: entries, expectedWriterRunId: 'older-build' })
+    await storage.release(key, 'older-build')
+  } finally {
+    await storage.close()
+  }
 }

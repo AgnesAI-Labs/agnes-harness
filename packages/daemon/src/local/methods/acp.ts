@@ -8,6 +8,7 @@ import {
 import {
   type EventEnvelope,
   type HarnessMeta,
+  type RpcError,
   rpcError,
   setHarnessMeta,
   type TurnEndReason,
@@ -343,12 +344,20 @@ export function disposeFeeds(feeds: Map<string, Feed>): void {
  */
 export function throwSessionOpenRpcError(error: unknown): never {
   const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
+  // A ledger holding a row type this build no longer knows was written by an older build; it fails
+  // closed, and the caller is told so rather than handed an internal error.
+  if (e?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
   if (e?.code === 'E_PRESET_UNRESOLVED' && (e.reason ?? e.detail?.reason) === 'no-routes')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'PROVIDER_UNCONFIGURED',
       reason: 'the profile declares no provider routes',
     })
   throwWorkspaceRpcError(error)
+}
+
+/** The refusal for a session whose ledger an older build wrote in a format this one cannot read. */
+export function legacyLedgerRpcError(): RpcError {
+  return rpcError('SEMANTIC_REJECTED', { code: 'LEGACY_LEDGER_FORMAT', reason: 'legacy-ledger-format' })
 }
 
 export function registerAcp(

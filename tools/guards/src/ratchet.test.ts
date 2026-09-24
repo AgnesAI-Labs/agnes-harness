@@ -357,7 +357,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-24 streaming-smoothness quick fixes (user-approved raise), rebased onto origin/main's 1730:
   // renderTrace forwards the transcript meta and still throttles the trace panel to 500 ms while busy.
   // Re-measured with countLines() on the merged tree: 1767, exact, no spare.
-  'packages/web/src/app': 1772,
+  // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
+  // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
+  'packages/web/src/app': 1776,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-17: composer permission listbox. Measured 203, exact.
   'packages/web/src/permission-picker': 203,
@@ -865,7 +867,17 @@ const INITIAL_CEILING: Record<string, number> = {
   // close between the end of the stream and the settlement still records the text. Measured
   // 25106, exact, no spare (+9).
   // Merged with b/main (Skill ZIP response, main merges); combined source re-measured, exact, no spare.
-  'packages/core/src': 25107,
+  // OPSTATE O5 (program counter leaves the rows): op writes through append with schema check and
+  // storage receipt, op-mark rows, relation check on cells, trigger from the op write; minus the fold's
+  // op register, its cache codec and the fork tombstone. Measured 25153, exact, no spare (+46).
+  // OPSTATE O6: open-time check of the program-counter cells (turn pairing, schema, lane, turn, seq
+  // range, dispatched calls not shown as undispatched). Measured 25207, exact, no spare (+54).
+  // OPSTATE O6 review fix: the dispatched-call check scans the current batch only. Measured 25213,
+  // exact, no spare (+6).
+  // OPSTATE O5 review fix: the register map keeps the set of op lanes beside its cells, so the
+  // per-append relation check and lease renewal stop copying the whole table. Measured +16 on its
+  // own base; with the batch-scan fix above the combined tree measures 25229, exact, no spare.
+  'packages/core/src': 25229,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1161,7 +1173,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM C1: assistant/output event type, session.preview notification and their root
   // type exports (+5). Re-measured with countLines(): 2187, exact, no spare.
   // CHUNK-LEDGER-SLIM final tree: assistant/chunk and its type export removed. Measured 2185, exact, no spare (-2).
-  'packages/protocol/src': 2185,
+  // OPSTATE O5: op.state leaves the event types; validateOpState exported for the register cell (the
+  // formatter splits the validate.js export list once it no longer fits a line). Measured 2194,
+  // exact, no spare (+9).
+  'packages/protocol/src': 2194,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1695,7 +1710,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // viewer has and are cut by encoded size, and the worker snapshot is bounded. Measured 26379,
   // exact, no spare (+49).
   // Merged with b/main (Skill ZIP response, main merges); combined source re-measured, exact, no spare.
-  'packages/daemon/src': 26419,
+  // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
+  // not INTERNAL: open-path mapping, approval reopen and the endpoint audit (+23). Re-measured on this tree:
+  // 26440, exact, no spare.
+  'packages/daemon/src': 26440,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -1925,7 +1943,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the live projection merges previews instead of chunks. Measured 13161, exact, no spare (-62).
   // Merge of CHUNK-LEDGER-SLIM (13161) with the streaming-smoothness quick fixes (13313): the preview
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
-  'packages/web/src': 13260,
+  // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
+  // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
+  'packages/web/src': 13266,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

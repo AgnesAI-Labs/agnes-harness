@@ -676,7 +676,7 @@ describe('Inference segment', () => {
     const { session, log } = await primed([textTurn('hello world')])
     const out = await session.runInference()
     expect(out).toEqual({ phase: 'checkpoint' })
-    const types = (await log.scan({ fromSeq: 7, limit: 50 })).map((e) => e.type)
+    const types = (await log.scan({ fromSeq: 6, limit: 50 })).map((e) => e.type)
     expect(types).toEqual([
       'x/core/context-breakdown',
       'step/start',
@@ -684,17 +684,15 @@ describe('Inference segment', () => {
       // explain. A replaying consumer therefore never reads an effect before either cause.
       'request/header',
       'effect/intent',
-      'op.state',
       'request/sent',
       'assistant/output',
       'assistant/message',
       'cost/ledger',
       'effect/settled',
       'step/end',
-      'op.state',
     ])
     expect(session.op()).toMatchObject({ step: 1, phase: { kind: 'checkpoint', continuation: 'may_finish' } })
-    expect(session.op()?.latestAssistantSeq).toBe(14)
+    expect(session.op()?.latestAssistantSeq).toBe(12)
     const msg = (await log.scan({ type: 'assistant/message', limit: 5 }))[0]
     expect(msg?.data).toMatchObject({
       content: [{ type: 'text', text: 'hello world' }],

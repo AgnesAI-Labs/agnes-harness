@@ -3,6 +3,8 @@ import { reduce } from '../reduce/reducer.js'
 import type { LedgerState } from '../reduce/state.js'
 import type { StateTracker } from '../reduce/tracker.js'
 import { CoreError, type Event, type PreparedEvent, type Seq } from '../types.js'
+import type { SessionLogImpl } from './session-log.js'
+import type { OpWrite } from './storage.js'
 
 /** Rows that only make sense inside an open turn on their lane. */
 const IN_TURN = new Set([
@@ -20,6 +22,7 @@ const IN_TURN = new Set([
   'verifier/signal',
   'repair/decision',
   'format/deviation',
+  'x/core/op-mark',
 ])
 
 /** Codes that mark a synthetic result written to close a call whose outcome nobody observed. */
@@ -32,11 +35,16 @@ type CheckedEvent = PreparedEvent & { seq?: Seq | undefined }
  * Checks a batch against the state it will be appended to. The batch is simulated in order, so a row
  * may rely on one earlier in the same batch, and a rejection stops the whole batch before anything is
  * written. Rows are numbered from the state under check when storage has not numbered them yet.
+ *
+ * `opLanes` are the lanes that hold a program-counter cell once the batch is committed. With it, an
+ * open turn and a cell are required on the same lanes after the batch; a caller that only simulates
+ * rows leaves it out and that pairing is not checked.
  */
 export function checkRelations(
   batch: readonly CheckedEvent[],
   start: LedgerState,
   surfaces?: Map<string, SurfaceCache>,
+  opLanes?: ReadonlySet<string>,
 ): void {
   let s = start
   for (const e of batch) {
@@ -143,12 +151,13 @@ export function checkRelations(
     }
     s = reduce(s, { ...e, seq } as Event)
   }
-  // Checked once at the end rather than per row, because a batch legitimately opens a turn and writes
-  // its op.state as two rows. A lane with one and not the other cannot be resumed: either the ledger
-  // says a turn is running with no program counter, or a counter survives the turn it belonged to.
-  for (const lane of new Set([...s.openTurn.keys(), ...s.registers.opState.keys()])) {
+  // Checked once at the end rather than per row, because a batch legitimately opens a turn in one
+  // row and the cell is written with the batch. A lane with one and not the other cannot be resumed:
+  // either a turn is running with no program counter, or a counter survives the turn it belonged to.
+  if (!opLanes) return
+  for (const lane of new Set([...s.openTurn.keys(), ...opLanes])) {
     const hasTurn = s.openTurn.has(lane)
-    const hasOp = s.registers.opState.has(lane)
+    const hasOp = opLanes.has(lane)
     if (hasTurn !== hasOp)
       throw new CoreError(
         'E_RELATION',
@@ -158,9 +167,18 @@ export function checkRelations(
   }
 }
 
+/** The lanes holding a program-counter cell once `op` is committed on top of `log`'s cells. */
+export function opLanesAfter(log: SessionLogImpl, op: OpWrite | undefined): Set<string> {
+  const lanes = log.opLanes()
+  if (op?.data === null) lanes.delete(op.lane)
+  else if (op) lanes.add(op.lane)
+  return lanes
+}
+
 export function makeRelationCheck(
   tracker: StateTracker,
   surfaces?: Map<string, SurfaceCache>,
-): (events: readonly CheckedEvent[]) => void {
-  return (events) => checkRelations(events, tracker.state, surfaces)
+): (events: readonly CheckedEvent[], log?: SessionLogImpl, op?: OpWrite) => void {
+  return (events, log, op) =>
+    checkRelations(events, tracker.state, surfaces, log ? opLanesAfter(log, op) : undefined)
 }

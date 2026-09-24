@@ -111,9 +111,10 @@ describe('durable tool dispatch state', () => {
       },
     })
     const rows = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq })
-    const resultIndex = rows.findIndex((row) => row.type === 'tool/result')
-    expect(rows[resultIndex + 1]?.type).toBe('op.state')
-    expect((rows[resultIndex + 1]?.data as { phase?: unknown } | undefined)?.phase).toMatchObject({
+    const resultSeq = rows.find((row) => row.type === 'tool/result')?.seq ?? 0
+    // The counter the result's own commit wrote: that commit ends at or after the result row.
+    const written = opened.opWrites().find((write) => write.seq >= resultSeq)
+    expect((written?.data as { phase?: unknown } | null | undefined)?.phase).toMatchObject({
       kind: 'tools',
       batch: {
         calls: [
@@ -125,7 +126,7 @@ describe('durable tool dispatch state', () => {
         ],
       },
     })
-    expect(rows.slice(resultIndex + 2).some((row) => row.type === 'effect/settled')).toBe(true)
+    expect(rows.some((row) => row.seq > (written?.seq ?? 0) && row.type === 'effect/settled')).toBe(true)
   })
 
   it('retries a Host-attested not_sent once under the same effect intent', async () => {
@@ -156,7 +157,7 @@ describe('durable tool dispatch state', () => {
       (row) => (row.data as { kind?: unknown }).kind === 'tool',
     )
     expect(intents).toHaveLength(1)
-    const states = toolStates(await opened.log.scan({ type: 'op.state', limit: 100 }))
+    const states = toolStates(opened.opWrites())
     expect(states).toContainEqual(
       expect.objectContaining({
         status: 'dispatch_pending',

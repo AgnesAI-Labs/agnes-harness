@@ -87,6 +87,8 @@ export function safeExpectedSessionRpcFailureLine(error: unknown): string | unde
     return 'PRESET_SWITCH_REJECTED: the requested preset or model is not available in this profile; `agh doctor provider` lists the configured routes.'
   if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'PROVIDER_UNCONFIGURED')
     return 'PROVIDER_UNCONFIGURED: no model provider is configured for this profile; run `agh config` to add one.'
+  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'LEGACY_LEDGER_FORMAT')
+    return 'LEGACY_LEDGER_FORMAT: this session was created by an older version and cannot be opened by this one; start a new session.'
   return undefined
 }
 

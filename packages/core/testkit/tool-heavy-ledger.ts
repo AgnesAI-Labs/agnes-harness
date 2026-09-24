@@ -1,42 +1,23 @@
 // A long, tool-call-heavy ledger for fold scaling tests, generated lazily so a caller can fold
 // tens of thousands of calls without holding the whole ledger in memory. Each call replays the
 // tool step of a real recorded session (the `batch-k1` golden recording): the same row types in the
-// same order, with ids, seqs and turn/step numbers rewritten. Program-counter payloads keep the
-// recorded shape with only the turn and step updated; nothing here folds them further.
+// same order, with ids, seqs and turn/step numbers rewritten. Op-mark rows keep the recorded shape
+// with only the call ids updated; nothing here folds them further.
 import type { Event, Seq } from '../src/types.js'
-import { readGolden } from './record-transitions.js'
+import { expectedFromGolden, readGolden } from './record-transitions.js'
 
 type Row = Omit<Event, 'seq' | 'id' | 'ts'> & { seq: Seq }
 
 /**
- * A golden recording as a ledger: every commit's rows in order, the program-counter rows (recorded
- * apart) put back after the commit's other rows. Rows carry no id or timestamp.
+ * A golden recording as a ledger in the current format: every commit's rows in order, with an
+ * op-mark where a transition had no row of its own. Rows carry no id or timestamp.
  */
 export function goldenLedger(name: string): Event[] {
   return recordedRows(name) as Event[]
 }
 
 function recordedRows(name: string): Row[] {
-  const rows: Row[] = []
-  for (const commit of readGolden(name)) {
-    const events = commit.events as Row[]
-    rows.push(...events)
-    let seq = events.at(-1)?.seq ?? rows.at(-1)?.seq ?? 0
-    const actor = (events[0] ?? rows[0])?.actor as Event['actor']
-    for (const op of commit.op)
-      rows.push({
-        lane: op.lane,
-        v: 1,
-        type: 'op.state',
-        register: 'op.state',
-        origin: 'system',
-        trust: 'trusted',
-        actor,
-        data: op.data as never,
-        seq: ++seq,
-      } as Row)
-  }
-  return rows
+  return expectedFromGolden(readGolden(name)).flatMap((commit) => commit.events as Row[])
 }
 
 type Templates = {
@@ -44,7 +25,6 @@ type Templates = {
   turnStart: Row
   step: Row[]
   turnEnd: Row
-  opTombstone: Row
   actor: Event['actor']
 }
 
@@ -60,11 +40,10 @@ function templates(): Templates {
   cached = {
     head: rows.slice(0, turnStartAt),
     turnStart,
-    // The rows between turn/start and the first step (program counter, budget, context breakdown)
-    // recur before every step of a long turn, so they belong to the replicated block.
+    // The rows between turn/start and the first step (op-marks, budget, context breakdown) recur
+    // before every step of a long turn, so they belong to the replicated block.
     step: rows.slice(turnStartAt + 1, stepEnd + 1),
     turnEnd: rows[turnEndAt] as Row,
-    opTombstone: { ...(rows.at(-1) as Row), data: null } as Row,
     actor: turnStart.actor as Event['actor'],
   }
   return cached
@@ -122,7 +101,6 @@ export function* toolHeavyLedger(opts: {
     if (call % perTurn === 0) {
       if (turn > 0) {
         yield place(t.turnEnd, ++seq, 0, { lastAssistantSeq: lastAssistant })
-        yield place(t.opTombstone, ++seq, 0)
       }
       turn++
       step = 0
@@ -142,8 +120,7 @@ export function* toolHeavyLedger(opts: {
       if (typeof d.toolUseId === 'string') patch.toolUseId = toolUseId
       if (d.tool && typeof d.tool === 'object') patch.tool = { ...(d.tool as object), toolUseId }
       if (row.type === 'step/start' || row.type === 'step/end') Object.assign(patch, { turn, step })
-      if (row.type === 'op.state' && d.meta)
-        Object.assign(patch, { meta: { ...(d.meta as object), turn }, step })
+      if (Array.isArray(d.calls)) patch.calls = (d.calls as object[]).map((call) => ({ ...call, toolUseId }))
       if (row.type === 'assistant/message') lastAssistant = at
       yield place(row, at, shift, patch)
     }

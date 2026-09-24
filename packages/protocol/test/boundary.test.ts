@@ -178,6 +178,7 @@ describe('protocol src boundary', () => {
         'validateJobStatus',
 
         'validateEvent',
+        'validateOpState',
         'validateHook',
         'validateMethod',
         'validateModelRecord',

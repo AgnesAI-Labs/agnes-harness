@@ -285,11 +285,12 @@ describe('tailSession on a live session pushes rather than polls', () => {
     })
     await vi.waitFor(() => expect(seen.at(-1)).toBe(session.lastSeq))
     // The host callback runs before commit observers; one that throws once skips them for that batch.
-    const o = (session.d.log as unknown as { o: { onAppended: ((evs: unknown[]) => void) | undefined } }).o
+    const o = (session.d.log as unknown as { o: { onAppended: ((...args: unknown[]) => void) | undefined } })
+      .o
     const original = o.onAppended
-    o.onAppended = (evs) => {
+    o.onAppended = (...args) => {
       o.onAppended = original
-      original?.(evs)
+      original?.(...args)
       throw new Error('host callback failed')
     }
     await expect(session.enqueue('next-turn', prompt('unannounced'))).rejects.toThrow('host callback failed')

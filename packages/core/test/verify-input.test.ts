@@ -263,6 +263,10 @@ describe('verify input contract', () => {
   it.each([
     ['policy hash mismatch', (data: Record<string, unknown>) => ({ ...data, policyHash: '0'.repeat(64) })],
     ['toolUseId mismatch', (data: Record<string, unknown>) => ({ ...data, toolUseId: 'other-call' })],
+    [
+      'missing policy envelope',
+      ({ resolvedPolicy: _policy, policyHash: _hash, ...rest }: Record<string, unknown>) => rest,
+    ],
   ])('fails closed on deferred %s', async (_case, tamper) => {
     const deferred: ToolDef = {
       ...(readTool() as ToolDef),
@@ -301,7 +305,9 @@ describe('verify input contract', () => {
     vi.spyOn(session.d.log, 'scan').mockImplementation(async (query) => {
       const rows = await scan(query)
       return rows.map((row) =>
-        row.type === 'tool/call' ? { ...row, data: tamper(row.data as Record<string, unknown>) } : row,
+        row.type === 'tool/call'
+          ? { ...row, data: tamper(row.data as Record<string, unknown>) as typeof row.data }
+          : row,
       )
     })
     expect(await session.runDeferred()).toEqual({ phase: 'checkpoint' })

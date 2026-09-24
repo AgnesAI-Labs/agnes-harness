@@ -394,17 +394,26 @@ describe('web session selection', () => {
     },
   )
 
-  it.each(['missing-profile', 'system-error'])(
+  it.each(['missing-profile', 'system-error', 'legacy-ledger'])(
     'keeps %s recovery visible and allows retry or a new task',
     async (kind) => {
       installPublicFixture()
       const old = session('old', async () => idleTimeline('old'))
-      const error = Object.assign(new Error('INTERNAL_ERROR (-32603)'), {
-        data:
-          kind === 'missing-profile'
-            ? { code: 'SESSION_PROFILE_MISSING' }
-            : { diagnosticId: '00000000-0000-4000-8000-000000000001' },
-      })
+      const error =
+        kind === 'legacy-ledger'
+          ? Object.assign(new Error('SEMANTIC_REJECTED (-32011)'), {
+              data: {
+                code: 'LEGACY_LEDGER_FORMAT',
+                reason: 'legacy-ledger-format',
+                diagnosticId: '00000000-0000-4000-8000-000000000001',
+              },
+            })
+          : Object.assign(new Error('INTERNAL_ERROR (-32603)'), {
+              data:
+                kind === 'missing-profile'
+                  ? { code: 'SESSION_PROFILE_MISSING' }
+                  : { diagnosticId: '00000000-0000-4000-8000-000000000001' },
+            })
       const create = vi.fn()
       sdk.createClient.mockReturnValue({
         apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
@@ -424,9 +433,16 @@ describe('web session selection', () => {
       await import('../src/app.js')
       const notice = document.getElementById('notice') as HTMLElement
       await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
-      expect(notice.textContent).toContain(
-        kind === 'missing-profile' ? '旧配置文件已缺失' : '00000000-0000-4000-8000-000000000001',
-      )
+      if (kind === 'legacy-ledger') {
+        expect(notice.textContent).toContain('该会话由旧版本创建，当前版本无法打开，请新建会话。')
+        expect(notice.textContent).not.toContain('诊断')
+        expect(notice.textContent).not.toContain('00000000-0000-4000-8000-000000000001')
+      } else
+        expect(notice.textContent).toContain(
+          kind === 'missing-profile' ? '旧配置文件已缺失' : '00000000-0000-4000-8000-000000000001',
+        )
+      // The session list renders whatever the failed open was.
+      expect(document.querySelector('#sessions')?.textContent).toContain('Old')
       document.body.click()
       document.getElementById('settings')?.click()
       await vi.waitFor(() => expect((document.getElementById('config') as HTMLDialogElement).open).toBe(true))

@@ -1,6 +1,7 @@
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
+import type { RegisterMap } from '../src/log/storage.js'
 import type { SessionImpl } from '../src/step/session.js'
 import type { Seq } from '../src/types.js'
 import { sentFor } from './helpers/fake-provider.js'
@@ -79,23 +80,25 @@ describe('the UI summary of the running operation', () => {
     expect(view.opState).toEqual({ turn: 1, step: 0, phase: 'inference' })
   })
 
-  it('shows the rebuilt program counter when open discards a drifted register table', async () => {
+  it('keeps and shows the program counter when open discards a drifted register table', async () => {
     const h = await inInference()
     const events = await h.log.scan({ fromSeq: 1, toSeq: h.log.lastSeq })
-    const registers = (await h.storage.registers('k')).map((row) =>
-      row.register === 'op.state' && row.data
-        ? { ...row, seq: row.seq - 1, data: { ...(row.data as object), step: 7 } }
-        : row,
-    )
-    const reopened = await openSession({
-      provider: hanging(),
-      storage: MemoryStorage.fromEvents('k', events, {
-        opCells: registers.filter((row) => row.register === 'op.state'),
-      }),
-      key: 'k',
-      writerRunId: 'r2',
+    const registers = await h.storage.registers('k')
+    const drifted = registers.find((row) => row.register !== 'op.state')
+    if (!drifted) throw new Error('expected a register besides the program counter')
+    const storage = MemoryStorage.fromEvents('k', events, {
+      opCells: registers
+        .filter((row) => row.register === 'op.state')
+        .map((row) => ({ ...row, data: { ...(row.data as object), step: 7 } })),
     })
-    expect(reopened.session.op()?.step).toBe(0)
-    expect((await reopened.session.projectUI()).opState).toEqual({ turn: 1, step: 0, phase: 'inference' })
+    // A folded register whose table row lies: the open rebuilds the table from the fold.
+    ;(storage as unknown as { book(key: string): { registers: RegisterMap } })
+      .book('k')
+      .registers.apply({ ...drifted, seq: drifted.seq + 100 })
+    const reopened = await openSession({ provider: hanging(), storage, key: 'k', writerRunId: 'r2' })
+    // The fold has no program counter to rebuild, so the cell the store holds is kept and shown.
+    expect(reopened.log.registerRow(drifted.register, drifted.key)?.seq).toBe(drifted.seq)
+    expect(reopened.session.op()?.step).toBe(7)
+    expect((await reopened.session.projectUI()).opState).toEqual({ turn: 1, step: 7, phase: 'inference' })
   })
 })

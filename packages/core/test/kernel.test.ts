@@ -17,6 +17,7 @@ import type { WorkspaceInvocationPort } from '../src/workspace/runtime.js'
 import { testFsPolicy } from '../testkit/fenced-fs.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
+import { opHistory } from './helpers/op-history.js'
 import {
   actor,
   noTimers,
@@ -303,7 +304,7 @@ describe('Kernel default children', () => {
     // opening the same writer a second time (which would also install a second lease timer).
     expect(open).toHaveBeenCalledTimes(2)
     expect(parent.d.children.get?.(child.key)).toBe(child)
-    expect(await child.status()).toMatchObject({ state: 'running', lastSeq: 6 })
+    expect(await child.status()).toMatchObject({ state: 'running', lastSeq: 5 })
 
     await expect(child.run('what?')).resolves.toMatchObject({ text: 'child says hi' })
     expect(await child.status()).toMatchObject({ state: 'done', text: 'child says hi' })
@@ -446,6 +447,7 @@ describe('Kernel (fix round 1)', () => {
     k.tools.add(openWorldTool(), { source: 's', trust: 'builtin' })
     k.tools.add(writeTool(), { source: 's', trust: 'builtin' })
     const s = await k.session('taint', sessionOpts)
+    const ops = opHistory(s.d.log)
     await s.enqueue('next-turn', { content: [{ type: 'text', text: 'read the page and note it' }], actor })
     const out = await s.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(out.reason).toBe('completed')
@@ -455,9 +457,10 @@ describe('Kernel (fix round 1)', () => {
     const untrusted = rows.filter((e) => e.type === 'tool/result' && e.trust === 'untrusted')
     expect(untrusted).toHaveLength(1)
     // The counter carries it too, so a resume that reads only op.state escalates the same way.
-    const counters = rows
-      .filter((e) => e.type === 'op.state' && e.data !== null)
-      .map((e) => (e.data as { taint: boolean }).taint)
+    const counters = ops
+      .writes()
+      .filter((w) => w.data !== null)
+      .map((w) => (w.data as { taint: boolean }).taint)
     expect(counters[0]).toBe(false)
     expect(counters.at(-1)).toBe(true)
     expect(counters.indexOf(true)).toBeGreaterThan(0)

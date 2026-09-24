@@ -44,7 +44,7 @@ describe('reducer', () => {
   it('folds registers, tombstones and lastSeq', () => {
     seq = 0
     const s = foldEvents([
-      ev('op.state', opstate(1), { register: 'op.state' }),
+      ev('x/core/note', {}, { ignorable: true }),
       ev('plan.items', { items: [{ id: 'a', text: 'do', status: 'todo' }] }, { register: 'plan.items' }),
       ev('artifact/job', { jobId: 'j1', status: 'queued' }, { register: 'artifact/job' }),
       ev(
@@ -52,10 +52,15 @@ describe('reducer', () => {
         { kind: 'memory', id: 'm1', title: 't', content: 'c', scope: 'local', version: 1, source: 'refine' },
         { register: 'harness/entry' },
       ),
-      ev('op.state', null, { register: 'op.state' }),
+      ev('x/core/note', {}, { ignorable: true }),
     ])
     expect(s.lastSeq).toBe(5)
-    expect(s.registers.opState.has('main')).toBe(false)
+    // The program counter is not a row: an old ledger that holds one does not fold.
+    expect(Object.keys(s.registers)).not.toContain('opState')
+    seq = 0
+    expect(() => foldEvents([ev('op.state', opstate(1), { register: 'op.state' })])).toThrow(
+      'E_UNKNOWN_EVENT',
+    )
     expect(s.registers.planItems.get('main')?.value.items[0]?.id).toBe('a')
     expect(s.registers.artifactJobs.get('j1')?.seq).toBe(3)
     // The kind/id pair is joined with the same separator the composite cache key uses.
@@ -385,7 +390,7 @@ describe('reducer', () => {
     ]
     const was = tables(s1)
     const now = tables(s2)
-    expect(was).toHaveLength(16)
+    expect(was).toHaveLength(15)
     expect(now.map(([n]) => n)).toEqual(was.map(([n]) => n))
     for (const [i, [name, table]] of was.entries()) {
       if (name === 'openStep' || name === 'lastStep') expect(now[i]?.[1], name).not.toBe(table)
@@ -403,7 +408,7 @@ describe('reducer', () => {
     seq = 0
     const live = foldEvents([
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
-      ev('op.state', opstate(1), { register: 'op.state' }),
+      ev('x/core/op-mark', { phase: 'checkpoint' }, { ignorable: true }),
       ev('step/start', { turn: 1, step: 1 }),
     ])
     const doomed = [

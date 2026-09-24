@@ -26,6 +26,7 @@ describe('the program counter a session steps from', () => {
     h.log.replaceRegisterCache(rows)
     expect(h.session.op()).toEqual(planted)
     expect(h.session.opSeq()).toBe(h.log.registerRow('op.state')?.seq)
-    expect(h.session.opSeq()).not.toBe(h.session.state.registers.opState.get('main')?.seq)
+    // The fold carries no program counter at all: there is no second source to fall back on.
+    expect(Object.keys(h.session.state.registers)).not.toContain('opState')
   })
 })

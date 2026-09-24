@@ -22,8 +22,11 @@ describe('session-v1 I2: every closed-set type has a data schema', () => {
   it('no type in the closed set falls through stage two any more', () => {
     expect(validateEvent(env('cost/ledger', { anything: 1 })).ok).toBe(false)
   })
+  it('the program counter is no longer a row type', () => {
+    expect(validateEvent({ ...env('op.state', null), register: 'op.state' }).ok).toBe(false)
+  })
   it('register tombstones are valid', () => {
-    for (const reg of ['op.state', 'plan.items', 'budget.state', 'artifact/job', 'inbox'])
+    for (const reg of ['plan.items', 'budget.state', 'artifact/job', 'inbox'])
       expect(validateEvent({ ...env(reg, null), register: reg }).ok, reg).toBe(true)
   })
   // The harness/entry cell is keyed by the kind/id pair read out of `data`, so a `data: null`

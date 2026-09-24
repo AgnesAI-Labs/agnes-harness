@@ -170,6 +170,13 @@ describe('web presentation controls', () => {
       '后台未能完成请求，请稍后重试。',
     )
     expect(errorNotice('normal error', id)).toBe('normal error')
+    // A session an older build wrote: said plainly, with no diagnostic wording to chase.
+    const legacy = errorNotice('SEMANTIC_REJECTED (-32011)', id, undefined, undefined, 'legacy-ledger-format')
+    expect(legacy).toBe('该会话由旧版本创建，当前版本无法打开，请新建会话。')
+    expect(legacy).not.toContain('诊断')
+    expect(errorNotice('SEMANTIC_REJECTED (-32011)', id, undefined, undefined, 'other')).toBe(
+      'SEMANTIC_REJECTED (-32011)',
+    )
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, true)).toContain('诊断记录未能保存')
     expect(errorNotice('INTERNAL_ERROR (-32603)', id, true)).not.toContain(id)
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'AUTH')).toBe(

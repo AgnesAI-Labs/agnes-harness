@@ -108,7 +108,7 @@ import {
 } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
-import { newOpState, type OpStateObj, opStateEvent, withPhase } from './op-state.js'
+import { newOpState, type OpStateObj, opMark, withPhase } from './op-state.js'
 import { continueParked } from './parked.js'
 import type { PresetView } from './preset.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
@@ -734,14 +734,19 @@ export class SessionImpl {
     const expected = this.opSeq()
     return this.locked(async () => {
       const seq = typeof next === 'function' ? this.opSeq() : expected
-      const computed = typeof next === 'function' ? next(this.op(), (this.lastSeq + 1) as Seq) : next
+      const cur = this.op()
+      const computed = typeof next === 'function' ? next(cur, (this.lastSeq + 1) as Seq) : next
       // Taint is carried onto the counter here rather than at each phase edge: it is derived from
       // the fold, and only the lock holder knows which rows have been folded into it. It cannot
       // leak into a turn that has not opened yet, because `laneTaint` reads false while the lane
       // has no open turn — and acceptInput's `turn/start` is still unwritten at this point.
       const state = computed && this.laneTaint() ? { ...computed, taint: true } : computed
-      const r = await this.d.log.append([...events, opStateEvent(this.lane, state, this.d.actor)], {
+      // The counter is a register cell committed with the batch. A transition with no row of its own
+      // still writes one, so the head, the cell's seq and the CAS all move on together.
+      const rows = events.length > 0 ? events : [opMark(cur, state, this.lane, this.d.actor)]
+      const r = await this.d.log.append(rows, {
         expectedRegisterSeq: { register: 'op.state', key: this.lane, seq },
+        opState: { lane: this.lane, data: state },
         ...opts,
       })
       return r.seqs

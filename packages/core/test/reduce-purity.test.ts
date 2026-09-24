@@ -102,8 +102,8 @@ describe('the relation check simulates a batch without touching the live state',
   it('leaves the tracker state as it was, whether the batch passes or is refused', () => {
     const tracker = new StateTracker()
     const all = [...toolHeavyLedger({ calls: 1001 })]
-    const head = all.filter((row) => row.seq <= 25_000)
-    const rest = all.filter((row) => row.seq > 25_000)
+    const head = all.filter((row) => row.seq <= 19_000)
+    const rest = all.filter((row) => row.seq > 19_000)
     tracker.apply(head)
     const state = tracker.state
     const before = encode(state)

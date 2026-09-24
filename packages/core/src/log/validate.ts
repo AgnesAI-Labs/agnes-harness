@@ -26,6 +26,9 @@ export function prepareEvents(
       id: input.id ?? ctx.ids.ulid(),
     } as PreparedEvent
     if (!isEventType(e.type) && e.ignorable !== true) throw new CoreError('E_UNKNOWN_EVENT', e.type)
+    // The program counter is a register cell committed beside the rows; no row may write it.
+    if (e.register === 'op.state')
+      throw new CoreError('E_ENVELOPE', 'the op.state register is not written by rows')
     // The envelope schema requires seq >= 1, but storage does not assign one until the commit
     // transaction. Validate a probe carrying the smallest legal seq; the row handed back has no
     // seq at all, so the probe value cannot be mistaken for the sequence it is written at.

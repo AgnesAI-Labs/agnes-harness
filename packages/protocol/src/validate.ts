@@ -66,6 +66,11 @@ export function toRpcError(errors: ValidationError[]): RpcError {
   })
 }
 
+/** The program counter is a register cell, not a row, so its value is checked on its own. */
+export function validateOpState(x: unknown): ValidationResult<S.OpState> {
+  return validateAgainst<S.OpState>(S.OpState, x)
+}
+
 export function validateToolDef(x: unknown): ValidationResult<ToolDef> {
   return validateAgainst<ToolDef>(ToolDefSchema, x)
 }

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { toRpcError, validateEvent } from '../src/index.js'
+import { toRpcError, validateEvent, validateOpState } from '../src/index.js'
 // DATA_DEFS is not on the root export surface — internal pieces of the generated module are not
 // spread onto `@agnes/protocol`'s root export — so tests that need it import the implementation
 // module directly.
@@ -115,7 +115,7 @@ describe('validateEvent', () => {
       taint: false,
       phase: { kind: 'deferred', jobs: [{ jobId: 'j1' }], resumeAfter: null },
     }
-    const r = validateEvent({ ...base, type: 'op.state', data: validOpState })
+    const r = validateOpState(validOpState)
     expect(r.ok).toBe(false)
     // Swapping in an element that also carries toolUseId should flip this to passing, corroborating
     // that the failure above really was the missing toolUseId
@@ -127,12 +127,12 @@ describe('validateEvent', () => {
         resumeAfter: null,
       },
     }
-    expect(validateEvent({ ...base, type: 'op.state', data: fixed }).ok).toBe(true)
+    expect(validateOpState(fixed).ok).toBe(true)
     const badCallSeq = {
       ...fixed,
       phase: { ...fixed.phase, jobs: [{ jobId: 'j1', toolUseId: 'tu1', callSeq: 0 }] },
     }
-    expect(validateEvent({ ...base, type: 'op.state', data: badCallSeq }).ok).toBe(false)
+    expect(validateOpState(badCallSeq).ok).toBe(false)
   })
 
   it('C7: SessionStart with presetId/resolvedPresetHash/platform is valid', () => {

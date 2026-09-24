@@ -43,7 +43,7 @@ export function storageContract(
     const s = open()
     await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
     const record = {
-      version: 2 as const,
+      version: 3 as const,
       seq: 1,
       payload: '{"lastSeq":1}',
       checksum: 'a'.repeat(64),

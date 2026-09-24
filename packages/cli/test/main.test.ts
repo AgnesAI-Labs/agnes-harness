@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { resolveDaemonScope } from '@agnes/daemon'
 import { defaultProcessIdentity } from '@agnes/host'
-import { createTestHost } from '@agnes/host/testkit'
+import { appendRowAsOlderBuild, createTestHost } from '@agnes/host/testkit'
 import { ResourceOperationFailure } from '@agnes/resource-control-cli'
 import { JsonRpcError, TransportClosed } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -151,6 +151,15 @@ describe('main', () => {
       }),
     ).toBe(
       'PROVIDER_UNCONFIGURED: no model provider is configured for this profile; run `agh config` to add one.',
+    )
+    expect(
+      safeExpectedSessionRpcFailureLine({
+        kind: 'json-rpc',
+        code: -32011,
+        data: { code: 'LEGACY_LEDGER_FORMAT', reason: 'legacy-ledger-format' },
+      }),
+    ).toBe(
+      'LEGACY_LEDGER_FORMAT: this session was created by an older version and cannot be opened by this one; start a new session.',
     )
     expect(
       safeExpectedSessionRpcFailureLine({
@@ -518,6 +527,31 @@ describe('main', () => {
     expect(h.out()).toBe('main says hi\n')
     expect(h.err()).toBe('')
   })
+
+  it.each(['--resume', 'resume'])(
+    'refuses %s of a session an older build wrote with one plain line',
+    async (form) => {
+      const dir = scratch()
+      const first = await bootLocal(parseArgs([]), testDeps(dir))
+      const made = await first.client.session.new({ cwd: dir })
+      const sessionId = made.id
+      await first.close()
+      await appendRowAsOlderBuild(dir, sessionId, (last) => ({
+        ...last,
+        type: 'op.state',
+        register: 'op.state',
+        lane: 'main',
+        data: null,
+      }))
+      const h = harness(dir)
+      const argv =
+        form === 'resume' ? ['resume', sessionId, '-p', 'go on'] : ['--resume', sessionId, '-p', 'go on']
+      expect(await main(argv, h.io, h.boot)).not.toBe(0)
+      expect(h.err()).toBe(
+        'LEGACY_LEDGER_FORMAT: this session was created by an older version and cannot be opened by this one; start a new session.\n',
+      )
+    },
+  )
 
   // `agnes daemon status` no longer reads a home variable itself; the daemon scope resolves it the
   // same way every other process does. Proven with a live owner record planted in one home only: the
