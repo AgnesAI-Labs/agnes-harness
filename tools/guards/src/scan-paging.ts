@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { createScanner } from 'typescript/unstable/ast/scanner'
 import { DEFAULT_EXCLUDE_DIRS, isTestFile, listSourceFiles } from './repo.js'
 
@@ -174,11 +174,13 @@ export function findings(text: string, file: string): ScanFinding[] {
 }
 
 /** Package source and testkits: the code other packages run, which a test tree is not. */
+const repositoryPath = (root: string, file: string): string => relative(root, file).split(sep).join('/')
+
 export function scannedFiles(root: string): string[] {
   const exclude = [...DEFAULT_EXCLUDE_DIRS, 'fixtures', 'test']
   return listSourceFiles(join(root, 'packages'), { excludeDirs: exclude })
     .filter((f) => !isTestFile(f) && !f.endsWith('.d.ts'))
-    .filter((f) => /\/packages\/(.+\/)?(src|testkit)\//.test(f))
+    .filter((f) => /^packages\/(.+\/)?(src|testkit)\//.test(repositoryPath(root, f)))
 }
 
 export function scanRepo(root: string): { calls: number; findings: ScanFinding[] } {
@@ -187,7 +189,7 @@ export function scanRepo(root: string): { calls: number; findings: ScanFinding[]
   for (const file of scannedFiles(root)) {
     const text = readFileSync(file, 'utf8')
     calls += scanCalls(text).length
-    out.push(...findings(text, relative(root, file)))
+    out.push(...findings(text, repositoryPath(root, file)))
   }
   return { calls, findings: out }
 }
