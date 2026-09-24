@@ -1,0 +1,39 @@
+{
+  "id": "dingtalk",
+  "displayName": "钉钉",
+  "version": "0.1.0",
+  "connection": {
+    "modes": ["stream"],
+    "default": "stream"
+  },
+  "capabilities": {
+    "edit": true,
+    "card": true,
+    "thread": false,
+    "attachment": true,
+    "reactions": false,
+    "typing": false,
+    "voice": true
+  },
+  "credentials": {
+    "required": ["clientId", "clientSecret"],
+    "optional": ["robotCode", "agentId"],
+    "exposes": ["staffId", "unionId", "conversationId", "conversationType", "senderNick"]
+  },
+  "limits": {
+    "textChars": 20000,
+    "cardBytes": 65536,
+    "editWindowMs": 0,
+    "rate": {
+      "perChatPerMin": 20,
+      "perAccountPerSec": 20
+    }
+  },
+  "events": {
+    "supported": ["message", "cardAction", "groupJoin"]
+  },
+  "directory": {
+    "supported": true,
+    "unit": "dept"
+  }
+}

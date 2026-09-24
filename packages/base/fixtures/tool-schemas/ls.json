@@ -1,0 +1,16 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "path": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "limit": {
+      "minimum": 1,
+      "maximum": 5000,
+      "type": "integer"
+    }
+  }
+}

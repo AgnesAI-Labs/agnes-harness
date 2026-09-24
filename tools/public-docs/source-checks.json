@@ -1,0 +1,169 @@
+[
+  {
+    "path": "package.json",
+    "includes": ["pnpm@10.34.5", ">=24.10"]
+  },
+  {
+    "path": "packages/cli/package.json",
+    "includes": ["build:local", "dist/local/agnes.mjs"]
+  },
+  {
+    "path": "packages/cli/src/args.ts",
+    "includes": ["--continue", "--resume", "--model expects <slot>=<route>/<model>"]
+  },
+  {
+    "path": "packages/cli/src/commands/package.ts",
+    "includes": ["case 'rollback'", "case 'trust'"]
+  },
+  {
+    "path": "packages/host/src/configuration.ts",
+    "includes": ["configuration.json", "defaultAccountId"]
+  },
+  {
+    "path": "packages/host/src/ext-host/row-services.ts",
+    "includes": ["registerRow(def", "ctx.services.register(${def.name})"]
+  },
+  {
+    "path": "packages/resource-control-runtime/src/skills-cordis.ts",
+    "includes": ["registerProvider", "register(skill:"]
+  },
+  {
+    "path": "packages/worker-runtime/src/mcp-server-rows.ts",
+    "includes": ["mcpServerRowsFromDefinitions", "oauth secretBinding is not supported"]
+  },
+  {
+    "path": "packages/package-manager/src/plugin-manifest.ts",
+    "includes": ["web: is reserved", "'in-process' | 'isolated'"]
+  },
+  {
+    "path": "packages/host/src/runtime-target-assembler.ts",
+    "includes": ["web:"]
+  },
+  {
+    "path": "packages/cordis-loader/src/entry-tree.ts",
+    "includes": ["transaction"]
+  },
+  {
+    "path": "packages/web-client/src/client-module.ts",
+    "includes": ["client service requires an active session", "config.services?.includes(name)"]
+  },
+  {
+    "path": "examples/packages/hot-tool-plugin/index.mjs",
+    "includes": ["demo_text_stats", "ctx.extension()"]
+  },
+  {
+    "path": "examples/packages/client-service-panel/v1/package.json",
+    "includes": ["\"plugins\"", "\"runtime\""]
+  },
+  {
+    "path": "packages/package-manager/src/manager.ts",
+    "includes": ["next.state = { ...next.state, trusted: null, enabled: false }"]
+  },
+  {
+    "path": "packages/cli/tools/build-local.ts",
+    "includes": ["!isAbsolute(args[1]", "Expected --output-dir with an absolute directory"]
+  },
+  {
+    "path": "packages/web/src/app.ts",
+    "includes": ["from '@agnes/sdk/browser'", "transport: { kind: 'ws'", "auth: { kind: 'local' }"]
+  },
+  {
+    "path": "packages/protocol/schema/resource-control.json",
+    "includes": [
+      "\"SkillRemoveParams\"",
+      "\"SkillPrioritySetParams\"",
+      "\"expectedPriority\"",
+      "\"maximum\": 500"
+    ]
+  },
+  {
+    "path": "packages/resource-control-runtime/src/skills.ts",
+    "includes": [
+      "b.priority - a.priority",
+      "state.control.priorities?.[candidate.resourceId]",
+      "const skillNameKey = (name: string) => name.trim().toLocaleLowerCase('en-US')"
+    ]
+  },
+  {
+    "path": "packages/resource-control-store/src/skills.ts",
+    "includes": [
+      "SKILL_DELETE_NOT_CANCELLABLE",
+      "SKILL_SOURCE_MANAGED",
+      "SKILL_REMOVAL_PENDING",
+      "SKILL_DELETE_PREFLIGHT_FAILED",
+      "journal.priorities[target] ?? defaultPriority(source)"
+    ]
+  },
+  {
+    "path": "packages/resource-control-web/src/admin.ts",
+    "includes": ["永久删除", "同名覆盖优先级（50–500，越大越优先）", "恢复默认优先级"]
+  },
+  {
+    "path": "packages/resource-control-worker/src/skill-remove.ts",
+    "includes": ["deleteSkillEntrySync(node)", "if (input.validateOnly) return", "stat.nlink !== 1"]
+  },
+  {
+    "path": "packages/resource-control-client-node/src/resource-control.ts",
+    "includes": [
+      "prioritySet(params: SkillPrioritySetParams)",
+      "client.call('_agnes/v1/skills.remove', params)"
+    ]
+  },
+  {
+    "path": "packages/web-server/src/server.ts",
+    "includes": ["posix.normalize(pathname)"]
+  },
+  {
+    "path": "packages/package-manager/src/inspect.ts",
+    "includes": ["metadata.clientDescriptors", "parseAgnesPluginEntries"]
+  },
+  {
+    "path": "packages/worker-runtime/src/main.ts",
+    "includes": [
+      "workerKind === 'session' ? { mcpRows: true }",
+      "createMcpRowRuntime({",
+      "await mcpRows.apply(bootResources.mcpEntries)"
+    ]
+  },
+  {
+    "path": "packages/worker-runtime/src/commands.ts",
+    "includes": ["await slot.mcpRows?.apply(next?.mcpEntries ?? [])"]
+  },
+  {
+    "path": "packages/worker-runtime/src/mcp-row-runtime.ts",
+    "includes": [
+      "mcpServerRowsFromDefinitions(mounting",
+      "await deps.host.extensionRows.apply([...others, ...prepared])",
+      "FIRST_ATTEMPT_TIMEOUT_MS = 20_000"
+    ]
+  },
+  {
+    "path": "packages/worker-runtime/src/mcp-server-rows.ts",
+    "includes": [
+      "entry.desired !== 'enabled'",
+      "entry.trust !== 'trusted'",
+      "definition.secretBinding.kind === 'oauth'"
+    ]
+  },
+  {
+    "path": "packages/resource-control-worker/src/runtime-bootstrap.ts",
+    "includes": ["const managedMcp = input.mcpRows", "mcpEntries: Object.freeze"]
+  },
+  {
+    "path": "packages/base/src/ecosystem.ts",
+    "includes": ["'agnes/mcp-search'", "mcpCatalogHubFor(init)"],
+    "excludes": ["'agnes/mcp-client'"]
+  },
+  {
+    "path": "packages/daemon/src/supervisor/socket-paths.ts",
+    "includes": [
+      "UNIX_SOCKET_PATH_BYTES = 103",
+      "agnes-${uid}-${hash}",
+      "stat.uid !== uid || (stat.mode & 0o7777) !== 0o700"
+    ]
+  },
+  {
+    "path": "packages/extension-api/src/plugin-extension.ts",
+    "includes": ["registerHook: ExtensionAPI['registerHook']", "registerTool: ExtensionAPI['registerTool']"]
+  }
+]

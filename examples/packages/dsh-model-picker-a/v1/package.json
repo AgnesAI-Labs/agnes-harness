@@ -1,0 +1,23 @@
+{
+  "name": "@agnes-examples/dsh-model-picker-a",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:examples/dsh-model-picker-a/main",
+        "runtime": "in-process"
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:examples/dsh-model-picker-a/main",
+        "path": "./extensions/main/agnes.client.json"
+      }
+    ]
+  },
+  "exports": "./index.mjs"
+}

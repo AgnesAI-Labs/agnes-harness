@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/brand-mark.png" type="image/png" />
+    <meta id="agnes-config" data-ws="__AGNES_WS_URL__" />
+    <title>Agnes Harness</title>
+    <!-- 阻塞式（非 module）：必须在首次绘制前定好主题，否则会闪一帧浅色。
+         CSP 为 script-src 'self' 且无 unsafe-inline，内联脚本会被拦。 -->
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+    <!-- WC5：平台共享单例 import map。说明符集合构建期固定；本脚本体被 web-server 以 SHA-256
+         计入 CSP script-src（严格哈希，不放宽策略）。手工修改本块后必须重新构建使哈希一致。 -->
+    <script type="importmap">
+{
+  "imports": {
+    "react": "/vendor/react.js",
+    "react/jsx-runtime": "/vendor/react-jsx-runtime.js",
+    "react-dom": "/vendor/react-dom.js",
+    "react-dom/client": "/vendor/react-dom-client.js",
+    "@agnes/cordis": "/vendor/cordis.js",
+    "@agnes/web-client": "/vendor/web-client.js"
+  }
+}
+    </script>
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body data-agnes-region="app">
+    <a class="skip-link" href="#main-content">跳至主要内容</a>
+    <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭导航"></button>
+
+    <aside class="sidebar" data-agnes-region="sidebar" aria-label="会话导航"></aside>
+
+    <main id="main-content" tabindex="-1">
+      <header class="topbar" data-agnes-region="topbar">
+      </header>
+
+      <p id="notice" role="alert"></p>
+      <div class="workbench-split">
+      <div class="session-tabs-bar">
+      <div class="session-tabs" role="tablist" aria-label="会话视图">
+        <button type="button" id="view-chat" role="tab" aria-selected="true" aria-controls="conversation-shell" tabindex="0">对话</button>
+        <button type="button" id="view-trace" role="tab" aria-selected="false" aria-controls="trace-panel" tabindex="-1">轨迹</button>
+      </div>
+      <button type="button" id="report-problem" class="icon-button" aria-label="报告问题" title="报告问题"><svg class="icon icon-fill" data-agnes-region="icon" viewBox="0 0 20 20" aria-hidden="true"><g transform="translate(1.8 2.25) scale(0.965)"><path d="M16.2496 8.24975C16.4584 8.24975 16.6354 8.32294 16.7809 8.46886C16.9273 8.61431 17 8.79139 17 9.00011C17 9.20789 16.9268 9.38545 16.7809 9.53136C16.712 9.60215 16.6293 9.65807 16.5379 9.69568C16.4465 9.73328 16.3484 9.75177 16.2496 9.75H14.2498V10.4999C14.2498 11.3957 14.0208 12.2292 13.5622 12.9998L15.2811 14.7187C15.427 14.8647 15.4998 15.0417 15.4998 15.25C15.4998 15.4582 15.427 15.6353 15.2811 15.7812C15.2122 15.852 15.1295 15.908 15.0381 15.9456C14.9468 15.9832 14.8487 16.0017 14.7499 15.9999C14.5416 15.9999 14.3645 15.9272 14.2186 15.7812L12.6249 14.1875C11.6663 15.0625 10.5415 15.5003 9.24994 15.5003H7.75017C6.45818 15.5003 5.33336 15.0625 4.37475 14.1875L2.78101 15.7812C2.71209 15.852 2.62939 15.908 2.53802 15.9456C2.44666 15.9832 2.34855 16.0017 2.24977 15.9999C2.04199 15.9999 1.86444 15.9272 1.71852 15.7812C1.64773 15.7123 1.59181 15.6296 1.55421 15.5383C1.51661 15.4469 1.49812 15.3488 1.49988 15.25C1.49988 15.0417 1.57308 14.8647 1.71852 14.7187L3.4374 12.9998C2.98351 12.2453 2.74567 11.3805 2.74985 10.4999V9.75H0.749999C0.541751 9.75 0.364669 9.67681 0.218753 9.53136C0.147964 9.46244 0.0920443 9.37974 0.0544416 9.28837C0.0168389 9.197 -0.00164984 9.0989 0.000115494 9.00011C0.000115494 8.79139 0.0728372 8.61431 0.218753 8.46886C0.287639 8.39799 0.370318 8.34198 0.461687 8.30429C0.553056 8.26661 0.651178 8.24804 0.749999 8.24975H2.74985V5.31252L1.46919 4.03137C1.3984 3.96245 1.34248 3.87975 1.30488 3.78838C1.26727 3.69701 1.24879 3.59891 1.25055 3.50012C1.25055 3.2914 1.32327 3.11432 1.46919 2.96887C1.53808 2.898 1.62075 2.84199 1.71212 2.8043C1.80349 2.76662 1.90161 2.74805 2.00044 2.74976C2.20868 2.74976 2.38577 2.82295 2.53168 2.96887L3.81281 4.25001H4.28173C4.28173 3.08362 4.69822 2.08345 5.53169 1.24998C6.36516 0.416501 7.36484 0 8.5317 0C9.69808 0 10.6982 0.416501 11.5317 1.24998C12.3652 2.08345 12.7817 3.08315 12.7817 4.25001H13.1878L14.4689 2.96887C14.5378 2.898 14.6205 2.84199 14.7118 2.8043C14.8032 2.76662 14.9013 2.74805 15.0002 2.74976C15.2089 2.74976 15.386 2.82295 15.5314 2.96887C15.6778 3.11432 15.7505 3.2914 15.7505 3.50012C15.7505 3.7079 15.6773 3.88546 15.5314 4.03137L14.2503 5.31252V8.24975H16.2496ZM10.4687 2.31248C9.9271 1.77084 9.28111 1.50025 8.53122 1.50025C7.78134 1.50025 7.13534 1.77084 6.59371 2.31248C6.05207 2.85412 5.78149 3.50012 5.78149 4.25001H11.281C11.281 3.50012 11.0104 2.85412 10.4687 2.31248ZM9.24994 14C10.2085 14 11.0312 13.6562 11.7187 12.9687C12.4063 12.2811 12.75 11.458 12.75 10.4999V5.7498H4.25009V10.5004C4.25009 11.458 4.59386 12.2811 5.28141 12.9687C5.96849 13.6562 6.79157 14 7.75017 14V8.12508C7.75017 7.8748 7.87484 7.75014 8.12512 7.75014H8.875C9.12528 7.75014 9.24994 7.8748 9.24994 8.12508V14Z"/></g></svg></button>
+      </div>
+      <div id="conversation-shell" class="conversation-shell" role="tabpanel" aria-labelledby="view-chat" data-agnes-region="conversation">
+      </div>
+      <aside id="trace-panel" role="tabpanel" aria-labelledby="view-trace" data-agnes-region="trace" hidden aria-label="运行轨迹"></aside>
+      <aside id="rightbar-panel" data-agnes-region="rightbar" hidden aria-label="扩展面板"></aside>
+      </div>
+
+      <section id="approval" data-agnes-region="approval" hidden aria-live="polite"></section>
+      <div id="composer-mount"></div>
+    </main>
+
+    <dialog data-agnes-region="dialog" id="new-session" aria-labelledby="new-session-title">
+      <form id="new-session-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="dialog-kicker">新会话</p>
+            <h2 id="new-session-title">选择工作区</h2>
+          </div>
+        </div>
+        <p class="dialog-intro">选择 Agnes 执行任务的目录。已有文件不会被移动或复制。</p>
+        <fieldset id="workspace-options" class="workspace-options">
+          <legend class="visually-hidden">最近工作区</legend>
+          <div id="workspace-option-items" class="workspace-option-items"></div>
+        </fieldset>
+        <div class="workspace-picker-action">
+          <button id="workspace-pick" class="primary-button" type="button" disabled>
+            <svg class="icon icon-folder" data-agnes-region="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.37012 2.8418C5.52719 2.84178 5.68146 2.88387 5.81641 2.96289C5.95148 3.04201 6.06232 3.15581 6.13672 3.29199L6.74414 4.40137H12.7383C13.2166 4.40139 13.6084 4.78249 13.6084 5.25391V12.6631C13.6082 13.1343 13.2165 13.5146 12.7383 13.5146H2.7627C2.28458 13.5146 1.89277 13.1343 1.89258 12.6631V3.69434C1.89258 3.22297 2.28447 2.84189 2.7627 2.8418H5.37012ZM2.83496 11.4932V12.5908H12.667V11.5645H12.666V8.00488L2.84961 7.99121L2.83496 11.4932ZM2.83496 7.06738H12.666V5.32617H6.18066L6.16016 5.28809L5.32715 3.76562H2.83496V7.06738Z" /></svg>
+            <span>选择文件夹…</span>
+          </button>
+          <p id="workspace-picker-state" class="field-hint" aria-live="polite">正在检查系统目录选择器…</p>
+        </div>
+        <details id="workspace-manual" class="workspace-manual">
+          <summary>手动输入路径</summary>
+          <label class="form-field" for="new-session-cwd">目录路径<input id="new-session-cwd" value="" autocomplete="off" spellcheck="false" placeholder="项目文件夹的完整路径" /></label>
+          <p id="cwd-hint" class="field-hint">请输入运行 agnes serve 的机器可访问的绝对目录路径。</p>
+        </details>
+        <p id="new-session-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button id="new-session-cancel" class="secondary-button" type="button">取消</button>
+          <button id="new-session-create" class="primary-button" type="submit">使用此工作区</button>
+        </div>
+      </form>
+
+    <!-- 账户详情/新增：弹窗形式（不再放在账户列表下方）。 -->
+    </dialog>
+
+
+    <dialog data-agnes-region="dialog" id="config" aria-labelledby="config-title"></dialog>
+
+    <dialog data-agnes-region="dialog" id="plugin-detail" class="plugin-detail" aria-label="插件详情"></dialog>
+    <dialog data-agnes-region="dialog" id="resource-detail" class="plugin-detail" aria-label="资源详情"></dialog>
+
+    <!-- 三个对话框必须放在 #config-form 之外。HTML 不允许 form 嵌套，而 #source-form / #mcp-form
+         是真实表单；嵌进设置表单会让内层 <form> 开始标签被忽略、它的 </form> 提前关掉 #config-form，
+         而后者正是设置弹窗的 grid 容器。独立页的同一份标记本来就在 body 层级，两边 id 契约由
+         packages/web/test/admin-pane-contract.test.ts 断言。 -->
+    <dialog data-agnes-region="dialog" id="source-dialog" aria-labelledby="source-dialog-title">
+      <form id="source-form" class="plugin-dialog-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">安装前检查</p>
+            <h2 id="source-dialog-title">从来源检查插件</h2>
+          </div>
+        </div>
+        <p class="dialog-intro">检查不会安装或启用插件。确认预览中的完整性摘要后，才能继续安装。</p>
+        <label class="form-field" for="source-type">来源类型
+          <select id="source-type">
+            <option value="npm">npm</option>
+            <option value="file">本地相对路径</option>
+            <option value="workspace">工作区扩展</option>
+            <option value="git">固定 Git 提交</option>
+          </select>
+        </label>
+        <label class="form-field" for="source-ref">来源引用
+          <input id="source-ref" required autocomplete="off" spellcheck="false" placeholder="npm:scope/package@1.2.3" />
+        </label>
+        <p class="field-hint">来源格式由后台严格校验；不要在这里粘贴凭据。</p>
+        <p id="source-error" class="plugin-form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button id="source-cancel" class="secondary-button" type="button">取消</button>
+          <button class="primary-button" type="submit">检查内容</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog data-agnes-region="dialog" id="plugin-confirm" aria-labelledby="plugin-confirm-title">
+      <div class="plugin-dialog-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">需要确认</p>
+            <h2 id="plugin-confirm-title">确认操作</h2>
+          </div>
+        </div>
+        <p id="plugin-confirm-description" class="dialog-intro"></p>
+        <div id="plugin-confirm-preview" class="confirm-facts" hidden></div>
+        <div class="dialog-actions">
+          <button id="plugin-confirm-cancel" class="secondary-button" type="button">取消</button>
+          <button id="plugin-confirm-action" class="primary-button" type="button">确认</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog data-agnes-region="dialog" id="mcp-dialog" aria-labelledby="mcp-dialog-title">
+      <form id="mcp-form" class="plugin-dialog-form">
+        <div class="dialog-heading"><div><p class="eyebrow">受控连接</p><h2 id="mcp-dialog-title">添加 MCP 服务</h2></div></div>
+        <p class="dialog-intro">只可填写受控 transport 和已有 <code>secret://</code> 引用。密钥值不会进入本页。</p>
+        <label class="form-field">服务 ID<input id="mcp-id" required maxlength="128" autocomplete="off" placeholder="github" /></label>
+        <label class="form-field">显示名称<input id="mcp-name" required maxlength="128" autocomplete="off" placeholder="GitHub" /></label>
+        <label class="form-field">传输<select id="mcp-transport"><option value="stdio">本地 stdio</option><option value="http">HTTPS / 本地 HTTP</option></select></label>
+        <label id="mcp-executable-row" class="form-field">可执行文件<input id="mcp-executable" autocomplete="off" placeholder="mcp-github" /></label>
+        <label id="mcp-args-row" class="form-field">参数（每行一个）<textarea id="mcp-args" rows="3" spellcheck="false"></textarea></label>
+        <label id="mcp-url-row" class="form-field" hidden>HTTPS 或本地 loopback 地址<input id="mcp-url" type="url" autocomplete="off" placeholder="https://example.com/mcp" /></label>
+        <label class="form-field">凭据方式<select id="mcp-secret-kind"><option value="none">无凭据</option><option value="stdio-env">stdio 环境变量</option><option value="http-bearer">HTTP Bearer</option><option value="http-header">HTTP API Key</option></select></label>
+        <label id="mcp-header-row" class="form-field" hidden>HTTP Header<select id="mcp-header-name"><option value="x-api-key">x-api-key</option><option value="x-api-token">x-api-token</option></select></label>
+        <label id="mcp-secret-row" class="form-field">SecretRef / 环境变量映射<textarea id="mcp-secret" rows="3" spellcheck="false" placeholder="secret://namespace/name 或 TOKEN=secret://namespace/name"></textarea></label>
+        <label class="form-field">允许工具（每行一个，可留空）<textarea id="mcp-tools" rows="3" spellcheck="false"></textarea></label>
+        <p id="mcp-error" class="plugin-form-error" role="alert"></p>
+        <div class="dialog-actions"><button id="mcp-cancel" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit">创建并等待确认</button></div>
+      </form>
+    </dialog>
+
+    <!-- 共享确认弹窗（@agnes/web-admin-frame 的 createConfirmController）：技能与 MCP 页用它替代
+         原生 window.confirm，两页的确认交互与事实预览因此一致。同一份标记也在两个独立页里。 -->
+    <dialog data-agnes-region="dialog" id="admin-confirm" aria-labelledby="admin-confirm-title">
+      <div class="plugin-dialog-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">需要确认</p>
+            <h2 id="admin-confirm-title">确认操作</h2>
+          </div>
+        </div>
+        <p id="admin-confirm-description" class="dialog-intro"></p>
+        <div id="admin-confirm-preview" class="confirm-facts" hidden></div>
+        <div class="dialog-actions">
+          <button id="admin-confirm-cancel" class="secondary-button" type="button">取消</button>
+          <button id="admin-confirm-action" class="primary-button" type="button">确认</button>
+        </div>
+      </div>
+    </dialog>
+  </body>
+</html>

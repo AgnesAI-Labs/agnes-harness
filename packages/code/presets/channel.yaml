@@ -1,0 +1,15 @@
+# The chat-channel recipe: the operator is in a group chat, on a phone, reading one message at a
+# time. It changes how the agent writes and how an approval reaches a human, and nothing else.
+name: channel
+extends: standard
+# daemon alone: a channel adapter is a long-lived process, never a terminal and never an editor.
+surfaces: [daemon]
+# channel-style goes last, so it qualifies the doctrine above it rather than being qualified by it.
+model: { prompt_sections: [persona, environment, coding-doctrine, channel-style] }
+# The approval becomes a card in the conversation rather than a prompt on a terminal. Parking is
+# what makes that possible: the turn ends, the card waits, and whoever is in the channel answers it.
+approval: { on_unavailable: park }
+ext_ui: { input: prompt, unattended: decline }
+# Narrower fan-out than standard: every subagent's progress lands in the same conversation, and four
+# of them at once is a channel nobody can read.
+subagent: { max_depth: 1, max_fan_out: 2 }

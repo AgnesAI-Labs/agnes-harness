@@ -1,0 +1,22 @@
+channel: dingtalk
+# Replace this with unix: followed by socketPath from the running daemon's discovery.json.
+connect: 'unix:\\.\pipe\REPLACE_WITH_DISCOVERED_PIPE'
+localDaemon:
+  home: 'D:\Agnes\home'
+  profile: local-dev
+  # Set dataDir only when the daemon uses an explicitly selected data directory.
+tenant: example-tenant
+agent: assistant
+# This file must already have a private Windows DACL, readable by the running account.
+credentialsFile: 'D:\Agnes\private\dingtalk.env'
+allowFrom: [] # Empty allows all senders; otherwise list permitted staff IDs.
+requireMention: true
+ackReaction: group-mentions
+workspace: 'D:\Agnes\workspace'
+outbound:
+  costLine: true
+directory:
+  sync: every 15m
+healthz:
+  enabled: true
+  port: 9877

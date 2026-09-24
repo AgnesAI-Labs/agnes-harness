@@ -1,0 +1,137 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "tsconfig.config.json"
+    },
+    {
+      "path": "packages/cosmokit"
+    },
+    {
+      "path": "packages/cordis"
+    },
+    {
+      "path": "packages/cordis-loader"
+    },
+    {
+      "path": "packages/plugin-runtime"
+    },
+    {
+      "path": "packages/web-slots"
+    },
+    {
+      "path": "packages/web-units"
+    },
+    {
+      "path": "packages/web-client"
+    },
+    {
+      "path": "packages/protocol"
+    },
+    {
+      "path": "packages/protocol-validation"
+    },
+    {
+      "path": "packages/package-admin-client-node"
+    },
+    {
+      "path": "packages/error-sanitization"
+    },
+    {
+      "path": "packages/package-isolation"
+    },
+    {
+      "path": "packages/web-server"
+    },
+    {
+      "path": "packages/web-admin-frame"
+    },
+    {
+      "path": "packages/resource-control-contracts"
+    },
+    {
+      "path": "packages/resource-control-store"
+    },
+    {
+      "path": "packages/resource-control-runtime"
+    },
+    {
+      "path": "packages/resource-control-web"
+    },
+    {
+      "path": "packages/resource-control-client-node"
+    },
+    {
+      "path": "packages/resource-control-cli"
+    },
+    {
+      "path": "packages/cli-tui"
+    },
+    {
+      "path": "packages/cli-launch"
+    },
+    {
+      "path": "packages/resource-control-worker"
+    },
+    {
+      "path": "packages/worker-runtime"
+    },
+    {
+      "path": "packages/resource-control-daemon"
+    },
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/extension-api"
+    },
+    {
+      "path": "packages/package-manager"
+    },
+    {
+      "path": "packages/ai"
+    },
+    {
+      "path": "packages/host"
+    },
+    {
+      "path": "packages/sdk"
+    },
+    {
+      "path": "packages/cli"
+    },
+    {
+      "path": "packages/daemon"
+    },
+    {
+      "path": "packages/channels"
+    },
+    {
+      "path": "packages/bridges"
+    },
+    {
+      "path": "packages/mcp-transport-health"
+    },
+    {
+      "path": "packages/base"
+    },
+    {
+      "path": "packages/code"
+    },
+    {
+      "path": "packages/runtime-python"
+    },
+    {
+      "path": "packages/web"
+    },
+    {
+      "path": "tools/guards"
+    },
+    {
+      "path": "packages/system-node"
+    },
+    {
+      "path": "packages/sandbox-remote"
+    }
+  ]
+}

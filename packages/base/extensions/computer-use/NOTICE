@@ -1,0 +1,143 @@
+Computer Use wrapper attribution
+================================
+
+This directory contains a TypeScript adaptation of Computer Use behavior from:
+
+  Project: NousResearch/hermes-agent
+  Source: https://github.com/NousResearch/hermes-agent
+  Fixed commit: fb56a7e06dde62e9f645ff744c82cb47b60c469e
+  License: MIT
+  Copyright (c) 2025 Nous Research
+
+Source-to-file mapping
+----------------------
+
+  tools/computer_use/schema.py
+    -> src/schema.ts
+    -> test/schema.test.ts
+       Single computer_use schema, action discriminator, capture/input/delivery and
+       capture-after fields. The fixed source enum contains 14 actions; Agnes does
+       not invent a fifteenth action despite an erroneous count in an execution-plan
+       checklist.
+
+  tools/computer_use/tool.py
+    -> src/tool.ts, src/safety.ts, src/result.ts
+    -> test/tool.test.ts, test/safety.test.ts, test/result.test.ts
+       Dispatch, safety blocks, sticky target guard, screenshot deduplication,
+       capture-after, verdicts, 100-element/40-line/120-character limits and 8x8
+       minimum image handling.
+
+  tools/computer_use/backend.py
+    -> src/backend.ts
+    -> test/tool.test.ts, test/result.test.ts
+       Typed capture, element, action, image and backend/provider contracts.
+
+  tools/computer_use/cua_backend.py
+  tools/computer_use/cua_backend_capture.py
+  tools/computer_use/cua_backend_input.py
+  tools/computer_use/cua_backend_daemon.py
+    -> src/cua-backend.ts, src/policy.ts
+    -> test/tool.test.ts, test/safety.test.ts, test/policy.test.ts
+       Sticky exact target, opaque snapshot token binding, input translation,
+       scroll clamp, foreground/background arguments and immutable standard,
+       bounded/session-unrestricted runtime-mode evidence. Process, transport,
+       capability-manifest enforcement, platform capture and real driver integration
+       remain Host-owned.
+
+  tools/computer_use/cua_backend_parse.py
+    -> src/parse.ts
+    -> test/result.test.ts, test/tool.test.ts
+       MCP 1.x/2.x snake_case/camelCase envelopes, structuredContent precedence,
+       versioned text element fallback, placeholder identifiers, zero bounds,
+       typed frames, Host-normalized image references and action verdict parsing.
+
+  skills/autonomous-ai-agents/computer-use/SKILL.md
+    -> skill/SKILL.md
+    -> test/skill.test.ts
+       Agnes wrapper workflow guidance: capture -> fresh element -> verify,
+       background verdict ladder, 14 wrapper actions, platform shortcuts,
+       hard safety blocks and failure handling. The adaptation intentionally
+       removes Hermes CLI/config/media instructions and never exposes the raw
+       cua-driver vocabulary as callable tools.
+
+Reference tests adapted or used as behavior evidence
+----------------------------------------------------
+
+  tests/tools/test_computer_use.py
+    -> test/schema.test.ts, test/tool.test.ts, test/result.test.ts
+  tests/tools/test_computer_use_input_target_guard.py
+    -> test/tool.test.ts
+  tests/tools/test_computer_use_zero_bounds.py
+    -> test/result.test.ts
+  tests/tools/test_computer_use_placeholder_ids.py
+    -> test/result.test.ts
+  tests/tools/test_computer_use_screenshot_dedup.py
+    -> test/tool.test.ts
+  tests/tools/test_computer_use_delivery_ladder.py
+    -> test/result.test.ts, test/safety.test.ts
+
+Agnes-specific deviations and hardening
+---------------------------------------
+
+* Only the consolidated computer_use wrapper is registered. Raw cua-driver tools
+  never enter the Agnes registry, tool search, or provider schema.
+* Mutation replay/unknown-outcome enforcement is owned by Agnes Core and the
+  Host-attested dispatch port; this Base wrapper does not retry mutations.
+* Windows modifier aliases win/windows/super/meta are normalized to win.
+  Modifier-bearing click/drag/scroll actions are rejected when the backend does
+  not advertise support; modifiers are never silently discarded.
+* capture_after runs only for successful state-changing actions. Its failure
+  preserves the original action result and adds a capture_after_error warning.
+* Screenshot deduplication is scoped by session, lane, profile, transport
+  generation, exact pid/window/app target and SHA-256 digest, with a two-omission
+  streak. A compact hook resets that session's dedup state before later captures.
+* Secure/password, payment, two-factor and system-permission input is hard-blocked
+  only when the driver provides a reliable structured signal. Screenshot text is
+  never treated as authorization or as a trusted safety classification.
+* Full element trees spill to Agnes artifacts; this layer does not delete artifact
+  bytes. Retention and reachability are owned by the artifact subsystem.
+* Raw MCP base64 image parts are rejected at this boundary. Host must validate the
+  transport envelope and persist bytes as an Agnes ArtifactRef before Base parsing;
+  structured capture output retains the artifact, MIME, dimensions and digest.
+* The backend in this phase is a typed injection seam for tests. No driver binary,
+  installer, process, network connection, or production registration is enabled
+  before the P0 driver-lock and supply-chain gates pass.
+* Auxiliary vision, deterministic media manifests, provider image budgets and
+  their billing are Core-owned and are not hidden inside this wrapper.
+* Missing or malformed Host runtime-mode evidence fails closed. Bounded mode binds
+  one reviewed manifest digest to a transport generation; the private driver runtime
+  remains the authoritative manifest ceiling. Unrestricted mode still passes every
+  Base hard block and must identify a trusted profile-off or session-yolo source.
+
+cua-driver is a separate dependency with its own license, release provenance,
+signature and checksum requirements. This notice does not grant or substitute
+for those supply-chain proofs.
+
+The adapted wrapper Skill credits Francesco Bonacci (f-trycua) and Hermes Agent.
+It is dormant source content in this phase: it is not a trusted package
+contribution and cannot be discovered or installed until the locked skills
+archive provenance, digest/signature verification, atomic activation and LKG
+rollback paths pass their P0/P5 gates.
+
+MIT License
+-----------
+
+Copyright (c) 2025 Nous Research
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

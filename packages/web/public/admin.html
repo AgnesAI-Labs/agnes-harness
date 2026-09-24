@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/brand-mark.png" type="image/png" />
+    <title>插件管理 · Agnes</title>
+    <!-- 与 index.html 同理：本页也会被嵌进设置对话框，必须同源跟随主题且不闪。 -->
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/admin-standalone.js"></script>
+  </head>
+  <body data-agnes-region="app" id="plugin-admin-page" class="admin-page">
+    <a class="skip-link" href="#plugin-content">跳至插件列表</a>
+    <header data-agnes-region="topbar" class="admin-header">
+      <button id="return-workbench" class="secondary-button compact" type="button">返回工作台</button>
+      <div class="admin-heading">
+        <p class="eyebrow">系统设置</p>
+        <h1>插件管理</h1>
+      </div>
+      <button id="install-source" class="primary-button" type="button">从来源安装</button>
+    </header>
+
+    <main id="plugin-content" class="admin-main" tabindex="-1">
+      <section id="recovery-notice" class="recovery-notice" hidden aria-label="恢复模式">
+        <strong>只读恢复模式</strong>
+        <p>管理页仍可显示安全状态；恢复完成前，所有检查和变更操作均已停用。</p>
+      </section>
+      <section id="orphan-pins" class="orphan-pins" hidden aria-label="孤儿运行时 pin">
+        <div class="orphan-pins-heading">
+          <strong>存在未释放的孤儿运行时 pin</strong>
+          <button id="orphan-pins-release-all" class="secondary-button compact" type="button">全部释放</button>
+        </div>
+        <p id="orphan-pins-status" class="orphan-pins-status" hidden></p>
+        <ul id="orphan-pins-list" class="orphan-pins-list"></ul>
+      </section>
+      <p id="admin-notice" class="admin-notice" role="status" aria-live="polite"></p>
+      <p id="plugin-tree-status" class="plugin-tree-status" role="status" aria-live="polite"></p>
+
+      <div class="plugin-toolbar">
+        <div class="plugin-tabs" role="tablist" aria-label="插件视图">
+          <button id="installed-tab" type="button" role="tab" aria-selected="true" aria-controls="plugin-list">已安装</button>
+          <button id="discover-tab" type="button" role="tab" aria-selected="false" aria-controls="plugin-list">发现</button>
+        </div>
+        <label class="plugin-search-field" for="plugin-search">
+          <span class="visually-hidden">搜索插件</span>
+          <input id="plugin-search" type="search" autocomplete="off" placeholder="筛选当前已安装列表" />
+        </label>
+      </div>
+
+      <div id="plugin-layout" class="plugin-layout">
+        <section id="plugin-list" class="plugin-list" role="tabpanel" aria-live="polite"></section>
+      </div>
+    </main>
+
+    <!-- 详情从右侧固定抽屉改为独立模态框：抽屉在窄屏下没有自己的滚动，操作按钮会被长内容顶出可视区。 -->
+    <dialog data-agnes-region="dialog" id="plugin-detail" class="plugin-detail" aria-label="插件详情"></dialog>
+
+    <dialog data-agnes-region="dialog" id="source-dialog" aria-labelledby="source-dialog-title">
+      <form id="source-form" class="plugin-dialog-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">安装前检查</p>
+            <h2 id="source-dialog-title">从来源检查插件</h2>
+          </div>
+        </div>
+        <p class="dialog-intro">检查不会安装或启用插件。确认预览中的完整性摘要后，才能继续安装。</p>
+        <label class="form-field" for="source-type">来源类型
+          <select id="source-type">
+            <option value="npm">npm</option>
+            <option value="file">本地相对路径</option>
+            <option value="workspace">工作区扩展</option>
+            <option value="git">固定 Git 提交</option>
+          </select>
+        </label>
+        <label class="form-field" for="source-ref">来源引用
+          <input id="source-ref" required autocomplete="off" spellcheck="false" placeholder="npm:scope/package@1.2.3" />
+        </label>
+        <p class="field-hint">来源格式由后台严格校验；不要在这里粘贴凭据。</p>
+        <p id="source-error" class="plugin-form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button id="source-cancel" class="secondary-button" type="button">取消</button>
+          <button class="primary-button" type="submit">检查内容</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog data-agnes-region="dialog" id="plugin-confirm" aria-labelledby="plugin-confirm-title">
+      <div class="plugin-dialog-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">需要确认</p>
+            <h2 id="plugin-confirm-title">确认操作</h2>
+          </div>
+        </div>
+        <p id="plugin-confirm-description" class="dialog-intro"></p>
+        <div id="plugin-confirm-preview" class="confirm-facts" hidden></div>
+        <div class="dialog-actions">
+          <button id="plugin-confirm-cancel" class="secondary-button" type="button">取消</button>
+          <button id="plugin-confirm-action" class="primary-button" type="button">确认</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- 共享确认弹窗（@agnes/web-admin-frame 的 createConfirmController）；同一份标记也存在于
+         resources.html 与 index.html。 -->
+    <dialog data-agnes-region="dialog" id="admin-confirm" aria-labelledby="admin-confirm-title">
+      <div class="plugin-dialog-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">需要确认</p>
+            <h2 id="admin-confirm-title">确认操作</h2>
+          </div>
+        </div>
+        <p id="admin-confirm-description" class="dialog-intro"></p>
+        <div id="admin-confirm-preview" class="confirm-facts" hidden></div>
+        <div class="dialog-actions">
+          <button id="admin-confirm-cancel" class="secondary-button" type="button">取消</button>
+          <button id="admin-confirm-action" class="primary-button" type="button">确认</button>
+        </div>
+      </div>
+    </dialog>
+  </body>
+</html>

@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "admissionEnabled": false,
+  "platformAdmissions": {
+    "darwin": { "status": "ready", "admissionEnabled": true },
+    "win32": { "status": "ready", "admissionEnabled": true },
+    "linux": { "status": "candidate", "admissionEnabled": false }
+  },
+  "source": {
+    "repository": "https://github.com/trycua/cua",
+    "tag": "cua-driver-rs-v0.28.1",
+    "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c",
+    "publishedAt": "2026-09-12T08:45:39Z",
+    "releaseCommitSignature": {
+      "verified": true,
+      "reason": "valid",
+      "verifiedAt": "2026-09-12T08:08:18Z"
+    },
+    "releaseManifest": {
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/release-manifest.json",
+      "sha256": "65f1c3af8a270c388def74ff16c7acb58a4574792673a342030a0af9c5b9d5ab",
+      "size": 7086
+    },
+    "checksums": {
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/checksums.txt",
+      "sha256": "35fbf023e27f65b7ab8afb4daef990940c8f2435828bc76c940d527cd022942e",
+      "size": 1742
+    }
+  },
+  "runtimeContract": {
+    "minimumVersion": "0.20.0",
+    "manifestSchemaVersion": "1",
+    "capabilityVersion": "1",
+    "requiredSubcommandArguments": {
+      "mcp": ["--socket", "--grant"],
+      "serve": [
+        "--socket",
+        "--permission-mode",
+        "--capability-manifest",
+        "--approve-capability-manifest",
+        "--embedded"
+      ],
+      "stop": ["--socket"]
+    }
+  },
+  "artifacts": [
+    {
+      "platform": "darwin",
+      "architectures": ["arm64", "x86_64"],
+      "name": "cua-driver-rs-0.28.1-darwin-universal.tar.gz",
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/cua-driver-rs-0.28.1-darwin-universal.tar.gz",
+      "sha256": "52fdabd1947c9b252d881a257d3169372ed1a2d4ea90cdcce7dd624e8360d133",
+      "size": 70074359,
+      "signatureEvidence": {
+        "status": "verified",
+        "kind": "apple-developer-id-notarized",
+        "bundleId": "com.trycua.driver",
+        "teamId": "YCK386LBJ7",
+        "authority": "Developer ID Application: Cua AI, Inc. (YCK386LBJ7)",
+        "notarization": "stapled",
+        "verifiedOn": "macOS",
+        "verifiedDate": "2026-09-16"
+      }
+    },
+    {
+      "platform": "win32",
+      "architectures": ["x86_64"],
+      "name": "cua-driver-rs-0.28.1-windows-x86_64.zip",
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/cua-driver-rs-0.28.1-windows-x86_64.zip",
+      "sha256": "0f864381d3bcf29e7caf20d4b93bdf8476faf4e1ba986ce03890162beba5c3ee",
+      "size": 28931191,
+      "signatureEvidence": {
+        "status": "verified",
+        "kind": "windows-authenticode",
+        "publisher": "Cua AI, Inc.",
+        "leafThumbprint": "41E0763A59BBF27607FB30FC045273004EBCCC94",
+        "chainRootThumbprint": "F40042E2E5F7E8EF8189FED15519AECE42C3BFA2",
+        "timestampAuthority": "Microsoft Public RSA Time Stamping Authority",
+        "timestamp": "2026-09-12T08:38:12Z",
+        "verifiedOn": "Windows 11 x64 build 26200",
+        "verifiedAt": "2026-09-19T06:05:00Z"
+      }
+    },
+    {
+      "platform": "win32",
+      "architectures": ["arm64"],
+      "name": "cua-driver-rs-0.28.1-windows-arm64.zip",
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/cua-driver-rs-0.28.1-windows-arm64.zip",
+      "sha256": "b21dd46691b9fb268f9668a9a3c0537578df39bea29d4ac54e5d6a663bdb0d17",
+      "size": 27246614,
+      "signatureEvidence": { "status": "pending", "kind": "windows-authenticode" }
+    },
+    {
+      "platform": "linux",
+      "architectures": ["x86_64"],
+      "name": "cua-driver-rs-0.28.1-linux-x86_64.tar.gz",
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/cua-driver-rs-0.28.1-linux-x86_64.tar.gz",
+      "sha256": "a068b6e477893b77ced74bceccf7db7483cf140e8d54150ce5849b6252b90bcf",
+      "size": 30563145,
+      "signatureEvidence": { "status": "pending", "kind": "linux-provenance" }
+    },
+    {
+      "platform": "linux",
+      "architectures": ["arm64"],
+      "name": "cua-driver-rs-0.28.1-linux-arm64.tar.gz",
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/cua-driver-rs-0.28.1-linux-arm64.tar.gz",
+      "sha256": "a863951ef0699fd25091adb87bd114d69709b887fdfc059e795aca49ef8ac19c",
+      "size": 30588021,
+      "signatureEvidence": { "status": "pending", "kind": "linux-provenance" }
+    }
+  ],
+  "supportArtifacts": [
+    {
+      "kind": "skills",
+      "name": "cua-driver-rs-v0.28.1-skills.tar.gz",
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/cua-driver-rs-v0.28.1-skills.tar.gz",
+      "sha256": "3fbd1e7540e9084e294d03f92a0e933427fa60cbbba6e94844e5d55af679d17f",
+      "size": 83209,
+      "signatureEvidence": { "status": "pending", "kind": "release-asset-provenance" }
+    },
+    {
+      "kind": "installer-posix",
+      "name": "install.sh",
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/install.sh",
+      "sha256": "317ba3a49fdba10f2a7f1b9f392c1bc1b7657f3aae85e1e2e43684cf17a1bf3b",
+      "size": 5692,
+      "signatureEvidence": { "status": "pending", "kind": "release-asset-provenance" }
+    },
+    {
+      "kind": "installer-windows",
+      "name": "install.ps1",
+      "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/install.ps1",
+      "sha256": "0399d004dfc4cb7c3f02cb1486365a630bf053211ede9a6de581e8320571daac",
+      "size": 81831,
+      "signatureEvidence": { "status": "pending", "kind": "release-asset-provenance" }
+    }
+  ],
+  "lastKnownGood": {
+    "status": "candidate",
+    "tag": "cua-driver-rs-v0.28.0",
+    "commit": "1b50c02e2d34734f64d2d22f54eb76cc97b4a663",
+    "releaseManifestSha256": "26ae9cfaf41fa83352a490e73746ba87380129e638e8d5030ddfe691ff3049f0",
+    "platformVerification": { "status": "pending" }
+  },
+  "fixtures": {
+    "manifest": { "status": "pending" },
+    "catalog": { "status": "pending" },
+    "result": { "status": "pending" },
+    "som": { "status": "pending" },
+    "doctor": { "status": "pending" },
+    "legacyCompatibility": { "status": "pending" }
+  },
+  "platformLabs": {
+    "darwin": { "status": "unassigned" },
+    "win32": {
+      "status": "assigned",
+      "owner": "agnes-windows-release-lab",
+      "os": "Windows 11 x64 build 26200.9457",
+      "architecture": "x86_64",
+      "evidencePath": "packages/host/test/computer-use/evidence/labs/windows-x64-live-admission-2026-09-20.json",
+      "sha256": "0f34e54a9570669b03105d586b221628a9299cb4300b1f4a7b1c7dec3bc85f04"
+    },
+    "linuxX11": { "status": "unassigned" },
+    "linuxWayland": { "status": "unassigned" }
+  }
+}

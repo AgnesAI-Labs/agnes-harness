@@ -1,0 +1,70 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Web UI 组件层 · 主题桥：--agnes-* → --ant-*
+   组件消费统一的语义主题变量。
+
+   这是 antd 组件的主题唯一通道。zeroRuntime 预构建的 antd.css 里样式值
+   引用 --ant-* CSS 变量（v6 cssVar 模式）；本文件把 --ant-* 指到仓库既有的
+   --agnes-* 语义 token（权威在 packages/web/public/style.css token 区），
+   浅/深色随既有机制（:root 浅色、.dark 深色覆盖）自动生效。
+
+   红线：
+   - 禁止在此写具体色值——只允许 var() 引用 --agnes-*、--radius-* 和 --font-* 尺度。
+   - 禁止用 ConfigProvider 运行时主题切色（zeroRuntime 静态 CSS 下无效）。
+   - prefixCls 保持默认 ant-，本文件不与 CSS 重新编译绑定。
+
+   ⚠ 变量名核对项（A0-4）：--ant-* 名称集合以安装后 zeroRuntime 实际产出
+   的 antd.css 为准；本文件的映射是标准 cssVar 命名的子集。漏映射的
+   --ant-* 保持 antd 默认值（CSS 变量 fallback 语义），不会报错，只观感
+   漂移——安装后逐项核对并在此补全，然后在执行记录里记核对结果。
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Brand / 链接 */
+  --ant-color-primary: var(--agnes-brand-primary);
+  --ant-color-primary-bg: var(--agnes-brand-emphasis-soft);
+  --ant-color-link: var(--agnes-brand-primary);
+
+  /* 文字 */
+  --ant-color-text: var(--agnes-text-primary);
+  --ant-color-text-secondary: var(--agnes-text-secondary);
+  --ant-color-text-tertiary: var(--agnes-text-tertiary);
+  --ant-color-text-disabled: var(--agnes-text-disabled);
+
+  /* 背景层级 */
+  --ant-color-bg-layout: var(--agnes-bg-page);
+  --ant-color-bg-container: var(--agnes-bg-app-content);
+  --ant-color-bg-elevated: var(--agnes-bg-popover);
+
+  /* 边框（antd border 比 border-secondary 深；agnes line-primary 重于 secondary） */
+  --ant-color-border: var(--agnes-line-primary);
+  --ant-color-border-secondary: var(--agnes-line-secondary);
+
+  /* 状态 */
+  --ant-color-error: var(--agnes-status-danger-text);
+  --ant-color-error-bg: var(--agnes-status-danger-bg);
+  --ant-color-error-text: var(--agnes-status-danger-text);
+  --ant-color-success: var(--agnes-status-success-text);
+  --ant-color-success-bg: var(--agnes-status-success-bg);
+  --ant-color-success-text: var(--agnes-status-success-text);
+  --ant-color-warning: var(--agnes-status-warning-text);
+  --ant-color-warning-bg: var(--agnes-status-warning-bg);
+  --ant-color-warning-text: var(--agnes-status-warning-text);
+  --ant-color-info: var(--agnes-status-info-text);
+
+  /* 尺度（无深浅维度） */
+  --ant-font-size: var(--font-size-body);
+  --ant-font-size-sm: var(--font-size-sm);
+  --ant-font-size-lg: var(--font-size-lg);
+  --ant-border-radius: var(--radius-md);
+  --ant-border-radius-sm: var(--radius-sm);
+  --ant-border-radius-lg: var(--radius-lg);
+  --ant-control-height: var(--control-height);
+  --ant-control-height-sm: calc(var(--control-height) - 8px);
+  --ant-control-height-lg: var(--control-height-form);
+}
+
+.dark {
+  /* 背景层级与边框在深色下的对位由 .dark 的 --agnes-* 覆盖自然传导；
+     这里只显式接走 antd 深色专用变量（浅色区未出现的名字）。 */
+  --ant-color-bg-spotlight: var(--agnes-brand-primary);
+}

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/tooldef.json",
+  "title": "ToolDef (the three model-visible fields plus the eight meta keys)",
+  "$ref": "#/$defs/ToolDef",
+  "$defs": {
+    "JsonValue": { "$ref": "session-v1.json#/$defs/JsonValue" },
+    "ToolMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isReadOnly",
+        "isDestructive",
+        "isConcurrencySafe",
+        "isOpenWorld",
+        "replay",
+        "costHint",
+        "deferLoading",
+        "requiresApproval"
+      ],
+      "properties": {
+        "isReadOnly": {
+          "type": "boolean",
+          "description": "The tool declares no writes. Tainted-call policy and sandbox requirements consult this flag; it does not override explicit approval or concurrency flags."
+        },
+        "isDestructive": {
+          "type": "boolean",
+          "description": "The tool performs a destructive action. Consumed by the approval stage, which gates the call before it runs."
+        },
+        "isConcurrencySafe": {
+          "type": "boolean",
+          "description": "The tool may run alongside other calls. The inner batch scheduler and the code runtime's sub-calls read this same judgement."
+        },
+        "isOpenWorld": {
+          "type": "boolean",
+          "description": "The result comes from outside. The row carrying it is written untrusted, injection defence trims it, and surface projection reads this."
+        },
+        "replay": {
+          "enum": ["safe", "never", "idempotent"],
+          "description": "How crash recovery treats an unsettled call: safe reruns it verbatim, idempotent reruns it under the same effectId, never synthesises an unknown outcome. Consumed by the effect sandwich."
+        },
+        "costHint": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "credits": { "type": "number", "minimum": 0 },
+                "wallMs": { "type": "integer", "minimum": 0 }
+              }
+            }
+          ],
+          "description": "An estimate for the budget preflight; null means the author declared no hint. Consumed by the budget stage."
+        },
+        "deferLoading": {
+          "type": ["boolean", "null"],
+          "description": "true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure."
+        },
+        "requiresApproval": {
+          "oneOf": [{ "enum": ["never", "destructive", "always"] }, { "type": "null" }],
+          "description": "The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage."
+        }
+      }
+    },
+    "ParametersSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "properties", "additionalProperties"],
+      "properties": {
+        "type": { "const": "object" },
+        "properties": { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "additionalProperties": { "const": false },
+        "description": { "type": "string", "maxLength": 2048 }
+      }
+    },
+    "ToolDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "parameters", "meta"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "parameters": { "$ref": "#/$defs/ParametersSchema" },
+        "meta": { "$ref": "#/$defs/ToolMeta" }
+      }
+    }
+  }
+}

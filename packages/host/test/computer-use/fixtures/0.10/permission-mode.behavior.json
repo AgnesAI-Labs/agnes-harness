@@ -1,0 +1,31 @@
+{
+  "format": "normalized-hermes-permission-mode-behavior-v1",
+  "contract_epoch": "cua-driver-0.10",
+  "evidence_kind": "source-test-behavior",
+  "cases": [
+    {
+      "id": "ordinary-session",
+      "sessionApprovalBypass": false,
+      "gatewayApprovalBypass": false,
+      "expectedMode": "standard"
+    },
+    {
+      "id": "explicit-session-bypass",
+      "sessionApprovalBypass": true,
+      "gatewayApprovalBypass": false,
+      "expectedMode": "unrestricted"
+    },
+    {
+      "id": "gateway-session-key-bypass",
+      "sessionApprovalBypass": false,
+      "gatewayApprovalBypass": true,
+      "expectedMode": "unrestricted"
+    },
+    {
+      "id": "gateway-session-key-after-revoke",
+      "sessionApprovalBypass": false,
+      "gatewayApprovalBypass": false,
+      "expectedMode": "standard"
+    }
+  ]
+}

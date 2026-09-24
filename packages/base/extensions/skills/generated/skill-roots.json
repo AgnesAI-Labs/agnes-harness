@@ -1,0 +1,29 @@
+[
+  {
+    "root": "~/.agh/skills",
+    "host": "agnes",
+    "layout": "dir/SKILL.md",
+    "trust": "user"
+  },
+  {
+    "root": "<workspace>/.agh/skills",
+    "host": "agnes",
+    "layout": "dir/SKILL.md",
+    "trust": "workspace"
+  },
+  {
+    "root": "~/.agents/skills",
+    "host": "agents",
+    "layout": "dir/SKILL.md"
+  },
+  {
+    "root": "~/.claude/skills",
+    "host": "claude",
+    "layout": "dir/SKILL.md"
+  },
+  {
+    "root": "~/.codex/skills",
+    "host": "codex",
+    "layout": "dir/SKILL.md"
+  }
+]

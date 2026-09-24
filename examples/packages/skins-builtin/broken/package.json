@@ -1,0 +1,11 @@
+{
+  "name": "@agnes-examples/skins-builtin",
+  "version": "1.2.0",
+  "type": "module",
+  "license": "MIT",
+  "agnes": {
+    "extensions": [
+      "./extensions/main"
+    ]
+  }
+}

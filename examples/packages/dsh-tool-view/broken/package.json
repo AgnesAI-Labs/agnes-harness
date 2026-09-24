@@ -1,0 +1,23 @@
+{
+  "name": "@agnes-examples/dsh-tool-view",
+  "version": "3.0.0",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:examples/dsh-tool-view/main",
+        "runtime": "in-process"
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:examples/dsh-tool-view/main",
+        "path": "./extensions/main/agnes.client.json"
+      }
+    ]
+  },
+  "exports": "./index.mjs"
+}

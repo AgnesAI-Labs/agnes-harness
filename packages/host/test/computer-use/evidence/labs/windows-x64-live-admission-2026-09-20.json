@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "result": "pass",
+  "verifiedAt": "2026-09-20T01:59:17Z",
+  "platform": "win32",
+  "os": "Windows 11 x64 build 26200.9457",
+  "architecture": "x86_64",
+  "source": {
+    "repository": "https://github.com/trycua/cua",
+    "tag": "cua-driver-rs-v0.28.1",
+    "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c"
+  },
+  "artifact": {
+    "name": "cua-driver-rs-0.28.1-windows-x86_64.zip",
+    "sha256": "0f864381d3bcf29e7caf20d4b93bdf8476faf4e1ba986ce03890162beba5c3ee",
+    "size": 28931191,
+    "publisher": "Cua AI, Inc.",
+    "leafThumbprint": "41E0763A59BBF27607FB30FC045273004EBCCC94",
+    "chainRootThumbprint": "F40042E2E5F7E8EF8189FED15519AECE42C3BFA2"
+  },
+  "installation": {
+    "status": "completed",
+    "generation": 1,
+    "activeVersion": "0.28.1",
+    "lastKnownGoodVersion": "0.28.1"
+  },
+  "health": {
+    "overall": "ok",
+    "passed": [
+      "binary_version",
+      "platform_supported",
+      "session_active",
+      "ax_capability",
+      "screen_capture_capability"
+    ],
+    "platformInapplicable": [
+      "bundle_identity",
+      "tcc_accessibility",
+      "tcc_screen_recording"
+    ]
+  },
+  "liveSmoke": {
+    "application": "Microsoft Edge",
+    "executablePath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "publisherSha256": "cb97e8e85e8e9321fb2646e9574efd17669b3b0581d24262ac7c8a227433a244",
+    "operations": [
+      "list_windows",
+      "capture_before",
+      "focus_app",
+      "press_key_escape",
+      "capture_after"
+    ],
+    "capture": {
+      "width": 1072,
+      "height": 648,
+      "mime": "image/png",
+      "size": 50160,
+      "sha256": "c922f620fa0527950026745c434a5e9d95e7e231be74730ee56fe1075e6d0a50"
+    }
+  }
+}

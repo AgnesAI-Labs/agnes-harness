@@ -1,0 +1,12 @@
+{
+  "client": {
+    "entry": "./client/index.js",
+    "styles": [],
+    "slots": ["ui:sidebar"],
+    "publicConfig": {
+      "label": "Agnes multi row · secondary v2 failure"
+    },
+    "services": [],
+    "projections": []
+  }
+}

@@ -1,0 +1,16 @@
+.dsh-input-controls {
+  --dsh-demo-accent: #2563eb;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--dsh-demo-accent), transparent 60%);
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--dsh-demo-accent);
+}
+
+.dsh-input-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}

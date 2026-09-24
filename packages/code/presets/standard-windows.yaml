@@ -1,0 +1,13 @@
+# Windows companion to standard. Containment and unambiguous identity are checked by
+# approval-policy before matching; the Host filesystem separately enforces actual access.
+# Shell, tainted requests and tools requiring approval always keep their existing gates.
+name: standard-windows
+extends: standard
+approval:
+  command_policy:
+    - tool: 'edit|write'
+      argv: '^[A-Z]:/(?!(?:[\s\S]*/)?\.\.(?:/|$))(?:[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/)*[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+$'
+      action: allow
+    - tool: 'edit|write'
+      argv: '^//(?!(?:[\s\S]*/)?\.\.(?:/|$))[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/(?:[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/)*[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+$'
+      action: allow

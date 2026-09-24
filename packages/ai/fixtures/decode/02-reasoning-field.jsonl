@@ -1,0 +1,3 @@
+{"id":"reasoning-plain","provenance":"hand-written","tool_names":["read"],"input_chunks":[{"kind":"thinking","delta":"let me think"}],"expected_events":[{"type":"thinking_delta","delta":"let me think"}]}
+{"id":"reasoning-think-tag-inside","provenance":"hand-written","tool_names":["read"],"input_chunks":[{"kind":"thinking","delta":"<think>nested</think>"}],"expected_events":[{"type":"thinking_delta","delta":"nested"}]}
+{"id":"reasoning-call-attributed-to-the-field","provenance":"hand-written","tool_names":["read"],"input_chunks":[{"kind":"thinking","delta":"<function=read><parameter=path>a</parameter></function>"}],"expected_events":[{"type":"toolcall_end","call":{"toolUseId":"dc-0","name":"read","args":{"path":"a"},"ordinal":0},"via":"reasoning_field"}]}

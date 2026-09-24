@@ -1,0 +1,4415 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/agnes-v1.json",
+  "title": "_agnes/v1",
+  "$defs": {
+    "ExtensionCallParams": {
+      "$ref": "extension-service.json#/$defs/ExtensionCallParams"
+    },
+    "ExtensionCallResult": {
+      "$ref": "extension-service.json#/$defs/ExtensionCallResult"
+    },
+    "ExtensionAckParams": {
+      "$ref": "extension-service.json#/$defs/ExtensionAckParams"
+    },
+    "ExtensionCallError": {
+      "$ref": "extension-service.json#/$defs/ExtensionCallError"
+    },
+    "JsonValue": {
+      "$ref": "session-v1.json#/$defs/JsonValue"
+    },
+    "ContentBlock": {
+      "$ref": "session-v1.json#/$defs/ContentBlock"
+    },
+    "Actor": {
+      "$ref": "session-v1.json#/$defs/Actor"
+    },
+    "SurfaceOp": {
+      "$ref": "session-v1.json#/$defs/SurfaceOp"
+    },
+    "EventEnvelope": {
+      "$ref": "session-v1.json#/$defs/EventEnvelope"
+    },
+    "HarnessMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promptTurnId", "eventSequence", "generation", "lane", "phase"],
+      "properties": {
+        "promptTurnId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "eventSequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lane": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "phase": {
+          "enum": ["event", "responseBoundary", "terminalQuiescence", "parked"]
+        },
+        "credits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["used", "source"],
+          "properties": {
+            "used": {
+              "type": "number"
+            },
+            "remaining": {
+              "type": "number"
+            },
+            "source": {
+              "enum": ["gateway", "estimated"]
+            }
+          }
+        },
+        "turnEnd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason"],
+          "properties": {
+            "reason": {
+              "enum": [
+                "completed",
+                "aborted",
+                "error",
+                "parked",
+                "blocked",
+                "budget",
+                "max_steps",
+                "interrupted"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "Auth": {
+      "$ref": "channel.json#/$defs/Auth"
+    },
+    "Credential": {
+      "$ref": "channel.json#/$defs/Credential"
+    },
+    "DirectoryEntry": {
+      "$ref": "channel.json#/$defs/DirectoryEntry"
+    },
+    "InitializeMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auth": {
+          "$ref": "#/$defs/Auth"
+        },
+        "clientId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "NewSessionMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preset": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "sessionKey": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "Cursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromSeq", "generation"],
+      "properties": {
+        "fromSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "AttachFilter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "lanes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "preview": {
+          "type": "boolean"
+        },
+        "acpUpdates": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SessionAttachParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "cursor": {
+          "$ref": "#/$defs/Cursor"
+        },
+        "filter": {
+          "$ref": "#/$defs/AttachFilter"
+        }
+      }
+    },
+    "SessionAttachResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "lastSeq", "resolvedProfileHash"],
+      "properties": {
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resolvedProfileHash": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "SessionSteerParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "content", "commandId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          }
+        },
+        "commandId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "SessionSteerResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq"],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "SessionCompactParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "commandId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "instructions": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "commandId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ApisListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "ApisListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "families"],
+      "properties": {
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "resolvedProfileHash", "presets"],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "resolvedProfileHash": {
+              "type": ["string", "null"]
+            },
+            "presets": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["default", "allowed"],
+              "properties": {
+                "default": {
+                  "type": "string"
+                },
+                "allowed": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["route", "id"],
+                "properties": {
+                  "route": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$"
+                  },
+                  "reasoning": {
+                    "type": "boolean"
+                  },
+                  "thinkingLevelMap": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "branding": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["accent", "mark", "selfLabel"],
+              "properties": {
+                "accent": {
+                  "type": "string"
+                },
+                "mark": {
+                  "type": "string"
+                },
+                "selfLabel": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "families": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "methods", "guidance"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "methods": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "guidance": {
+                "type": "string",
+                "maxLength": 4096
+              }
+            }
+          }
+        }
+      }
+    },
+    "SubmitParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientId", "commandId", "kind", "payload"],
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "commandId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "kind": {
+          "enum": ["steer", "followUp", "compact", "fork", "jobs.enqueue"]
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "payload": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      }
+    },
+    "CommandAckParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientId", "sessionId", "commandId"],
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "commandId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "Ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replayed"],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "replayed": {
+          "type": "boolean"
+        },
+        "status": {
+          "const": "uncertain"
+        },
+        "result": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "compact": {
+          "$ref": "#/$defs/CompactOutcome"
+        }
+      }
+    },
+    "CompactOutcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "endSeq"],
+          "properties": {
+            "state": { "const": "completed" },
+            "endSeq": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "endSeq"],
+          "properties": {
+            "state": { "const": "failed" },
+            "endSeq": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": { "const": "unknown" }
+          }
+        }
+      ]
+    },
+    "ErrorData": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    },
+    "SessionIdParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "ApprovalGrantListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "toolId", "scope", "policyVersion"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    },
+    "ApprovalGrantRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grantId",
+        "profileHash",
+        "actorId",
+        "actorOrg",
+        "toolId",
+        "scope",
+        "policyVersion",
+        "createdAt"
+      ],
+      "properties": {
+        "grantId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "profileHash": { "type": "string", "pattern": "^sha256-[a-f0-9]{64}$" },
+        "actorId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "actorOrg": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "revokedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ApprovalGrantRevokeParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "toolId", "scope", "policyVersion", "grantId"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "grantId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "ApprovalGrantListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grants"],
+      "properties": {
+        "grants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ApprovalGrantRecord" }
+        }
+      }
+    },
+    "Empty": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "ComputerUseLockedPackageMutationStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activationReady", "recoveryReady", "blockers"],
+      "properties": {
+        "activationReady": { "type": "boolean" },
+        "recoveryReady": { "type": "boolean" },
+        "blockers": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "environment-unavailable",
+              "mutation-engine-unavailable",
+              "publisher-keyring-unavailable",
+              "safe-extraction-unavailable",
+              "store-directory-unavailable",
+              "trusted-directory-handle-unavailable"
+            ]
+          }
+        }
+      }
+    },
+    "ComputerUseStatusResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "runtime", "blockers"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "blocked" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "blocked" },
+                "reason": { "enum": ["p0-evidence-incomplete", "runtime-unavailable"] }
+              }
+            },
+            "runtime": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "startAttempted"],
+              "properties": {
+                "state": { "const": "not-started" },
+                "startAttempted": { "const": false }
+              }
+            },
+            "blockers": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "release-provenance-incomplete",
+                  "compatibility-evidence-incomplete",
+                  "platform-acceptance-incomplete",
+                  "feature-disabled",
+                  "platform-unsupported",
+                  "driver-not-prepared",
+                  "driver-preparing",
+                  "driver-prepare-failed"
+                ]
+              }
+            },
+            "lockedPackageMutations": { "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "runtime", "blockers", "driver"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "ready" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": {
+                  "enum": ["windows-verified-driver", "macos-verified-driver", "linux-verified-driver"]
+                }
+              }
+            },
+            "runtime": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "startAttempted", "activeSessions"],
+              "properties": {
+                "state": { "enum": ["idle", "running"] },
+                "startAttempted": { "type": "boolean" },
+                "activeSessions": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "blockers": { "type": "array", "maxItems": 0 },
+            "driver": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["platform", "version", "publisher"],
+              "properties": {
+                "platform": { "enum": ["win32", "darwin", "linux"] },
+                "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+                "publisher": { "type": "string", "minLength": 1, "maxLength": 256 }
+              }
+            },
+            "lockedPackageMutations": { "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus" }
+          }
+        }
+      ]
+    },
+    "ComputerUsePermissionsStatusResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "probe"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "unavailable" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "blocked" },
+                "reason": { "const": "p0-evidence-incomplete" }
+              }
+            },
+            "probe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "not-run" },
+                "reason": { "const": "production-driver-admission-disabled" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "probe"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "not-required" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": { "const": "linux-verified-driver" }
+              }
+            },
+            "probe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "passed" },
+                "reason": { "const": "linux-no-os-grant-required" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "probe"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "not-required" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": { "const": "windows-verified-driver" }
+              }
+            },
+            "probe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "passed" },
+                "reason": { "const": "windows-no-os-grant-required" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "probe"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "granted" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": { "const": "macos-verified-driver" }
+              }
+            },
+            "probe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason", "accessibility", "screenRecording"],
+              "properties": {
+                "state": { "const": "passed" },
+                "reason": { "const": "macos-tcc-permissions-granted" },
+                "accessibility": { "const": true },
+                "screenRecording": { "const": true }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "probe"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "required" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": { "const": "macos-verified-driver" }
+              }
+            },
+            "probe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason", "accessibility", "screenRecording"],
+              "properties": {
+                "state": { "const": "passed" },
+                "reason": { "const": "macos-tcc-permissions-missing" },
+                "accessibility": { "const": false },
+                "screenRecording": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "probe"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "required" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": { "const": "macos-verified-driver" }
+              }
+            },
+            "probe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason", "accessibility", "screenRecording"],
+              "properties": {
+                "state": { "const": "passed" },
+                "reason": { "const": "macos-tcc-permissions-missing" },
+                "accessibility": { "const": true },
+                "screenRecording": { "const": false }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "probe"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "unknown" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": { "const": "macos-verified-driver" }
+              }
+            },
+            "probe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "failed" },
+                "reason": { "const": "macos-tcc-probe-failed" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ComputerUseDoctorParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" }
+        },
+        "skip": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" }
+        }
+      }
+    },
+    "ComputerUseDoctorResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "checks"],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "blocked"
+            },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "blocked"
+                },
+                "reason": {
+                  "const": "p0-evidence-incomplete"
+                }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "not-run"
+                },
+                "reason": {
+                  "const": "production-driver-admission-disabled"
+                }
+              }
+            },
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "checks"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "ready" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": { "const": "linux-verified-driver" }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "passed" },
+                "reason": { "const": "linux-driver-health-and-identity-verified" }
+              }
+            },
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "checks"],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "ready"
+            },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "windows-verified-driver"
+                }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "passed"
+                },
+                "reason": {
+                  "const": "windows-driver-health-and-identity-verified"
+                }
+              }
+            },
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "checks"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "failed" },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "ready" },
+                "reason": { "const": "linux-verified-driver" }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": { "const": "failed" },
+                "reason": { "const": "linux-driver-health-or-identity-failed" }
+              }
+            },
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "checks"],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "ready"
+            },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "macos-verified-driver"
+                }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "passed"
+                },
+                "reason": {
+                  "const": "macos-driver-health-and-identity-verified"
+                }
+              }
+            },
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "checks"],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "failed"
+            },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "windows-verified-driver"
+                }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "failed"
+                },
+                "reason": {
+                  "const": "windows-driver-health-or-identity-failed"
+                }
+              }
+            },
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "checks"],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "failed"
+            },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "macos-verified-driver"
+                }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "failed"
+                },
+                "reason": {
+                  "const": "macos-driver-health-or-identity-failed"
+                }
+              }
+            },
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "admission", "checks"],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "unreachable"
+            },
+            "admission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "enum": ["windows-verified-driver", "macos-verified-driver", "linux-verified-driver"]
+                }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {
+                  "const": "unavailable"
+                },
+                "reason": {
+                  "const": "live-driver-doctor-unavailable"
+                }
+              }
+            },
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
+          }
+        }
+      ]
+    },
+    "ComputerUseOperationStartParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["install", "update", "restart"] }
+      }
+    },
+    "ComputerUseOperationStatusParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" }
+      }
+    },
+    "ComputerUseOperationIdParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId"],
+      "properties": {
+        "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" }
+      }
+    },
+    "ComputerUseOperationResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "not-found" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "status",
+            "operationId",
+            "kind",
+            "state",
+            "phase",
+            "startedAtMs",
+            "updatedAtMs"
+          ],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "found" },
+            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
+            "kind": { "enum": ["install", "update", "restart"] },
+            "state": { "const": "queued" },
+            "phase": { "const": "queued" },
+            "startedAtMs": { "type": "integer", "minimum": 0 },
+            "updatedAtMs": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "status",
+            "operationId",
+            "kind",
+            "state",
+            "phase",
+            "startedAtMs",
+            "updatedAtMs"
+          ],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "found" },
+            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
+            "kind": { "enum": ["install", "update"] },
+            "state": { "enum": ["running", "cancelling"] },
+            "phase": { "enum": ["installing", "restarting"] },
+            "startedAtMs": { "type": "integer", "minimum": 0 },
+            "updatedAtMs": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "status",
+            "operationId",
+            "kind",
+            "state",
+            "phase",
+            "startedAtMs",
+            "updatedAtMs"
+          ],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "found" },
+            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
+            "kind": { "const": "restart" },
+            "state": { "enum": ["running", "cancelling"] },
+            "phase": { "const": "restarting" },
+            "startedAtMs": { "type": "integer", "minimum": 0 },
+            "updatedAtMs": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "status",
+            "operationId",
+            "kind",
+            "state",
+            "phase",
+            "startedAtMs",
+            "updatedAtMs",
+            "outcome"
+          ],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "found" },
+            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
+            "kind": { "enum": ["install", "update"] },
+            "state": { "const": "succeeded" },
+            "phase": { "const": "complete" },
+            "startedAtMs": { "type": "integer", "minimum": 0 },
+            "updatedAtMs": { "type": "integer", "minimum": 0 },
+            "outcome": { "enum": ["installed", "already-current", "repaired", "lkg-restored"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "status",
+            "operationId",
+            "kind",
+            "state",
+            "phase",
+            "startedAtMs",
+            "updatedAtMs",
+            "outcome"
+          ],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "found" },
+            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
+            "kind": { "const": "restart" },
+            "state": { "const": "succeeded" },
+            "phase": { "const": "complete" },
+            "startedAtMs": { "type": "integer", "minimum": 0 },
+            "updatedAtMs": { "type": "integer", "minimum": 0 },
+            "outcome": { "const": "restarted" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "status",
+            "operationId",
+            "kind",
+            "state",
+            "phase",
+            "startedAtMs",
+            "updatedAtMs",
+            "failure"
+          ],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "found" },
+            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
+            "kind": { "enum": ["install", "update", "restart"] },
+            "state": { "const": "failed" },
+            "phase": { "const": "complete" },
+            "startedAtMs": { "type": "integer", "minimum": 0 },
+            "updatedAtMs": { "type": "integer", "minimum": 0 },
+            "failure": { "const": "operation-failed" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "status",
+            "operationId",
+            "kind",
+            "state",
+            "phase",
+            "startedAtMs",
+            "updatedAtMs"
+          ],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "status": { "const": "found" },
+            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
+            "kind": { "enum": ["install", "update", "restart"] },
+            "state": { "const": "cancelled" },
+            "phase": { "const": "complete" },
+            "startedAtMs": { "type": "integer", "minimum": 0 },
+            "updatedAtMs": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "AuthClaimParams": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "expiresAtMs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value", "limit", "windowMs"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "windowMs": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    },
+    "AuthClaimResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["granted"],
+      "properties": {
+        "granted": {
+          "type": "boolean"
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "SessionEventParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "event"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "event": {
+          "$ref": "session-v1.json#/$defs/EventEnvelope"
+        },
+        "_meta": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ai.agnes.harness"],
+          "properties": {
+            "ai.agnes.harness": {
+              "$ref": "#/$defs/HarnessMeta"
+            }
+          }
+        }
+      }
+    },
+    "SessionPreviewParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "lane", "effectId", "stream", "offset", "delta"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "lane": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "effectId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "stream": {
+          "enum": ["text", "thinking"]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "delta": {
+          "type": "string"
+        }
+      }
+    },
+    "DaemonNotice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "detail", "at"],
+          "properties": {
+            "kind": { "const": "packages_changed" },
+            "detail": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["profile", "revision", "reason"],
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+                },
+                "revision": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "reason": {
+                  "enum": ["inventory", "activation", "trust", "resources", "rebuilt"]
+                },
+                "packageId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+                }
+              }
+            },
+            "at": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "detail", "at"],
+          "properties": {
+            "kind": { "const": "tree_changed" },
+            "detail": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["profile", "targetDigest", "identity", "hash"],
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+                },
+                "targetDigest": {
+                  "type": "string",
+                  "pattern": "^sha256-[0-9a-f]{64}$"
+                },
+                "hash": {
+                  "type": "string",
+                  "pattern": "^sha256-[0-9a-f]{64}$"
+                },
+                "identity": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["treeHash", "resourceRevision", "compositeRevision"],
+                  "properties": {
+                    "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                  }
+                }
+              }
+            },
+            "at": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "detail", "at"],
+          "properties": {
+            "kind": {
+              "enum": [
+                "resumed",
+                "worker_crashed",
+                "worker_quarantined",
+                "overloaded",
+                "job_dispatched",
+                "job_dead",
+                "shutting_down"
+              ]
+            },
+            "sessionId": { "type": "string", "maxLength": 512 },
+            "detail": { "$ref": "#/$defs/JsonValue" },
+            "at": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "BudgetState": {
+      "$ref": "session-v1.json#/$defs/BudgetState"
+    },
+    "ArtifactRef": {
+      "$ref": "session-v1.json#/$defs/ArtifactRef"
+    },
+    "ArtifactJob": {
+      "$ref": "session-v1.json#/$defs/ArtifactJob"
+    },
+    "JobSpec": {
+      "$ref": "jobs.json#/$defs/JobSpec"
+    },
+    "JobStatus": {
+      "$ref": "jobs.json#/$defs/JobStatus"
+    },
+    "SessionBudgetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "ledger"],
+      "properties": {
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BudgetState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ledger": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["creditSource", "seq"],
+            "properties": {
+              "credits": {
+                "type": "number"
+              },
+              "creditSource": {
+                "enum": ["gateway", "estimated"]
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "SessionProjectUIParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "upto": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "surface": {
+          "enum": ["tui", "web", "channel"]
+        }
+      }
+    },
+    "SessionProjectUIPatchParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "after"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "after": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "upto": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "surface": {
+          "enum": ["tui", "web", "channel"]
+        }
+      }
+    },
+    "SessionProjectUIOpeningParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "surface": {
+          "enum": ["tui", "web", "channel"]
+        },
+        "maxNodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 200
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 16384,
+          "maximum": 1048576,
+          "default": 262144
+        }
+      }
+    },
+    "UIHistoryCursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "SessionProjectUIHistoryParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "cursor"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "cursor": {
+          "$ref": "#/$defs/UIHistoryCursor"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 100
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 16384,
+          "maximum": 1048576,
+          "default": 262144
+        }
+      }
+    },
+    "SlotFillView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "extId", "payload"],
+      "properties": {
+        "slot": {
+          "enum": ["tool.card.inline", "sidebar.action", "status.line", "notification"]
+        },
+        "extId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "payload": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "requestSeq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "UINode": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "content"],
+          "properties": {
+            "kind": {
+              "const": "user"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ContentBlock"
+              }
+            },
+            "actorLabel": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "text"],
+          "properties": {
+            "kind": {
+              "const": "assistant"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "thinking": {
+              "type": "string"
+            },
+            "streaming": {
+              "type": "boolean"
+            },
+            "effectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "lostChars": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "toolUseId", "name", "status", "summary"],
+          "properties": {
+            "kind": {
+              "const": "tool"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "enum": ["planned", "awaiting_approval", "running", "completed", "failed", "cancelled"]
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "argsPreview": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "resultPreview": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "enforcement": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["level", "scope"],
+              "properties": {
+                "level": {
+                  "enum": ["full", "partial", "none"]
+                },
+                "scope": {
+                  "type": "array",
+                  "items": {
+                    "enum": ["file", "network", "process"]
+                  }
+                }
+              }
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "slots": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SlotFillView"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "state", "summary", "risk", "options"],
+          "properties": {
+            "kind": {
+              "const": "approval"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "state": {
+              "enum": ["pending", "decided", "expired"]
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "risk": {
+              "enum": ["destructive", "always", "budget", "unknown"]
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "enum": ["allow_once", "allow_always", "allow_permanent", "reject_once"]
+              }
+            },
+            "ticket": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "requestSeq": {
+              "type": "integer"
+            },
+            "decision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["verdict", "via"],
+              "properties": {
+                "verdict": {
+                  "type": "string"
+                },
+                "via": {
+                  "type": "string"
+                },
+                "byLabel": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "source"],
+          "properties": {
+            "kind": {
+              "const": "cost"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "credits": {
+              "type": "number"
+            },
+            "source": {
+              "enum": ["gateway", "estimated"]
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "tokens": {
+              "$ref": "model.json#/$defs/TokenCounts"
+            },
+            "billing": {
+              "$ref": "session-v1.json#/$defs/Billing"
+            },
+            "model": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "interrupted": {
+              "type": "boolean"
+            },
+            "timing": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ttftMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "name", "ref"],
+          "properties": {
+            "kind": {
+              "const": "artifact"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "ref": {
+              "$ref": "#/$defs/ArtifactRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "range"],
+          "properties": {
+            "kind": {
+              "const": "compaction"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "range": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer"
+              }
+            },
+            "tokensBefore": {
+              "type": "integer"
+            },
+            "tokensAfter": {
+              "type": "integer"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "customInstructions": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "fill"],
+          "properties": {
+            "kind": {
+              "const": "slot"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "fill": {
+              "$ref": "#/$defs/SlotFillView"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "sections"],
+          "properties": {
+            "kind": {
+              "const": "context-sections"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "sections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "order", "source", "tokens"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "order": {
+                    "type": "integer"
+                  },
+                  "source": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "key", "ops"],
+          "properties": {
+            "kind": {
+              "const": "contribute-conflict"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "key": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "ops": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 128
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "text"],
+          "properties": {
+            "kind": {
+              "const": "context"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "UsageView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totals", "context", "model"],
+      "properties": {
+        "totals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "output", "cacheRead", "cacheWrite", "reasoning"],
+          "properties": {
+            "input": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cacheRead": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cacheWrite": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reasoning": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "cost": {
+          "$ref": "session-v1.json#/$defs/Billing"
+        },
+        "credits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["amount", "source", "complete"],
+          "properties": {
+            "amount": {
+              "type": "number",
+              "minimum": 0
+            },
+            "source": {
+              "enum": ["gateway", "estimated"]
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          }
+        },
+        "reasoningComplete": {
+          "type": "boolean"
+        },
+        "billingComplete": {
+          "type": "boolean"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokens", "window", "autoCompact"],
+          "properties": {
+            "tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "window": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "autoCompact": {
+              "type": "boolean"
+            },
+            "source": {
+              "const": "estimated"
+            }
+          }
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["route", "id", "thinking"],
+          "properties": {
+            "route": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$"
+            },
+            "thinking": {
+              "$ref": "model.json#/$defs/ThinkingLevel"
+            },
+            "maxTokens": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hitRate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "lastInvalidation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["seq", "reprocessedTokens", "cause"],
+              "properties": {
+                "seq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "reprocessedTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cause": {
+                  "enum": ["compaction", "system-changed", "history-changed"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "UITurnCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "seq", "purpose", "model", "creditSource"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "purpose": {
+          "enum": [
+            "inference",
+            "compaction",
+            "verifier",
+            "subagent",
+            "media",
+            "tool",
+            "title",
+            "approval-guardian"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "tokens": {
+          "$ref": "model.json#/$defs/TokenCounts"
+        },
+        "credits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "creditSource": {
+          "enum": ["gateway", "estimated"]
+        },
+        "billing": {
+          "$ref": "session-v1.json#/$defs/Billing"
+        },
+        "interrupted": {
+          "type": "boolean"
+        },
+        "timing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttftMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "adjustment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["of", "delta", "reason"],
+          "properties": {
+            "of": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "delta": {
+              "type": "number"
+            },
+            "usdMicrosDelta": {
+              "type": "integer"
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 512
+            }
+          }
+        }
+      }
+    },
+    "UITurnUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totals", "reasoningComplete", "billingComplete", "calls"],
+      "properties": {
+        "totals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "output", "cacheRead", "cacheWrite", "reasoning"],
+          "properties": {
+            "input": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cacheRead": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cacheWrite": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reasoning": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "cost": {
+          "$ref": "session-v1.json#/$defs/Billing"
+        },
+        "credits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["amount", "source", "complete"],
+          "properties": {
+            "amount": {
+              "type": "number",
+              "minimum": 0
+            },
+            "source": {
+              "enum": ["gateway", "estimated"]
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          }
+        },
+        "reasoningComplete": {
+          "type": "boolean"
+        },
+        "billingComplete": {
+          "type": "boolean"
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UITurnCall"
+          }
+        }
+      }
+    },
+    "UISpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "status", "startSeq", "startedAt", "children"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "kind": {
+          "enum": ["turn", "step", "generation", "tool", "subagent", "compaction", "approval", "other"]
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "status": {
+          "enum": ["running", "waiting", "completed", "failed", "cancelled"]
+        },
+        "startSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ttftMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "purpose": {
+          "enum": [
+            "inference",
+            "compaction",
+            "verifier",
+            "subagent",
+            "media",
+            "tool",
+            "title",
+            "approval-guardian"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "effectId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "toolUseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "childSessionKey": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "nodeIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "callSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UISpan"
+          }
+        }
+      }
+    },
+    "UITurn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "turn",
+        "startSeq",
+        "startedAt",
+        "status",
+        "nodeIds",
+        "usage",
+        "inherited",
+        "forkable"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": ["running", "waiting", "completed", "failed", "cancelled"]
+        },
+        "reason": {
+          "enum": ["completed", "aborted", "error", "parked", "blocked", "budget", "max_steps", "interrupted"]
+        },
+        "nodeIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "finalAssistantId": {
+          "type": "string"
+        },
+        "finalModel": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "usage": {
+          "$ref": "#/$defs/UITurnUsage"
+        },
+        "inherited": {
+          "type": "boolean"
+        },
+        "forkable": {
+          "type": "boolean"
+        },
+        "trace": {
+          "$ref": "#/$defs/UISpan"
+        }
+      }
+    },
+    "UIOperationState": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["turn", "step", "phase"],
+          "properties": {
+            "turn": {
+              "type": "integer"
+            },
+            "step": {
+              "type": "integer"
+            },
+            "phase": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "parked": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ticket", "expiresAt"],
+              "properties": {
+                "ticket": {
+                  "type": "string"
+                },
+                "expiresAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "UITimeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "upto", "generation", "opState", "nodes", "turns"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "upto": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "opState": {
+          "$ref": "#/$defs/UIOperationState"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UINode"
+          }
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UITurn"
+          }
+        },
+        "budget": {
+          "$ref": "#/$defs/BudgetState"
+        },
+        "usage": {
+          "$ref": "#/$defs/UsageView"
+        }
+      }
+    },
+    "UIHistoryInfo": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hasEarlier", "cursor", "startIndex", "totalNodes"],
+          "properties": {
+            "hasEarlier": {
+              "const": true
+            },
+            "cursor": {
+              "$ref": "#/$defs/UIHistoryCursor"
+            },
+            "startIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "totalNodes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hasEarlier", "startIndex", "totalNodes"],
+          "properties": {
+            "hasEarlier": {
+              "const": false
+            },
+            "startIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "totalNodes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      ]
+    },
+    "UIOpeningResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeline", "history"],
+      "properties": {
+        "timeline": {
+          "$ref": "#/$defs/UITimeline"
+        },
+        "history": {
+          "$ref": "#/$defs/UIHistoryInfo"
+        }
+      }
+    },
+    "UIHistoryPage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sessionId",
+            "generation",
+            "cut",
+            "nodes",
+            "hasEarlier",
+            "cursor",
+            "startIndex",
+            "totalNodes",
+            "turns"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "cut": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "nodes": {
+              "type": "array",
+              "maxItems": 200,
+              "items": {
+                "$ref": "#/$defs/UINode"
+              }
+            },
+            "turns": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UITurn"
+              }
+            },
+            "hasEarlier": {
+              "const": true
+            },
+            "cursor": {
+              "$ref": "#/$defs/UIHistoryCursor"
+            },
+            "startIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "totalNodes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sessionId",
+            "generation",
+            "cut",
+            "nodes",
+            "turns",
+            "hasEarlier",
+            "startIndex",
+            "totalNodes"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "cut": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "nodes": {
+              "type": "array",
+              "maxItems": 200,
+              "items": {
+                "$ref": "#/$defs/UINode"
+              }
+            },
+            "turns": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UITurn"
+              }
+            },
+            "hasEarlier": {
+              "const": false
+            },
+            "startIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "totalNodes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      ]
+    },
+    "UIProjectionNodeChange": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "id"],
+          "properties": {
+            "op": {
+              "const": "remove"
+            },
+            "id": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "index", "node"],
+          "properties": {
+            "op": {
+              "const": "upsert"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "node": {
+              "$ref": "#/$defs/UINode"
+            }
+          }
+        }
+      ]
+    },
+    "UIProjectionTurnChange": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "id"],
+          "properties": {
+            "op": {
+              "const": "remove"
+            },
+            "id": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "index", "turn"],
+          "properties": {
+            "op": {
+              "const": "upsert"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "turn": {
+              "$ref": "#/$defs/UITurn"
+            }
+          }
+        }
+      ]
+    },
+    "UITimelinePatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "generation", "from", "upto", "opState", "changes", "turnChanges"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "upto": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalNodes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "opState": {
+          "$ref": "#/$defs/UIOperationState"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UIProjectionNodeChange"
+          }
+        },
+        "turnChanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UIProjectionTurnChange"
+          }
+        },
+        "budget": {
+          "$ref": "#/$defs/BudgetState"
+        },
+        "usage": {
+          "$ref": "#/$defs/UsageView"
+        }
+      }
+    },
+    "UIProjectionUpdate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "patch"],
+          "properties": {
+            "kind": {
+              "const": "patch"
+            },
+            "patch": {
+              "$ref": "#/$defs/UITimelinePatch"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "timeline"],
+          "properties": {
+            "kind": {
+              "const": "replace"
+            },
+            "timeline": {
+              "$ref": "#/$defs/UITimeline"
+            }
+          }
+        }
+      ]
+    },
+    "JwtCredential": {
+      "$ref": "channel.json#/$defs/JwtCredential"
+    },
+    "SourceAuthCredential": {
+      "$ref": "channel.json#/$defs/SourceAuthCredential"
+    },
+    "PortalIdentityCredential": {
+      "$ref": "channel.json#/$defs/PortalIdentityCredential"
+    },
+    "LocalCredential": {
+      "$ref": "channel.json#/$defs/LocalCredential"
+    },
+    "SurfaceAuthCredential": {
+      "$ref": "channel.json#/$defs/SurfaceAuthCredential"
+    },
+    "SlotName": {
+      "$ref": "model.json#/$defs/SlotName"
+    },
+    "SessionForkParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "at"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "childKey": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "WorkspaceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "name", "lastUsedAt", "sessionCount", "available"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "lastUsedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "sessionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "WorkspaceListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "WorkspaceListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceEntry"
+          }
+        }
+      }
+    },
+    "WorkspaceAddParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "WorkspaceAddResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspace"],
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceEntry"
+        }
+      }
+    },
+    "SurfacesMountsParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "SurfacesMountsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mounts"],
+      "properties": {
+        "mounts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package", "surfaceId", "mount", "host", "port"],
+            "properties": {
+              "package": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+              },
+              "surfaceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9-]{0,63}$"
+              },
+              "mount": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^/(?!_agnes(?:/|$))[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$"
+              },
+              "host": {
+                "type": "string",
+                "const": "127.0.0.1"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              }
+            }
+          }
+        }
+      }
+    },
+    "SessionPreferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archived"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SessionRenameParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "title"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "SessionArchiveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "archived"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      }
+    },
+    "DiagnosticsCollectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "DiagnosticsCollectResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collectedAt", "agh", "runtime", "logs"],
+      "properties": {
+        "collectedAt": { "type": "string", "format": "date-time" },
+        "agh": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version"],
+          "properties": {
+            "version": { "type": "string", "maxLength": 128 }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "arch", "osRelease", "node", "pid", "uptimeMs"],
+          "properties": {
+            "platform": { "type": "string", "maxLength": 64 },
+            "arch": { "type": "string", "maxLength": 64 },
+            "osRelease": { "type": "string", "maxLength": 256 },
+            "node": { "type": "string", "maxLength": 64 },
+            "pid": { "type": "integer", "minimum": 0 },
+            "uptimeMs": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "logs": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "size", "text", "truncated", "missing"],
+            "properties": {
+              "name": { "enum": ["daemon.jsonl", "host.jsonl"] },
+              "size": { "type": "integer", "minimum": 0 },
+              "text": { "type": "string" },
+              "truncated": { "type": "boolean" },
+              "missing": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "DiagnosticsEventsParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "afterSeq", "limit", "maxBytes"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "afterSeq": { "type": "integer", "minimum": 0 },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 2097152 }
+      }
+    },
+    "DiagnosticsEventsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "lastSeq", "nextAfterSeq"],
+      "properties": {
+        "events": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "session-v1.json#/$defs/EventEnvelope" }
+        },
+        "lastSeq": { "type": "integer", "minimum": 0 },
+        "nextAfterSeq": {
+          "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        }
+      }
+    },
+    "SessionMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "createdAt", "lastSeq", "generation", "preset"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "preset": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "archived": { "type": "boolean" },
+        "titleSource": { "const": "user", "type": "string" },
+        "cwd": {
+          "type": "string"
+        }
+      }
+    },
+    "SessionListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "q": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cwd": {
+              "type": "string"
+            },
+            "prefix": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      }
+    },
+    "PageSessionMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionMeta"
+          }
+        },
+        "next": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "SessionSetPresetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "preset"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "preset": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "SessionSetModelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "slot", "route", "model"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "slot": {
+          "$ref": "#/$defs/SlotName"
+        },
+        "route": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "thinking": {
+          "$ref": "model.json#/$defs/ThinkingLevel"
+        }
+      }
+    },
+    "SessionSetYoloParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "enabled"],
+      "properties": {
+        "sessionId": { "type": "string" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "EffectiveFromResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectiveFromSeq"],
+      "properties": {
+        "effectiveFromSeq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "SeqResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq"],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ApprovalDecideParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticket", "verdict", "approverCredential"],
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "verdict": {
+          "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
+        },
+        "approverCredential": {
+          "$ref": "#/$defs/Credential"
+        }
+      }
+    },
+    "ParticipantParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "credential"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "credential": {
+          "$ref": "#/$defs/Credential"
+        }
+      }
+    },
+    "ParticipantListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["participants"],
+      "properties": {
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["actor", "joinedAt"],
+            "properties": {
+              "actor": {
+                "$ref": "#/$defs/Actor"
+              },
+              "joinedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "surface": {
+                "type": "string",
+                "maxLength": 64
+              }
+            }
+          }
+        }
+      }
+    },
+    "DirectoryUpsertParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries"],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "maxItems": 5000,
+          "items": {
+            "$ref": "#/$defs/DirectoryEntry"
+          }
+        }
+      }
+    },
+    "DirectoryUpsertResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upserted", "deleted"],
+      "properties": {
+        "upserted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "JobIdParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId"],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "JobIdResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId"],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "ExtUiResponseParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "requestSeq", "action"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "requestSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "enum": ["accept", "decline", "cancel", "expired"]
+        },
+        "data": {
+          "$ref": "#/$defs/JsonValue",
+          "x-trust": "untrusted"
+        }
+      }
+    },
+    "ConfigOAuthInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "enum": ["start", "poll", "answer", "test", "commit", "cancel"]
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "accountId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9][a-z0-9-]{0,47}$"
+        },
+        "providerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "loginMethod": {
+          "enum": ["browser", "device_code"]
+        },
+        "promptId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "answer": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "ConfigOAuthPrompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "message", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "type": {
+          "enum": ["text", "secret", "manual_code"]
+        },
+        "placeholder": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "ConfigOAuthNotice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "ConfigOAuthResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "state"],
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "state": {
+          "enum": ["running", "ready", "failed", "cancelled", "saved"]
+        },
+        "prompt": {
+          "$ref": "#/$defs/ConfigOAuthPrompt"
+        },
+        "notices": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/ConfigOAuthNotice"
+          }
+        },
+        "models": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/ConfigModel"
+          }
+        },
+        "snapshot": {
+          "$ref": "#/$defs/ConfigSnapshot"
+        },
+        "error": {
+          "enum": ["CONFIG_AUTH_FAILED", "CONFIG_AUTH_CANCELLED", "CONFIG_AUTH_EXPIRED"]
+        }
+      }
+    },
+    "ConfigProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "api", "baseUrl"],
+      "properties": {
+        "authType": { "enum": ["api-key", "oauth"] },
+        "authMethods": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["api-key", "oauth"] }
+        },
+        "loginMethods": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["browser", "device_code"] }
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "api": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "baseUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
+    },
+    "ConfigModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "thinkingEfforts": {
+          "oneOf": [
+            {
+              "const": false
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ConfigSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "revision", "configured", "provider", "effect"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "baseUrl", "model", "credentialConfigured"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "baseUrl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "credentialConfigured": {
+                  "type": "boolean"
+                },
+                "route": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              }
+            }
+          ]
+        },
+        "effect": {
+          "enum": ["new-sessions", "restart-required"]
+        },
+        "accounts": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/ConfigAccount"
+          }
+        },
+        "defaultAccountId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+              "maxLength": 48
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ConfigTestInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providerId"],
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "baseUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "model": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "accountId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+          "maxLength": 48
+        }
+      }
+    },
+    "ConfigSaveInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providerId", "model"],
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "baseUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+          "maxLength": 48
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "makeDefault": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ConfigTestResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["models", "verified"],
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigModel"
+          },
+          "maxItems": 4096
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ConfigProvidersResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providers"],
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigProvider"
+          },
+          "maxItems": 128
+        }
+      }
+    },
+    "ConfigEmptyParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {}
+    },
+    "PackageCatalogListParams": {
+      "$ref": "package-admin.json#/$defs/PackageCatalogListParams"
+    },
+    "PackageCatalogPage": {
+      "$ref": "package-admin.json#/$defs/PackageCatalogPage"
+    },
+    "PackageCatalogGetParams": {
+      "$ref": "package-admin.json#/$defs/PackageCatalogGetParams"
+    },
+    "PackageCatalogDescriptor": {
+      "$ref": "package-admin.json#/$defs/PackageCatalogDescriptor"
+    },
+    "PackageListParams": {
+      "$ref": "package-admin.json#/$defs/PackageListParams"
+    },
+    "SkinReadParams": {
+      "$ref": "package-admin.json#/$defs/SkinReadParams"
+    },
+    "ClientModuleReadParams": {
+      "$ref": "package-admin.json#/$defs/ClientModuleReadParams"
+    },
+    "PackageListResult": {
+      "$ref": "package-admin.json#/$defs/PackageListResult"
+    },
+    "PackageInspectParams": {
+      "$ref": "package-admin.json#/$defs/PackageInspectParams"
+    },
+    "PackageOperationReceipt": {
+      "$ref": "package-admin.json#/$defs/PackageOperationReceipt"
+    },
+    "PackageInstallParams": {
+      "$ref": "package-admin.json#/$defs/PackageInstallParams"
+    },
+    "PackageTrustParams": {
+      "$ref": "package-admin.json#/$defs/PackageTrustParams"
+    },
+    "PackageUntrustParams": {
+      "$ref": "package-admin.json#/$defs/PackageUntrustParams"
+    },
+    "PackageActivationTrust": {
+      "$ref": "package-admin.json#/$defs/PackageActivationTrust"
+    },
+    "PackageActivationRequest": {
+      "$ref": "package-admin.json#/$defs/PackageActivationRequest"
+    },
+    "PackageRollbackTarget": {
+      "$ref": "package-admin.json#/$defs/PackageRollbackTarget"
+    },
+    "PackageAdminContext": {
+      "$ref": "package-admin.json#/$defs/PackageAdminContext"
+    },
+    "PackageEnableParams": {
+      "$ref": "package-admin.json#/$defs/PackageEnableParams"
+    },
+    "PackageDisableParams": {
+      "$ref": "package-admin.json#/$defs/PackageDisableParams"
+    },
+    "PackageUpdateParams": {
+      "$ref": "package-admin.json#/$defs/PackageUpdateParams"
+    },
+    "PackageRollbackParams": {
+      "$ref": "package-admin.json#/$defs/PackageRollbackParams"
+    },
+    "PackageRemoveParams": {
+      "$ref": "package-admin.json#/$defs/PackageRemoveParams"
+    },
+    "PackageOperationGetParams": {
+      "$ref": "package-admin.json#/$defs/PackageOperationGetParams"
+    },
+    "PackageOperation": {
+      "$ref": "package-admin.json#/$defs/PackageOperation"
+    },
+    "PackageOperationCancelParams": {
+      "$ref": "package-admin.json#/$defs/PackageOperationCancelParams"
+    },
+    "PackagePinsInspectParams": {
+      "$ref": "package-admin.json#/$defs/PackagePinsInspectParams"
+    },
+    "PackagePinsInspectResult": {
+      "$ref": "package-admin.json#/$defs/PackagePinsInspectResult"
+    },
+    "PackagePinsReleaseParams": {
+      "$ref": "package-admin.json#/$defs/PackagePinsReleaseParams"
+    },
+    "PackagePinsReleaseResult": {
+      "$ref": "package-admin.json#/$defs/PackagePinsReleaseResult"
+    },
+    "PackageTrustWorkspaceParams": {
+      "$ref": "package-admin.json#/$defs/PackageTrustWorkspaceParams"
+    },
+    "PackageTrustWorkspaceResult": {
+      "$ref": "package-admin.json#/$defs/PackageTrustWorkspaceResult"
+    },
+    "PluginTreeApplyParams": {
+      "$ref": "package-admin.json#/$defs/PluginTreeApplyParams"
+    },
+    "PluginTreeRollbackParams": {
+      "$ref": "package-admin.json#/$defs/PluginTreeRollbackParams"
+    },
+    "PluginTreeView": {
+      "$ref": "package-admin.json#/$defs/PluginTreeView"
+    },
+    "PluginTreeApplyResult": {
+      "$ref": "package-admin.json#/$defs/PluginTreeApplyResult"
+    },
+    "PluginTreeRollbackResult": {
+      "$ref": "package-admin.json#/$defs/PluginTreeRollbackResult"
+    },
+    "ConfigAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "label",
+        "providerId",
+        "route",
+        "baseUrl",
+        "model",
+        "models",
+        "enabled",
+        "credentialConfigured"
+      ],
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+          "maxLength": 48
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "providerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "route": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "baseUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigModel"
+          },
+          "maxItems": 4096
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "credentialConfigured": {
+          "type": "boolean"
+        },
+        "authType": {
+          "enum": ["api-key", "oauth"]
+        }
+      }
+    },
+    "ArtifactReadParams": {
+      "description": "Read one bounded byte range from a content-addressed artifact. Session and lane are authorization targets, not caller identity; the daemon authenticates that scope independently.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "laneId", "artifact"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "laneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "range": {
+          "description": "One RFC 7233 bytes range. Multiple ranges are unsupported.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^bytes=(?:[0-9]+-[0-9]*|-[0-9]+)$"
+        }
+      }
+    },
+    "ArtifactReadResult": {
+      "description": "A bounded base64 JSON-RPC artifact response or a fixed, non-secret failure.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 400 },
+            "code": { "const": "invalid_request" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 401 },
+            "code": { "const": "authentication_required" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 403 },
+            "code": { "const": "artifact_forbidden" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 404 },
+            "code": { "const": "artifact_not_found" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 409 },
+            "code": { "const": "artifact_identity_mismatch" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 410 },
+            "code": { "const": "artifact_reclaimed" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 413 },
+            "code": { "const": "artifact_too_large" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 416 },
+            "code": { "const": "range_not_satisfiable" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "code"],
+          "properties": {
+            "ok": { "const": false },
+            "status": { "const": 500 },
+            "code": { "const": "artifact_unavailable" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "status", "artifact", "acceptRanges", "contentLength", "etag", "base64"],
+          "properties": {
+            "ok": { "const": true },
+            "status": { "const": 200 },
+            "artifact": { "$ref": "#/$defs/ArtifactRef" },
+            "acceptRanges": { "const": "bytes" },
+            "contentLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1048576
+            },
+            "etag": {
+              "type": "string",
+              "pattern": "^\"[0-9a-f]{64}\"$"
+            },
+            "base64": {
+              "description": "Canonical standard base64 for at most 1 MiB of response bytes.",
+              "type": "string",
+              "maxLength": 1398104,
+              "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "status",
+            "artifact",
+            "acceptRanges",
+            "contentLength",
+            "etag",
+            "contentRange",
+            "base64"
+          ],
+          "properties": {
+            "ok": { "const": true },
+            "status": { "const": 206 },
+            "artifact": { "$ref": "#/$defs/ArtifactRef" },
+            "acceptRanges": { "const": "bytes" },
+            "contentLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1048576
+            },
+            "etag": {
+              "type": "string",
+              "pattern": "^\"[0-9a-f]{64}\"$"
+            },
+            "contentRange": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^bytes [0-9]+-[0-9]+/[0-9]+$"
+            },
+            "base64": {
+              "description": "Canonical standard base64 for at most 1 MiB of response bytes.",
+              "type": "string",
+              "maxLength": 1398104,
+              "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+            }
+          }
+        }
+      ]
+    },
+    "ConfigAccountInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accountId", "action", "expectedRevision"],
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+          "maxLength": 48
+        },
+        "action": {
+          "enum": ["enable", "disable", "remove", "default"]
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

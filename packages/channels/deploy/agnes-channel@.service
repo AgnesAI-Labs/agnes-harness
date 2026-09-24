@@ -1,0 +1,24 @@
+[Unit]
+Description=Agnes channel runner (%i)
+After=network-online.target agnesd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agnes
+Environment=NODE_ENV=production
+Environment=AGNES_CHANNEL_STATE_DIR=/var/lib/agnes/channels
+StateDirectory=agnes/channels agnes/workspaces
+ExecStart=/usr/bin/agnes-channel %i --config /etc/agnes/channels/%i.yaml
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+UMask=0077
+ReadWritePaths=/var/lib/agnes/channels /var/lib/agnes/workspaces
+
+[Install]
+WantedBy=multi-user.target

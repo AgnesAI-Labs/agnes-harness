@@ -1,0 +1,20 @@
+{
+  "name": "@agnes/cordis",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vendored Cordis core (source: @deepseek-ai/cordis@4.0.2, see VENDORED.md)",
+  "exports": {
+    ".": "./src/index.ts",
+    "./host": "./src/host.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/cosmokit": "workspace:*",
+    "@standard-schema/spec": "1.1.0"
+  },
+  "license": "MIT"
+}

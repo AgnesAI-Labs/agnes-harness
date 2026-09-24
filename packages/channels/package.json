@@ -1,0 +1,29 @@
+{
+  "name": "@agnes/channels",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agnes-channel": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./adapter": "./src/adapter.ts",
+    "./testkit": "./testkit/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/daemon": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "yaml": "2.9.0"
+  },
+  "optionalDependencies": {
+    "dingtalk-stream": "2.1.6-beta.1"
+  },
+  "license": "Apache-2.0"
+}

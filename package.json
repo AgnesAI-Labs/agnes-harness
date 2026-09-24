@@ -1,0 +1,27 @@
+{
+  "name": "agnes-harness",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "scripts": {
+    "test": "vitest run --maxWorkers=1",
+    "typecheck": "tsc -b",
+    "lint": "biome check .",
+    "gen:check": "pnpm -r --if-present run gen:check",
+    "bench:cu-artifact-gc": "tsx tools/bench-cu-artifact-gc.ts",
+    "bench:ledger-integrity": "tsx tools/bench-ledger-integrity.ts",
+    "bench:ledger-scan": "tsx tools/bench-ledger-scan.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@types/node": "26.4.1",
+    "happy-dom": "20.14.3",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
+  },
+  "license": "Apache-2.0"
+}

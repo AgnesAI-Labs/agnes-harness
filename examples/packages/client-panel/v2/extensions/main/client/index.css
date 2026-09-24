@@ -1,0 +1,9 @@
+[data-slot="ui:sidebar"] {
+  margin: 12px 0;
+  border: 1px solid var(--agnes-accent, #2563eb);
+  border-radius: 10px;
+  padding: 12px 16px;
+  background: var(--agnes-bg-card, #ffffff);
+  color: var(--agnes-accent, #2563eb);
+  font-weight: 700;
+}

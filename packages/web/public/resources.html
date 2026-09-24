@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/brand-mark.png" type="image/png" />
+    <title>技能与 MCP · Agnes</title>
+    <!-- 与 index.html 同理：本页也会被嵌进设置对话框，必须同源跟随主题且不闪。 -->
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/resources-standalone.js"></script>
+  </head>
+  <body data-agnes-region="app" id="resource-admin-page" class="admin-page resource-admin-page">
+    <a class="skip-link" href="#resource-content">跳至资源列表</a>
+    <header data-agnes-region="topbar" class="admin-header resource-admin-header">
+      <button id="resource-return" class="secondary-button compact" type="button">返回工作台</button>
+      <div class="admin-heading"><p class="eyebrow">系统设置</p><h1>技能与 MCP</h1></div>
+    </header>
+    <main id="resource-content" class="admin-main resource-admin-main" tabindex="-1">
+      <p id="resource-notice" class="admin-notice" role="status" aria-live="polite"></p>
+      <div class="resource-toolbar">
+        <div class="plugin-tabs" role="tablist" aria-label="资源类型">
+          <button id="skills-tab" type="button" role="tab" aria-controls="resource-list" aria-selected="true">Skills</button>
+          <button id="mcp-tab" type="button" role="tab" aria-controls="resource-list" aria-selected="false" tabindex="-1">MCP</button>
+        </div>
+        <div class="resource-toolbar-actions">
+          <button id="skill-refresh" class="secondary-button compact" type="button">刷新技能目录</button>
+          <button id="mcp-create" class="primary-button compact" type="button" hidden>添加 MCP</button>
+        </div>
+      </div>
+      <div id="resource-layout" class="plugin-layout resource-layout">
+        <section id="resource-list" class="plugin-list" aria-live="polite" aria-label="资源目录"></section>
+      </div>
+    </main>
+
+    <!-- 详情从右侧固定抽屉改为独立模态框，与插件页一致。 -->
+    <dialog data-agnes-region="dialog" id="resource-detail" class="plugin-detail" aria-label="资源详情"></dialog>
+    <dialog data-agnes-region="dialog" id="mcp-dialog" aria-labelledby="mcp-dialog-title">
+      <form id="mcp-form" class="plugin-dialog-form">
+        <div class="dialog-heading"><div><p class="eyebrow">受控连接</p><h2 id="mcp-dialog-title">添加 MCP 服务</h2></div></div>
+        <p class="dialog-intro">只可填写受控 transport 和已有 <code>secret://</code> 引用。密钥值不会进入本页。</p>
+        <label class="form-field">服务 ID<input id="mcp-id" required maxlength="128" autocomplete="off" placeholder="github" /></label>
+        <label class="form-field">显示名称<input id="mcp-name" required maxlength="128" autocomplete="off" placeholder="GitHub" /></label>
+        <label class="form-field">传输<select id="mcp-transport"><option value="stdio">本地 stdio</option><option value="http">HTTPS / 本地 HTTP</option><option value="sse">SSE（远程，旧版协议）</option></select></label>
+        <label id="mcp-executable-row" class="form-field">可执行文件<input id="mcp-executable" autocomplete="off" placeholder="mcp-github" /></label>
+        <label id="mcp-args-row" class="form-field">参数（每行一个）<textarea id="mcp-args" rows="3" spellcheck="false"></textarea></label>
+        <label id="mcp-url-row" class="form-field" hidden>HTTPS 或本地 loopback 地址<input id="mcp-url" type="url" autocomplete="off" placeholder="https://example.com/mcp" /></label>
+        <label class="form-field">凭据方式<select id="mcp-secret-kind"><option value="none">无凭据</option><option value="stdio-env">stdio 环境变量</option><option value="http-bearer">HTTP Bearer</option><option value="http-header">HTTP API Key</option></select></label>
+        <label id="mcp-header-row" class="form-field" hidden>HTTP Header<select id="mcp-header-name"><option value="x-api-key">x-api-key</option><option value="x-api-token">x-api-token</option></select></label>
+        <label id="mcp-secret-row" class="form-field">SecretRef / 环境变量映射<textarea id="mcp-secret" rows="3" spellcheck="false" placeholder="secret://namespace/name 或 TOKEN=secret://namespace/name"></textarea></label>
+        <label class="form-field">允许工具（每行一个，可留空）<textarea id="mcp-tools" rows="3" spellcheck="false"></textarea></label>
+        <p id="mcp-error" class="plugin-form-error" role="alert"></p>
+        <div class="dialog-actions"><button id="mcp-cancel" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit">创建并等待确认</button></div>
+      </form>
+    </dialog>
+    <!-- 共享确认弹窗（@agnes/web-admin-frame 的 createConfirmController）。此前本页每个操作都弹
+         原生 window.confirm，与本页其余样式不搭且无法展示结构化事实。同一份标记也存在于
+         index.html 与 admin.html，由 admin-pane-contract.test.ts 断言三处都有。 -->
+    <dialog data-agnes-region="dialog" id="admin-confirm" aria-labelledby="admin-confirm-title">
+      <div class="plugin-dialog-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">需要确认</p>
+            <h2 id="admin-confirm-title">确认操作</h2>
+          </div>
+        </div>
+        <p id="admin-confirm-description" class="dialog-intro"></p>
+        <div id="admin-confirm-preview" class="confirm-facts" hidden></div>
+        <div class="dialog-actions">
+          <button id="admin-confirm-cancel" class="secondary-button" type="button">取消</button>
+          <button id="admin-confirm-action" class="primary-button" type="button">确认</button>
+        </div>
+      </div>
+    </dialog>
+  </body>
+</html>

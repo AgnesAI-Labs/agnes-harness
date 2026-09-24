@@ -1,0 +1,14 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "url": {
+      "minLength": 1,
+      "maxLength": 2048,
+      "type": "string"
+    }
+  },
+  "required": [
+    "url"
+  ]
+}

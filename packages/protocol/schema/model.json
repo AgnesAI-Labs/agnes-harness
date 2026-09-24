@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/model.json",
+  "title": "agnes-model/v1",
+  "$defs": {
+    "JsonValue": { "$ref": "session-v1.json#/$defs/JsonValue" },
+    "ContentBlock": { "$ref": "session-v1.json#/$defs/ContentBlock" },
+    "ToolCall": { "$ref": "session-v1.json#/$defs/ToolCall" },
+    "SlotName": {
+      "enum": ["primary", "escalation", "fast", "compaction", "verifier", "image", "video"]
+    },
+    "ThinkingLevel": {
+      "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+    },
+    "AiErrorCode": {
+      "enum": [
+        "AUTH",
+        "RATE_LIMIT",
+        "QUOTA",
+        "OVERFLOW",
+        "TIMEOUT",
+        "NO_MODEL",
+        "NO_ADAPTER",
+        "FORMAT",
+        "TRANSPORT",
+        "CONTRACT_MISMATCH",
+        "ABORTED"
+      ]
+    },
+    "DecodeRule": {
+      "enum": [
+        "reasoning_field",
+        "think_tag",
+        "qwen3_coder",
+        "anthropic_invoke",
+        "hermes_tool_call",
+        "inline_json",
+        "lenient_json"
+      ]
+    },
+    "Sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "ToolSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "parameters"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+        "description": { "type": "string", "maxLength": 8192 },
+        "parameters": { "$ref": "#/$defs/JsonValue" }
+      }
+    },
+    "RequestMessage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role", "content"],
+          "properties": {
+            "role": { "const": "user" },
+            "content": { "type": "array", "items": { "$ref": "#/$defs/ContentBlock" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role", "content"],
+          "properties": {
+            "role": { "const": "assistant" },
+            "content": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "text"],
+                    "properties": { "type": { "const": "text" }, "text": { "type": "string" } }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "text"],
+                    "properties": { "type": { "const": "thinking" }, "text": { "type": "string" } }
+                  }
+                ]
+              }
+            },
+            "toolCalls": { "type": "array", "items": { "$ref": "#/$defs/ToolCall" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role", "toolUseId", "content", "isError"],
+          "properties": {
+            "role": { "const": "tool_result" },
+            "toolUseId": { "type": "string", "maxLength": 128 },
+            "content": { "type": "array", "items": { "$ref": "#/$defs/ContentBlock" } },
+            "isError": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "RequestBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sessionKey",
+        "slot",
+        "route",
+        "model",
+        "contractId",
+        "derivedHash",
+        "system",
+        "messages",
+        "tools"
+      ],
+      "properties": {
+        "kind": { "enum": ["inference", "summary"] },
+        "sessionKey": { "type": "string", "maxLength": 512 },
+        "slot": { "$ref": "#/$defs/SlotName" },
+        "route": { "type": "string", "maxLength": 128 },
+        "model": { "type": "string", "maxLength": 256 },
+        "contractId": { "type": ["string", "null"], "maxLength": 128 },
+        "derivedHash": { "$ref": "#/$defs/Sha256" },
+        "system": { "type": "string", "maxLength": 1048576 },
+        "messages": { "type": "array", "items": { "$ref": "#/$defs/RequestMessage" } },
+        "tools": { "type": "array", "items": { "$ref": "#/$defs/ToolSchema" } },
+        "sampling": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+            "maxTokens": { "type": "integer", "minimum": 1 },
+            "thinking": { "$ref": "#/$defs/ThinkingLevel" }
+          }
+        },
+        "timeoutMs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["firstToken", "total"],
+          "properties": {
+            "firstToken": { "type": "integer", "minimum": 1000 },
+            "total": { "type": "integer", "minimum": 1000 }
+          }
+        }
+      }
+    },
+    "ModelCost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "output", "cacheRead", "cacheWrite"],
+      "properties": {
+        "input": { "type": "number" },
+        "output": { "type": "number" },
+        "cacheRead": { "type": "number" },
+        "cacheWrite": { "type": "number" }
+      }
+    },
+    "ModelRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "api",
+        "route",
+        "baseUrl",
+        "reasoning",
+        "input",
+        "cost",
+        "contextWindow",
+        "maxTokens",
+        "toolCallFormats",
+        "thinkingReplay",
+        "contract_id"
+      ],
+      "properties": {
+        "id": { "type": "string", "maxLength": 256 },
+        "name": { "type": "string", "maxLength": 256 },
+        "api": { "type": "string", "maxLength": 64 },
+        "route": { "type": "string", "maxLength": 128 },
+        "baseUrl": { "type": "string", "maxLength": 2048 },
+        "reasoning": { "type": "boolean" },
+        "thinkingLevelMap": { "type": "object", "additionalProperties": { "type": "string" } },
+        "input": { "type": "array", "items": { "enum": ["text", "image"] } },
+        "cost": { "$ref": "#/$defs/ModelCost" },
+        "contextWindow": { "type": "integer", "minimum": 1 },
+        "maxTokens": { "type": "integer", "minimum": 1 },
+        "samplingParams": { "$ref": "#/$defs/JsonValue" },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "compat": { "$ref": "#/$defs/JsonValue" },
+        "toolCallFormats": {
+          "type": "array",
+          "items": { "anyOf": [{ "const": "native" }, { "$ref": "#/$defs/DecodeRule" }] }
+        },
+        "thinkingReplay": { "enum": ["native", "drop", "text"] },
+        "contract_id": { "type": ["string", "null"], "maxLength": 128 },
+        "slot": { "$ref": "#/$defs/SlotName" }
+      }
+    },
+    "ContractStamp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt_prefix_hash",
+        "tool_schema_hash",
+        "parser_version",
+        "contract_id",
+        "model",
+        "derived_hash",
+        "sent_hash",
+        "transforms"
+      ],
+      "properties": {
+        "prompt_prefix_hash": { "oneOf": [{ "$ref": "#/$defs/Sha256" }, { "type": "null" }] },
+        "tool_schema_hash": { "$ref": "#/$defs/Sha256" },
+        "parser_version": { "type": "string", "maxLength": 32 },
+        "contract_id": { "type": ["string", "null"], "maxLength": 128 },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["route", "id"],
+          "properties": {
+            "route": { "type": "string", "maxLength": 128 },
+            "id": { "type": "string", "maxLength": 256 },
+            "responseModel": { "type": "string", "maxLength": 256 }
+          }
+        },
+        "derived_hash": { "$ref": "#/$defs/Sha256" },
+        "sent_hash": { "$ref": "#/$defs/Sha256" },
+        "transforms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["event", "ext"],
+            "properties": {
+              "event": { "type": "string", "maxLength": 64 },
+              "ext": { "type": "string", "maxLength": 128 }
+            }
+          }
+        }
+      }
+    },
+    "TokenCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "output", "cacheRead", "cacheWrite"],
+      "properties": {
+        "input": { "type": "integer", "minimum": 0 },
+        "output": { "type": "integer", "minimum": 0 },
+        "cacheRead": { "type": "integer", "minimum": 0 },
+        "cacheWrite": { "type": "integer", "minimum": 0 },
+        "reasoning": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "Billing": { "$ref": "session-v1.json#/$defs/Billing" },
+    "Timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ttftMs": { "type": "integer", "minimum": 0 },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "CountResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokens", "source", "boundHash"],
+          "properties": {
+            "tokens": { "type": "integer", "minimum": 0 },
+            "source": { "enum": ["provider", "local-tokenizer"] },
+            "boundHash": { "$ref": "#/$defs/Sha256" },
+            "modelSnapshot": { "type": "string", "maxLength": 256 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source"],
+          "properties": { "source": { "const": "unsupported" } }
+        }
+      ]
+    },
+    "InferenceEvent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "stamp"],
+          "properties": { "type": { "const": "sent" }, "stamp": { "$ref": "#/$defs/ContractStamp" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "delta"],
+          "properties": {
+            "type": { "enum": ["text_delta", "thinking_delta", "toolcall_delta"] },
+            "delta": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "call", "via"],
+          "properties": {
+            "type": { "const": "toolcall_end" },
+            "call": { "$ref": "#/$defs/ToolCall" },
+            "via": { "anyOf": [{ "const": "native" }, { "$ref": "#/$defs/DecodeRule" }] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "rule", "sampleHash"],
+          "properties": {
+            "type": { "const": "deviation" },
+            "rule": { "const": "unparsed" },
+            "sampleHash": { "$ref": "#/$defs/Sha256" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "tokens", "creditSource"],
+          "properties": {
+            "type": { "const": "usage" },
+            "tokens": { "$ref": "#/$defs/TokenCounts" },
+            "credits": { "type": "number", "minimum": 0 },
+            "creditSource": { "enum": ["gateway", "estimated"] },
+            "billing": { "$ref": "#/$defs/Billing" },
+            "timing": { "$ref": "#/$defs/Timing" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "reason"],
+          "properties": {
+            "type": { "const": "done" },
+            "reason": { "enum": ["stop", "length", "toolUse"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "reason", "code", "message", "retryable"],
+          "properties": {
+            "type": { "const": "error" },
+            "reason": { "enum": ["aborted", "error"] },
+            "code": { "$ref": "#/$defs/AiErrorCode" },
+            "message": { "type": "string", "maxLength": 4096 },
+            "retryable": { "type": "boolean" },
+            "retryAfterMs": { "type": "integer", "minimum": 0 },
+            "requestId": { "type": "string", "maxLength": 128 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "kind", "data", "mimeType"],
+          "properties": {
+            "type": { "const": "media" },
+            "kind": { "const": "image" },
+            "data": { "type": "string" },
+            "mimeType": { "type": "string", "maxLength": 128 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "kind", "jobId", "status"],
+          "properties": {
+            "type": { "const": "media" },
+            "kind": { "const": "video_job" },
+            "jobId": { "type": "string", "maxLength": 128 },
+            "status": {
+              "enum": ["submitted", "running", "succeeded", "failed", "cancelled", "expired"]
+            },
+            "url": { "type": "string", "maxLength": 4096 }
+          }
+        }
+      ]
+    },
+    "RouteDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "api", "baseUrl"],
+      "properties": {
+        "route": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "api": { "type": "string", "maxLength": 64 },
+        "baseUrl": { "type": "string", "maxLength": 2048 },
+        "credentialRef": { "type": "string", "pattern": "^secret://[A-Za-z0-9_./-]+$" },
+        "compat": { "$ref": "#/$defs/JsonValue" },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/ModelRecord" } }
+      }
+    },
+    "RouteTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "model"],
+      "properties": {
+        "route": { "type": "string", "maxLength": 128 },
+        "model": { "type": "string", "maxLength": 256 },
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["route", "model"],
+            "properties": {
+              "route": { "type": "string", "maxLength": 128 },
+              "model": { "type": "string", "maxLength": 256 }
+            }
+          }
+        }
+      }
+    },
+    "RouteTable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary"],
+      "properties": {
+        "primary": { "$ref": "#/$defs/RouteTarget" },
+        "escalation": { "$ref": "#/$defs/RouteTarget" },
+        "fast": { "$ref": "#/$defs/RouteTarget" },
+        "compaction": { "$ref": "#/$defs/RouteTarget" },
+        "verifier": { "$ref": "#/$defs/RouteTarget" },
+        "image": { "$ref": "#/$defs/RouteTarget" },
+        "video": { "$ref": "#/$defs/RouteTarget" }
+      }
+    },
+    "ProbeReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "ok", "checks", "latencyMs"],
+      "properties": {
+        "route": { "type": "string", "maxLength": 128 },
+        "ok": { "type": "boolean" },
+        "latencyMs": { "type": "integer", "minimum": 0 },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "ok"],
+            "properties": {
+              "name": { "type": "string", "maxLength": 64 },
+              "ok": { "type": "boolean" },
+              "detail": { "type": "string", "maxLength": 1024 }
+            }
+          }
+        }
+      }
+    },
+    "ContractManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "model_family", "parser_version", "released_at", "sha256"],
+      "properties": {
+        "version": { "type": "string", "maxLength": 32 },
+        "model_family": { "type": "string", "maxLength": 128 },
+        "parser_version": { "type": "string", "maxLength": 32 },
+        "released_at": { "type": "string", "format": "date-time" },
+        "sha256": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prefix", "tools", "syntax"],
+          "properties": {
+            "prefix": {
+              "$ref": "#/$defs/Sha256",
+              "description": "Over the normalised bytes of the contract prompt prefix."
+            },
+            "tools": {
+              "$ref": "#/$defs/Sha256",
+              "description": "Over the canonical JSON of the tool schemas."
+            },
+            "syntax": {
+              "$ref": "#/$defs/Sha256",
+              "description": "Over the parse rule set."
+            }
+          },
+          "description": "This package checks the shape of these three hashes and neither computes nor compares them; the comparison is what raises CONTRACT_MISMATCH, and it lives with the inference client."
+        }
+      }
+    }
+  }
+}

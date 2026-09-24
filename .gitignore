@@ -1,0 +1,35 @@
+.superpowers/
+node_modules/
+dist/
+*.tsbuildinfo
+.agnes-tmp/
+
+# A literal tilde directory: host defaults dataDir to the string "~/.agnes" and nothing
+# expands it, so a run without an explicit dataDir writes here. Ignored so it cannot be
+# committed again; the defect itself is being fixed in host.
+~/
+.agnes-scratch/
+
+# Compiled at build time by packages/host/scripts/build-native.mjs (macOS only). Host helpers
+# live in its ignored dist/ tree; C sources remain in packages/host/native/.
+packages/host/native/macos-process-identity
+packages/host/native/macos-live-app-identity
+
+# Subagent worktrees live inside the repository; the fail-closed manager verifies this rule before
+# creating one so the parent checkout cannot accidentally stage a nested worktree.
+.worktrees/
+.codegraph/
+
+# Machine-local IDE settings and temporary Windows test output.
+.idea/
+/.windows-core-host-check.log
+.agnes
+.agh
+learn/
+.DS_Store
+
+# Local assistant configuration and unpublished scratch material.
+.claude/
+.cursor/
+outputs/
+spikes/

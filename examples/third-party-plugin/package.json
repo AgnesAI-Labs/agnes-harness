@@ -1,0 +1,22 @@
+{
+  "name": "@example/agnes-echo-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "echo",
+        "id": "ext:example/echo",
+        "runtime": "in-process",
+        "default": true
+      },
+      {
+        "export": "echo",
+        "id": "ext:example/echo-isolated",
+        "runtime": "isolated"
+      }
+    ]
+  },
+  "license": "Apache-2.0"
+}

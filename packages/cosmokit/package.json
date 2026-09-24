@@ -1,0 +1,14 @@
+{
+  "name": "@agnes/cosmokit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vendored utilities (source: @deepseek-ai/cosmokit@1.8.3, see VENDORED.md)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,22 @@
+#!/bin/sh
+# Terminal command for this harness. `agh` with a TTY starts the TUI.
+# Resolves symlinks so a PATH entry can point here from outside the repo.
+set -eu
+source=$0
+while [ -L "$source" ]; do
+  dir=$(CDPATH= cd -- "$(dirname "$source")" && pwd)
+  target=$(readlink "$source")
+  case $target in
+    /*) source=$target ;;
+    *) source=$dir/$target ;;
+  esac
+done
+script_dir=$(CDPATH= cd -- "$(dirname "$source")" && pwd)
+repo=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
+built=$repo/packages/cli/dist/local/agnes.mjs
+if [ ! -f "$built" ]; then
+  printf '%s\n' "agh: missing $built" >&2
+  printf '%s\n' "agh: build it with: pnpm --filter @agnes/cli build:local" >&2
+  exit 1
+fi
+exec node "$built" "$@"

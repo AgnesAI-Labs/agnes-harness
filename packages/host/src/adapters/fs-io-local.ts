@@ -1,0 +1,33 @@
+import { type Dirent, promises as fsp, type Stats } from 'node:fs'
+import type { FsIo, FsIoKind } from './fs-io.js'
+
+const kindOf = (e: Dirent | Stats): FsIoKind =>
+  e.isSymbolicLink() ? 'symlink' : e.isDirectory() ? 'dir' : e.isFile() ? 'file' : 'other'
+
+/** node:fs, one call per primitive. The two "missing" codes become undefined; anything else throws. */
+export const localFsIo: FsIo = Object.freeze({
+  async lstat(abs) {
+    try {
+      const st = await fsp.lstat(abs)
+      return { kind: kindOf(st), size: st.size, mtimeMs: st.mtimeMs }
+    } catch (error) {
+      // ENOTDIR joins ENOENT: a path through a plain file resolves no further, and the fence decides
+      // on the deepest real prefix plus the unresolved remainder - fail-closed, and correct on a
+      // worktree, where `.git` is a file, not a directory.
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return undefined
+      throw error
+    }
+  },
+  readlink: (abs) => fsp.readlink(abs),
+  readFile: (abs) => fsp.readFile(abs),
+  writeFile: (abs, data) => fsp.writeFile(abs, data),
+  async mkdir(abs) {
+    await fsp.mkdir(abs, { recursive: true })
+  },
+  async readdir(abs) {
+    const ents = await fsp.readdir(abs, { withFileTypes: true })
+    return ents.map((e) => ({ name: e.name, kind: kindOf(e) }))
+  },
+  rm: (abs, opts) => fsp.rm(abs, { recursive: opts.recursive, force: false }),
+})

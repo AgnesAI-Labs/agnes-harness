@@ -1,0 +1,20 @@
+{
+  "name": "@agnes/resource-control-daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/system-node": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/resource-control-store": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

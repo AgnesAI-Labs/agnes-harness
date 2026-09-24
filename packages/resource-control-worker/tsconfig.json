@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "dist" },
+  "include": ["**/*.ts"],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    { "path": "../../tsconfig.config.json" },
+    { "path": "../base" },
+    { "path": "../protocol" },
+    { "path": "../resource-control-runtime" },
+    { "path": "../system-node" }
+  ]
+}

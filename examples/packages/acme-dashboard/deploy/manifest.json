@@ -1,0 +1,10 @@
+{
+  "id": "customer",
+  "version": "1.0.0",
+  "harnessRange": "^0.1",
+  "extensions": [],
+  "profileFragment": "profile/main.yaml",
+  "presets": [],
+  "fixtures": "fixtures/data",
+  "surfaces": ["surfaces/main.json"]
+}

@@ -1,0 +1,9 @@
+/*
+ * 高对比：主要靠 token 拉满对比度（正文目标 >= 7:1）。样式表只做一件 token 表达不了的事——
+ * 把半透明玻璃态换成实底，否则底下的内容会透上来，对比度门禁的测算前提就不成立。
+ */
+[data-agnes-region="topbar"],
+[data-agnes-region="composer"] {
+  background-image: none;
+  background-color: var(--agnes-bg-page);
+}

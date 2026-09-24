@@ -1,0 +1,54 @@
+name: local-dev
+schemaVersion: 1
+packages:
+  - { id: "@agnes/ai", source: "builtin" }
+  - { id: "@agnes/base", source: "builtin" }
+  - { id: "@agnes/code", source: "builtin" }
+  - { id: "test/hello", source: "file:hello-ext" }
+seams:
+  approval: "@agnes/base"
+  checkpoint: "@agnes/base"
+  ledger: "@agnes/base"
+  sandbox: "@agnes/base"
+  verifier: "@agnes/base"
+  repair: "@agnes/base"
+  artifacts: "@agnes/base"
+  principals: "@agnes/base"
+  platform: "@agnes/host"
+  harness: "@agnes/base"
+provider:
+  package: "@agnes/ai"
+  adapters: ["@agnes/ai"]
+  routes:
+    - route: faux
+      api: openai-completions
+      baseUrl: SEA_BASE_URL
+      credentialRef: secret://test/wire
+      models:
+        - id: faux-1
+          name: faux-1
+          api: openai-completions
+          route: faux
+          baseUrl: SEA_BASE_URL
+          reasoning: false
+          input: [text]
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+          contextWindow: 128000
+          maxTokens: 8192
+          toolCallFormats: [native]
+          thinkingReplay: native
+          contract_id: null
+adapters:
+  storage: sqlite
+  fs: local
+  exec: local
+  platform: host
+  secrets: { kind: file }
+transports: [{ kind: stdio }]
+dataDir: "~/.agh"
+cacheDir: "~/.agh/cache"
+limits: { "jobs.tick_ms": 1000, "shutdown.grace_ms": 10000 }
+presets: { default: standard, allowed: [standard] }
+policy:
+  capabilityCeiling: [tools, hooks, slots, events, resources, network, tools.invoke, artifacts, subagent]
+  workspacePackages: require-project-trust

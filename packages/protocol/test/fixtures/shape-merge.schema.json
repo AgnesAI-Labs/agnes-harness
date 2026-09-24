@@ -1,0 +1,30 @@
+{
+  "$defs": {
+    "Extra": {
+      "type": "object",
+      "properties": { "n": { "type": "integer" } },
+      "required": ["n"]
+    },
+    "Shape": {
+      "description": "a shape, tagged by kind",
+      "type": "object",
+      "properties": { "id": { "type": "string" } },
+      "required": ["id"],
+      "oneOf": [
+        {
+          "description": "circle branch",
+          "type": "object",
+          "properties": { "kind": { "const": "circle" } },
+          "required": ["kind"],
+          "allOf": [{ "$ref": "#/$defs/Extra" }]
+        },
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "square" } },
+          "required": ["kind"]
+        }
+      ],
+      "discriminator": { "propertyName": "kind" }
+    }
+  }
+}

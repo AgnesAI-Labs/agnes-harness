@@ -1,0 +1,55 @@
+# The reinforcement-learning baseline. It extends nothing, states every field explicitly, and its
+# exact bytes are frozen: presets/minimal-rl.sha256 records their sha256 and loading this package
+# checks it. A training run measured against this recipe is only comparable to another run if the
+# recipe was byte-identical, so changing it is a deliberate re-signing (pnpm --filter @agnes/code
+# gen) rather than an edit - and that includes the comments, which are part of the bytes.
+#
+# Every line below is annotated with who reads it. Several keys have no reader at all today, and
+# they are kept rather than dropped: the value of this file is that it states the whole intent of
+# the baseline, including the parts the kernel has not been taught to honour. What may not happen is
+# a reader believing an unread key is in force, so each one says so.
+name: minimal-rl
+# NOT CONSUMED. No code reads `surfaces`; which surfaces may select a recipe is a Profile decision.
+surfaces: [cli, acp]
+# route/prompt_sections: read by core's readPreset and host's route materialization. `default` on
+# both fields of a target is the unconfigured sentinel - the deployment's adapter list decides.
+# An empty prompt_sections is the point of the baseline: no persona, no doctrine, no environment.
+model: { contract_id: agnes-model-contract@v1, route: { primary: { route: default, model: default } }, prompt_sections: [] }
+# Read by core's readPreset. `standard` here means the model emits tool calls directly.
+disclosure: standard
+# tools.core: NOT CONSUMED. The tool registry is filled by the extensions the assembly loads, not by
+# this list, so the two-tool baseline is a statement of intent that nothing enforces yet.
+# tools.timeout_ms: read by core's readPreset.
+tools: { core: [shell, edit], timeout_ms: 120000 }
+# NOT CONSUMED. No MCP client reads this yet.
+mcp: { servers: [], defer: false }
+# NOT CONSUMED. Nothing loads skills from a root list yet; the empty list is the intent.
+skills_roots: []
+# Read by core's readPreset, all four fields.
+compaction: { enabled: true, reserve_tokens: 16384, keep_recent_tokens: 20000, agent_callable: false }
+# preflight / per_request_cap / on_exceed / max_steps: read by core's readPreset.
+# attribution: NOT CONSUMED.
+budget: { preflight: estimate, per_request_cap: null, on_exceed: quote, max_steps: 100, attribution: own }
+# on_unavailable and timeout_ms: read by core's readPreset, and on_unavailable again by base's
+# approval seam. command_policy: validated by the host when a session opens and evaluated by base's
+# approval seam. Empty means nothing is pre-approved: every destructive call reaches a human, and
+# with nobody connected `deny` refuses it. That is the baseline's whole approval posture.
+approval: { on_unavailable: deny, timeout_ms: 60000, command_policy: [] }
+# required: read by the host, which refuses to open a session when the platform cannot provide L1.
+# on_unavailable: read by core's readPreset. level: NOT CONSUMED.
+sandbox: { level: L1, required: false, on_unavailable: deny }
+# Read by core's readPreset as the depth limit. 0 means the baseline spawns no subagents.
+subagent: { max_depth: 0 }
+# Read by core's readPreset.
+verifier: { default_tier: 0 }
+# enabled: NOT CONSUMED. readPreset reads completion_gate.min_items and nothing else.
+completion_gate: { enabled: false }
+# NOT CONSUMED. No self-refinement loop reads this yet; `false` is the intent for a baseline.
+harness: { auto_refine: { enabled: false } }
+# consent: NOT CONSUMED. readPreset reads telemetry.invariants and telemetry.timing, neither of
+# which is written here, so both take their defaults of false. DISABLED is the stated intent.
+telemetry: { consent: DISABLED }
+# NOT CONSUMED. Hook subscription comes from the extensions the assembly loads.
+hooks: []
+# NOT CONSUMED.
+locale: en

@@ -1,0 +1,140 @@
+{
+  "scope": "External dependencies directly used for building, testing, type checking or development.",
+  "packages": [
+    {
+      "name": "@biomejs/biome",
+      "version": "2.5.12",
+      "license": "MIT OR Apache-2.0",
+      "source": "https://github.com/biomejs/biome",
+      "purpose": "Repository formatting and static lint checks.",
+      "rationale": "Provides one deterministic formatter and linter for the TypeScript workspace.",
+      "consumers": ["."]
+    },
+    {
+      "name": "@types/node",
+      "version": "26.4.1",
+      "license": "MIT",
+      "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node",
+      "purpose": "TypeScript declarations for the supported Node.js runtime.",
+      "rationale": "Makes Node platform APIs type-checkable without maintaining local ambient declarations.",
+      "consumers": ["."]
+    },
+    {
+      "name": "@types/react",
+      "version": "18.3.12",
+      "license": "MIT",
+      "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react",
+      "purpose": "Type declarations for React 18 used by the web workbench and the web-client module author API.",
+      "rationale": "Type-only companion of the pinned react dependency; same version line.",
+      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+    },
+    {
+      "name": "@types/react-dom",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom",
+      "purpose": "Type declarations for react-dom 18 used by the web workbench and web-client.",
+      "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
+      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+    },
+    {
+      "name": "@types/turndown",
+      "version": "5.0.6",
+      "license": "MIT",
+      "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/turndown",
+      "purpose": "Type declarations for the Turndown HTML-to-Markdown converter.",
+      "rationale": "Keeps the public-page rendering integration checked against the installed Turndown API.",
+      "consumers": ["packages/base"]
+    },
+    {
+      "name": "@types/ws",
+      "version": "8.18.1",
+      "license": "MIT",
+      "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ws",
+      "purpose": "TypeScript declarations for the ws transport library.",
+      "rationale": "Keeps daemon tests and SDK transport code checked against the installed ws API.",
+      "consumers": ["packages/daemon", "packages/sdk"]
+    },
+    {
+      "name": "@xterm/headless",
+      "version": "6.0.0",
+      "license": "MIT",
+      "source": "https://github.com/xtermjs/xterm.js",
+      "purpose": "Headless terminal emulation for CLI and TUI tests.",
+      "rationale": "Verifies terminal control sequences and screen output without an interactive terminal.",
+      "consumers": ["packages/cli"]
+    },
+    {
+      "name": "esbuild",
+      "version": "0.28.2",
+      "license": "MIT",
+      "source": "https://github.com/evanw/esbuild",
+      "purpose": "SDK browser checks, the Web client bundle and the isolated hooks-runner bundle.",
+      "rationale": "Provides one fast bundler for browser compatibility and deterministic self-contained runtime artifacts.",
+      "consumers": ["packages/base", "packages/cli", "packages/sdk", "packages/web"]
+    },
+    {
+      "name": "react",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react",
+      "purpose": "UI runtime for the web workbench and the in-page client module host; bundled into /vendor/* shared-singleton chunks.",
+      "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
+      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
+      "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
+      "rationale": "Same pin line as react (WC5).",
+      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+    },
+    {
+      "name": "tsx",
+      "version": "4.23.13",
+      "license": "MIT",
+      "source": "https://github.com/privatenumber/tsx",
+      "purpose": "Executes TypeScript repository tools and generators.",
+      "rationale": "Runs checked-in TypeScript tooling directly while preserving the workspace module model.",
+      "consumers": ["."]
+    },
+    {
+      "name": "typescript",
+      "version": "7.0.2",
+      "license": "Apache-2.0",
+      "source": "https://github.com/microsoft/TypeScript",
+      "purpose": "Workspace compiler and project-reference type checker.",
+      "rationale": "Defines the language and type-checking implementation used by all packages.",
+      "consumers": ["."]
+    },
+    {
+      "name": "vitest",
+      "version": "5.0.0",
+      "license": "MIT",
+      "source": "https://github.com/vitest-dev/vitest",
+      "purpose": "Unit, integration, conformance and guard test runner.",
+      "rationale": "Provides one test runtime compatible with the workspace's ESM TypeScript setup.",
+      "consumers": ["."]
+    },
+    {
+      "name": "postject",
+      "version": "1.0.0-alpha.6",
+      "license": "MIT",
+      "source": "https://github.com/nodejs/postject",
+      "purpose": "Inject the Node SEA resource into the CLI executable.",
+      "rationale": "Upstream I8 CLI SEA packaging uses the Node project resource injector; build-time only.",
+      "consumers": ["packages/cli"]
+    },
+    {
+      "name": "happy-dom",
+      "version": "20.14.3",
+      "license": "MIT",
+      "source": "https://github.com/capricorn86/happy-dom",
+      "purpose": "DOM-based Web Markdown and streaming interaction regression tests.",
+      "rationale": "Runs isolated selection, focus, safe rendering and clipboard lifecycle tests without adding a browser runtime dependency to the product.",
+      "consumers": ["."]
+    }
+  ]
+}

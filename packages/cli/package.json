@@ -1,0 +1,64 @@
+{
+  "name": "@agnes/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "dist/agnes-runtime",
+    "dist/sea/agnes-*",
+    "dist/local",
+    "dist/local/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
+    "dist/local/bundled-plugins",
+    "dist/sea/daemon.mjs",
+    "dist/sea/worker.mjs",
+    "dist/sea/web",
+    "dist/sea/native",
+    "dist/sea/runtime",
+    "dist/sea/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
+    "dist/sea/bundled-plugins"
+  ],
+  "bin": {
+    "agh": "./bin/agh"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build:runtime": "tsx ../base/tools/package-isolation-runtime.ts --output dist/agnes-runtime",
+    "build:sea": "node sea/build.mjs",
+    "build:local": "tsx tools/build-local.ts",
+    "start": "node dist/local/agnes.mjs",
+    "web": "node dist/local/agnes.mjs serve"
+  },
+  "dependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/base": "workspace:*",
+    "@agnes/bridges": "workspace:*",
+    "@agnes/code": "workspace:*",
+    "@agnes/daemon": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "@agnes/resource-control-cli": "workspace:*",
+    "@agnes/resource-control-runtime": "workspace:*",
+    "@agnes/cli-tui": "workspace:*",
+    "@agnes/cli-launch": "workspace:*",
+    "get-east-asian-width": "1.6.0",
+    "marked": "18.0.12",
+    "yaml": "2.9.0",
+    "@agnes/web": "workspace:*"
+  },
+  "devDependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@sinclair/typebox": "0.34.33",
+    "@xterm/headless": "6.0.0",
+    "esbuild": "0.28.2",
+    "postject": "1.0.0-alpha.6"
+  },
+  "license": "Apache-2.0"
+}

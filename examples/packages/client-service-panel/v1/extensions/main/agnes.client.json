@@ -1,0 +1,12 @@
+{
+  "client": {
+    "entry": "./client/index.js",
+    "styles": [],
+    "slots": ["ui:sidebar"],
+    "publicConfig": {
+      "label": "Agnes client service demo · v1"
+    },
+    "services": ["panel.version"],
+    "projections": []
+  }
+}

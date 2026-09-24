@@ -1,0 +1,29 @@
+{
+  "issuedAt": "2026-09-13T00:00:00.000Z",
+  "ttlMs": 60000,
+  "entries": [
+    {
+      "id": "acme/widget",
+      "version": "1.0.0",
+      "source": {
+        "type": "npm",
+        "ref": "npm:acme-widget@1.0.0"
+      },
+      "integrity": "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "license": "MIT",
+      "contributions": [
+        {
+          "kind": "extension",
+          "id": "acme/widget",
+          "path": "./extension",
+          "apiRange": "^1.0",
+          "capabilities": {},
+          "runtimeSupports": ["in-process"]
+        }
+      ],
+      "compatibility": "supported",
+      "sourceId": "spoofed",
+      "retrievedAt": "2020-01-01T00:00:00.000Z"
+    }
+  ]
+}

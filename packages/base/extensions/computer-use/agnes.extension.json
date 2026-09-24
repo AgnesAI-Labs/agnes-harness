@@ -1,0 +1,15 @@
+{
+  "id": "agnes/computer-use",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": { "prefix": "", "names": ["computer_use"] },
+    "hooks": ["compact", "shutdown"],
+    "slots": [],
+    "events": false,
+    "resources": [],
+    "network": [],
+    "artifacts": true
+  }
+}

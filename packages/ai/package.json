@@ -1,0 +1,22 @@
+{
+  "name": "@agnes/ai",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testkit": "./testkit/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/protocol": "workspace:*",
+    "@earendil-works/pi-ai": "0.87.0"
+  },
+  "devDependencies": {
+    "@sinclair/typebox": "0.34.33"
+  },
+  "license": "Apache-2.0"
+}

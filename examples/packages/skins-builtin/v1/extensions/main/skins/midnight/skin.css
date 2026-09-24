@@ -1,0 +1,19 @@
+/* 午夜：深色冷调，用纯 CSS 渐变做纵深——不需要任何图片文件。 */
+[data-agnes-region="app"] {
+  background-image: linear-gradient(180deg, #f7f9fc, #e6ecf5);
+}
+[data-agnes-region="sidebar"] {
+  background-color: #e6ecf5;
+}
+[data-agnes-region="composer"] {
+  border-color: #c6d2e0;
+}
+.dark [data-agnes-region="app"] {
+  background-image: linear-gradient(180deg, #141a22, #0b0f14);
+}
+.dark [data-agnes-region="sidebar"] {
+  background-color: #101720;
+}
+.dark [data-agnes-region="composer"] {
+  border-color: #2b3644;
+}

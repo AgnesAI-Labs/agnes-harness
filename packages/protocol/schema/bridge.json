@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/bridge.json",
+  "title": "code \u6863 host bridge \u5e27 (code \u7a3f \u00a76.5)",
+  "x-agnes-bridge-errors": {
+    "1001": "BUDGET_EXCEEDED",
+    "1002": "APPROVAL_REJECTED",
+    "1003": "DEPTH_EXCEEDED",
+    "1004": "TOOL_NOT_FOUND",
+    "1005": "SCHEMA_INVALID"
+  },
+  "$defs": {
+    "JsonValue": {
+      "$ref": "session-v1.json#/$defs/JsonValue"
+    },
+    "BridgeMethod": {
+      "enum": [
+        "bridge.tools.invoke",
+        "bridge.subagent.spawn",
+        "bridge.subagent.fork",
+        "bridge.subagent.collect",
+        "bridge.artifacts.put",
+        "bridge.artifacts.get",
+        "bridge.plan.set",
+        "bridge.log"
+      ]
+    },
+    "BridgeRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jsonrpc", "id", "method", "params"],
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "type": ["integer", "string"]
+            },
+            "method": {
+              "const": "bridge.tools.invoke"
+            },
+            "params": {
+              "$ref": "#/$defs/ToolsInvokeParams"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jsonrpc", "id", "method", "params"],
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "type": ["integer", "string"]
+            },
+            "method": {
+              "enum": [
+                "bridge.subagent.spawn",
+                "bridge.subagent.fork",
+                "bridge.subagent.collect",
+                "bridge.artifacts.put",
+                "bridge.artifacts.get",
+                "bridge.plan.set",
+                "bridge.log"
+              ]
+            },
+            "params": {
+              "$ref": "#/$defs/JsonValue"
+            }
+          }
+        }
+      ]
+    },
+    "BridgeResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jsonrpc", "id", "result"],
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "type": ["integer", "string"]
+            },
+            "result": {
+              "$ref": "#/$defs/JsonValue"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jsonrpc", "id", "error"],
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "type": ["integer", "string", "null"]
+            },
+            "error": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": {
+                  "enum": [1001, 1002, 1003, 1004, 1005, -32600, -32601, -32602, -32603, -32700, -32800]
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "data": {
+                  "$ref": "#/$defs/JsonValue"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ToolsInvokeParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "args"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+        },
+        "args": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      }
+    }
+  },
+  "x-agnes-max-bytes": 1048576
+}

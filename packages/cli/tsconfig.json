@@ -1,0 +1,54 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    { "path": "../system-node" },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../resource-control-cli"
+    },
+    {
+      "path": "../resource-control-runtime"
+    },
+    {
+      "path": "../cli-tui"
+    },
+    {
+      "path": "../cli-launch"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../daemon"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../code"
+    },
+    {
+      "path": "../web"
+    }
+  ]
+}

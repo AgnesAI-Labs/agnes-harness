@@ -1,0 +1,38 @@
+{
+  "name": "@agnes/code",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./runtime": "./src/runtime/index.ts",
+    "./runtime/testkit": "./src/runtime/testkit.ts",
+    "./presets/*": "./presets/*"
+  },
+  "agnes": {
+    "extensions": [
+      "./src/extensions/code-mode"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "gen": "tsx tools/freeze.ts"
+  },
+  "peerDependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@agnes/base": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/protocol": "workspace:*"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.33",
+    "yaml": "2.9.0"
+  },
+  "license": "Apache-2.0"
+}

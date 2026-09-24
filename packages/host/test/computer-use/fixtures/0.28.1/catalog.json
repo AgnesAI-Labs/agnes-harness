@@ -1,0 +1,2356 @@
+{
+  "format": "normalized-tools-list-v1",
+  "source": {
+    "repository": "https://github.com/trycua/cua",
+    "tag": "cua-driver-rs-v0.28.1",
+    "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c"
+  },
+  "capability_version": "1",
+  "observed_tool_count": 57,
+  "tools": [
+    {
+      "name": "list_apps",
+      "capabilities": ["app.list"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_windows",
+      "capabilities": ["window.list"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "on_screen_only": {
+            "description": "When true, drop windows that aren't currently on-screen. Default false.",
+            "type": "boolean"
+          },
+          "pid": {
+            "description": "Optional pid filter. When set, only this pid's windows are returned.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_window_state",
+      "capabilities": [
+        "accessibility.window_state",
+        "accessibility.tree",
+        "accessibility.tree.structured",
+        "accessibility.tree.bounded",
+        "accessibility.element_tokens",
+        "screen.capture",
+        "screen.capture.window"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "capture_mode": {
+            "description": "DEPRECATED and ignored. get_window_state always returns BOTH the element tree and a screenshot — ground on both. The modality is chosen at action time by how you address the target: an element ax action (element_index/element_token) or an element px action (x,y). Any value (including the old \"som\"/\"screenshot\" aliases) is accepted but has no effect.",
+            "enum": ["ax", "vision"],
+            "type": "string"
+          },
+          "include_accessibility_tree": {
+            "description": "Default true — walk the UIA tree and return `elements` + `tree_markdown` alongside the screenshot. Set false to SKIP the UIA walk entirely and return just the screenshot plus window metadata (window_bounds, app_name, window_title) — the capture-only path for a live window preview / picture-in-picture. Mirrors include_screenshot. Setting BOTH include_accessibility_tree:false AND include_screenshot:false is an error (nothing to return).",
+            "type": "boolean"
+          },
+          "include_screenshot": {
+            "description": "Default true — returns a grounding screenshot alongside the tree. Set false to skip the grab and return tree only (the cheap path for re-indexing before an element ax action).",
+            "type": "boolean"
+          },
+          "max_depth": {
+            "description": "Cap on the UIA-tree walk depth. Nodes whose rendered indent would exceed this are omitted. Omit for the default (25). Lower for deep menu / Electron trees.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_dimension": {
+            "description": "Optional cap on the returned screenshot's long edge, in pixels (aspect ratio preserved) — the cheap path for a small preview. Applied on top of the configured max_image_dimension ceiling; the tighter wins. Omit for the configured default.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_elements": {
+            "description": "Cap on the total number of UIA nodes walked. Truncates depth-first; markdown and structured elements truncate together. Omit for the default (5 000). Lower for Electron / large web apps that produce 10k+ element trees.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pid": {
+            "description": "Process ID from `list_apps`.",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Optional case-insensitive substring. Projects both tree_markdown and structured elements to matches plus ancestors while preserving original indices. Compare total_element_count with returned_element_count.",
+            "type": "string"
+          },
+          "screenshot_out_file": {
+            "description": "When set, write the PNG to this file path instead of embedding base64 in the response. The structured output will contain `screenshot_file_path` instead.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "HWND of the target window. Must belong to `pid`. Enumerate via `list_windows` or read from `launch_app`'s `windows` array.",
+            "type": "integer"
+          }
+        },
+        "required": ["pid", "window_id"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "verify_state",
+      "capabilities": [
+        "state.verify",
+        "state.verify.window",
+        "state.verify.element",
+        "state.observe.visual_evidence"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "expect": {
+            "description": "One to eight predicates, combined with logical AND.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "element": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": ["boolean", "null"]
+                    },
+                    "exists": {
+                      "description": "Assert that at least one trusted element matches the selector.\n\nElement walks are not yet exhaustive on every platform, so absence\ncannot be proven. `false` is rejected instead of returning an\nindefinitely-unknown predicate.",
+                      "enum": [true],
+                      "type": "boolean"
+                    },
+                    "selected": {
+                      "type": ["boolean", "null"]
+                    },
+                    "selector": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "label_contains": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "role": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "type": "object"
+                    },
+                    "value_equals": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["selector"],
+                  "type": ["object", "null"]
+                },
+                "window": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bounds": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "height": {
+                          "type": "number"
+                        },
+                        "tolerance_px": {
+                          "maximum": 100,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "width": {
+                          "type": "number"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["x", "y", "width", "height"],
+                      "type": ["object", "null"]
+                    },
+                    "exists": {
+                      "type": ["boolean", "null"]
+                    }
+                  },
+                  "type": ["object", "null"]
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "include_screenshot": {
+            "description": "Return the final window screenshot as image content for a multimodal\ncaller. The driver does not interpret that image.",
+            "type": ["boolean", "null"]
+          },
+          "pid": {
+            "description": "Exact process whose window may be observed.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session. This\nfield never selects capture modality or authorization.",
+            "type": "string"
+          },
+          "stable_samples": {
+            "default": 2,
+            "description": "Consecutive satisfied samples required before returning success.",
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "timeout_ms": {
+            "default": 5000,
+            "description": "Bounded wait. Zero performs one sample.",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "Exact native window identifier.",
+            "type": "integer"
+          }
+        },
+        "required": ["pid", "window_id", "expect"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "launch_app",
+      "capabilities": ["app.launch"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "additional_arguments": {
+            "description": "Extra command-line arguments passed to the launched process (or activation arguments for packaged apps).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "aumid": {
+            "description": "Explicit AUMID for a packaged app. Cleaner alternative to overloading `bundle_id`. Takes precedence over `bundle_id` / `name` when present.",
+            "type": "string"
+          },
+          "bundle_id": {
+            "description": "App User Model ID (AUMID) for a packaged app — pattern `{PackageFamilyName}!{ApplicationId}`, e.g. `Microsoft.WindowsNotepad_8wekyb3d8bbwe!App`. Falls back to a `name` alias if no `!` is present. Either bundle_id, name, aumid, path, or launch_path must be provided.",
+            "type": "string"
+          },
+          "creates_new_application_instance": {
+            "description": "Accepted for parity; no-op on Windows (ShellExecuteEx always creates a new process).",
+            "type": "boolean"
+          },
+          "launch_path": {
+            "description": "Round-trip the `launch_path` returned by `list_apps`. Highest precedence — when set, this exact string is handed to ShellExecuteEx unchanged. For Windows desktop apps it's the full `.exe` commandline (path + arguments preserved from the source shortcut); for UWP apps it's `shell:appsFolder\\{PackageFamilyName}!{AppId}`. For precise UWP pid capture, prefer `aumid` over `launch_path`.",
+            "type": "string"
+          },
+          "name": {
+            "description": "App display name. Tried against the `shell:AppsFolder` index first for packaged-app lookup; on a miss, passed to ShellExecuteEx's PATH search.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Full path to executable. Windows-only; takes precedence over name/bundle_id/aumid (but not over `launch_path`).",
+            "type": "string"
+          },
+          "start_minimized": {
+            "description": "When true, launch the app's window minimized to the taskbar instead of restored-but-not-activated. Use this when the agent wants to drive the app entirely in the background — the user's previously-frontmost window (e.g. terminal) stays visually on top. Desktop launches hold the foreground lock through startup and use SW_SHOWMINNOACTIVE; packaged-app activation remains broker-controlled and receives a best-effort SW_SHOWMINNOACTIVE post-pass. UIA / background dispatch still work on a minimized window; only `screenshot` and `delivery_mode:\"foreground\"` need it restored.",
+            "type": "boolean"
+          },
+          "urls": {
+            "description": "URLs to open in the default browser via ShellExecuteEx (no activation).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "webkit_inspector_port": {
+            "description": "Accepted for cross-platform parity; no-op on Windows.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "kill_app",
+      "capabilities": ["app.kill"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "PID of the process to terminate.",
+            "type": "integer"
+          }
+        },
+        "required": ["pid"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "bring_to_front",
+      "capabilities": ["window.activate"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "Optional HWND. Defaults to pid's first visible top-level window.",
+            "type": "integer"
+          }
+        },
+        "required": ["pid"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_window_frame",
+      "capabilities": ["window.frame.set"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "pid": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "width": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "window_id": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "required": ["pid", "window_id", "x", "y", "width", "height"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "invoke_menu",
+      "capabilities": ["menu.path.invoke", "accessibility.menu.native"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Exact, immediate-child application menu path to resolve and invoke through\nthe operating system's accessibility API. Path labels are matched after\ntrimming surrounding whitespace and otherwise remain case-sensitive.",
+        "properties": {
+          "path": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          },
+          "pid": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "window_id": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": ["pid", "window_id", "path"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "debug_window_info",
+      "capabilities": ["window.debug_info"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "PID of the process to inspect.",
+            "type": "integer"
+          }
+        },
+        "required": ["pid"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "click",
+      "capabilities": [
+        "input.pointer.click",
+        "input.pointer.click.left",
+        "accessibility.element_tokens",
+        "input.delivery_mode"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "button": {
+            "description": "Mouse button. Default \"left\".",
+            "enum": ["left", "right", "middle"],
+            "type": "string"
+          },
+          "count": {
+            "description": "Click count — 1 (single), 2 (double), 3 (triple). Default 1.",
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) the tool returns a structured background_unavailable error rather than fronting. 'foreground' is the explicit escalation: a brief SetForegroundWindow swap + SendInput, restoring the prior foreground afterward. IMPORTANT: 'background' is not a hint to weigh — it is the mandatory first attempt. Do NOT pass 'foreground' preemptively because a target 'looks like' GTK/Chromium/Electron; the DRIVER decides when background is impossible and tells you so via a background_unavailable error (or a verified no-op). Only THEN re-issue the same action with 'foreground'. The lists above are the driver's detectors, not a checklist for you to front on a guess — fronting up-front needlessly steals the user's focus and is a bug, not a shortcut. Matches the macOS delivery_mode surface.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "element_index": {
+            "description": "Element index from get_window_state. Requires the matching `snapshot_id` alongside it. Prefer `element_token`, which carries both values.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+            "type": "string"
+          },
+          "from_zoom": {
+            "description": "When true, x and y are pixel coordinates in the last `zoom` image for this pid. The driver maps them back to window coords.",
+            "type": "boolean"
+          },
+          "modifier": {
+            "description": "Modifier keys held during the action: cmd, shift, option/alt, ctrl.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID for window scope. Omit with scope=desktop for screen-absolute coordinates from get_desktop_state.",
+            "type": "integer"
+          },
+          "scope": {
+            "default": "window",
+            "enum": ["window", "desktop"],
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+            "pattern": "^s[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "target": {
+            "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+            "oneOf": [
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "kind": {
+                    "const": "window",
+                    "type": "string"
+                  },
+                  "pid": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "window_id": {
+                    "format": "uint64",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["kind", "pid", "window_id"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "display_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "desktop",
+                    "type": "string"
+                  }
+                },
+                "required": ["kind", "display_id"],
+                "type": "object"
+              }
+            ]
+          },
+          "window_id": {
+            "description": "HWND for the window whose get_window_state produced the element_index. Required when element_index is used. Optional when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "x": {
+            "description": "X in window-local screenshot pixels — same space as the PNG get_window_state returns. Must be provided together with y.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Y in window-local screenshot pixels. Must be provided together with x.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "double_click",
+      "capabilities": [
+        "input.pointer.click",
+        "input.pointer.click.left",
+        "input.pointer.click.double",
+        "accessibility.element_tokens",
+        "input.delivery_mode"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) the tool returns a structured background_unavailable error rather than fronting. 'foreground' is the explicit escalation: a brief SetForegroundWindow swap + SendInput, restoring the prior foreground afterward. IMPORTANT: 'background' is not a hint to weigh — it is the mandatory first attempt. Do NOT pass 'foreground' preemptively because a target 'looks like' GTK/Chromium/Electron; the DRIVER decides when background is impossible and tells you so via a background_unavailable error (or a verified no-op). Only THEN re-issue the same action with 'foreground'. The lists above are the driver's detectors, not a checklist for you to front on a guess — fronting up-front needlessly steals the user's focus and is a bug, not a shortcut. Matches the macOS delivery_mode surface.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "element_index": {
+            "description": "Element index from get_window_state. Requires the matching `snapshot_id` alongside it. Prefer `element_token`, which carries both values.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+            "type": "string"
+          },
+          "from_zoom": {
+            "description": "After a zoom call, pass true to translate zoom-image coords back to window space.",
+            "type": "boolean"
+          },
+          "modifier": {
+            "description": "Modifier keys held during the action: cmd, shift, option/alt, ctrl.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+            "pattern": "^s[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "HWND for the target window. Required when element_index is used. Optional when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "x": {
+            "description": "X in window-local screenshot pixels. Must be provided together with y.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Y in window-local screenshot pixels. Must be provided together with x.",
+            "type": "number"
+          }
+        },
+        "required": ["pid"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "right_click",
+      "capabilities": [
+        "input.pointer.click",
+        "input.pointer.click.right",
+        "accessibility.element_tokens",
+        "input.delivery_mode"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) the tool returns a structured background_unavailable error rather than fronting. 'foreground' is the explicit escalation: a brief SetForegroundWindow swap + SendInput, restoring the prior foreground afterward. IMPORTANT: 'background' is not a hint to weigh — it is the mandatory first attempt. Do NOT pass 'foreground' preemptively because a target 'looks like' GTK/Chromium/Electron; the DRIVER decides when background is impossible and tells you so via a background_unavailable error (or a verified no-op). Only THEN re-issue the same action with 'foreground'. The lists above are the driver's detectors, not a checklist for you to front on a guess — fronting up-front needlessly steals the user's focus and is a bug, not a shortcut. Matches the macOS delivery_mode surface.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "element_index": {
+            "description": "Element index from get_window_state. Requires the matching `snapshot_id` alongside it. Prefer `element_token`, which carries both values.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+            "type": "string"
+          },
+          "from_zoom": {
+            "description": "After a zoom call, pass true to translate zoom-image coords back to window space.",
+            "type": "boolean"
+          },
+          "modifier": {
+            "description": "Modifier keys held during the action: cmd, shift, option/alt, ctrl.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+            "pattern": "^s[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "HWND for the target window. Required when element_index is used. Optional when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "x": {
+            "description": "X in window-local screenshot pixels. Must be provided together with y.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Y in window-local screenshot pixels. Must be provided together with x.",
+            "type": "number"
+          }
+        },
+        "required": ["pid"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "drag",
+      "capabilities": ["input.pointer.drag", "input.delivery_mode"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "button": {
+            "description": "Mouse button. Default \"left\".",
+            "enum": ["left", "right", "middle"],
+            "type": "string"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) the tool returns a structured background_unavailable error rather than fronting. 'foreground' is the explicit escalation: a brief SetForegroundWindow swap + SendInput, restoring the prior foreground afterward. IMPORTANT: 'background' is not a hint to weigh — it is the mandatory first attempt. Do NOT pass 'foreground' preemptively because a target 'looks like' GTK/Chromium/Electron; the DRIVER decides when background is impossible and tells you so via a background_unavailable error (or a verified no-op). Only THEN re-issue the same action with 'foreground'. The lists above are the driver's detectors, not a checklist for you to front on a guess — fronting up-front needlessly steals the user's focus and is a bug, not a shortcut. Matches the macOS delivery_mode surface.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "duration_ms": {
+            "description": "Wall-clock duration of drag path. Default: 500.",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "from_x": {
+            "description": "Drag-start X in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "from_y": {
+            "description": "Drag-start Y in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "from_zoom": {
+            "description": "When true, coordinates are in the last zoom image for this pid.",
+            "type": "boolean"
+          },
+          "modifier": {
+            "description": "Modifier keys held during the action: cmd, shift, option/alt, ctrl.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "scope": {
+            "description": "Use desktop with no pid/window_id for screen-absolute coordinates.",
+            "enum": ["window", "desktop"],
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "steps": {
+            "description": "Number of intermediate WM_MOUSEMOVE events. Default: 20.",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "format": "uint32",
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "format": "uint64",
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "pid", "window_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "display_id"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to_x": {
+            "description": "Drag-end X in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "to_y": {
+            "description": "Drag-end Y in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "window_id": {
+            "description": "Target window handle (HWND). Optional — driver picks frontmost window of pid when omitted.",
+            "type": "integer"
+          }
+        },
+        "required": ["from_x", "from_y", "to_x", "to_y"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "type_text",
+      "capabilities": [
+        "input.keyboard.type",
+        "input.keyboard.type.terminal_safe",
+        "accessibility.element_tokens",
+        "input.delivery_mode"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "delay_ms": {
+            "description": "Milliseconds between characters. Default 30.",
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) the tool returns a structured background_unavailable error rather than fronting. 'foreground' is the explicit escalation: a brief SetForegroundWindow swap + SendInput, restoring the prior foreground afterward. IMPORTANT: 'background' is not a hint to weigh — it is the mandatory first attempt. Do NOT pass 'foreground' preemptively because a target 'looks like' GTK/Chromium/Electron; the DRIVER decides when background is impossible and tells you so via a background_unavailable error (or a verified no-op). Only THEN re-issue the same action with 'foreground'. The lists above are the driver's detectors, not a checklist for you to front on a guess — fronting up-front needlessly steals the user's focus and is a bug, not a shortcut. Matches the macOS delivery_mode surface.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "element_index": {
+            "description": "Element index from the last get_window_state for the same (pid, window_id). When supplied, type_text writes through UIA ValuePattern and reads that exact element back by handle. The shared ActionResult is confirmed only when the complete expected value is synchronously visible. If SetValue succeeds but read-back is stale or unavailable, the result is unverifiable with no escalation; take a fresh snapshot before retrying because deferred providers may publish only after this call returns. Requires window_id.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+            "type": "string"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "scope": {
+            "description": "Use desktop with no pid/window_id to type into the current foreground application.",
+            "enum": ["window", "desktop"],
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+            "pattern": "^s[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "format": "uint32",
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "format": "uint64",
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "pid", "window_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "display_id"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "description": "Text to insert at the focused element's cursor.",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "HWND of the target window. Required when element_index is used. Optional when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "x": {
+            "description": "Window-local screenshot-pixel X of the field to type into — the element px action form. Pass x,y (no element_index) and the tool pixel-clicks there to establish real renderer focus, then types. Use for Chromium/Electron inputs the UIA/WM_CHAR path can't reach. Read straight off the get_window_state PNG, same convention as click.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Window-local screenshot-pixel Y of the field (see x).",
+            "type": "number"
+          }
+        },
+        "required": ["text"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "press_key",
+      "capabilities": ["input.keyboard.press", "accessibility.element_tokens", "input.delivery_mode"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) the tool returns a structured background_unavailable error rather than fronting. 'foreground' is the explicit escalation: a brief SetForegroundWindow swap + SendInput, restoring the prior foreground afterward. IMPORTANT: 'background' is not a hint to weigh — it is the mandatory first attempt. Do NOT pass 'foreground' preemptively because a target 'looks like' GTK/Chromium/Electron; the DRIVER decides when background is impossible and tells you so via a background_unavailable error (or a verified no-op). Only THEN re-issue the same action with 'foreground'. The lists above are the driver's detectors, not a checklist for you to front on a guess — fronting up-front needlessly steals the user's focus and is a bug, not a shortcut. Matches the macOS delivery_mode surface.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "element_index": {
+            "description": "Optional element_index from the last get_window_state; focuses that UIA element before the key is delivered.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+            "type": "string"
+          },
+          "key": {
+            "description": "Key name (return, tab, escape, up, down, left, right, space, delete, home, end, pageup, pagedown, f1-f12, letter, digit).",
+            "type": "string"
+          },
+          "modifiers": {
+            "description": "Optional modifier names held while the key is pressed (ctrl/shift/alt/win).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "scope": {
+            "description": "Use desktop with no pid/window_id to send the key to the current foreground application.",
+            "enum": ["window", "desktop"],
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+            "pattern": "^s[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "format": "uint32",
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "format": "uint64",
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "pid", "window_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "display_id"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window_id": {
+            "description": "HWND for the target window. Required when element_index is used; otherwise auto-resolves the pid's first visible window.",
+            "type": "integer"
+          },
+          "x": {
+            "description": "Window-local screenshot-pixel X — the element px action form: pixel-click there to focus, then send the key. Use when the key must go to a Chromium/Electron surface the UIA path can't focus. Pass with y, no element_index.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Window-local screenshot-pixel Y (see x).",
+            "type": "number"
+          }
+        },
+        "required": ["key"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "hotkey",
+      "capabilities": ["input.keyboard.hotkey", "input.delivery_mode"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) the tool returns a structured background_unavailable error rather than fronting. 'foreground' is the explicit escalation: a brief SetForegroundWindow swap + SendInput, restoring the prior foreground afterward. IMPORTANT: 'background' is not a hint to weigh — it is the mandatory first attempt. Do NOT pass 'foreground' preemptively because a target 'looks like' GTK/Chromium/Electron; the DRIVER decides when background is impossible and tells you so via a background_unavailable error (or a verified no-op). Only THEN re-issue the same action with 'foreground'. The lists above are the driver's detectors, not a checklist for you to front on a guess — fronting up-front needlessly steals the user's focus and is a bug, not a shortcut. Matches the macOS delivery_mode surface.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "element_index": {
+            "description": "Element index from get_window_state. Requires the matching `snapshot_id` alongside it. Prefer `element_token`, which carries both values.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+            "type": "string"
+          },
+          "keys": {
+            "description": "Modifier(s) and one non-modifier key, e.g. [\"ctrl\", \"c\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "scope": {
+            "description": "Use desktop with no pid/window_id to send the hotkey to the current foreground application.",
+            "enum": ["window", "desktop"],
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+            "pattern": "^s[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "format": "uint32",
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "format": "uint64",
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "pid", "window_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "display_id"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window_id": {
+            "description": "Explicit HWND when the pid owns multiple windows.",
+            "type": "integer"
+          },
+          "x": {
+            "description": "Window-local screenshot-pixel X — the element px action form: pixel-click there to focus, then send the combo (so e.g. Ctrl+V pastes into that field). Pass with y. Use for Chromium/Electron surfaces the background combo can't reach.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Window-local screenshot-pixel Y (see x).",
+            "type": "number"
+          }
+        },
+        "required": ["keys"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_value",
+      "capabilities": ["input.keyboard.type", "accessibility.element_tokens"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "element_index": {
+            "description": "Element index from get_window_state. Requires the matching `snapshot_id` alongside it. Prefer `element_token`, which carries both values.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+            "type": "string"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+            "pattern": "^s[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "value": {
+            "description": "New value. UIA will coerce to the element's native type.",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "HWND of the window. Required when element_index is used; optional when element_token is supplied (the token carries it).",
+            "type": "integer"
+          }
+        },
+        "required": ["pid", "value"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "scroll",
+      "capabilities": ["input.pointer.scroll", "accessibility.element_tokens", "input.delivery_mode"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "Number of scroll ticks. Default 3.",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "by": {
+            "description": "Scroll granularity. Default: line.",
+            "enum": ["line", "page"],
+            "type": "string"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) the tool returns a structured background_unavailable error rather than fronting. 'foreground' is the explicit escalation: a brief SetForegroundWindow swap + SendInput, restoring the prior foreground afterward. IMPORTANT: 'background' is not a hint to weigh — it is the mandatory first attempt. Do NOT pass 'foreground' preemptively because a target 'looks like' GTK/Chromium/Electron; the DRIVER decides when background is impossible and tells you so via a background_unavailable error (or a verified no-op). Only THEN re-issue the same action with 'foreground'. The lists above are the driver's detectors, not a checklist for you to front on a guess — fronting up-front needlessly steals the user's focus and is a bug, not a shortcut. Matches the macOS delivery_mode surface.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "direction": {
+            "enum": ["up", "down", "left", "right"],
+            "type": "string"
+          },
+          "element_index": {
+            "description": "Optional element_index. Accepted for parity; currently no-op on Windows.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+            "type": "string"
+          },
+          "pid": {
+            "description": "Target process ID for window scope. Omit with scope=desktop for screen-absolute coordinates from get_desktop_state.",
+            "type": "integer"
+          },
+          "scope": {
+            "default": "window",
+            "enum": ["window", "desktop"],
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+            "pattern": "^s[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "format": "uint32",
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "format": "uint64",
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "pid", "window_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "display_id"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window_id": {
+            "description": "HWND of the target window. Required when element_index is used; otherwise auto-resolves the pid's first visible window.",
+            "type": "integer"
+          },
+          "x": {
+            "description": "With pid/window_id: window-local screenshot X used to target a nested scroll surface in foreground mode. Without pid/window_id: screen-absolute X for desktop scope. Must be paired with y.",
+            "type": "number"
+          },
+          "y": {
+            "description": "With pid/window_id: window-local screenshot Y used to target a nested scroll surface in foreground mode. Without pid/window_id: screen-absolute Y for desktop scope. Must be paired with x.",
+            "type": "number"
+          }
+        },
+        "required": ["direction"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "clipboard_read",
+      "capabilities": ["clipboard.read", "clipboard.types"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_text": {
+            "default": false,
+            "description": "Return plain-text clipboard content in addition to the available types.\nClipboard content is privacy-sensitive and is never retained in telemetry.",
+            "type": "boolean"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "clipboard_write",
+      "capabilities": [
+        "clipboard.write",
+        "clipboard.write.text",
+        "clipboard.write.image",
+        "clipboard.write.file_url",
+        "clipboard.types"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file_path": {
+            "description": "Absolute path to a local file to place on the clipboard as a file URL.",
+            "type": "string"
+          },
+          "image_path": {
+            "description": "Absolute path to a local image to place on the clipboard.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "text": {
+            "description": "Plain text to place on the clipboard.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_screen_size",
+      "capabilities": ["screen.dimensions"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_desktop_state",
+      "capabilities": ["screen.capture", "screen.dimensions"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "screenshot_out_file": {
+            "description": "Write PNG here instead of base64.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_cursor_position",
+      "capabilities": ["screen.cursor.position"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "move_cursor",
+      "capabilities": ["agent_cursor.move", "input.pointer.move"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor_id": {
+            "type": "string"
+          },
+          "scope": {
+            "description": "desktop moves the real OS pointer; window moves only the agent overlay.",
+            "enum": ["window", "desktop"],
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "format": "uint32",
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "format": "uint64",
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "pid", "window_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "display_id"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Preferred per-call target. New callers should set this field."
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "required": ["x", "y"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_agent_cursor_enabled",
+      "capabilities": ["agent_cursor.set_enabled"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": ["session", "enabled"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_agent_cursor_motion",
+      "capabilities": ["agent_cursor.set_motion"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "arc_flow": {
+            "format": "double",
+            "type": ["number", "null"]
+          },
+          "arc_size": {
+            "format": "double",
+            "type": ["number", "null"]
+          },
+          "dwell_after_click_ms": {
+            "format": "double",
+            "type": ["number", "null"]
+          },
+          "end_handle": {
+            "format": "double",
+            "type": ["number", "null"]
+          },
+          "glide_duration_ms": {
+            "format": "double",
+            "type": ["number", "null"]
+          },
+          "idle_hide_ms": {
+            "format": "double",
+            "type": ["number", "null"]
+          },
+          "session": {
+            "type": "string"
+          },
+          "spring": {
+            "format": "double",
+            "type": ["number", "null"]
+          },
+          "start_handle": {
+            "format": "double",
+            "type": ["number", "null"]
+          },
+          "turn_radius": {
+            "format": "double",
+            "type": ["number", "null"]
+          }
+        },
+        "required": ["session"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_agent_cursor_state",
+      "capabilities": ["agent_cursor.state"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": ["session"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_agent_cursor_theme",
+      "capabilities": ["agent_cursor.set_theme"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "reduced_motion": {
+            "default": "auto",
+            "enum": ["auto", "on", "off"],
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "theme_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["session", "theme_id"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "check_permissions",
+      "capabilities": [
+        "system.permissions.tcc",
+        "system.permissions.tcc.accessibility",
+        "system.permissions.tcc.screen_recording"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "health_report",
+      "capabilities": [],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "include": {
+            "description": "Only run these checks (canonical names). Wins over `skip`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skip": {
+            "description": "Skip these checks (canonical names). Ignored when `include` is set.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_config",
+      "capabilities": ["system.config.read"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_config",
+      "capabilities": ["system.config.write"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "capture_mode": {
+            "description": "DEPRECATED and ignored — get_window_state always returns both the UIA tree and a screenshot. Still accepted/persisted for back-compat but has no effect. (\"som\"/\"screenshot\" still decode as deprecated aliases.)",
+            "enum": ["ax", "vision"],
+            "type": "string"
+          },
+          "experimental_pip": {
+            "description": "Legacy per-field shape. Enables PiP preview (applies next restart).",
+            "type": "boolean"
+          },
+          "experimental_pip_geometry": {
+            "description": "Legacy per-field shape. PiP window size + optional position.",
+            "type": "string"
+          },
+          "key": {
+            "description": "Dotted snake_case path to a leaf config field (Swift-compatible shape). Pair with `value`.",
+            "type": "string"
+          },
+          "max_image_dimension": {
+            "description": "Legacy per-field shape.",
+            "type": "integer"
+          },
+          "value": {
+            "description": "New value for `key`. JSON type depends on the key."
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_accessibility_tree",
+      "capabilities": ["accessibility.tree", "accessibility.tree.structured"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "zoom",
+      "capabilities": ["screen.capture", "screen.capture.window", "screen.capture.region"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID. Validated in code (an explicit \"Missing required integer field pid\" error when absent); kept out of `required` to match the shared cross-platform zoom contract.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "HWND of the target window.",
+            "type": "integer"
+          },
+          "x1": {
+            "description": "Left edge of the region (resized-image pixels).",
+            "type": "number"
+          },
+          "x2": {
+            "description": "Right edge of the region (resized-image pixels).",
+            "type": "number"
+          },
+          "y1": {
+            "description": "Top edge of the region (resized-image pixels).",
+            "type": "number"
+          },
+          "y2": {
+            "description": "Bottom edge of the region (resized-image pixels).",
+            "type": "number"
+          }
+        },
+        "required": ["window_id", "x1", "y1", "x2", "y2"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page",
+      "capabilities": ["page.action"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "Action to perform.",
+            "enum": [
+              "execute_javascript",
+              "get_text",
+              "query_dom",
+              "click_element",
+              "insert_text",
+              "type_keystrokes",
+              "enable_javascript_apple_events"
+            ],
+            "type": "string"
+          },
+          "attributes": {
+            "description": "Element attributes to include in query_dom results.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bundle_id": {
+            "description": "Bundle ID of the browser. Required for enable_javascript_apple_events (macOS only).",
+            "type": "string"
+          },
+          "cdp_port": {
+            "description": "Optional, for execute_javascript/insert_text/type_keystrokes: use this exact CDP port instead of auto-discovering one from pid. Needed when the port was opened via the browser's own remote-debugging toggle rather than a launch-time flag, since that path may not answer the auto-discovery probe.",
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "css_selector": {
+            "description": "CSS selector for query_dom (e.g. 'a', 'button', 'input', 'h1'-'h6', 'p', 'img', 'select', '*').",
+            "type": "string"
+          },
+          "javascript": {
+            "description": "JavaScript to execute. Required for execute_javascript.",
+            "type": "string"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "selector": {
+            "description": "CSS selector for click_element (e.g. 'button.submit', '#login a').",
+            "type": "string"
+          },
+          "target_url_contains": {
+            "description": "Optional, for execute_javascript/insert_text/type_keystrokes: require exactly one browser tab whose URL contains this substring. Use this on a multi-tab browser — there's no built-in link between window_id and which tab a CDP call reaches.",
+            "type": "string"
+          },
+          "text": {
+            "description": "Text to insert or type. Required for insert_text and type_keystrokes. The target field must already have DOM focus (click/focus it first).",
+            "type": "string"
+          },
+          "user_has_confirmed_enabling": {
+            "description": "Must be true to proceed with enable_javascript_apple_events. This will quit and relaunch the browser.",
+            "type": "boolean"
+          },
+          "window_id": {
+            "description": "Target window ID from list_windows.",
+            "type": "integer"
+          }
+        },
+        "required": ["action"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_browser_state",
+      "capabilities": ["browser.state"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "continuation": {
+            "description": "Opaque continuation minted by an earlier semantic_v2 response.",
+            "type": "string"
+          },
+          "include_screenshot": {
+            "default": false,
+            "description": "Capture the exact tab viewport as PNG through CDP without selecting the tab or foregrounding its native window. The request refuses if capture cannot be completed.",
+            "type": "boolean"
+          },
+          "pid": {
+            "description": "Native browser process id (bind mode).",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Read-only semantic match over role, accessible name, and visible text.",
+            "type": "string"
+          },
+          "scope_ref": {
+            "description": "Current semantic/content ref whose subtree should be observed.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session. Browser targets, tabs, and refs belong to the resolved lifecycle session.",
+            "type": "string"
+          },
+          "snapshot_format": {
+            "description": "Versioned snapshot contract. dom_refs_v1 remains the compatibility default.",
+            "enum": ["dom_refs_v1", "semantic_v2"],
+            "type": "string"
+          },
+          "tab_id": {
+            "description": "Opaque tab id from get_browser_state (session-scoped).",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Opaque browser target id minted by get_browser_state (session-scoped; never a CDP id).",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "Native window id owned by pid (bind mode).",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "browser_prepare",
+      "capabilities": ["browser.prepare"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "allow_launch": {
+            "description": "Allow a separate driver-owned isolated Chromium process to be launched (default false).",
+            "type": "boolean"
+          },
+          "pid": {
+            "description": "Browser process id to prepare. Required except for a driver-owned isolated_new/isolated_named launch with allow_launch=true.",
+            "type": "integer"
+          },
+          "profile": {
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "enum": ["isolated_new", "isolated_named"],
+                "type": "string"
+              },
+              "name": {
+                "description": "Required only for isolated_named; 1-64 path-safe ASCII characters.",
+                "type": "string"
+              }
+            },
+            "required": ["mode"],
+            "type": "object"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session. Browser targets, tabs, and refs belong to the resolved lifecycle session.",
+            "type": "string"
+          },
+          "strategy": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": ["existing_profile"],
+                "type": "string"
+              }
+            },
+            "required": ["kind"],
+            "type": "object"
+          },
+          "window_id": {
+            "description": "Exact native window approval anchor; required for strategy.kind=existing_profile.",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "browser_navigate",
+      "capabilities": ["browser.navigate"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session. Browser targets, tabs, and refs belong to the resolved lifecycle session.",
+            "type": "string"
+          },
+          "tab_id": {
+            "description": "Opaque tab id from get_browser_state (session-scoped).",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Opaque browser target id minted by get_browser_state (session-scoped; never a CDP id).",
+            "type": "string"
+          },
+          "url": {
+            "description": "Destination URL (http:, https:, or about:).",
+            "type": "string"
+          }
+        },
+        "required": ["target_id", "tab_id", "url"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "browser_click",
+      "capabilities": ["browser.input.click"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "input_route": {
+            "description": "\"trusted\" (default): Input.dispatchMouseEvent. It refuses rather than foregrounding a standalone browser. \"dom_event\": synthetic full-background DOM click, only when explicitly requested. Dispatch does not prove the control activated; refresh page state and verify the expected postcondition.",
+            "enum": ["trusted", "dom_event"],
+            "type": "string"
+          },
+          "ref": {
+            "description": "Page element ref in the p<snapshot>:<index> namespace from get_browser_state. Refs are invalidated by navigation and by newer snapshots of the same tab.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session. Browser targets, tabs, and refs belong to the resolved lifecycle session.",
+            "type": "string"
+          },
+          "tab_id": {
+            "description": "Opaque tab id from get_browser_state (session-scoped).",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Opaque browser target id minted by get_browser_state (session-scoped; never a CDP id).",
+            "type": "string"
+          },
+          "x": {
+            "description": "Viewport x (CSS px) — alternative to ref.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Viewport y (CSS px) — alternative to ref.",
+            "type": "number"
+          }
+        },
+        "required": ["target_id", "tab_id"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "browser_type",
+      "capabilities": ["browser.input.type"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "mode": {
+            "description": "insert_text (default): bulk Input.insertText. keystrokes: per-character Input.dispatchKeyEvent.",
+            "enum": ["insert_text", "keystrokes"],
+            "type": "string"
+          },
+          "ref": {
+            "description": "Page element ref in the p<snapshot>:<index> namespace from get_browser_state. Refs are invalidated by navigation and by newer snapshots of the same tab.",
+            "type": "string"
+          },
+          "replace": {
+            "description": "false (default): insert at the caret, appending to whatever the field already holds. true: select the element's whole content first so the text replaces it — with an empty text this clears the field. Replacement goes through the selection, so beforeinput/input still fire and framework state stays consistent.",
+            "type": "boolean"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session. Browser targets, tabs, and refs belong to the resolved lifecycle session.",
+            "type": "string"
+          },
+          "tab_id": {
+            "description": "Opaque tab id from get_browser_state (session-scoped).",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Opaque browser target id minted by get_browser_state (session-scoped; never a CDP id).",
+            "type": "string"
+          },
+          "text": {
+            "description": "Text to type.",
+            "type": "string"
+          }
+        },
+        "required": ["target_id", "tab_id", "ref", "text"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "browser_dialog",
+      "capabilities": ["browser.dialog", "input.delivery_mode"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": ["inspect", "accept", "dismiss"],
+            "type": "string"
+          },
+          "delivery_mode": {
+            "default": "background",
+            "description": "Requested foreground posture for accept/dismiss. Linux Chromium requires foreground; inspect is read-only.",
+            "enum": ["background", "foreground"],
+            "type": "string"
+          },
+          "dialog_id": {
+            "description": "Opaque current dialog generation returned by action=inspect.",
+            "type": "string"
+          },
+          "prompt_text": {
+            "description": "Sensitive response text, valid only when accepting a prompt dialog.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session. Browser targets, tabs, and refs belong to the resolved lifecycle session.",
+            "type": "string"
+          },
+          "tab_id": {
+            "description": "Opaque tab id from get_browser_state (session-scoped).",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Opaque browser target id minted by get_browser_state (session-scoped; never a CDP id).",
+            "type": "string"
+          }
+        },
+        "required": ["target_id", "tab_id", "action"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "browser_set_input_files",
+      "capabilities": ["browser.input.files"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "files": {
+            "items": {
+              "description": "Absolute path to one local regular file.",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array"
+          },
+          "ref": {
+            "description": "Page element ref in the p<snapshot>:<index> namespace from get_browser_state. Refs are invalidated by navigation and by newer snapshots of the same tab.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session. Browser targets, tabs, and refs belong to the resolved lifecycle session.",
+            "type": "string"
+          },
+          "tab_id": {
+            "description": "Opaque tab id from get_browser_state (session-scoped).",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Opaque browser target id minted by get_browser_state (session-scoped; never a CDP id).",
+            "type": "string"
+          }
+        },
+        "required": ["target_id", "tab_id", "ref", "files"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "browser_download",
+      "capabilities": ["browser.download"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "destination_root": {
+            "description": "Absolute, existing, canonical directory approved to receive the download.",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Live page ref whose activation initiates the download.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. This tool requires the label that owns its browser target, tab, and refs.",
+            "type": "string"
+          },
+          "tab_id": {
+            "description": "Opaque exact tab id from get_browser_state.",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Opaque exact browser target id from get_browser_state.",
+            "type": "string"
+          }
+        },
+        "required": ["session", "target_id", "tab_id", "ref", "destination_root"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "browser_pointer",
+      "capabilities": ["browser.input.pointer"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": ["hover", "right_click", "double_click", "scroll", "drag"],
+            "type": "string"
+          },
+          "delta_x": {
+            "description": "Horizontal scroll delta in CSS pixels.",
+            "type": "number"
+          },
+          "delta_y": {
+            "description": "Vertical scroll delta in CSS pixels.",
+            "type": "number"
+          },
+          "destination_ref": {
+            "description": "Drag destination page ref in the exact same frame.",
+            "type": "string"
+          },
+          "input_route": {
+            "default": "trusted",
+            "enum": ["trusted", "dom_event"],
+            "type": "string"
+          },
+          "ref": {
+            "description": "Origin page ref. Alternative to x/y.",
+            "type": "string"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. This tool requires the label that owns its browser target, tab, and refs.",
+            "type": "string"
+          },
+          "tab_id": {
+            "description": "Opaque tab id minted by get_browser_state.",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Opaque target id minted by get_browser_state.",
+            "type": "string"
+          },
+          "to_x": {
+            "description": "Drag destination viewport x in CSS pixels.",
+            "type": "number"
+          },
+          "to_y": {
+            "description": "Drag destination viewport y in CSS pixels.",
+            "type": "number"
+          },
+          "x": {
+            "description": "Origin viewport x in CSS pixels.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Origin viewport y in CSS pixels.",
+            "type": "number"
+          }
+        },
+        "required": ["target_id", "tab_id", "session", "action"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "start_recording",
+      "capabilities": ["recording.start"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "output_dir": {
+            "description": "Absolute or ~-rooted directory where turn folders and (when enabled) the video file are written.",
+            "type": "string"
+          },
+          "record_video": {
+            "description": "Capture the main display to <output_dir>/recording.mp4. Default: false. Set to true to also capture the main display to recording.mp4 (otherwise only the per-turn screenshots + JSON are recorded). On macOS this uses native ScreenCaptureKit (no extra TCC prompt, macOS 15.0+); on Windows + Linux it requires ffmpeg on PATH.",
+            "type": "boolean"
+          }
+        },
+        "required": ["output_dir"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "stop_recording",
+      "capabilities": ["recording.stop"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_recording_state",
+      "capabilities": ["recording.state"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "replay_trajectory",
+      "capabilities": ["recording.replay"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "delay_ms": {
+            "description": "Milliseconds to sleep between turns, for human-observable pacing. Default 500.",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "dir": {
+            "description": "Trajectory directory previously written by `start_recording`. Absolute or ~-rooted.",
+            "type": "string"
+          },
+          "stop_on_error": {
+            "description": "Stop replay on the first tool-call error. Default true — set false to best-effort through the full trajectory.",
+            "type": "boolean"
+          }
+        },
+        "required": ["dir"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "install_ffmpeg",
+      "capabilities": ["recording.install_dependency"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "Run the install command. Without it, only the planned command is reported.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "start_session",
+      "capabilities": ["session.lifecycle.start", "session.capture_scope"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "capture_scope": {
+            "description": "Deprecated compatibility policy. New callers select window or desktop\nmodality on each action instead of storing it on the session.",
+            "enum": ["auto", "window", "desktop"],
+            "type": "string"
+          },
+          "cursor_theme": {
+            "description": "Optional initial cursor theme. The host applies it before the cursor is\nfirst made visible, avoiding a flash of the default theme.",
+            "properties": {
+              "reduced_motion": {
+                "default": "auto",
+                "enum": ["auto", "on", "off"],
+                "type": "string"
+              },
+              "theme_id": {
+                "type": "string"
+              }
+            },
+            "required": ["theme_id"],
+            "type": ["object", "null"]
+          },
+          "session": {
+            "description": "Optional stable public label for this run (e.g. \"research-run-1\").\nWhen omitted, the authenticated transport lease's implicit session is\ncreated or returned.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "escalate_session",
+      "capabilities": ["session.capture_scope.escalate"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "detail": {
+            "description": "Optional bounded diagnostic detail. Never use secrets or page content.",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "ax_tree_pixel_mismatch",
+              "background_delivery_failed",
+              "foreground_ineffective",
+              "no_window_target",
+              "other"
+            ],
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": ["session", "reason"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_session",
+      "capabilities": ["session.lifecycle.read"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "session": {
+            "description": "Optional public label. When omitted, inspect the caller's attached\nimplicit session.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_sessions",
+      "capabilities": ["session.lifecycle.list"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cursor": {
+            "description": "Opaque continuation cursor returned by a previous call.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum number of content-free summaries to return (default 50, max\n100). Ordinary agent transports are scoped to their own lease.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": ["integer", "null"]
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_session_state",
+      "capabilities": ["session.capture_scope.read"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "session": {
+            "description": "Optional public label. When omitted, inspect the caller's attached\nimplicit session.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "end_session",
+      "capabilities": ["session.lifecycle.end"],
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "session": {
+            "description": "Optional public label to end. When omitted, end the caller's attached\nimplicit session.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "check_for_update",
+      "capabilities": ["driver.update_check"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    }
+  ]
+}

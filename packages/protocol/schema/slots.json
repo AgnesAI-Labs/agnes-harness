@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/slots.json",
+  "title": "SlotMap: the four UI slots an extension may fill",
+  "x-agnes-slot-table": {
+    "tool.card.inline": {
+      "cardinality": "multi",
+      "order": 100,
+      "surfaces": ["tui", "web", "channel"],
+      "failPolicy": "open",
+      "trigger": ["tool_result"],
+      "payload": "ToolCardInlinePayload"
+    },
+    "sidebar.action": {
+      "cardinality": "multi",
+      "order": 200,
+      "surfaces": ["tui", "web"],
+      "failPolicy": "open",
+      "trigger": ["turn_end", "tick"],
+      "payload": "SidebarActionPayload"
+    },
+    "status.line": {
+      "cardinality": "multi",
+      "order": 300,
+      "surfaces": ["tui", "web", "channel"],
+      "failPolicy": "open",
+      "trigger": ["tick"],
+      "payload": "StatusLinePayload"
+    },
+    "notification": {
+      "cardinality": "multi",
+      "order": 400,
+      "surfaces": ["web", "channel"],
+      "failPolicy": "open",
+      "trigger": ["turn_end"],
+      "payload": "NotificationPayload"
+    }
+  },
+  "x-agnes-max-bytes": 65536,
+  "$defs": {
+    "UiSlotName": {
+      "enum": ["tool.card.inline", "sidebar.action", "status.line", "notification"]
+    },
+    "ToolCardInlinePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 256 },
+        "table": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "rows"],
+          "properties": {
+            "columns": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 128 } },
+            "rows": {
+              "type": "array",
+              "maxItems": 500,
+              "items": { "type": "array", "items": { "type": "string", "maxLength": 1024 } }
+            }
+          }
+        },
+        "chart": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "series"],
+          "properties": {
+            "kind": { "enum": ["bar", "line"] },
+            "series": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "points"],
+                "properties": {
+                  "name": { "type": "string", "maxLength": 64 },
+                  "points": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["x", "y"],
+                      "properties": {
+                        "x": { "type": "string", "maxLength": 64 },
+                        "y": { "type": "number" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" },
+              "label": { "type": "string", "maxLength": 64 }
+            }
+          }
+        }
+      }
+    },
+    "SidebarActionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" },
+        "label": { "type": "string", "maxLength": 64 },
+        "icon": { "type": "string", "maxLength": 32 },
+        "disabled": { "type": "boolean" }
+      }
+    },
+    "StatusLinePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "level"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 512 },
+        "level": { "enum": ["info", "warn", "error"] }
+      }
+    },
+    "NotificationPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "body"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 256 },
+        "body": { "type": "string", "maxLength": 4096 },
+        "link": { "type": "string", "maxLength": 2048 }
+      }
+    }
+  }
+}

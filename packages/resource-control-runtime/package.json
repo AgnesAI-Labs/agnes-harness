@@ -1,0 +1,19 @@
+{
+  "name": "@agnes/resource-control-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/cordis": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.25.2"
+  },
+  "license": "Apache-2.0"
+}

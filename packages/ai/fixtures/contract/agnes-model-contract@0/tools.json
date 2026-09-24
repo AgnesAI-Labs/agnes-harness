@@ -1,0 +1,20 @@
+[
+  {
+    "name": "shell",
+    "description": "Run a shell command",
+    "parameters": {
+      "type": "object",
+      "properties": { "command": { "type": "string" } },
+      "required": ["command"]
+    }
+  },
+  {
+    "name": "edit",
+    "description": "Edit a file",
+    "parameters": {
+      "type": "object",
+      "properties": { "path": { "type": "string" }, "edits": { "type": "array" } },
+      "required": ["path", "edits"]
+    }
+  }
+]

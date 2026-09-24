@@ -1,0 +1,821 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/resource-control.json",
+  "title": "Skill and MCP resource control-plane contracts",
+  "$defs": {
+    "ResourcePermission": {
+      "enum": [
+        "resources.read",
+        "resources.skills.write",
+        "resources.reconcile",
+        "skills.refresh",
+        "skills.trust",
+        "mcp.read",
+        "mcp.tools.read",
+        "mcp.manage",
+        "mcp.trust",
+        "mcp.test",
+        "mcp.activate",
+        "mcp.reconnect",
+        "secrets.use"
+      ]
+    },
+    "ProfileId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+    },
+    "ResourceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 384,
+      "pattern": "^(?:skill|mcp)/[a-z0-9][a-z0-9._/-]{0,255}$"
+    },
+    "ServerId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+    },
+    "Revision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "WorkspaceId": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "CommandId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "ClientId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "SourceScope": { "enum": ["workspace", "user", "package", "runtime"] },
+    "SkillRootKey": {
+      "enum": [
+        "workspace-agnes",
+        "user-agnes",
+        "user-agents",
+        "user-claude",
+        "user-codex",
+        "package",
+        "runtime"
+      ]
+    },
+    "SkillRootDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": [
+            "root-unreadable",
+            "root-unresolvable",
+            "entry-limit",
+            "root-bytes-limit",
+            "workspace-key-missing",
+            "entry-outside-root",
+            "skill-file-unreadable",
+            "skill-body-too-large",
+            "invalid-frontmatter",
+            "entries-skipped"
+          ]
+        }
+      }
+    },
+    "SkillRootStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rootKey", "scope", "state"],
+      "properties": {
+        "rootKey": { "$ref": "#/$defs/SkillRootKey" },
+        "scope": { "$ref": "#/$defs/SourceScope" },
+        "state": { "enum": ["ready", "empty", "stale", "unavailable"] },
+        "workspaceId": { "$ref": "#/$defs/WorkspaceId" },
+        "diagnostic": { "$ref": "#/$defs/SkillRootDiagnostic" }
+      }
+    },
+    "SkillSourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "rootKey", "sourceId"],
+      "properties": {
+        "scope": { "$ref": "#/$defs/SourceScope" },
+        "rootKey": { "$ref": "#/$defs/SkillRootKey" },
+        "sourceId": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "SkillResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["winner", "shadowed"],
+      "properties": {
+        "winner": { "type": "boolean" },
+        "shadowed": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resourceId", "sourceIdentity", "revision", "reason"],
+            "properties": {
+              "resourceId": { "$ref": "#/$defs/ResourceId" },
+              "sourceIdentity": { "$ref": "#/$defs/SkillSourceIdentity" },
+              "revision": { "$ref": "#/$defs/Revision" },
+              "reason": { "const": "lower-priority" }
+            }
+          }
+        }
+      }
+    },
+    "TrustState": { "enum": ["untrusted", "trusted", "rejected"] },
+    "DesiredState": { "enum": ["enabled", "disabled"] },
+    "ActualState": { "enum": ["unavailable", "disabled", "preparing", "ready", "degraded"] },
+    "SafeError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "SkillDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "resourceId",
+        "name",
+        "revision",
+        "sourceIdentity",
+        "priority",
+        "resolution",
+        "trust",
+        "desired",
+        "actual",
+        "stale"
+      ],
+      "properties": {
+        "kind": { "const": "skill" },
+        "resourceId": { "$ref": "#/$defs/ResourceId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 512 },
+        "revision": { "$ref": "#/$defs/Revision" },
+        "sourceIdentity": { "$ref": "#/$defs/SkillSourceIdentity" },
+        "priority": { "type": "integer", "minimum": 50, "maximum": 500 },
+        "resolution": { "$ref": "#/$defs/SkillResolution" },
+        "trust": { "$ref": "#/$defs/TrustState" },
+        "desired": { "$ref": "#/$defs/DesiredState" },
+        "actual": { "$ref": "#/$defs/ActualState" },
+        "stale": { "type": "boolean" },
+        "lastSafeError": { "$ref": "#/$defs/SafeError" },
+        "workspaceId": { "$ref": "#/$defs/WorkspaceId" }
+      }
+    },
+    "McpEnvName": {
+      "type": "string",
+      "pattern": "^(?!(?:PATH|HOME|SHELL|NODE_OPTIONS|LD_PRELOAD|DYLD_INSERT_LIBRARIES)$)[A-Z][A-Z0-9_]{0,63}$"
+    },
+    "McpStdioTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "executable", "args"],
+      "properties": {
+        "kind": { "const": "stdio" },
+        "executable": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?!(?:.*[/\\\\])?(?:[sS][hH]|[bB][aA][sS][hH]|[zZ][sS][hH]|[fF][iI][sS][hH]|[cC][mM][dD]|[pP][oO][wW][eE][rR][sS][hH][eE][lL][lL]|[pP][wW][sS][hH])(?:\\.[eE][xX][eE])?$)(?:[^\\x00-\\x1f\\x7f\\s]+|(?:/|[a-zA-Z]:[/\\\\]|\\\\\\\\)[^\\x00-\\x1f\\x7f]+)$"
+        },
+        "args": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "maxLength": 512, "pattern": "^(?!-c$|/c$)[^\\x00\\r\\n]+$" }
+        }
+      }
+    },
+    "McpHttpTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "url"],
+      "properties": {
+        "kind": { "const": "http" },
+        "url": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 2048,
+          "pattern": "^https?://(?![^/]*@)(?![^#?]*\\?(?:[^#]*&)?(?:token|key|secret|credential|password)=)[^\\s#?]+(?:/[^\\s#?]*)?(?:\\?[^\\s#]*)?$"
+        }
+      }
+    },
+    "McpSseTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "url"],
+      "properties": {
+        "kind": { "const": "sse" },
+        "url": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 2048,
+          "pattern": "^https?://(?![^/]*@)(?![^#?]*\\?(?:[^#]*&)?(?:token|key|secret|credential|password)=)[^\\s#?]+(?:/[^\\s#?]*)?(?:\\?[^\\s#]*)?$"
+        }
+      }
+    },
+    "McpSecretBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "env"],
+          "properties": {
+            "kind": { "const": "stdio-env" },
+            "env": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "additionalProperties": { "$ref": "profile.json#/$defs/SecretRef" },
+              "propertyNames": {
+                "pattern": "^(?!(?:PATH|HOME|SHELL|NODE_OPTIONS|LD_PRELOAD|DYLD_INSERT_LIBRARIES)$)[A-Z][A-Z0-9_]{0,63}$"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "credentialRef"],
+          "properties": {
+            "kind": { "const": "http-bearer" },
+            "credentialRef": { "$ref": "profile.json#/$defs/SecretRef" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "headerName", "credentialRef"],
+          "properties": {
+            "kind": { "const": "http-header" },
+            "headerName": { "enum": ["x-api-key", "x-api-token"] },
+            "credentialRef": { "$ref": "profile.json#/$defs/SecretRef" }
+          }
+        }
+      ]
+    },
+    "McpStdioSecretBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "env"],
+          "properties": {
+            "kind": { "const": "stdio-env" },
+            "env": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "additionalProperties": { "$ref": "profile.json#/$defs/SecretRef" },
+              "propertyNames": {
+                "pattern": "^(?!(?:PATH|HOME|SHELL|NODE_OPTIONS|LD_PRELOAD|DYLD_INSERT_LIBRARIES)$)[A-Z][A-Z0-9_]{0,63}$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "McpOAuthSecretBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "oauth" },
+        "staticClientId": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "McpHttpSecretBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "credentialRef"],
+          "properties": {
+            "kind": { "const": "http-bearer" },
+            "credentialRef": { "$ref": "profile.json#/$defs/SecretRef" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "headerName", "credentialRef"],
+          "properties": {
+            "kind": { "const": "http-header" },
+            "headerName": { "enum": ["x-api-key", "x-api-token"] },
+            "credentialRef": { "$ref": "profile.json#/$defs/SecretRef" }
+          }
+        },
+        { "$ref": "#/$defs/McpOAuthSecretBinding" }
+      ]
+    },
+    "McpToolPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+          }
+        }
+      }
+    },
+    "McpServerDefinitionInput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["serverId", "displayName", "transport", "secretBinding"],
+          "properties": {
+            "serverId": { "$ref": "#/$defs/ServerId" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "transport": { "$ref": "#/$defs/McpStdioTransport" },
+            "secretBinding": { "$ref": "#/$defs/McpStdioSecretBinding" },
+            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["serverId", "displayName", "transport", "secretBinding"],
+          "properties": {
+            "serverId": { "$ref": "#/$defs/ServerId" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "transport": { "$ref": "#/$defs/McpHttpTransport" },
+            "secretBinding": { "$ref": "#/$defs/McpHttpSecretBinding" },
+            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["serverId", "displayName", "transport", "secretBinding"],
+          "properties": {
+            "serverId": { "$ref": "#/$defs/ServerId" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "transport": { "$ref": "#/$defs/McpSseTransport" },
+            "secretBinding": { "$ref": "#/$defs/McpHttpSecretBinding" },
+            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" }
+          }
+        }
+      ]
+    },
+    "McpServerDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "resourceId",
+        "serverId",
+        "displayName",
+        "revision",
+        "definition",
+        "transportKind",
+        "secretBindingKind",
+        "trust",
+        "desired",
+        "actual",
+        "source"
+      ],
+      "properties": {
+        "kind": { "const": "mcp" },
+        "resourceId": { "$ref": "#/$defs/ResourceId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "revision": { "$ref": "#/$defs/Revision" },
+        "definition": { "$ref": "#/$defs/McpServerDefinitionInput" },
+        "transportKind": { "enum": ["stdio", "http", "sse"] },
+        "secretBindingKind": { "enum": ["none", "stdio-env", "http-bearer", "http-header", "oauth"] },
+        "trust": { "$ref": "#/$defs/TrustState" },
+        "desired": { "$ref": "#/$defs/DesiredState" },
+        "actual": { "$ref": "#/$defs/ActualState" },
+        "source": { "enum": ["managed", "legacy-preset"] },
+        "lastSafeError": { "$ref": "#/$defs/SafeError" },
+        "authorizationStatus": {
+          "oneOf": [{ "enum": ["pending", "authorized", "needs-reconnect", "error"] }, { "type": "null" }]
+        }
+      }
+    },
+    "McpStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serverId",
+        "connectionState",
+        "observedRevision",
+        "catalogRevision",
+        "toolCount",
+        "observedAt"
+      ],
+      "properties": {
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "connectionState": { "enum": ["disabled", "connecting", "ready", "degraded", "unavailable"] },
+        "observedRevision": { "oneOf": [{ "$ref": "#/$defs/Revision" }, { "type": "null" }] },
+        "catalogRevision": { "oneOf": [{ "$ref": "#/$defs/Revision" }, { "type": "null" }] },
+        "toolCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "lastSafeError": { "$ref": "#/$defs/SafeError" }
+      }
+    },
+    "McpInputSchema": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "object" },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+        },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string", "maxLength": 2048 }
+      },
+      "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+    },
+    "McpTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "inputSchema"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 1024 },
+        "inputSchema": { "$ref": "#/$defs/McpInputSchema" }
+      }
+    },
+    "McpToolCatalogPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serverId", "catalogRevision", "items"],
+      "properties": {
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "catalogRevision": { "$ref": "#/$defs/Revision" },
+        "items": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/McpTool" } },
+        "nextCursor": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "ResourceOperationReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "state"],
+      "properties": {
+        "operationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "state": { "enum": ["received", "running", "succeeded", "failed", "cancelled"] }
+      }
+    },
+    "ResourceOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "kind", "state", "profile", "target", "revision", "createdAt", "updatedAt"],
+      "properties": {
+        "operationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "state": { "enum": ["received", "running", "succeeded", "failed", "cancelled"] },
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "target": { "$ref": "#/$defs/ResourceId" },
+        "revision": { "$ref": "#/$defs/Revision" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "toolCount": { "type": "integer", "minimum": 0 },
+            "catalogRevision": { "$ref": "#/$defs/Revision" }
+          }
+        },
+        "lastSafeError": { "$ref": "#/$defs/SafeError" }
+      }
+    },
+    "ResourceDescriptor": {
+      "oneOf": [{ "$ref": "#/$defs/SkillDescriptor" }, { "$ref": "#/$defs/McpServerDescriptor" }]
+    },
+    "ResourceListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "kind": { "enum": ["skill", "mcp"] },
+        "cursor": { "type": "string", "maxLength": 256 },
+        "workspaceId": { "$ref": "#/$defs/WorkspaceId" }
+      }
+    },
+    "ResourceListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/ResourceDescriptor" } },
+        "nextCursor": { "type": "string", "maxLength": 256 },
+        "skillRoots": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/SkillRootStatus" }
+        }
+      }
+    },
+    "ResourceGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "resourceId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "resourceId": { "$ref": "#/$defs/ResourceId" }
+      }
+    },
+    "ResourceDesiredSetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "resourceId", "state", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "resourceId": { "type": "string", "pattern": "^skill/" },
+        "state": { "$ref": "#/$defs/DesiredState" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "ResourceOperationGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "operationId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "operationId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "ResourceOperationCancelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "operationId", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "operationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "SkillRefreshParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "rootKey": { "$ref": "#/$defs/SkillRootKey" },
+        "workspaceId": { "$ref": "#/$defs/WorkspaceId" },
+        "reinstall": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["resourceId", "expectedRevision"],
+          "properties": {
+            "resourceId": { "type": "string", "pattern": "^skill/" },
+            "expectedRevision": { "$ref": "#/$defs/Revision" }
+          }
+        },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "SkillTrustSetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "resourceId", "expectedRevision", "trust", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "resourceId": { "type": "string", "pattern": "^skill/" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "trust": { "enum": ["trusted", "rejected"] },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "SkillRemoveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "resourceId", "expectedRevision", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "resourceId": { "type": "string", "pattern": "^skill/" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "SkillPrioritySetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "resourceId",
+        "expectedRevision",
+        "clientId",
+        "commandId",
+        "priority",
+        "expectedPriority"
+      ],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "resourceId": { "type": "string", "pattern": "^skill/" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" },
+        "priority": { "anyOf": [{ "type": "integer", "minimum": 50, "maximum": 500 }, { "type": "null" }] },
+        "expectedPriority": { "type": "integer", "minimum": 50, "maximum": 500 }
+      }
+    },
+    "McpServerListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "cursor": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "McpServerListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/McpServerDescriptor" } },
+        "nextCursor": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "McpServerGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId"],
+      "properties": { "profile": { "$ref": "#/$defs/ProfileId" }, "serverId": { "$ref": "#/$defs/ServerId" } }
+    },
+    "McpServerCreateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "definition", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "definition": { "$ref": "#/$defs/McpServerDefinitionInput" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "McpServerUpdateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId", "expectedRevision", "definition", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "definition": { "$ref": "#/$defs/McpServerDefinitionInput" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "McpServerRemoveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId", "expectedRevision", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "McpTrustSetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId", "expectedRevision", "trust", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "trust": { "enum": ["trusted", "rejected"] },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "McpServerTestParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId", "expectedRevision", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "McpServerEnableParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId", "expectedRevision", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "McpServerDisableParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId", "expectedRevision", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "McpServerReconnectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId", "expectedRevision", "clientId", "commandId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "expectedRevision": { "$ref": "#/$defs/Revision" },
+        "clientId": { "$ref": "#/$defs/ClientId" },
+        "commandId": { "$ref": "#/$defs/CommandId" }
+      }
+    },
+    "McpToolsListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "cursor": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "McpOAuthStatusSetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "serverId", "status"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ProfileId" },
+        "serverId": { "$ref": "#/$defs/ServerId" },
+        "status": { "enum": ["authorized", "needs-reconnect", "error"] }
+      }
+    },
+    "McpOAuthStatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorizationStatus"],
+      "properties": {
+        "authorizationStatus": {
+          "oneOf": [{ "enum": ["pending", "authorized", "needs-reconnect", "error"] }, { "type": "null" }]
+        },
+        "lastSafeError": { "$ref": "#/$defs/SafeError" }
+      }
+    }
+  }
+}

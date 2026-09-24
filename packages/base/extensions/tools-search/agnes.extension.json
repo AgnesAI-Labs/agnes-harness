@@ -1,0 +1,15 @@
+{
+  "id": "agnes/tools-search",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": { "prefix": "", "names": ["grep", "find", "ls"] },
+    "hooks": [],
+    "slots": [],
+    "events": false,
+    "resources": [],
+    "network": [],
+    "artifacts": true
+  }
+}

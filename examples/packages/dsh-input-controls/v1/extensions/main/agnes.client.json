@@ -1,0 +1,13 @@
+{
+  "client": {
+    "entry": "./client/index.js",
+    "styles": ["./client/index.css"],
+    "slots": ["conversation.input.right"],
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "services": [],
+    "projections": [],
+    "publicConfig": {
+      "label": "DSH input controls · v1"
+    }
+  }
+}

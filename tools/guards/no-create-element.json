@@ -1,0 +1,4 @@
+{
+  "comment": "Files that have been migrated to the React component layer and must not regress to imperative document.createElement. Append a path per migrated file (repo-relative, forward slashes); remove only when the file leaves the repo. Managed by the web-ui component system (spec 2026-09-24-web-ui-component-system-design §9.2).",
+  "files": []
+}

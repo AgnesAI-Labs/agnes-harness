@@ -1,0 +1,86 @@
+{
+  "skins": [
+    {
+      "id": "high-contrast",
+      "name": "高对比",
+      "css": "./skins/high-contrast/skin.css",
+      "tokens": {
+        "--agnes-bg-page": {
+          "light": "#ffffff",
+          "dark": "#000000"
+        },
+        "--agnes-bg-app-content": {
+          "light": "#ffffff",
+          "dark": "#000000"
+        },
+        "--agnes-bg-surface": {
+          "light": "#ffffff",
+          "dark": "#000000"
+        },
+        "--agnes-text-primary": {
+          "light": "#000000",
+          "dark": "#ffffff"
+        },
+        "--agnes-text-secondary": {
+          "light": "#1a1a1a",
+          "dark": "#e8e8e8"
+        },
+        "--agnes-text-tertiary": {
+          "light": "#333333",
+          "dark": "#cccccc"
+        },
+        "--agnes-line-primary": {
+          "light": "#000000",
+          "dark": "#ffffff"
+        },
+        "--agnes-line-emphasis": {
+          "light": "#000000",
+          "dark": "#ffffff"
+        },
+        "--agnes-brand-primary": {
+          "light": "#0b3d91",
+          "dark": "#8ab4ff"
+        }
+      }
+    },
+    {
+      "id": "midnight",
+      "name": "午夜",
+      "css": "./skins/midnight/skin.css",
+      "tokens": {
+        "--agnes-bg-page": {
+          "light": "#eef2f7",
+          "dark": "#0f141a"
+        },
+        "--agnes-bg-app-content": {
+          "light": "#f7f9fc",
+          "dark": "#0b0f14"
+        }
+      }
+    },
+    {
+      "id": "paper",
+      "name": "纸质",
+      "css": "./skins/paper/skin.css",
+      "tokens": {
+        "--agnes-bg-page": {
+          "light": "#fbf7ef",
+          "dark": "#1a1713"
+        },
+        "--agnes-bg-card": {
+          "light": "#f3ece0",
+          "dark": "#241f19"
+        },
+        "--agnes-line-primary": {
+          "light": "#d9cdb8",
+          "dark": "#3a3229"
+        }
+      }
+    },
+    {
+      "id": "aurora",
+      "name": "流光",
+      "css": "./skins/aurora/skin.css"
+    }
+  ]
+}

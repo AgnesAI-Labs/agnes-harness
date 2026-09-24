@@ -1,0 +1,21 @@
+{
+  "$defs": {
+    "Node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "edges"],
+      "properties": {
+        "id": { "type": "string" },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/Edge" } }
+      }
+    },
+    "Edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["to"],
+      "properties": {
+        "to": { "$ref": "#/$defs/Node" }
+      }
+    }
+  }
+}

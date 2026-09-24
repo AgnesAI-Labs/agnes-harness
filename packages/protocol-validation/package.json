@@ -1,0 +1,16 @@
+{
+  "name": "@agnes/protocol-validation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.33"
+  },
+  "license": "Apache-2.0"
+}

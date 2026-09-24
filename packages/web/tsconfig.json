@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    { "path": "../../tsconfig.config.json" },
+    { "path": "../base" },
+    { "path": "../cordis" },
+    { "path": "../web-client" },
+    { "path": "../web-units" },
+    { "path": "../protocol" },
+    { "path": "../sdk" },
+    { "path": "../resource-control-web" },
+    { "path": "../web-admin-frame" },
+    { "path": "../web-server" }
+  ]
+}

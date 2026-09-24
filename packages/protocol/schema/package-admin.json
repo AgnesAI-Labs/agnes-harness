@@ -1,0 +1,2326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/package-admin.json",
+  "title": "Package Admin contracts",
+  "$defs": {
+    "SkinListResult": {
+      "description": "Selectable skins derived from the enabled, trusted package inventory.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "skins"],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "skins": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "packageName", "cssUrl"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "packageName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "cssUrl": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "css": {
+                "description": "Stylesheet text, sent with the roster so a skin that ships no assets needs no second request. Omitted when the stylesheet exceeds the install cap, in which case the client falls back to cssUrl.",
+                "type": "string",
+                "maxLength": 131072
+              },
+              "assetBase": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "tokens": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["light", "dark"],
+                  "properties": {
+                    "light": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "dark": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "shadowed": {
+          "description": "Skin ids rejected because an earlier package already declared them.",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "PackageAdminPermission": {
+      "enum": [
+        "packages.read",
+        "packages.install",
+        "packages.trust",
+        "packages.activate",
+        "packages.remove",
+        "catalog.configure",
+        "extensions.execute"
+      ]
+    },
+    "PackageSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "npm"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^npm:(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@(?=.{1,64}$)(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+            }
+          },
+          "required": ["type", "ref"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "file"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^file:\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            }
+          },
+          "required": ["type", "ref"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "workspace"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^workspace:extensions/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            }
+          },
+          "required": ["type", "ref"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "git"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^git:",
+              "format": "agnes-git-source"
+            }
+          },
+          "required": ["type", "ref"]
+        }
+      ]
+    },
+    "PackageContributionSummary": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "client" },
+            "id": { "type": "string", "pattern": "^plugin/[0-9a-f]{16}$" },
+            "rowId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            },
+            "client": { "$ref": "extension-manifest.json#/$defs/ClientContribution" },
+            "skins": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": { "$ref": "extension-manifest.json#/$defs/SkinContribution" }
+            }
+          },
+          "required": ["kind", "id", "rowId", "path", "client"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "client" },
+            "id": { "type": "string", "pattern": "^plugin/[0-9a-f]{16}$" },
+            "rowId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            },
+            "skins": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": { "$ref": "extension-manifest.json#/$defs/SkinContribution" }
+            }
+          },
+          "required": ["kind", "id", "rowId", "path", "skins"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "extension"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            },
+            "apiRange": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "capabilities": {
+              "$ref": "extension-manifest.json#/$defs/Capabilities"
+            },
+            "client": {
+              "$ref": "extension-manifest.json#/$defs/ClientContribution"
+            },
+            "runtimeSupports": {
+              "type": "array",
+              "items": {
+                "enum": ["in-process", "isolated"]
+              },
+              "maxItems": 2,
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "required": ["kind", "id", "path", "apiRange", "capabilities"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "seam"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            },
+            "apiRange": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "provides": {
+              "type": "array",
+              "items": {
+                "$ref": "profile.json#/$defs/SeamName"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "required": ["kind", "id", "path", "apiRange", "provides"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "provider"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            },
+            "apiRange": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "required": ["kind", "id", "path", "apiRange"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "runtime"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            },
+            "apiRange": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "required": ["kind", "id", "path", "apiRange"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "skill"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            }
+          },
+          "required": ["kind", "id", "path"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "preset"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+            }
+          },
+          "required": ["kind", "id", "path"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "surface"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+            },
+            "descriptor": {
+              "$ref": "surface.json#/$defs/SurfaceDescriptor"
+            }
+          },
+          "required": ["kind", "id", "descriptor"]
+        }
+      ]
+    },
+    "PackageCapabilityDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "runtimeSupportRemoved": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "dependenciesAdded": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+          },
+          "maxItems": 128
+        },
+        "serviceGrantsAdded": {
+          "type": "array",
+          "items": {
+            "$ref": "surface.json#/$defs/SurfaceServiceGrant"
+          },
+          "maxItems": 128
+        }
+      },
+      "required": ["added", "removed", "runtimeSupportRemoved", "dependenciesAdded", "serviceGrantsAdded"]
+    },
+    "PackageBlocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "dependency",
+            "profile",
+            "generation",
+            "deployment",
+            "policy",
+            "incompatible",
+            "unknown-contribution"
+          ]
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 128
+        }
+      },
+      "required": ["code", "references"]
+    },
+    "PackageWarning": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "unverified-provenance",
+            "unlicensed",
+            "capability-change",
+            "runtime-support-change",
+            "dependency-change",
+            "service-grant-change"
+          ]
+        },
+        "safeMessage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": ["code", "safeMessage"]
+    },
+    "PackageProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "releasedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signatureVerified": {
+          "type": "boolean"
+        }
+      },
+      "required": ["source", "integrity", "signatureVerified"]
+    },
+    "PackagePreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "provenance": {
+          "$ref": "#/$defs/PackageProvenance"
+        },
+        "contributions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageContributionSummary"
+          },
+          "maxItems": 128
+        },
+        "capabilityDiff": {
+          "$ref": "#/$defs/PackageCapabilityDiff"
+        },
+        "dependencies": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(?=.{1,256}$)(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+          },
+          "maxProperties": 256,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageWarning"
+          },
+          "maxItems": 128
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageBlocker"
+          },
+          "maxItems": 128
+        },
+        "capabilityHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "minLength": 64,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "source",
+        "integrity",
+        "license",
+        "provenance",
+        "contributions",
+        "capabilityDiff",
+        "dependencies",
+        "warnings",
+        "blockers"
+      ]
+    },
+    "PackageTrustDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "capabilityHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["integrity", "capabilityHash", "decidedAt"]
+    },
+    "PackageActivationTrust": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "capabilityHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["integrity", "capabilityHash"]
+    },
+    "PackageActivationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expectedInstalledIntegrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "expectedActiveIntegrity": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 95,
+              "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trust": {
+          "$ref": "#/$defs/PackageActivationTrust"
+        }
+      },
+      "required": ["expectedInstalledIntegrity", "expectedActiveIntegrity", "trust"]
+    },
+    "PackageRollbackTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "capabilityHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["version", "integrity", "capabilityHash"]
+    },
+    "PackageAdminContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageAdminPermission"
+          },
+          "maxItems": 7,
+          "uniqueItems": true
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "authScope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+          },
+          "maxItems": 32,
+          "uniqueItems": true
+        }
+      },
+      "required": ["profile", "clientId", "permissions", "readOnly"]
+    },
+    "PackageInstalledDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "trusted": {
+          "type": "boolean"
+        },
+        "desired": {
+          "enum": ["installed-disabled", "enabled"]
+        },
+        "actual": {
+          "enum": ["not-running", "starting", "running", "failed", "restart-required", "unavailable"]
+        },
+        "contributions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageContributionSummary"
+          },
+          "maxItems": 128
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageBlocker"
+          },
+          "maxItems": 128
+        },
+        "capabilityHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "actualVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "actualIntegrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "actualReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "cleanupPending": {
+          "type": "boolean"
+        },
+        "rollbackTarget": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PackageRollbackTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "source",
+        "integrity",
+        "trusted",
+        "desired",
+        "actual",
+        "contributions",
+        "blockers"
+      ]
+    },
+    "PackageCatalogDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "contributions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageContributionSummary"
+          },
+          "maxItems": 128
+        },
+        "compatibility": {
+          "enum": ["supported", "adapted", "generation-only", "unsupported"]
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "retrievedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "source",
+        "integrity",
+        "license",
+        "contributions",
+        "compatibility",
+        "sourceId",
+        "retrievedAt"
+      ]
+    },
+    "PackageAdminError": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "E_PACKAGE_SOURCE",
+            "E_PACKAGE_INTEGRITY",
+            "E_PACKAGE_TRUST",
+            "E_PACKAGE_STATE",
+            "E_PACKAGE_BLOCKED",
+            "E_PACKAGE_PREVIEW_STALE",
+            "E_PACKAGE_CANCELLED"
+          ]
+        },
+        "safeMessage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageBlocker"
+          },
+          "maxItems": 128
+        }
+      },
+      "required": ["code", "safeMessage", "blockers"]
+    },
+    "PackageOperationReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        }
+      },
+      "required": ["operationId", "profile"]
+    },
+    "PackageOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "operation": {
+          "enum": [
+            "inspect",
+            "install",
+            "trust",
+            "untrust",
+            "enable",
+            "disable",
+            "update",
+            "rollback",
+            "remove"
+          ]
+        },
+        "state": {
+          "enum": [
+            "received",
+            "inspecting",
+            "installing",
+            "staging",
+            "quiescing",
+            "switching",
+            "draining",
+            "completed",
+            "failed",
+            "cancelled",
+            "rolled-back"
+          ]
+        },
+        "progress": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "preview": {
+          "$ref": "#/$defs/PackagePreview"
+        },
+        "installed": {
+          "$ref": "#/$defs/PackageInstalledDescriptor"
+        },
+        "error": {
+          "$ref": "#/$defs/PackageAdminError"
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "cancellable": {
+          "type": "boolean"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": ["operationId", "profile", "operation", "state", "progress", "startedAt", "updatedAt"]
+    },
+    "PackageCatalogPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageCatalogDescriptor"
+          },
+          "maxItems": 100
+        },
+        "nextCursor": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["items", "nextCursor"]
+    },
+    "PackageListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageInstalledDescriptor"
+          },
+          "maxItems": 1024
+        }
+      },
+      "required": ["packages"]
+    },
+    "PackageCatalogListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": ["profile"]
+    },
+    "PackageCatalogGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        }
+      },
+      "required": ["profile", "id"]
+    },
+    "PackageListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        }
+      },
+      "required": ["profile"]
+    },
+    "PackageInspectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "source"]
+    },
+    "PackageInstallParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "expectedIntegrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "source", "expectedIntegrity"]
+    },
+    "PackageTrustParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "expectedIntegrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "capabilityHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "id", "expectedIntegrity", "capabilityHash"]
+    },
+    "PackageUntrustParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\\/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "expectedIntegrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "capabilityHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "id", "expectedIntegrity", "capabilityHash"]
+    },
+    "PackageEnableParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "expectedInstalledIntegrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "expectedActiveIntegrity": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 95,
+              "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "id"]
+    },
+    "PackageDisableParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "id"]
+    },
+    "PackageRollbackParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "expectedTargetIntegrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "activation": {
+          "$ref": "#/$defs/PackageActivationRequest"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "id"]
+    },
+    "PackageRemoveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "id"]
+    },
+    "PackageUpdateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "expectedIntegrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "activation": {
+          "$ref": "#/$defs/PackageActivationRequest"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "id", "source", "expectedIntegrity"]
+    },
+    "PackageOperationGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        }
+      },
+      "required": ["profile", "operationId"]
+    },
+    "PackageOperationCancelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "operationId"]
+    },
+    "RuntimePinDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pinId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "purpose": {
+          "enum": ["active", "candidate", "recovery", "rollback", "turn"]
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "snapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["pinId", "purpose", "packageId", "version", "snapshotId", "operationId"]
+    },
+    "RuntimePinReleaseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pinId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "outcome": {
+          "enum": ["released", "skipped-no-longer-orphaned", "failed"]
+        },
+        "error": {
+          "$ref": "#/$defs/PackageAdminError"
+        }
+      },
+      "required": ["pinId", "outcome"]
+    },
+    "PackagePinsInspectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        }
+      },
+      "required": ["profile"]
+    },
+    "PackagePinsInspectResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "orphans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimePinDescriptor"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["orphans"]
+    },
+    "PackagePinsReleaseParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "pinIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 1,
+          "maxItems": 64
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "pinIds"]
+    },
+    "PackagePinsReleaseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimePinReleaseResult"
+          },
+          "maxItems": 64
+        }
+      },
+      "required": ["results"]
+    },
+    "PackageTrustWorkspaceParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "deployDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "deployDir"]
+    },
+    "PackageTrustWorkspaceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        }
+      },
+      "required": ["hash"]
+    },
+    "SkinReadParams": {
+      "description": "One same-origin skin route path to read bytes for. The path is a URL path, never a filesystem path.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "path"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "path": {
+          "description": "Absolute URL path such as /skins/aurora/assets/aurora.png.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^/skins/"
+        }
+      }
+    },
+    "SkinReadResult": {
+      "description": "Bytes for one skin asset, or a negative answer. A miss and a refusal are indistinguishable on purpose.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["found"],
+          "properties": {
+            "found": {
+              "const": false
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["found", "base64"],
+          "properties": {
+            "found": {
+              "const": true
+            },
+            "base64": {
+              "description": "Standard base64 of the file, bounded by the install-time cap for the file class.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4194304
+            }
+          }
+        }
+      ]
+    },
+    "ClientModuleListResult": {
+      "description": "Web client module roster for one profile. `rows` is the row-level browser projection (rowId/moduleName/enabled/phase plus optional asset metadata); it never carries runtime row config, credentials, or artifact data. The legacy modules/statuses arrays remain during the compatibility window so older callers can continue reading ready assets and package status.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "modules", "statuses", "serverTime"],
+      "properties": {
+        "revision": {
+          "description": "Opaque roster revision; changes whenever the roster content changes. Unrelated to package integrity.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "serverTime": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "rows": {
+          "description": "Row-level projection for browser consumers. It carries only an explicit manifest publicConfig allow-list; runtime row config, credentials, secret references and opaque artifact fields are not permitted.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/ClientModuleRosterRow"
+          }
+        },
+        "rowAliases": {
+          "description": "Persisted legacy browser row migrations. Each old row id maps to exactly one current canonical row id.",
+          "type": "object",
+          "maxProperties": 256,
+          "propertyNames": {
+            "pattern": "^web:[^\\x00]{1,251}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^web:[^\\x00]{1,251}$"
+          }
+        },
+        "modules": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["packageId", "revision", "entryUrl", "styleUrls", "slots", "extIds"],
+            "properties": {
+              "rowId": {
+                "description": "Stable browser lifecycle row id. Omitted only by legacy producers; packageId remains the authorization subject.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^web:[^\\x00]{1,251}$"
+              },
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "revision": {
+                "description": "Integrity of the installed revision this entry serves.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "entryUrl": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^/plugins/"
+              },
+              "styleUrls": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "^/plugins/"
+                }
+              },
+              "slots": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "slotCatalogVersion": {
+                "description": "Exact browser component-slot catalog version used by this contribution. Missing only for legacy Agnes slots.",
+                "type": "string",
+                "pattern": "^dsh-client-slots/v[0-9]+$"
+              },
+              "contentDigest": {
+                "description": "Digest of the verified immutable browser snapshot manifest. Missing only for legacy producers.",
+                "type": "string",
+                "pattern": "^sha256-[a-f0-9]{64}$"
+              },
+              "extIds": {
+                "description": "Backend extension ids activated by this package; the page uses them for slot-fill claim matching.",
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "publicConfig": {
+                "description": "Explicitly public package-authored browser metadata. It is immutable manifest data, never runtime row config, credentials, secret references or artifact data.",
+                "type": "object",
+                "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+              }
+            }
+          }
+        },
+        "statuses": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["packageId", "installedRevision", "backendRevision", "state"],
+            "properties": {
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "installedRevision": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "backendRevision": {
+                "description": "Revision the backend extensions actually run at; null for pure-frontend packages or when unknown.",
+                "type": ["string", "null"],
+                "maxLength": 128
+              },
+              "state": {
+                "enum": ["ready", "pending-activation", "blocked"]
+              },
+              "reason": {
+                "description": "Fixed-enum reason text; never leaks internal paths.",
+                "enum": [
+                  "backend-revision-unavailable",
+                  "backend-not-running",
+                  "unsupported-slot",
+                  "resources-invalid",
+                  "snapshot-quota-exceeded",
+                  "snapshot-retention-limit"
+                ]
+              },
+              "retained": {
+                "description": "Superseded snapshots still served during their grace window.",
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["revision", "expiresAt"],
+                  "properties": {
+                    "revision": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ClientModuleRosterRow": {
+      "description": "Safe browser projection of one runtime client row. Asset metadata is optional for non-ready phases. publicConfig is immutable manifest metadata; runtime config, credentials and secret references are intentionally absent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rowId", "moduleName", "enabled", "phase"],
+      "properties": {
+        "rowId": {
+          "description": "Stable browser row id, normally web:<package-id>.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^web:[^\\x00]{1,251}$"
+        },
+        "moduleName": {
+          "description": "Safe display/lookup name for the browser module; never a credential or config key.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "packageId": {
+          "description": "Installed package that owns this row. It is an identifier only, never a credential or configuration value.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "enabled": {
+          "description": "Whether the row is enabled by the currently selected runtime projection.",
+          "type": "boolean"
+        },
+        "phase": {
+          "description": "Safe lifecycle phase; this is not a worker convergence report and does not expose internal failure text.",
+          "enum": ["ready", "pending-activation", "blocked", "disabled"]
+        },
+        "revision": {
+          "description": "Immutable client asset revision when one is available.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "entryUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^/plugins/"
+        },
+        "styleUrls": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^/plugins/"
+          }
+        },
+        "slots": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "slotCatalogVersion": {
+          "description": "Exact browser component-slot catalog version used by this row. Missing only for legacy Agnes slots.",
+          "type": "string",
+          "pattern": "^dsh-client-slots/v[0-9]+$"
+        },
+        "contentDigest": {
+          "description": "Digest of the verified immutable browser snapshot manifest. Missing only for legacy producers.",
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "extIds": {
+          "description": "Backend extension ids associated with the row; these are identifiers only, never extension configuration.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "services": {
+          "description": "Immutable manifest-declared same-extension query service names. This projection is a browser UX/API allow-list, never a credential or arbitrary RPC route.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$"
+          }
+        },
+        "publicConfig": {
+          "description": "Explicitly public package-authored client configuration. It is a narrow manifest projection, never runtime row config, credentials, secret references or artifact data.",
+          "type": "object",
+          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+        }
+      }
+    },
+    "ClientModuleReadParams": {
+      "description": "One same-origin client-module route path to read bytes for. The path is a URL path, never a filesystem path.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "path"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "path": {
+          "description": "Absolute URL path such as /plugins/acme.panel/sha256-ab.../dist/client/index.js.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^/plugins/"
+        }
+      }
+    },
+    "ClientModuleReadResult": {
+      "description": "Bytes for one client-module file, or a negative answer. A miss and a refusal are indistinguishable on purpose.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["found"],
+          "properties": {
+            "found": {
+              "const": false
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["found", "base64"],
+          "properties": {
+            "found": {
+              "const": true
+            },
+            "base64": {
+              "description": "Standard base64 of the file, bounded by the install-time cap for the file class (4 MiB raw).",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6000000
+            }
+          }
+        }
+      ]
+    },
+    "ClientModuleServiceCallParams": {
+      "description": "Private launcher-to-daemon request for one ready browser row's declared query service. Browser identity, extension identity and credentials are deliberately not parameters.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "rowId", "sessionId", "service", "input"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^web:[^\\x00]{1,251}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$"
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+        }
+      }
+    },
+    "ClientModuleServiceCallResult": {
+      "description": "Sanitized result of a declared query service. The daemon verifies the service output schema before it reaches this private relay.",
+      "$ref": "extension-service.json#/$defs/ExtensionCallResult"
+    },
+    "ClientModuleEffectCallParams": {
+      "description": "Private launcher-to-daemon request for one explicitly authorized effect command owned by a ready browser row. Identity and credentials are supplied by the server, never by browser input.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "rowId", "sessionId", "service", "commandId", "input"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^web:[^\\x00]{1,251}$"
+        },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+        }
+      }
+    },
+    "ClientModuleEffectCallResult": {
+      "description": "Sanitized result of an authorized effect service, protected by daemon journal and serialization semantics.",
+      "$ref": "extension-service.json#/$defs/ExtensionCallResult"
+    },
+    "PluginTreeArtifact": {
+      "description": "Canonical RuntimeTarget artifact accepted by plugins.tree.apply. Same envelope as worker RuntimeTargetArtifact.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "canonicalBase64", "digest", "identity"],
+      "properties": {
+        "encoding": { "const": "base64" },
+        "canonicalBase64": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 16776788,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        },
+        "digest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["treeHash", "resourceRevision", "compositeRevision"],
+          "properties": {
+            "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        }
+      }
+    },
+    "PluginTreeGetParams": {
+      "$ref": "#/$defs/PackageListParams"
+    },
+    "PluginTreeListParams": {
+      "$ref": "#/$defs/PackageListParams"
+    },
+    "PluginTreeApplyParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "clientId", "commandId", "artifact"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "artifact": { "$ref": "#/$defs/PluginTreeArtifact" }
+      }
+    },
+    "PluginTreeRollbackParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "clientId", "commandId"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        }
+      }
+    },
+    "PluginTreeView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actual", "pending"],
+      "properties": {
+        "actual": { "type": "boolean" },
+        "pending": { "type": "boolean" },
+        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+        "reportOk": { "type": "boolean" },
+        "failurePhase": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "workerGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["treeHash", "resourceRevision", "compositeRevision"],
+          "properties": {
+            "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "desired": { "$ref": "#/$defs/PluginTreeArtifact" }
+      }
+    },
+    "PluginTreeApplyResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["desiredDigest", "pending"],
+      "properties": {
+        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+        "pending": { "type": "boolean" }
+      }
+    },
+    "PluginTreeRollbackResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rolledBack"],
+      "properties": {
+        "rolledBack": { "type": "boolean" },
+        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

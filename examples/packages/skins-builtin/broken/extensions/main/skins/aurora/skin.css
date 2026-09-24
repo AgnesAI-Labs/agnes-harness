@@ -1,0 +1,131 @@
+/*
+ * 流光（极限版）：把一张真实的极光照片铺到**每一个**界面区域，再换掉字体与图标。
+ *
+ * 照片：NASA ISS048e056981（公有领域，见 assets/ATTRIBUTION.md）。
+ *
+ * 关键技巧——**多层背景**：照片永远是最底一层，上面压一层半透明深色"纱"（scrim）。
+ * 没有这层纱，白底正文压在照片上会读不清。为什么每处都要写两个 background-image，
+ * 原因就在这里。
+ *
+ * 另一个坑（上一版正是在这里翻车）：基础样式里 `.conversation-shell` 是**不透明**的
+ * `--agnes-bg-app-content`（#fafafa）。只给 `app` 铺照片时，会话区整块把它盖住，
+ * 于是照片只剩侧边栏能看见。**要铺满就必须逐个覆盖那些不透明的面。**
+ */
+
+/* ---- 1. 页面底图：fixed 让照片在滚动时钉在视口上 ---- */
+[data-agnes-region="app"] {
+  background-image: url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+/* ---- 2. 会话外框：覆盖基础样式那块不透明底 ---- */
+[data-agnes-region="conversation"] {
+  background-image: linear-gradient(rgb(255 255 255 / 62%), rgb(255 255 255 / 78%)), url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+/* ---- 3. 对话区：比外框更透一点，照片看得见、正文仍有底 ---- */
+[data-agnes-region="transcript"] {
+  background-image: linear-gradient(rgb(255 255 255 / 52%), rgb(255 255 255 / 68%)), url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+/* ---- 4. 侧栏 / 顶栏：深色纱，图标与文字用浅色 ---- */
+[data-agnes-region="sidebar"] {
+  background-image: linear-gradient(rgb(16 24 36 / 70%), rgb(10 16 26 / 86%)), url("assets/hero.jpg");
+  background-size: cover;
+  background-position: left center;
+  border-right-color: rgb(255 255 255 / 16%);
+}
+[data-agnes-region="topbar"] {
+  background-image: linear-gradient(rgb(16 24 36 / 60%), rgb(10 16 26 / 74%)), url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center 30%;
+  border-bottom-color: rgb(255 255 255 / 16%);
+}
+
+/* ---- 5. 输入框：最厚的一层纱，保证打字清楚 ---- */
+[data-agnes-region="composer"] {
+  background-image: linear-gradient(rgb(14 20 30 / 78%), rgb(8 12 20 / 88%)), url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center 70%;
+  border-color: rgb(140 200 255 / 45%);
+  box-shadow:
+    0 18px 44px rgb(0 0 0 / 45%),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
+}
+[data-agnes-region="composer-input"] {
+  color: rgb(236 244 255);
+}
+[data-agnes-region="composer-input"]::placeholder {
+  color: rgb(198 214 234 / 70%);
+}
+
+/* ---- 6. 弹窗与设置分页 ---- */
+[data-agnes-region="dialog"] {
+  background-image: linear-gradient(rgb(12 18 28 / 88%), rgb(8 12 20 / 94%)), url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center;
+  color: rgb(228 238 250);
+}
+[data-agnes-region="settings-pane"] {
+  background-image: linear-gradient(rgb(14 20 32 / 80%), rgb(10 15 25 / 88%)), url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center;
+}
+
+/* ---- 7. 空状态：让照片透出来当欢迎画面 ---- */
+[data-agnes-region="empty-state"] {
+  color: rgb(232 240 252);
+}
+
+/* ---- 8. 深色模式：照片本来就是夜景，纱可以更薄 ---- */
+.dark [data-agnes-region="conversation"] {
+  background-image: linear-gradient(rgb(6 10 18 / 62%), rgb(4 7 14 / 76%)), url("assets/hero.jpg");
+}
+.dark [data-agnes-region="transcript"] {
+  background-image: linear-gradient(rgb(6 10 18 / 54%), rgb(4 7 14 / 70%)), url("assets/hero.jpg");
+}
+.dark [data-agnes-region="sidebar"] {
+  background-image: linear-gradient(rgb(10 16 26 / 66%), rgb(6 10 18 / 82%)), url("assets/hero.jpg");
+}
+.dark [data-agnes-region="topbar"] {
+  background-image: linear-gradient(rgb(10 16 26 / 56%), rgb(6 10 18 / 70%)), url("assets/hero.jpg");
+}
+
+/* ---- 9. 字体：系统字体栈，零资产、零授权问题 ---- */
+body,
+button,
+input,
+select,
+textarea {
+  font-family: "Chalkboard SE", "Comic Sans MS", "STHupo", "PingFang SC", system-ui, sans-serif;
+  letter-spacing: 0.01em;
+}
+body {
+  font-size: 16px;
+}
+
+/* ---- 10. 图标：加粗、垫底、辉光 ----
+   全部通过 `[data-agnes-region="icon"]` 钩子，不碰 `.icon` 这类内部 class。
+   压在照片上的那些（侧栏/顶栏）用浅色描边，其余跟随品牌色。 */
+[data-agnes-region="icon"] {
+  stroke: var(--agnes-brand-primary);
+  stroke-width: 2.4;
+  padding: 0.12rem;
+  box-sizing: content-box;
+  border-radius: 0.35rem;
+  background-image: linear-gradient(rgb(120 180 255 / 18%), rgb(60 110 190 / 18%));
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 35%));
+}
+[data-agnes-region="sidebar"] [data-agnes-region="icon"],
+[data-agnes-region="topbar"] [data-agnes-region="icon"] {
+  stroke: rgb(224 240 255);
+  background-image: linear-gradient(rgb(255 255 255 / 12%), rgb(255 255 255 / 4%));
+}

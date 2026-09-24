@@ -1,0 +1,643 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/lockfile.json",
+  "title": "agnes-lock.json (\u89c4\u683c \u00a718.2.1)",
+  "$ref": "#/$defs/Lockfile",
+  "$defs": {
+    "PackageLock": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "source",
+            "integrity",
+            "trust",
+            "license",
+            "state",
+            "releasedAt",
+            "dependencies",
+            "previous"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "ref"],
+              "properties": {
+                "type": {
+                  "enum": ["npm", "market"]
+                },
+                "ref": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            },
+            "integrity": {
+              "type": "string",
+              "pattern": "^sha(256|512)-[A-Za-z0-9+/=]+$"
+            },
+            "trust": {
+              "enum": ["builtin", "trusted"]
+            },
+            "license": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "apiRange": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "provides": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SeamName"
+              }
+            },
+            "capabilities": {
+              "$ref": "extension-manifest.json#/$defs/Capabilities"
+            },
+            "state": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["installed", "trusted", "enabled"],
+              "properties": {
+                "installed": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "trusted": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "releasedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "dependencies": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "previous": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["version", "integrity"],
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "integrity": {
+                      "type": "string",
+                      "pattern": "^sha(256|512)-[A-Za-z0-9+/=]+$"
+                    },
+                    "surfaces": {
+                      "type": "array",
+                      "maxItems": 64,
+                      "uniqueItems": true,
+                      "items": {
+                        "$ref": "surface.json#/$defs/SurfaceDescriptor"
+                      }
+                    },
+                    "source": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["type", "ref"],
+                      "properties": {
+                        "type": {
+                          "enum": ["npm", "market", "git", "file", "workspace"]
+                        },
+                        "ref": {
+                          "type": "string",
+                          "maxLength": 1024
+                        }
+                      }
+                    },
+                    "trust": {
+                      "enum": ["builtin", "trusted"]
+                    },
+                    "license": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "apiRange": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "provides": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/SeamName"
+                      }
+                    },
+                    "capabilities": {
+                      "$ref": "extension-manifest.json#/$defs/Capabilities"
+                    },
+                    "state": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["installed", "trusted", "enabled"],
+                      "properties": {
+                        "installed": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "trusted": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "releasedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "dependencies": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "contributions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "package-admin.json#/$defs/PackageContributionSummary"
+                      },
+                      "maxItems": 128
+                    },
+                    "treeIntegrity": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 71,
+                      "pattern": "^sha256-[a-f0-9]{64}$"
+                    },
+                    "trustDecision": {
+                      "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+                    }
+                  }
+                }
+              ]
+            },
+            "surfaces": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "surface.json#/$defs/SurfaceDescriptor"
+              }
+            },
+            "contributions": {
+              "type": "array",
+              "items": {
+                "$ref": "package-admin.json#/$defs/PackageContributionSummary"
+              },
+              "maxItems": 128
+            },
+            "treeIntegrity": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 71,
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            "trustDecision": {
+              "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "source",
+            "integrity",
+            "trust",
+            "license",
+            "state",
+            "dependencies",
+            "previous"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "ref"],
+              "properties": {
+                "type": {
+                  "enum": ["git", "workspace", "file"]
+                },
+                "ref": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            },
+            "integrity": {
+              "type": "string",
+              "pattern": "^sha(256|512)-[A-Za-z0-9+/=]+$"
+            },
+            "trust": {
+              "enum": ["builtin", "trusted"]
+            },
+            "license": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "apiRange": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "provides": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SeamName"
+              }
+            },
+            "capabilities": {
+              "$ref": "extension-manifest.json#/$defs/Capabilities"
+            },
+            "state": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["installed", "trusted", "enabled"],
+              "properties": {
+                "installed": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "trusted": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "releasedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "dependencies": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "previous": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["version", "integrity"],
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "integrity": {
+                      "type": "string",
+                      "pattern": "^sha(256|512)-[A-Za-z0-9+/=]+$"
+                    },
+                    "surfaces": {
+                      "type": "array",
+                      "maxItems": 64,
+                      "uniqueItems": true,
+                      "items": {
+                        "$ref": "surface.json#/$defs/SurfaceDescriptor"
+                      }
+                    },
+                    "source": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["type", "ref"],
+                      "properties": {
+                        "type": {
+                          "enum": ["npm", "market", "git", "file", "workspace"]
+                        },
+                        "ref": {
+                          "type": "string",
+                          "maxLength": 1024
+                        }
+                      }
+                    },
+                    "trust": {
+                      "enum": ["builtin", "trusted"]
+                    },
+                    "license": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "apiRange": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "provides": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/SeamName"
+                      }
+                    },
+                    "capabilities": {
+                      "$ref": "extension-manifest.json#/$defs/Capabilities"
+                    },
+                    "state": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["installed", "trusted", "enabled"],
+                      "properties": {
+                        "installed": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "trusted": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "releasedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "dependencies": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "contributions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "package-admin.json#/$defs/PackageContributionSummary"
+                      },
+                      "maxItems": 128
+                    },
+                    "treeIntegrity": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 71,
+                      "pattern": "^sha256-[a-f0-9]{64}$"
+                    },
+                    "trustDecision": {
+                      "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+                    }
+                  }
+                }
+              ]
+            },
+            "surfaces": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "surface.json#/$defs/SurfaceDescriptor"
+              }
+            },
+            "contributions": {
+              "type": "array",
+              "items": {
+                "$ref": "package-admin.json#/$defs/PackageContributionSummary"
+              },
+              "maxItems": 128
+            },
+            "treeIntegrity": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 71,
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            "trustDecision": {
+              "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+            }
+          }
+        }
+      ]
+    },
+    "Lockfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lockfileVersion",
+        "profile",
+        "resolvedProfileHash",
+        "generatedAt",
+        "generatedBy",
+        "packages",
+        "seams",
+        "provider",
+        "policySnapshot"
+      ],
+      "properties": {
+        "lockfileVersion": {
+          "const": 1
+        },
+        "profile": {
+          "type": "string"
+        },
+        "resolvedProfileHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "generatedBy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["agnesVersion"],
+          "properties": {
+            "agnesVersion": {
+              "type": "string"
+            }
+          }
+        },
+        "packages": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PackageLock"
+          }
+        },
+        "provider": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["package", "adapters"],
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "adapters": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "workspace": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash", "manifestId", "trustedAt"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^(?!/)(?![A-Za-z]:)(?!\\.\\.(?:/|$))(?!.*\\/\\.\\.(?:/|$))[^\\\\\\u0000]+$"
+            },
+            "hash": {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            "manifestId": {
+              "type": "string"
+            },
+            "trustedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "policySnapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capabilityCeiling", "workspacePackages"],
+          "properties": {
+            "capabilityCeiling": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Capability"
+              }
+            },
+            "workspacePackages": {
+              "enum": ["deny", "require-project-trust"]
+            },
+            "hash": {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            }
+          }
+        },
+        "seams": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "approval",
+            "checkpoint",
+            "ledger",
+            "sandbox",
+            "verifier",
+            "repair",
+            "artifacts",
+            "principals",
+            "platform",
+            "harness"
+          ],
+          "properties": {
+            "approval": {
+              "type": "string"
+            },
+            "checkpoint": {
+              "type": "string"
+            },
+            "ledger": {
+              "type": "string"
+            },
+            "sandbox": {
+              "type": "string"
+            },
+            "verifier": {
+              "type": "string"
+            },
+            "repair": {
+              "type": "string"
+            },
+            "artifacts": {
+              "type": "string"
+            },
+            "principals": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "harness": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "Capabilities": {
+      "$ref": "extension-manifest.json#/$defs/Capabilities"
+    },
+    "HookEvent": {
+      "$ref": "hooks.json#/$defs/HookEvent"
+    },
+    "UiSlotName": {
+      "$ref": "slots.json#/$defs/UiSlotName"
+    },
+    "SeamName": {
+      "$ref": "profile.json#/$defs/SeamName"
+    },
+    "Capability": {
+      "$ref": "profile.json#/$defs/Capability"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "agnes/principals-local",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "hooks": [],
+    "slots": [],
+    "events": false,
+    "resources": [],
+    "network": []
+  }
+}

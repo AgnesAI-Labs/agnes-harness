@@ -1,0 +1,12 @@
+{
+  "name": "acme/pkg-a",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "^1.0.0"
+  }
+}

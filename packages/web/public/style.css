@@ -1,0 +1,6040 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   1. 基础色 —— 唯一允许出现具体色值的区域
+   命名：--agnes-color-{族}-{阶}[-a{透明}]
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  --agnes-color-transparent: transparent;
+  --agnes-color-white: #ffffff;
+  --agnes-color-black-a06: rgb(0 0 0 / 6%);
+
+  --agnes-color-neutral-025: #fdfeff;
+  --agnes-color-neutral-050: #fbfbfb;
+  --agnes-color-neutral-075: #fafafa;
+  --agnes-color-neutral-100: #e2e2e2;
+  --agnes-color-neutral-150: #d9d9d9;
+  --agnes-color-neutral-200: #d2dfe3;
+  --agnes-color-neutral-250: #c6cfd6;
+  --agnes-color-neutral-275: #c5c7d1;
+  --agnes-color-neutral-300: #c4cbd7;
+  --agnes-color-neutral-325: #b9c1ce;
+  --agnes-color-neutral-350: #b3b9c3;
+  --agnes-color-neutral-360: #b1b1b1;
+  --agnes-color-neutral-375: #b2bcd0;
+  --agnes-color-neutral-400: #aec1c7;
+  --agnes-color-neutral-425: #a1a6bd;
+  --agnes-color-neutral-450: #a0acb1;
+  --agnes-color-neutral-475: #909aa4;
+  --agnes-color-neutral-500: #8d98b3;
+  --agnes-color-neutral-550: #6b7280;
+  --agnes-color-neutral-575: #676d83;
+  --agnes-color-neutral-600: #667188;
+  --agnes-color-neutral-625: #4e586a;
+  --agnes-color-neutral-650: #4a556b;
+  --agnes-color-neutral-675: #485054;
+  --agnes-color-neutral-700: #464e5c;
+  --agnes-color-neutral-725: #424656;
+  --agnes-color-neutral-750: #2c303b;
+  --agnes-color-neutral-775: #2b313c;
+  --agnes-color-neutral-790: #2a2e35;
+  --agnes-color-neutral-800: #22252c;
+  --agnes-color-neutral-850: #1c2026;
+  --agnes-color-neutral-900: #191c1d;
+  --agnes-color-neutral-950: #161b21;
+
+  --agnes-color-brand-indigo-300: #849aff;
+  --agnes-color-brand-indigo-400: #6983fc;
+  --agnes-color-brand-indigo-450: #3c57d5;
+  --agnes-color-brand-indigo-500: #3248af;
+  --agnes-color-brand-blue-400: #5c9eff;
+  --agnes-color-brand-blue-500: #0066ff;
+  --agnes-color-brand-cyan-100: #cff2ff;
+  --agnes-color-brand-cyan-200: #baeafb;
+  --agnes-color-brand-cyan-300: #b5e5ff;
+  --agnes-color-brand-cyan-400: #98dbff;
+
+  --agnes-color-green-400: #4ade80;
+  --agnes-color-green-600: #15803d;
+  --agnes-color-green-bg-light: #dcfce7;
+  --agnes-color-green-bg-dark: #1f3b2b;
+  --agnes-color-yellow-400: #ffb547;
+  --agnes-color-yellow-600: #ff8e12;
+  /* 步骤 3 把浅色警告文字换成 yellow-600 后，落在 #f8f1df 上只有 2.04:1。
+     补一档足够深的黄（沿用步骤 3 之前的语义值 #805e21）用于浅色文字：5.26:1。 */
+  --agnes-color-yellow-700: #805e21;
+  --agnes-color-red-400: #ff5c5c;
+  --agnes-color-red-600: #e52626;
+  /* 同上：red-600 落在 #f5cdcd 上只有 3.13:1，补一档深红用于浅色危险文字：5.54:1。 */
+  --agnes-color-red-700: #8f2f2f;
+  --agnes-color-red-bg-light: #f5cdcd;
+  /* 原 #4a2323 配 red-400 文字只有 4.46:1，压深一档到 4.79:1。 */
+  --agnes-color-red-bg-dark: #421f1f;
+
+  /* 透明变体必须定义为完整颜色值，不得用整体 opacity 模拟 */
+  --agnes-color-white-a70: rgb(255 255 255 / 70%);
+  --agnes-color-white-a50: rgb(255 255 255 / 50%);
+  --agnes-color-white-a30: rgb(255 255 255 / 30%);
+  --agnes-color-white-a04: rgb(255 255 255 / 4%);
+  --agnes-color-neutral-725-a60: rgb(66 70 86 / 60%);
+  --agnes-color-neutral-300-a60: rgb(196 203 215 / 60%);
+  --agnes-color-neutral-575-a12: rgb(103 109 131 / 12%);
+  --agnes-color-neutral-150-a40: rgb(217 217 217 / 40%);
+  --agnes-color-neutral-100-a70: rgb(226 226 226 / 70%);
+  --agnes-color-neutral-850-a70: rgb(28 32 38 / 70%);
+  --agnes-color-brand-indigo-500-a30: rgb(50 72 175 / 30%);
+  --agnes-color-brand-indigo-400-a30: rgb(105 131 252 / 30%);
+  --agnes-color-brand-indigo-500-a10: rgb(50 72 175 / 10%);
+  --agnes-color-brand-indigo-400-a10: rgb(105 131 252 / 10%);
+  --agnes-color-brand-blue-500-a05: rgb(0 102 255 / 5%);
+  --agnes-color-brand-blue-400-a05: rgb(92 158 255 / 5%);
+  --agnes-color-line-light-a80: rgb(194 198 216 / 80%);
+  --agnes-color-line-light-a30: rgb(194 198 216 / 30%);
+  --agnes-color-line-light-a20: rgb(194 198 216 / 20%);
+  --agnes-color-line-dark-primary: #393f49;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   2. 语义 token —— 浅色（组件只允许引用这一层）
+   组件禁止直接引用 --agnes-color-*；命名描述用途不描述色值。
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --agnes-brand-primary: var(--agnes-color-brand-indigo-500);
+  --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-500-a30);
+  --agnes-brand-emphasis-soft: var(--agnes-color-brand-indigo-500-a10);
+
+  /* Text */
+  --agnes-text-primary: var(--agnes-color-neutral-900);
+  --agnes-text-secondary: var(--agnes-color-neutral-725);
+  --agnes-text-tertiary: var(--agnes-color-neutral-550);
+  --agnes-text-disabled: var(--agnes-color-neutral-350);
+  --agnes-text-inverse: var(--agnes-color-white);
+  /* 强调文字：桌面端 token 集无此角色，本次补齐（设计 §5.4） */
+  --agnes-text-emphasis: var(--agnes-color-brand-indigo-500);
+
+  /* Icon —— 只有 secondary 有"非继承"消费点（连接状态灯）；
+     其余图标一律走 .icon 的 stroke: currentColor 继承按钮文字色。 */
+  --agnes-icon-secondary: var(--agnes-color-neutral-360);
+
+  /* Background */
+  --agnes-bg-page: var(--agnes-color-white);
+  --agnes-bg-surface: var(--agnes-color-neutral-025);
+  --agnes-bg-popover: var(--agnes-color-white);
+  --agnes-bg-card: var(--agnes-color-neutral-150-a40);
+  /* 代码面：DSH 的 markdown-code-block 是 rgb(249,250,251)，但那是压在纯白内容底上的；
+     B 的内容底已是 #fafafa，同值灰会看不见。改用客户端既有的内嵌面，
+     保持 DSH 的关系（代码面比内容底深一档）。 */
+  --agnes-bg-code: var(--agnes-color-neutral-150-a40);
+  --agnes-bg-selected: var(--agnes-color-neutral-575-a12);
+  --agnes-bg-hover: var(--agnes-color-neutral-150-a40);
+  --agnes-bg-scrim: var(--agnes-color-white-a50);
+  /* 头部与设置面板表头按 DSH 不再磨砂上色，--agnes-surface-glass 随之失去消费点，已删除；
+     -soft / -hover 仍有消费点。 */
+  --agnes-surface-glass-soft: rgb(255 255 255 / 72%);
+  --agnes-surface-glass-hover: rgb(255 255 255 / 54%);
+
+  /* Input */
+  --agnes-input-surface: var(--agnes-color-neutral-100-a70);
+  --agnes-input-content-strong: var(--agnes-color-neutral-900);
+  --agnes-input-placeholder: var(--agnes-color-neutral-725-a60);
+  --agnes-input-border: var(--agnes-color-line-light-a30);
+  --agnes-input-border-emphasis: var(--agnes-color-line-light-a80);
+  --agnes-input-border-focus: var(--agnes-color-brand-indigo-500);
+
+  /* Line */
+  --agnes-line-emphasis: var(--agnes-color-line-light-a80);
+  --agnes-line-primary: var(--agnes-color-line-light-a30);
+  /* --agnes-line-secondary（最浅一档 a20）在 DSH 对齐后失去消费点，已删除；
+     需要最浅发丝的场合由 --agnes-line-primary 承担。 */
+
+  /* Button —— secondary 在 .secondary-button 里是描边按钮，不需要填充角色；
+     disabled 沿用 --agnes-text-tertiary + --agnes-bg-card（单独配 disabled 底色会掉到 1.43:1）。 */
+  --agnes-button-primary-bg: var(--agnes-color-brand-indigo-500);
+  --agnes-button-primary-bg-hover: var(--agnes-color-brand-indigo-450);
+  --agnes-button-primary-content: var(--agnes-color-white);
+  --agnes-button-outline-content: var(--agnes-color-neutral-675);
+
+  /* Status */
+  --agnes-status-success-text: var(--agnes-color-green-600);
+  /* 连接成功胶囊的底色（照 DSH state-success-tertiary）。 */
+  --agnes-status-success-bg: var(--agnes-color-green-bg-light);
+  --agnes-status-warning-text: var(--agnes-color-yellow-700);
+  /* 警告背景：桌面端只有 warning 文字色，本次补齐（设计 §5.4） */
+  --agnes-status-warning-bg: #f8f1df;
+  --agnes-status-danger-text: var(--agnes-color-red-700);
+  --agnes-status-danger-bg: var(--agnes-color-red-bg-light);
+  --agnes-status-info-text: var(--agnes-color-brand-blue-500);
+
+  /* Shadow —— 阴影内含颜色，必须随主题切换，故归语义层而不是尺度层：
+     尺度层的 :root 在文件更后方，与 .dark 特异性相同，会把深色值覆盖回浅色。 */
+  --shadow-elevation: 0 4px 20px -12px rgb(0 0 0 / 12%);
+  --shadow-hairline: 0 0 0 1px rgb(0 0 0 / 5%);
+  --shadow-dialog: 0 28px 80px rgb(22 30 25 / 20%);
+  /* 抬升面（照 DSH 的 --dsw-elevation-*）：0.5px 发丝描边画在阴影的**首层**，
+     所以抬升元素自身 border: 0 —— 描边不占布局，也不会与阴影叠成双层边。
+     描边色跟随主题，等价于 DSH 可重绑的 --dsw-elevation-stroke-color。 */
+  --shadow-elevation-soft:
+    0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
+  /* 菜单 / 浮层 / 对话框面（DSH --dsw-elevation-prominent 的逐值照抄）。 */
+  --shadow-elevation-prominent:
+    0 0 0 0.5px var(--agnes-line-primary), 0 3px 8px rgb(0 0 0 / 4%), 0 0 20px rgb(0 0 0 / 5%);
+
+  /* --agnes-highlight-inset（品牌填充上的内高光）在 DSH 对齐后失去消费点：
+     DSH 的品牌填充没有内高光，故删除。 */
+
+  /* Product-specific */
+  /* 侧栏面：照 DSH 的 specific-sidebar-fill（近白 rgb(249,250,251)），
+     用客户端最接近的基础色 neutral-050 (#fbfbfb)。此前按"角色名"映射到 neutral-150-a40 的灰，
+     名字对得上但观感差一档。 */
+  /* 侧栏与内容区必须分得开：照 DSH 的关系（内容面是纯白 bg-base，侧栏是浅灰
+     specific-sidebar-fill），而不是两个几乎同值的近白。此前是侧栏 #fbfbfb /
+     内容 #fafafa —— 只差 1 个色阶，观感上糊成一片。 */
+  --agnes-bg-app-sidebar: var(--agnes-color-neutral-075);
+  --agnes-bg-app-content: var(--agnes-bg-page);
+
+  /* Trace 时序图和类型标记的语义色；组件层只消费这些角色，不保留具体色值。 */
+  --agnes-trace-track: rgb(127 127 127 / 8%);
+  --agnes-trace-row-current: rgb(127 127 127 / 10%);
+  --agnes-trace-row-hover: rgb(127 127 127 / 7%);
+  --agnes-trace-lane-input: #9aa8b5;
+  --agnes-trace-lane-user: #4d7ec8;
+  --agnes-trace-lane-context: #3fa37a;
+  --agnes-trace-lane-model: #6f62c4;
+  --agnes-trace-lane-tool: #d4843a;
+  --agnes-trace-badge-user-text: #3b6fb6;
+  --agnes-trace-badge-user-bg: rgb(59 111 182 / 14%);
+  --agnes-trace-badge-context-text: #2f8f6a;
+  --agnes-trace-badge-context-bg: rgb(47 143 106 / 14%);
+  --agnes-trace-badge-assistant-text: #5c52a8;
+  --agnes-trace-badge-assistant-bg: rgb(92 82 168 / 14%);
+  --agnes-trace-badge-tool-text: #c36b22;
+  --agnes-trace-badge-tool-bg: rgb(195 107 34 / 14%);
+  --agnes-trace-badge-approval-text: #8a5a12;
+  --agnes-trace-badge-approval-bg: rgb(138 90 18 / 12%);
+  --agnes-trace-badge-compaction-text: #4e586a;
+  --agnes-trace-badge-compaction-bg: rgb(78 88 106 / 12%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   3. 语义 token —— 深色（与浅色分类同序、名字成对）
+   必须出现在浅色 :root 之后，同名 token 才能覆盖。
+   ═══════════════════════════════════════════════════════════════════════ */
+.dark {
+  color-scheme: dark;
+
+  /* Brand */
+  --agnes-brand-primary: var(--agnes-color-brand-indigo-400);
+  --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-400-a30);
+  --agnes-brand-emphasis-soft: var(--agnes-color-brand-indigo-400-a10);
+
+  /* Text */
+  --agnes-text-primary: var(--agnes-color-neutral-050);
+  --agnes-text-secondary: var(--agnes-color-neutral-300);
+  /* 三级文字：原为 neutral-700，在 #161b21 上只有 2.07:1，几乎不可读。
+     neutral-500 给到 6.0:1，仍明显低于 secondary，保持三级次序。 */
+  --agnes-text-tertiary: var(--agnes-color-neutral-500);
+  --agnes-text-disabled: var(--agnes-color-neutral-625);
+  /* 深色品牌色是亮靛蓝，反色内容必须是近黑：白字只有 3.36:1，近黑 5.16:1。 */
+  --agnes-text-inverse: var(--agnes-color-neutral-950);
+  --agnes-text-emphasis: var(--agnes-color-brand-indigo-400);
+
+  /* Icon —— 同浅色：只有 secondary 有非继承消费点（连接状态灯） */
+  --agnes-icon-secondary: var(--agnes-color-neutral-575);
+
+  /* Background */
+  /* 深色下三级表面必须拉开：页面底 ≠ 弹窗/输入框底 ≠ 面板底。
+     原先三者都是 neutral-950，弹窗与页面同色，只剩 1px 边框可分。 */
+  --agnes-bg-page: var(--agnes-color-neutral-850);
+  --agnes-bg-surface: var(--agnes-color-neutral-800);
+  --agnes-bg-popover: var(--agnes-color-neutral-800);
+  --agnes-bg-card: var(--agnes-color-white-a04);
+  /* 照 DSH 深色 markdown-code-block 的 rgb(27,27,28)。 */
+  --agnes-bg-code: var(--agnes-color-neutral-850);
+  --agnes-bg-selected: var(--agnes-color-neutral-750);
+  --agnes-bg-hover: var(--agnes-color-white-a04);
+  --agnes-bg-scrim: var(--agnes-color-neutral-850-a70);
+  --agnes-surface-glass-soft: rgb(255 255 255 / 8%);
+  --agnes-surface-glass-hover: rgb(255 255 255 / 12%);
+
+  /* Input */
+  --agnes-input-surface: var(--agnes-color-neutral-775);
+  --agnes-input-content-strong: var(--agnes-color-neutral-050);
+  --agnes-input-placeholder: var(--agnes-color-neutral-300-a60);
+  --agnes-input-border: var(--agnes-color-line-dark-primary);
+  --agnes-input-border-emphasis: var(--agnes-color-line-dark-primary);
+  --agnes-input-border-focus: var(--agnes-color-brand-indigo-400);
+
+  /* Line */
+  --agnes-line-emphasis: var(--agnes-color-neutral-790);
+  --agnes-line-primary: var(--agnes-color-line-dark-primary);
+
+  /* Button —— 同浅色：secondary 是描边按钮，disabled 沿用 tertiary + bg-card */
+  --agnes-button-primary-bg: var(--agnes-color-brand-indigo-400);
+  --agnes-button-primary-bg-hover: var(--agnes-color-brand-indigo-300);
+  --agnes-button-primary-content: var(--agnes-color-neutral-950);
+  --agnes-button-outline-content: var(--agnes-color-white);
+
+  /* Status */
+  --agnes-status-success-text: var(--agnes-color-green-400);
+  --agnes-status-success-bg: var(--agnes-color-green-bg-dark);
+  --agnes-status-warning-text: var(--agnes-color-yellow-400);
+  --agnes-status-warning-bg: #3a2f18;
+  --agnes-status-danger-text: var(--agnes-color-red-400);
+  --agnes-status-danger-bg: var(--agnes-color-red-bg-dark);
+  --agnes-status-info-text: var(--agnes-color-brand-blue-400);
+
+  /* Shadow —— 深色底上浅色阴影看不见，改用更强的黑；hairline 反过来用浅环 */
+  --shadow-elevation: 0 4px 20px -12px rgb(0 0 0 / 55%);
+  --shadow-hairline: 0 0 0 1px rgb(255 255 255 / 8%);
+  --shadow-dialog: 0 28px 80px rgb(0 0 0 / 55%);
+  /* 与浅色同值：分离感由发丝描边承担（深色下描边换成浅环），与 DSH 一致。 */
+  --shadow-elevation-soft:
+    0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
+  --shadow-elevation-prominent:
+    0 0 0 0.5px var(--agnes-line-primary), 0 3px 8px rgb(0 0 0 / 4%), 0 0 20px rgb(0 0 0 / 5%);
+
+  /* 与浅色同值：品牌填充仍是靛蓝，顶部高光的角色不变 */
+
+  /* Product-specific */
+  /* 深色侧栏面：照 DSH 的 bluish-900（比页面亮一档），用客户端 neutral-850。 */
+  --agnes-bg-app-sidebar: var(--agnes-color-neutral-850);
+  --agnes-bg-app-content: var(--agnes-color-neutral-950);
+
+  /* 保留 Trace 类型的稳定识别色；透明背景自然与深色表面合成。 */
+  --agnes-trace-track: rgb(127 127 127 / 8%);
+  --agnes-trace-row-current: rgb(127 127 127 / 10%);
+  --agnes-trace-row-hover: rgb(127 127 127 / 7%);
+  --agnes-trace-lane-input: #9aa8b5;
+  --agnes-trace-lane-user: #4d7ec8;
+  --agnes-trace-lane-context: #3fa37a;
+  --agnes-trace-lane-model: #6f62c4;
+  --agnes-trace-lane-tool: #d4843a;
+  --agnes-trace-badge-user-text: #3b6fb6;
+  --agnes-trace-badge-user-bg: rgb(59 111 182 / 14%);
+  --agnes-trace-badge-context-text: #2f8f6a;
+  --agnes-trace-badge-context-bg: rgb(47 143 106 / 14%);
+  --agnes-trace-badge-assistant-text: #5c52a8;
+  --agnes-trace-badge-assistant-bg: rgb(92 82 168 / 14%);
+  --agnes-trace-badge-tool-text: #c36b22;
+  --agnes-trace-badge-tool-bg: rgb(195 107 34 / 14%);
+  --agnes-trace-badge-approval-text: #8a5a12;
+  --agnes-trace-badge-approval-bg: rgb(138 90 18 / 12%);
+  --agnes-trace-badge-compaction-text: #4e586a;
+  --agnes-trace-badge-compaction-bg: rgb(78 88 106 / 12%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4. 尺度 —— 无深浅维度，不参与别名映射
+   --radius-card / --radius-panel 是既有名字原样提升进本层：
+   圆角是纯尺度，既无深浅维度也无"基础/语义"分层，故不新建 token、
+   不做别名（同名别名会构成 var 自引用）。
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-body: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --line-xs: 1rem;
+  --line-sm: 1.25rem;
+  --line-md: 1.5rem;
+  --line-lg: 1.75rem;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-main-page: 32px;
+  --radius-modal: 28px;
+  --radius-full: 9999px;
+  --radius-card: 1.125rem;
+  --radius-panel: 1.375rem;
+  --s2: 2px;
+  --s4: 4px;
+  --s8: 8px;
+  --s10: 10px;
+  --s12: 12px;
+  --s16: 16px;
+  --s20: 20px;
+  --s24: 24px;
+  --s32: 32px;
+  --s48: 48px;
+  --chat-content-width: 57.5rem;
+  --composer-card-max-width: calc(var(--chat-content-width) + 2rem);
+  --admin-content-width: 70rem;
+  --control-height: 2.25rem;
+  --control-height-form: 2.75rem;
+  --control-height-touch: 44px;
+  --dialog-max-height: min(46rem, calc(100dvh - 3rem));
+  /* 阴影已上移到语义层（第 2 节 Shadow 组）：内含颜色，需要 .dark 覆盖。
+     三档仍是极简口径，只是不再属于"无深浅维度"的尺度层。 */
+  --transition-fast: 140ms ease-out;
+  --transition: 170ms ease-out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   6. 组件层 —— 一代化：每个选择器只声明一次，零具体色值
+   原 181 个硬编码色值已按规则映射到语义 token；重复块已合并（后声明者胜）。
+   ═══════════════════════════════════════════════════════════════════════ */
+* {
+  box-sizing: border-box;
+  /* 隐藏滚动条外观，保留各容器原有的滚动行为。 */
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+:where([hidden]) {
+  display: none !important;
+}
+html,
+body {
+  min-width: 0;
+  min-height: 100%;
+}
+body {
+  height: 100dvh;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 288px minmax(0, 1fr);
+  overflow: hidden;
+  /* 照 DSH 的列宽轴：正文列宽 W，输入卡 = W + 32px（ConversationRoot 的
+     --dsh-chat-content-width / --dsh-composer-card-max-width 关系）。
+     此前正文 52rem、输入卡 47rem，输入卡反而比正文窄，与 DSH 相反。 */
+  /* DSH 的列宽轴上限是 920px（clamp(680px, 列宽*0.64, 920px) 的 cap），
+     此前取 52rem(832px) 显得窄。 */
+}
+/* 区域表面钩子（不变量 R1，设计 §20）：可换肤表面属性必须声明在 data-agnes-region 选择器 (0,1,0) 上，
+   不能声明在元素的 #id (1,0,0) 上。皮肤样式表靠 adoptedStyleSheets 排在文档样式表之后取胜，
+   同特异性下皮肤必胜；但只要基础样式把同一属性声明在 #id 上，皮肤就永远赢不了。
+   布局、尺寸、交互态（:hover / :focus*）仍留在各自的 id/class 规则上。其余区域规则见各自元素附近。 */
+[data-agnes-region="app"] {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-app-content);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+}
+::selection {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-selected);
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  border: 1px solid var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-page);
+}
+/* 输入类控件用自己的语义角色（底色/文字/边框），button 不吃这一组。
+   此前输入框与页面同底、占位符与真实值同色，控件不"像"控件。 */
+input,
+select,
+textarea {
+  border-color: var(--agnes-input-border);
+  color: var(--agnes-input-content-strong);
+  background: var(--agnes-input-surface);
+}
+button {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+button:hover:not(:disabled) {
+  border-color: var(--agnes-line-emphasis);
+  background: var(--agnes-bg-hover);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button:focus-visible,
+summary:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+
+/* 表单控件吃 outline 会和自身边框叠成双层，看着又粗又脏。
+   改成「边框变色 + 一圈柔和品牌环」，既克制又仍然醒目。 */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--agnes-input-border-focus);
+  box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
+}
+/* 禁用态照 DSH 用不透明度表达，**不换底色**——换底色会把"输入面/卡片面"的语义搅在一起
+   （此前 disabled 用了 --agnes-bg-card，使禁用的输入框看起来像一张卡）。
+   按钮取 0.4（DSH .primary/.add 的值）；输入类取 0.5（客户端 Input 的 disabled:opacity-50）。 */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+input,
+select {
+  min-height: var(--control-height);
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+}
+textarea {
+  min-height: 2.875rem;
+  max-height: 11.25rem;
+  padding: 0.25rem 0;
+  resize: none;
+}
+::placeholder {
+  color: var(--agnes-input-placeholder);
+  opacity: 1;
+}
+.icon {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+/* ── 客户端（agnes-code）图标的绘制约定 ──────────────────────────────────────
+   这些字形直接取自客户端 `ui/desktop/src/components/icons/*` 与
+   `images/projectIcon_*.svg`。客户端各图标的 fill/stroke 口径不同（自定义图标基本是
+   纯 fill；Settings 是 16 网格上的 stroke 1.2；projectIcon 是"填充 + 0.144 极细描边"），
+   而 SVG 上的 stroke-width 属性会被上面 .icon 的 CSS 覆盖，故按图标再声明一次。 */
+.icon-fill {
+  fill: currentColor;
+  stroke: none;
+}
+.icon-settings {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+.icon-folder {
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 0.144;
+}
+.icon-folder-open {
+  stroke-width: 0.1953;
+  display: none;
+}
+/* 工作区分组标题的展开/收起两态，对应客户端 AgnesProjectFolderIcon 的 expanded 属性。 */
+.workspace-heading[aria-expanded="true"] .icon-folder-open {
+  display: block;
+}
+.workspace-heading[aria-expanded="true"] .icon-folder-closed {
+  display: none;
+}
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-inverse);
+  background: var(--agnes-button-primary-bg);
+  transform: translateY(-180%);
+  transition: transform var(--transition-fast);
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.primary-button {
+  border-color: var(--agnes-button-primary-bg);
+  color: var(--agnes-button-primary-content);
+  background: var(--agnes-button-primary-bg);
+}
+.primary-button:hover:not(:disabled) {
+  border-color: var(--agnes-button-primary-bg-hover);
+  background: var(--agnes-button-primary-bg-hover);
+  box-shadow: var(--shadow-elevation);
+}
+.secondary-button {
+  color: var(--agnes-button-outline-content);
+  background: transparent;
+}
+.secondary-button.compact {
+  min-height: 2rem;
+  padding: 0.25rem 0.625rem;
+}
+.icon-button {
+  /* 照 DSH 的 iconButton：28px 正圆、无边框、ink 用 secondary 一档。 */
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 50%;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+}
+.icon-button:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-hover);
+}
+.sidebar {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.375rem 0.75rem;
+  /* 侧栏自己**不滚动**：滚动职责只归 `#sessions`。此前这里是 `auto`，
+     一旦内容总高超出视口（窗口拉矮，或 `sidebar.panellist` 插槽有内容），
+     整个侧栏变成滚动容器，底部的「设置」行会随列表一起滚出视野。
+     裁掉溢出即可 —— 列表在剩余空间里自己滚，底部行始终留在原位。 */
+  overflow: hidden;
+  border-right: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-app-sidebar);
+  border-right-color: var(--agnes-line-primary);
+}
+/* 插槽只承载组件生命周期；会话列表和底部操作仍参与侧栏的纵向 flex 布局。
+   必须覆盖到**最内层**的 slot 包装：侧栏实际有 `ui:sidebar` → `sidebar` 两组各两层包装，
+   只让外层透明时，内层 `[data-slot="sidebar"]` / `[data-slot-entry]` 仍是普通 block 盒子，
+   `#sessions` 的 flex:1 与 `.sidebar-footer` 的 flex:none 全部失效 ——
+   列表不再自己滚动，底部「设置」也不会钉在侧栏底部。这里按后代泛化，避免写死嵌套深度。 */
+.sidebar :where([data-slot], [data-slot-entry]) {
+  display: contents;
+}
+.sidebar-head,
+.topbar,
+.connection-group,
+.dialog-heading,
+.dialog-heading-actions {
+  display: flex;
+  align-items: center;
+}
+.sidebar-head {
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0 0.5rem 0.25rem;
+  margin: 0 0 0.5rem;
+  min-height: 3.75rem;
+}
+.brand-lockup {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* 品牌锁定组合沿用原 AgnesMark，图形标和字标共用主题品牌色。 */
+.brand-lockup {
+  color: var(--agnes-brand-primary);
+}
+/* 原 AgnesMark 以 alpha 蒙版着色，侧栏、空态与过程行头像复用同一资产。 */
+.agnes-mark {
+  flex: 0 0 auto;
+  background: currentColor;
+  -webkit-mask: url("/brand-mark.png") center / contain no-repeat;
+  mask: url("/brand-mark.png") center / contain no-repeat;
+}
+.brand-mark-image {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+.brand-wordmark-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.0625rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+.eyebrow,
+.section-label,
+.task-heading h1,
+.task-heading span,
+#composer-hint,
+.field-hint,
+.dialog-intro {
+  margin: 0;
+}
+.eyebrow {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+/* 侧栏分组标题照 DSH 的 sectionLabel：不做大小写变换、14px、字重 400。 */
+.section-label {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.875rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.25rem;
+  text-transform: none;
+}
+.sidebar-actions {
+  display: grid;
+}
+.sidebar-actions .primary-button {
+  /* 照 DSH 的 newSession：38px 高、圆角 12、0.5px 描边、14px/500、抬升底且无投影。
+     用 height 而不是 min-height：内边距 + 行高 + 0.5px 描边合计 39px，min-height 会撑到 39。 */
+  height: 2.375rem;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-width: 0.5px;
+  border-color: var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-page);
+  box-shadow: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.375rem;
+}
+.section-label {
+  margin: 0;
+}
+#sessions {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 0.125rem;
+  /* flex:1 + min-height:0 会把列表压进剩余空间；不裁 overflow 时多出来的行
+     直接画到下面的「设置」行上。列表自己滚动，footer 才能钉在底部。 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.session-row {
+  /* 照 DSH 的 `.sessionRow`：悬停/选中底色画在**行**上，不画在内层按钮上。
+     内层 `.session` 是 `flex: 1` 的按钮，行尾的三点动作槽在按钮之外；底色画在按钮上时，
+     悬停底色会在动作槽左侧断掉，三点浮在没有底色的区域上。 */
+  display: flex;
+  align-items: center;
+  position: relative;
+  min-width: 0;
+  border-radius: var(--radius-md);
+}
+.session-row > :where(.session) {
+  flex: 1;
+  min-width: 0;
+}
+/* 行状态统一在这里上色：悬停、当前会话（`data-active` 由 navigation 打在行上）、
+   菜单打开期间钉住（面板已脱离文档流，指针离开行就丢了 `:hover`）。 */
+.session-row:hover,
+.session-row[data-active="true"],
+.session-row[data-menu-open="true"] {
+  background: var(--agnes-bg-hover);
+}
+.session-menu {
+  flex: none;
+  /* 动作位**常驻占位、悬停显现**（照 DSH）：占位常在，悬停显隐时标题的省略点
+     不会左右跳动，标题与「⋯」之间是一条恒定的缝。显隐用 opacity 而不是
+     display:none —— none 会让按钮不可聚焦，键盘用户永远够不到这个入口
+     （opacity 只是不响应指针，Tab 仍可达，焦点进行内即显现）。菜单打开期间钉住。
+     `data-menu-open` 由菜单模块写在行上：不用 `:has()`，因为 Chrome 对"元素插入后再改属性"的
+     `:has()` 重算不可靠（实测同一条规则里 `display` 会刷新而 `background` 不会）。 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  /* 右缘留 8px（+12px 侧栏内边距 =「⋯」离窗口右缘 24px）：标题距左缘 42px，
+     动作位贴死右缘（16px）会让整行观感左重右轻。 */
+  margin-right: 0.5rem;
+  opacity: 0;
+  pointer-events: none;
+}
+.session-row:hover .session-menu,
+.session-row:focus-within .session-menu,
+.session-row[data-menu-open="true"] .session-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Touch has no durable hover target.  Keeping the session action hit area inert on a narrow
+   sidebar made the menu unreachable by an ordinary tap; expose the already-reserved action slot
+   there while retaining the compact hover treatment for pointer desktops. */
+@media (max-width: 720px) {
+  .session-menu {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.session-menu-trigger {
+  /* 照 DSH 的行内动作：16px 裸图标、三级文字色、悬停转主色，没有底色也没有描边。
+     min-height 必须显式给：全局 `button { min-height: 2.25rem }` 会把触发器撑成 16×36，
+     行高随之在悬停时多 4px（实测过）。 */
+  width: 1rem;
+  min-height: 1rem;
+  height: 1rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+}
+.session-menu-trigger:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-primary);
+  background: transparent;
+}
+/* 照 DSH 的 Menu 卡：4px 内边距、圆角 20px、border: 0（发丝描边画在阴影首层）、
+   elevation-prominent。宽 218px 与落点由 `positionPopover` 写进行内样式。
+   必须是 fixed —— 面板挂在 body 上，`.sidebar` 的 overflow 裁不到它。 */
+.session-menu-actions {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-radius: 1.25rem;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-popover);
+  box-shadow: var(--shadow-elevation-prominent), var(--shadow-hairline);
+}
+/* 照 DSH 的菜单单元：最小高 40px、8px/10px 内边距、圆角 10px、14px/22px、图文间距 8px。
+   `justify-content` 必须显式左对齐：全局 `button` 是 `inline-flex` + `justify-content: center`，
+   只写 `text-align: left` 会被 flex 居中盖掉（截图核验出来的）。 */
+.session-menu-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 0;
+  border-radius: 0.625rem;
+  color: var(--agnes-text-primary);
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.375rem;
+  text-align: left;
+}
+.session-menu-actions button:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--agnes-bg-hover);
+}
+/* 图标槽三级色、文字主色 —— 与 DSH 的图标槽/文字分工一致。 */
+.session-menu-actions .icon {
+  color: var(--agnes-text-tertiary);
+}
+.session-rename-dialog {
+  width: min(480px, calc(100vw - 32px));
+  padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.session-rename-dialog form {
+  display: grid;
+  gap: 16px;
+}
+.session-rename-dialog input {
+  width: 100%;
+  min-width: 0;
+}
+.session-rename-error {
+  margin: 0;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.session-rename-error:empty {
+  display: none;
+}
+/* 报告问题弹窗：照重命名弹窗的尺寸；四个步骤用 [hidden] 切换。 */
+.diagnostics-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+/* 内边距与滚动放在内层：落在 <dialog> 自身的点击才算点遮罩（bindDismissibleDialog）。 */
+.diagnostics-body {
+  max-height: var(--dialog-max-height);
+  padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.diagnostics-dialog section {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+.diagnostics-badge {
+  justify-self: start;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--agnes-status-success-bg);
+  color: var(--agnes-status-success-text);
+  font-size: var(--font-size-sm);
+}
+.diagnostics-include {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.diagnostics-include label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--agnes-text-primary);
+}
+/* 全局 input 规则把 checkbox 撑成 width:100%，把标签文字挤成竖排换行；
+   缩到原生勾选框大小，复用 #config-form .appearance-option input 的方案。 */
+.diagnostics-include input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  min-height: 0;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--agnes-brand-primary);
+}
+.diagnostics-file {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  overflow-wrap: anywhere;
+}
+.diagnostics-dialog .dialog-error {
+  margin: 12px 0 0;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.diagnostics-dialog .dialog-error:empty {
+  display: none;
+}
+.archived-heading {
+  align-items: flex-start;
+}
+/* #config-close 绝对定位在面板右上（right:14px、宽 28px），横幅右侧的
+   「刷新列表」按钮按常规 1.5rem 内边距会伸进 ×底下被压住；右缘让出
+   42px + 10px 缝。选择器带 ID 压过 ≤900px 媒体查询里的 padding-inline 覆盖。 */
+#config-form .config-heading.archived-heading {
+  padding-right: 3.25rem;
+}
+.archived-heading > div {
+  min-width: 0;
+}
+.archived-pane-body {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  padding: 2rem 1.5rem 1.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.archived-heading p {
+  margin: 0.35rem 0 0;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.375rem;
+}
+.archived-toolbar {
+  display: flex;
+  align-items: flex-end;
+  width: auto;
+  margin-top: 0;
+}
+.archived-search-field {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+}
+.archived-search-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-input-border);
+  border-radius: var(--radius-md);
+  color: var(--agnes-input-content-strong);
+  background: var(--agnes-input-surface);
+  font-size: var(--font-size-sm);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background-color var(--transition-fast);
+}
+.archived-search-field input::placeholder {
+  color: var(--agnes-text-tertiary);
+}
+.archived-search-field input:hover:not(:disabled) {
+  border-color: var(--agnes-input-border-emphasis);
+  background: var(--agnes-input-surface);
+}
+.archived-search-field input:focus {
+  border-color: var(--agnes-input-border-focus);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
+}
+.archived-message {
+  min-height: 0;
+  margin: 1rem 0 0;
+  color: var(--agnes-status-danger-text);
+  overflow-wrap: anywhere;
+}
+.archived-message:empty {
+  display: none;
+}
+.archived-list-shell {
+  margin-top: 1.25rem;
+  margin-bottom: 0;
+  min-height: 12rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-surface);
+  overflow: hidden;
+}
+.archived-empty {
+  margin: 0;
+  padding: 3rem 1.5rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+.archived-empty:empty {
+  display: none;
+}
+.archived-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.archived-sessions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 4.25rem;
+  padding: 0.75rem 1rem 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  transition: background 120ms ease;
+}
+.archived-sessions li:last-child {
+  border-bottom: 0;
+}
+.archived-sessions li:hover {
+  background: var(--agnes-bg-hover);
+}
+.archived-sessions li > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.archived-sessions strong {
+  display: block;
+  overflow: hidden;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  line-height: 1.375rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.archived-sessions p {
+  margin: 0.2rem 0 0;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.25rem;
+}
+.archived-sessions button {
+  flex: none;
+  min-height: 2rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-surface);
+  font-size: var(--font-size-xs);
+}
+.archived-sessions button:hover:not(:disabled) {
+  border-color: var(--agnes-text-emphasis);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-selected);
+}
+
+.session {
+  width: 100%;
+  min-height: 2.125rem;
+  justify-content: flex-start;
+  overflow: hidden;
+  /* 左侧 30px = 工作区标题的文字 x（行内 8 + 文件夹图标 16 + 间距 6）：
+     会话标题与工作区名落在同一条竖线上，"会话嵌在工作区下"的层级靠这条缩进表达。
+     行高与 .workspace-heading 同为 34px，分组内外的纵向节奏一致。 */
+  padding: 0 0.5rem 0 1.875rem;
+  border-color: transparent;
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-primary);
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+}
+/* 底色由上方的 `.session-row` 承担。这里仍要显式声明，是为了压掉通用
+   `button:hover:not(:disabled)`：不清的话按钮悬停时会多出一圈 `--agnes-line-emphasis` 描边，
+   并在动作槽左侧补一块断开的底色。 */
+.session:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+}
+/* 照 DSH：选中与 hover 同底，不额外改字色/字重，也不加左侧色条；底色同样画在行上
+   （`.session-row[data-active="true"]`），所以这里只剩语义标记，没有可上色的属性。 */
+.session.active {
+  color: var(--agnes-text-primary);
+  font-weight: 400;
+}
+.sidebar-footer {
+  /* 底部操作行不参与压缩：侧栏是 flex column，空间紧张时若不显式 flex:none，
+     这一行会被 `#sessions` 挤扁。配合 `.sidebar` 的 overflow:hidden，
+     「设置」始终完整留在侧栏底部。 */
+  flex: none;
+  margin-top: 0.5rem;
+}
+.sidebar-footer button {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 2.625rem;
+  padding: 0 0.625rem 0 0.5rem;
+  border-color: transparent;
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-primary);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.375rem;
+}
+main {
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--agnes-bg-app-content);
+}
+/* 照 DSH 的对话头（ConversationRoot .header / .titleRow / .titleCluster）：
+   76px 高、padding 10px 28px 0 20px、0.5px 底分隔线；头部自己不铺色也不模糊，
+   底色交给内容区（DSH .header 没有 background / backdrop-filter）。 */
+.topbar {
+  min-height: 4.75rem;
+  /* 顶栏内容上下居中：DSH 原本是 flex-start + padding-bottom 0（内容贴顶，
+     观感偏上），这里改成 center + 上下等内边距。 */
+  align-items: center;
+  gap: 0;
+  padding: 0.625rem 1.75rem;
+  border-bottom: 0.5px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-app-content);
+  backdrop-filter: none;
+}
+.sidebar-toggle {
+  flex: 0 0 auto;
+}
+.task-heading {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+/* 照 DSH 面包屑 .crumb：14/20、当前项 500 + label-primary、padding 4px 8px、
+   圆角 12px、220px 上限后省略号。 */
+.task-heading h1 {
+  max-width: 220px;
+  overflow: hidden;
+  padding: 0.25rem 0.5rem;
+  color: var(--agnes-text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 头部没有第二行：状态与标题同排，按 DSH .crumbSubagent 的次级 12/18 呈现。 */
+.task-heading span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#status[data-state="running"] {
+  color: var(--agnes-text-emphasis);
+}
+#status[data-state="error"] {
+  color: var(--agnes-status-danger-text);
+}
+/* 照 DSH ConnectionIndicator：28px 高、padding 0 8px、13px 圆角、1px 透明描边、
+   12/18 500；图标列 14px（7px 圆点 + 左右各 3px 补齐 DSH 的 14px 图标位）。 */
+.connection-group {
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  height: 1.75rem;
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.125rem;
+  white-space: nowrap;
+}
+.connection-group::before {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  flex: 0 0 auto;
+  margin-inline: 0.1875rem;
+  content: "";
+  border-radius: 50%;
+  background: var(--agnes-icon-secondary);
+}
+.connection-group:has(#connection[data-state="connecting"]) {
+  border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
+  color: var(--agnes-status-warning-text);
+  background: var(--agnes-status-warning-bg);
+}
+.connection-group:has(#connection[data-state="reconnecting"]) {
+  border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
+  color: var(--agnes-status-warning-text);
+  background: var(--agnes-status-warning-bg);
+}
+.connection-group:has(#connection[data-state="connected"]) {
+  border-color: color-mix(in srgb, var(--agnes-status-success-text) 20%, transparent);
+  color: var(--agnes-status-success-text);
+  background: var(--agnes-status-success-bg);
+}
+.connection-group:has(#connection[data-state="closed"]) {
+  border-color: color-mix(in srgb, var(--agnes-status-danger-text) 20%, transparent);
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+}
+.connection-group:has(#connection[data-state="connected"])::before,
+.connection-group:has(#connection[data-state="reconnecting"])::before,
+.connection-group:has(#connection[data-state="closed"])::before {
+  background: currentcolor;
+}
+#disconnect .icon {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+#notice {
+  width: min(50rem, calc(100% - 3rem));
+  min-height: 0;
+  margin: 0 auto;
+  padding-top: var(--s8);
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+#notice:empty {
+  display: none;
+}
+#notice[data-kind="error"] {
+  color: var(--agnes-status-danger-text);
+}
+.workbench-split {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+/* 页签行：tablist 与「报告问题」按钮同级，按钮不进 tablist，以免破坏 tab 语义。 */
+.session-tabs-bar {
+  display: flex;
+  align-items: center;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.session-tabs {
+  display: flex;
+  gap: 1rem;
+}
+#report-problem {
+  margin-left: auto;
+}
+.session-tabs button {
+  min-height: 2.25rem;
+  padding: 0.35rem 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+}
+.session-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--agnes-text-emphasis);
+  color: var(--agnes-text-emphasis);
+}
+.conversation-shell {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--agnes-bg-app-content);
+}
+.conversation-region-root {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+[data-agnes-region="trace"] {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--agnes-bg-app-content);
+  color: var(--agnes-text-secondary);
+}
+[data-agnes-region="rightbar"] {
+  position: fixed;
+  z-index: 5;
+  inset: 4.75rem 1rem 1rem auto;
+  width: min(26rem, calc(100vw - 2rem));
+  overflow: auto;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 1rem;
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+[data-agnes-region="rightbar"] > [data-slot="rightbar"] {
+  min-height: 100%;
+}
+#rightbar-content,
+#rightbar-session {
+  min-height: 100%;
+}
+#rightbar-session {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+.rightbar-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.rightbar-tab-content {
+  min-width: 0;
+}
+.rightbar-document-preview {
+  min-width: 0;
+  overflow: auto;
+}
+.rightbar-document-preview > img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.rightbar-document-preview > iframe {
+  display: block;
+  width: 100%;
+  min-height: 24rem;
+  border: 0;
+}
+.rightbar-document-preview > pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rightbar-document-preview .document-preview-unavailable {
+  color: var(--agnes-text-secondary);
+}
+.trace-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.trace-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+}
+.trace-search {
+  width: min(14rem, 100%);
+  min-height: 1.75rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 999px;
+  background: var(--agnes-bg-app-content);
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+}
+.trace-gantt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  padding: 0.55rem 1rem 0.7rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.trace-gantt-row {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: center;
+}
+.trace-gantt-label {
+  font-size: 0.7rem;
+  color: var(--agnes-text-secondary);
+}
+.trace-gantt-track {
+  position: relative;
+  height: 0.85rem;
+  overflow: hidden;
+  background: var(--agnes-trace-track);
+  border-radius: 2px;
+}
+.trace-gantt-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  min-width: 6px;
+  border-radius: 2px;
+}
+.trace-gantt-bar.lane-input {
+  background: var(--agnes-trace-lane-input);
+}
+.trace-gantt-bar.lane-input.tone-user {
+  background: var(--agnes-trace-lane-user);
+}
+.trace-gantt-bar.lane-input.tone-context {
+  background: var(--agnes-trace-lane-context);
+}
+.trace-gantt-bar.lane-model {
+  background: var(--agnes-trace-lane-model);
+}
+.trace-gantt-bar.lane-tool {
+  background: var(--agnes-trace-lane-tool);
+}
+.trace-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+  min-height: 0;
+}
+.trace-list {
+  min-width: 0;
+  overflow: auto;
+}
+.trace-row {
+  display: grid;
+  grid-template-columns: 3.6rem 3.4rem minmax(0, 1fr);
+  align-items: center;
+  justify-content: start;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.28rem 1rem;
+  border: 0;
+  border-radius: 0;
+  color: var(--agnes-text-primary);
+  background: transparent;
+  text-align: start;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.trace-row[aria-current="true"] {
+  background: var(--agnes-trace-row-current);
+}
+.trace-row:hover {
+  background: var(--agnes-trace-row-hover);
+}
+.trace-turn-mark {
+  position: static;
+  justify-self: start;
+  min-height: 0;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 3px;
+  color: var(--agnes-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1.3;
+}
+.trace-turn-mark:empty {
+  border: 0;
+  padding: 0;
+}
+.trace-badge {
+  justify-self: start;
+  padding: 0.08rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.trace-badge.kind-用户 {
+  color: var(--agnes-trace-badge-user-text);
+  background: var(--agnes-trace-badge-user-bg);
+}
+.trace-badge.kind-上下文 {
+  color: var(--agnes-trace-badge-context-text);
+  background: var(--agnes-trace-badge-context-bg);
+}
+.trace-badge.kind-助手 {
+  color: var(--agnes-trace-badge-assistant-text);
+  background: var(--agnes-trace-badge-assistant-bg);
+}
+.trace-badge.kind-工具 {
+  color: var(--agnes-trace-badge-tool-text);
+  background: var(--agnes-trace-badge-tool-bg);
+}
+.trace-badge.kind-审批 {
+  color: var(--agnes-trace-badge-approval-text);
+  background: var(--agnes-trace-badge-approval-bg);
+}
+.trace-badge.kind-整理 {
+  color: var(--agnes-trace-badge-compaction-text);
+  background: var(--agnes-trace-badge-compaction-bg);
+}
+.trace-row-preview {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--agnes-text-secondary);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace-inspector {
+  min-width: 0;
+  overflow: auto;
+  padding: 0.75rem 1rem 1.25rem;
+  border-left: 1px solid var(--agnes-line-primary);
+}
+.trace-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.trace-inspector-title {
+  flex: 1;
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.trace-inspector-close {
+  display: inline-flex;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  min-height: 0;
+  height: 1.75rem;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 400;
+}
+.trace-tab {
+  min-height: 0;
+  justify-content: flex-start;
+  font-weight: 400;
+}
+.trace-inspector-tabs {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.trace-tab {
+  padding: 0.35rem 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+}
+.trace-tab[aria-selected="true"] {
+  border-bottom-color: var(--agnes-text-emphasis);
+  color: var(--agnes-text-emphasis);
+}
+.trace-field {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+  font-size: var(--font-size-sm);
+}
+.trace-field-label {
+  color: var(--agnes-text-secondary);
+}
+.trace-field-value {
+  color: var(--agnes-text-primary);
+  overflow-wrap: anywhere;
+}
+.trace-pre {
+  margin: 0.5rem 0 0;
+  overflow: auto;
+  color: var(--agnes-text-primary);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+.trace-empty {
+  margin: 1.5rem 1.25rem;
+}
+@media (max-width: 900px) {
+  .trace-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trace-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trace-gantt-bar {
+    transition: none;
+  }
+}
+#transcript {
+  height: 100%;
+  margin-inline: auto;
+  /* 切换会话时旧画面降不透明度提示「正在准备」（body.session-switching），
+     新投影就绪后平滑恢复。 */
+  transition: opacity var(--transition);
+  /* 对话不需要横向滚动条。此前 overflow: auto 会让任何一根超宽的行内元素
+     （长代码串、长路径）把整条会话推出横向滚动。 */
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* 照 DSH ChatView .scroll：上下 16px、左右 clearance(16) + 16 = 32px。
+     此前左右 24px、下方 5rem——下方留白是"输入卡浮在滚动区之上"时代的残留，
+     现在输入卡是会话区的流内兄弟，不需要这段占位。 */
+  padding: 1rem 2rem;
+  scroll-behavior: smooth;
+  width: min(100%, var(--chat-content-width));
+}
+/* 空态用输入卡的宽度轴（DSH HeroShell .stack 的 max-width 就是
+   --dsh-composer-card-max-width），与下方输入卡左右对齐。 */
+#empty-state {
+  /* 照 DSH HeroShell .root：在滚动区里 flex 居中，底部留 32px
+     （DSH .composerHero 的 padding-bottom: 32px）。 */
+  position: absolute;
+  inset: 0;
+  width: min(100%, var(--composer-card-max-width));
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2rem 2rem;
+  text-align: center;
+  /* hidden → 显示（新建草稿进入空态）时淡入，压平布局切换的生硬感。 */
+  transition: opacity var(--transition);
+}
+@starting-style {
+  #empty-state:not([hidden]) {
+    opacity: 0;
+  }
+}
+[data-agnes-region="empty-state"] {
+  color: var(--agnes-text-secondary);
+}
+#empty-state .eyebrow {
+  color: var(--agnes-text-emphasis);
+}
+/* 照 DSH HeroShell .headline：26/32、500、label-primary、居中。
+   此前是 clamp(1.45rem,3vw,2rem) / 700 / -0.035em 的标题排版。 */
+/* hero 标题放大（原 26/32，DSH HeroShell .headline 的值）。 */
+.empty-state-heading {
+  max-width: 30rem;
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 2.5rem;
+}
+/* 照 DSH HeroShell .stack 的 12px 堆叠间距；DSH 没有副标题，这段说明保持次级 13/20。 */
+.empty-state-copy {
+  max-width: 30rem;
+  margin: 0.75rem 0 0;
+  color: var(--agnes-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+/* 仅新收到的文字淡入；尾段重建时沿用已开始的进度，已读正文与布局保持稳定。
+   时长和负延时由 text-reveal 提供，历史快照与选区释放后的积压内容直接显示。 */
+@keyframes message-text-reveal {
+  from {
+    opacity: 0.08;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.message-reveal-fragment {
+  animation-name: message-text-reveal;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-fill-mode: both;
+}
+.timeline-node {
+  width: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.node-label,
+.tool-head,
+.approval-head {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.015em;
+}
+.node-label {
+  margin: 0;
+}
+.node-body,
+.approval-summary {
+  overflow-wrap: anywhere;
+}
+.node-body:not(.markdown),
+.approval-summary {
+  white-space: pre-wrap;
+}
+.node-body {
+  margin-top: 0.5rem;
+}
+/* `.user` 原有一条卡片样式（padding/border/radius/background）。.user 只会以
+   "timeline-node user" 出现，那 4 条全被 .timeline-node.user 与 .user .node-body
+   覆盖，属死值，已删除。 */
+/* 照 DSH AssistantMarkdown：正文 14px/24px、无内边距；名字标签已删，
+   正文不再需要 8px 上外边距（流间距由 .conversation-turn 的 16px 承担）。 */
+.assistant {
+  padding: 0;
+}
+.assistant .node-body {
+  margin-top: 0;
+  color: var(--agnes-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+.assistant .node-body:empty {
+  display: none;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+/* 照 DSH CodeBlock：圆角 12px、border: 0，底色取代码面。 */
+.code-block {
+  overflow: hidden;
+  border: 0;
+  border-radius: 0.75rem;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-code);
+}
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-card);
+}
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown .table-scroll,
+.markdown .code-block {
+  margin: 0 0 1rem;
+}
+/* 照 DSH MarkdownText 的标题阶梯：h1 21/30、h2 19/28、h3 18/26（700），
+   h4 14/24（600）；h1-h3 上 32px、h4 上下 16px。 */
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 2rem 0 1rem;
+  color: var(--agnes-text-primary);
+  font-weight: 700;
+}
+.markdown h1 {
+  font-size: 1.3125rem;
+  line-height: 1.875rem;
+}
+.markdown h2 {
+  font-size: 1.1875rem;
+  line-height: 1.75rem;
+}
+.markdown h3 {
+  font-size: 1.125rem;
+  line-height: 1.625rem;
+}
+.markdown h4 {
+  margin: 1rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+}
+/* 照 DSH MarkdownText 列表：padding-left 18px、项间距 6px、项内段落 8px。 */
+.markdown ul,
+.markdown ol {
+  padding-inline-start: 18px;
+}
+.markdown li {
+  line-height: 1.5rem;
+}
+.markdown li + li {
+  margin-top: 6px;
+}
+.markdown li > p {
+  margin: 8px 0;
+}
+.markdown li:first-child > p {
+  margin-top: 0;
+}
+.markdown li:last-child > p {
+  margin-bottom: 0;
+}
+.markdown li > ul,
+.markdown li > ol {
+  margin: 0.25em 0 0.35em;
+}
+/* 照 DSH MarkdownText blockquote：2px 左侧引线、padding-left 14px。 */
+.markdown blockquote {
+  padding: 0 0 0 14px;
+  border-inline-start: 2px solid var(--agnes-text-tertiary);
+  color: var(--agnes-text-secondary);
+}
+.markdown a {
+  color: var(--agnes-text-emphasis);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+.markdown a:hover {
+  color: var(--agnes-brand-primary);
+}
+.markdown code,
+.tool-name,
+.tool-summary,
+#approval p {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+/* 照 DSH MarkdownText 行内代码：圆角 6px、padding 0 5px、0.5px 发丝描边。 */
+.markdown :where(:not(pre)) > code {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border: 0.5px solid var(--agnes-line-primary);
+  border-radius: 6px;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-code);
+  font-size: 0.875em;
+}
+/* 照 DSH CodeBlock banner：padding 9px 14px、gap 12px、11/18、无分隔线。 */
+.code-toolbar {
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5625rem 0.875rem;
+  border-bottom: 0;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-code);
+  font-size: 0.6875rem;
+  line-height: 1.125rem;
+}
+/* 照 DSH CodeBlock 的语言名：等宽 11/18、label-primary、不做大写转换。 */
+.code-language {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1.125rem;
+  letter-spacing: 0;
+  color: var(--agnes-text-primary);
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+.code-copy {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
+  border-color: var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-surface);
+  font-size: var(--font-size-xs);
+}
+/* 照 DSH CodeBlock pre：等宽 11/19、内边距 16px。 */
+.code-block pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  font-size: 0.6875rem;
+  line-height: 1.1875rem;
+  tab-size: 2;
+}
+.resource-admin-page code {
+  padding: 0.125rem 0.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--agnes-bg-card);
+  color: var(--agnes-text-primary);
+}
+.code-block pre code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+/* 照 DSH MarkdownText 表格：13/22、th 500 / td 400、padding 10px 16px、
+   0.5px 下描边、表头不铺底、首列去左内边距 / 末列去右内边距。 */
+.markdown table {
+  width: 100%;
+  min-width: 32rem;
+  border-collapse: collapse;
+  color: var(--agnes-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.375rem;
+  font-variant-numeric: tabular-nums;
+}
+.markdown th,
+.markdown td {
+  padding: 0.625rem 1rem;
+  border-bottom: 0.5px solid var(--agnes-line-primary);
+  text-align: start;
+  vertical-align: top;
+}
+.markdown th {
+  color: var(--agnes-text-primary);
+  font-weight: 500;
+  background: transparent;
+}
+.markdown th:first-child,
+.markdown td:first-child {
+  padding-left: 0;
+}
+.markdown th:last-child,
+.markdown td:last-child {
+  padding-right: 0;
+}
+.markdown tr:last-child td {
+  border-bottom: 0;
+}
+/* 思考标题保留轻量折叠入口；正文用独立细线和 12px 缩进，避免与过程外壳叠出双导轨。 */
+.thinking {
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+}
+.thinking > summary {
+  width: fit-content;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0;
+  border-radius: 0;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  line-height: 1.5rem;
+  cursor: pointer;
+}
+.thinking-content {
+  margin-top: 0.25rem;
+  padding: 0.125rem 0 0.125rem var(--s12);
+  border-left: 1px solid var(--agnes-line-primary);
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+  line-height: 1.375rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* 照 DSH GenericCommandCard：没有卡片外壳（无 border / 圆角 / 底色 / 内边距），
+   只有一条 24px 的行 + 可展开的结果块。 */
+.tool {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.tool:hover {
+  box-shadow: none;
+}
+/* 照 DSH DisclosureRow：标题行 24px 高、名称 13/24 二级色、右侧摘要 13/24 三级色单行省略。 */
+.tool-head,
+.approval-head {
+  min-height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.tool-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.tool-name {
+  overflow: hidden;
+  color: var(--agnes-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-status {
+  flex: 0 0 auto;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.5rem;
+}
+.tool-summary {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-detail {
+  min-height: 1.75rem;
+  flex: 0 0 auto;
+  padding: 0.375rem;
+  border-color: transparent;
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+  font-size: 0.8125rem;
+  line-height: 1.5rem;
+}
+.tool-detail:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--agnes-bg-selected);
+}
+.approval-summary {
+  margin: 0.5rem 0 0;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.timeline-node.cost {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--agnes-text-tertiary);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.cost .node-label,
+.cost .node-body {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+.cost .node-body {
+  color: var(--agnes-text-tertiary);
+  font-weight: 600;
+}
+.timeline-node.approval {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "label summary status";
+  align-items: baseline;
+  column-gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--agnes-text-tertiary);
+}
+.approval .approval-head {
+  display: contents;
+}
+.approval .node-label {
+  grid-area: label;
+}
+.approval .tool-status {
+  grid-area: status;
+}
+.approval .approval-summary {
+  grid-area: summary;
+  min-width: 0;
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+.tool[data-status="running"] .tool-status,
+.tool[data-status="completed"] .tool-status {
+  color: var(--agnes-text-emphasis);
+}
+.tool[data-status="failed"] {
+  border-color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+}
+.tool[data-status="failed"] .tool-status {
+  color: var(--agnes-status-danger-text);
+}
+.new-content {
+  position: absolute;
+  right: max(1.5rem, calc((100% - 50rem) / 2));
+  bottom: 1rem;
+  min-height: 2.25rem;
+  border-color: var(--agnes-button-primary-bg);
+  border-radius: var(--radius-full);
+  color: var(--agnes-button-primary-content);
+  background: var(--agnes-button-primary-bg);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+/* 浮在正文上方，走主按钮语言才有足够的"跳到底部"号召力；hover 加深一档，
+   两档都是不透明主题 token，底下的正文不会透出。 */
+.new-content:hover:not(:disabled) {
+  border-color: var(--agnes-button-primary-bg-hover);
+  background: var(--agnes-button-primary-bg-hover);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+/* 照 DSH ApprovalPanel：卡片最大宽 = 正文列宽、圆角 20px、1px 警告描边、
+   白底（警告色只用在描边与文案，不整卡铺底）、按钮右对齐 8px。 */
+#approval {
+  width: min(calc(100% - 2rem), var(--chat-content-width));
+  margin: 0 auto 0.75rem;
+  padding: 0.75rem 1rem;
+}
+[data-agnes-region="approval"] {
+  overflow: hidden;
+  border: 1px solid var(--agnes-status-warning-text);
+  border-radius: 1.25rem;
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation);
+  /* 审批卡出现时从下方 4px 淡入；收回是瞬时的（不做离散 display 过渡）。
+     切换会话的半透明（body.session-switching）与这条共用 opacity 轴，方向一致。 */
+  transition:
+    opacity var(--transition),
+    translate var(--transition);
+}
+@starting-style {
+  [data-agnes-region="approval"]:not([hidden]) {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+#approval h2 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+#approval p {
+  margin: 0.375rem 0 0;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+#approval .approval-impact {
+  font-family: inherit;
+}
+.approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.875rem;
+}
+/* 新会话的输入区抬高到 DSH hero 的下限（52px = 两行 24px 行盒 + 4px 上内边距），
+   停靠态保持 36px。 */
+body:has(#transcript:empty) #prompt {
+  min-height: 3.25rem;
+}
+/* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中——空态时让
+   .conversation-shell 收起为内容高度，两端各吃一份 auto 外边距即可居中，
+   顶栏（flex 首项）不受影响。此前是 hero 占满、输入卡贴底。 */
+body:has(#transcript:empty) .conversation-shell {
+  flex: 0 1 auto;
+  margin-top: auto;
+  overflow: visible;
+}
+body:has(#transcript:empty) #empty-state {
+  position: static;
+  inset: auto;
+  /* 底边距保持 32px（DSH .composerHero 的 padding-bottom），与输入卡拉开距离。 */
+}
+/* 空态下会话清单里没有内容，但它带着 16px 上下内边距会占位、把 hero 顶下去，
+   于是 hero 跑出 shell 而整体偏离居中。空态时直接让位。 */
+body:has(#transcript:empty) #transcript {
+  display: none;
+}
+body:has(#transcript:empty) #composer {
+  margin-bottom: auto;
+}
+/* 两份 auto 只把这一组居中在"顶栏以下"的空间里，观感上仍偏低；用等高的下内边距
+   把顶栏那一份补回来，中轴才与视口一致。 */
+body:has(#transcript:empty) main {
+  padding-bottom: 8rem;
+}
+/* 切换会话的加载态：上一会话画面降不透明度（含会话区外的审批卡），提示内容
+   正在被替换；新投影就绪后由 body.session-switching 移除而平滑恢复。
+   空态时 #transcript 不显示，这条自然落空，不影响新建草稿的 hero。 */
+body.session-switching #transcript,
+body.session-switching #approval {
+  opacity: 0.55;
+}
+#composer {
+  width: min(calc(100% - 2rem), var(--composer-card-max-width));
+  margin: 0 auto 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.5rem 0 0;
+  transition: box-shadow var(--transition);
+  /* 卡片首层的 0.5px 发丝描边画在 border-box 之外，而上面的 .conversation-shell
+     是 position: relative（定位元素晚于静态元素绘制），会把这条上边裁掉。
+     DSH 用 sticky + z-index: 7 把输入卡抬到会话层之上，这里取同一层级。 */
+  position: relative;
+  z-index: 7;
+}
+[data-agnes-region="composer"] {
+  /* 照 DSH 的输入卡：圆角 22px、border: 0，分离感由阴影首层的 0.5px 发丝描边承担。
+     backdrop-filter 必须声明在区域钩子上（R1 不变量，皮肤可覆盖）——DSH 的卡片不模糊，故为 none。 */
+  border: 0;
+  border-radius: 1.375rem;
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-soft);
+  backdrop-filter: none;
+}
+/* DSH 的输入卡没有任何 focus 态样式（InputBar.module.css 的 .card 无 :focus-within，
+   也没有 focus 环）：聚焦反馈由光标承担。此前这里叠了一圈 3px 品牌环，去掉 1px 边框后
+   它直接贴在最外层，视觉上就是"边框变粗"。 */
+.composer-writing {
+  min-height: 0;
+  /* 卡片圆角 22px 而卡片本身没有水平内边距：writing 区全宽铺到卡缘时，
+     textarea 首行和 hint 行的字体正好落进左上圆角的裁切区、hint 甚至贴着卡缘。
+     两侧各留 14px，加上 textarea 自身的 14px 左内边距，字形离卡缘 28px，稳出圆角。 */
+  padding: 0 0.875rem;
+}
+#prompt {
+  display: block;
+  width: 100%;
+  min-height: 2.25rem;
+  line-height: 1.5rem;
+  padding: 0.25rem 0.5rem 0 0.875rem;
+  font-size: 0.875rem;
+}
+[data-agnes-region="composer-input"] {
+  border: 0;
+  border-radius: 0;
+  color: var(--agnes-text-primary);
+  background: transparent;
+}
+#prompt:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+#composer-hint {
+  margin-top: 0.25rem;
+  /* 与 textarea 的字形左缘对齐（writing 区 14px + 自身 14px），否则 hint 贴着卡片边。 */
+  padding: 0 0.875rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.125rem;
+}
+#composer-hint:empty,
+#composer-hint:not([data-kind="state"]) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.125rem 0.5rem 0.375rem;
+  /* 照 DSH 的 .row：这一行是尺寸容器，`#model` 的 45cqw 上限才有参照物
+     （百分比会对着自身收缩宽度算成循环依赖）。 */
+  container-type: inline-size;
+}
+.model-field {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 0.25rem;
+  margin-left: auto;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* #model 的完整样式只在这里声明一次。此前 .composer-workspace, #model 那一组
+   又声明了一遍 max-width/color/padding/min-height，因后声明而生效，
+   使这里的 max-width: min(12rem,100%) 与 color 变成死值。 */
+#model {
+  min-width: 0;
+  width: auto;
+  /* 照 DSH ModelSelect .trigger 的上限：让长模型名多拿一点宽度又不吃掉整行。
+     45cqw 以 .composer-controls 这个尺寸容器为参照；容器缺失时按规范退回视口宽度。 */
+  max-width: min(360px, 45cqw);
+  min-height: 1.75rem;
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 0.25rem 0 0.5rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 1.5rem;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+/* 照 DSH 的 .triggerLabel：名字自己省略，别把 chevron 挤出去。 */
+.model-field [data-model-label] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 下拉箭头改用与全站一致的 .icon SVG。此前是 "⌄" 字符：字形上下留白随字体与字号变化，
+   同一个按钮里的文字按行盒居中、字符按基线摆放，两者永远对不齐。 */
+.model-chevron {
+  color: var(--agnes-text-tertiary);
+  transition: transform var(--transition-fast);
+}
+#model[aria-expanded="true"] .model-chevron {
+  transform: rotate(180deg);
+}
+#model:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+/* 照 DSH ModelSelect .menu / Menu 卡：padding 4px、圆角 20px、border: 0、
+   elevation-prominent，宽度随内容并在视口内夹取。 */
+.model-picker {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: max-content;
+  min-width: min(240px, calc(100vw - 32px));
+  max-width: min(420px, calc(100vw - 32px));
+  max-height: min(360px, calc(100vh - 96px));
+  padding: 0.25rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 1.25rem;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-popover);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+.model-picker[data-placement="above"] {
+  transform-origin: bottom left;
+}
+.model-picker[data-placement="below"] {
+  transform-origin: top left;
+}
+.model-picker-help {
+  margin: 0;
+  padding: 0.5rem 0.5rem 0.25rem;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+.model-picker-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: 0;
+}
+/* 照 DSH ModelSelect 的模型行：min-height 38px、padding 6px 8px、圆角 10px、
+   gap 8px；选中态不铺底，只在尾部给一个勾（DSH .selected { background: transparent }）。 */
+.model-picker-option {
+  position: relative;
+  display: grid;
+  gap: 0.125rem;
+  min-height: 2.375rem;
+  padding: 0.375rem 0.5rem 0.375rem 2rem;
+  border-radius: 0.625rem;
+  cursor: pointer;
+  outline: 0;
+  overflow-wrap: anywhere;
+  transition:
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+.model-picker-option::before {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.5rem;
+  color: var(--agnes-text-primary);
+  content: "";
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.model-picker-option[aria-selected="true"] {
+  background: transparent;
+}
+.model-picker-option[aria-selected="true"]::before {
+  content: "✓";
+}
+.model-picker-option[data-active="true"] {
+  box-shadow: none;
+  background: var(--agnes-bg-hover);
+}
+.model-picker-option:hover:not([aria-disabled="true"]) {
+  background: var(--agnes-bg-hover);
+}
+.model-picker-option[aria-selected="true"][data-active="true"],
+.model-picker-option:hover[aria-selected="true"] {
+  background: var(--agnes-bg-hover);
+}
+.model-picker-option[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.6;
+}
+.model-picker-model {
+  color: var(--agnes-text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+.model-picker-route {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  overflow-wrap: anywhere;
+}
+#cancel,
+#send {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+#send[data-mode="idle"] {
+  /* 照 DSH InputBar .primary：34px 圆、translateY(-2px) 让它停在原座位
+     （控制行整体因 padding 2px 下移时不跟着动）。 */
+  width: 2.125rem;
+  min-width: 2.125rem;
+  height: 2.125rem;
+  min-height: 2.125rem;
+  padding: 0;
+  border-radius: 999px;
+  transform: translateY(-2px);
+}
+/* 照 DSH Modal：border: 0（描边由 elevation 首层的 0.5px 发丝承担）、圆角 24px、
+   elevation-prominent。各弹窗自己的 width 覆盖仍生效。 */
+dialog {
+  inset: 0;
+  margin: auto;
+  width: min(23.75rem, calc(100vw - 3rem));
+  max-height: var(--dialog-max-height);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-2xl);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-prominent);
+  /* showModal 打开时从下方 8px 淡入；遮罩同步淡入。关闭仍瞬时。 */
+  transition:
+    opacity var(--transition),
+    translate var(--transition),
+    overlay var(--transition) allow-discrete;
+}
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+/* 关闭态必须隐藏。作者样式里的 `display` 会覆盖浏览器对关闭态 dialog 的 `display: none`，
+   于是空盒子（带边框/圆角/阴影）会在页面上渲染成一条"灰线"——插件详情与资源详情此前正是如此。
+   这条兜底与下面把 `.plugin-detail` 的 display 限定到 `[open]` 一起用：治本 + 防复发。 */
+dialog:not([open]) {
+  display: none;
+}
+/* 照 DSH Modal 的遮罩：模糊 2px（--dsw-mask-blur）。底色仍取客户端的遮罩面。 */
+dialog::backdrop {
+  background: var(--agnes-bg-scrim);
+  backdrop-filter: blur(2px);
+  transition:
+    opacity var(--transition),
+    overlay var(--transition) allow-discrete;
+}
+#new-session {
+  width: min(30rem, calc(100% - 2rem));
+}
+#new-session-error {
+  margin: 0;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-sm);
+}
+#new-session-error:empty {
+  display: none;
+}
+/* 工具详情默认就是宽版：此前有个"展开阅读/收起阅读"切换按钮，属于多余的一次点击。 */
+.dialog-heading {
+  justify-content: space-between;
+  gap: 1rem;
+}
+.dialog-heading-actions {
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+/* 照 DSH Modal 的标题：16/24、500。 */
+.dialog-heading h2,
+#config-form h2,
+#new-session-form h2 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+.dialog-intro {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+/* 共享确认弹窗的说明是多行文本（操作摘要 + 后台复核提示），必须保留换行。 */
+#admin-confirm-description {
+  white-space: pre-line;
+}
+.config-heading {
+  display: grid;
+  gap: var(--s8);
+}
+#new-session-form .eyebrow {
+  color: var(--agnes-text-emphasis);
+}
+#config-form .config-heading .eyebrow {
+  color: var(--agnes-brand-primary);
+  font-size: var(--font-size-xs);
+}
+#config-form .config-heading p {
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.config-section {
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.config-section + .config-section {
+  padding-top: 1rem;
+}
+.config-section legend {
+  padding: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* 标签在上、控件在下（DSH ui-settings-plugins .field：flex column + gap 6px）。 */
+  gap: 0.375rem;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.form-field input:not([type="checkbox"]):not([type="radio"]),
+.form-field select,
+.form-field textarea {
+  width: 100%;
+  min-height: var(--control-height-form);
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  line-height: var(--line-sm);
+}
+/* 即时校验的红边（aria-invalid 由 mcp-form-validation 反馈写入）：只换边框色，
+   不动 box-shadow，聚焦时的品牌焦点环仍然生效。 */
+.form-field :is(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--agnes-status-danger-text);
+}
+.field-hint {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+#config-key-hint:empty {
+  display: none;
+}
+#config-form #config-test {
+  justify-self: start;
+  flex: 0 0 auto;
+  min-height: 2.5rem;
+  border-color: var(--agnes-line-emphasis);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-surface);
+}
+#config-state,
+#config-form #config-error {
+  min-height: 1.3rem;
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+#config-state {
+  color: var(--agnes-text-tertiary);
+}
+#config-form #config-error {
+  color: var(--agnes-status-danger-text);
+}
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+.sidebar-backdrop,
+.sidebar-close {
+  display: none;
+}
+body.sidebar-collapsed {
+  /* 照 DSH：折叠不是"整条消失"，而是收成 56px 图标轨道 —— 轨道始终可见。 */
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+}
+body {
+  transition: grid-template-columns var(--transition);
+}
+.sidebar {
+  transition:
+    width var(--transition),
+    padding var(--transition),
+    opacity var(--transition);
+}
+/* 轨道几何照 DSH 的 rail spec：56px 列、左右 10px、36×36 控件盒、12px 纵向节奏。
+   只在宽屏启用：窄屏（≤900px）的侧栏是覆盖层，没有轨道概念。 */
+@media (min-width: 901px) {
+  body.sidebar-collapsed .sidebar {
+    align-items: center;
+    padding: 1.125rem 0.625rem 0.375rem;
+    overflow: hidden;
+    border-right: 1px solid var(--agnes-line-primary);
+  }
+  body.sidebar-collapsed .brand-wordmark-text {
+    display: none;
+  }
+  body.sidebar-collapsed .brand-lockup {
+    gap: 0;
+  }
+  body.sidebar-collapsed .sidebar-head {
+    justify-content: center;
+    padding: 0;
+    min-height: 2.25rem;
+    margin: 0 0 0.75rem;
+  }
+  body.sidebar-collapsed .sidebar-actions .primary-button {
+    width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+    gap: 0;
+    margin: 0 0 0.75rem;
+    border-color: transparent;
+    background: transparent;
+  }
+  body.sidebar-collapsed .sidebar-actions .primary-button span {
+    display: none;
+  }
+  /* 轨道里不出现工作区与会话列表（DSH 的 rail 同样收起浏览区） */
+  body.sidebar-collapsed .sidebar-section-heading,
+  body.sidebar-collapsed #sessions {
+    display: none;
+  }
+  body.sidebar-collapsed .sidebar-footer {
+    margin-top: auto;
+  }
+  body.sidebar-collapsed .sidebar-footer button {
+    width: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+    justify-content: center;
+  }
+  body.sidebar-collapsed .sidebar-footer button span {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  body,
+  body.sidebar-collapsed {
+    display: block;
+  }
+  .sidebar {
+    position: fixed;
+    z-index: 20;
+    inset: 0 auto 0 0;
+    width: min(17rem, calc(100vw - 3.25rem));
+    transform: translateX(-105%);
+    transition: transform var(--transition);
+    box-shadow: var(--shadow-dialog);
+  }
+  body:not(.sidebar-open) .sidebar {
+    visibility: hidden;
+    pointer-events: none;
+    box-shadow: none;
+  }
+  body.sidebar-open .sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+  body.sidebar-collapsed .sidebar {
+    display: flex;
+    width: min(17rem, calc(100vw - 3.25rem));
+    padding: 1.25rem 0.75rem 0.75rem;
+    /* 与宽屏同口径：覆盖层也不做滚动容器，底部行不随列表滚走。 */
+    overflow: hidden;
+    border-right: 1px solid var(--agnes-line-primary);
+  }
+  .sidebar-close,
+  .sidebar-toggle {
+    display: inline-flex;
+  }
+  .sidebar-backdrop {
+    position: fixed;
+    z-index: 10;
+    inset: 0;
+    width: 100%;
+    min-height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--agnes-bg-scrim);
+  }
+  body:not(.sidebar-open) .sidebar-backdrop {
+    display: none;
+  }
+  main {
+    height: 100dvh;
+    min-height: 0;
+  }
+  #notice,
+  #approval,
+  #composer,
+  #empty-state {
+    width: calc(100% - 2rem);
+  }
+  #transcript {
+    padding-inline: 1rem;
+  }
+  .new-content {
+    right: 1rem;
+  }
+}
+
+@media (max-width: 540px) {
+  /* Touch targets stay usable even where the desktop skin intentionally uses compact controls. */
+  button,
+  input,
+  select {
+    min-height: 44px;
+  }
+  .topbar {
+    min-height: 3.75rem;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+  }
+  .connection-group {
+    gap: var(--s8);
+  }
+  /* 只有 #connection 需要隐藏；#disconnect 里没有任何 .button-label 元素，
+     原先那条 `#disconnect .button-label` 选择器匹配不到东西。 */
+  #connection {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+  #disconnect {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
+  }
+  button,
+  input,
+  select {
+    min-height: 2.75rem;
+  }
+  .icon-button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+  /* 页签行里的按钮与页签同高，不把 2.25rem 的页签行撑高。 */
+  #report-problem {
+    width: 2.25rem;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
+  }
+  .secondary-button.compact {
+    min-height: 2.75rem;
+  }
+  .sidebar-actions .primary-button,
+  .session,
+  .code-copy,
+  .tool-detail,
+  .new-content {
+    min-height: 2.75rem;
+  }
+  #composer {
+    margin-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  #prompt {
+    min-height: 3rem;
+  }
+  #model {
+    min-height: 2.75rem;
+  }
+  #send[data-mode="idle"] {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+  #config-form,
+  #new-session-form {
+    padding: 1rem;
+  }
+  .dialog-heading-actions {
+    gap: 0.25rem;
+  }
+}
+
+@media (max-width: 380px) {
+  #notice,
+  #approval,
+  #composer,
+  #empty-state {
+    width: calc(100% - 1.5rem);
+  }
+  #transcript {
+    padding-inline: 0.75rem;
+  }
+  .composer-controls {
+    gap: var(--s8);
+  }
+  .model-field {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 3.5rem;
+  }
+  #model {
+    max-width: 100%;
+  }
+  #cancel,
+  #send:not([data-mode="idle"]) {
+    padding-inline: 0.625rem;
+  }
+  .dialog-heading {
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition: 0ms;
+    --transition-fast: 0ms;
+  }
+  .sidebar,
+  .skip-link,
+  button,
+  #composer,
+  #transcript,
+  #approval,
+  #empty-state,
+  [data-agnes-region="approval"],
+  dialog,
+  dialog::backdrop,
+  .tool,
+  .model-chevron,
+  .model-picker-option {
+    transition: none;
+  }
+  .message-reveal-fragment {
+    animation: none;
+  }
+  #transcript {
+    scroll-behavior: auto;
+  }
+}
+.empty-brand-mark {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  /* 照 DSH EmptyHero / HeroShell：品牌标是 label-primary（墨色）、无底色、无阴影、
+     不描边，与侧栏 .brand-mark 同一套处理。 */
+  color: var(--agnes-text-primary);
+  background: transparent;
+  box-shadow: none;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.sidebar-actions .primary-button:hover:not(:disabled) {
+  border-color: var(--agnes-line-emphasis);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-surface);
+  box-shadow: var(--shadow-elevation);
+}
+.sidebar-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  min-height: 2.25rem;
+  padding-left: 0.25rem;
+  margin: 0.5rem 0 0.25rem;
+  border-radius: var(--radius-lg);
+}
+.sidebar-section-heading .section-label {
+  margin: 0;
+  letter-spacing: 0.045em;
+  text-transform: none;
+}
+.icon-button.subtle {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+}
+.workspace-group {
+  /* 组与组之间比组内行距（2px）大一档：工作区分组靠这条 6px 的缝表达，
+     每个组内是同一条 2px 节奏。首组不吃这条缝（上方是「新会话」按钮，已有间距）。 */
+  margin-top: 0.375rem;
+}
+.workspace-group:first-child {
+  margin-top: 0;
+}
+.workspace-heading {
+  width: 100%;
+  min-height: 2.125rem;
+  gap: 0.375rem;
+  justify-content: flex-start;
+  padding: 0 0.5rem;
+  border-color: transparent;
+  /* 与 .session:hover 完全一致：通用 button:hover 会把描边刷成 --agnes-line-emphasis，
+     悬停时多出一圈灰边，观感与下方会话行不统一。 */
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-primary);
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+}
+.workspace-heading:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--agnes-bg-hover);
+}
+.workspace-heading .workspace-name,
+.session .session-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 会话行与工作区行同宽：此前这里多 10px 左内缩，导致文件夹的悬停底色比会话宽一截。
+   层级由文件夹图标与标题缩进表达，不靠底色宽度。 */
+.workspace-sessions {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.quiet-disconnect {
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+}
+/* DSH 的鱼标宽 34px、与标题的间距 12px（HeroShell .stack 的 gap）。 */
+/* hero 品牌标：用客户端 AgnesMark 位图（与侧栏品牌位同一资源）代替原来的 "AGH" 文字占位。
+   mask 靠 background 显色，所以这里必须显式给 currentColor —— 上面那条基础规则里的
+   background: transparent 是在"文字标"时代写的，会盖掉 .agnes-mark 的着色。 */
+.empty-brand-mark {
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 auto 1.25rem;
+  border-radius: 0;
+  color: var(--agnes-brand-primary);
+  background: currentColor;
+}
+/* 照 DSH ChatView 的流间距 --dsh-chat-flow-gap: 16px（此前 48px）。 */
+.conversation-turn {
+  margin: 0 0 1rem;
+}
+.turn-user:empty,
+.turn-final:empty,
+.turn-process-body:empty,
+.turn-attention:empty {
+  display: none;
+}
+.turn-response {
+  min-width: 0;
+}
+/* 身份行独立于过程折叠；摘要只承载真实状态、耗时和计数，箭头紧随文字。 */
+.turn-process {
+  min-width: 0;
+  margin: 0 0 0.5rem;
+  color: var(--agnes-text-tertiary);
+}
+.turn-process > summary {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 1.5rem;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+  line-height: 1.5rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* 身份行：圆形描边头像 + 助手名字。 */
+.process-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 1rem 0 0.5rem;
+}
+.turn-status {
+  margin: 0 0 0.5rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5rem;
+  overflow-wrap: anywhere;
+}
+.process-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 50%;
+  background: var(--agnes-bg-surface);
+}
+/* mask 会把元素自身的描边一起裁掉，所以圆框在外层、图形标在内层。 */
+.process-avatar-mark {
+  width: 1rem;
+  height: 1rem;
+  background: var(--agnes-brand-primary);
+}
+.process-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--agnes-text-primary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.process-row {
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.process-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.process-chevron {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  color: var(--agnes-text-tertiary);
+  transform: rotate(-90deg);
+  transition:
+    transform var(--transition),
+    color var(--transition-fast);
+}
+.turn-process[open] .process-chevron {
+  transform: rotate(0deg);
+}
+.turn-process > summary:hover,
+.turn-process > summary:focus-visible {
+  color: var(--agnes-text-primary);
+}
+.turn-process > summary:hover .process-chevron,
+.turn-process > summary:focus-visible .process-chevron {
+  color: var(--agnes-text-secondary);
+}
+/* 过程成员沿内容轴排列；只由思考正文绘制竖线，工具行和元信息保留自身层级。 */
+.turn-process-body {
+  margin-top: 0.5rem;
+  padding-left: 0;
+  border-left: 0;
+}
+.turn-process-body > * {
+  margin: 0;
+  padding: 0.5rem 0;
+}
+.turn-process-body > :first-child {
+  padding-top: 0;
+}
+.turn-process-body > :last-child {
+  padding-bottom: 0;
+}
+.turn-process-body > * + * {
+  border-top: 0.5px solid var(--agnes-line-primary);
+}
+/* 工具行前缀图标：24 网格描边字形，与名称同族。 */
+.tool-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--agnes-text-tertiary);
+}
+/* 步骤标题 */
+.turn-process-body .node-label,
+.turn-process-body .tool-name {
+  color: var(--agnes-text-primary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.5rem;
+  text-transform: none;
+}
+.turn-process-body .tool-status {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.5rem;
+}
+/* 步骤正文：命令/输出这类内容用等宽内嵌块（照 DSH GenericCommandCard 的 .body：
+   0.5px 描边 + 圆角 + 代码面 + 等宽小字号）。 */
+.turn-process-body .tool-summary {
+  margin: 0.25rem 0 0;
+  padding: 0.375rem 0.5rem;
+  overflow: visible;
+  border: 0.5px solid var(--agnes-line-primary);
+  border-radius: 0.5rem;
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-code);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.6875rem;
+  line-height: 1.1875rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 元信息（用量这类）：更小、更弱，与步骤正文区分开。 */
+.turn-process-body .timeline-node.cost {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+/* 标签不参与收缩：否则长数值会把「用量」挤成一列两个字。 */
+.turn-process-body .cost .node-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.turn-process-body .cost .node-label,
+.turn-process-body .cost .node-body {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.125rem;
+}
+.turn-process-body .cost .node-body {
+  color: var(--agnes-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+/* 「查看详情」是步骤里的次级动作 */
+.turn-process-body .tool-detail {
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.5rem;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+/* 行内详情：0fr → 1fr 的栅格行过渡，展开与收起两个方向都有动画；
+   内容层 overflow: hidden 才有收缩效果。 */
+.tool-detail-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--transition);
+}
+.tool-detail-body > .tool-detail-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.tool[data-expanded="true"] .tool-detail-body {
+  grid-template-rows: 1fr;
+}
+/* 展开体固定在 260px 内滚动，不再把整段内容全摊开
+   （DSH ToolRow .bodyScroll：max-height 260px + overflow-y auto）。 */
+.tool-detail-text {
+  max-height: 16.25rem;
+  overflow-y: auto;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border: 0.5px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-code);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.6875rem;
+  line-height: 1.1875rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.turn-process-body .tool-detail:hover:not(:disabled) {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-hover);
+}
+.turn-response .turn-process-body .timeline-node {
+  margin-left: 0;
+}
+.turn-process-body > .timeline-node.assistant {
+  padding-left: 0;
+}
+.turn-attention {
+  margin: 1rem 0 0;
+}
+.turn-final .assistant {
+  margin-top: 0;
+}
+/* 照 DSH MessageIconActions .actions：gap 8px、高 28px，外层
+   AssistantMarkdown .actions 的 margin-top 16px / margin-left -6px
+   （-6px 是让 28px 图标命中区里的 15px 字形与上方正文左缘光学校齐）。 */
+.turn-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  row-gap: 0.5rem;
+  min-height: 1.75rem;
+  margin: 1rem 0 0 -0.375rem;
+  color: var(--agnes-text-tertiary);
+}
+/* 复制 / 分支与过程摘要、用量摘要共用 DSH 的 28px 圆角 pill：
+   6px 8px 内边距、28px 圆角、13/24 三级色，悬停换成交互底色 + 二级色。 */
+.turn-action,
+.turn-meta {
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  /* DSH 的 pill 是固定 28px 高、border-box：24px 行盒在 16px 内容盒里居中溢出，
+     这样标签不会把 pill 撑高。 */
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  border-color: transparent;
+  border-radius: 28px;
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.5rem;
+  cursor: pointer;
+}
+.turn-action {
+  width: 1.75rem;
+  padding: 0.375rem;
+}
+.turn-action .icon {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+.turn-action:hover:not(:disabled),
+.turn-meta:hover:not(:disabled),
+.turn-meta:focus-visible {
+  border-color: transparent;
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-hover);
+}
+.turn-meta {
+  min-width: 0;
+  /* 相邻统计 pill 回退一部分内边距，让两个 pill 读成一簇（DSH .root + .root）。 */
+  margin-left: -0.375rem;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-usage {
+  position: relative;
+}
+.turn-usage > summary {
+  list-style: none;
+}
+.turn-usage > summary::-webkit-details-marker {
+  display: none;
+}
+/* 照 DSH 的 stat-dialog 面板皮（回合用量与 ContextMeter 共用）：
+   padding 16px、圆角 12px、border: 0、elevation-prominent、12/18；
+   行栅格 minmax(76px,auto) / minmax(0,1fr)、6px 16px 间距。
+   定位由 turns.ts 的 positionUsagePopover 负责（照 DSH 的 stat-dialog：按触发器
+   矩形给 left/top 并夹进视口）——注意内联样式优先于本表，改锚点要改那段 JS。 */
+.turn-usage-grid {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  padding: 1rem;
+  max-height: min(22rem, 60vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-radius: 0.75rem;
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-prominent);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+.turn-usage-grid dt,
+.turn-usage-grid dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.turn-usage-grid dd {
+  color: var(--agnes-text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.turn-usage[open] .turn-usage-grid {
+  display: grid;
+}
+
+@media (max-width: 420px) {
+  .turn-usage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .turn-usage-grid dd {
+    margin-bottom: 0.5rem;
+    text-align: left;
+  }
+}
+.turn-feedback {
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-xs);
+}
+.timeline-unassigned:not(:empty) {
+  margin: 0 0 1rem;
+  padding: 0.625rem;
+  border-left: 1px solid var(--agnes-line-primary);
+}
+.timeline-node.user {
+  width: fit-content;
+  /* 照 DSH MessageItem .userStack：min(内容宽 × 0.702, 82%)。 */
+  max-width: min(calc(var(--chat-content-width) * 0.702), 82%);
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+/* DSH 的用户回合同样没有名字标签。 */
+.user .node-label {
+  display: none;
+}
+.user .node-body {
+  /* 照 DSH MessageItem 的气泡：10px 16px 内边距、22px 统一圆角、border: 0、14/22 正文。
+     底色仍取客户端的卡片面——客户端没有 DSH 的 specific-bubble 品牌浅蓝。 */
+  padding: 0.625rem 1rem;
+  border: 0;
+  /* 圆角取客户端的 `--radius-btn-default: 12px`（agnes-code UserMessage 的气泡就是它）；
+     DSH 的 22px 对单行短消息会圆成胶囊，观感太圆。 */
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-card);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+  white-space: pre-wrap;
+}
+/* DSH 的助手回合没有头像、没有名字标签：正文直接从列左缘开始，也没有 2rem 缩进。 */
+.timeline-node.assistant {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.assistant .node-label {
+  display: none;
+}
+.timeline-node.tool,
+.timeline-node.cost,
+.timeline-node.artifact,
+.timeline-node.compaction {
+  margin: 0;
+  border-radius: var(--radius-lg);
+}
+.timeline-node.tool {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.call-usage > summary {
+  width: fit-content;
+  padding: 0.25rem 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.composer-workspace {
+  align-items: center;
+  min-height: 1.75rem;
+  /* 与 #model 同一套 DSH 上限；百分比会对着自身收缩宽度算成循环依赖。 */
+  max-width: min(360px, 45cqw);
+  justify-content: flex-start;
+  padding: 0 0.25rem 0 0.5rem;
+  overflow: hidden;
+  border-color: transparent;
+  border-radius: 1.5rem;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.composer-workspace:hover:not(:disabled),
+#model:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-hover);
+}
+.composer-workspace [data-workspace-label],
+#model [data-model-label],
+.composer-permission [data-permission-label] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-permission {
+  align-items: center;
+  min-height: 1.75rem;
+  max-width: min(360px, 45cqw);
+  justify-content: flex-start;
+  gap: 0.25rem;
+  padding: 0 0.25rem 0 0.5rem;
+  overflow: hidden;
+  border-color: transparent;
+  border-radius: 1.5rem;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.composer-permission:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-hover);
+}
+.composer-permission[aria-expanded="true"] .model-chevron {
+  transform: rotate(180deg);
+}
+.permission-picker {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  min-width: min(240px, calc(100vw - 32px));
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 0.25rem;
+  border: 0;
+  border-radius: 1.25rem;
+  /* 此前是未定义的 --agnes-bg-elevated：声明失效 → background 退到 initial（全透明），
+     面板下的正文直接透出来。对齐另外两个浮层（session-menu / model-picker）用 popover。 */
+  background: var(--agnes-bg-popover);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+.permission-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.permission-picker-option {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.85rem;
+  cursor: pointer;
+}
+.permission-picker-option[data-active="true"],
+.permission-picker-option:hover {
+  background: var(--agnes-bg-hover);
+}
+.permission-picker-check {
+  color: var(--agnes-text-emphasis);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.permission-picker-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.permission-picker-label {
+  color: var(--agnes-text-emphasis);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.permission-picker-hint {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+#cancel {
+  min-height: 2.125rem;
+  padding: 0 0.75rem;
+  border-color: transparent;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+#session-usage {
+  width: auto;
+
+  z-index: 15;
+}
+.session-usage {
+  /* 锚在触发 pill 上（照 DSH ContextMeter：面板 `bottom: calc(100% + 8px)` 相对
+     触发器）。触发器在输入卡底部的控制行里，所以面板是**盖在输入卡上**向上展开，
+     而不是整个浮在卡片上方；触发器已移到模型旁边（卡片右侧），向左展开不出卡片。 */
+  position: relative;
+}
+.session-usage > summary {
+  /* 照 DSH ContextMeter .trigger：28px 圆形命中区，与 + / 模型触发器同族。 */
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: visible;
+  border-radius: 999px;
+  color: var(--agnes-text-secondary);
+  /* 圆环本身就是指示器，底下再垫一块灰底会脏。只在悬停时给一点反馈。 */
+  background: transparent;
+  list-style: none;
+  transition: background var(--transition-fast);
+}
+.session-usage > summary:hover {
+  background: var(--agnes-bg-hover);
+}
+.session-usage > summary::-webkit-details-marker {
+  display: none;
+}
+.usage-ring {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+  border-radius: 50%;
+  background: conic-gradient(var(--agnes-brand-primary) var(--usage-pct, 0%), var(--agnes-line-primary) 0);
+  /* 豁免：mask 的不透明停靠点必须是纯黑，它不是主题色（见设计 §5.1）。 */
+  -webkit-mask: radial-gradient(circle, transparent 48%, #000 50%);
+  mask: radial-gradient(circle, transparent 48%, #000 50%);
+}
+.usage-summary-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+/* 照 DSH ContextMeter .panel：264px 宽、12px 内边距、12px 圆角、border: 0、
+   elevation-prominent，正文 12/20。整块用普通块级流，不再用栅格——此前把
+   「标题 / 读数 / 说明」放进 `max-content max-content minmax(0,1fr)` 三列栅格，
+   说明文字（中文无空格，min-content 就是整串）把第三列顶宽，面板横向溢出、
+   明细行的数值被推到可视区之外（用户看到"进度条太长、文字都看不见了"）。 */
+.session-usage > .usage-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
+  width: min(20rem, calc(100vw - 2rem));
+  /* 合并 Token 用量分区后内容变长（上下文 4 行 + Token 10 行），面板上限放到
+     36rem 并让视口兜底；真放不下时在面板内滚动。 */
+  max-height: min(36rem, calc(100vh - 6rem));
+  padding: 0.75rem;
+  overflow: auto;
+  border: 0;
+  border-radius: 0.75rem;
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-prominent);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  cursor: default;
+}
+/* 照 DSH ContextMeter .header：一行 flex、6px 间距；
+   「上下文已用」三级色 → 百分比 500 主色 → 数值靠 margin-left:auto 顶到最右。 */
+.usage-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.usage-popover-title {
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+/* 照 DSH .percent：500 + label-primary + tabular-nums。 */
+.usage-context-value {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+/* 照 DSH .figures：读数顶到行尾，不参与换行。 */
+.usage-context-caption {
+  margin: 0 0 0 auto;
+  overflow: hidden;
+  color: var(--agnes-text-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 照 DSH ContextMeter .bar：4px 高、999 圆角、1px 分段间隙。 */
+.usage-bar {
+  display: flex;
+  gap: 1px;
+  height: 0.25rem;
+  margin: 0.625rem 0 0.75rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--agnes-bg-hover);
+}
+.usage-bar > span {
+  flex: none;
+  min-width: 2px;
+  height: 100%;
+  display: block;
+  border-radius: 1px;
+  background: var(--agnes-brand-primary);
+}
+/* 照 DSH ContextMeter .rows / .row：一行一条、左标签右数值、12px 间距、
+   纵向 2px 节距、数值 tabular-nums；面板里不另加分隔线。 */
+:where(.usage-popover) .usage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 0.125rem 0.75rem;
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+}
+:where(.usage-popover) .usage-grid dt,
+:where(.usage-popover) .usage-grid dd {
+  min-width: 0;
+  margin: 0;
+}
+:where(.usage-popover) .usage-grid dt {
+  overflow: hidden;
+  color: var(--agnes-text-secondary);
+  text-overflow: ellipsis;
+}
+:where(.usage-popover) .usage-grid dd {
+  color: var(--agnes-text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+#new-session-form {
+  max-height: var(--dialog-max-height);
+  padding: 1.25rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.workspace-options {
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  margin: 1rem 0;
+}
+.workspace-picker-action {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-surface);
+}
+#workspace-pick {
+  width: 100%;
+  min-height: 2.75rem;
+}
+#workspace-picker-state {
+  margin: 0;
+  text-align: center;
+}
+.workspace-manual {
+  margin-top: 0.75rem;
+  color: var(--agnes-text-tertiary);
+}
+.workspace-manual > summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+.workspace-manual > .form-field {
+  margin-top: 0.625rem;
+}
+.workspace-option-items {
+  display: grid;
+  gap: var(--s8);
+}
+.workspace-option {
+  width: 100%;
+  min-height: 3.25rem;
+  justify-content: flex-start;
+  padding: 0.5rem 0.75rem;
+  border-color: var(--agnes-line-primary);
+  text-align: left;
+  background: var(--agnes-bg-surface);
+}
+.workspace-option-copy {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+}
+.workspace-option-name {
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+}
+.workspace-option-path {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-option[data-available="false"] {
+  opacity: 0.62;
+}
+.dialog-kicker {
+  margin: 0 0 0.25rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+#config {
+  /* 照 DSH SettingsRoot .panel：宽 800、高 min(800px, 100vh - 48px)、
+     max-width 100vw - 48px、圆角 32px、border: 0 + elevation-prominent。 */
+  position: relative;
+  width: 800px;
+  max-width: calc(100vw - 48px);
+  height: min(800px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  border: 0;
+  border-radius: var(--radius-main-page);
+  background: var(--agnes-bg-surface);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+/* 设置拆成独立插槽后，透过宿主包装保留表单到当前面板的高度链。
+   隐藏面板仍由 [hidden] 排除，不为未选中的插槽留下空网格行。 */
+#config > div:has(> #config-form),
+#settings-dsh-shell-slots,
+#settings-dsh-shell-slots > [id^="settings-dsh-slot-"],
+#settings-dsh-shell-slots > [id^="settings-dsh-slot-"] > [data-slot],
+#settings-dsh-shell-slots > [id^="settings-dsh-slot-"] > [data-slot] > [data-slot-entry],
+#settings-pane-slots,
+#settings-pane-slots > [data-agnes-settings-pane-slot],
+#settings-pane-slots > [data-agnes-settings-pane-slot] > [data-slot],
+#settings-pane-slots > [data-agnes-settings-pane-slot] > [data-slot] > [data-slot-entry],
+#settings-pane-slots [data-agnes-region-owner="builtin"][data-agnes-region-unit^="settings-"] {
+  display: contents;
+}
+#config-form {
+  /* 照 DSH .nav 的 188px 宽。 */
+  grid-template-columns: 11.75rem minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  border-radius: inherit;
+  height: 100%;
+  max-height: none;
+  display: grid;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+#settings-content-slots {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Admin 面板有两个宿主：设置弹窗里的 .admin-pane（本组规则）与独立页的 .admin-page /
+   .admin-main。两者共用同一套滚动模型——文档不滚动、列表是唯一纵向滚动容器、详情只有中段
+   滚动——这样"内容超出就被裁掉"结构上不会再发生。 */
+.admin-pane {
+  min-height: 0;
+}
+.admin-pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.5rem 1.5rem 1.5rem;
+}
+.admin-toolbar-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.settings-rail {
+  /* 照 DSH .nav：188px 宽、padding 22px 12px 0、gap 18px、不铺底（面板白透上来）、
+     没有右边框。 */
+  background: transparent;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+  padding: 1.375rem 0.75rem 0;
+  border-right: 0;
+}
+.config-card {
+  min-width: 0;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-xl);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation);
+}
+
+@media (max-width: 720px) {
+  body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar {
+    width: min(19rem, calc(100vw - 2.5rem));
+  }
+  .topbar {
+    min-height: 3.4rem;
+    padding-inline: 0.75rem;
+  }
+  #transcript {
+    padding: 1.5rem 1rem 5rem;
+  }
+  .timeline-node.user {
+    max-width: 92%;
+  }
+  .timeline-node.assistant {
+    padding-left: 2rem;
+  }
+  .timeline-node.tool,
+  .timeline-node.cost,
+  .timeline-node.artifact,
+  .timeline-node.compaction {
+    margin-left: 2rem;
+  }
+  #composer {
+    width: calc(100% - 1rem);
+    min-height: 6.75rem;
+  }
+  /* 区域规则紧跟在同一媒体查询内、同一层叠位置：挪到文件末尾会反过来压掉这条响应式覆盖。 */
+  [data-agnes-region="composer"] {
+    border-radius: var(--radius-xl);
+  }
+  #session-usage {
+    margin-left: auto;
+  }
+  .composer-workspace {
+    max-width: 9rem;
+  }
+  #config {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+body.admin-page {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* 独立页此前从工作台外壳继承了 overflow: hidden 却没有自己的滚动模型，内容一高就被裁掉。
+     现在与设置面板共用"文档不滚、列表滚"的模型，这里显式声明。 */
+  overflow: hidden;
+}
+/* 独立页的文字色故意比工作台低一档。用 (0,1,0) 的类选择器而不是 (0,1,1) 的 `body.admin-page`：
+   高于 (0,1,0) 的基础声明会让皮肤的区域规则永远赢不了（设计 §20）。 */
+.admin-page {
+  color: var(--agnes-text-secondary);
+}
+.admin-header {
+  width: min(var(--admin-content-width), calc(100% - 3rem));
+  min-height: 7.5rem;
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(0, 2fr) minmax(9rem, 1fr);
+  align-items: center;
+  gap: 1rem;
+  margin: 0 auto;
+  flex: 0 0 auto;
+}
+.admin-header > :last-child {
+  justify-self: end;
+}
+.admin-header > :first-child {
+  justify-self: start;
+  width: auto;
+}
+.admin-heading {
+  min-width: 0;
+  text-align: center;
+}
+.admin-heading .eyebrow {
+  margin: 0 0 0.125rem;
+  color: var(--agnes-text-emphasis);
+}
+.admin-heading h1 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+}
+.admin-main {
+  width: min(var(--admin-content-width), calc(100% - 3rem));
+  margin: 0 auto;
+  padding: 0 0 1.5rem;
+  /* 与 .admin-pane-body 同构：吃掉剩余高度，把滚动交给列表与详情。 */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.admin-notice {
+  min-height: 1.35rem;
+  margin: 0 0 0.75rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.admin-notice[data-kind="error"] {
+  color: var(--agnes-status-danger-text);
+}
+/* resource-control-web 会写 kind=success/warning，admin 会写 kind=state；
+   此前只有 error 有样式，成功与警告态和普通提示同色。 */
+.admin-notice[data-kind="success"] {
+  color: var(--agnes-status-success-text);
+}
+.admin-notice[data-kind="warning"] {
+  color: var(--agnes-status-warning-text);
+}
+.admin-notice[data-kind="state"] {
+  color: var(--agnes-status-info-text);
+}
+.recovery-notice {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.75rem;
+  border: 1px solid var(--agnes-status-warning-text);
+  border-inline-start: 3px solid var(--agnes-status-warning-text);
+  border-radius: var(--radius-card);
+  background: var(--agnes-status-warning-bg);
+}
+.recovery-notice strong {
+  color: var(--agnes-status-warning-text);
+  font-size: var(--font-size-sm);
+}
+.recovery-notice p {
+  margin: 0;
+  color: var(--agnes-status-warning-text);
+  font-size: var(--font-size-sm);
+}
+.orphan-pins {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-inline-start: 3px solid var(--agnes-status-warning-text);
+  border-radius: var(--radius-card);
+  background: var(--agnes-status-warning-bg);
+}
+.orphan-pins-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+.orphan-pins-heading strong {
+  color: var(--agnes-status-warning-text);
+  font-size: var(--font-size-sm);
+}
+.orphan-pins-status {
+  margin: 0;
+  color: var(--agnes-status-warning-text);
+  font-size: var(--font-size-sm);
+}
+.orphan-pins-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.orphan-pin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--agnes-status-warning-text);
+  border-radius: var(--radius-md);
+  background: var(--agnes-status-warning-bg);
+}
+.orphan-pin-content p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.orphan-pin-content .orphan-pin-meta {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.orphan-pin-content .orphan-pin-error {
+  color: var(--agnes-status-danger-text);
+}
+.plugin-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  /* 不再自带边框与阴影：它与搜索框/按钮会叠成双层描边。边框留给控件自己。 */
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.plugin-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.375rem;
+  padding: 0;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  border-radius: 0;
+  background: transparent;
+}
+.plugin-tabs button {
+  position: relative;
+  min-height: var(--control-height);
+  padding: 0.4375rem 0.0625rem 0.5625rem;
+  border: 0;
+  border-radius: 0;
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.plugin-tabs button:hover:not(:disabled),
+.plugin-tabs button[aria-selected="true"] {
+  border-color: transparent;
+  color: var(--agnes-text-primary);
+  background: transparent;
+}
+.plugin-tabs button[aria-selected="true"]::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--agnes-text-primary);
+  content: "";
+}
+.plugin-search-field {
+  min-width: min(19rem, 45%);
+}
+.plugin-search-field input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding-inline: 0.75rem;
+  /* 之前边框被显式置为透明、且 :focus 只改底色，导致常态与焦点态都没有边框；
+     字号也没声明，落到 body 的 16px，比工具条里其他 13px 控件明显偏大。 */
+  font-size: var(--font-size-sm);
+  border-color: var(--agnes-input-border);
+  background: var(--agnes-input-surface);
+}
+.plugin-search-field input:hover {
+  border-color: var(--agnes-line-emphasis);
+}
+/* 焦点态沿用全站 input:focus-visible（文件顶部表单控件规则）：边框变
+   --agnes-input-border-focus 并带一圈 --agnes-brand-focus-ring，此处不再覆盖。 */
+.plugin-layout {
+  /* 详情搬进独立模态框后，布局里只剩列表一列。这里仍需建立纵向 flex 高度链，
+     否则列表会按内容高度撑开，再被 .admin-pane-body 的 overflow: hidden 裁掉。 */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: 1rem;
+}
+.resource-admin-page .admin-main {
+  max-width: 1240px;
+}
+.resource-admin-header {
+  align-items: center;
+}
+.resource-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  /* 与 .plugin-toolbar 一致：间距交给 .plugin-layout 的 margin-top。 */
+  margin: 0;
+}
+.resource-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.resource-layout {
+  min-height: 0;
+}
+/* 技能与 MCP 列表与插件页同构：标题 / 状态灯 / Switch 三段固定轨道，
+   同一列表内各行因此严格对齐（此前状态区是长度不一的文字 chip，列宽只能靠估）。 */
+.resource-row {
+  grid-template-columns: minmax(0, 1fr) 8.5rem 2.375rem;
+}
+.resource-empty {
+  padding: 1.25rem 0.75rem;
+  color: var(--agnes-text-secondary);
+  white-space: pre-line;
+}
+#resource-list[data-state="loading"]::before {
+  display: block;
+  padding: 1.25rem 0.75rem;
+  color: var(--agnes-text-secondary);
+  content: "正在读取资源目录…";
+}
+#resource-list[data-state="error"] {
+  border-color: var(--agnes-status-danger-text);
+}
+#resource-notice [data-resource-retry] {
+  margin-left: 0.75rem;
+}
+.resource-roots {
+  margin: 0 0.75rem 0.75rem;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--agnes-text-secondary);
+}
+.resource-facts {
+  display: grid;
+  grid-template-columns: minmax(104px, 0.75fr) minmax(0, 1.25fr);
+  gap: 0.5rem 1rem;
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-page);
+}
+.resource-facts dt {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+.resource-facts dd {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 0.625rem;
+}
+.resource-safe-error {
+  margin: 0.75rem 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-md);
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  font-size: var(--font-size-sm);
+}
+.resource-operation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-surface);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 760px) {
+  .resource-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .resource-toolbar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .resource-toolbar-actions > button {
+    width: 100%;
+  }
+  .resource-toolbar-actions:has(> #mcp-create[hidden]) > #skill-refresh,
+  .resource-toolbar-actions:has(> #skill-refresh[hidden]) > #mcp-create {
+    grid-column: 1 / -1;
+  }
+  .resource-facts {
+    grid-template-columns: 1fr;
+    gap: 0.125rem;
+  }
+  .resource-facts dt {
+    margin-top: 0.5rem;
+  }
+}
+.plugin-list {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  /* 列表是两个宿主的唯一纵向滚动容器。 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.plugin-inventory-status {
+  margin: 0 0 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-status-warning-text);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-status-warning-text);
+  background: var(--agnes-status-warning-bg);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.plugin-row {
+  display: grid;
+  /* 列宽写死，不用 auto：每一行都是独立 grid，auto 轨道会按各自内容算宽，
+     于是不同行的状态列起点各不相同（MCP 列表此前就是这样错位的）。
+     第三列是 Switch（固定宽），不再是长度不一的文字按钮。 */
+  grid-template-columns: minmax(0, 1fr) 8.5rem 2.375rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-page);
+  cursor: pointer;
+  outline: 0;
+  text-align: left;
+  transition:
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+.plugin-row:last-of-type {
+  margin-bottom: 0;
+}
+/* 目录页第三列是动作按钮而不是 Switch，宽度随文案变，所以在基础轨上单独覆盖。 */
+.plugin-row[data-tab="discover"] {
+  grid-template-columns: minmax(0, 1fr) 8.5rem auto;
+}
+.plugin-row[data-tab="installed"]:has(.plugin-row-trust),
+.plugin-row[data-tab="installed"]:has(.plugin-row-retry) {
+  grid-template-columns: minmax(0, 1fr) 8.5rem auto;
+}
+.plugin-row:hover,
+.plugin-row:focus-visible {
+  border-color: var(--agnes-line-emphasis);
+  background: var(--agnes-bg-hover);
+  box-shadow: none;
+}
+.plugin-row:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: -2px;
+}
+.plugin-row-content {
+  min-width: 0;
+}
+.plugin-row h2 {
+  margin: 0;
+  /* 行标题单行截断 + title 全文（见渲染代码）：长插件名/长 MCP 名不得撑破行。 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.plugin-detail h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  line-height: 1.35;
+}
+.plugin-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.plugin-detail-close {
+  flex: 0 0 auto;
+}
+.plugin-row-content p {
+  margin: 0.125rem 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.plugin-row-content .plugin-source {
+  color: var(--agnes-text-tertiary);
+}
+.plugin-surface-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+.plugin-surface-link {
+  min-height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-button-outline-content);
+  background: transparent;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+}
+.plugin-surface-link:hover {
+  background: var(--agnes-bg-hover);
+}
+.plugin-surface-link:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+/* 状态指示灯：信任 / 期望 / 实际 / 浏览器 UI 四格纵向排开。此前是一排文字 chip，
+   长短随取值变化，扫读要逐字读。改用色点后一眼能看出"哪一格不对劲"。
+   颜色不进 JS，只由这里的 data-tone 决定。 */
+.state-lights {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.state-light {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.3;
+}
+.state-light-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--agnes-text-tertiary);
+}
+.state-light-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.state-light-name {
+  flex: 0 0 auto;
+  color: var(--agnes-text-tertiary);
+}
+.state-light-value {
+  overflow: hidden;
+  color: var(--agnes-text-secondary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.state-light[data-tone="ok"] .state-light-dot {
+  background: var(--agnes-status-success-text);
+}
+.state-light[data-tone="ok"] .state-light-value {
+  color: var(--agnes-status-success-text);
+}
+.state-light[data-tone="warn"] .state-light-dot {
+  background: var(--agnes-status-warning-text);
+}
+.state-light[data-tone="warn"] .state-light-value {
+  color: var(--agnes-status-warning-text);
+}
+.state-light[data-tone="bad"] .state-light-dot {
+  background: var(--agnes-status-danger-text);
+}
+.state-light[data-tone="bad"] .state-light-value {
+  color: var(--agnes-status-danger-text);
+}
+.state-light[data-tone="off"] .state-light-dot {
+  background: var(--agnes-line-emphasis);
+}
+.state-light[data-tone="off"] .state-light-value {
+  color: var(--agnes-text-tertiary);
+}
+
+/* Switch：行内第三列，拨的是"期望状态"。真实生效结果由本地后台回报，
+   所以它只表达意图，不代表已经生效（那一格由"实际"灯负责）。
+   button 本身就是轨道，内部 span 只负责圆钮定位。 */
+.switch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  width: 2.375rem;
+  min-width: 2.375rem;
+  height: 1.375rem;
+  min-height: 1.375rem;
+  padding: 0;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-full);
+  background: var(--agnes-bg-card);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.switch-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 0.1875rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: var(--radius-full);
+  background: var(--agnes-text-tertiary);
+  transform: translateY(-50%);
+  transition:
+    transform var(--transition-fast),
+    background-color var(--transition-fast);
+}
+.switch[aria-checked="true"] {
+  border-color: var(--agnes-brand-primary);
+  background: var(--agnes-brand-primary);
+}
+.switch[aria-checked="true"] .switch-knob {
+  /* 轨道是品牌填充色，圆钮沿用"品牌填充上的内容色"这个既有语义 token，
+     深浅色各自取到正确的前景（浅色白、深色近黑）。 */
+  background: var(--agnes-button-primary-content);
+  transform: translate(1rem, -50%);
+}
+.switch:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+.switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.plugin-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  justify-content: flex-end;
+}
+.plugin-row-actions .secondary-button {
+  min-width: 5.75rem;
+}
+.plugin-row-trust {
+  min-width: 4.5rem;
+}
+.plugin-empty {
+  display: grid;
+  place-content: center;
+  min-height: 18rem;
+  padding: 2rem;
+  text-align: center;
+}
+.admin-empty-state {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  min-height: 18rem;
+  padding: 2rem;
+  text-align: center;
+}
+.admin-empty-state-mark {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.875rem;
+  color: var(--agnes-brand-primary);
+  opacity: 0.86;
+}
+.admin-empty-state h2 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-md);
+}
+.admin-empty-state p {
+  max-width: 21rem;
+  margin: 0.5rem 0 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.admin-empty-state-hints {
+  display: grid;
+  gap: 0.375rem;
+  width: min(100%, 30rem);
+  margin: 0.875rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-bg-surface);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+  list-style: none;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.plugin-more {
+  width: calc(100% - 2rem);
+  justify-content: center;
+  margin: 0.75rem 1rem 1rem;
+}
+.plugin-detail[open] {
+  /* 三段式容器：头部固定 / 中段滚动 / 动作固定。内部结构见 .admin-detail-scroll 与
+     .admin-detail-actions；操作按钮因此永远不会被内容推出可视区。
+     选择器限定 `[open]`：否则 `display: flex` 会覆盖浏览器对关闭态 dialog 的 `display: none`，
+     空盒子就会在页面正中渲染成一条灰线。 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: var(--dialog-max-height);
+  padding: 0;
+  overflow: hidden;
+}
+/* 详情是模态框（不再是面板右侧的固定抽屉），宽度自己定，不再由 .plugin-layout 的列宽决定。
+   三段式的三段里，头部与动作是 flex: 0 0 auto，只有中段 flex:1 + overflow-y:auto，
+   因此"描述太长 → 底部按钮够不到"结构上不可能发生。 */
+#plugin-detail,
+#resource-detail {
+  width: min(42rem, calc(100vw - 2rem));
+}
+.admin-detail-head {
+  flex: 0 0 auto;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.admin-detail-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 0 1rem 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.admin-detail-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-page);
+}
+.plugin-detail > p:not(.plugin-detail-version):not(.plugin-detail-state) {
+  margin: 0.5rem 0 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.plugin-detail-version,
+.plugin-detail-state {
+  margin: var(--s8) 0 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.plugin-detail-state {
+  color: var(--agnes-text-emphasis);
+  font-weight: 600;
+}
+.plugin-facts {
+  display: grid;
+  grid-template-columns: 5.25rem minmax(0, 1fr);
+  gap: 0.5rem 0.75rem;
+  margin: 1.25rem 0 0;
+  padding: 0.75rem;
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-card);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.plugin-facts dt {
+  color: var(--agnes-text-tertiary);
+}
+.plugin-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-secondary);
+}
+.plugin-blockers,
+.plugin-operations {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--agnes-status-danger-text);
+  border-radius: var(--radius-card);
+  background: var(--agnes-status-danger-bg);
+}
+.plugin-operations {
+  border-color: var(--agnes-line-primary);
+  background: var(--agnes-bg-surface);
+}
+.plugin-blockers h3,
+.plugin-operations h3 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+}
+.plugin-blockers ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.625rem 0 0;
+  padding-left: 1rem;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-xs);
+}
+.plugin-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+.danger-button {
+  min-height: 2.25rem;
+  padding: var(--s8) 0.75rem;
+  border: 1px solid var(--agnes-status-danger-text);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+/* 此前 hover 与常态声明完全相同，悬停零反馈。
+   改为反色填充：文字用 --agnes-text-inverse，浅 4.53:1 / 深 5.72:1。 */
+.danger-button:hover:not(:disabled) {
+  border-color: var(--agnes-status-danger-text);
+  color: var(--agnes-text-inverse);
+  background: var(--agnes-status-danger-text);
+}
+.operation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
+.operation-row p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+.plugin-dialog-form {
+  display: grid;
+  gap: 1rem;
+  max-height: inherit;
+  padding: 1.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.confirm-facts {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+}
+.confirm-facts-lead {
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.confirm-facts-list {
+  display: grid;
+  grid-template-columns: minmax(5.75rem, 7rem) minmax(0, 1fr);
+  gap: 0.25rem 0.625rem;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-surface);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.confirm-facts-list dt {
+  color: var(--agnes-text-tertiary);
+}
+.confirm-facts-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-secondary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--font-size-xs);
+}
+.confirm-review-section {
+  min-width: 0;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-page);
+}
+.confirm-review-section > summary {
+  padding: 0.625rem 0.75rem;
+  cursor: pointer;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  list-style-position: inside;
+}
+.confirm-review-content {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.75rem;
+}
+.confirm-review-content ul {
+  display: grid;
+  gap: var(--s8);
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.confirm-review-content li {
+  overflow-wrap: anywhere;
+}
+.confirm-contributions {
+  padding-left: 1rem;
+}
+.confirm-contributions li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.confirm-contributions li:last-child {
+  border-bottom: 0;
+}
+.confirm-contributions p,
+.confirm-empty-fact {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.confirm-contributions p + p {
+  margin-top: 0.25rem;
+  color: var(--agnes-text-tertiary);
+}
+.confirm-empty-fact {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.plugin-form-error {
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-sm);
+}
+
+/* 窄屏（窗口 ≤900px）。iframe 时代这里必须靠容器查询或宿主特例覆盖，因为 @media 量的是
+   iframe 自己的宽度（≈922px）而不是窗口，于是"窄屏规则"在嵌入态恒为真——那正是详情掉到
+   列表下方、详情同时失去自身滚动的根因。去掉 iframe 后 @media 重新量窗口，这套补丁不再需要。
+   窄屏由 .admin-pane-body / .admin-main 滚，列表按自然高度排列；模态详情保留自己的正文滚动。 */
+@media (max-width: 900px) {
+  .plugin-layout {
+    grid-template-columns: 1fr;
+    flex: none;
+  }
+  .plugin-list {
+    max-height: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+  .admin-pane-body,
+  .admin-main {
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-header,
+  .admin-main {
+    width: min(100% - 2rem, 44rem);
+  }
+}
+
+@media (max-width: 540px) {
+  .admin-header {
+    min-height: 6.5rem;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem;
+  }
+  .admin-heading {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .admin-header > :first-child {
+    grid-row: 2;
+  }
+  .admin-header > :last-child {
+    grid-row: 2;
+  }
+  .plugin-toolbar {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .plugin-search-field {
+    min-width: 0;
+  }
+  .plugin-tabs {
+    width: 100%;
+  }
+  .plugin-tabs button {
+    flex: 1 1 50%;
+    min-height: 2.75rem;
+  }
+  .plugin-search-field input {
+    min-height: 2.75rem;
+  }
+  .plugin-row {
+    grid-template-columns: minmax(0, 1fr) 7rem 2.375rem;
+    gap: 0.5rem;
+    padding: 0.75rem;
+  }
+  .plugin-row[data-tab="discover"] {
+    grid-template-columns: minmax(0, 1fr) 6rem auto;
+  }
+  .plugin-row > :last-child.secondary-button,
+  .plugin-row > :last-child .secondary-button,
+  .plugin-detail-actions button,
+  .danger-button {
+    min-height: 2.75rem;
+  }
+  .plugin-detail-actions > * {
+    flex: 1 1 10rem;
+  }
+  .plugin-dialog-form {
+    padding: 1rem;
+  }
+  .confirm-facts-list {
+    grid-template-columns: 1fr;
+    gap: 0.125rem;
+  }
+  .confirm-facts-list dd {
+    margin-bottom: var(--s8);
+  }
+}
+
+@media (max-width: 360px) {
+  .admin-header,
+  .admin-main {
+    width: calc(100% - 1.5rem);
+  }
+  .admin-header > :last-child,
+  .admin-header > :first-child {
+    padding-inline: 0.625rem;
+    font-size: var(--font-size-xs);
+  }
+  .plugin-row > :last-child.secondary-button,
+  .plugin-row > :last-child .secondary-button {
+    min-width: 0;
+    padding-inline: 0.5rem;
+  }
+}
+#config::backdrop {
+  background: var(--agnes-bg-scrim);
+  backdrop-filter: blur(2px);
+}
+#config-form .settings-rail-heading .eyebrow,
+.settings-nav-label,
+.settings-rail-title,
+.config-accounts-heading h3,
+.config-detail-heading h3,
+.config-list-note,
+#config-account-guard {
+  margin: 0;
+}
+#config-form .config-accounts-heading > div > p,
+#config-form .config-detail-heading > div > p,
+#config-form #config-account-context {
+  margin: 0;
+}
+/* DSH 的设置导航只有标题一项，没有 eyebrow。 */
+#config-form .settings-rail-heading .eyebrow {
+  display: none;
+  color: var(--agnes-text-disabled);
+  font-size: var(--font-size-xs);
+}
+.settings-rail-title {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+/* 照 DSH .header + .close：关闭按钮坐在面板内容列的表头右上角
+   （header 的 padding 20px 14px 8px 10px），28px 圆形、14px 字形；
+   这里用绝对定位把它从 rail 挪到该位置，省掉一次 DOM 结构改动。 */
+#config-close {
+  position: absolute;
+  top: 20px;
+  right: 14px;
+  z-index: 1;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
+  border-radius: 28px;
+  color: var(--agnes-text-primary);
+}
+#config-close .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+/* 照 DSH .navTitle：16/24、500、label-primary、左右 12px 内边距。 */
+.settings-rail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+}
+.settings-nav-group {
+  /* 照 DSH .navList 的 gap 4px。 */
+  display: grid;
+  gap: 0.25rem;
+}
+.settings-nav-label {
+  display: none;
+}
+/* 照 DSH .navCell：40px 高、padding 9px 16px 9px 12px、圆角 12px、gap 8px、
+   14/22 400 label-primary；hover/选中走侧栏导航底色。 */
+.settings-nav-item {
+  width: 100%;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding: 0.5625rem 1rem 0.5625rem 0.75rem;
+  border: 0;
+  border-radius: 0.75rem;
+  color: var(--agnes-text-primary);
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.375rem;
+  text-align: start;
+}
+.settings-nav-item.active,
+.settings-nav-item[aria-current="page"] {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-selected);
+  box-shadow: none;
+}
+.settings-nav-item:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-hover);
+}
+#config-form .settings-nav-item .icon {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+.settings-content {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* DSH 的内容列不铺底：面板那一层白直接透上来。 */
+  background: transparent;
+}
+/* 照 DSH SettingsRoot .header：54px、padding 20px 14px 8px 10px、无底分隔线、
+   不磨砂。B 多一行说明文案，故用 min-height 而不是固定 height。 */
+#config-form .config-heading {
+  min-height: 3.375rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 1.25rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  background: transparent;
+}
+/* DSH 的面板标题没有 eyebrow，标题本身是 16/24 500。 */
+#config-form .config-heading .eyebrow {
+  display: none;
+}
+#config-form .config-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+#config-form .config-heading > div > p {
+  max-width: 38rem;
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+}
+/* 照 DSH .options 的 padding 0 24px 24px。 */
+/* 模型账户页：账户列表在上、账户详情在下（用户要求改成上下结构）。
+   外观页仍沿用两栏，未动。 */
+#model-settings-pane .config-workspace {
+  width: min(100%, 45rem);
+  flex: 0 1 auto;
+  display: block;
+  padding-bottom: 1.5rem;
+  overflow: visible;
+}
+.config-workspace {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(17rem, 0.86fr) minmax(26rem, 1.5fr);
+  gap: 1.25rem;
+  padding: 0.5rem 1.5rem 1.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#computer-use-settings-pane .config-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  overflow-x: hidden;
+}
+#computer-use-settings-pane .config-card {
+  flex: 0 0 auto;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+  box-shadow: none;
+}
+#computer-use-settings-pane .config-card p {
+  margin: 0.5rem 0;
+  text-wrap: pretty;
+}
+#computer-use-settings-pane .config-card .eyebrow {
+  margin-top: 0;
+  color: var(--agnes-text-tertiary);
+}
+#computer-use-settings-pane .config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+#computer-use-settings-pane .config-heading {
+  padding-right: 3rem;
+  flex-wrap: wrap;
+}
+#computer-use-blockers:empty,
+#computer-use-runtime:empty {
+  display: none;
+}
+.config-accounts-section {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  overflow: visible;
+}
+#model-settings-pane .config-accounts-section {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.config-accounts-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0;
+  padding: 1rem 0 0.75rem;
+  border-top: 0;
+}
+#model-settings-pane .config-accounts-heading h3 {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.config-accounts-heading h3,
+.config-detail-heading h3 {
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+#config-form .config-accounts-heading > div > p,
+#config-form #config-account-context {
+  margin-top: 0.25rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+#config-add-account {
+  flex: 0 0 auto;
+  border-color: var(--agnes-line-emphasis);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-surface);
+}
+#config-accounts {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  padding: 0.5rem 0 0;
+  overflow: visible;
+}
+#config-accounts[data-state="empty"]::before {
+  padding: 1.5rem 0.75rem;
+  border: 1px dashed var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-tertiary);
+  content: "还没有已保存的模型账户";
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+#config-accounts[data-state="loading"]::before {
+  padding: 1.5rem 0.75rem;
+  border: 1px dashed var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-tertiary);
+  content: "正在读取配置…";
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+.config-account {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "identity actions"
+    "meta actions";
+  align-items: center;
+  justify-items: stretch;
+  gap: 0.125rem 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-page);
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+.config-account::before {
+  display: none;
+}
+.config-account:hover,
+.config-account:focus-visible {
+  border-color: var(--agnes-line-emphasis);
+  background: var(--agnes-bg-hover);
+  box-shadow: none;
+}
+.config-account[data-selected="true"] {
+  border-color: var(--agnes-line-emphasis);
+}
+.config-account-select {
+  min-width: 0;
+  min-height: 1.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  grid-area: identity;
+  gap: 0.5rem;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-primary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.config-account-select::before {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--agnes-text-tertiary);
+  content: "";
+}
+.config-account[data-credential="configured"] .config-account-select::before {
+  background: var(--agnes-status-success-text);
+}
+.config-account[data-credential="missing"] .config-account-select::before {
+  background: var(--agnes-status-danger-text);
+}
+.config-account-select:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-primary);
+  background: transparent;
+  box-shadow: none;
+}
+.config-account-meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.375rem;
+  padding-left: 1rem;
+  overflow: hidden;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.125rem;
+}
+.config-account-meta > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.config-account-status {
+  flex: 0 0 auto;
+  padding: 0.0625rem 0.375rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-sm);
+  color: var(--agnes-text-secondary);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+.config-account-status[data-tone="success"] {
+  color: var(--agnes-status-success-text);
+}
+.config-account-status[data-tone="brand"] {
+  color: var(--agnes-text-emphasis);
+}
+.config-account-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+.config-account-actions button {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
+  border-color: var(--agnes-line-emphasis);
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-surface-glass-soft);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+.config-account-actions button:hover:not(:disabled) {
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-surface-glass-hover);
+}
+.config-account button:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+.config-list-note {
+  margin-top: auto;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+.config-detail-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.config-detail-heading {
+  min-height: 4.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+#config-form .config-detail-heading .eyebrow {
+  margin-bottom: 0.25rem;
+  color: var(--agnes-text-disabled);
+  font-size: var(--font-size-xs);
+}
+#config-form #config-account-context {
+  flex: 0 1 auto;
+  max-width: 13rem;
+  color: var(--agnes-text-tertiary);
+  text-align: end;
+}
+.config-detail-grid {
+  min-height: 0;
+  flex: 1;
+  padding: 1.25rem;
+  overflow-y: auto;
+}
+/* 账户详情 / 新增弹窗：外壳沿用全局 dialog 口径（宽度 / 圆角 / 阴影 / 遮罩），
+   这里只补内部排版 —— 内容可滚动、关闭按钮浮在右上、页脚保留原分隔线样式。 */
+#account-dialog {
+  width: min(30rem, calc(100vw - 3rem));
+}
+.select-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+  min-height: max(44px, var(--control-height-form));
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-input-border);
+  border-radius: var(--radius-md);
+  color: var(--agnes-input-content-strong);
+  background: var(--agnes-input-surface);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  text-align: start;
+  box-shadow: none;
+}
+.select-picker-trigger:hover:not(:disabled) {
+  border-color: var(--agnes-input-border-emphasis);
+  background: var(--agnes-bg-hover);
+}
+.select-picker-trigger:active:not(:disabled),
+.select-picker-trigger[aria-expanded="true"] {
+  border-color: var(--agnes-input-border-focus);
+  background: var(--agnes-brand-emphasis-soft);
+  transform: none;
+}
+.select-picker-trigger:focus-visible {
+  outline: 2px solid var(--agnes-brand-primary);
+  outline-offset: 2px;
+}
+.select-picker-trigger:disabled {
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-bg-card);
+  cursor: not-allowed;
+}
+.select-picker-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-picker-chevron {
+  flex: 0 0 auto;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin: 0 0.125rem 0.1875rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.select-picker-trigger[aria-expanded="true"] .select-picker-chevron {
+  transform: rotate(225deg);
+  margin-bottom: 0;
+}
+.select-picker-panel {
+  position: fixed;
+  inset: auto;
+  z-index: 40;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.375rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--agnes-line-emphasis) transparent;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-popover);
+  color: var(--agnes-text-primary);
+  box-shadow: var(--shadow-elevation-prominent);
+  font-size: var(--font-size-sm);
+}
+.select-picker-group + .select-picker-group {
+  margin-top: 0.5rem;
+}
+.select-picker-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.625rem 0.5rem;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  line-height: 1.25rem;
+  text-transform: uppercase;
+  cursor: default;
+  user-select: none;
+}
+.select-picker-heading::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--agnes-line-primary);
+}
+.select-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.select-picker-option:hover,
+.select-picker-panel[data-keyboard="true"] .select-picker-option[data-active="true"] {
+  background: var(--agnes-bg-hover);
+}
+.select-picker-option[aria-selected="true"] {
+  background: var(--agnes-brand-emphasis-soft);
+  font-weight: 500;
+}
+.select-picker-panel[data-keyboard="true"] .select-picker-option[data-active="true"] {
+  outline: 1px solid var(--agnes-brand-primary);
+  outline-offset: -1px;
+}
+.select-picker-option:active {
+  background: var(--agnes-bg-selected);
+}
+.select-picker-check {
+  flex: 0 0 1rem;
+  color: var(--agnes-brand-primary);
+  text-align: center;
+}
+.account-dialog-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 1;
+}
+.account-dialog-body {
+  max-height: var(--dialog-max-height);
+  overflow-y: auto;
+}
+/* 弹窗里不再需要卡片自己的内边距与滚动（由 .account-dialog-body 统一承担）。 */
+#account-dialog .config-detail-grid {
+  padding: 0.875rem 1.25rem 1rem;
+  overflow: visible;
+}
+#account-dialog .config-detail-heading {
+  min-height: auto;
+  display: grid;
+  gap: 0.125rem;
+  padding: 1.25rem 3rem 0.875rem 1.25rem;
+}
+#account-dialog .config-detail-heading .eyebrow {
+  display: none;
+}
+#account-dialog .config-detail-heading h3 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+#account-dialog #config-account-context {
+  max-width: none;
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.125rem;
+  text-align: start;
+}
+#account-dialog .config-detail-footer {
+  position: sticky;
+  bottom: 0;
+}
+/* 模型账户页的字段整行铺开（用户要求改成上下结构）；
+   设置弹窗整体在 #config-form 内，故用面板 id 收窄作用范围。 */
+#config-form #model-settings-pane .config-section {
+  grid-template-columns: minmax(0, 1fr);
+}
+:is(#config-form, #account-dialog) .config-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+:is(#config-form, #account-dialog) .config-section + .config-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--agnes-line-primary);
+}
+:is(#config-form, #account-dialog) .config-section legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0.25rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+}
+:is(#config-form, #account-dialog) .form-field {
+  gap: 0.375rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+:is(#config-form, #account-dialog) .form-field-wide,
+:is(#config-form, #account-dialog) .config-validation-section .config-validation-controls,
+:is(#config-form, #account-dialog) .config-validation-section #config-state,
+:is(#config-form, #account-dialog) .config-validation-section #config-error {
+  grid-column: 1 / -1;
+}
+:is(#config-form, #account-dialog) input,
+:is(#config-form, #account-dialog) select {
+  min-height: var(--control-height-form);
+  padding: 0.625rem 0.75rem;
+  border-color: var(--agnes-input-border);
+  border-radius: var(--radius-md);
+  color: var(--agnes-input-content-strong);
+  background: var(--agnes-input-surface);
+  font-size: var(--font-size-sm);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background-color var(--transition-fast);
+}
+:is(#config-form, #account-dialog) input:hover:not(:disabled),
+:is(#config-form, #account-dialog) select:hover:not(:disabled) {
+  border-color: var(--agnes-input-border-emphasis);
+  background: var(--agnes-input-surface);
+}
+:is(#config-form, #account-dialog) input:focus-visible,
+:is(#config-form, #account-dialog) select:focus-visible {
+  background: var(--agnes-input-surface);
+}
+:is(#config-form, #account-dialog) input:disabled,
+:is(#config-form, #account-dialog) select:disabled {
+  color: var(--agnes-text-tertiary);
+  border-color: var(--agnes-line-primary);
+  background: var(--agnes-bg-card);
+}
+:is(#config-form, #account-dialog) #config-key-hint {
+  min-height: 1.1rem;
+  margin-top: 0.125rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+#account-dialog .oauth-controls {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-card);
+}
+#account-dialog .oauth-controls[hidden] {
+  display: none;
+}
+#account-dialog .oauth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+#account-dialog .oauth-actions button {
+  flex: 1 1 8rem;
+}
+#account-dialog .oauth-status {
+  min-height: 1.125rem;
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+#account-dialog :is(.oauth-status, .oauth-links):empty {
+  display: none;
+}
+#account-dialog .oauth-links a {
+  color: var(--agnes-text-emphasis);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+#account-dialog .oauth-prompt[hidden] {
+  display: none;
+}
+:is(#config-form, #account-dialog) .config-validation-section .config-validation-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 1rem;
+}
+:is(#config-form, #account-dialog) .config-validation-section #config-state,
+:is(#config-form, #account-dialog) .config-validation-section #config-error {
+  min-height: 0;
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+:is(#config-form, #account-dialog) .config-validation-section #config-state {
+  color: var(--agnes-text-tertiary);
+}
+:is(#config-form, #account-dialog) .config-validation-section #config-error {
+  color: var(--agnes-status-danger-text);
+}
+:is(#config-form, #account-dialog) .config-validation-section #config-error:empty {
+  display: none;
+}
+.config-detail-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-surface);
+}
+#config-account-guard {
+  max-width: 27rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+#config-save {
+  min-width: 7rem;
+  min-height: 2.5rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 900px) {
+  #config {
+    width: calc(100vw - 1.25rem);
+    height: calc(100dvh - 1.25rem);
+    max-height: calc(100dvh - 1.25rem);
+  }
+  #config-form {
+    grid-template-columns: 11.75rem minmax(0, 1fr);
+  }
+  #config-form .config-heading,
+  .config-workspace {
+    padding-inline: 1.25rem;
+  }
+  .config-workspace {
+    grid-template-columns: minmax(15rem, 0.8fr) minmax(21rem, 1.2fr);
+    gap: 0.75rem;
+  }
+  #config-form .config-section {
+    grid-template-columns: 1fr;
+  }
+  #config-form .form-field-wide,
+  #config-form .config-validation-section .config-validation-controls,
+  #config-form .config-validation-section #config-state,
+  #config-form .config-validation-section #config-error,
+  #config-form .config-section legend {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 840px) {
+  #config {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  #config-form {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #settings-content-slots {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .settings-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .settings-rail-heading {
+    padding: 0;
+  }
+  .settings-nav-group {
+    grid-template-columns: auto auto;
+    align-items: center;
+  }
+  .settings-nav-label {
+    display: none;
+  }
+  .settings-nav-item {
+    min-height: 2.25rem;
+    width: auto;
+    padding: 0.5rem 0.625rem;
+  }
+  .settings-content {
+    overflow-y: auto;
+  }
+  #config-form .config-heading {
+    min-height: auto;
+    align-items: flex-start;
+    padding: 1.25rem 1rem;
+  }
+  #config-form .config-heading h2 {
+    font-size: var(--font-size-xl);
+  }
+  .config-workspace {
+    min-height: auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    flex: none;
+    padding: 1rem;
+    overflow: visible;
+  }
+  #config-accounts {
+    max-height: 15rem;
+  }
+  .config-detail-grid {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 480px) {
+  .settings-rail {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .settings-nav-group {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .settings-rail-heading .eyebrow,
+  #config-form #config-account-context {
+    display: none;
+  }
+  .settings-nav-item {
+    flex: 1 1 50%;
+    justify-content: center;
+  }
+  #config-form .config-heading {
+    padding-block: 1rem;
+  }
+  .config-accounts-heading,
+  .config-detail-heading,
+  .config-detail-grid,
+  .config-detail-footer {
+    padding: 1rem;
+  }
+  .config-accounts-heading {
+    align-items: center;
+  }
+  .config-accounts-heading p,
+  #config-add-account span {
+    display: none;
+  }
+  #config-add-account {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    padding: 0;
+  }
+  .config-account-select {
+    grid-template-columns: 2rem minmax(0, 1fr);
+  }
+  #config-form .config-validation-section .config-validation-controls,
+  .config-detail-footer {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+  #config-form #config-test,
+  #config-save {
+    width: 100%;
+  }
+}
+.usage-disclosure {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+.usage-disclosure summary {
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.usage-disclosure summary:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+.usage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s8) 1rem;
+  margin: 0.75rem 0 0.25rem;
+}
+.usage-grid dt,
+.usage-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.usage-grid dd {
+  color: var(--agnes-text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.usage-note {
+  margin: 0.625rem 0 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+#send[data-mode="idle"] > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.turn-process-body .assistant .node-label {
+  display: none;
+}
+.confirm-review-section[open] > summary {
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.appearance-options {
+  margin: 0;
+  padding: 1rem 1rem;
+  border: 0;
+}
+.appearance-card {
+  padding-top: 0.75rem;
+}
+.appearance-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+.appearance-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.appearance-option-name {
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.appearance-option-hint {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.appearance-option + .appearance-option {
+  margin-top: 0.5rem;
+}
+.appearance-option:hover {
+  background: var(--agnes-bg-hover);
+}
+.appearance-option:has(input:checked) {
+  border-color: var(--agnes-input-border-focus);
+  background: var(--agnes-brand-emphasis-soft);
+}
+#config-form /* fieldset 的 legend 默认画在边框区，会顶到卡片上沿。
+   display:block 让它回到正常流里，fieldset 的 padding-top 才起作用。 */
+.appearance-options legend {
+  display: block;
+  padding: 0 0 var(--s12);
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+#config-form .appearance-option input {
+  width: 1rem;
+  height: 1rem;
+  min-height: 0;
+  margin: 0.125rem 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--agnes-brand-primary);
+}
+
+/* 通用设置按 DSH 的单列 options 结构纵向排列，三组偏好项共享同一条内容轴。 */
+#appearance-settings-pane .config-workspace {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+/* 原生 select 太丑：去掉系统外观，自绘箭头。
+   必须带 #config-form——文件前部已有 #config-form select 的 padding 简写 (1,0,1)，
+   裸 .form-field select 只有 (0,1,1)，padding-right 会被压掉，箭头压住文字。 */
+.plugin-dialog-form select,
+#config-form select {
+  appearance: none;
+  padding-right: 2rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position:
+    right 1rem center,
+    right 0.72rem center;
+  background-size:
+    0.3rem 0.3rem,
+    0.3rem 0.3rem;
+  background-repeat: no-repeat;
+}
+
+/* Keep the final mobile cascade authoritative: several legacy component blocks below the first
+   responsive section intentionally set compact desktop heights. */
+@media (max-width: 540px) {
+  button,
+  input:not([type="checkbox"]):not([type="radio"]),
+  select {
+    min-height: var(--control-height-touch) !important;
+  }
+}

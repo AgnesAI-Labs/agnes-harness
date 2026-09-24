@@ -1,0 +1,29 @@
+{
+  "id": "agnes/hooks-runner",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "hooks": [
+      "session_start",
+      "shutdown",
+      "before_step",
+      "context",
+      "tool_call",
+      "tool_result",
+      "turn_stopping",
+      "subagent_start",
+      "subagent_end",
+      "before_compact",
+      "compact",
+      "approval_request"
+    ],
+    "slots": [],
+    "events": true,
+    "resources": [],
+    "network": []
+  },
+  "runtime": {
+    "supports": ["in-process", "isolated"]
+  }
+}

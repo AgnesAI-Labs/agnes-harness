@@ -1,0 +1,186 @@
+{
+  "scope": "External dependencies directly used by product runtime or optional integration paths.",
+  "packages": [
+    {
+      "name": "@earendil-works/pi-ai",
+      "version": "0.87.0",
+      "license": "MIT",
+      "source": "https://github.com/earendil-works/pi/tree/main/packages/ai",
+      "purpose": "Provider adapters, model catalog and streaming AI protocol support.",
+      "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations.",
+      "consumers": ["packages/ai"]
+    },
+    {
+      "name": "@modelcontextprotocol/sdk",
+      "version": "1.25.2",
+      "license": "MIT",
+      "source": "https://github.com/modelcontextprotocol/typescript-sdk",
+      "purpose": "MCP client transport and protocol interoperability.",
+      "rationale": "Provides the canonical TypeScript implementation of the external MCP contract.",
+      "consumers": ["packages/base", "packages/resource-control-runtime"]
+    },
+    {
+      "name": "@joplin/turndown-plugin-gfm",
+      "version": "1.0.67",
+      "license": "MIT",
+      "source": "https://github.com/laurent22/joplin-turndown-plugin-gfm",
+      "purpose": "Adds GitHub Flavored Markdown table and strikethrough rules to public-page conversion.",
+      "rationale": "Uses the maintained Turndown GFM rules instead of duplicating Markdown conversion behavior.",
+      "consumers": ["packages/base"]
+    },
+    {
+      "name": "@standard-schema/spec",
+      "version": "1.1.0",
+      "license": "MIT",
+      "source": "https://github.com/standard-schema/standard-schema",
+      "purpose": "Schema specification interface consumed by the vendored Cordis core at runtime.",
+      "rationale": "Vendored @agnes/cordis (from npm @deepseek-ai/cordis@4.0.2) pins this exact version; provenance recorded in packages/cordis/VENDORED.md.",
+      "consumers": ["packages/cordis", "packages/plugin-runtime"]
+    },
+    {
+      "name": "@sinclair/typebox",
+      "version": "0.34.33",
+      "license": "MIT",
+      "source": "https://github.com/sinclairzx81/typebox",
+      "purpose": "Runtime JSON-schema construction and static TypeScript schema inference.",
+      "rationale": "Keeps runtime validation schemas and compile-time protocol types derived from one definition.",
+      "consumers": [
+        "packages/ai",
+        "packages/base",
+        "packages/cli",
+        "packages/code",
+        "packages/core",
+        "packages/extension-api",
+        "packages/host",
+        "packages/plugin-runtime",
+        "packages/protocol",
+        "packages/protocol-validation",
+        "packages/resource-control-contracts"
+      ]
+    },
+    {
+      "name": "es-module-lexer",
+      "version": "2.3.2",
+      "license": "MIT",
+      "source": "https://github.com/guybedford/es-module-lexer",
+      "purpose": "Parses the static and literal dynamic ESM dependency graph of browser client-module snapshots.",
+      "rationale": "Avoids treating comments or ordinary strings as imports while enumerating the immutable browser resource closure.",
+      "consumers": ["packages/daemon"]
+    },
+    {
+      "name": "ajv-formats",
+      "version": "3.0.1",
+      "license": "MIT",
+      "source": "https://github.com/ajv-validator/ajv-formats",
+      "purpose": "Standard format validation for MCP tool input schemas and protocol parity tests.",
+      "rationale": "Provides RFC 3986 URI validation for external MCP schemas without maintaining a separate validator.",
+      "consumers": ["packages/base", "packages/protocol"]
+    },
+    {
+      "name": "dingtalk-stream",
+      "version": "2.1.6-beta.1",
+      "license": "MIT",
+      "source": "https://github.com/open-dingtalk/dingtalk-stream-sdk-nodejs",
+      "purpose": "Optional DingTalk streaming channel integration.",
+      "rationale": "Uses DingTalk's maintained stream SDK for its proprietary gateway protocol.",
+      "consumers": ["packages/channels"]
+    },
+    {
+      "name": "get-east-asian-width",
+      "version": "1.6.0",
+      "license": "MIT",
+      "source": "https://github.com/sindresorhus/get-east-asian-width",
+      "purpose": "Unicode terminal cell-width calculation for the CLI.",
+      "rationale": "Avoids incorrect cursor layout for East Asian wide and full-width characters.",
+      "consumers": ["packages/cli", "packages/cli-tui"]
+    },
+    {
+      "name": "isomorphic-git",
+      "version": "1.41.9",
+      "license": "MIT",
+      "source": "https://github.com/isomorphic-git/isomorphic-git",
+      "purpose": "Programmatic Git operations for base extensions.",
+      "rationale": "Provides Git behavior through a JavaScript API without assuming a shell Git executable.",
+      "consumers": ["packages/base"]
+    },
+    {
+      "name": "ipaddr.js",
+      "version": "2.5.0",
+      "license": "MIT",
+      "source": "https://github.com/whitequark/ipaddr.js",
+      "purpose": "Parses and classifies resolved IPv4 and IPv6 addresses for bounded public retrieval.",
+      "rationale": "Provides well-tested address parsing for the public-network deny rules, including IPv4-mapped IPv6 forms.",
+      "consumers": ["packages/host"]
+    },
+    {
+      "name": "jiti",
+      "version": "2.7.0",
+      "license": "MIT",
+      "source": "https://github.com/unjs/jiti",
+      "purpose": "Loads TypeScript and modern JavaScript extension modules in Host and the confined Base runner.",
+      "rationale": "Supports the extension authoring formats accepted by the Host loader without a separate compile step.",
+      "consumers": ["packages/base", "packages/host"]
+    },
+    {
+      "name": "marked",
+      "version": "18.0.12",
+      "license": "MIT",
+      "source": "https://github.com/markedjs/marked",
+      "purpose": "Parses assistant Markdown for terminal and Web rendering.",
+      "rationale": "Uses one maintained Markdown lexer; the Web client renders tokens through a DOM allowlist rather than inserting parser HTML.",
+      "consumers": ["packages/cli", "packages/cli-tui", "packages/web"]
+    },
+    {
+      "name": "turndown",
+      "version": "7.2.4",
+      "license": "MIT",
+      "source": "https://github.com/mixmark-io/turndown",
+      "purpose": "Converts fetched HTML into bounded Markdown tool output.",
+      "rationale": "Uses a maintained HTML-to-Markdown implementation before applying the product's output limits.",
+      "consumers": ["packages/base"]
+    },
+    {
+      "name": "undici",
+      "version": "8.10.2",
+      "license": "MIT",
+      "source": "https://github.com/nodejs/undici",
+      "purpose": "Provides the explicit HTTP dispatcher used by bounded public retrieval.",
+      "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state.",
+      "consumers": ["packages/host"]
+    },
+    {
+      "name": "ws",
+      "version": "8.21.3",
+      "license": "MIT",
+      "source": "https://github.com/websockets/ws",
+      "purpose": "WebSocket client transport and authenticated daemon listener.",
+      "rationale": "Supplies the Node WebSocket implementation needed where the browser-native API is unavailable.",
+      "consumers": ["packages/daemon", "packages/sdk"]
+    },
+    {
+      "name": "yaml",
+      "version": "2.9.0",
+      "license": "ISC",
+      "source": "https://github.com/eemeli/yaml",
+      "purpose": "Parses and serializes user configuration, channel configuration and extension resources.",
+      "rationale": "Provides standards-aware YAML parsing with explicit document-level error handling.",
+      "consumers": [
+        "packages/base",
+        "packages/channels",
+        "packages/cli",
+        "packages/code",
+        "packages/host",
+        "packages/package-manager"
+      ]
+    },
+    {
+      "name": "ajv",
+      "version": "8.20.0",
+      "license": "MIT",
+      "source": "https://github.com/ajv-validator/ajv",
+      "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
+      "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
+      "consumers": ["packages/base", "packages/host", "packages/protocol"]
+    }
+  ]
+}

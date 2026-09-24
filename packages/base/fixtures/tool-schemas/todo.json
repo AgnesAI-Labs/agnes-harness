@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "items": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "pending",
+                "type": "string"
+              },
+              {
+                "const": "in_progress",
+                "type": "string"
+              },
+              {
+                "const": "completed",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "content",
+          "status"
+        ]
+      }
+    }
+  },
+  "required": [
+    "items"
+  ]
+}

@@ -1,0 +1,17 @@
+channel: dingtalk
+connect: unix:/var/lib/agnes/daemon/agnesd.sock # For another host: wss://agnes.internal:8443/agnes
+tenant: example-tenant
+agent: assistant
+# Must be mode 0600 and owned by the service user (for example: agnes:agnes).
+credentialsFile: /etc/agnes/channels/dingtalk.env
+allowFrom: [] # Empty allows all senders; otherwise list permitted staff IDs.
+requireMention: true
+ackReaction: group-mentions
+workspace: /var/lib/agnes/workspaces/example-tenant
+outbound:
+  costLine: true
+directory:
+  sync: every 15m
+healthz:
+  enabled: true
+  port: 9877

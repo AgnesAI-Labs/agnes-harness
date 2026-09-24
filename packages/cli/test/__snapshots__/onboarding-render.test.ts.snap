@@ -1,0 +1,50 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AuthMethodView > renders the two product choices and hint within 40 columns 1`] = `
+[
+  "Select authentication method:",
+  "▶ 1. Sign in with an Agnes account",
+  "  2. Sign in with an API key / ChatGPT …",
+  "↑↓ navigate  enter select  escape/ctrl+c",
+  "cancel",
+]
+`;
+
+exports[`AuthMethodView > renders the two product choices and hint within 80 columns 1`] = `
+[
+  "Select authentication method:",
+  "▶ 1. Sign in with an Agnes account",
+  "  2. Sign in with an API key / ChatGPT subscription",
+  "↑↓ navigate  enter select  escape/ctrl+c cancel",
+]
+`;
+
+exports[`AuthMethodView > renders the two product choices and hint within 120 columns 1`] = `
+[
+  "Select authentication method:",
+  "▶ 1. Sign in with an Agnes account",
+  "  2. Sign in with an API key / ChatGPT subscription",
+  "↑↓ navigate  enter select  escape/ctrl+c cancel",
+]
+`;
+
+exports[`SecretInputView > never renders the secret at 40 columns 1`] = `
+[
+  "API key: [input hidden]",
+  "enter submit  escape back",
+]
+`;
+
+exports[`SecretInputView > never renders the secret at 80 columns 1`] = `
+[
+  "API key: [input hidden]",
+  "enter submit  escape back",
+]
+`;
+
+exports[`SecretInputView > never renders the secret at 120 columns 1`] = `
+[
+  "API key: [input hidden]",
+  "enter submit  escape back",
+]
+`;

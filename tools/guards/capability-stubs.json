@@ -1,0 +1,125 @@
+{
+  "scope": "Production capability gaps and intentional fail-closed boundaries in packages/**/*.ts. Tests, fixtures, generated output and build output are excluded.",
+  "capabilities": [
+    {
+      "id": "runtime.python.execution",
+      "evidence": [
+        {
+          "path": "packages/runtime-python/src/index.ts",
+          "marker": "python code runtime is not implemented yet"
+        }
+      ]
+    },
+    {
+      "id": "code.runtime.lifecycle",
+      "evidence": [
+        {
+          "path": "packages/code/src/extensions/code-mode/index.ts",
+          "marker": "code runtime lifecycle is not wired yet"
+        }
+      ]
+    },
+    {
+      "id": "ai.models.catalogue-probe",
+      "evidence": [
+        {
+          "path": "packages/ai/src/adapters/pi/probe-models.ts",
+          "marker": "protocol-specific catalogue probe is not implemented"
+        },
+        {
+          "path": "packages/ai/src/adapters/pi/probe-models.ts",
+          "marker": "catalogue authentication variant is not implemented"
+        },
+        {
+          "path": "packages/ai/src/adapters/pi/probe.ts",
+          "marker": "protocol-specific catalogue probe is not implemented"
+        }
+      ]
+    },
+    {
+      "id": "approval.ticket-store",
+      "evidence": [
+        {
+          "path": "packages/base/extensions/approval-policy/src/tickets.ts",
+          "marker": "approval parking is not implemented"
+        }
+      ]
+    },
+    {
+      "id": "artifacts.background-jobs",
+      "evidence": [
+        {
+          "path": "packages/base/extensions/artifacts-local/src/jobs.ts",
+          "marker": "artifact jobs are not implemented in this build"
+        }
+      ]
+    },
+    {
+      "id": "profile.additional-layers",
+      "evidence": [
+        {
+          "path": "packages/host/src/profile/isolation.ts",
+          "marker": "resolveProfile cannot apply the"
+        }
+      ]
+    },
+    {
+      "id": "sandbox.host-filtered-network",
+      "evidence": [
+        {
+          "path": "packages/base/extensions/sandbox/src/backends/shared.ts",
+          "marker": "host-filtered network enforcement is not implemented"
+        }
+      ]
+    },
+    {
+      "id": "windows.runtime-enforcement",
+      "evidence": [
+        {
+          "path": "packages/host/src/adapters/platform-win32.ts",
+          "marker": "not implemented"
+        },
+        {
+          "path": "packages/host/src/adapters/credential-files.ts",
+          "marker": "private credential ACL enforcement is unavailable"
+        }
+      ]
+    },
+    {
+      "id": "cli.remote-and-extra-modes",
+      "evidence": [
+        {
+          "path": "packages/cli/src/bin.ts",
+          "marker": "is not available in this build"
+        }
+      ]
+    },
+    {
+      "id": "sdk.optional-build-capabilities",
+      "evidence": [
+        {
+          "path": "packages/sdk/src/errors.ts",
+          "marker": "is not available in this build"
+        }
+      ]
+    },
+    {
+      "id": "sandbox.bwrap-runtime-selection",
+      "evidence": [
+        {
+          "path": "packages/base/extensions/sandbox/src/backends/bwrap.ts",
+          "marker": "intentionally not wired into the default sandbox seam"
+        }
+      ]
+    },
+    {
+      "id": "cli.onboarding.account",
+      "evidence": [
+        {
+          "path": "packages/cli/src/onboarding/tui.ts",
+          "marker": "Agnes account sign-in is not available in this build yet"
+        }
+      ]
+    }
+  ]
+}

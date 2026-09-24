@@ -1,0 +1,25 @@
+{
+  "name": "@agnes/web-units",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stable built-in web unit identities and contributes.client contracts for the Agnes web shell",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/protocol": "workspace:*",
+    "@agnes/web-slots": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "license": "Apache-2.0"
+}

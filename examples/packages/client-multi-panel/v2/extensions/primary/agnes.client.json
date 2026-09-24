@@ -1,0 +1,12 @@
+{
+  "client": {
+    "entry": "./client/index.js",
+    "styles": [],
+    "slots": ["workbench.panel"],
+    "publicConfig": {
+      "label": "Agnes multi row · primary v2"
+    },
+    "services": [],
+    "projections": []
+  }
+}

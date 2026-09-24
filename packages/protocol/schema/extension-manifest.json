@@ -1,0 +1,321 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/extension-manifest.json",
+  "title": "agnes.extension.json (\u89c4\u683c \u00a719.3)",
+  "$ref": "#/$defs/ExtensionManifest",
+  "$defs": {
+    "Capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prefix"],
+          "properties": {
+            "prefix": {
+              "type": "string",
+              "pattern": "^(?:[a-z][a-z0-9_]{0,31}_)?$"
+            },
+            "names": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+              }
+            }
+          }
+        },
+        "tools.invoke": {
+          "type": "boolean"
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "$ref": "hooks.json#/$defs/HookEvent"
+          }
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "$ref": "slots.json#/$defs/UiSlotName"
+          }
+        },
+        "events": {
+          "type": "boolean"
+        },
+        "ui": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 8,
+          "items": {
+            "enum": ["skin", "client"]
+          },
+          "description": "UI contributions this package makes; declaring 'skin' requires a matching contributes.skins entry, declaring 'client' requires contributes.client."
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "enum": ["skill", "mcp", "kb", "datasource", "model"]
+          }
+        },
+        "network.publicRead": {
+          "type": "boolean",
+          "description": "Anonymous bounded public GET via net.fetchPublic, independent of network.hosts."
+        },
+        "network": {
+          "oneOf": [
+            {
+              "type": "array",
+              "maxItems": 0,
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["hosts"],
+              "properties": {
+                "hosts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9.-]+(:[0-9]{1,5})?$"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "artifacts": {
+          "type": "boolean"
+        },
+        "subagent": {
+          "type": "boolean"
+        },
+        "services": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Service names must be distinct; validateExtensionManifest enforces name uniqueness.",
+          "items": {
+            "$ref": "extension-service.json#/$defs/ServiceCapability"
+          }
+        },
+        "projections": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "projection.json#/$defs/ProjectionCapability"
+          },
+          "description": "Names must be distinct; validateExtensionManifest enforces name uniqueness even when descriptors differ."
+        }
+      }
+    },
+    "SkinContribution": {
+      "description": "One selectable UI skin. `css` is a package-relative stylesheet path; containment is enforced at load, and token-key membership in the generated whitelist is enforced by validateExtensionManifest rather than by this schema.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "css"],
+      "properties": {
+        "id": {
+          "description": "Skin id. Built-in theme words are reserved so a skin can never shadow light/dark/system/none.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?!(?:light|dark|system|none)$)[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "css": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 256,
+          "pattern": "^\\./"
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["light", "dark"],
+            "properties": {
+              "light": { "$ref": "#/$defs/SkinTokenValue" },
+              "dark": { "$ref": "#/$defs/SkinTokenValue" }
+            }
+          }
+        }
+      }
+    },
+    "SkinTokenValue": {
+      "description": "One CSS value. Rejects declaration-breaking characters and url() references; gradients are allowed.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?!.*url\\()[^;{}@]*$"
+    },
+    "ClientContribution": {
+      "description": "One in-page web client module (design WC1). `entry` is a package-relative ESM path that must export `apply`; the daemon serves the files from an immutable snapshot. Format checks only — not a security boundary. Declaring it requires capabilities.ui to contain 'client', and vice versa.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry"],
+      "properties": {
+        "id": {
+          "description": "Optional stable identity for this browser contribution. When omitted, the containing extension id is used.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "entry": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "styles": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "slots": {
+          "description": "Declared slot names; informational/review only, the runtime registry is authoritative.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "slotCatalogVersion": {
+          "description": "Independent browser component-slot catalog version. Legacy client contributions may omit it; DSH-aligned contributions must identify the exact catalog version they target.",
+          "type": "string",
+          "pattern": "^dsh-client-slots/v[0-9]+$"
+        },
+        "services": {
+          "description": "Immutable allow-list of query services from this same extension that its browser module may request through the host-owned BFF. It is not a credential or a backend capability grant; effect services and undeclared services are refused.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "projections": {
+          "description": "Reserved; validated and archived but grants nothing in this iteration.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "legacyRowIds": {
+          "description": "Explicit browser row ids from an older manifest that this contribution replaces.",
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^web:[^\\x00]{1,251}$"
+          }
+        },
+        "publicConfig": {
+          "description": "Optional browser-visible, package-authored JSON configuration. This is immutable manifest metadata only; runtime configuration, credentials, secret references and backend row config must never be placed here.",
+          "type": "object",
+          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+        }
+      }
+    },
+    "ExtensionManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "apiRange", "entry", "capabilities"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "apiRange": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "entry": {
+          "type": "string",
+          "pattern": "^\\./"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/Capabilities"
+        },
+        "contributes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "skins": {
+              "type": "array",
+              "maxItems": 8,
+              "items": { "$ref": "#/$defs/SkinContribution" }
+            },
+            "client": { "$ref": "#/$defs/ClientContribution" }
+          }
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "profile.json#/$defs/SeamName"
+          }
+        },
+        "lease": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "budget": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "supports": {
+              "type": "array",
+              "items": {
+                "enum": ["in-process", "isolated"]
+              },
+              "maxItems": 2,
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "required": ["supports"]
+        }
+      }
+    },
+    "HookEvent": {
+      "$ref": "hooks.json#/$defs/HookEvent"
+    },
+    "UiSlotName": {
+      "$ref": "slots.json#/$defs/UiSlotName"
+    },
+    "SeamName": {
+      "$ref": "profile.json#/$defs/SeamName"
+    }
+  }
+}

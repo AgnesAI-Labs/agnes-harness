@@ -1,0 +1,7 @@
+{
+  "id": "fixture/throws",
+  "version": "1.0.0",
+  "apiRange": "^1.0",
+  "entry": "./index.ts",
+  "capabilities": { "tools": { "prefix": "tx_" } }
+}

@@ -1,0 +1,451 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/channel.json",
+  "title": "Channel credentials and transport authentication",
+  "$defs": {
+    "Credential": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/JwtCredential"
+        },
+        {
+          "$ref": "#/$defs/SourceAuthCredential"
+        },
+        {
+          "$ref": "#/$defs/PortalIdentityCredential"
+        },
+        {
+          "$ref": "#/$defs/LocalCredential"
+        },
+        {
+          "$ref": "#/$defs/ChannelCredential"
+        }
+      ],
+      "x-secret": true
+    },
+    "ApprovalAction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ticket", "verdict", "approverCredential"],
+          "properties": {
+            "ticket": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "verdict": {
+              "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
+            },
+            "approverCredential": {
+              "$ref": "#/$defs/Credential"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requestSeq", "verdict", "approverCredential"],
+          "properties": {
+            "requestSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "verdict": {
+              "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
+            },
+            "approverCredential": {
+              "$ref": "#/$defs/Credential"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ticket", "requestSeq", "verdict", "approverCredential"],
+          "properties": {
+            "ticket": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "requestSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "verdict": {
+              "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
+            },
+            "approverCredential": {
+              "$ref": "#/$defs/Credential"
+            }
+          }
+        }
+      ]
+    },
+    "DirectoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "name", "syncedAt"],
+      "properties": {
+        "kind": {
+          "enum": ["user", "dept"]
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "parentId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "userIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "x-trust": "untrusted"
+        },
+        "deletedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ChannelCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edit", "card", "thread", "attachment"],
+      "properties": {
+        "edit": {
+          "type": "boolean"
+        },
+        "card": {
+          "type": "boolean"
+        },
+        "thread": {
+          "type": "boolean"
+        },
+        "attachment": {
+          "type": "boolean"
+        },
+        "reactions": {
+          "type": "boolean"
+        },
+        "typing": {
+          "type": "boolean"
+        },
+        "voice": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ChannelManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "version",
+        "connection",
+        "capabilities",
+        "credentials",
+        "limits",
+        "events"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "connection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["modes", "default"],
+          "properties": {
+            "modes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": ["stream", "websocket", "longpoll", "webhook"]
+              }
+            },
+            "default": {
+              "enum": ["stream", "websocket", "longpoll", "webhook"]
+            }
+          }
+        },
+        "capabilities": {
+          "$ref": "#/$defs/ChannelCapabilities"
+        },
+        "credentials": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "optional", "exposes"],
+          "properties": {
+            "required": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "optional": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "exposes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+              }
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["textChars", "cardBytes", "editWindowMs"],
+          "properties": {
+            "textChars": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cardBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "editWindowMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rate": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "perChatPerMin": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "perAccountPerSec": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["supported"],
+          "properties": {
+            "supported": {
+              "type": "array",
+              "items": {
+                "enum": ["message", "cardAction", "groupJoin", "reaction"]
+              }
+            }
+          }
+        },
+        "directory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["supported"],
+          "properties": {
+            "supported": {
+              "type": "boolean"
+            },
+            "unit": {
+              "enum": ["dept", "group"]
+            }
+          }
+        }
+      }
+    },
+    "JwtCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "token"],
+      "properties": {
+        "kind": {
+          "const": "jwt"
+        },
+        "token": {
+          "type": "string",
+          "maxLength": 8192
+        }
+      },
+      "x-secret": true
+    },
+    "SourceAuthCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "timestamp", "signature", "nonce"],
+      "properties": {
+        "kind": {
+          "const": "source-auth"
+        },
+        "timestamp": {
+          "type": "integer"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^v0=[0-9a-f]{64}$"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "x-secret": true
+    },
+    "PortalIdentityCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "token"],
+      "properties": {
+        "kind": {
+          "const": "portal-identity"
+        },
+        "token": {
+          "type": "string",
+          "maxLength": 8192
+        }
+      },
+      "x-secret": true
+    },
+    "LocalCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "const": "local"
+        }
+      },
+      "x-secret": true
+    },
+    "SurfaceAuthCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sourceId", "source", "subject"],
+      "properties": {
+        "kind": {
+          "const": "surface"
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceAuthCredential"
+        },
+        "subject": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/JwtCredential"
+            },
+            {
+              "$ref": "#/$defs/PortalIdentityCredential"
+            }
+          ]
+        }
+      },
+      "x-secret": true
+    },
+    "Auth": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/JwtCredential"
+        },
+        {
+          "$ref": "#/$defs/SourceAuthCredential"
+        },
+        {
+          "$ref": "#/$defs/PortalIdentityCredential"
+        },
+        {
+          "$ref": "#/$defs/LocalCredential"
+        },
+        {
+          "$ref": "#/$defs/SurfaceAuthCredential"
+        }
+      ],
+      "x-secret": true
+    },
+    "ChannelCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "channel", "accountId", "userId", "chatId", "chatType"],
+      "properties": {
+        "kind": {
+          "const": "channel"
+        },
+        "channel": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "accountId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "unionId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "chatId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "chatType": {
+          "enum": ["dm", "group", "thread"]
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "raw": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "x-trust": "untrusted"
+        }
+      },
+      "x-secret": true
+    }
+  }
+}

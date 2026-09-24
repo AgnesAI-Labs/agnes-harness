@@ -1,0 +1,10 @@
+.dsh-tool-view {
+  display: grid;
+  gap: 0.15rem;
+  max-width: 32rem;
+  border: 2px solid #0f766e;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: #115e59;
+  background: #f0fdfa;
+}

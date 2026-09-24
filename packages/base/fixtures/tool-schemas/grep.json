@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "pattern": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "path": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "glob": {
+      "type": "string"
+    },
+    "ignoreCase": {
+      "type": "boolean"
+    },
+    "literal": {
+      "type": "boolean"
+    },
+    "context": {
+      "minimum": 0,
+      "maximum": 10,
+      "type": "integer"
+    },
+    "limit": {
+      "minimum": 1,
+      "maximum": 1000,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "pattern"
+  ]
+}

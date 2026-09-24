@@ -1,0 +1,3 @@
+{"id":"think-basic","provenance":"hand-written","tool_names":[],"input_chunks":["Sure.<think>plan: read file</think>Here you go."],"expected_events":[{"type":"text_delta","delta":"Sure."},{"type":"thinking_delta","delta":"plan: read file"},{"type":"text_delta","delta":"Here you go."}]}
+{"id":"think-in-fence-not-scanned","provenance":"hand-written","tool_names":[],"input_chunks":["```\n<think>x</think>\n```"],"expected_events":[{"type":"text_delta","delta":"```\n<think>x</think>\n```"}]}
+{"id":"think-unclosed","provenance":"hand-written","tool_names":[],"input_chunks":["<think>oops"],"expected_events":[{"type":"text_delta","delta":"<think>oops"}]}

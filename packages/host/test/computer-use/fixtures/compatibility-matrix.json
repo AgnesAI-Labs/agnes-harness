@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "id": "legacy-0.9-selected-catalog",
+      "contractEpoch": "cua-driver-0.9",
+      "kind": "legacyCompatibility",
+      "status": "verified",
+      "fixturePath": "packages/host/test/computer-use/fixtures/0.9/catalog.selected.json",
+      "sha256": "bc2651301b1b0774d8003de14c1a56a79cb97a19478957ee7c9b826f996875ca",
+      "provenance": {
+        "kind": "source-fixture",
+        "repository": "https://github.com/NousResearch/hermes-agent.git",
+        "commit": "fb56a7e06dde62e9f645ff744c82cb47b60c469e",
+        "sourcePath": "tests/fixtures/cua_driver_0_9_tools_list.json",
+        "sourceSha256": "21d770a0ea9c6547b7ec805b20f6261897f29e0e92475cc5e241f9eaf9121db2",
+        "normalization": "JSON whitespace only via repository formatter; keys and values unchanged."
+      }
+    },
+    {
+      "id": "legacy-0.10-permission-mode-behavior",
+      "contractEpoch": "cua-driver-0.10",
+      "kind": "legacyCompatibility",
+      "status": "verified",
+      "fixturePath": "packages/host/test/computer-use/fixtures/0.10/permission-mode.behavior.json",
+      "sha256": "3df83bbb1ed4df247e3a1015f1bf7a3b39320a7c0e712fc8a3dc57f592ee796a",
+      "provenance": {
+        "kind": "source-behavior",
+        "repository": "https://github.com/NousResearch/hermes-agent.git",
+        "commit": "fb56a7e06dde62e9f645ff744c82cb47b60c469e",
+        "sourcePath": "tests/tools/test_computer_use_cua_0_10_permissions.py",
+        "sourceSha256": "3aef215baa5308055400bad5177ddd0d88c692978a970e78b68f4fe3bc971b7a",
+        "normalization": "Reviewed semantic extraction of the four direct mode-resolution assertions only; no driver/MCP bytes are represented."
+      }
+    },
+    {
+      "id": "locked-0.28.1-manifest",
+      "contractEpoch": "cua-driver-0.28.1",
+      "kind": "manifest",
+      "status": "verified",
+      "fixturePath": "packages/host/test/computer-use/fixtures/0.28.1/manifest.json",
+      "sha256": "0190a6f05ab24e968e141d3a247c3c8336d327d9cbb46e7cc943c3f4b41d2c27",
+      "provenance": {
+        "kind": "driver-capture",
+        "repository": "https://github.com/trycua/cua",
+        "tag": "cua-driver-rs-v0.28.1",
+        "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c",
+        "platform": "win32",
+        "capturedAt": "2026-09-19T05:55:55.6350770Z",
+        "sanitization": "Normalized from the locked Windows x86_64 release; removed local paths, usernames, window handles/counts, and volatile process data; retained the complete tool names, capabilities, and input schemas for catalog evidence."
+      }
+    },
+    {
+      "id": "locked-0.28.1-catalog",
+      "contractEpoch": "cua-driver-0.28.1",
+      "kind": "catalog",
+      "status": "verified",
+      "fixturePath": "packages/host/test/computer-use/fixtures/0.28.1/catalog.json",
+      "sha256": "5fb395a2b94c6a28cf7b7680f2bef2838d46952cfc187edff9c36621a425b6ef",
+      "provenance": {
+        "kind": "driver-capture",
+        "repository": "https://github.com/trycua/cua",
+        "tag": "cua-driver-rs-v0.28.1",
+        "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c",
+        "platform": "win32",
+        "capturedAt": "2026-09-19T05:59:17.3564475Z",
+        "sanitization": "Normalized from the locked Windows x86_64 release; removed local paths, usernames, window handles/counts, and volatile process data; retained the complete tool names, capabilities, and input schemas for catalog evidence."
+      }
+    },
+    {
+      "id": "locked-0.28.1-result",
+      "contractEpoch": "cua-driver-0.28.1",
+      "kind": "result",
+      "status": "verified",
+      "fixturePath": "packages/host/test/computer-use/fixtures/0.28.1/result.json",
+      "sha256": "e4d3d6cdabb775d85b4187bd342162e1cbf339c4261ff2c3e70eea6529fb25da",
+      "provenance": {
+        "kind": "driver-capture",
+        "repository": "https://github.com/trycua/cua",
+        "tag": "cua-driver-rs-v0.28.1",
+        "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c",
+        "platform": "win32",
+        "capturedAt": "2026-09-19T06:03:08.2260577Z",
+        "sanitization": "Normalized from the locked Windows x86_64 release; removed local paths, usernames, window handles/counts, and volatile process data; retained the complete tool names, capabilities, and input schemas for catalog evidence."
+      }
+    },
+    {
+      "id": "locked-0.28.1-som",
+      "contractEpoch": "cua-driver-0.28.1",
+      "kind": "som",
+      "status": "missing",
+      "blocker": "The Safari probe returned ax_window_unresolved with zero elements and is not SOM success evidence."
+    },
+    {
+      "id": "locked-0.28.1-doctor",
+      "contractEpoch": "cua-driver-0.28.1",
+      "kind": "doctor",
+      "status": "verified",
+      "fixturePath": "packages/host/test/computer-use/fixtures/0.28.1/doctor.json",
+      "sha256": "7179d3ba639ffdc855b60020fed7946fe22f3c4403acaf5fa02e2f5ff6fd8d0f",
+      "provenance": {
+        "kind": "driver-capture",
+        "repository": "https://github.com/trycua/cua",
+        "tag": "cua-driver-rs-v0.28.1",
+        "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c",
+        "platform": "win32",
+        "capturedAt": "2026-09-19T05:55:59.0954049Z",
+        "sanitization": "Normalized from the locked Windows x86_64 release; removed local paths, usernames, window handles/counts, and volatile process data; retained the complete tool names, capabilities, and input schemas for catalog evidence."
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "client": {
+    "entry": "./client/index.js",
+    "styles": ["./client/index.css"],
+    "slots": ["tool.call.toolview"],
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "services": [],
+    "projections": [],
+    "publicConfig": {
+      "label": "DSH tool view · broken"
+    }
+  }
+}

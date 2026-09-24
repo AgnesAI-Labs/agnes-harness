@@ -1,0 +1,5 @@
+# Source and signed/frozen fixtures must have identical bytes on all checkouts.
+# Keep binary files untouched; Windows batch launchers may require CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf

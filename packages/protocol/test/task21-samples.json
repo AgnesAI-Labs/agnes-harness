@@ -1,0 +1,3166 @@
+{
+  "authz": {
+    "Actor": {
+      "valid": {
+        "id": "fixture",
+        "org": "fixture",
+        "role": "user",
+        "deptPath": [],
+        "attrs": {}
+      },
+      "invalid": [
+        {},
+        {
+          "id": "",
+          "org": "fixture",
+          "role": "user",
+          "deptPath": [],
+          "attrs": {}
+        },
+        {
+          "id": "fixture",
+          "org": 1,
+          "role": "user",
+          "deptPath": [],
+          "attrs": {}
+        },
+        {
+          "id": "fixture",
+          "org": "fixture",
+          "role": "user",
+          "deptPath": [],
+          "attrs": {},
+          "unknown": true
+        }
+      ],
+      "note": "Existing Actor required identity fields"
+    },
+    "Target": {
+      "valid": {
+        "kind": "table",
+        "id": "fixture",
+        "parent": "db"
+      },
+      "invalid": [
+        {
+          "kind": "table",
+          "id": "fixture",
+          "parent": "db",
+          "unknown_field": true
+        },
+        {
+          "id": "fixture",
+          "parent": "db"
+        },
+        {
+          "kind": "table",
+          "parent": "db"
+        },
+        {
+          "kind": 7,
+          "id": "fixture",
+          "parent": "db"
+        },
+        {
+          "kind": "invalid !",
+          "id": "fixture",
+          "parent": "db"
+        },
+        {
+          "kind": "table",
+          "id": 7,
+          "parent": "db"
+        },
+        {
+          "kind": "table",
+          "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "parent": "db"
+        },
+        {
+          "kind": "table",
+          "id": "fixture",
+          "parent": 7
+        },
+        {
+          "kind": "table",
+          "id": "fixture",
+          "parent": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "Action": {
+      "valid": "admin.manage",
+      "invalid": [7, "invalid !"],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "RowScope": {
+      "valid": "named_regions[region_a,region-b]",
+      "invalid": [
+        "named_regions[]",
+        "named_regions[,a]",
+        "named_regions[a,]",
+        "named_regions[a,,b]",
+        "named_regions[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "ref()",
+        "ref(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)",
+        "select * from table"
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "Decision": {
+      "valid": {
+        "decisionId": "fixture",
+        "effect": "allow",
+        "reason": "fixture",
+        "rowFilter": "named_regions[region_a,region-b]",
+        "fieldMask": {
+          "visible": [],
+          "masked": []
+        },
+        "limits": {
+          "maxRows": 0,
+          "exportRequiresGrant": false
+        },
+        "expiresAt": "2026-09-09T00:00:00Z"
+      },
+      "invalid": [
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z",
+          "unknown_field": true
+        },
+        {
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": 7,
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": 7,
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "invalid !",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": 7,
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": [],
+            "unknown_field": true
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": {},
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": {}
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false,
+            "unknown_field": true
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": "1",
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 1.5,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": -1,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": "false"
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": 7
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-02-30T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T24:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[region_a,region-b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00+01"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "named_regions[a,,b]",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        },
+        {
+          "decisionId": "fixture",
+          "effect": "allow",
+          "reason": "fixture",
+          "rowFilter": "select * from table",
+          "fieldMask": {
+            "visible": [],
+            "masked": []
+          },
+          "limits": {
+            "maxRows": 0,
+            "exportRequiresGrant": false
+          },
+          "expiresAt": "2026-09-09T00:00:00Z"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    }
+  },
+  "channel": {
+    "Credential": {
+      "valid": {
+        "kind": "channel",
+        "channel": "fixture",
+        "accountId": "account",
+        "userId": "user",
+        "chatId": "chat",
+        "chatType": "dm",
+        "raw": {
+          "label": "untrusted"
+        }
+      },
+      "invalid": [
+        {},
+        {
+          "kind": "sso"
+        },
+        {
+          "kind": "jwt"
+        },
+        {
+          "kind": "local",
+          "token": "x"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "invalid",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "x"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "ApprovalAction": {
+      "valid": {
+        "ticket": "fixture",
+        "verdict": "allowed-once",
+        "approverCredential": {
+          "kind": "local"
+        }
+      },
+      "invalid": [
+        {
+          "verdict": "allowed-once",
+          "approverCredential": {
+            "kind": "local"
+          }
+        },
+        {
+          "ticket": "fixture",
+          "verdict": "allowed-once",
+          "approverCredential": {
+            "kind": "local"
+          },
+          "requestSeq": 0
+        },
+        {
+          "ticket": "fixture",
+          "verdict": "allowed-once",
+          "approverCredential": {
+            "kind": "local"
+          },
+          "requestSeq": 1.5
+        },
+        {
+          "ticket": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "verdict": "allowed-once",
+          "approverCredential": {
+            "kind": "local"
+          }
+        },
+        {
+          "ticket": "fixture",
+          "verdict": "allow",
+          "approverCredential": {
+            "kind": "local"
+          }
+        },
+        {
+          "ticket": "fixture",
+          "verdict": "allowed-once",
+          "approverCredential": {
+            "kind": "jwt"
+          }
+        },
+        {
+          "ticket": "fixture",
+          "verdict": "allowed-once",
+          "approverCredential": {
+            "kind": "local"
+          },
+          "unknown": 1
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "DirectoryEntry": {
+      "valid": {
+        "kind": "dept",
+        "id": "dept",
+        "name": "Fixture",
+        "syncedAt": "2026-09-09T00:00:00Z",
+        "attrs": {
+          "label": "untrusted"
+        }
+      },
+      "invalid": [
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          },
+          "unknown_field": true
+        },
+        {
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "Fixture",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": 7,
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "invalid !",
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": 7,
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": 7,
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": 7,
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-02-30T00:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T24:00:00Z",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00+01",
+          "attrs": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": 7
+          }
+        },
+        {
+          "kind": "dept",
+          "id": "dept",
+          "name": "Fixture",
+          "syncedAt": "2026-09-09T00:00:00Z",
+          "attrs": {
+            "label": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "ChannelCapabilities": {
+      "valid": {
+        "edit": false,
+        "card": false,
+        "thread": false,
+        "attachment": false
+      },
+      "invalid": [
+        {
+          "edit": false,
+          "card": false,
+          "thread": false,
+          "attachment": false,
+          "unknown_field": true
+        },
+        {
+          "card": false,
+          "thread": false,
+          "attachment": false
+        },
+        {
+          "edit": false,
+          "thread": false,
+          "attachment": false
+        },
+        {
+          "edit": false,
+          "card": false,
+          "attachment": false
+        },
+        {
+          "edit": false,
+          "card": false,
+          "thread": false
+        },
+        {
+          "edit": "false",
+          "card": false,
+          "thread": false,
+          "attachment": false
+        },
+        {
+          "edit": false,
+          "card": "false",
+          "thread": false,
+          "attachment": false
+        },
+        {
+          "edit": false,
+          "card": false,
+          "thread": "false",
+          "attachment": false
+        },
+        {
+          "edit": false,
+          "card": false,
+          "thread": false,
+          "attachment": "false"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "ChannelManifest": {
+      "valid": {
+        "id": "fixture",
+        "displayName": "Fixture",
+        "version": "0.1.0",
+        "connection": {
+          "modes": ["webhook"],
+          "default": "webhook"
+        },
+        "capabilities": {
+          "edit": false,
+          "card": false,
+          "thread": false,
+          "attachment": false
+        },
+        "credentials": {
+          "required": [],
+          "optional": [],
+          "exposes": []
+        },
+        "limits": {
+          "textChars": 1,
+          "cardBytes": 1,
+          "editWindowMs": 0
+        },
+        "events": {
+          "supported": ["message"]
+        }
+      },
+      "invalid": [
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          },
+          "unknown_field": true
+        },
+        {
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          }
+        },
+        {
+          "id": 7,
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "invalid !",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": 7,
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": 7,
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook",
+            "unknown_field": true
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"]
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": {},
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": [],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": [7],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["invalid !"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": 7
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "invalid !"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false,
+            "unknown_field": true
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": "false",
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": "false",
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": "false",
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": "false"
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": [],
+            "unknown_field": true
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": {},
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": {},
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": {}
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0,
+            "unknown_field": true
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": "1",
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1.5,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 0,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": "1",
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1.5,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 0,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": "1"
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 1.5
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": -1
+          },
+          "events": {
+            "supported": ["message"]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["message"],
+            "unknown_field": true
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {}
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": {}
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": [7]
+          }
+        },
+        {
+          "id": "fixture",
+          "displayName": "Fixture",
+          "version": "0.1.0",
+          "connection": {
+            "modes": ["webhook"],
+            "default": "webhook"
+          },
+          "capabilities": {
+            "edit": false,
+            "card": false,
+            "thread": false,
+            "attachment": false
+          },
+          "credentials": {
+            "required": [],
+            "optional": [],
+            "exposes": []
+          },
+          "limits": {
+            "textChars": 1,
+            "cardBytes": 1,
+            "editWindowMs": 0
+          },
+          "events": {
+            "supported": ["invalid !"]
+          }
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "JwtCredential": {
+      "valid": {
+        "kind": "jwt",
+        "token": "fixture-token"
+      },
+      "invalid": [
+        {
+          "kind": "jwt",
+          "token": "fixture-token",
+          "unknown_field": true
+        },
+        {
+          "token": "fixture-token"
+        },
+        {
+          "kind": "jwt"
+        },
+        {
+          "kind": 7,
+          "token": "fixture-token"
+        },
+        {
+          "kind": "invalid !",
+          "token": "fixture-token"
+        },
+        {
+          "kind": "jwt",
+          "token": 7
+        },
+        {
+          "kind": "jwt",
+          "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "SourceAuthCredential": {
+      "valid": {
+        "kind": "source-auth",
+        "timestamp": 0,
+        "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+        "nonce": "00000000000000000000000000000000"
+      },
+      "invalid": [
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "00000000000000000000000000000000",
+          "unknown_field": true
+        },
+        {
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "kind": 7,
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "invalid !",
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": "1",
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 1.5,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": 7,
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "invalid !",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": 7
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "invalid !"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "PortalIdentityCredential": {
+      "valid": {
+        "kind": "portal-identity",
+        "token": "fixture-token"
+      },
+      "invalid": [
+        {
+          "kind": "portal-identity",
+          "token": "fixture-token",
+          "unknown_field": true
+        },
+        {
+          "token": "fixture-token"
+        },
+        {
+          "kind": "portal-identity"
+        },
+        {
+          "kind": 7,
+          "token": "fixture-token"
+        },
+        {
+          "kind": "invalid !",
+          "token": "fixture-token"
+        },
+        {
+          "kind": "portal-identity",
+          "token": 7
+        },
+        {
+          "kind": "portal-identity",
+          "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "LocalCredential": {
+      "valid": {
+        "kind": "local"
+      },
+      "invalid": [
+        {
+          "kind": "local",
+          "unknown_field": true
+        },
+        {},
+        {
+          "kind": 7
+        },
+        {
+          "kind": "invalid !"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "SurfaceAuthCredential": {
+      "valid": {
+        "kind": "surface",
+        "sourceId": "reports",
+        "source": {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "00000000000000000000000000000000"
+        },
+        "subject": {
+          "kind": "portal-identity",
+          "token": "fixture-token"
+        }
+      },
+      "invalid": [
+        {
+          "kind": "surface",
+          "sourceId": "reports",
+          "subject": { "kind": "portal-identity", "token": "fixture-token" }
+        },
+        {
+          "kind": "surface",
+          "sourceId": "reports",
+          "source": {
+            "kind": "source-auth",
+            "timestamp": 0,
+            "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+            "nonce": "00000000000000000000000000000000"
+          }
+        },
+        {
+          "kind": "surface",
+          "sourceId": "../reports",
+          "source": {
+            "kind": "source-auth",
+            "timestamp": 0,
+            "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+            "nonce": "00000000000000000000000000000000"
+          },
+          "subject": { "kind": "jwt", "token": "fixture-token" }
+        },
+        {
+          "kind": "surface",
+          "sourceId": "reports",
+          "source": {
+            "kind": "source-auth",
+            "timestamp": 0,
+            "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+            "nonce": "00000000000000000000000000000000"
+          },
+          "subject": { "kind": "local" }
+        }
+      ],
+      "note": "Surface auth requires both its configured source proof and a user subject credential"
+    },
+    "Auth": {
+      "valid": {
+        "kind": "local"
+      },
+      "invalid": [
+        {},
+        {
+          "kind": "sso"
+        },
+        {
+          "kind": "jwt"
+        },
+        {
+          "kind": "local",
+          "token": "x"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "invalid",
+          "nonce": "00000000000000000000000000000000"
+        },
+        {
+          "kind": "source-auth",
+          "timestamp": 0,
+          "signature": "v0=0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce": "x"
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "ChannelCredential": {
+      "valid": {
+        "kind": "channel",
+        "channel": "fixture",
+        "accountId": "account",
+        "userId": "user",
+        "chatId": "chat",
+        "chatType": "dm",
+        "raw": {
+          "label": "untrusted"
+        }
+      },
+      "invalid": [
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          },
+          "unknown_field": true
+        },
+        {
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": 7,
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "invalid !",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": 7,
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": 7,
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": 7,
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": 7,
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "chatType": "dm",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": 7,
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "invalid !",
+          "raw": {
+            "label": "untrusted"
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": 7
+          }
+        },
+        {
+          "kind": "channel",
+          "channel": "fixture",
+          "accountId": "account",
+          "userId": "user",
+          "chatId": "chat",
+          "chatType": "dm",
+          "raw": {
+            "label": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    }
+  },
+  "bridge": {
+    "JsonValue": {
+      "valid": {
+        "fixture": [null, false, 0]
+      },
+      "invalid": [],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "BridgeMethod": {
+      "valid": "bridge.tools.invoke",
+      "invalid": ["bridge.unknown", "tools.invoke", null],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "BridgeRequest": {
+      "valid": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "bridge.tools.invoke",
+        "params": {
+          "name": "read_file",
+          "args": {}
+        }
+      },
+      "invalid": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "bridge.unknown",
+          "params": {
+            "name": "read_file",
+            "args": {}
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "bridge.tools.invoke",
+          "params": {}
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "bridge.tools.invoke",
+          "params": {
+            "name": "not valid",
+            "args": {}
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "bridge.tools.invoke",
+          "params": {
+            "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "args": {}
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "bridge.tools.invoke",
+          "params": {
+            "name": "valid"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "bridge.tools.invoke",
+          "params": {
+            "name": "read_file",
+            "args": {}
+          },
+          "result": {}
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": null,
+          "method": "bridge.tools.invoke",
+          "params": {
+            "name": "read_file",
+            "args": {}
+          }
+        },
+        {
+          "jsonrpc": "1.0",
+          "id": 1,
+          "method": "bridge.tools.invoke",
+          "params": {
+            "name": "read_file",
+            "args": {}
+          }
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "BridgeResponse": {
+      "valid": {
+        "jsonrpc": "2.0",
+        "id": null,
+        "error": {
+          "code": 1003,
+          "message": "capability required"
+        }
+      },
+      "invalid": [
+        {
+          "jsonrpc": "2.0",
+          "id": null,
+          "error": {
+            "code": 1003,
+            "message": "capability required"
+          },
+          "result": {}
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": null,
+          "error": {
+            "code": 1006,
+            "message": "invalid"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": null,
+          "error": {
+            "code": 1003,
+            "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": null,
+          "result": {}
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    },
+    "ToolsInvokeParams": {
+      "valid": {
+        "name": "read_file",
+        "args": {}
+      },
+      "invalid": [
+        {
+          "name": "read_file",
+          "args": {},
+          "unknown_field": true
+        },
+        {
+          "args": {}
+        },
+        {
+          "name": "read_file"
+        },
+        {
+          "name": 7,
+          "args": {}
+        },
+        {
+          "name": "invalid !",
+          "args": {}
+        }
+      ],
+      "note": "Task21 explicit required, closed object, scalar and nested boundary examples"
+    }
+  }
+}

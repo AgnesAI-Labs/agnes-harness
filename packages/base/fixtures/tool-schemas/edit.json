@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "path": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "edits": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "oldText": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "newText": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "oldText",
+          "newText"
+        ]
+      }
+    }
+  },
+  "required": [
+    "path",
+    "edits"
+  ]
+}

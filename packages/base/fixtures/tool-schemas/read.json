@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "path": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "offset": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "limit": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "path"
+  ]
+}

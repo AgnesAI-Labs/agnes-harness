@@ -1,0 +1,43 @@
+name: enterprise
+schemaVersion: 1
+packages:
+  - { id: "@agnes/ai", source: "builtin" }
+  - { id: "@agnes/base", source: "builtin" }
+  - { id: "@agnes/enterprise", source: "builtin" }
+  - { id: "@agnes/connector-db", source: "builtin" }
+  - { id: "@agnes/connector-kb", source: "builtin" }
+seams:
+  approval: "@agnes/base"
+  checkpoint: "@agnes/base"
+  ledger: "@agnes/base"
+  sandbox: "@agnes/base"
+  verifier: "@agnes/base"
+  repair: "@agnes/base"
+  artifacts: "@agnes/base"
+  principals: "@agnes/enterprise"
+  platform: "@agnes/host"
+  harness: "@agnes/base"
+provider:
+  package: "@agnes/ai"
+  adapters: ["@agnes/ai"]
+adapters:
+  storage: sqlite
+  fs: local
+  exec: local
+  platform: host
+  secrets: { kind: file, path: /etc/agnes/secrets }
+transports:
+  - { kind: unix }
+dataDir: /var/lib/agnes
+cacheDir: /var/cache/agnes
+limits: { "jobs.tick_ms": 1000, "shutdown.grace_ms": 10000, "sandbox.required": 1 }
+computerUse:
+  enabled: false
+  appAccess: allowlist
+  appAllowlist: []
+  capture: { allowFullDesktop: false, maxImageDimension: 1456, maxBytesPerImage: 4194304, maxImagesPerResult: 1, maxImagesPerMutationResult: 2, maxImagesPerModelRequest: 4, maxCapturesPerHour: 120 }
+  retention: { maxRecentPerSession: 100, ttlMs: 86400000, gcIntervalMs: 3600000, maxExtendedTtlMs: 604800000, globalMaxBytes: 1073741824 }
+presets: { default: standard, allowed: [standard] }
+policy:
+  capabilityCeiling: ["tools", "hooks", "slots", "events", "resources", "ui", "network", "artifacts", "subagent"]
+  workspacePackages: require-project-trust

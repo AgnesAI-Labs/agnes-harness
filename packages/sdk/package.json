@@ -1,0 +1,34 @@
+{
+  "name": "@agnes/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "browser": "./src/index.browser.ts",
+      "default": "./src/index.node.ts"
+    },
+    "./browser": "./src/index.browser.ts",
+    "./surface": {
+      "browser": "./src/surface.browser.ts",
+      "default": "./src/surface.node.ts"
+    },
+    "./composer-selection": "./src/composer-selection.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/package-admin-client-node": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/resource-control-client-node": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1",
+    "esbuild": "0.28.2"
+  },
+  "license": "Apache-2.0"
+}

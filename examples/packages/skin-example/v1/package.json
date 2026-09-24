@@ -1,0 +1,22 @@
+{
+  "name": "@agnes-examples/skin-example",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:examples/skin-example/main",
+        "runtime": "in-process"
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:examples/skin-example/main",
+        "path": "./extensions/main/agnes.client.json"
+      }
+    ]
+  },
+  "exports": "./index.mjs"
+}

@@ -1,0 +1,19 @@
+{
+  "package": "acme/dashboard",
+  "surfaceId": "dashboard",
+  "mount": "/dashboard",
+  "sourceId": "customer",
+  "config": {
+    "title": "Recovery fixture"
+  },
+  "secrets": {
+    "upstream": "secret://customer/dashboard-upstream"
+  },
+  "grants": [
+    {
+      "extension": "plugin/6a629743672f8122",
+      "name": "data.read",
+      "range": "^2.0"
+    }
+  ]
+}

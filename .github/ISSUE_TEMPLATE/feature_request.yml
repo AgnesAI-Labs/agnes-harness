@@ -1,0 +1,33 @@
+name: 场景与建议 / Use case or suggestion
+description: 分享你希望用 AGH 完成的工作 / Tell us what you want to build with AGH.
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎把你的场景带进来！请先搜索已有建议，用具体任务说明需求。中文或英文均可。
+        Bring your use case to AGH. Search existing suggestions and describe a concrete task; Chinese and English are welcome.
+
+        反馈不需要提交代码。当前代码与文档 PR 仅限受邀内部开发者；建议会用于讨论，不代表已承诺开发排期。
+        Feedback does not require code. PRs remain limited to invited internal developers; suggestions inform discussion, not a committed delivery date.
+  - type: textarea
+    id: goal
+    attributes:
+      label: 使用场景 / Use case
+      description: 你希望用 AGH 完成什么任务？ / What task would you like to complete with AGH?
+    validations:
+      required: true
+  - type: textarea
+    id: need
+    attributes:
+      label: 当前困难与期望 / Current difficulty and desired outcome
+      description: 目前在哪里卡住，怎样的结果会帮助你？ / Where are you blocked, and what outcome would help?
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: 想法与已有尝试 / Ideas and alternatives
+      description: 可选：考虑过的方案、尝试过的插件或相关公开资料。 / Optional approaches, plugins you have tried, or public references.
+    validations:
+      required: false

@@ -1,0 +1,23 @@
+{
+  "name": "@agnes-examples/client-service-panel",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": "./extensions/main/index.mjs",
+  "private": true,
+  "agnes": {
+    "plugins": [
+      {
+        "export": "runtime",
+        "id": "ext:examples/client-service-panel/runtime",
+        "runtime": "in-process"
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:examples/client-service-panel/runtime",
+        "path": "./extensions/main/agnes.client.json"
+      }
+    ]
+  }
+}

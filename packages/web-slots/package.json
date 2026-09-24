@@ -1,0 +1,15 @@
+{
+  "name": "@agnes/web-slots",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "React-free declaration and lifecycle kernel for Agnes browser slots",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "license": "Apache-2.0"
+}

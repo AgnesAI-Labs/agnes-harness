@@ -1,0 +1,1148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/profile.json",
+  "title": "Profile shapes (\u89c4\u683c \u00a718.2)",
+  "$defs": {
+    "Capability": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9.-]{0,63}$"
+    },
+    "ApprovalMode": {
+      "enum": ["manual", "smart", "off"]
+    },
+    "ApprovalProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/ApprovalMode"
+        }
+      }
+    },
+    "SeamName": {
+      "enum": [
+        "approval",
+        "checkpoint",
+        "ledger",
+        "sandbox",
+        "verifier",
+        "repair",
+        "artifacts",
+        "principals",
+        "platform",
+        "harness"
+      ]
+    },
+    "PackageRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(@[a-z0-9-]+/)?[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "tombstone": {
+          "type": "boolean"
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      }
+    },
+    "SecretRef": {
+      "type": "string",
+      "pattern": "^secret://[a-z0-9-]+/[a-z0-9._-]+$"
+    },
+    "Transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["stdio", "unix", "ws-tls"]
+        },
+        "path": {
+          "type": "string"
+        },
+        "listen": {
+          "type": "string"
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cert": {
+              "$ref": "#/$defs/SecretRef"
+            },
+            "key": {
+              "$ref": "#/$defs/SecretRef"
+            }
+          }
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sourceAuthSecrets": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/SecretRef"
+              }
+            },
+            "rotationGraceMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "jwt": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "issuer": {
+                  "type": "string"
+                },
+                "jwks": {
+                  "type": "string"
+                },
+                "secret": {
+                  "$ref": "#/$defs/SecretRef"
+                }
+              }
+            }
+          }
+        },
+        "artifactsUrl": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      }
+    },
+    "Policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capabilityCeiling": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Capability"
+          }
+        },
+        "workspacePackages": {
+          "enum": ["deny", "require-project-trust"]
+        }
+      }
+    },
+    "ComputerUseAppIdentity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "executablePath", "publisherSha256"],
+          "properties": {
+            "platform": {
+              "const": "win32"
+            },
+            "executablePath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "publisherSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "executablePath", "packageFamilyName"],
+          "properties": {
+            "platform": {
+              "const": "win32"
+            },
+            "executablePath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "packageFamilyName": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 255
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "bundleId", "teamId", "signatureSha256"],
+          "properties": {
+            "platform": {
+              "const": "darwin"
+            },
+            "bundleId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "teamId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "signatureSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "desktopId", "executablePath", "installSource"],
+          "properties": {
+            "platform": {
+              "const": "linux"
+            },
+            "desktopId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "executablePath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "installSource": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          }
+        }
+      ]
+    },
+    "ComputerUseCapturePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowFullDesktop": {
+          "type": "boolean"
+        },
+        "maxImageDimension": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 1456
+        },
+        "maxBytesPerImage": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 4194304
+        },
+        "maxImagesPerResult": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1
+        },
+        "maxImagesPerMutationResult": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        },
+        "maxImagesPerModelRequest": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "maxCapturesPerHour": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        }
+      }
+    },
+    "ComputerUseRetentionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxRecentPerSession": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "ttlMs": {
+          "type": "integer",
+          "minimum": 60000,
+          "maximum": 604800000
+        },
+        "gcIntervalMs": {
+          "type": "integer",
+          "minimum": 60000,
+          "maximum": 3600000
+        },
+        "maxExtendedTtlMs": {
+          "type": "integer",
+          "minimum": 60000,
+          "maximum": 604800000
+        },
+        "globalMaxBytes": {
+          "type": "integer",
+          "minimum": 4194304,
+          "maximum": 1073741824
+        }
+      }
+    },
+    "ComputerUseProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "appAccess": {
+          "enum": ["allowlist", "all"]
+        },
+        "appAllowlist": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/ComputerUseAppIdentity"
+          }
+        },
+        "capture": {
+          "$ref": "#/$defs/ComputerUseCapturePolicy"
+        },
+        "retention": {
+          "$ref": "#/$defs/ComputerUseRetentionPolicy"
+        }
+      }
+    },
+    "ComputerUseRestriction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "const": false
+        },
+        "appAccess": {
+          "const": "allowlist"
+        },
+        "appAllowlist": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/ComputerUseAppIdentity"
+          }
+        },
+        "capture": {
+          "$ref": "#/$defs/ComputerUseCapturePolicy"
+        },
+        "retention": {
+          "$ref": "#/$defs/ComputerUseRetentionPolicy"
+        }
+      }
+    },
+    "ResolvedComputerUseProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "appAccess", "appAllowlist", "capture", "retention"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "appAccess": {
+          "enum": ["allowlist", "all"]
+        },
+        "appAllowlist": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/ComputerUseAppIdentity"
+          }
+        },
+        "capture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "allowFullDesktop",
+            "maxImageDimension",
+            "maxBytesPerImage",
+            "maxImagesPerResult",
+            "maxImagesPerMutationResult",
+            "maxImagesPerModelRequest",
+            "maxCapturesPerHour"
+          ],
+          "properties": {
+            "allowFullDesktop": {
+              "type": "boolean"
+            },
+            "maxImageDimension": {
+              "type": "integer",
+              "minimum": 8,
+              "maximum": 1456
+            },
+            "maxBytesPerImage": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 4194304
+            },
+            "maxImagesPerResult": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "maxImagesPerMutationResult": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2
+            },
+            "maxImagesPerModelRequest": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4
+            },
+            "maxCapturesPerHour": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120
+            }
+          }
+        },
+        "retention": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxRecentPerSession", "ttlMs", "gcIntervalMs", "maxExtendedTtlMs", "globalMaxBytes"],
+          "properties": {
+            "maxRecentPerSession": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "ttlMs": {
+              "type": "integer",
+              "minimum": 60000,
+              "maximum": 604800000
+            },
+            "gcIntervalMs": {
+              "type": "integer",
+              "minimum": 60000,
+              "maximum": 3600000
+            },
+            "maxExtendedTtlMs": {
+              "type": "integer",
+              "minimum": 60000,
+              "maximum": 604800000
+            },
+            "globalMaxBytes": {
+              "type": "integer",
+              "minimum": 4194304,
+              "maximum": 1073741824
+            }
+          }
+        }
+      }
+    },
+    "RuntimeProfileManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "extends": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PackageRef"
+          }
+        },
+        "seams": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "approval": {
+              "type": "string"
+            },
+            "checkpoint": {
+              "type": "string"
+            },
+            "ledger": {
+              "type": "string"
+            },
+            "sandbox": {
+              "type": "string"
+            },
+            "verifier": {
+              "type": "string"
+            },
+            "repair": {
+              "type": "string"
+            },
+            "artifacts": {
+              "type": "string"
+            },
+            "principals": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "harness": {
+              "type": "string"
+            }
+          }
+        },
+        "provider": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["package"],
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "adapters": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RouteDecl"
+              }
+            },
+            "catalog": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["include"],
+              "properties": {
+                "include": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "contract": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dir", "contractIds"],
+              "properties": {
+                "dir": {
+                  "type": "string"
+                },
+                "contractIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "adapters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "storage": {
+              "type": "string"
+            },
+            "fs": {
+              "type": "string"
+            },
+            "exec": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "secrets": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": {
+                "kind": {
+                  "enum": ["file", "env", "vault"]
+                },
+                "path": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "transports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Transport"
+          }
+        },
+        "dataDir": {
+          "type": "string"
+        },
+        "cacheDir": {
+          "type": "string"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "presets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "type": "string"
+            },
+            "allowed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy"
+        },
+        "reconcile": {
+          "$ref": "#/$defs/ReconcilePolicy"
+        },
+        "approvals": {
+          "$ref": "#/$defs/ApprovalProfile"
+        },
+        "computerUse": {
+          "$ref": "#/$defs/ComputerUseProfile"
+        },
+        "extensionIsolation": {
+          "$ref": "#/$defs/ExtensionIsolationPolicy"
+        },
+        "commandHooks": {
+          "$ref": "#/$defs/CommandHooksPolicy"
+        }
+      }
+    },
+    "ProfileFragment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approvals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {
+              "enum": ["manual", "smart"]
+            }
+          }
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "source"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^(@[a-z0-9-]+/)?[a-z0-9][a-z0-9._-]{0,127}$"
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "version": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "tombstone": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "capabilityCeiling": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Capability"
+              }
+            }
+          }
+        },
+        "extensionIsolation": {
+          "$ref": "#/$defs/ExtensionIsolationRequest"
+        },
+        "computerUse": {
+          "$ref": "#/$defs/ComputerUseRestriction"
+        }
+      }
+    },
+    "ManagedPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "policy"],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy"
+        },
+        "packagesDeny": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "extensionIsolation": {
+          "$ref": "#/$defs/ExtensionIsolationPolicy"
+        }
+      }
+    },
+    "ResolvedProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "schemaVersion",
+        "chain",
+        "packages",
+        "seams",
+        "provider",
+        "adapters",
+        "transports",
+        "dataDir",
+        "cacheDir",
+        "limits",
+        "presets",
+        "policy",
+        "computerUse",
+        "hash",
+        "reconcile"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "chain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "version", "source", "integrity", "trust", "enabled"],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "integrity": {
+                "type": "string"
+              },
+              "trust": {
+                "enum": ["builtin", "trusted"]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "provides": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/SeamName"
+                }
+              },
+              "config": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/JsonValue"
+                }
+              }
+            }
+          }
+        },
+        "seams": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "approval",
+            "checkpoint",
+            "ledger",
+            "sandbox",
+            "verifier",
+            "repair",
+            "artifacts",
+            "principals",
+            "platform",
+            "harness"
+          ],
+          "properties": {
+            "approval": {
+              "type": "string"
+            },
+            "checkpoint": {
+              "type": "string"
+            },
+            "ledger": {
+              "type": "string"
+            },
+            "sandbox": {
+              "type": "string"
+            },
+            "verifier": {
+              "type": "string"
+            },
+            "repair": {
+              "type": "string"
+            },
+            "artifacts": {
+              "type": "string"
+            },
+            "principals": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "harness": {
+              "type": "string"
+            }
+          }
+        },
+        "provider": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["package", "adapters"],
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "adapters": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RouteDecl"
+              }
+            },
+            "catalog": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["include"],
+              "properties": {
+                "include": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "contract": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dir", "contractIds"],
+              "properties": {
+                "dir": {
+                  "type": "string"
+                },
+                "contractIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "adapters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["storage", "fs", "exec", "platform", "secrets"],
+          "properties": {
+            "storage": {
+              "type": "string"
+            },
+            "fs": {
+              "type": "string"
+            },
+            "exec": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "secrets": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": {
+                "kind": {
+                  "enum": ["file", "env", "vault"]
+                },
+                "path": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "transports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Transport"
+          }
+        },
+        "dataDir": {
+          "type": "string"
+        },
+        "cacheDir": {
+          "type": "string"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "presets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["default", "allowed"],
+          "properties": {
+            "default": {
+              "type": "string"
+            },
+            "allowed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capabilityCeiling", "workspacePackages"],
+          "properties": {
+            "capabilityCeiling": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Capability"
+              }
+            },
+            "workspacePackages": {
+              "enum": ["deny", "require-project-trust"]
+            }
+          }
+        },
+        "reconcile": {
+          "$ref": "#/$defs/ReconcilePolicy"
+        },
+        "approvals": {
+          "$ref": "#/$defs/ApprovalProfile"
+        },
+        "computerUse": {
+          "$ref": "#/$defs/ResolvedComputerUseProfile"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "enum": ["python", "typescript"]
+          }
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "extensionIsolation": {
+          "$ref": "#/$defs/ExtensionIsolationPolicy"
+        },
+        "commandHooks": {
+          "$ref": "#/$defs/CommandHooksPolicy"
+        }
+      }
+    },
+    "RouteDecl": {
+      "$ref": "model.json#/$defs/RouteDecl"
+    },
+    "DecodeRule": {
+      "$ref": "model.json#/$defs/DecodeRule"
+    },
+    "JsonValue": {
+      "$ref": "model.json#/$defs/JsonValue"
+    },
+    "ModelCost": {
+      "$ref": "model.json#/$defs/ModelCost"
+    },
+    "ModelRecord": {
+      "$ref": "model.json#/$defs/ModelRecord"
+    },
+    "SlotName": {
+      "$ref": "model.json#/$defs/SlotName"
+    },
+    "ExtensionIsolationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extensions"],
+      "properties": {
+        "backend": {
+          "enum": ["auto", "seatbelt", "bwrap", "restricted-token"]
+        },
+        "extensions": {
+          "type": "object",
+          "maxProperties": 128,
+          "propertyNames": {
+            "pattern": "^(?=.{1,256}$)[a-z0-9-]+/[a-z0-9-]+$"
+          },
+          "additionalProperties": {
+            "enum": ["off", "preferred", "required"]
+          }
+        }
+      }
+    },
+    "ExtensionIsolationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extensions"],
+      "properties": {
+        "extensions": {
+          "type": "object",
+          "maxProperties": 128,
+          "propertyNames": {
+            "pattern": "^(?=.{1,256}$)[a-z0-9-]+/[a-z0-9-]+$"
+          },
+          "additionalProperties": {
+            "enum": ["preferred", "required"]
+          }
+        }
+      }
+    },
+    "CommandHookGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "configDigest", "workspaceRoot"],
+      "properties": {
+        "source": {
+          "enum": ["data", "workspace"]
+        },
+        "configDigest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
+        "workspaceRoot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32767,
+          "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\(?![.?][\\\\/])[^\\\\/]+[\\\\/][^\\\\/]+(?:[\\\\/]|$))[^\\u0000-\\u001f\\u007f]*$"
+        }
+      }
+    },
+    "CommandHooksPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trustedUnconfined"],
+      "properties": {
+        "trustedUnconfined": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/CommandHookGrant"
+          }
+        }
+      }
+    },
+    "ReconcilePoint": {
+      "enum": ["immediate", "turn", "step"]
+    },
+    "ReconcilePolicy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["point"],
+          "properties": {
+            "point": {
+              "const": "immediate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["point"],
+          "properties": {
+            "point": {
+              "enum": ["turn", "step"]
+            },
+            "maxWaitMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          }
+        }
+      ]
+    }
+  }
+}

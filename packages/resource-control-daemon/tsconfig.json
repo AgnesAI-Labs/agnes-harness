@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "dist" },
+  "include": ["**/*.ts"],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    { "path": "../system-node" },
+    { "path": "../../tsconfig.config.json" },
+    { "path": "../package-manager" },
+    { "path": "../protocol" },
+    { "path": "../resource-control-store" }
+  ]
+}

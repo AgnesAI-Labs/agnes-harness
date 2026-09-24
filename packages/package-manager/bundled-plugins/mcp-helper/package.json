@@ -1,0 +1,28 @@
+{
+  "name": "@agnes/mcp-helper",
+  "version": "0.1.0",
+  "description": "Connect MCP servers to Agnes Harness through approved host requests",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "mcpHelper",
+        "id": "ext:mcp-helper/main",
+        "inject": [
+          "extension"
+        ]
+      }
+    ]
+  }
+}

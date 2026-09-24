@@ -1,0 +1,11 @@
+{
+  "name": "@agnes-examples/skin-example-broken",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "agnes": {
+    "extensions": [
+      "./extensions/main"
+    ]
+  }
+}

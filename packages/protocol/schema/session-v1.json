@@ -1,0 +1,2387 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/session-v1.json",
+  "title": "agnes-session/v1",
+  "x-agnes-data": {
+    "session/start": "SessionStart",
+    "turn/start": "TurnStart",
+    "turn/end": "TurnEnd",
+    "step/start": "StepStart",
+    "step/end": "StepEnd",
+    "user/message": "UserMessage",
+    "assistant/message": "AssistantMessage",
+    "tool/result": "ToolResult",
+    "tool/call": "ToolCall",
+    "request/header": "RequestHeader",
+    "request/sent": "RequestSent",
+    "op.state": "OpState",
+    "assistant/output": "AssistantOutput",
+    "plan.items": "PlanItems",
+    "budget.state": "BudgetState",
+    "artifact/job": "ArtifactJob",
+    "inbox": "Inbox",
+    "harness/entry": "HarnessEntry",
+    "effect/intent": "EffectIntent",
+    "effect/settled": "EffectSettled",
+    "verifier/signal": "VerifierSignal",
+    "repair/decision": "RepairDecision",
+    "format/deviation": "FormatDeviation",
+    "cost/ledger": "CostLedger",
+    "approval/asked": "ApprovalAsked",
+    "approval/decided": "ApprovalDecided",
+    "approval/guardian-decided": "ApprovalGuardianDecision",
+    "feedback/rating": "FeedbackRating",
+    "feedback/implicit": "FeedbackImplicit",
+    "participant": "Participant",
+    "harness/refine": "HarnessRefine",
+    "subagent/cost": "SubagentCost"
+  },
+  "$ref": "#/$defs/EventEnvelope",
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "array", "items": { "$ref": "#/$defs/JsonValue" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } }
+      ]
+    },
+    "Actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "org", "role", "deptPath", "attrs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "org": { "type": "string", "maxLength": 256 },
+        "role": { "type": "string", "maxLength": 64 },
+        "deptPath": { "type": "array", "items": { "type": "string", "maxLength": 256 } },
+        "attrs": { "type": "object", "additionalProperties": { "type": "string", "maxLength": 1024 } }
+      }
+    },
+    "ContentBlock": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "text"],
+          "properties": { "type": { "const": "text" }, "text": { "type": "string", "maxLength": 1048576 } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "data", "mimeType"],
+          "properties": {
+            "type": { "const": "image" },
+            "data": { "type": "string" },
+            "mimeType": { "type": "string", "maxLength": 128 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "uri"],
+          "properties": {
+            "type": { "const": "resource_link" },
+            "uri": { "type": "string", "maxLength": 4096 },
+            "name": { "type": "string", "maxLength": 256 },
+            "mimeType": { "type": "string", "maxLength": 128 }
+          }
+        }
+      ]
+    },
+    "SurfaceOp": {
+      "oneOf": [
+        { "const": "append" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "start", "end"],
+          "properties": {
+            "op": { "const": "replace" },
+            "start": { "type": "integer", "minimum": 1 },
+            "end": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "EventEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "ts", "id", "type", "data", "actor", "origin", "trust"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "ts": { "type": "string", "format": "date-time" },
+        "id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+        "type": {
+          "type": "string",
+          "maxLength": 128,
+          "anyOf": [
+            {
+              "enum": [
+                "session/start",
+                "turn/start",
+                "turn/end",
+                "step/start",
+                "step/end",
+                "user/message",
+                "assistant/message",
+                "tool/result",
+                "assistant/output",
+                "tool/call",
+                "request/header",
+                "request/sent",
+                "op.state",
+                "plan.items",
+                "budget.state",
+                "artifact/job",
+                "inbox",
+                "harness/entry",
+                "effect/intent",
+                "effect/settled",
+                "verifier/signal",
+                "repair/decision",
+                "format/deviation",
+                "cost/ledger",
+                "approval/asked",
+                "approval/decided",
+                "approval/guardian-decided",
+                "feedback/rating",
+                "feedback/implicit",
+                "participant",
+                "harness/refine",
+                "subagent/cost"
+              ]
+            },
+            {
+              "pattern": "^x\\/(?:(?:core|agnes)\\/[a-z0-9-]+|host\\/session-title|[a-z0-9-]+\\/[a-z0-9-]+\\/[a-z0-9-]+)$"
+            }
+          ]
+        },
+        "data": { "$ref": "#/$defs/JsonValue" },
+        "actor": { "$ref": "#/$defs/Actor" },
+        "origin": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^(principal|model|system|memory|tool:[^\\s]+|external:[^\\s]+|skill:[^\\s]+|subagent:[^\\s]+|ext:[^\\s]+|import:[^\\s]+)$"
+        },
+        "trust": { "enum": ["trusted", "untrusted"] },
+        "lane": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "v": { "type": "integer", "minimum": 1 },
+        "register": { "type": "string", "maxLength": 128 },
+        "ignorable": { "const": true },
+        "surfaceOp": { "$ref": "#/$defs/SurfaceOp" },
+        "sourceEventSeqs": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+      }
+    },
+    "SessionStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "resolvedProfileHash", "preset", "agnesVersion"],
+      "properties": {
+        "key": { "type": "string", "maxLength": 512 },
+        "resolvedProfileHash": { "type": ["string", "null"], "maxLength": 128 },
+        "preset": { "type": ["string", "null"], "maxLength": 128 },
+        "agnesVersion": { "type": "string", "maxLength": 64 },
+        "parent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["key", "boundarySeq"],
+          "properties": {
+            "key": { "type": "string", "maxLength": 512 },
+            "boundarySeq": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "imported": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "sourceId", "cwd"],
+          "properties": {
+            "source": { "enum": ["claude-code", "codex", "pi"] },
+            "sourceId": { "type": "string", "maxLength": 256 },
+            "cwd": { "type": "string", "maxLength": 4096 }
+          }
+        },
+        "presetId": { "type": ["string", "null"], "maxLength": 128 },
+        "resolvedPresetHash": { "type": ["string", "null"], "maxLength": 128 },
+        "platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "os": { "type": "string", "maxLength": 32 },
+            "arch": { "type": "string", "maxLength": 32 },
+            "shell": { "type": "string", "maxLength": 32 }
+          }
+        },
+        "delegation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "creationId", "rootTaskId", "generationDepth"],
+          "properties": {
+            "kind": { "enum": ["fork", "spawn"] },
+            "creationId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "rootTaskId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "generationDepth": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "SubagentCost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["childKey", "originSessionKey", "originCostSeq", "settlementRevision"],
+      "properties": {
+        "childKey": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "originSessionKey": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "originCostSeq": { "type": "integer", "minimum": 1 },
+        "settlementRevision": { "type": "integer", "minimum": 1 },
+        "credits": { "type": "number", "minimum": 0 },
+        "creditSource": { "enum": ["gateway", "estimated", "unknown"] },
+        "complete": { "type": "boolean" }
+      }
+    },
+    "TurnStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turn", "trigger"],
+      "properties": {
+        "turn": { "type": "integer", "minimum": 1 },
+        "trigger": { "enum": ["prompt", "steer", "follow_up", "job", "approval-resume"] },
+        "continues": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["turn", "step"],
+          "properties": {
+            "turn": { "type": "integer" },
+            "step": { "type": "integer" },
+            "toolUseId": { "type": "string", "maxLength": 128 },
+            "requestId": { "type": "string", "maxLength": 128 }
+          }
+        }
+      }
+    },
+    "TurnEnd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "lastAssistantSeq"],
+      "properties": {
+        "reason": {
+          "enum": ["completed", "aborted", "error", "parked", "blocked", "budget", "max_steps", "interrupted"]
+        },
+        "lastAssistantSeq": { "type": ["integer", "null"], "minimum": 1 },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "string", "maxLength": 64 },
+            "message": { "type": "string", "maxLength": 4096 }
+          }
+        }
+      }
+    },
+    "StepStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turn", "step"],
+      "properties": {
+        "turn": { "type": "integer", "minimum": 1 },
+        "step": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "StepEnd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turn", "step"],
+      "properties": {
+        "turn": { "type": "integer", "minimum": 1 },
+        "step": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "UserMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content"],
+      "properties": {
+        "content": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ContentBlock" } },
+        "kind": { "enum": ["prompt", "steer", "follow_up", "runtime_context"] }
+      }
+    },
+    "AssistantMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "stopReason"],
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["type", "text"],
+                "properties": { "type": { "const": "text" }, "text": { "type": "string" } }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["type", "text"],
+                "properties": { "type": { "const": "thinking" }, "text": { "type": "string" } }
+              }
+            ]
+          }
+        },
+        "stopReason": { "enum": ["end_turn", "tool_use", "max_tokens", "refusal", "error"] },
+        "requestSeq": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ResolvedToolCallPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isReadOnly",
+        "isDestructive",
+        "replay",
+        "requiresApproval",
+        "approvalScopes",
+        "policyVersion"
+      ],
+      "properties": {
+        "isReadOnly": { "type": "boolean" },
+        "isDestructive": { "type": "boolean" },
+        "isConcurrencySafe": { "type": "boolean" },
+        "isOpenWorld": { "type": "boolean" },
+        "replay": { "enum": ["safe", "never", "idempotent"] },
+        "requiresApproval": { "enum": ["never", "destructive", "always"] },
+        "approvalScopes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"
+          }
+        },
+        "policyVersion": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"
+        }
+      }
+    },
+    "ExecutionDomain": {
+      "enum": ["workspace", "host-computer-use"]
+    },
+    "DispatchPhase": {
+      "enum": ["not_sent", "may_have_sent", "responded"]
+    },
+    "ToolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolUseId", "name", "args", "ordinal"],
+      "properties": {
+        "toolUseId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+        "args": { "$ref": "#/$defs/JsonValue" },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "depth": { "type": "integer", "minimum": 0 },
+        "parentEffectId": { "type": "string", "maxLength": 128 },
+        "resolvedPolicy": { "$ref": "#/$defs/ResolvedToolCallPolicy" },
+        "executionDomain": { "$ref": "#/$defs/ExecutionDomain" },
+        "definitionFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "policyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "dependentRequired": {
+        "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+        "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+        "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+        "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+      }
+    },
+    "ToolResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolUseId", "content", "isError", "enforcement", "authz"],
+      "properties": {
+        "toolUseId": { "type": "string", "maxLength": 128 },
+        "content": { "type": "array", "items": { "$ref": "#/$defs/ContentBlock" } },
+        "structured": { "$ref": "#/$defs/JsonValue" },
+        "isError": { "type": "boolean" },
+        "code": { "type": "string", "maxLength": 64 },
+        "enforcement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "scope"],
+          "properties": {
+            "level": { "enum": ["full", "partial", "none"] },
+            "scope": { "type": "array", "items": { "enum": ["file", "network", "process"] } }
+          }
+        },
+        "authz": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decisionId"],
+          "properties": { "decisionId": { "type": "string", "maxLength": 128 } }
+        },
+        "partial": { "type": "boolean" },
+        "cancelledBy": { "$ref": "#/$defs/Actor" },
+        "interrupted": { "type": "boolean" },
+        "transformedBy": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "RequestMediaManifestEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeSeq", "artifactUri", "sha256", "mime", "width", "height", "selected"],
+      "properties": {
+        "nodeSeq": { "type": "integer", "minimum": 1 },
+        "artifactUri": { "type": "string", "pattern": "^artifact://[0-9a-f]{64}$" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "mime": { "enum": ["image/png", "image/jpeg"] },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "selected": { "type": "boolean" },
+        "reason": { "enum": ["latest-three", "deduplicated", "compacted", "unsupported", "too-small"] },
+        "elementMapDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "RequestMediaManifest": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RequestMediaManifestEntry" }
+    },
+    "RequestMediaHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "selectionOrder", "route", "manifest"],
+      "properties": {
+        "version": { "const": 1 },
+        "selectionOrder": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "route": { "enum": ["native-image", "auxiliary-vision", "text-only"] },
+        "manifest": { "$ref": "#/$defs/RequestMediaManifest" }
+      }
+    },
+    "RequestHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "derived_hash",
+        "prompt_prefix_hash",
+        "tool_schema_hash",
+        "parser_version",
+        "contract_id",
+        "model",
+        "envelopeNonce"
+      ],
+      "properties": {
+        "derived_hash": { "type": "string", "maxLength": 128 },
+        "sent_hash": { "type": "string", "maxLength": 128 },
+        "transforms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["event", "ext"],
+            "properties": {
+              "event": { "type": "string", "maxLength": 64 },
+              "ext": { "type": "string", "maxLength": 128 }
+            }
+          }
+        },
+        "prompt_prefix_hash": { "type": "string", "maxLength": 128 },
+        "tool_schema_hash": { "type": "string", "maxLength": 128 },
+        "parser_version": { "type": "string", "maxLength": 32 },
+        "contract_id": { "type": ["string", "null"], "maxLength": 128 },
+        "model": { "type": "string", "maxLength": 256 },
+        "envelopeNonce": { "type": "string", "maxLength": 64 },
+        "media": { "$ref": "#/$defs/RequestMediaHeader" }
+      }
+    },
+    "RequestSent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt_prefix_hash",
+        "tool_schema_hash",
+        "parser_version",
+        "contract_id",
+        "model",
+        "derived_hash",
+        "sent_hash",
+        "transforms"
+      ],
+      "properties": {
+        "prompt_prefix_hash": {
+          "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+        },
+        "tool_schema_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "parser_version": { "type": "string", "maxLength": 32 },
+        "contract_id": { "type": ["string", "null"], "maxLength": 128 },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["route", "id"],
+          "properties": {
+            "route": { "type": "string", "maxLength": 128 },
+            "id": { "type": "string", "maxLength": 256 },
+            "responseModel": { "type": "string", "maxLength": 256 }
+          }
+        },
+        "derived_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "sent_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "transforms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["event", "ext"],
+            "properties": {
+              "event": { "type": "string", "maxLength": 64 },
+              "ext": { "type": "string", "maxLength": 128 }
+            }
+          }
+        }
+      }
+    },
+    "OpState": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["meta", "control", "step", "latestAssistantSeq", "taint", "phase"],
+          "properties": {
+            "meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "turn",
+                "lane",
+                "acceptedAt",
+                "triggerSeq",
+                "presetName",
+                "profileHash",
+                "depthLimit"
+              ],
+              "properties": {
+                "turn": { "type": "integer", "minimum": 1 },
+                "lane": { "type": "string" },
+                "acceptedAt": { "type": "string" },
+                "triggerSeq": { "type": "integer", "minimum": 1 },
+                "presetName": { "type": "string" },
+                "profileHash": { "type": ["string", "null"] },
+                "depthLimit": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "control": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status"],
+                  "properties": { "status": { "const": "running" } }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "requestedAt", "by"],
+                  "properties": {
+                    "status": { "const": "cancel_requested" },
+                    "requestedAt": { "type": "string" },
+                    "by": { "$ref": "#/$defs/Actor" }
+                  }
+                }
+              ]
+            },
+            "step": { "type": "integer", "minimum": 0 },
+            "latestAssistantSeq": { "type": ["integer", "null"] },
+            "taint": { "type": "boolean" },
+            "phase": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "continuation", "triggerSeq"],
+                  "properties": {
+                    "kind": { "const": "checkpoint" },
+                    "continuation": { "enum": ["need_assistant", "may_finish"] },
+                    "triggerSeq": { "type": "integer" },
+                    "thresholdCheckedSeq": { "type": "integer" },
+                    "skipInboxOnce": { "const": true }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "gen"],
+                  "properties": {
+                    "kind": { "const": "inference" },
+                    "gen": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["status", "attempt"],
+                          "properties": { "status": { "const": "ready" }, "attempt": { "type": "integer" } }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["status", "attempt", "effectId", "slot"],
+                          "properties": {
+                            "status": { "const": "effect_pending" },
+                            "attempt": { "type": "integer" },
+                            "effectId": { "type": "string" },
+                            "slot": { "type": "string" }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["status", "attempt", "notBefore", "code"],
+                          "properties": {
+                            "status": { "const": "retry_wait" },
+                            "attempt": { "type": "integer" },
+                            "notBefore": { "type": "string" },
+                            "code": { "type": "string" }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "batch"],
+                  "properties": {
+                    "kind": { "const": "tools" },
+                    "batch": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["assistantSeq", "calls"],
+                      "properties": {
+                        "assistantSeq": { "type": "integer" },
+                        "calls": { "type": "array", "items": { "$ref": "#/$defs/ToolCallState" } }
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "reason", "resumeAfter"],
+                  "properties": {
+                    "kind": { "const": "compaction" },
+                    "reason": { "enum": ["threshold", "overflow", "requested"] },
+                    "plan": { "$ref": "#/$defs/JsonValue" },
+                    "effectIds": { "type": "array", "items": { "type": "string" } },
+                    "resumeAfter": { "$ref": "#/$defs/JsonValue" }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "jobs", "resumeAfter"],
+                  "properties": {
+                    "kind": { "const": "deferred" },
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["jobId", "toolUseId"],
+                        "properties": {
+                          "jobId": { "type": "string", "maxLength": 128 },
+                          "toolUseId": { "type": "string", "maxLength": 128 },
+                          "callSeq": { "type": "integer", "minimum": 1 }
+                        }
+                      }
+                    },
+                    "resumeAfter": { "$ref": "#/$defs/JsonValue" }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "error", "provenance"],
+                  "properties": {
+                    "kind": { "const": "failure_drain" },
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["code", "message"],
+                      "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+                    },
+                    "provenance": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["kind"],
+                      "properties": {
+                        "kind": { "enum": ["inference", "tool", "seam"] },
+                        "seq": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ToolCallState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ordinal", "toolUseId", "name", "argsSeq", "status", "replay"],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "argsSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "effectId": {
+              "type": "string"
+            },
+            "replay": {
+              "enum": ["safe", "never", "idempotent"]
+            },
+            "terminate": {
+              "type": "boolean"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parentEffectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resolvedPolicy": {
+              "$ref": "#/$defs/ResolvedToolCallPolicy"
+            },
+            "executionDomain": {
+              "$ref": "#/$defs/ExecutionDomain"
+            },
+            "definitionFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dispatchAttempt": {
+              "enum": [1, 2]
+            },
+            "dispatchPhase": {
+              "$ref": "#/$defs/DispatchPhase"
+            },
+            "status": {
+              "enum": ["planned", "awaiting_approval"]
+            }
+          },
+          "dependentRequired": {
+            "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+            "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+            "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+            "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+          },
+          "not": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["effectId"]
+              },
+              {
+                "type": "object",
+                "required": ["dispatchAttempt"]
+              },
+              {
+                "type": "object",
+                "required": ["dispatchPhase"]
+              }
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ordinal",
+            "toolUseId",
+            "name",
+            "argsSeq",
+            "status",
+            "replay",
+            "resolvedPolicy",
+            "executionDomain",
+            "definitionFingerprint",
+            "policyHash"
+          ],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "argsSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "effectId": {
+              "type": "string"
+            },
+            "replay": {
+              "enum": ["safe", "never", "idempotent"]
+            },
+            "terminate": {
+              "type": "boolean"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parentEffectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resolvedPolicy": {
+              "$ref": "#/$defs/ResolvedToolCallPolicy"
+            },
+            "executionDomain": {
+              "$ref": "#/$defs/ExecutionDomain"
+            },
+            "definitionFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dispatchAttempt": {
+              "enum": [1, 2]
+            },
+            "dispatchPhase": {
+              "$ref": "#/$defs/DispatchPhase"
+            },
+            "status": {
+              "const": "approved"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["effectId"]
+              },
+              {
+                "type": "object",
+                "required": ["dispatchAttempt"]
+              },
+              {
+                "type": "object",
+                "required": ["dispatchPhase"]
+              }
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ordinal",
+            "toolUseId",
+            "name",
+            "argsSeq",
+            "status",
+            "replay",
+            "effectId",
+            "dispatchAttempt",
+            "resolvedPolicy",
+            "executionDomain",
+            "definitionFingerprint",
+            "policyHash"
+          ],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "argsSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "effectId": {
+              "type": "string"
+            },
+            "replay": {
+              "enum": ["safe", "never", "idempotent"]
+            },
+            "terminate": {
+              "type": "boolean"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parentEffectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resolvedPolicy": {
+              "$ref": "#/$defs/ResolvedToolCallPolicy"
+            },
+            "executionDomain": {
+              "$ref": "#/$defs/ExecutionDomain"
+            },
+            "definitionFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dispatchAttempt": {
+              "enum": [1, 2]
+            },
+            "dispatchPhase": {
+              "const": "not_sent"
+            },
+            "status": {
+              "const": "dispatch_pending"
+            }
+          },
+          "dependentRequired": {
+            "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+            "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+            "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+            "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+          },
+          "not": {
+            "allOf": [
+              {
+                "type": "object",
+                "required": ["dispatchPhase"]
+              },
+              {
+                "type": "object",
+                "required": ["executionDomain"],
+                "properties": {
+                  "executionDomain": {
+                    "const": "workspace"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ordinal", "toolUseId", "name", "argsSeq", "status", "replay", "effectId"],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "argsSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "effectId": {
+              "type": "string"
+            },
+            "replay": {
+              "enum": ["safe", "never", "idempotent"]
+            },
+            "terminate": {
+              "type": "boolean"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parentEffectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resolvedPolicy": {
+              "$ref": "#/$defs/ResolvedToolCallPolicy"
+            },
+            "executionDomain": {
+              "$ref": "#/$defs/ExecutionDomain"
+            },
+            "definitionFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dispatchAttempt": {
+              "enum": [1, 2]
+            },
+            "dispatchPhase": {
+              "$ref": "#/$defs/DispatchPhase"
+            },
+            "status": {
+              "const": "effect_pending"
+            }
+          },
+          "dependentRequired": {
+            "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+            "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+            "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+            "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+          },
+          "not": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["dispatchAttempt"]
+              },
+              {
+                "type": "object",
+                "required": ["dispatchPhase"]
+              }
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ordinal",
+            "toolUseId",
+            "name",
+            "argsSeq",
+            "status",
+            "replay",
+            "effectId",
+            "dispatchAttempt",
+            "dispatchPhase",
+            "resolvedPolicy",
+            "executionDomain",
+            "definitionFingerprint",
+            "policyHash"
+          ],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "argsSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "effectId": {
+              "type": "string"
+            },
+            "replay": {
+              "enum": ["safe", "never", "idempotent"]
+            },
+            "terminate": {
+              "type": "boolean"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parentEffectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resolvedPolicy": {
+              "$ref": "#/$defs/ResolvedToolCallPolicy"
+            },
+            "executionDomain": {
+              "$ref": "#/$defs/ExecutionDomain"
+            },
+            "definitionFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dispatchAttempt": {
+              "enum": [1, 2]
+            },
+            "dispatchPhase": {
+              "const": "may_have_sent"
+            },
+            "status": {
+              "const": "dispatched"
+            }
+          },
+          "dependentRequired": {
+            "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+            "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+            "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+            "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ordinal",
+            "toolUseId",
+            "name",
+            "argsSeq",
+            "status",
+            "replay",
+            "effectId",
+            "dispatchAttempt",
+            "dispatchPhase",
+            "resolvedPolicy",
+            "executionDomain",
+            "definitionFingerprint",
+            "policyHash"
+          ],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "argsSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "effectId": {
+              "type": "string"
+            },
+            "replay": {
+              "enum": ["safe", "never", "idempotent"]
+            },
+            "terminate": {
+              "type": "boolean"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parentEffectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resolvedPolicy": {
+              "$ref": "#/$defs/ResolvedToolCallPolicy"
+            },
+            "executionDomain": {
+              "$ref": "#/$defs/ExecutionDomain"
+            },
+            "definitionFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dispatchAttempt": {
+              "enum": [1, 2]
+            },
+            "dispatchPhase": {
+              "const": "responded"
+            },
+            "status": {
+              "const": "responded"
+            }
+          },
+          "dependentRequired": {
+            "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+            "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+            "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+            "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ordinal", "toolUseId", "name", "argsSeq", "status", "replay"],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "argsSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "effectId": {
+              "type": "string"
+            },
+            "replay": {
+              "enum": ["safe", "never", "idempotent"]
+            },
+            "terminate": {
+              "type": "boolean"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parentEffectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resolvedPolicy": {
+              "$ref": "#/$defs/ResolvedToolCallPolicy"
+            },
+            "executionDomain": {
+              "$ref": "#/$defs/ExecutionDomain"
+            },
+            "definitionFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dispatchAttempt": {
+              "enum": [1, 2]
+            },
+            "dispatchPhase": {
+              "$ref": "#/$defs/DispatchPhase"
+            },
+            "status": {
+              "const": "completed"
+            }
+          },
+          "dependentRequired": {
+            "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+            "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+            "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+            "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+          },
+          "not": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["dispatchAttempt"]
+              },
+              {
+                "type": "object",
+                "required": ["dispatchPhase"]
+              }
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ordinal",
+            "toolUseId",
+            "name",
+            "argsSeq",
+            "status",
+            "replay",
+            "effectId",
+            "dispatchAttempt",
+            "dispatchPhase",
+            "resolvedPolicy",
+            "executionDomain",
+            "definitionFingerprint",
+            "policyHash"
+          ],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "argsSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "effectId": {
+              "type": "string"
+            },
+            "replay": {
+              "enum": ["safe", "never", "idempotent"]
+            },
+            "terminate": {
+              "type": "boolean"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parentEffectId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resolvedPolicy": {
+              "$ref": "#/$defs/ResolvedToolCallPolicy"
+            },
+            "executionDomain": {
+              "$ref": "#/$defs/ExecutionDomain"
+            },
+            "definitionFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dispatchAttempt": {
+              "enum": [1, 2]
+            },
+            "dispatchPhase": {
+              "$ref": "#/$defs/DispatchPhase"
+            },
+            "status": {
+              "const": "completed"
+            }
+          },
+          "dependentRequired": {
+            "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+            "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+            "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+            "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+          }
+        }
+      ]
+    },
+    "ArtifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "size", "mime"],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mime": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "Verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "reasons"],
+      "properties": {
+        "outcome": {
+          "enum": ["pass", "fail", "needs_revision", "unavailable"]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        }
+      }
+    },
+    "AssistantOutput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "effectId", "chars", "estimatedTokens"],
+          "properties": {
+            "state": { "enum": ["started", "progress"] },
+            "effectId": { "type": "string", "maxLength": 128 },
+            "chars": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "thinking"],
+              "properties": {
+                "text": { "type": "integer", "minimum": 0 },
+                "thinking": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "estimatedTokens": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "effectId", "chars", "estimatedTokens", "content"],
+          "properties": {
+            "state": { "const": "interrupted" },
+            "effectId": { "type": "string", "maxLength": 128 },
+            "chars": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "thinking"],
+              "properties": {
+                "text": { "type": "integer", "minimum": 0 },
+                "thinking": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "estimatedTokens": { "type": "integer", "minimum": 0 },
+            "content": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "text"],
+                    "properties": { "type": { "const": "text" }, "text": { "type": "string" } }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "text"],
+                    "properties": { "type": { "const": "thinking" }, "text": { "type": "string" } }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "PlanItems": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["items"],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "text", "status"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "status": {
+                    "enum": ["todo", "doing", "done", "blocked"]
+                  },
+                  "check": {
+                    "type": "string",
+                    "maxLength": 2048
+                  }
+                }
+              }
+            },
+            "customInstructions": {
+              "type": "string",
+              "maxLength": 8192
+            }
+          }
+        }
+      ]
+    },
+    "BudgetState": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["slot", "escalate", "creditsUsed", "creditsCap"],
+          "properties": {
+            "slot": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "escalate": {
+              "type": "boolean"
+            },
+            "creditsUsed": {
+              "type": "number",
+              "minimum": 0
+            },
+            "creditsCap": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "lastPreflight": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tokens", "source"],
+              "properties": {
+                "tokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "source": {
+                  "enum": ["count", "estimate"]
+                },
+                "boundHash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "seq": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ArtifactJob": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jobId", "status"],
+          "properties": {
+            "jobId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "status": {
+              "enum": ["queued", "running", "done", "failed", "cancelled"]
+            },
+            "ref": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "error": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        }
+      ]
+    },
+    "InboxItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "target", "content", "actor", "enqueuedAt"],
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "target": {
+          "enum": ["next-turn", "next-step"]
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          }
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "commandId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "admissionId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "enqueuedAt": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["prompt", "steer", "follow_up"]
+        },
+        "trust": {
+          "enum": ["trusted", "untrusted"]
+        }
+      }
+    },
+    "Inbox": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["items"],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InboxItem"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "HarnessEntryValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "title", "content", "scope", "version", "source"],
+      "properties": {
+        "kind": {
+          "enum": ["prompt", "memory", "skill", "subagent"]
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "scope": {
+          "enum": ["local", "global"]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "reference": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "arguments": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      }
+    },
+    "HarnessEntry": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "tombstone"],
+          "properties": {
+            "kind": {
+              "enum": ["prompt", "memory", "skill", "subagent"]
+            },
+            "id": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "tombstone": {
+              "const": true
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/HarnessEntryValue"
+        }
+      ]
+    },
+    "EffectIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectId", "kind", "replay"],
+      "properties": {
+        "effectId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "parentEffectId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "kind": {
+          "enum": ["inference", "tool", "compaction", "job", "approval-guardian", "media"]
+        },
+        "tool": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["toolUseId", "name"],
+          "properties": {
+            "toolUseId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        },
+        "replay": {
+          "enum": ["safe", "never", "idempotent"]
+        },
+        "argsSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "slot": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "not": {
+        "type": "object",
+        "required": ["kind", "replay"],
+        "properties": {
+          "kind": {
+            "const": "media"
+          },
+          "replay": {
+            "enum": ["safe", "idempotent"]
+          }
+        }
+      }
+    },
+    "EffectSettled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectId", "outcome"],
+      "properties": {
+        "effectId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "outcome": {
+          "enum": ["ok", "error", "aborted", "unknown"]
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "VerifierSignal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "tier", "verdict", "reasons"],
+      "properties": {
+        "scope": {
+          "enum": ["tool", "step", "turn", "task"]
+        },
+        "tier": {
+          "enum": [0, 1, 2]
+        },
+        "verdict": {
+          "enum": ["pass", "fail", "needs_revision"]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "toolUseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "credits": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "RepairDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["round", "decision", "verdictSeq"],
+      "properties": {
+        "round": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decision": {
+          "enum": ["repair", "park", "escalate", "complete"]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "verdictSeq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "FormatDeviation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule", "model", "parserVersion", "sampleHash"],
+      "properties": {
+        "rule": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "responseModel": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "parserVersion": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "sampleHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Billing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["usdMicros", "source", "subscription"],
+      "properties": {
+        "usdMicros": { "type": "integer", "minimum": 0 },
+        "source": { "enum": ["gateway", "estimated"] },
+        "subscription": { "type": "boolean" }
+      }
+    },
+    "CostLedger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["purpose", "effectId", "tokens", "creditSource", "model"],
+      "properties": {
+        "purpose": {
+          "enum": [
+            "inference",
+            "compaction",
+            "verifier",
+            "subagent",
+            "media",
+            "tool",
+            "title",
+            "approval-guardian"
+          ]
+        },
+        "sourceTurn": { "type": "integer", "minimum": 1 },
+        "credits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "billing": { "$ref": "#/$defs/Billing" },
+        "creditSource": {
+          "enum": ["gateway", "estimated"]
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "output", "cacheRead", "cacheWrite"],
+          "properties": {
+            "input": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cacheRead": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cacheWrite": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reasoning": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "effectId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "timing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttftMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "stepGapMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolWallMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "gapPhases": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            },
+            "transport": {
+              "type": "string",
+              "maxLength": 32
+            }
+          }
+        },
+        "interrupted": {
+          "type": "boolean"
+        },
+        "adjustment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["of", "delta", "reason"],
+          "properties": {
+            "of": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "delta": {
+              "type": "number"
+            },
+            "usdMicrosDelta": {
+              "type": "integer"
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 512
+            }
+          }
+        }
+      }
+    },
+    "ApprovalAsked": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "kind", "risk", "summary", "bindingHash"],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "kind": {
+          "enum": ["tool", "budget", "unknown-outcome", "refine"]
+        },
+        "toolUseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tool": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "argvHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "risk": {
+          "enum": ["destructive", "always", "budget", "unknown"]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "bindingHash": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{64})?$"
+        },
+        "deadline": {
+          "type": "string"
+        },
+        "requester": {
+          "$ref": "#/$defs/Actor"
+        },
+        "pending": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ticket", "expiresAt"],
+          "properties": {
+            "ticket": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "expiresAt": {
+              "type": "string"
+            }
+          }
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "profileHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "options": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
+          }
+        }
+      }
+    },
+    "ApprovalDecided": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "verdict", "via"],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "verdict": {
+          "enum": [
+            "allowed-once",
+            "allowed-session",
+            "allowed-permanent",
+            "rejected",
+            "cancelled",
+            "unavailable"
+          ]
+        },
+        "via": {
+          "enum": ["sync", "callback", "timeout", "guardian"]
+        },
+        "decidedBy": {
+          "$ref": "#/$defs/Actor"
+        },
+        "ticket": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "grantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "ApprovalGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grantId",
+        "profileHash",
+        "actorId",
+        "actorOrg",
+        "toolId",
+        "scope",
+        "policyVersion",
+        "createdAt"
+      ],
+      "properties": {
+        "grantId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "profileHash": { "type": "string", "pattern": "^sha256-[a-f0-9]{64}$" },
+        "actorId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "actorOrg": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "revokedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ApprovalGuardianDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "effectId",
+        "toolUseId",
+        "scope",
+        "bindingHash",
+        "policyHash",
+        "decision",
+        "ruleVersion",
+        "reasons",
+        "budget"
+      ],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "effectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "toolUseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "bindingHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "policyHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "decision": { "enum": ["allow-once", "allow-session", "escalate", "reject"] },
+        "ruleVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "reasons": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 512 } },
+        "model": { "type": "string", "maxLength": 128 },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokensReserved", "credits", "creditSource", "cap", "approved"],
+          "properties": {
+            "tokensReserved": { "type": "integer", "minimum": 0 },
+            "credits": { "type": "number", "minimum": 0 },
+            "creditSource": { "enum": ["gateway", "estimated"] },
+            "cap": { "type": ["number", "null"], "minimum": 0 },
+            "approved": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "FeedbackRating": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetSeq", "rating"],
+      "properties": {
+        "targetSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rating": {
+          "enum": ["up", "down"]
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "FeedbackImplicit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetSeq", "kind"],
+      "properties": {
+        "targetSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "enum": ["regenerate", "edit-resend", "reaction", "copy", "abort"]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "Participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "participant", "surface"],
+      "properties": {
+        "action": {
+          "enum": ["join", "leave"]
+        },
+        "participant": {
+          "$ref": "#/$defs/Actor"
+        },
+        "surface": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "credentialKind": {
+          "type": "string",
+          "maxLength": 32
+        }
+      }
+    },
+    "HarnessRefine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger", "proposalId", "rationale", "edits", "baseline", "outcome"],
+      "properties": {
+        "trigger": {
+          "enum": ["auto", "manual", "compact", "rollback"]
+        },
+        "proposalId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "rationale": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["op", "entry"],
+                "properties": {
+                  "op": {
+                    "const": "upsert"
+                  },
+                  "entry": {
+                    "$ref": "#/$defs/HarnessEntryValue"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["op", "kind", "id"],
+                "properties": {
+                  "op": {
+                    "const": "delete"
+                  },
+                  "kind": {
+                    "enum": ["prompt", "memory", "skill", "subagent"]
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "baseline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "version"],
+            "properties": {
+              "key": {
+                "type": "string",
+                "maxLength": 258
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "expectedOutcome": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "outcome": {
+          "enum": ["applied", "rejected:conflict", "rejected:limit", "rejected:evidence", "rejected:prefix"]
+        },
+        "rollbackOf": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "evidenceSeqs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

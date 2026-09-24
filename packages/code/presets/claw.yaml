@@ -1,0 +1,29 @@
+# The unattended recipe: nobody is at a terminal, so an approval that cannot be answered is parked
+# for whoever comes back rather than guessed at. Everything not written here comes from standard.
+name: claw
+extends: standard
+# No cli and no acp: both of those surfaces are somebody sitting in front of the run.
+surfaces: [daemon, sdk]
+# `park` mints a ticket and ends the turn. It is the whole point of this recipe: with nobody
+# connected the alternative verdict is `unavailable`, which the kernel reads as a refusal, and a run
+# that is refused mid-way has done half the work and reported none of it.
+#
+# There is deliberately no `timeout_ms` here. An earlier draft wrote 0 meaning "never time out"; the
+# view reads it as a deadline of zero milliseconds and a timed-out approval is a rejection, so the
+# knob meant to wait forever refused everything instead. The host now refuses that document, and the
+# way to say "the default" is to leave the key out.
+approval: { on_unavailable: park }
+# `required: true` is a hard requirement, not a preference: the host refuses to open a session when
+# the platform cannot provide L1. An unattended run has no operator to notice that the isolation it
+# assumed is not there.
+sandbox: { level: L1, required: true }
+# A long run is the reason this recipe exists, so the step ceiling is raised - and the per-request
+# spend ceiling is not, because a longer run is not a licence for a more expensive single request.
+budget: { per_request_cap: 4000, max_steps: 200 }
+subagent: { max_depth: 2, max_fan_out: 4 }
+# There is no operator to prompt, so an extension asking for input is declined rather than left
+# hanging until the turn's deadline.
+ext_ui: { unattended: decline }
+# Self-refinement is on, and a change that would apply globally still waits for a human: an
+# unattended run may improve its own next turn, not the deployment everyone else shares.
+harness: { auto_refine: { enabled: true, global_needs_human: true } }

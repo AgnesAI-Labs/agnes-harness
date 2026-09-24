@@ -1,0 +1,41 @@
+/*
+ * 午夜：深色冷调。只用 data-agnes-region 钩子，所以 Agnes 重命名内部 class 也不会失效。
+ * 浅深两套都写了——只写一套会让另一半模式难读。
+ */
+[data-agnes-region="app"] {
+  background-image: linear-gradient(180deg, #f7f9fc, #eef2f7);
+}
+
+[data-agnes-region="sidebar"] {
+  background-color: #eef2f7;
+}
+
+/* 会话区：铺一张自带的纹理图，证明样式表可以相对引用包内资产。 */
+[data-agnes-region="transcript"] {
+  background-color: #fbfbfb;
+  background-image: url("assets/paper.png");
+  background-repeat: repeat;
+}
+
+/* 输入框：单独给出边界与底色，验证它可被皮肤命中。 */
+[data-agnes-region="composer"] {
+  background-color: #ffffff;
+  border-color: #cdd6e0;
+}
+
+.dark [data-agnes-region="app"] {
+  background-image: linear-gradient(180deg, #141a22, #0f141a);
+}
+
+.dark [data-agnes-region="sidebar"] {
+  background-color: #101720;
+}
+
+.dark [data-agnes-region="transcript"] {
+  background-color: #141a22;
+}
+
+.dark [data-agnes-region="composer"] {
+  background-color: #1b232e;
+  border-color: #2b3644;
+}

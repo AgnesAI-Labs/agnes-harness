@@ -1,0 +1,8 @@
+{"type":"user","uuid":"u1","parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/w","sessionId":"abc","version":"2.1.88","timestamp":"2026-09-07T00:00:00Z","message":{"role":"user","content":"list files"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","isSidechain":false,"cwd":"/w","sessionId":"abc","timestamp":"2026-09-07T00:00:01Z","message":{"role":"assistant","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"I should inspect."},{"type":"text","text":"Listing."},{"type":"tool_use","id":"toolu_1","name":"mcp/server-tool","input":{"command":"ls"}}]}}
+{"type":"user","uuid":"u2","parentUuid":"a1","isSidechain":false,"cwd":"/w","sessionId":"abc","timestamp":"2026-09-07T00:00:02Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"a.txt\nb.txt","is_error":false}]},"toolUseResult":{"stdout":"a.txt\nb.txt"}}
+{"type":"assistant","uuid":"a2","parentUuid":"u2","isSidechain":false,"cwd":"/w","sessionId":"abc","timestamp":"2026-09-07T00:00:03Z","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"Two files."}]}}
+{"type":"progress","uuid":"p1","parentUuid":"a2","isSidechain":false,"timestamp":"2026-09-07T00:00:03Z","data":{}}
+{"type":"summary","summary":"listed two files","leafUuid":"a2","timestamp":"2026-09-07T00:00:04Z"}
+{"type":"user","uuid":"s1","parentUuid":"u1","isSidechain":true,"agentId":"agent-1","cwd":"/w","sessionId":"abc","timestamp":"2026-09-07T00:00:04Z","message":{"role":"user","content":"sidechain prompt"}}
+{"type":"assistant","uuid":"s2","parentUuid":"s1","isSidechain":true,"cwd":"/w","sessionId":"abc","timestamp":"2026-09-07T00:00:05Z","message":{"role":"assistant","content":"sidechain answer"}}

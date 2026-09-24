@@ -1,0 +1,14 @@
+{
+  "id": "agnes-examples/minimal",
+  "version": "0.1.0",
+  "apiRange": "^1.0.0",
+  "entry": "./index.ts",
+  "capabilities": {
+    "tools": { "prefix": "minimal_" },
+    "hooks": ["tool_result"],
+    "slots": ["status.line"],
+    "events": true,
+    "resources": ["skill"]
+  },
+  "lease": { "budget": 100 }
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/deploy-manifest.json",
+  "title": "deploy/<\u5ba2\u6237>/manifest.json (host \u7a3f \u00a76.3)",
+  "$ref": "#/$defs/DeployManifest",
+  "$defs": {
+    "DeployManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "harnessRange", "extensions", "profileFragment", "presets", "fixtures"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,64}$"
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "harnessRange": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "id"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^extensions/"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+              }
+            }
+          }
+        },
+        "profileFragment": {
+          "type": "string",
+          "pattern": "^profile/"
+        },
+        "presets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^preset/"
+          }
+        },
+        "fixtures": {
+          "type": "string",
+          "pattern": "^fixtures/"
+        },
+        "surfaces": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^surfaces/[a-z][a-z0-9-]{0,63}\\.json$"
+          }
+        }
+      }
+    }
+  }
+}

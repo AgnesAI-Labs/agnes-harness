@@ -1,0 +1,12 @@
+{
+  "id": "test/hello",
+  "version": "0.0.1",
+  "apiRange": "^1.0",
+  "entry": "./index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "hello_",
+      "names": ["hello_ping"]
+    }
+  }
+}

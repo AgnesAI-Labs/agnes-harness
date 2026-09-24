@@ -1,0 +1,14 @@
+{
+  "format": "normalized-driver-manifest-v1",
+  "source": {
+    "repository": "https://github.com/trycua/cua",
+    "tag": "cua-driver-rs-v0.28.1",
+    "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c"
+  },
+  "schema_version": "1",
+  "binary_version": "0.28.1",
+  "mcp_invocation": {
+    "command": "<locked-cua-driver>",
+    "args": ["mcp"]
+  }
+}

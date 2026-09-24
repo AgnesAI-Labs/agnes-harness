@@ -1,0 +1,10 @@
+{"timestamp":"2026-09-07T00:00:00Z","type":"session_meta","payload":{"session_id":"sess-1","id":"thread-1","cwd":"/w","originator":"codex_cli","forked_from_id":"parent-1"}}
+{"timestamp":"2026-09-07T00:00:00Z","type":"turn_context","payload":{"cwd":"/w","model":"gpt-x","approval_policy":"on-request"}}
+{"timestamp":"2026-09-07T00:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"list files"}]}}
+{"timestamp":"2026-09-07T00:00:02Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"I should list."}]}}
+{"timestamp":"2026-09-07T00:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\"]}","call_id":"call_1"}}
+{"timestamp":"2026-09-07T00:00:03Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_1","output":"a.txt\nb.txt"}}
+{"timestamp":"2026-09-07T00:00:04Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Two files."}]}}
+{"timestamp":"2026-09-07T00:00:04Z","type":"token_usage_record","payload":{"input_tokens":100,"output_tokens":20}}
+{"timestamp":"2026-09-07T00:00:05Z","type":"event_msg","payload":{"type":"agent_message","message":"duplicate UI event"}}
+{"timestamp":"2026-09-07T00:00:06Z","type":"compacted","payload":{"message":"listed files"}}

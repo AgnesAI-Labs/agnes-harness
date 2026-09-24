@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/worker.json",
+  "title": "Agnes private supervisor-worker protocol primitives",
+  "$defs": {
+    "WorkerGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "RuntimeTargetIdentity": {
+      "description": "Content-qualified identity of one complete runtime target.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["treeHash", "resourceRevision", "compositeRevision"],
+      "properties": {
+        "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "RuntimeTargetArtifact": {
+      "description": "Immutable canonical runtime target bytes carried as bounded standard base64.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "canonicalBase64", "digest", "identity"],
+      "properties": {
+        "encoding": { "const": "base64" },
+        "canonicalBase64": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 16776788,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        },
+        "digest": {
+          "description": "SHA-256 integrity of the decoded canonical bytes.",
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
+        "identity": { "$ref": "#/$defs/RuntimeTargetIdentity" }
+      }
+    },
+    "RuntimeStaleFrame": {
+      "description": "The only runtime stale notification: one complete self-contained artifact.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "artifact"],
+      "properties": {
+        "type": { "const": "runtime.stale" },
+        "artifact": { "$ref": "#/$defs/RuntimeTargetArtifact" }
+      }
+    },
+    "RuntimeConvergenceRow": {
+      "description": "One ordinary or resource-owned row in a qualified runtime report.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "state": {
+          "type": "string",
+          "enum": ["pending", "loading", "active", "failed", "disabled", "waiting-drain"]
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "RuntimeConvergenceReport": {
+      "description": "Qualified complete runtime report. Each resource-owned id appears once.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash", "ok", "rows"],
+      "properties": {
+        "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "ok": { "type": "boolean" },
+        "rows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RuntimeConvergenceRow" }
+        }
+      }
+    },
+    "RuntimeBootReadyFrame": {
+      "description": "Worker startup admission: lastGood or bootstrap apply succeeded for this generation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "workerKind", "workerKey", "generation", "digest", "identity", "source"],
+      "properties": {
+        "type": { "const": "runtime.boot_ready" },
+        "workerKind": { "const": "session" },
+        "workerKey": { "const": "@shared" },
+        "generation": { "$ref": "#/$defs/WorkerGeneration" },
+        "digest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+        "identity": { "$ref": "#/$defs/RuntimeTargetIdentity" },
+        "source": { "type": "string", "enum": ["lastGood", "bootstrap"] }
+      }
+    },
+    "RuntimeConvergedFrame": {
+      "description": "Qualified success for the current desired artifact and worker generation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "workerKind", "workerKey", "generation", "digest", "identity", "report"],
+      "properties": {
+        "type": { "const": "runtime.converged" },
+        "workerKind": { "const": "session" },
+        "workerKey": { "const": "@shared" },
+        "generation": { "$ref": "#/$defs/WorkerGeneration" },
+        "digest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+        "identity": { "$ref": "#/$defs/RuntimeTargetIdentity" },
+        "report": { "$ref": "#/$defs/RuntimeConvergenceReport" }
+      }
+    },
+    "RuntimeApplyFailedFrame": {
+      "description": "Qualified apply failure. It does not replace lastGood or retire the worker.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "workerKind", "workerKey", "generation", "digest", "identity", "phase", "message"],
+      "properties": {
+        "type": { "const": "runtime.apply_failed" },
+        "workerKind": { "const": "session" },
+        "workerKey": { "const": "@shared" },
+        "generation": { "$ref": "#/$defs/WorkerGeneration" },
+        "digest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+        "identity": { "$ref": "#/$defs/RuntimeTargetIdentity" },
+        "phase": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@agnes/system-node",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./process-spawn": "./src/process-spawn.ts",
+    "./process-detached": "./src/process-detached.ts",
+    "./windows-pipe": "./src/windows-pipe.ts",
+    "./process-broker": "./runtime/process-broker.mjs",
+    "./native": "./dist/native/agnes-system.node"
+  },
+  "scripts": {
+    "build:native": "node scripts/build-native.mjs",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "license": "Apache-2.0"
+}

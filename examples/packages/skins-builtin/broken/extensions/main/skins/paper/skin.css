@@ -1,0 +1,21 @@
+/* 纸质：暖色浅底 + 细纹。纹理由 repeating-linear-gradient 生成，同样不需要图片。 */
+[data-agnes-region="app"] {
+  background-image: repeating-linear-gradient(0deg, rgb(0 0 0 / 1.2%) 0 1px, transparent 1px 3px);
+}
+[data-agnes-region="transcript"] {
+  background-color: #fbf7ef;
+}
+[data-agnes-region="composer"] {
+  background-color: #fffdf8;
+  border-color: #d9cdb8;
+}
+.dark [data-agnes-region="app"] {
+  background-image: repeating-linear-gradient(0deg, rgb(255 255 255 / 1.6%) 0 1px, transparent 1px 3px);
+}
+.dark [data-agnes-region="transcript"] {
+  background-color: #1a1713;
+}
+.dark [data-agnes-region="composer"] {
+  background-color: #241f19;
+  border-color: #3a3229;
+}

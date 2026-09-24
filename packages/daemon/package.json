@@ -1,0 +1,45 @@
+{
+  "name": "@agnes/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./local": "./src/local/index.ts",
+    "./packages": "./src/packages/index.ts",
+    "./worker": "./src/worker/main.ts"
+  },
+  "files": [
+    "src",
+    "dist/agnes-runtime"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build:runtime": "tsx ../base/tools/package-isolation-runtime.ts --output dist/agnes-runtime"
+  },
+  "dependencies": {
+    "@agnes/host": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/resource-control-store": "workspace:*",
+    "@agnes/resource-control-daemon": "workspace:*",
+    "@agnes/resource-control-runtime": "workspace:*",
+    "@agnes/resource-control-worker": "workspace:*",
+    "@agnes/worker-runtime": "workspace:*",
+    "@agnes/error-sanitization": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "es-module-lexer": "2.3.2",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/base": "workspace:*",
+    "@agnes/code": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/web-server": "workspace:*",
+    "@types/ws": "8.18.1"
+  },
+  "license": "Apache-2.0"
+}

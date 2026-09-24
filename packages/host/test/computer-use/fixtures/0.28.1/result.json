@@ -1,0 +1,23 @@
+{
+  "format": "normalized-tool-result-v1",
+  "source": {
+    "repository": "https://github.com/trycua/cua",
+    "tag": "cua-driver-rs-v0.28.1",
+    "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c"
+  },
+  "tool": "check_permissions",
+  "isError": false,
+  "structuredContent": {
+    "elevated": false,
+    "integrity_level": "Medium",
+    "integrity_level_rid": 8192,
+    "post_message": true,
+    "uia": true
+  },
+  "content": [
+    {
+      "type": "text",
+      "text": "Process integrity level: Medium (RID 0x2000, non-elevated)\nUIA accessibility: available (no special permission needed)\nPostMessage injection: available"
+    }
+  ]
+}

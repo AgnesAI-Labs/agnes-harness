@@ -1,0 +1,18 @@
+{
+  "name": "@agnes-examples/hot-tool-plugin",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "textStatsTool",
+        "id": "ext:agnes-examples/hot-tool-plugin",
+        "inject": [
+          "extension"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "Capability": "tools.invoke",
+  "SeamName": "approval",
+  "PackageRef": {
+    "id": "@agnes/base",
+    "source": "builtin",
+    "version": "0.1.0",
+    "enabled": false,
+    "tombstone": true
+  },
+  "SecretRef": "secret://test/fixture",
+  "Transport": {
+    "kind": "ws-tls",
+    "listen": "127.0.0.1:443",
+    "tls": {
+      "cert": "secret://test/cert",
+      "key": "secret://test/key"
+    },
+    "auth": {
+      "sourceAuthSecrets": ["secret://test/current", "secret://test/previous"],
+      "rotationGraceMs": 0,
+      "jwt": {
+        "issuer": "fixture",
+        "jwks": "https://fixture.invalid/keys",
+        "secret": "secret://test/jwt"
+      }
+    },
+    "artifactsUrl": "https://fixture.invalid/artifacts"
+  },
+  "Policy": {
+    "capabilityCeiling": ["workspace.read", "tools.invoke"],
+    "workspacePackages": "require-project-trust"
+  },
+  "PackageLock": {
+    "version": "0.1.0",
+    "source": {
+      "type": "npm",
+      "ref": "npm:@agnes/base@0.1.0"
+    },
+    "integrity": "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "trust": "builtin",
+    "license": "MIT",
+    "state": {
+      "installed": "2026-09-09T00:00:00Z",
+      "trusted": "2026-09-09T00:00:00Z",
+      "enabled": true
+    },
+    "releasedAt": "2026-09-09T00:00:00Z",
+    "dependencies": {},
+    "previous": null,
+    "provides": ["approval"],
+    "capabilities": {
+      "tools": {
+        "prefix": "fixture_",
+        "names": ["fixture_read"]
+      },
+      "tools.invoke": false,
+      "events": true,
+      "hooks": ["tool_call"],
+      "slots": ["status.line"],
+      "resources": ["skill", "mcp", "kb", "datasource", "model"],
+      "network": {
+        "hosts": ["127.0.0.1:443"]
+      },
+      "artifacts": true,
+      "subagent": true
+    }
+  },
+  "Capabilities": {
+    "tools": {
+      "prefix": "fixture_",
+      "names": ["fixture_read"]
+    },
+    "tools.invoke": false,
+    "events": true,
+    "hooks": ["tool_call"],
+    "slots": ["status.line"],
+    "resources": ["skill", "mcp", "kb", "datasource", "model"],
+    "network": {
+      "hosts": ["127.0.0.1:443"]
+    },
+    "artifacts": true,
+    "subagent": true
+  },
+  "Schedule": {
+    "kind": "every",
+    "everyMs": 1000
+  }
+}

@@ -1,0 +1,47 @@
+name: local-dev
+schemaVersion: 1
+packages:
+  - { id: "@agnes/ai", source: "builtin" }
+  - { id: "@agnes/base", source: "builtin" }
+  - { id: "@agnes/code", source: "builtin" }
+seams:
+  approval: "@agnes/base"
+  checkpoint: "@agnes/base"
+  ledger: "@agnes/base"
+  sandbox: "@agnes/base"
+  verifier: "@agnes/base"
+  repair: "@agnes/base"
+  artifacts: "@agnes/base"
+  principals: "@agnes/base"
+  platform: "@agnes/host"
+  harness: "@agnes/base"
+provider:
+  package: "@agnes/ai"
+  adapters: ["@agnes/ai"]
+adapters:
+  storage: sqlite
+  fs: local
+  exec: local
+  platform: host
+  secrets: { kind: file }
+transports:
+  - { kind: stdio }
+  - { kind: unix }
+# dataDir and cacheDir are intentionally absent: host's paths module computes both from the home
+# root (<home>/data, <home>/cache) so this template cannot drift from what the daemon computes for
+# the same home. A literal `~/.agnes` here once meant every unconfigured install wrote its session
+# database directly into the home root instead of a subdirectory of it.
+limits: { "jobs.tick_ms": 1000, "shutdown.grace_ms": 10000 }
+computerUse:
+  # The development profile is ready for Computer Use once a vision-capable model is configured.
+  # The driver still verifies app identity and refuses sensitive app categories; macOS continues
+  # to require the user's explicit Accessibility and Screen Recording consent.
+  enabled: true
+  appAccess: all
+  appAllowlist: []
+  capture: { allowFullDesktop: false, maxImageDimension: 1456, maxBytesPerImage: 4194304, maxImagesPerResult: 1, maxImagesPerMutationResult: 2, maxImagesPerModelRequest: 4, maxCapturesPerHour: 120 }
+  retention: { maxRecentPerSession: 100, ttlMs: 86400000, gcIntervalMs: 3600000, maxExtendedTtlMs: 604800000, globalMaxBytes: 1073741824 }
+presets: { default: standard, allowed: [standard] }
+policy:
+  capabilityCeiling: ["tools", "hooks", "slots", "events", "resources", "ui", "network", "network.publicRead", "tools.invoke", "artifacts", "subagent"]
+  workspacePackages: require-project-trust

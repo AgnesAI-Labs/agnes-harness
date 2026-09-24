@@ -1,0 +1,27 @@
+{
+  "name": "@agnes/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gen/*": "./gen/ts/*.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "gen": "tsx tools/gen.ts",
+    "gen:check": "tsx tools/gen.ts --check",
+    "conformance": "tsx tools/conformance.ts"
+  },
+  "dependencies": {
+    "@agnes/resource-control-contracts": "workspace:*",
+    "@agnes/protocol-validation": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  },
+  "license": "Apache-2.0"
+}

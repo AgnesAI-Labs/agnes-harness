@@ -1,0 +1,33 @@
+# The root every shipped recipe extends. It carries no product opinion: no model routing, no prompt
+# sections, no disclosure mode. Those belong to a product package's own recipe, which names this one
+# in its `extends` and adds them.
+#
+# A value here that equals the kernel's built-in default cannot be told apart from that default by
+# any test that only reads the resolved view, so nothing below should be read as evidence that
+# inheritance ran. What this file settles is the keys the kernel has no default for at all.
+name: base
+tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch], timeout_ms: 120000, timeouts: { web_fetch: 30000, skill_helper_import: 240000 } }
+mcp: { servers: [], defer: true }
+# Written unexpanded on purpose: a `~` here is the operator's home, and whoever reads this key is
+# the one that knows whose home that is. Nothing expands it yet, so nothing may join these onto a
+# path either - an unexpanded tilde reaching a filesystem call creates a directory named `~`.
+skills_roots: [~/.agh/skills, ~/.agents/skills, ~/.claude/skills, ~/.codex/skills]
+compaction: { enabled: true, reserve_tokens: 16384, keep_recent_tokens: 20000, agent_callable: true }
+checkpoint: { keep: 200, max_file_bytes: 10485760 }
+budget: { preflight: estimate, per_request_cap: null, on_exceed: quote, max_steps: 50, attribution: aggregate }
+approval: { on_unavailable: deny, on_timeout: rejected, timeout_ms: 60000, pending_ttl_ms: 86400000, command_policy: [] }
+sandbox: { level: L1, required: false, on_unavailable: deny, extra_paths: [], deny_paths: [], network_allow: [] }
+loop: { repeat_threshold: 3, no_progress_steps: 4 }
+repair: { max_rounds: 5, escalate_after: 3, timeout_ms: 10000 }
+verifier: { timeout_ms: 30000, default_tier: 0 }
+completion_gate: { enabled: true, min_items: 3, allow_override: true }
+subagent: { max_depth: 1, max_fan_out: 4, isolation: worktree, budget_inherit: aggregate }
+harness:
+  max_entries: { prompt: 10, memory: 50, skill: 30, subagent: 10 }
+  max_chars_per_entry: 2000
+  queue_max: 20
+  auto_refine: { enabled: true, gate: verifier, global_needs_human: true, cooldown_turns: 5 }
+telemetry: { consent: DISABLED, invariants: false, timing: false }
+recovery: { unknown_child: model }
+ext: { events_per_turn: 200 }
+locale: en

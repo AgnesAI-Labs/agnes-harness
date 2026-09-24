@@ -1,0 +1,42 @@
+{
+  "name": "@agnes/host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./testkit": "./testkit/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build:native": "node scripts/build-native.mjs"
+  },
+  "dependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/cordis": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/protocol-validation": "workspace:*",
+    "@agnes/resource-control-runtime": "workspace:*",
+    "@agnes/sandbox-remote": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "@sinclair/typebox": "0.34.33",
+    "ajv": "8.20.0",
+    "ipaddr.js": "2.5.0",
+    "jiti": "2.7.0",
+    "undici": "8.10.2",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@agnes/base": "workspace:*",
+    "@agnes/code": "workspace:*"
+  },
+  "license": "Apache-2.0 AND MIT"
+}

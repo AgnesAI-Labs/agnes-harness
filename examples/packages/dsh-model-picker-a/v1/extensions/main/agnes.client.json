@@ -1,0 +1,13 @@
+{
+  "client": {
+    "entry": "./client/index.js",
+    "styles": ["./client/index.css"],
+    "slots": ["conversation.input.model"],
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "services": [],
+    "projections": [],
+    "publicConfig": {
+      "label": "DSH model picker A · v1"
+    }
+  }
+}

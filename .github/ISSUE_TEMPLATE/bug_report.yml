@@ -1,0 +1,49 @@
+name: 问题报告 / Bug report
+description: 帮助我们复现和修复 AGH 的问题 / Help us reproduce an AGH issue.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢试用 AGH！请先搜索已有 Issues，并提供最小复现信息。中文或英文均可。
+        Thanks for trying AGH. Search existing issues first; Chinese and English are both welcome.
+
+        请勿附上密钥、完整 AGH_HOME、客户数据或未脱敏日志。漏洞请按仓库 SECURITY.md 私密报告。
+        Omit credentials, complete AGH home directories, customer data, and private logs. Follow SECURITY.md for vulnerability reports.
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题与预期 / Problem and expected behavior
+      description: 你想完成什么、实际发生了什么、预期是什么？ / What were you trying to do, what happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 版本与环境 / Version and environment
+      description: 源码 commit、OS/架构、Node/pnpm 版本；涉及 Web 时附浏览器版本。 / Include the commit, OS/architecture, Node/pnpm, and browser when relevant.
+      placeholder: |
+        Commit:
+        OS / Architecture:
+        Node / pnpm:
+        CLI / Web / SDK:
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 提供最少的操作、命令和脱敏配置。 / Include minimal steps, commands, and redacted configuration.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 补充信息 / Additional context
+      description: 可选：错误码、脱敏日志片段或截图，以及已做的排查。 / Optional error codes, redacted excerpts or screenshots, and checks already tried.
+    validations:
+      required: false

@@ -1,0 +1,607 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/hooks.json",
+  "title": "HookMap: the seventeen events, their five-tuple table, and their payload/return shapes",
+  "x-agnes-hook-table": {
+    "session_start": {
+      "mode": "parallel",
+      "category": "observe",
+      "failPolicy": "open",
+      "timeoutMs": 500,
+      "replayOnResume": true
+    },
+    "resources_discover": {
+      "mode": "waterfall",
+      "category": "transform",
+      "failPolicy": "open",
+      "timeoutMs": 1000,
+      "replayOnResume": true
+    },
+    "before_step": {
+      "mode": "serial",
+      "category": "directive",
+      "failPolicy": "closed",
+      "timeoutMs": 1000,
+      "replayOnResume": false
+    },
+    "context": {
+      "mode": "waterfall",
+      "category": "transform",
+      "failPolicy": "closed",
+      "timeoutMs": 1500,
+      "replayOnResume": false
+    },
+    "before_request": {
+      "mode": "waterfall",
+      "category": "transform",
+      "failPolicy": "closed",
+      "timeoutMs": 1500,
+      "replayOnResume": false
+    },
+    "before_provider_headers": {
+      "mode": "waterfall",
+      "category": "transform",
+      "failPolicy": "closed",
+      "timeoutMs": 500,
+      "replayOnResume": false
+    },
+    "request_error": {
+      "mode": "parallel",
+      "category": "observe",
+      "failPolicy": "open",
+      "timeoutMs": 500,
+      "replayOnResume": false
+    },
+    "tool_call": {
+      "mode": "serial",
+      "category": "directive",
+      "failPolicy": "closed",
+      "timeoutMs": 2000,
+      "replayOnResume": false
+    },
+    "tool_result": {
+      "mode": "waterfall",
+      "category": "transform",
+      "failPolicy": "open",
+      "timeoutMs": 2000,
+      "replayOnResume": false
+    },
+    "turn_stopping": {
+      "mode": "serial",
+      "category": "directive",
+      "failPolicy": "open",
+      "timeoutMs": 1000,
+      "replayOnResume": false
+    },
+    "approval_request": {
+      "mode": "waterfall",
+      "category": "transform",
+      "failPolicy": "closed",
+      "timeoutMs": 1000,
+      "replayOnResume": false
+    },
+    "before_compact": {
+      "mode": "waterfall",
+      "category": "transform",
+      "failPolicy": "closed",
+      "timeoutMs": 3000,
+      "replayOnResume": false
+    },
+    "compact": {
+      "mode": "parallel",
+      "category": "observe",
+      "failPolicy": "open",
+      "timeoutMs": 1000,
+      "replayOnResume": false
+    },
+    "subagent_start": {
+      "mode": "emit",
+      "category": "observe",
+      "failPolicy": "open",
+      "timeoutMs": 200,
+      "replayOnResume": false
+    },
+    "subagent_end": {
+      "mode": "emit",
+      "category": "observe",
+      "failPolicy": "open",
+      "timeoutMs": 200,
+      "replayOnResume": false
+    },
+    "format_deviation": {
+      "mode": "parallel",
+      "category": "observe",
+      "failPolicy": "open",
+      "timeoutMs": 500,
+      "replayOnResume": false
+    },
+    "shutdown": {
+      "mode": "parallel",
+      "category": "observe",
+      "failPolicy": "open",
+      "timeoutMs": 1000,
+      "replayOnResume": false
+    }
+  },
+  "x-agnes-hook-io": {
+    "session_start": ["SessionStartPayload", "SessionStartReturn"],
+    "resources_discover": ["ResourcesDiscoverPayload", "ResourcesDiscoverReturn"],
+    "before_step": ["BeforeStepPayload", "BeforeStepReturn"],
+    "context": ["ContextPayload", "ContextReturn"],
+    "before_request": ["BeforeRequestPayload", "BeforeRequestReturn"],
+    "before_provider_headers": ["BeforeProviderHeadersPayload", "BeforeProviderHeadersReturn"],
+    "request_error": ["RequestErrorPayload", "RequestErrorReturn"],
+    "tool_call": ["ToolCallPayload", "ToolCallReturn"],
+    "tool_result": ["ToolResultPayload", "ToolResultReturn"],
+    "turn_stopping": ["TurnStoppingPayload", "TurnStoppingReturn"],
+    "approval_request": ["ApprovalRequestPayload", "ApprovalRequestReturn"],
+    "before_compact": ["BeforeCompactPayload", "BeforeCompactReturn"],
+    "compact": ["CompactPayload", "CompactReturn"],
+    "subagent_start": ["SubagentStartPayload", "SubagentStartReturn"],
+    "subagent_end": ["SubagentEndPayload", "SubagentEndReturn"],
+    "format_deviation": ["FormatDeviationPayload", "FormatDeviationReturn"],
+    "shutdown": ["ShutdownPayload", "ShutdownReturn"]
+  },
+  "$defs": {
+    "JsonValue": { "$ref": "session-v1.json#/$defs/JsonValue" },
+    "Actor": { "$ref": "session-v1.json#/$defs/Actor" },
+    "ContentBlock": { "$ref": "session-v1.json#/$defs/ContentBlock" },
+    "ToolResult": { "$ref": "session-v1.json#/$defs/ToolResult" },
+    "PlanItems": { "$ref": "session-v1.json#/$defs/PlanItems" },
+    "Verdict": { "$ref": "session-v1.json#/$defs/Verdict" },
+    "ToolMeta": { "$ref": "tooldef.json#/$defs/ToolMeta" },
+
+    "ResolvedToolCallPolicy": { "$ref": "session-v1.json#/$defs/ResolvedToolCallPolicy" },
+    "ExecutionDomain": { "$ref": "session-v1.json#/$defs/ExecutionDomain" },
+
+    "HookEvent": {
+      "enum": [
+        "session_start",
+        "resources_discover",
+        "before_step",
+        "context",
+        "before_request",
+        "before_provider_headers",
+        "request_error",
+        "tool_call",
+        "tool_result",
+        "turn_stopping",
+        "approval_request",
+        "before_compact",
+        "compact",
+        "subagent_start",
+        "subagent_end",
+        "format_deviation",
+        "shutdown"
+      ]
+    },
+
+    "PromptSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "order", "text"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "order": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string", "maxLength": 65536 }
+      }
+    },
+    "ResourceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "description"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "kind": { "enum": ["skill", "mcp", "kb", "datasource", "model"] },
+        "name": { "type": "string", "maxLength": 256 },
+        "description": { "type": "string", "maxLength": 2048 },
+        "schema": { "$ref": "#/$defs/JsonValue" }
+      }
+    },
+    "SurfaceDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "tokensEstimate"],
+      "properties": {
+        "nodes": { "type": "integer", "minimum": 0 },
+        "tokensEstimate": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ApprovalRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool", "argvHash", "risk", "actor", "context"],
+      "properties": {
+        "tool": { "type": "string", "maxLength": 64 },
+        "argvHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "risk": { "enum": ["destructive", "always", "budget", "unknown"] },
+        "actor": { "$ref": "#/$defs/Actor" },
+        "context": { "type": "string", "maxLength": 4096 }
+      }
+    },
+    "CompactionPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keepFromSeq", "summarizeRange", "prompts", "maxTokens", "details"],
+      "properties": {
+        "keepFromSeq": { "type": "integer", "minimum": 1 },
+        "summarizeRange": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "turnPrefixRange": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "previousSummarySeq": { "type": "integer", "minimum": 1 },
+        "prompts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["system", "history"],
+          "properties": {
+            "system": { "type": "string" },
+            "history": { "type": "string" },
+            "prefix": { "type": "string" }
+          }
+        },
+        "maxTokens": { "type": "integer", "minimum": 1 },
+        "details": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["readFiles", "modifiedFiles"],
+          "properties": {
+            "readFiles": { "type": "array", "items": { "type": "string" } },
+            "modifiedFiles": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "customInstructions": { "type": "string", "maxLength": 8192 }
+      }
+    },
+
+    "SessionStartPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "preset", "cwd"],
+      "properties": {
+        "reason": { "enum": ["new", "resume", "fork"] },
+        "preset": { "type": "string" },
+        "cwd": { "type": "string" },
+        "parent": { "type": "string" }
+      }
+    },
+    "SessionStartReturn": { "type": "null" },
+
+    "ResourcesDiscoverPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "cwd", "registered"],
+      "properties": {
+        "actor": { "$ref": "#/$defs/Actor" },
+        "cwd": { "type": "string" },
+        "registered": { "type": "array", "items": { "$ref": "#/$defs/ResourceEntry" } }
+      }
+    },
+    "ResourcesDiscoverReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resources": { "type": "array", "items": { "$ref": "#/$defs/ResourceEntry" } },
+        "additionalContext": { "type": "string", "maxLength": 8192 }
+      }
+    },
+
+    "BeforeStepPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turn", "step", "budget", "depth"],
+      "properties": {
+        "turn": { "type": "integer" },
+        "step": { "type": "integer" },
+        "depth": { "type": "integer", "minimum": 0 },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["remaining", "cap"],
+          "properties": {
+            "remaining": { "type": ["number", "null"] },
+            "cap": { "type": ["number", "null"] }
+          }
+        }
+      }
+    },
+    "BeforeStepReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "block": { "type": "boolean" },
+        "reason": { "type": "string", "maxLength": 1024 }
+      }
+    },
+
+    "ContextPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sections", "surfaceDigest"],
+      "properties": {
+        "sections": { "type": "array", "items": { "$ref": "#/$defs/PromptSection" } },
+        "surfaceDigest": { "$ref": "#/$defs/SurfaceDigest" }
+      }
+    },
+    "ContextReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A participant returns only the sections it is contributing; sections already contributed by an earlier participant (or present before this hook ran) are kept automatically unless this participant's own sections list an id that matches one of them, in which case that whole row (order, text, source) is replaced by this participant's version. There is no need to read the incoming section list and echo it back.",
+      "properties": {
+        "sections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PromptSection" },
+          "description": "Sections this participant is contributing or overriding, by id. Omit any section you are not changing -- it stays as it was."
+        },
+        "additionalContext": { "type": "string", "maxLength": 8192 }
+      }
+    },
+
+    "BeforeRequestPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "slot", "model", "attempt"],
+      "properties": {
+        "request": { "$ref": "#/$defs/JsonValue" },
+        "slot": { "type": "string" },
+        "model": { "type": "string" },
+        "attempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "BeforeRequestReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "patch": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "samplingParams": { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } },
+            "maxTokens": { "type": "integer", "minimum": 1 },
+            "metadata": { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } }
+          }
+        }
+      }
+    },
+
+    "BeforeProviderHeadersPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "headers"],
+      "properties": {
+        "route": { "type": "string" },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "BeforeProviderHeadersReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "propertyNames": { "pattern": "^X-Ext-" },
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+
+    "RequestErrorPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "attempt", "retryable"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "attempt": { "type": "integer" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "RequestErrorReturn": { "type": "null" },
+
+    "ToolCallPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolUseId", "name", "args", "meta", "actor", "taint"],
+      "properties": {
+        "toolUseId": { "type": "string" },
+        "name": { "type": "string" },
+        "args": { "$ref": "#/$defs/JsonValue" },
+        "meta": { "$ref": "#/$defs/ToolMeta" },
+        "actor": { "$ref": "#/$defs/Actor" },
+        "taint": { "type": "boolean" },
+        "resolvedPolicy": { "$ref": "#/$defs/ResolvedToolCallPolicy" },
+        "executionDomain": { "$ref": "#/$defs/ExecutionDomain" },
+        "definitionFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "policyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "dependentRequired": {
+        "resolvedPolicy": ["executionDomain", "definitionFingerprint", "policyHash"],
+        "executionDomain": ["resolvedPolicy", "definitionFingerprint", "policyHash"],
+        "definitionFingerprint": ["resolvedPolicy", "executionDomain", "policyHash"],
+        "policyHash": ["resolvedPolicy", "executionDomain", "definitionFingerprint"]
+      }
+    },
+    "ToolCallReturn": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allow"],
+          "properties": { "allow": { "const": true } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allow", "reason"],
+          "properties": {
+            "allow": { "const": false },
+            "reason": { "type": "string", "maxLength": 1024 }
+          }
+        }
+      ]
+    },
+
+    "ToolResultPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolUseId", "name", "args", "result", "enforcement"],
+      "properties": {
+        "toolUseId": { "type": "string" },
+        "name": { "type": "string" },
+        "args": { "$ref": "#/$defs/JsonValue" },
+        "result": { "$ref": "#/$defs/ToolResult" },
+        "enforcement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "scope"],
+          "properties": {
+            "level": { "enum": ["full", "partial", "none"] },
+            "scope": { "type": "array", "items": { "enum": ["file", "network", "process"] } }
+          }
+        }
+      }
+    },
+    "ToolResultReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "result": { "$ref": "#/$defs/ToolResult" } }
+    },
+
+    "TurnStoppingPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turn", "step", "proposedReason"],
+      "properties": {
+        "turn": { "type": "integer" },
+        "step": { "type": "integer" },
+        "proposedReason": {
+          "enum": ["completed", "aborted", "error", "parked", "blocked", "budget", "max_steps", "interrupted"]
+        },
+        "plan": { "$ref": "#/$defs/PlanItems" },
+        "verifier": { "$ref": "#/$defs/Verdict" }
+      }
+    },
+    "TurnStoppingReturn": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action"],
+          "properties": { "action": { "const": "stop" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "note"],
+          "properties": {
+            "action": { "const": "continue" },
+            "note": { "type": "string", "maxLength": 2048 }
+          }
+        }
+      ]
+    },
+
+    "ApprovalRequestPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request"],
+      "properties": { "request": { "$ref": "#/$defs/ApprovalRequest" } }
+    },
+    "ApprovalRequestReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "risk": { "enum": ["destructive", "always", "budget", "unknown"] },
+            "context": { "type": "string", "maxLength": 4096 }
+          }
+        }
+      }
+    },
+
+    "BeforeCompactPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contextTokens", "contextWindow", "reserveTokens", "reason"],
+      "properties": {
+        "contextTokens": { "type": "integer", "minimum": 0 },
+        "contextWindow": { "type": "integer", "minimum": 1 },
+        "reserveTokens": { "type": "integer", "minimum": 1 },
+        "reason": { "enum": ["threshold", "overflow", "requested"] },
+        "previousSummarySeq": { "type": "integer", "minimum": 1 },
+        "customInstructions": { "type": "string", "maxLength": 8192 }
+      }
+    },
+    "BeforeCompactReturn": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/CompactionPlan" }] },
+
+    "CompactPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replaceSeq", "range", "tokensBefore", "tokensAfter"],
+      "properties": {
+        "replaceSeq": { "type": "integer", "minimum": 1 },
+        "range": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
+        "tokensBefore": { "type": "integer", "minimum": 0 },
+        "tokensAfter": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "CompactReturn": { "type": "null" },
+
+    "SubagentStartPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["childKey", "kind", "budget"],
+      "properties": {
+        "childKey": { "type": "string" },
+        "kind": { "enum": ["fork", "spawn"] },
+        "budget": { "type": ["number", "null"] }
+      }
+    },
+    "SubagentStartReturn": { "type": "null" },
+
+    "SubagentEndPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["childKey", "outcome", "credits"],
+      "properties": {
+        "childKey": { "type": "string" },
+        "outcome": {
+          "enum": ["completed", "aborted", "error", "parked", "blocked", "budget", "max_steps", "interrupted"]
+        },
+        "credits": { "type": "number", "minimum": 0 }
+      }
+    },
+    "SubagentEndReturn": { "type": "null" },
+
+    "FormatDeviationPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule", "model", "sampleHash"],
+      "properties": {
+        "rule": { "type": "string" },
+        "model": { "type": "string" },
+        "sampleHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "FormatDeviationReturn": { "type": "null" },
+
+    "ShutdownPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": { "reason": { "enum": ["close", "revoke", "reload"] } }
+    },
+    "ShutdownReturn": { "type": "null" }
+  }
+}

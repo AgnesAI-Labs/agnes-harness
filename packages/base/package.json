@@ -1,0 +1,95 @@
+{
+  "name": "@agnes/base",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./computer-use": "./extensions/computer-use/src/index.ts",
+    "./privacy": "./extensions/privacy/src/redact.ts",
+    "./testkit": "./testkit/index.ts",
+    "./presets/*": "./presets/*"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "approvalPlugin",
+        "id": "seam:approval"
+      },
+      {
+        "export": "principalsPlugin",
+        "id": "seam:principals"
+      },
+      {
+        "export": "artifactsPlugin",
+        "id": "seam:artifacts"
+      },
+      {
+        "export": "checkpointPlugin",
+        "id": "seam:checkpoint"
+      },
+      {
+        "export": "ledgerPlugin",
+        "id": "seam:ledger"
+      },
+      {
+        "export": "verifierPlugin",
+        "id": "seam:verifier"
+      },
+      {
+        "export": "repairPlugin",
+        "id": "seam:repair"
+      },
+      {
+        "export": "harnessPlugin",
+        "id": "seam:harness"
+      }
+    ],
+    "extensions": [
+      "./extensions/tools-core",
+      "./extensions/tools-search",
+      "./extensions/tools-web",
+      "./extensions/compaction",
+      "./extensions/refine",
+      "./extensions/subagent",
+      "./extensions/mcp-search",
+      "./extensions/hooks-runner",
+      "./extensions/privacy",
+      "./extensions/skills",
+      "./extensions/computer-use"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build:isolation-runner": "tsx tools/build-isolation-runner.ts",
+    "gen": "tsx tools/gen-schemas.ts --write",
+    "gen:check": "tsx tools/gen-schemas.ts"
+  },
+  "peerDependencies": {
+    "@agnes/extension-api": "workspace:*"
+  },
+  "dependencies": {
+    "@agnes/core": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@joplin/turndown-plugin-gfm": "1.0.67",
+    "@agnes/protocol-validation": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.25.2",
+    "@sinclair/typebox": "0.34.33",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "isomorphic-git": "1.41.9",
+    "jiti": "2.7.0",
+    "turndown": "7.2.4",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/mcp-transport-health": "workspace:*",
+    "@types/turndown": "5.0.6",
+    "esbuild": "0.28.2"
+  },
+  "license": "Apache-2.0 AND MIT"
+}

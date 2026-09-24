@@ -1,0 +1,11 @@
+{
+  "name": "@agnes/guards",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "license": "Apache-2.0"
+}

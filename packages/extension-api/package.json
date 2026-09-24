@@ -1,0 +1,28 @@
+{
+  "name": "@agnes/extension-api",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testkit": "./testkit/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "gen": "tsx tools/gen-tables.ts && tsx tools/gen-docs.ts",
+    "gen:check": "tsx tools/gen-tables.ts --check && tsx tools/gen-docs.ts --check",
+    "release:check": "tsx tools/release-check.ts"
+  },
+  "dependencies": {
+    "@agnes/protocol": "workspace:*"
+  },
+  "peerDependencies": {
+    "@sinclair/typebox": ">=0.34"
+  },
+  "devDependencies": {
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/core": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

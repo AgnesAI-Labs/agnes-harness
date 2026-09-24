@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/authz.json",
+  "title": "Actor / Target / Action / Decision / RowScope (\u89c4\u683c \u00a74.8.1\u20134.8.2)",
+  "$defs": {
+    "Actor": {
+      "$ref": "session-v1.json#/$defs/Actor"
+    },
+    "Target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "enum": ["datasource", "db", "table", "field", "model", "skill", "mcp", "kb", "menu", "button"]
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "parent": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "Action": {
+      "type": "string",
+      "pattern": "^(select|export|execute|discover|admin\\.[a-z_]{1,32})$"
+    },
+    "RowScope": {
+      "oneOf": [
+        {
+          "enum": ["all_org", "self", "own_dept", "dept_subtree"]
+        },
+        {
+          "type": "string",
+          "pattern": "^named_regions\\[[a-z0-9_-]+(?:,[a-z0-9_-]+)*\\]$",
+          "maxLength": 271
+        },
+        {
+          "type": "string",
+          "pattern": "^ref\\([a-z0-9_-]{1,64}\\)$"
+        }
+      ]
+    },
+    "Decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisionId", "effect", "reason"],
+      "properties": {
+        "decisionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "effect": {
+          "enum": ["allow", "deny", "require_approval"]
+        },
+        "rowFilter": {
+          "$ref": "#/$defs/RowScope"
+        },
+        "fieldMask": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["visible", "masked"],
+          "properties": {
+            "visible": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "masked": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxRows": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "exportRequiresGrant": {
+              "type": "boolean"
+            }
+          }
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

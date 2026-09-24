@@ -1,0 +1,14 @@
+{
+  "name": "fixture-exts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "agnes": {
+    "extensions": [
+      "./extensions/ok",
+      "./extensions/undeclared",
+      "./extensions/throws",
+      "./extensions/escape"
+    ]
+  }
+}

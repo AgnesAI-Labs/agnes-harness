@@ -1,0 +1,150 @@
+{
+  "$generated": "generated from @agnes/bridges@0.0.0 — do not edit",
+  "version": "0.0.0",
+  "events": {
+    "PreToolUse": {
+      "to": [
+        "tool_call"
+      ],
+      "unsupportedFields": [
+        "updatedInput"
+      ]
+    },
+    "PostToolUse": {
+      "to": [
+        "tool_result"
+      ]
+    },
+    "PostToolUseFailure": {
+      "to": [
+        "tool_result"
+      ]
+    },
+    "Notification": {
+      "to": null,
+      "reason": "UI notification; no harness event"
+    },
+    "UserPromptSubmit": {
+      "to": [
+        "before_step",
+        "context"
+      ],
+      "reason": "the current before_step/context payloads expose no user-message text",
+      "unsupportedFields": [
+        "prompt"
+      ]
+    },
+    "SessionStart": {
+      "to": [
+        "session_start"
+      ],
+      "reason": "session_start currently returns null; source=compact has no legal reason value",
+      "unsupportedFields": [
+        "additionalContext"
+      ]
+    },
+    "SessionEnd": {
+      "to": [
+        "shutdown"
+      ]
+    },
+    "Stop": {
+      "to": [
+        "turn_stopping"
+      ]
+    },
+    "StopFailure": {
+      "to": null,
+      "reason": "error path is turn/end{error}, not a hook"
+    },
+    "SubagentStart": {
+      "to": [
+        "subagent_start"
+      ],
+      "reason": "subagent_start has no prompt field",
+      "unsupportedFields": [
+        "prompt"
+      ]
+    },
+    "SubagentStop": {
+      "to": [
+        "subagent_end"
+      ],
+      "unsupportedFields": [
+        "decision"
+      ]
+    },
+    "PreCompact": {
+      "to": [
+        "before_compact"
+      ]
+    },
+    "PostCompact": {
+      "to": [
+        "compact"
+      ]
+    },
+    "PermissionRequest": {
+      "to": [
+        "approval_request"
+      ],
+      "reason": "approval_request can refine risk/context but cannot return an approval verdict",
+      "unsupportedFields": [
+        "decision",
+        "updatedPermissions"
+      ]
+    },
+    "PermissionDenied": {
+      "to": null,
+      "reason": "already an approval/decided event"
+    },
+    "Setup": {
+      "to": null,
+      "reason": "install-time action; package lifecycle is not exposed to extensions"
+    },
+    "TeammateIdle": {
+      "to": null,
+      "reason": "Claude Code team model; harness has a jobs table instead"
+    },
+    "TaskCreated": {
+      "to": null,
+      "reason": "Claude Code task model; harness has a jobs table instead"
+    },
+    "TaskCompleted": {
+      "to": null,
+      "reason": "Claude Code task model; harness has a jobs table instead"
+    },
+    "Elicitation": {
+      "to": null,
+      "reason": "MCP elicitation is declined in v0.1"
+    },
+    "ElicitationResult": {
+      "to": null,
+      "reason": "MCP elicitation is declined in v0.1"
+    },
+    "ConfigChange": {
+      "to": null,
+      "reason": "profile change requires restart"
+    },
+    "WorktreeCreate": {
+      "to": null,
+      "reason": "worktree is a subagent-internal contract"
+    },
+    "WorktreeRemove": {
+      "to": null,
+      "reason": "worktree is a subagent-internal contract"
+    },
+    "InstructionsLoaded": {
+      "to": null,
+      "reason": "AGENTS.md is already visible in the context hook"
+    },
+    "CwdChanged": {
+      "to": null,
+      "reason": "session cwd is fixed"
+    },
+    "FileChanged": {
+      "to": null,
+      "reason": "no file watcher"
+    }
+  }
+}

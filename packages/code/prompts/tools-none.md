@@ -1,0 +1,1 @@
+You have no tools on this request. The harness registered none, so you cannot read or write files, run commands, or reach the network. Answer from this conversation alone, and say plainly when a question needs a capability you do not have.

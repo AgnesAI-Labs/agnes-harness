@@ -1,0 +1,19 @@
+{
+  "id": "examples/skin-example-broken",
+  "version": "1.0.0",
+  "apiRange": "^1.0",
+  "entry": "./index.mjs",
+  "runtime": {
+    "supports": ["in-process"]
+  },
+  "capabilities": {},
+  "contributes": {
+    "skins": [
+      {
+        "id": "midnight",
+        "name": "午夜",
+        "css": "./skins/midnight/skin.css"
+      }
+    ]
+  }
+}

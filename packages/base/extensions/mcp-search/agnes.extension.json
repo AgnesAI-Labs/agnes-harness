@@ -1,0 +1,14 @@
+{
+  "id": "agnes/mcp-search",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": { "prefix": "tool_", "names": ["tool_search", "tool_describe"] },
+    "hooks": [],
+    "slots": [],
+    "events": false,
+    "resources": [],
+    "network": []
+  }
+}

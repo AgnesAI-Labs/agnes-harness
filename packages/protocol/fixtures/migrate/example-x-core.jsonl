@@ -1,0 +1,1 @@
+{"id": "x-core-example-v0-to-v1", "target": "migrate", "type": "x/core/example", "fromV": 0, "before": {"msg": "old"}, "after": {"msg": "old", "migrated": true}}

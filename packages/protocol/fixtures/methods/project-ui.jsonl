@@ -1,0 +1,7 @@
+{"id": "project-ui-default", "kind": "valid", "target": "method", "name": "_agnes/v1/session.projectUI", "side": "params", "payload": {"sessionId": "s"}}
+{"id": "project-ui-zero", "kind": "valid", "target": "method", "name": "_agnes/v1/session.projectUI", "side": "params", "payload": {"sessionId": "s", "upto": 0, "surface": "tui"}}
+{"id": "project-ui-actor", "kind": "invalid", "target": "method", "name": "_agnes/v1/session.projectUI", "side": "params", "payload": {"sessionId": "s", "actor": {}}, "expect": {"errorCode": -32602, "dataCode": "UNKNOWN_KEY", "key": "actor"}}
+{"id": "project-ui-negative", "kind": "invalid", "target": "method", "name": "_agnes/v1/session.projectUI", "side": "params", "payload": {"sessionId": "s", "upto": -1}}
+{"id": "project-ui-empty", "kind": "valid", "target": "method", "name": "_agnes/v1/session.projectUI", "side": "result", "payload": {"sessionId": "s", "generation": 1, "upto": 0, "opState": null, "nodes": [], "turns": []}}
+{"id": "project-ui-missing-generation", "kind": "invalid", "target": "method", "name": "_agnes/v1/session.projectUI", "side": "result", "payload": {"sessionId": "s", "upto": 0, "opState": null, "nodes": [], "turns": []}}
+{"id": "project-ui-zero-generation", "kind": "invalid", "target":"method", "name": "_agnes/v1/session.projectUI", "side": "result", "payload": {"sessionId": "s", "generation": 0, "upto": 0, "opState": null, "nodes": [], "turns": []}}

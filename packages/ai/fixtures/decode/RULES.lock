@@ -1,0 +1,13 @@
+{
+  "parserVersion": "2",
+  "rulesDigest": "11f32b4a7a9825c8620ae6c9d55eb47387e73a0f1b97a5bf5f22c4310233c763",
+  "sourceDigest": "c7f112aef73bbca797087a027992ab011065c7814cd9eb3477c3dd00a24fd932",
+  "fixtureDigest": "9540012c8ce2daacff78fca8b197471144a669084bbb74c64ecb3b785b574383",
+  "sampleCoverage": {
+    "qwen3_coder": null,
+    "anthropic_invoke": null,
+    "hermes_tool_call": null,
+    "inline_json": null,
+    "lenient_json": null
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": "agnes-model-contract@0",
+  "model_family": "test",
+  "parser_version": "1",
+  "released_at": "2026-09-07T00:00:00Z",
+  "sha256": {
+    "prefix": "a522df3b0d10f28e4ccb4b51bcc70e65fb1e17f930b14ad1b2734a8f3a6089f6",
+    "tools": "bd237a278777966ec9882b135fa453edcde167cd86fe490d6d598057a0705810",
+    "syntax": "ee8f5723eb5770c80866081897feb51e90e2ae337291d3672601c45cb33a3ae0"
+  }
+}

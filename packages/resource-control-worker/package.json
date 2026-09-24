@@ -1,0 +1,20 @@
+{
+  "name": "@agnes/resource-control-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/base": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/resource-control-runtime": "workspace:*",
+    "@agnes/system-node": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,29 @@
+Agnes Harness — third-party and separate-license notices
+
+The Agnes Harness project is licensed under Apache License 2.0 except where
+individual files, packages, or directories carry a different license. The
+following material retains its original notices and license terms:
+
+- Cordis and Cosmokit, vendored in packages/cordis and packages/cosmokit:
+  Copyright (c) 2021-present Shigma. MIT License. The corresponding LICENSE
+  and VENDORED.md files are retained in each package.
+- Portions of packages/base/extensions/tools-web and
+  packages/host/src/adapters/public-fetch:
+  Copyright (c) 2026 DeepSeek. MIT License. See the local
+  DEEPSEEK-LICENSE.txt files and source-file notices.
+- Computer Use adaptation in packages/base/extensions/computer-use:
+  Copyright (c) 2025 Nous Research. MIT License. See the local NOTICE for
+  provenance, changes, and the full license text.
+- Bundled Skill Helper in packages/package-manager/bundled-plugins/skill-helper:
+  Copyright (c) 2026 2812348473. MIT License. See its local LICENSE.
+- The ACP schema in packages/protocol/schema/acp is derived from the Agent
+  Client Protocol project under Apache License 2.0. See UPSTREAM.md for the
+  exact source revision and scope.
+- Example packages under examples/packages/ that explicitly declare MIT in
+  their package.json retain that separate declaration. Their authorship and
+  accompanying license text must be checked before distributing those example
+  packages independently.
+
+This NOTICE is informational and does not modify any license. It records known
+source-tree attributions; a separately distributed binary or package must also
+be checked against its actual bundled dependencies and assets.

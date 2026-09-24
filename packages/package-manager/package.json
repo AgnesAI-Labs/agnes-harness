@@ -1,0 +1,26 @@
+{
+  "name": "@agnes/package-manager",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/error-sanitization": "workspace:*",
+    "@agnes/package-isolation": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "yaml": "2.9.0"
+  },
+  "license": "Apache-2.0 AND MIT"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "agnes/subagent",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "subagent_",
+      "names": ["subagent_fork", "subagent_spawn", "subagent_collect", "subagent_cancel"]
+    },
+    "hooks": [],
+    "slots": [],
+    "events": true,
+    "subagent": true,
+    "resources": [],
+    "network": []
+  }
+}

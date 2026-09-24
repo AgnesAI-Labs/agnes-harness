@@ -1,0 +1,9 @@
+{
+  "$defs": {
+    "ExtLikeType": {
+      "type": "string",
+      "maxLength": 10,
+      "anyOf": [{ "enum": ["fixed"] }, { "pattern": "^ok-.*$" }]
+    }
+  }
+}

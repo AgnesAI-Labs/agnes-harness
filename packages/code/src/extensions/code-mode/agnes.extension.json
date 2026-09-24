@@ -1,0 +1,17 @@
+{
+  "id": "agnes/code-mode",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./index.ts",
+  "capabilities": {
+    "tools": { "prefix": "", "names": ["run_code"] },
+    "hooks": ["session_start", "before_compact", "shutdown"],
+    "slots": [],
+    "events": true,
+    "resources": [],
+    "network": [],
+    "tools.invoke": true,
+    "artifacts": true,
+    "subagent": true
+  }
+}

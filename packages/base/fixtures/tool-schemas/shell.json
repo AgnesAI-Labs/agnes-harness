@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "command": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "timeoutMs": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "cwd": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "background": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "command"
+  ]
+}

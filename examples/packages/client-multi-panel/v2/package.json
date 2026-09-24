@@ -1,0 +1,32 @@
+{
+  "name": "@agnes-examples/client-multi-panel",
+  "version": "2.0.0",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "agnes": {
+    "plugins": [
+      {
+        "export": "primary",
+        "id": "ext:examples/client-multi-panel/primary",
+        "runtime": "in-process"
+      },
+      {
+        "export": "secondary",
+        "id": "ext:examples/client-multi-panel/secondary",
+        "runtime": "in-process"
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:examples/client-multi-panel/primary",
+        "path": "./extensions/primary/agnes.client.json"
+      },
+      {
+        "rowId": "ext:examples/client-multi-panel/secondary",
+        "path": "./extensions/secondary/agnes.client.json"
+      }
+    ]
+  },
+  "exports": "./index.mjs"
+}

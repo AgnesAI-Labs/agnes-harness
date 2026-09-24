@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    { "path": "../system-node" },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../sdk"
+    },
+    { "path": "../resource-control-store" },
+    { "path": "../resource-control-daemon" },
+    { "path": "../resource-control-runtime" },
+    { "path": "../resource-control-worker" },
+    { "path": "../worker-runtime" },
+    { "path": "../base" },
+    { "path": "../code" }
+  ]
+}

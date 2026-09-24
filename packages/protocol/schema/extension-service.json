@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/extension-service.json",
+  "$ref": "#/$defs/ServiceCapability",
+  "$defs": {
+    "ServiceCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "inputSchema", "outputSchema", "timeoutMs", "maxResultBytes"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
+          "maxLength": 128
+        },
+        "kind": {
+          "enum": ["query", "effect"]
+        },
+        "inputSchema": {
+          "$ref": "tooldef.json#/$defs/ParametersSchema"
+        },
+        "outputSchema": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        },
+        "maxResultBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      }
+    },
+    "ExtensionCallParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "extension", "service", "input"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "extension": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
+          "maxLength": 128
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "ExtensionCallResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output"],
+      "properties": {
+        "output": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        }
+      }
+    },
+    "ExtensionAckParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extension", "service", "commandId"],
+      "properties": {
+        "extension": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
+          "maxLength": 128
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "ExtensionCallError": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "data"],
+          "properties": {
+            "code": {
+              "const": -32001
+            },
+            "message": {
+              "const": "OVERLOADED"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code"],
+              "properties": {
+                "code": {
+                  "const": "OVERLOADED"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "data"],
+          "properties": {
+            "code": {
+              "const": -32006
+            },
+            "message": {
+              "const": "CAPABILITY_DENIED"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code"],
+              "properties": {
+                "code": {
+                  "const": "CAPABILITY_DENIED"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "data"],
+          "properties": {
+            "code": {
+              "const": -32602
+            },
+            "message": {
+              "const": "INVALID_PARAMS"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code"],
+              "properties": {
+                "code": {
+                  "const": "INVALID_PARAMS"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "data"],
+          "properties": {
+            "code": {
+              "const": -32011
+            },
+            "message": {
+              "const": "SEMANTIC_REJECTED"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code"],
+              "properties": {
+                "code": {
+                  "const": "ID_CONFLICT"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "data"],
+          "properties": {
+            "code": {
+              "const": -32012
+            },
+            "message": {
+              "const": "REQUEST_TIMEOUT"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code"],
+              "properties": {
+                "code": {
+                  "const": "REQUEST_TIMEOUT"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "data"],
+          "properties": {
+            "code": {
+              "const": -32603
+            },
+            "message": {
+              "const": "INTERNAL_ERROR"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code"],
+              "properties": {
+                "code": {
+                  "enum": ["INTERNAL_ERROR", "E_WORKSPACE_REQUIRED"]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "data"],
+          "properties": {
+            "code": {
+              "const": -32013
+            },
+            "message": {
+              "const": "OUTCOME_UNKNOWN"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code"],
+              "properties": {
+                "code": {
+                  "const": "OUTCOME_UNKNOWN"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

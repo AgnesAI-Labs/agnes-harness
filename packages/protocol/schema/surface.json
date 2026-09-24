@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/surface.json",
+  "title": "Surface artifacts and deployment instances",
+  "$ref": "#/$defs/SurfaceDescriptor",
+  "$defs": {
+    "SurfaceServiceGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extension", "name", "range"],
+      "properties": {
+        "extension": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$"
+        },
+        "range": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*)(?: +(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*))*$"
+        }
+      }
+    },
+    "SurfaceArtifact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "entry"],
+          "properties": {
+            "kind": {
+              "const": "node"
+            },
+            "entry": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^\\./dist/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.(?:js|mjs|cjs)$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "image"],
+          "properties": {
+            "kind": {
+              "const": "oci"
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?/(?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "SurfaceConfigValue": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "maxLength": 16384,
+          "pattern": "^(?!secret://)"
+        },
+        {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/SurfaceConfigValue"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(?!(?:[A-Za-z0-9]+[_.-])*(?:[sS][eE][cC][rR][eE][tT]|[sS][eE][cC][rR][eE][tT][sS]|[tT][oO][kK][eE][nN]|[tT][oO][kK][eE][nN][sS]|[pP][aA][sS][sS][wW][oO][rR][dD]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]|[aA][uU][tT][hH][oO][rR][iI][zZ][aA][tT][iI][oO][nN]|[aA][pP][iI][_.-]?[kK][eE][yY]|[pP][rR][iI][vV][aA][tT][eE][_.-]?[kK][eE][yY]|[aA][cC][cC][eE][sS][sS][_.-]?[tT][oO][kK][eE][nN]|[rR][eE][fF][rR][eE][sS][hH][_.-]?[tT][oO][kK][eE][nN]|[cC][lL][iI][eE][nN][tT][_.-]?[sS][eE][cC][rR][eE][tT])$)[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/SurfaceConfigValue"
+          }
+        }
+      ]
+    },
+    "SurfaceDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "apiRange", "artifact", "healthPath", "requires"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "apiRange": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*)(?: +(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*))*$"
+        },
+        "artifact": {
+          "$ref": "#/$defs/SurfaceArtifact"
+        },
+        "healthPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^/(?:[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)?$"
+        },
+        "requires": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["services"],
+          "properties": {
+            "services": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/SurfaceServiceGrant"
+              }
+            }
+          }
+        }
+      }
+    },
+    "SurfaceInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "surfaceId", "mount", "sourceId", "config", "secrets", "grants"],
+      "properties": {
+        "package": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "surfaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "mount": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^/(?!_agnes(?:/|$))[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$"
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "config": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(?!(?:[A-Za-z0-9]+[_.-])*(?:[sS][eE][cC][rR][eE][tT]|[sS][eE][cC][rR][eE][tT][sS]|[tT][oO][kK][eE][nN]|[tT][oO][kK][eE][nN][sS]|[pP][aA][sS][sS][wW][oO][rR][dD]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]|[aA][uU][tT][hH][oO][rR][iI][zZ][aA][tT][iI][oO][nN]|[aA][pP][iI][_.-]?[kK][eE][yY]|[pP][rR][iI][vV][aA][tT][eE][_.-]?[kK][eE][yY]|[aA][cC][cC][eE][sS][sS][_.-]?[tT][oO][kK][eE][nN]|[rR][eE][fF][rR][eE][sS][hH][_.-]?[tT][oO][kK][eE][nN]|[cC][lL][iI][eE][nN][tT][_.-]?[sS][eE][cC][rR][eE][tT])$)[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/SurfaceConfigValue"
+          }
+        },
+        "secrets": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "profile.json#/$defs/SecretRef"
+          }
+        },
+        "grants": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SurfaceServiceGrant"
+          }
+        }
+      }
+    },
+    "SurfacePackageMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surfaces"],
+      "properties": {
+        "surfaces": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SurfaceDescriptor"
+          }
+        }
+      }
+    }
+  }
+}

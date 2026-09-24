@@ -1,0 +1,19 @@
+{
+  "skins": [
+    {
+      "id": "midnight",
+      "name": "午夜",
+      "css": "./skins/midnight/skin.css",
+      "tokens": {
+        "--agnes-bg-page": {
+          "light": "#fbfbfb",
+          "dark": "#141a22"
+        },
+        "--agnes-bg-app-content": {
+          "light": "#f4f6f9",
+          "dark": "#0f141a"
+        }
+      }
+    }
+  ]
+}

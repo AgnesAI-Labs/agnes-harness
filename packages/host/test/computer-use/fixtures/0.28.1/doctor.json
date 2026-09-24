@@ -1,0 +1,48 @@
+{
+  "format": "normalized-health-report-v1",
+  "source": {
+    "repository": "https://github.com/trycua/cua",
+    "tag": "cua-driver-rs-v0.28.1",
+    "commit": "d8028a7943087ee258dc1b4d19dc12a7cd27669c"
+  },
+  "schema_version": "1",
+  "platform": "win32-x86_64",
+  "overall": "ok",
+  "checks": [
+    {
+      "id": "binary",
+      "status": "pass",
+      "message": "cua-driver 0.28.1 (x86_64-windows)"
+    },
+    {
+      "id": "install_dir",
+      "status": "pass",
+      "message": "locked release archive executable verified"
+    },
+    {
+      "id": "home_dir",
+      "status": "pass",
+      "message": "driver home directory available"
+    },
+    {
+      "id": "telemetry",
+      "status": "pass",
+      "message": "telemetry setting readable"
+    },
+    {
+      "id": "interactive_session",
+      "status": "pass",
+      "message": "interactive desktop attached"
+    },
+    {
+      "id": "ui_automation",
+      "status": "pass",
+      "message": "CoCreateInstance(CUIAutomation) succeeded"
+    },
+    {
+      "id": "enumwindows_visible",
+      "status": "pass",
+      "message": "visible top-level windows detected"
+    }
+  ]
+}

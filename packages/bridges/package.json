@@ -1,0 +1,22 @@
+{
+  "name": "@agnes/bridges",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./convert": "./src/convert/index.ts",
+    "./trajectory": "./src/trajectory/upload-client.ts",
+    "./data/*": "./data/*"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "gen": "tsx generate/run.ts",
+    "gen:check": "tsx generate/run.ts --check"
+  },
+  "dependencies": {
+    "@agnes/protocol": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

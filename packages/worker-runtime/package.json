@@ -1,0 +1,27 @@
+{
+  "name": "@agnes/worker-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/base": "workspace:*",
+    "@agnes/code": "workspace:*",
+    "@agnes/error-sanitization": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/resource-control-runtime": "workspace:*",
+    "@agnes/resource-control-worker": "workspace:*",
+    "@agnes/package-manager": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

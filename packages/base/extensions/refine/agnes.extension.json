@@ -1,0 +1,14 @@
+{
+  "id": "agnes/refine",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": { "prefix": "", "names": ["harness_propose"] },
+    "hooks": ["compact"],
+    "slots": [],
+    "events": true,
+    "resources": [],
+    "network": []
+  }
+}

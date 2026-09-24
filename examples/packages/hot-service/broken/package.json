@@ -1,0 +1,20 @@
+{
+  "name": "@agnes-examples/hot-service",
+  "version": "1.2.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "hotService",
+        "config": {
+          "label": "demo"
+        },
+        "provide": [
+          "demoTextStats"
+        ]
+      }
+    ]
+  }
+}

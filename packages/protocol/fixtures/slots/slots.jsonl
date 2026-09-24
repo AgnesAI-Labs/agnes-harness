@@ -1,0 +1,8 @@
+{"id": "tool-card-inline-ok", "kind": "valid", "target": "slot", "name": "tool.card.inline", "payload": {"title": "monthly sales", "table": {"columns": ["region", "amount"], "rows": [["east", "1,200"]]}, "actions": [{"id": "export", "label": "Export"}]}}
+{"id": "tool-card-inline-pie-chart", "kind": "invalid", "target": "slot", "name": "tool.card.inline", "payload": {"title": "monthly sales", "chart": {"kind": "pie", "series": []}}, "expect": {"dataCode": "ENUM", "key": "kind"}}
+{"id": "sidebar-action-ok", "kind": "valid", "target": "slot", "name": "sidebar.action", "payload": {"id": "rerun", "label": "Re-run", "icon": "arrow", "disabled": false}}
+{"id": "sidebar-action-id-with-space", "kind": "invalid", "target": "slot", "name": "sidebar.action", "payload": {"id": "Re Run", "label": "Re-run"}, "expect": {"dataCode": "PATTERN", "key": "id"}}
+{"id": "status-line-ok", "kind": "valid", "target": "slot", "name": "status.line", "payload": {"text": "3 tools running", "level": "info"}}
+{"id": "status-line-bad-level", "kind": "invalid", "target": "slot", "name": "status.line", "payload": {"text": "3 tools running", "level": "debug"}, "expect": {"dataCode": "ENUM", "key": "level"}}
+{"id": "notification-ok", "kind": "valid", "target": "slot", "name": "notification", "payload": {"title": "done", "body": "the turn finished", "link": "https://example.invalid/x"}}
+{"id": "notification-missing-body", "kind": "invalid", "target": "slot", "name": "notification", "payload": {"title": "done"}, "expect": {"dataCode": "MISSING", "key": "body"}}

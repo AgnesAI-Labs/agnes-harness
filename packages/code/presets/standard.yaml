@@ -1,0 +1,70 @@
+# The default recipe: the model emits tool calls directly and the standard tool set answers them.
+# Everything not written here is inherited from base.yaml; the tool list is spelled out anyway so
+# that a byte snapshot of this file reads as a complete description of the product's defaults.
+name: standard
+extends: base
+surfaces: [cli, sdk, acp, daemon]
+model:
+  contract_id: agnes-model-contract@v1
+  # Five of the seven slots; image and video are absent, which means "not supported here".
+  # `default` is a placeholder on both fields: the deployment's adapter list decides which provider
+  # and which model it resolves to. A product recipe never names a concrete model.
+  route:
+    primary: { route: default, model: default }
+    escalation: { route: default, model: default }
+    fast: { route: default, model: default }
+    compaction: { route: default, model: default }
+    verifier: { route: default, model: default }
+  prompt_sections: [persona, environment, coding-doctrine]
+disclosure: standard
+tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch] }
+# L0: file tools still stay in the workspace; shell is not wrapped in sandbox-exec.
+# on_unavailable must be allow — L0 has no OS backend, and deny would refuse every exec.
+sandbox: { level: L0, required: false, on_unavailable: allow }
+mcp: { defer: true }
+budget: { per_request_cap: 4000, max_steps: 80 }
+approval:
+  # Editing and writing inside the workspace is pre-approved; every shell command is still asked.
+  #
+  # What argv actually is, which is what the previous version of this rule got wrong. The evaluator
+  # is handed the containment-checked ABSOLUTE path, always - never the workspace-relative one, and
+  # never the raw string the model wrote. A path that resolves outside the workspace never reaches a
+  # rule at all: it is refused as non-canonical at the producing end and becomes a question for the
+  # operator. So this rule is the second half of a pair, and containment is the other half's job. A
+  # rule written against a relative spelling matched nothing and pre-approved nothing, while the
+  # session refused to open at all, because an allow rule that a relative path can satisfy is one
+  # resolved against a working directory it never saw.
+  #
+  # This rule decides what runs *without asking a human*, so it is written as an allowlist, not as a
+  # list of spellings to refuse. A blocklist over an unnormalised string loses to the next spelling
+  # nobody thought of; a positive shape only ever loses to something it was never taught to accept,
+  # and that failure is "ask the operator", which is the safe direction.
+  #
+  # The shape: anchored at both ends, a leading `/`, then one or more `/`-joined components, each
+  # component non-empty and built only from characters that are neither a separator nor a control
+  # character (so no backslash, no NUL, no tab, no newline, no NEL, no LINE/PARAGRAPH SEPARATOR).
+  # That single alphabet is what closes the Windows family (`\Windows\x`, `\\server\share`,
+  # `\\?\C:\x`), the empty-component family (`//etc`, `a//b`, a trailing `/`) and every
+  # line-terminator smuggling of a `..` segment, because a path carrying one of those bytes no longer
+  # matches at all. Every relative spelling - `src/a.ts`, `../outside`, `~/.ssh/config`, `C:x` - fails
+  # the leading `/` and is asked.
+  #
+  # Deliberately still pre-approved: `weird..name/x.ts`, `a..b`, `...` - `..` inside a name does not
+  # escape anything. So are `%2e%2e/etc` and a U+FF0E look-alike of `../etc`: on disk those are
+  # ordinary directory names, not a parent reference.
+  #
+  # The `..` lookahead scans with `[\s\S]`, not `.`: `.` stops at a line terminator in every engine
+  # that might compile this string, which is exactly how an earlier version of this rule let
+  # `x\n/../../etc/passwd` through. The component alphabet already excludes those bytes, so the
+  # lookahead is belt to its braces rather than the only defence. It sits before the leading `/` is
+  # consumed so that `/../x` is inside its reach.
+  #
+  # This is the auto-approval gate only; the sandbox write domain is the second gate behind it, and
+  # denied paths inside the workspace are refused there even though this rule pre-approves them.
+  command_policy:
+    - tool: 'edit|write'
+      argv: '^/(?!(?:[\s\S]*/)?\.\.(?:/|$))(?:[^/\\\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/)*[^/\\\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+$'
+      action: allow
+subagent: { max_depth: 1, max_fan_out: 4, isolation: worktree }
+ext_ui: { input: prompt, unattended: decline }
+hooks: [session_start, tool_call, tool_result, format_deviation]
