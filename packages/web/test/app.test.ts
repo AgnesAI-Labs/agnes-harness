@@ -1434,6 +1434,27 @@ describe('incremental opening', () => {
     expect(approval.querySelectorAll('button')).toHaveLength(0)
   })
 
+  it('after the daemon closes the connection, reloads only once the Web page is served again', async () => {
+    const reload = vi.spyOn(location, 'reload').mockImplementation(() => undefined)
+    const { emit } = await bootWith(async () => idleTimeline('old'))
+    const connection = document.getElementById('connection') as HTMLElement
+    await vi.waitFor(() => expect(connection.dataset.state).toBe('connected'))
+    const probe = vi.fn<typeof fetch>(async () => new Response('', { status: 502 }))
+    vi.stubGlobal('fetch', probe)
+    emit('closed', { reason: 'closed' })
+    // Two probes land at 0.5 s and 1.5 s; the server is still down, so the page must stay put.
+    await new Promise((resolve) => setTimeout(resolve, 1700))
+    expect(reload).not.toHaveBeenCalled()
+    expect(probe.mock.calls.filter(([input]) => input === '/').length).toBe(2)
+    const status = document.getElementById('reconnect-notice') as HTMLElement
+    expect(status.hidden).toBe(false)
+    expect(connection.dataset.state).toBe('reconnecting')
+    probe.mockImplementation(async () => new Response(publicHtml, { status: 200 }))
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1), { timeout: 4000 })
+    expect(status.textContent).toContain('正在重新载入')
+    reload.mockRestore()
+  }, 15_000)
+
   it('looks for the approval again after a reopen, and ignores gaps of other sessions', async () => {
     const { old, emit } = await bootWith(async () => parkedTimeline())
     const approval = document.getElementById('approval') as HTMLElement

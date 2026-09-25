@@ -49,7 +49,7 @@ import {
   shouldShowEmptyState,
   workspaceErrorNotice,
 } from './presentation.js'
-import { createReconnectController } from './reconnect.js'
+import { createReconnectController, probeBootstrap, type ReconnectPhase } from './reconnect.js'
 import { createSessionActions, forkTitle } from './session-actions.js'
 import { bindWebSession, loadWebSession } from './session-binding.js'
 import { createTitleRefresh, sessionTitle } from './session-title.js'
@@ -102,7 +102,37 @@ const client = createClient({
   journal: memoryJournal(),
 })
 let intentionalClose = false
-const reconnect = createReconnectController({ reload: () => location.reload() })
+// Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
+// retry control must survive them.
+const reconnectNotice = document.createElement('p')
+reconnectNotice.id = 'reconnect-notice'
+reconnectNotice.setAttribute('role', 'status')
+reconnectNotice.hidden = true
+notice.after(reconnectNotice)
+const reconnect = createReconnectController({
+  probe: (signal) => probeBootstrap((input, init) => fetch(input, init), signal),
+  reload: () => location.reload(),
+  onPhase: renderReconnect,
+})
+function renderReconnect(phase: ReconnectPhase): void {
+  reconnectNotice.hidden = phase === 'idle'
+  if (phase === 'idle') {
+    reconnectNotice.replaceChildren()
+    return
+  }
+  if (phase !== 'stalled') {
+    setConnection('reconnecting')
+    reconnectNotice.textContent =
+      phase === 'waiting' ? '正在等待后台恢复，恢复后页面会自动重新载入。' : '后台已恢复，正在重新载入页面…'
+    return
+  }
+  setConnection('closed')
+  const retry = document.createElement('button')
+  retry.type = 'button'
+  retry.textContent = '重试连接'
+  retry.addEventListener('click', () => reconnect.retry())
+  reconnectNotice.replaceChildren('后台暂未恢复。确认后台已重新启动后，可以重试连接。 ', retry)
+}
 // 客户端模块底座（WC8）：Cordis 根 + 五个宿主服务 + workbench.panel 挂载点。
 // 名册真源是 `_agnes/v1/clientModules.list`（P1a）；profile 要等 config.get() 才报出，
 // 之前名册按空处理（fail-closed，不加载任何模块）。
@@ -1746,7 +1776,7 @@ client.on('closed', () => {
   const message = '连接已关闭；任务是否结束请以后台状态为准。重新运行 Web 启动命令并打开其地址即可恢复查看。'
   if (sessionRecovery) renderSessionRecovery(message)
   else {
-    notice.textContent = intentionalClose ? message : `${message} 页面将有限次尝试恢复。`
+    notice.textContent = message
     notice.dataset.kind = 'error'
   }
   if (!intentionalClose) reconnect.start()

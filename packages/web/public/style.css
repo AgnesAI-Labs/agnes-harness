@@ -1213,7 +1213,8 @@ main {
   width: 0.9375rem;
   height: 0.9375rem;
 }
-#notice {
+#notice,
+#reconnect-notice {
   width: min(50rem, calc(100% - 3rem));
   min-height: 0;
   margin: 0 auto;
@@ -2880,6 +2881,7 @@ body {
     min-height: 0;
   }
   #notice,
+  #reconnect-notice,
   #approval,
   #composer,
   #empty-state {
@@ -2980,6 +2982,7 @@ body {
 
 @media (max-width: 380px) {
   #notice,
+  #reconnect-notice,
   #approval,
   #composer,
   #empty-state {
