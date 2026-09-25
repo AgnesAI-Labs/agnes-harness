@@ -422,9 +422,15 @@ describe('production supervisor storage', () => {
     const previousPath = process.env.PATH
     let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
     let rpc: Awaited<ReturnType<typeof client>> | undefined
-    // The servers name a bare `node`, so the grant and the lookup both go through PATH.
-    process.env.AGNES_MCP_STDIO_ALLOWLIST = 'node'
-    process.env.PATH = `${dirname(process.execPath)}${process.platform === 'win32' ? ';' : ':'}${previousPath ?? ''}`
+    // Windows enables its verified native executable without a deployment grant. Elsewhere the
+    // servers name a bare `node`, so the deployment grant and the lookup both go through PATH.
+    const windows = process.platform === 'win32'
+    const executable = windows ? process.execPath : 'node'
+    if (windows) delete process.env.AGNES_MCP_STDIO_ALLOWLIST
+    else {
+      process.env.AGNES_MCP_STDIO_ALLOWLIST = 'node'
+      process.env.PATH = `${dirname(process.execPath)}:${previousPath ?? ''}`
+    }
     try {
       writeFileSync(
         server,
@@ -496,7 +502,7 @@ describe('production supervisor storage', () => {
         const definition = {
           serverId,
           displayName: serverId,
-          transport: { kind: 'stdio', executable: 'node', args: [server, pidFile] },
+          transport: { kind: 'stdio', executable, args: [server, pidFile] },
           secretBinding: { kind: 'none' },
           toolPolicy: { allow: ['status'] },
         }
