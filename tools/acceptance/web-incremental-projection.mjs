@@ -7,6 +7,7 @@
 //   AGNES_WEB_ARTIFACTS       directory for screenshots and results.json
 //   AGNES_PROJECTION_TURNS    turns in the seeded long session (default 500)
 //   AGNES_PROJECTION_RECORD_ONLY=1  record numbers without failing on assertions (for older trees)
+//   AGNES_PROJECTION_RESTARTS  daemon restarts in step 7 (default 1)
 //
 // Run with `node --import tsx tools/acceptance/web-incremental-projection.mjs`.
 import assert from 'node:assert/strict'
@@ -27,6 +28,7 @@ if (!modulePath) {
 const recordOnly = process.env.AGNES_PROJECTION_RECORD_ONLY === '1'
 const TURNS = Number(process.env.AGNES_PROJECTION_TURNS ?? 500)
 const CHILDREN = 20
+const RESTARTS = Math.max(1, Number(process.env.AGNES_PROJECTION_RESTARTS ?? 1))
 const playwright = await import(pathToFileURL(modulePath).href)
 const { chromium } = playwright
 const { createClient, memoryJournal } = await import('../../packages/sdk/src/index.node.ts')
@@ -62,7 +64,7 @@ for (let index = 0; index < 600; index++) {
 
 /** A loopback port outside the ones other local tools commonly hold. */
 async function freePort() {
-  const reserved = new Set([4177, 4190, 4191, 4192, 4193, 4194])
+  const reserved = new Set([4177, 4182, 4190, 4191, 4192, 4193, 4194])
   for (;;) {
     const probe = createServer()
     await new Promise((done) => probe.listen(0, '127.0.0.1', done))
@@ -201,6 +203,9 @@ function watchSocket(socket) {
       if (response) {
         method = pending.get(message.id) ?? '(unknown)'
         pending.delete(message.id)
+        if (PROJECTION_REPLIES.has(method) && message.result)
+          for (const span of subagentSummary(message.result))
+            receivedSubagents.set(span.id, { ...span, via: method.split('.').at(-1) })
       }
       frames.push({ at: Date.now(), socket: index, direction, method: method ?? '(none)', bytes, response })
     }
@@ -217,6 +222,62 @@ const notes = (list, method) =>
 const replies = (list, method) =>
   list.filter((f) => f.direction === 'received' && f.response && f.method === method)
 const bytesOf = (list) => list.reduce((sum, f) => sum + f.bytes, 0)
+/**
+ * Every subagent span inside a projection payload, with the span that holds it (the parent's
+ * spawn or fork tool span) and what the embedded child tree carries.
+ */
+function subagentSummary(value) {
+  const found = []
+  const isSpan = (node) =>
+    node && typeof node === 'object' && typeof node.kind === 'string' && Array.isArray(node.children)
+  const walk = (node, holder) => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, holder)
+      return
+    }
+    if (!node || typeof node !== 'object') return
+    const span = isSpan(node)
+    if (span && node.kind === 'subagent') {
+      let descendants = 0
+      let truncations = 0
+      let omitted = 0
+      let reads = 0
+      const inner = (item) => {
+        for (const child of item.children) {
+          descendants++
+          if (child.error?.code === 'TRACE_TRUNCATED') {
+            truncations++
+            omitted += Number(child.error.message) || 0
+          }
+          if (child.kind === 'tool' && child.name === 'read') reads++
+          inner(child)
+        }
+      }
+      inner(node)
+      found.push({
+        id: node.id,
+        holder: holder?.kind === 'tool' ? holder.name : (holder?.kind ?? 'none'),
+        name: node.name,
+        child: Boolean(node.childSessionKey),
+        descendants,
+        reads,
+        truncations,
+        omitted,
+      })
+    }
+    for (const item of Object.values(node))
+      if (item && typeof item === 'object') walk(item, span ? node : holder)
+  }
+  walk(value, undefined)
+  return found
+}
+const PROJECTION_REPLIES = new Set([
+  '_agnes/v1/session.projectUIOpening',
+  '_agnes/v1/session.projectUIPatch',
+  '_agnes/v1/session.projectUIHistory',
+])
+/** Subagent spans the page has received so far, the latest copy of each span id. */
+const receivedSubagents = new Map()
 /** Groups arrivals the way the engine's 50 ms leading/trailing debounce can at most split them. */
 function windows50(list) {
   let count = 0
@@ -418,7 +479,6 @@ const groupErrors = (list) => {
 try {
   const launch = await launchWeb()
   sdk = await connectSdk()
-  const firstGeneration = sdk.owner.generation
   const client = sdk.client
   const snapshot = await client.config.get()
   const verification = await client.config.test({
@@ -442,16 +502,22 @@ try {
   const long = await client.session.new({ cwd })
   const spawnEvery = Math.max(1, Math.floor(TURNS / CHILDREN))
   const bigAt = Math.max(1, TURNS - 8)
-  const plan = { plain: 0, read: 0, spawnSmall: 0, spawnBig: 0 }
+  const plan = { plain: 0, read: 0, spawnSmall: 0, forkSmall: 0, spawnBig: 0 }
   const reasons = {}
   for (let turn = 1; turn <= TURNS; turn++) {
     let prompt
     if (turn === bigAt) {
       prompt = `PJ_SPAWN_BIG ${turn}`
       plan.spawnBig++
-    } else if (turn % spawnEvery === 3 && plan.spawnSmall < CHILDREN - 1) {
-      prompt = `PJ_SPAWN_SMALL ${turn}`
-      plan.spawnSmall++
+    } else if (turn % spawnEvery === 3 && plan.spawnSmall + plan.forkSmall < CHILDREN - 1) {
+      // Small child tasks alternate between a spawned child and a forked one.
+      if ((plan.spawnSmall + plan.forkSmall) % 2 === 0) {
+        prompt = `PJ_SPAWN_SMALL ${turn}`
+        plan.spawnSmall++
+      } else {
+        prompt = `PJ_FORK_SMALL ${turn}`
+        plan.forkSmall++
+      }
     } else if (turn % 10 === 7) {
       prompt = `PJ_READ ${turn}`
       plan.read++
@@ -470,8 +536,24 @@ try {
   const spans = seeded.turns.flatMap((turn) => (turn.trace ? walk(turn.trace) : []))
   const subagentSpans = spans.filter((span) => span.kind === 'subagent')
   const failedSpawns = seeded.nodes.filter(
-    (node) => node.kind === 'tool' && node.name === 'subagent_spawn' && node.status === 'failed',
+    (node) =>
+      node.kind === 'tool' &&
+      (node.name === 'subagent_spawn' || node.name === 'subagent_fork') &&
+      node.status === 'failed',
   )
+  const expectedChildren = subagentSummary(seeded.turns)
+  const byHolder = (list) => {
+    const out = {}
+    for (const span of list) {
+      const key = span.holder
+      out[key] ??= { spans: 0, withChild: 0, withEmbeddedTree: 0, truncated: 0 }
+      out[key].spans++
+      if (span.child) out[key].withChild++
+      if (span.descendants > 0) out[key].withEmbeddedTree++
+      if (span.truncations > 0) out[key].truncated++
+    }
+    return out
+  }
   results.seeding = {
     turns: TURNS,
     plan,
@@ -485,6 +567,11 @@ try {
     subagentSpans: subagentSpans.length,
     subagentSpansWithChild: subagentSpans.filter((span) => span.childSessionKey).length,
     embeddedChildSpans: subagentSpans.reduce((sum, span) => sum + walk(span).length - 1, 0),
+    childTreesByHolder: byHolder(expectedChildren),
+    largestChildTree: expectedChildren.reduce(
+      (best, span) => (span.descendants > (best?.descendants ?? -1) ? span : best),
+      undefined,
+    ),
     failedSpawnToolNodes: failedSpawns.length,
     failedSpawnResult: failedSpawns[0]?.resultPreview,
     providerCompletions: provider.completions,
@@ -519,6 +606,8 @@ try {
   page.on('websocket', watchSocket)
   page.on('pageerror', (error) => pageErrors.push({ step: currentStep, text: error.message.slice(0, 300) }))
   page.on('console', (message) => {
+    if (message.type() === 'error' && !results.firstConsoleError)
+      results.firstConsoleError = message.text().slice(0, 1500)
     if (message.type() === 'error')
       consoleErrors.push({ step: currentStep, text: message.text().slice(0, 300) })
   })
@@ -569,6 +658,7 @@ try {
       acpSessionUpdates: { count: notes(list, M.update).length, bytes: bytesOf(notes(list, M.update)) },
       eventNotifications: notes(list, M.event).length,
       firstPaintMs,
+      visibilityState: await page.evaluate(() => document.visibilityState),
       renderedNodes: await page.locator('#transcript article.timeline-node').count(),
       earlierButtonVisible: await page.locator('.transcript-earlier:not([hidden])').count(),
       rpc: rpcSummary(list),
@@ -827,79 +917,125 @@ try {
     await page.screenshot({ path: join(artifacts, '06-reconnected.png'), animations: 'disabled' })
   })
 
-  // 7. Daemon restart (new generation).
+  // 7. Daemon restart (new generation), repeated to see how often the page recovers on its own.
+  const navigations = []
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) navigations.push({ at: Date.now(), url: frame.url().split('?')[0] })
+  })
   await stepBlock('7-daemon-restart', async () => {
-    from = mark()
-    const socketsBeforeRestart = socketCount
-    await sdk.client.close().catch(() => {})
-    sdk = undefined
-    await stopWeb()
-    await command(['daemon', 'stop'])
-    const relaunch = await launchWeb()
-    sdk = await connectSdk()
-    const secondGeneration = sdk.owner.generation
-    let recoveredBy = 'page reconnect'
-    try {
-      await page.waitForFunction(
-        () => document.querySelector('#connection')?.dataset.state === 'connected',
-        undefined,
-        {
-          timeout: 20000,
-        },
-      )
-      await page.waitForFunction(
-        () => document.querySelector('#transcript')?.textContent.includes('LONG_STREAM_END'),
-        undefined,
-        {
-          timeout: 30000,
-        },
-      )
-    } catch {
-      recoveredBy = 'navigation'
-      await page.goto(sessionUrl(relaunch, long.id))
-      await page.waitForFunction(() => document.querySelector('#connection')?.dataset.state === 'connected')
-      await page.waitForFunction(
-        () => document.querySelector('#transcript')?.textContent.includes('LONG_STREAM_END'),
-        undefined,
-        {
-          timeout: 60000,
-        },
-      )
+    const attempts = []
+    for (let attempt = 1; attempt <= RESTARTS; attempt++) {
+      from = mark()
+      const socketsBeforeRestart = socketCount
+      const generationBefore = sdk.owner.generation
+      const navigationsBefore = navigations.length
+      await sdk.client.close().catch(() => {})
+      sdk = undefined
+      const stopStarted = Date.now()
+      await stopWeb()
+      await command(['daemon', 'stop'])
+      const relaunch = await launchWeb()
+      const readyAt = Date.now()
+      sdk = await connectSdk()
+      const generationAfter = sdk.owner.generation
+      let recoveredBy = 'page reconnect'
+      let connectedAfterMs
+      try {
+        await page.waitForFunction(
+          () => document.querySelector('#connection')?.dataset.state === 'connected',
+          undefined,
+          { timeout: 20000 },
+        )
+        connectedAfterMs = Date.now() - readyAt
+        await page.waitForFunction(
+          () => document.querySelector('#transcript')?.textContent.includes('LONG_STREAM_END'),
+          undefined,
+          { timeout: 30000 },
+        )
+      } catch {
+        recoveredBy = 'navigation'
+        await page.goto(sessionUrl(relaunch, long.id))
+        await page.waitForFunction(() => document.querySelector('#connection')?.dataset.state === 'connected')
+        await page.waitForFunction(
+          () => document.querySelector('#transcript')?.textContent.includes('LONG_STREAM_END'),
+          undefined,
+          { timeout: 60000 },
+        )
+      }
+      await settle(page)
+      list = slice(from)
+      const onOldSocket = list.filter((f) => f.socket <= socketsBeforeRestart)
+      const afterRestart = list.filter((f) => f.socket > socketsBeforeRestart)
+      const firstOpening7 = afterRestart.findIndex((f) => f.direction === 'sent' && f.method === M.opening)
+      const pageNavigations = navigations.slice(navigationsBefore)
+      attempts.push({
+        attempt,
+        generationChanged: generationBefore !== generationAfter,
+        recoveredBy,
+        connectedAfterReadyMs: connectedAfterMs,
+        downMs: readyAt - stopStarted,
+        shutdownNoticeOnOldSocket: notes(onOldSocket, '_agnes/v1/daemon.notice').length,
+        socketsOpened: socketCount - socketsBeforeRestart,
+        // A navigation before our own fallback is the page's reload-based recovery.
+        pageNavigations: pageNavigations.map((entry) => ({
+          afterStopMs: entry.at - stopStarted,
+          beforeReady: entry.at < readyAt,
+          url: entry.url.startsWith('chrome-error') ? 'chrome-error' : 'app',
+        })),
+        openings: sent(list, M.opening).length,
+        fullProjectUI: sent(list, M.full).length,
+        patchesBeforeReopen: sent(
+          firstOpening7 < 0 ? afterRestart : afterRestart.slice(0, firstOpening7),
+          M.patch,
+        ).length,
+      })
+      console.log('RESTART', JSON.stringify(attempts.at(-1)))
     }
-    await settle(page)
-    list = slice(from)
-    const afterRestart = list.filter((f) => f.socket > socketsBeforeRestart)
-    const firstOpening7 = afterRestart.findIndex((f) => f.direction === 'sent' && f.method === M.opening)
+    const last = attempts.at(-1)
     step('7-daemon-restart', {
-      generationChanged: firstGeneration !== secondGeneration,
-      recoveredBy,
-      openings: sent(list, M.opening).length,
-      fullProjectUI: sent(list, M.full).length,
-      patchesBeforeReopen: sent(
-        firstOpening7 < 0 ? afterRestart : afterRestart.slice(0, firstOpening7),
-        M.patch,
-      ).length,
+      attempts,
+      recoveredByPage: attempts.filter((entry) => entry.recoveredBy === 'page reconnect').length,
+      generationChanged: last.generationChanged,
+      recoveredBy: last.recoveredBy,
+      openings: last.openings,
+      fullProjectUI: last.fullProjectUI,
+      patchesBeforeReopen: last.patchesBeforeReopen,
     })
-    check('7 generation changed', firstGeneration !== secondGeneration)
+    check(
+      '7 generation changed',
+      attempts.every((entry) => entry.generationChanged),
+    )
     check(
       '7 one opening and no full projection after restart',
-      sent(list, M.opening).length === 1 && sent(list, M.full).length === 0,
-      {
-        openings: sent(list, M.opening).length,
-      },
+      attempts.every((entry) => entry.openings === 1 && entry.fullProjectUI === 0),
+      attempts.map((entry) => entry.openings),
     )
-    check('7 zero patches before the reopen', results.steps['7-daemon-restart'].patchesBeforeReopen === 0)
+    check(
+      '7 zero patches before the reopen',
+      attempts.every((entry) => entry.patchesBeforeReopen === 0),
+    )
     await page.screenshot({ path: join(artifacts, '07-after-daemon-restart.png'), animations: 'disabled' })
   })
 
   // 8. Trace panel.
-  await stepBlock('8-trace', async () => {
-    from = mark()
-    const hasEarlier8 = (await page.locator('.transcript-earlier:not([hidden])').count()) > 0
-    const traceClosedRows = await page.locator('#trace-panel .trace-row').count()
-    await page.locator('#view-trace').click()
-    await page.locator('#trace-panel .trace-row').first().waitFor({ timeout: 30000 })
-    const trace = await page.evaluate(() => {
+  /** The tool lane of the Gantt as drawn: targeted bars are the parent's own tool calls. */
+  const ganttToolLane = () =>
+    page.evaluate(() => {
+      const units = [...document.querySelectorAll('#trace-panel .trace-gantt-bar.lane-tool')]
+      const count = (node) =>
+        node.classList.contains('cluster') ? Number(node.getAttribute('title')?.match(/^(\d+)/)?.[1] ?? 1) : 1
+      const untargeted = units.filter((node) => node.tagName !== 'BUTTON')
+      return {
+        units: units.length,
+        events: units.reduce((sum, node) => sum + count(node), 0),
+        untargetedUnits: untargeted.length,
+        untargetedEvents: untargeted.reduce((sum, node) => sum + count(node), 0),
+        truncatedBars: units.filter((node) => node.classList.contains('truncated')).length,
+        childReadBars: untargeted.filter((node) => node.getAttribute('title')?.startsWith('read ·')).length,
+      }
+    })
+  const traceDom = () =>
+    page.evaluate(() => {
       const panel = document.querySelector('#trace-panel')
       const text = (selector) => [...panel.querySelectorAll(selector)].map((node) => node.textContent)
       const toolBars = [...panel.querySelectorAll('.trace-gantt-bar.lane-tool')].map((node) =>
@@ -913,13 +1049,61 @@ try {
         loadEarlierButton: panel.querySelectorAll('.trace-load-earlier').length,
         toolBars: toolBars.length,
         subagentToolBars: toolBars.filter((title) => title?.startsWith('subagent_')).length,
-        readBars: toolBars.filter((title) => title === 'read').length,
+        readBars: toolBars.filter((title) => title?.startsWith('read')).length,
+        toolToggles: panel.querySelectorAll('.trace-tool-toggle').length,
       }
     })
+  const loadedChildren = () => [...receivedSubagents.values()]
+  await stepBlock('8-trace', async () => {
+    from = mark()
+    const hasEarlier8 = (await page.locator('.transcript-earlier:not([hidden])').count()) > 0
+    const traceClosedRows = await page.locator('#trace-panel .trace-row').count()
+    await page.locator('#view-trace').click()
+    await page.locator('#trace-panel .trace-row').first().waitFor({ timeout: 30000 })
+    const trace = await traceDom()
+    const lane = await ganttToolLane()
     const traceToolNodes = await page.evaluate(
       () => document.querySelectorAll('#transcript article.timeline-node.tool').length,
     )
     await page.screenshot({ path: join(artifacts, '08-trace-open.png'), animations: 'disabled' })
+    const opened = slice(from)
+    // What the page holds for the loaded window: each subagent span with its embedded child tree.
+    const loaded = loadedChildren()
+    const loadedBig = loaded.find((span) => span.truncations > 0)
+    // The full projection attaches child trees whole; Web turns cut them to a per-turn budget.
+    const expectedBig = expectedChildren.find((span) => span.id === loadedBig?.id)
+
+    // Expand a child: find the oversized child's spawn row, select it, fold every turn and unfold again.
+    const expandFrom = mark()
+    await page.locator('#trace-panel .trace-search').fill('PJ_CHILD_BIG')
+    await page.waitForTimeout(300)
+    const matchingRows = await page.locator('#trace-panel .trace-row').count()
+    await page.locator('#trace-panel .trace-row').first().click()
+    const inspector = await page.evaluate(() => {
+      const aside = document.querySelector('#trace-panel .trace-inspector')
+      return {
+        visible: Boolean(aside && !aside.hidden),
+        title: aside?.querySelector('.trace-inspector-title')?.textContent ?? null,
+        source: [...(aside?.querySelectorAll('.trace-field') ?? [])]
+          .map((field) => field.textContent)
+          .find((value) => value?.startsWith('来源')),
+      }
+    })
+    await page.screenshot({ path: join(artifacts, '08-trace-child-selected.png'), animations: 'disabled' })
+    await page.locator('#trace-panel .trace-search').fill('')
+    await page.waitForTimeout(300)
+    const foldAll = page.locator('#trace-panel .trace-fold-all')
+    await foldAll.click()
+    const collapsedRows = await page.locator('#trace-panel .trace-row').count()
+    const laneCollapsed = await ganttToolLane()
+    await foldAll.click()
+    await page.locator('#trace-panel .trace-row').first().waitFor({ timeout: 10000 })
+    const expandedRows = await page.locator('#trace-panel .trace-row').count()
+    const laneExpanded = await ganttToolLane()
+    const notesExpanded = (await traceDom()).truncationNotes
+    await page.screenshot({ path: join(artifacts, '08-trace-expanded.png'), animations: 'disabled' })
+    const expandList = slice(expandFrom)
+    const expandRpc = expandList.filter((f) => f.direction === 'sent' && !f.response)
     await page.locator('#view-chat').click()
     await settle(page, 600)
     list = slice(from)
@@ -928,8 +1112,25 @@ try {
       hasEarlier: hasEarlier8,
       ...trace,
       transcriptToolCards: traceToolNodes,
+      toolLane: lane,
       // Parent tool spans each have a tool card; any further tool bars come from embedded child trees.
       embeddedChildToolBars: trace.toolBars - traceToolNodes,
+      openRpc: rpcSummary(opened),
+      loadedChildren: {
+        spans: loaded.length,
+        byHolder: byHolder(loaded),
+        oversized: loadedBig,
+      },
+      expand: {
+        matchingRows,
+        inspector,
+        collapsedRows,
+        expandedRows,
+        toolLaneWhileCollapsed: laneCollapsed,
+        toolLaneAfterExpand: laneExpanded,
+        truncationNotesAfterExpand: notesExpanded,
+        requestsSent: rpcSummary(expandRpc),
+      },
       fullProjectUI: sent(list, M.full).length,
       patches: sent(list, M.patch).length,
     })
@@ -944,11 +1145,38 @@ try {
     )
     // Child trees are only embedded when a child session was really created.
     if (results.seeding.subagentSpansWithChild > 0) {
-      check('8 child task spans are embedded', trace.toolBars > traceToolNodes)
+      check('8 child task spans are embedded', lane.untargetedEvents > 0 && trace.toolBars > 0, lane)
+      check(
+        '8 every loaded child sits under the parent spawn or fork with its own tree',
+        loaded.length > 0 &&
+          loaded.every(
+            (span) =>
+              span.child &&
+              span.descendants > 0 &&
+              (span.holder === 'subagent_spawn' || span.holder === 'subagent_fork'),
+          ),
+        byHolder(loaded),
+      )
       check(
         '8 truncation marker present for the oversized child tree',
-        trace.truncationNotes.length > 0,
-        trace.truncationNotes,
+        trace.truncationNotes.length > 0 && Boolean(loadedBig),
+        { notes: trace.truncationNotes, truncatedBars: lane.truncatedBars },
+      )
+      check(
+        '8 kept plus omitted spans of the oversized child equal its whole tree',
+        Boolean(expectedBig) &&
+          loadedBig.descendants - loadedBig.truncations + loadedBig.omitted === expectedBig.descendants,
+        { loaded: loadedBig, expected: expectedBig },
+      )
+      check(
+        '8 selecting and expanding a child sends no projection request',
+        matchingRows > 0 &&
+          inspector.visible &&
+          expandedRows > collapsedRows &&
+          laneExpanded.untargetedEvents === lane.untargetedEvents &&
+          notesExpanded.length === trace.truncationNotes.length &&
+          expandRpc.filter((f) => PROJECTION_REPLIES.has(f.method) || f.method === M.full).length === 0,
+        { matchingRows, requests: expandRpc.map((f) => f.method) },
       )
     } else {
       results.notes.push(
@@ -982,17 +1210,43 @@ try {
           () => true,
           () => false,
         )
+    const pageLog = []
+    const sentinelInView = () =>
+      page.evaluate(() => {
+        const sentinel = document.querySelector('.transcript-earlier')
+        const box = document.querySelector('#transcript')?.getBoundingClientRect()
+        const rect = sentinel?.getBoundingClientRect()
+        return Boolean(
+          sentinel && !sentinel.hidden && box && rect && rect.bottom > box.top && rect.top < box.bottom,
+        )
+      })
     while (await page.locator('.transcript-earlier:not([hidden])').count()) {
       const before = await renderedCount()
+      const pageFrom = mark()
+      const pageStarted = Date.now()
+      const inViewBeforeScroll = await sentinelInView()
       await page.evaluate(() =>
         document.querySelector('.transcript-earlier')?.scrollIntoView({ block: 'start' }),
       )
+      let trigger = 'scroll'
       if (await grew(before, 5000)) scrollTriggered++
       else {
+        trigger = 'click'
         await page.evaluate(() => document.querySelector('.transcript-earlier button')?.click())
         if (!(await grew(before, 30000))) throw new Error('earlier history page did not arrive')
         clickFallbacks++
       }
+      const pageFrames = slice(pageFrom)
+      const requests = pageFrames.filter((f) => f.direction === 'sent' && f.method === M.history)
+      const reply = pageFrames.find((f) => f.direction === 'received' && f.response && f.method === M.history)
+      pageLog.push({
+        trigger,
+        inViewBeforeScroll,
+        historyRequests: requests.length,
+        requestAfterMs: requests[0] ? requests[0].at - pageStarted : null,
+        replyAfterMs: reply ? reply.at - pageStarted : null,
+        grewAfterMs: Date.now() - pageStarted,
+      })
       pages++
       if (pages > 200) throw new Error('earlier history did not reach the top')
     }
@@ -1003,6 +1257,7 @@ try {
       pagesLoaded: pages,
       scrollTriggered,
       clickFallbacks,
+      pageLog,
       historyCalls: sent(list, M.history).length,
       historyReplyBytes: bytesOf(replies(list, M.history)),
       reopenings: sent(list, M.opening).length,
@@ -1024,6 +1279,61 @@ try {
       node.scrollTop = 0
     })
     await page.screenshot({ path: join(artifacts, '09-top-of-history.png'), animations: 'disabled' })
+  })
+
+  // 9b. With the whole history loaded, every child task is in the trace panel.
+  await stepBlock('9b-trace-all-children', async () => {
+    from = mark()
+    await page.locator('#view-trace').click()
+    await page.locator('#trace-panel .trace-row').first().waitFor({ timeout: 30000 })
+    await page.waitForTimeout(500)
+    const trace = await traceDom()
+    const lane = await ganttToolLane()
+    await page.screenshot({ path: join(artifacts, '09b-trace-all-history.png'), animations: 'disabled' })
+    await page.locator('#view-chat').click()
+    await settle(page, 600)
+    list = slice(from)
+    const loaded = loadedChildren()
+    const expectedTruncations = expectedChildren.reduce((sum, span) => sum + span.truncations, 0)
+    const expectedChildEvents = expectedChildren.reduce((sum, span) => sum + span.descendants, 0)
+    step('9b-trace-all-children', {
+      rows: trace.rows,
+      stats: trace.stats,
+      partialMarker: trace.partialMarker,
+      truncationNotes: trace.truncationNotes,
+      toolLane: lane,
+      loadedChildren: { spans: loaded.length, byHolder: byHolder(loaded) },
+      expectedChildren: { spans: expectedChildren.length, byHolder: byHolder(expectedChildren) },
+      expectedChildSpanEvents: expectedChildEvents,
+      expectedTruncationsInFullProjection: expectedTruncations,
+      requestsSent: rpcSummary(list.filter((f) => f.direction === 'sent' && !f.response)),
+    })
+    // Each tree the page holds, counted as kept plus omitted spans, against the whole tree.
+    const signature = (items) =>
+      items
+        .map(
+          (span) =>
+            `${span.id}|${span.holder}|${span.child}|${span.descendants - span.truncations + span.omitted}`,
+        )
+        .sort()
+        .join()
+    const loadedTruncations = loaded.reduce((sum, span) => sum + span.truncations, 0)
+    check(
+      '9b the page holds every child tree the full projection has',
+      loaded.length === expectedChildren.length && signature(loaded) === signature(expectedChildren),
+      { loaded: loaded.length, expected: expectedChildren.length },
+    )
+    check('9b no partial marker once the whole history is loaded', trace.partialMarker === 0)
+    check(
+      '9b only the oversized child is cut, with one note per placeholder',
+      loaded.filter((span) => span.truncations > 0).length === 1 &&
+        trace.truncationNotes.length === loadedTruncations,
+      { notes: trace.truncationNotes.length, placeholders: loadedTruncations },
+    )
+    check(
+      '9b trace panel sends no projection request',
+      sent(list, M.full).length + sent(list, M.opening).length === 0,
+    )
   })
 
   // Final comparison: the full Web projection from the SDK against the loaded DOM.
