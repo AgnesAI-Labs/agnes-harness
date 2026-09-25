@@ -131,7 +131,7 @@ export async function startProjectionProvider(options: ProjectionProviderOptions
             { name: 'subagent_spawn', args: { task: `PJ_CHILD_${size} for ${label}`, isolation: 'shared' } },
           ])
         } else if (round === 1) {
-          const childKey = lastResult.match(/spawned (\S+?)(?:\\n|"|\s|$)/)?.[1]
+          const childKey = lastResult.match(/spawned ([^\s"<\\]+)/)?.[1]
           if (childKey) call([{ name: 'subagent_collect', args: { childKey, wait: true } }])
           else answer(`Spawn did not return a child handle for ${label}.`)
         } else answer(`Collected the child task for ${label}.`)
