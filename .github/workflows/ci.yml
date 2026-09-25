@@ -52,11 +52,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=4', shard: '' }
-          - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', shard: '' }
-          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts --exclude=packages/daemon/test/skill-install-requests.test.ts', shard: '1/3' }
-          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts --exclude=packages/daemon/test/skill-install-requests.test.ts', shard: '2/3' }
-          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts --exclude=packages/daemon/test/skill-install-requests.test.ts', shard: '3/3' }
+          - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=4', testExclude: '', shard: '' }
+          - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', testExclude: '', shard: '' }
+          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/cli/test/acp-concurrency.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.test.ts,packages/daemon/test/skill-install-requests.test.ts', shard: '1/3' }
+          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/cli/test/acp-concurrency.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.test.ts,packages/daemon/test/skill-install-requests.test.ts', shard: '2/3' }
+          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/cli/test/acp-concurrency.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.test.ts,packages/daemon/test/skill-install-requests.test.ts', shard: '3/3' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -82,6 +82,8 @@ jobs:
       # conformance core as the package CLI, so a newly added fixture cannot bypass CI.
       - name: test (includes Protocol conformance)
         id: suite
+        # Files run alone below on Windows are held out here.
+        env: { AGNES_TEST_EXCLUDE: '${{ matrix.testExclude }}' }
         run: pnpm exec vitest run ${{ matrix.testArgs }}
       # The ACP cold-start bound measures eight concurrent CLI processes. Run it without other
       # Vitest files competing for this runner's cores, while retaining its original assertion.

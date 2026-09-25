@@ -4,14 +4,29 @@ import { defaultExclude, defineConfig } from 'vitest/config'
 // vitest.config.ts 都直接复用这份配置(不再各自维护 include),新增目录不需要改配置(I2)。
 // exclude 在 vitest 默认排除(node_modules、.git)之上追加 dist——dist 下是 tsc 编译产物副本,
 // 不追加会把编译后的 .test.js 也当测试跑一遍(M7:在默认值基础上追加,不整体替换)。
+// Vitest applies the `--exclude` CLI flag to the root config only, not inside `projects`, so a run
+// that must hold named files out (CI runs a few contention-sensitive files alone on Windows) lists
+// them in AGNES_TEST_EXCLUDE as comma-separated globs relative to the repository root.
+const held = (process.env.AGNES_TEST_EXCLUDE ?? '').split(',').filter(Boolean)
+const exclude = [...defaultExclude, '**/dist/**', ...held]
+
+// Test tiers are chosen by file name. `*.e2e.test.ts` starts real daemons, workers or CLI processes
+// and exercises real signals and exit cleanup; `*.slow.test.ts` builds large ledgers or waits on
+// real timers. Both belong to `heavy`; every other test file belongs to `fast`. The two include
+// sets partition `**/*.test.ts`, so running both projects runs every test file exactly once.
+const heavy = ['**/*.e2e.test.ts', '**/*.slow.test.ts']
+
 export default defineConfig({
   test: {
-    include: ['**/*.test.ts'],
-    exclude: [...defaultExclude, '**/dist/**'],
+    exclude,
     // Windows suites start real PowerShell, daemon and worker processes; macOS hosted runners
     // also hit the default 5s deadline in unrelated suites when the full gate runs concurrently.
     // Keep functional checks finite without changing product-level deadlines.
     // Explicit per-test timeouts and CLI maxWorkers overrides still take precedence.
     ...(['win32', 'darwin'].includes(process.platform) ? { maxWorkers: 2, testTimeout: 15_000 } : {}), // guards-allow-platform: hosted OS test-runner limits.
+    projects: [
+      { extends: true, test: { name: 'fast', include: ['**/*.test.ts'], exclude: [...exclude, ...heavy] } },
+      { extends: true, test: { name: 'heavy', include: heavy } },
+    ],
   },
 })
