@@ -142,7 +142,8 @@ describe('createHost', () => {
       return original(...args)
     })
     const opening = host.createSession({ cwd: dataDir })
-    await started
+    // An opening that fails before reaching the kernel rejects here instead of hanging the test.
+    await Promise.race([started, opening])
     const closing = host.close()
     release()
     await expect(opening).rejects.toMatchObject({ code: 'E_HOST_CLOSED' })

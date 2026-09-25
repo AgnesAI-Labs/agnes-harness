@@ -412,7 +412,8 @@ describe('locked Computer Use package activation', () => {
       environment,
       verifySignature: blockingVerifier,
     })
-    await started
+    // Wait for the verifier to be entered, but surface an early rejection instead of hanging on it.
+    await Promise.race([started, first])
     await expect(
       activateLockedPackage({
         sourceDirectory: source,

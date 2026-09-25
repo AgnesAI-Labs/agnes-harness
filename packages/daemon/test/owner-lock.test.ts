@@ -139,7 +139,13 @@ it('enforces the default identity deadline on an uncooperative query', async () 
       return new Promise(() => {})
     },
   }).catch((error: unknown) => error)
-  await queryStarted
+  // An acquisition that fails before querying identity surfaces its error instead of hanging.
+  await Promise.race([
+    queryStarted,
+    outcome.then((error) => {
+      throw error
+    }),
+  ])
   let settled = false
   void outcome.then(() => {
     settled = true
