@@ -272,7 +272,11 @@ describe('remote assembly wiring (RA17)', () => {
   })
 })
 
-describe('the remote seam over a real openAdapters bundle (C1: the exec gate is in the path)', () => {
+// A remote workspace root is a posix path by contract, and the loopback transport stands in for the
+// remote host with a directory on this disk, which on win32 has no posix spelling.
+const onPosix = process.platform === 'win32' ? describe.skip : describe
+
+onPosix('the remote seam over a real openAdapters bundle (C1: the exec gate is in the path)', () => {
   let dir: string
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
