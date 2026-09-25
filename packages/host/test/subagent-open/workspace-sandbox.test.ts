@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,13 +37,16 @@ const text = (value: string): InferenceEvent[] => [
 ]
 
 /**
- * Parent and child share one provider, so requests are routed by session key instead of by global
- * call order.
+ * Parent and child share one provider and may run concurrently (spawn), so requests are routed by
+ * session key instead of by global call order.
  */
 class RoutedProvider implements Provider {
   private readonly parent: ScriptedProvider
   private readonly child: ScriptedProvider
   readonly childKeys: string[] = []
+
+  /** Holds every child model request until released. */
+  childGate: Promise<void> = Promise.resolve()
 
   constructor(parent: Script[], child: Script[]) {
     const models = [fakeModel({ route: 'gw', id: 'm1' })]
@@ -57,7 +61,12 @@ class RoutedProvider implements Provider {
   infer(req: RequestBody, opts: { signal: AbortSignal; toolNames: string[] }) {
     if (req.sessionKey === PARENT) return this.parent.infer(req, opts)
     this.childKeys.push(req.sessionKey)
-    return this.child.infer(req, opts)
+    const gate = this.childGate
+    const inner = this.child.infer(req, opts)
+    return (async function* () {
+      await gate
+      yield* inner
+    })()
   }
 }
 
@@ -135,6 +144,137 @@ describe('subagents in a workspace-bound Host session', () => {
         creationPhase: 'committed',
         state: 'completed',
       })
+    } finally {
+      await host.close()
+    }
+  })
+
+  it('runs subagent_spawn and lets the parent collect the child result', async () => {
+    let childKey = ''
+    const provider = new RoutedProvider(
+      [
+        toolCall('subagent_spawn', { task: 'count the files', isolation: 'shared' }),
+        (req) => {
+          const spawned = JSON.stringify(req.messages).match(/spawned (subagent-parent\/[A-Z0-9]+)/)
+          childKey = spawned?.[1] ?? ''
+          return toolCall('subagent_collect', { childKey, wait: true })
+        },
+        text('parent collected'),
+      ],
+      [text('three files')],
+    )
+    const { host, session, dataDir } = await workspaceHost(provider)
+    try {
+      const out = await prompt(session, 'spawn and collect')
+      expect(out.reason).toBe('completed')
+      const [spawn, collect] = await toolResults(session)
+      expect(spawn?.isError).not.toBe(true)
+      expect(childKey).not.toBe('')
+      expect(collect?.isError).not.toBe(true)
+      expect(textOf(collect)).toBe('three files')
+      expect(await childRecord(dataDir, childKey)).toMatchObject({
+        creationPhase: 'committed',
+        state: 'completed',
+      })
+    } finally {
+      await host.close()
+    }
+  })
+
+  it('opens a worktree spawn under the parent workspace sandbox', async () => {
+    let childKey = ''
+    const provider = new RoutedProvider(
+      [
+        toolCall('subagent_spawn', { task: 'work in a worktree', isolation: 'worktree' }),
+        (req) => {
+          const spawned = JSON.stringify(req.messages).match(/spawned (subagent-parent\/[A-Z0-9]+)/)
+          childKey = spawned?.[1] ?? ''
+          return toolCall('subagent_collect', { childKey, wait: true })
+        },
+        text('parent collected'),
+      ],
+      [text('child answered')],
+    )
+    const { host, session, dataDir, root } = await workspaceHost(provider)
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' })
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'subagent@example.test')
+    git('config', 'user.name', 'subagent')
+    writeFileSync(join(root, '.gitignore'), '*\n!.gitignore\n.worktrees\n')
+    git('add', '.gitignore')
+    git('commit', '-m', 'init')
+    try {
+      expect((await prompt(session, 'spawn into a worktree')).reason).toBe('completed')
+      const [spawn, collect] = await toolResults(session)
+      expect(spawn?.isError).not.toBe(true)
+      expect(textOf(spawn)).not.toMatch(/worktree skipped/)
+      expect(textOf(collect)).toBe('child answered')
+      const record = await childRecord(dataDir, childKey)
+      expect(record).toMatchObject({ isolation: 'worktree', creationPhase: 'committed', state: 'completed' })
+      expect(record?.cwd.startsWith(join(root, '.worktrees', 'agnes-'))).toBe(true)
+    } finally {
+      await host.close()
+    }
+  })
+
+  it('holds an extension activation until an in-flight spawned child turn has ended', async () => {
+    let release!: () => void
+    const provider = new RoutedProvider(
+      [toolCall('subagent_spawn', { task: 'slow work', isolation: 'shared' }), text('parent done')],
+      [text('slow answer')],
+    )
+    provider.childGate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { host, session, dataDir } = await workspaceHost(provider)
+    try {
+      expect((await prompt(session, 'spawn and move on')).reason).toBe('completed')
+      await expect.poll(() => provider.childKeys.length).toBe(1)
+      const childKey = provider.childKeys[0] as string
+      expect(host.activationBarrier.snapshot().active.turn).toBe(1)
+      let switchedWith: unknown
+      const activation = host.activationBarrier.quiesce('test.child-turn', async () => {
+        switchedWith = (await childRecord(dataDir, childKey))?.state
+      })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(switchedWith).toBeUndefined()
+      release()
+      await activation
+      expect(switchedWith).toBe('completed')
+    } finally {
+      release()
+      await host.close()
+    }
+  })
+
+  it('queues a child spawned while an activation is quiescing instead of failing it', async () => {
+    let host!: Awaited<ReturnType<typeof workspaceHost>>['host']
+    let activation: Promise<unknown> | undefined
+    let childAtSwitch: unknown
+    let childKey = ''
+    const provider = new RoutedProvider(
+      [
+        () => {
+          // The activation starts while the parent turn is live, before its spawn call runs.
+          activation = host.activationBarrier.quiesce('test.spawn-during-switch', async () => {
+            childAtSwitch = { requests: provider.childKeys.length }
+          })
+          return toolCall('subagent_spawn', { task: 'queued work', isolation: 'shared' })
+        },
+        (req) => {
+          childKey = JSON.stringify(req.messages).match(/spawned (subagent-parent\/[A-Z0-9]+)/)?.[1] ?? ''
+          return text('parent done')
+        },
+      ],
+      [text('queued answer')],
+    )
+    const opened = await workspaceHost(provider)
+    host = opened.host
+    try {
+      expect((await prompt(opened.session, 'spawn during a switch')).reason).toBe('completed')
+      await activation
+      expect(childAtSwitch).toEqual({ requests: 0 })
+      await expect.poll(async () => (await childRecord(opened.dataDir, childKey))?.state).toBe('completed')
     } finally {
       await host.close()
     }
