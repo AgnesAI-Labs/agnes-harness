@@ -1,10 +1,12 @@
+export type { AntdRoot } from './antd-root.js'
+export { createAntdRoot } from './antd-root.js'
 export * from './admin-confirmation.js'
 export * from './admin-detail.js'
 export * from './admin-dialogs.js'
 export * from './admin-list.js'
 export * from './admin-text.js'
 export * from './confirm.js'
-export * from './popover.js'
+export * from './popover.js' 
 export {
   createRegionHost,
   mountRegion,

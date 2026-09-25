@@ -15,8 +15,9 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
+import type { AntdRoot } from '@agnes/web-ui'
+import { createAntdRoot } from '@agnes/web-ui'
 import { createElement, type ReactElement } from 'react'
-import { createRoot, type Root } from 'react-dom/client'
 import type { ClaimResolver } from './boot.js'
 
 /** 与 protocol `kind:'slot'` 节点同形的最小切片。 */
@@ -46,7 +47,7 @@ interface SlotMount {
   update(next: SlotNodeView): void
 }
 
-const roots = new WeakMap<HTMLElement, { root: Root; node: SlotNodeView }>()
+const roots = new WeakMap<HTMLElement, { root: AntdRoot; node: SlotNodeView }>()
 
 export function mountSlotCard(options: {
   node: SlotNodeView
@@ -66,7 +67,7 @@ export function mountSlotCard(options: {
       },
     }
   }
-  const root = createRoot(element)
+  const root = createAntdRoot(element)
   roots.set(element, { root, node: options.node })
   render(root, context, options.node)
 
@@ -81,7 +82,7 @@ export function mountSlotCard(options: {
   }
 }
 
-function render(root: Root, context: SlotCardContext, node: SlotNodeView): void {
+function render(root: AntdRoot, context: SlotCardContext, node: SlotNodeView): void {
   const outletProps: SlotOutletProps<'tool.card.inline'> = {
     name: 'tool.card.inline',
     props: { fill: { slot: node.fill.slot, extId: node.fill.extId, payload: node.fill.payload } },

@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { createRoot, type Root } from 'react-dom/client'
+import { type AntdRoot, createAntdRoot } from './antd-root.js'
 
 export type RegionElement = ReactNode
 
-const roots = new Map<HTMLElement, Root>()
+const roots = new Map<HTMLElement, AntdRoot>()
 
 /**
  * Mount one replaceable React surface. Host code must use the returned disposer (or
@@ -12,7 +12,7 @@ const roots = new Map<HTMLElement, Root>()
  */
 export function mountRegion(host: HTMLElement, element: RegionElement): () => void {
   if (roots.has(host)) throw new Error('React region is already mounted')
-  const root = createRoot(host)
+  const root = createAntdRoot(host)
   roots.set(host, root)
   flushSync(() => root.render(element))
   let active = true
