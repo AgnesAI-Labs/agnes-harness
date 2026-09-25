@@ -278,13 +278,15 @@ describe('client module request resolution', () => {
   it('strictly decodes URL path segments without allowing encoded separators or traversal', () => {
     const root = snapshotRoot()
     const base = join(root, 'acme', 'panel', revision, 'dist', 'client')
-    writeFileSync(join(base, '空 格?#%.js'), 'export {}\n')
+    // Windows file names cannot contain '?', so that one character is exercised on POSIX only.
+    const name = process.platform === 'win32' ? '空 格#%.js' : '空 格?#%.js'
+    writeFileSync(join(base, name), 'export {}\n')
     expect(
       resolveClientModuleAsset(
         root,
-        `/plugins/acme/panel/${revision}/dist/client/${encodeURIComponent('空 格?#%.js')}`,
+        `/plugins/acme/panel/${revision}/dist/client/${encodeURIComponent(name)}`,
       ),
-    ).toBe(realpathSync(join(base, '空 格?#%.js')))
+    ).toBe(realpathSync(join(base, name)))
     for (const encoded of ['%2e%2e', '%2Fetc', '%5Cetc', '%00'])
       expect(
         resolveClientModuleAsset(root, `/plugins/acme/panel/${revision}/dist/client/${encoded}/x.js`),
