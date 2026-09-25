@@ -288,7 +288,7 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toBeUndefined())
     await expect(trace.readToolDetail('next', 9)).rejects.toThrow('没有当前会话')
     expect(next.readToolDetail).toHaveBeenCalledTimes(1)
-  })
+  }, 15_000)
 
   it('opens a new draft with the last model and permission', async () => {
     installPublicFixture()

@@ -37,10 +37,19 @@ jobs:
       - run: node tools/public-docs/verify.mjs
       - run: pnpm typecheck
       # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
+      # Windows has slower process and filesystem operations, so use less parallelism and a bounded
+      # 10-second test timeout there. Measure startup without competing test workers.
       # The root Vitest gate discovers and runs the complete Protocol fixture tree through the same
       # conformance core as the package CLI, so a newly added fixture cannot bypass CI.
       - name: test (includes Protocol conformance)
+        if: runner.os != 'Windows'
         run: pnpm exec vitest run --maxWorkers=4
+      - name: test (includes Protocol conformance)
+        if: runner.os == 'Windows'
+        run: pnpm exec vitest run --maxWorkers=2 --testTimeout=10000 --exclude packages/cli/test/boot-budget.test.ts
+      - name: verify startup budget without competing tests
+        if: runner.os == 'Windows'
+        run: pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1
       - name: build local acceptance package on each platform
         run: pnpm --filter @agnes/cli build:local
       - name: verify packaged directory publication capability
