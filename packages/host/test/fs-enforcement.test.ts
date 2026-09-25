@@ -61,6 +61,12 @@ type Impl = {
   foldsCase: boolean
   /** Speaks posix paths only, so it is left out on win32. */
   posixOnly?: true
+  /**
+   * Runs one spelling per distinct path through the fence instead of every spelling of every denied
+   * path. Set on a row whose only new coverage is its io: the spellings that differ only in how
+   * fs.ts normalises them lexically reach the io as the same path, and the rows above run them all.
+   */
+  representativeSpellings?: true
 }
 
 /**
@@ -204,6 +210,7 @@ const IMPLEMENTATIONS: Record<string, Impl> = {
     // The remote io shells out to python3/readlink/mkdir/rm as spawned executables, which win32 has
     // no equivalents for as plain argv[0]s.
     posixOnly: true,
+    representativeSpellings: true,
   },
 }
 
@@ -228,6 +235,14 @@ function spellings(root: string, deny: string, file: string): Array<[string, str
   ]
 }
 
+/**
+ * For a representative row: a relative and an absolute spelling of a file under the denied path, and
+ * the denied directory itself. `./x` and `a/../x` resolve to the plain relative path before the io
+ * sees them. Two denied paths are enough, one single-segment and one nested.
+ */
+const REPRESENTATIVE_SPELLINGS = new Set(['plain relative', 'absolute', 'the denied directory itself'])
+const REPRESENTATIVE_DENIED = 2
+
 const flipCase = (s: string): string => (s === s.toUpperCase() ? s.toLowerCase() : s.toUpperCase())
 
 /** The policy one implementation row enforces, rebuilt for the kernel probe with the same root. */
@@ -244,12 +259,14 @@ describe.each(
   Object.entries(IMPLEMENTATIONS).filter(([, i]) => !i.posixOnly || process.platform !== 'win32'),
 )('%s', { timeout: 30_000 }, (_name, impl) => {
   // The remote io spawns one python3 process per canonicalized path segment; the local and
-  // in-memory rows finish in milliseconds, but this loop's ~500 subprocess spawns for the remote
-  // row alone need more than vitest's 5s default.
+  // in-memory rows finish in milliseconds, but this loop's subprocess spawns for the remote row
+  // alone need more than vitest's 5s default, even with its representative spellings only.
   it('refuses every spelling of every denied path, on all four operations', async () => {
     const { fs, root } = impl.open()
-    for (const deny of impl.deny)
+    const denied = impl.representativeSpellings ? impl.deny.slice(0, REPRESENTATIVE_DENIED) : impl.deny
+    for (const deny of denied)
       for (const [how, path] of spellings(root, deny, 'inside')) {
+        if (impl.representativeSpellings && !REPRESENTATIVE_SPELLINGS.has(how)) continue
         await expect(fs.read(path), how).rejects.toThrow(/E_FS_DENIED/)
         await expect(fs.list(path), how).rejects.toThrow(/E_FS_DENIED/)
         await expect(fs.stat(path), how).rejects.toThrow(/E_FS_DENIED/)
