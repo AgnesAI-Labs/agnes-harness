@@ -8,8 +8,9 @@ export default defineConfig({
   test: {
     include: ['**/*.test.ts'],
     exclude: [...defaultExclude, '**/dist/**'],
-    // Windows suites start real PowerShell, daemon and worker processes. Bound file fan-out;
-    // keep product deadlines intact and allow an explicit CLI maxWorkers override.
-    ...(process.platform === 'win32' ? { maxWorkers: 2 } : {}), // guards-allow-platform: Windows test-process concurrency.
+    // Windows suites start real PowerShell, daemon and worker processes. Bound file fan-out
+    // and allow for process startup under CI load without changing product-level deadlines.
+    // Explicit per-test timeouts and CLI maxWorkers overrides still take precedence.
+    ...(process.platform === 'win32' ? { maxWorkers: 2, testTimeout: 15_000 } : {}), // guards-allow-platform: Windows test-runner limits.
   },
 })
