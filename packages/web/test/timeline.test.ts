@@ -3,7 +3,8 @@
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
-import { createElement } from 'react'
+import { createElement, useEffect, useLayoutEffect } from 'react'
+import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
 
@@ -115,6 +116,62 @@ describe('timeline reader semantics', () => {
     })
 
     timeline.reset()
+    await ctx.fiber.dispose()
+  })
+
+  it('lets a reset inside another React commit finish before it unmounts the per-node roots', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry)
+    const registry = (ctx as unknown as { slots: SlotRegistry }).slots
+    registry.declare('conversation.chat.node', { kind: 'keyed', scope: 'session' })
+    registry.setSession('session-a')
+    let mounted = 0
+    function ClaimedNode() {
+      useEffect(() => {
+        mounted++
+        return () => {
+          mounted--
+        }
+      }, [])
+      return createElement('div', { id: 'claimed-node' }, 'claimed')
+    }
+    const remove = registry.register(
+      { name: 'conversation.chat.node', key: 'assistant', id: 'claimed-assistant' },
+      ClaimedNode,
+    )
+    const transcript = document.createElement('div')
+    const newContentButton = document.createElement('button')
+    document.body.append(transcript, newContentButton)
+    const timeline = createTimelineRenderer({ transcript, newContentButton, registry })
+    timeline.render([{ kind: 'assistant', id: 'assistant-1', seq: 1, text: 'answer' }])
+    await vi.waitFor(() => expect(mounted).toBe(1))
+
+    // A transcript that is torn down on a session switch resets its timeline from a layout cleanup,
+    // which React runs inside the commit that removes it.
+    let ownerMounted = false
+    function Owner() {
+      useLayoutEffect(() => {
+        ownerMounted = true
+        return () => timeline.reset()
+      }, [])
+      return null
+    }
+    const owner = createRoot(document.body.appendChild(document.createElement('div')))
+    owner.render(createElement(Owner))
+    await vi.waitFor(() => expect(ownerMounted).toBe(true))
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      owner.unmount()
+      expect(errors.mock.calls.map((call) => String(call[0]))).not.toContainEqual(
+        expect.stringContaining('synchronously unmount a root'),
+      )
+    } finally {
+      errors.mockRestore()
+    }
+    expect(transcript.querySelector('#claimed-node')).toBeNull()
+    await vi.waitFor(() => expect(mounted).toBe(0))
+
+    remove()
     await ctx.fiber.dispose()
   })
 

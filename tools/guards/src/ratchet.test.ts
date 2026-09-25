@@ -390,7 +390,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 731,
+  // Per-node roots unmount after the current commit instead of inside it: measured 730, exact.
+  'packages/web/src/timeline': 730,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1972,7 +1973,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
   // TRACE-INSPECTION-20260925: trace detail callback wiring; measured 13269, exact.
-  'packages/web/src': 13269,
+  // Per-node roots in the timeline unmount after the current commit: measured 13268, exact.
+  'packages/web/src': 13268,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

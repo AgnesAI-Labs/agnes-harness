@@ -504,8 +504,9 @@ function mountDshNode(
     },
     dispose() {
       for (const stop of stops) stop()
-      root.unmount()
-      childRoot.unmount()
+      // A reset can run inside another root's commit (the transcript is torn down on a session
+      // switch), where React cannot unmount a root synchronously; let that commit finish first.
+      for (const nested of [root, childRoot]) queueMicrotask(() => nested.unmount())
       host.remove()
       native.remove()
     },
