@@ -7,7 +7,9 @@
     "node": ">=24.10"
   },
   "scripts": {
-    "test": "vitest run --maxWorkers=1",
+    "test": "vitest run --project fast --maxWorkers=1",
+    "test:heavy": "vitest run --project heavy --maxWorkers=1",
+    "test:all": "vitest run --maxWorkers=1",
     "typecheck": "tsc -b",
     "lint": "biome check .",
     "gen:check": "pnpm -r --if-present run gen:check",

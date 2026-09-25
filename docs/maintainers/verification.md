@@ -32,7 +32,7 @@ pnpm gen:check
 pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWorkers=1
 ```
 
-`pnpm test` runs the complete suite. Retain skips, platform prerequisites, and failures in the results for that revision. A total pass count must not hide unverified areas.
+`pnpm test:all` runs the complete suite; `pnpm test` runs only the fast tier and `pnpm test:heavy` only the real-process and large-data tier (`*.e2e.test.ts`, `*.slow.test.ts`). Retain skips, platform prerequisites, and failures in the results for that revision. A total pass count must not hide unverified areas.
 
 <a id="构建与真实本地进程"></a>
 

@@ -35,7 +35,7 @@ node tools/public-docs/verify.mjs
 pnpm exec vitest run tools/guards/src --maxWorkers=1
 ```
 
-Run affected package tests from the repository root; `pnpm test` runs the full suite. A focused test command must actually execute matching tests. For a complete local runtime, follow the [installation guide](docs/guide/install.md).
+Run affected package tests from the repository root. `pnpm test` runs the fast tier, `pnpm test:heavy` runs the real-process and large-data tests (`*.e2e.test.ts`, `*.slow.test.ts`), and `pnpm test:all` runs both. Run a single file of either tier with `pnpm exec vitest run <file>`. A focused test command must actually execute matching tests. For a complete local runtime, follow the [installation guide](docs/guide/install.md).
 
 ## Engineering boundaries
 
