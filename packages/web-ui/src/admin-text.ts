@@ -4,7 +4,17 @@ import type {
   PackageOperation,
   PackagePreview,
 } from '@agnes/protocol'
-import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
+
+/**
+ * 浏览器 UI 运行状态的展示视图。结构与 web 包的 PluginRuntimeState 保持结构化等价
+ * （phase/packageId/revision/error.message），组件层不 import web 包。
+ */
+export type RuntimeStateView = Readonly<{
+  packageId: string
+  revision: string | undefined
+  phase: 'idle' | 'loading' | 'active' | 'stopping' | 'failed'
+  error?: Readonly<{ message: string }>
+}>
 
 export function hasPermission(permissions: readonly string[], permission: string): boolean {
   return permissions.includes(permission)
@@ -12,6 +22,14 @@ export function hasPermission(permissions: readonly string[], permission: string
 
 export function sourceLabel(source: { type: string; ref: string }): string {
   return `${source.type} · ${source.ref}`
+}
+
+export function contributionText(item: { contributions: readonly { kind: string; id: string }[] }): string {
+  if (!item.contributions.length) return '未报告贡献'
+  const labels = item.contributions
+    .slice(0, 3)
+    .map((contribution) => `${contribution.kind} · ${contribution.id}`)
+  return `${labels.join('，')}${item.contributions.length > labels.length ? `，另有 ${item.contributions.length - labels.length} 项` : ''}`
 }
 
 export function integrityLabel(integrity: string): string {
@@ -43,7 +61,7 @@ export function actualIdentity(item: PackageInstalledDescriptor): string {
   return '后台未确认实际版本或摘要'
 }
 
-export function runtimeStateLabel(state: PluginRuntimeState | undefined): string {
+export function runtimeStateLabel(state: RuntimeStateView | undefined): string {
   if (!state) return '未确认'
   return {
     idle: '未加载',
@@ -54,7 +72,7 @@ export function runtimeStateLabel(state: PluginRuntimeState | undefined): string
   }[state.phase]
 }
 
-export function runtimeStateMessage(state: PluginRuntimeState | undefined): string {
+export function runtimeStateMessage(state: RuntimeStateView | undefined): string {
   if (!state) return '浏览器 UI 状态将在工作台打开后确认。'
   if (state.phase === 'failed') return 'Agnes 原界面保持可用，可重试。'
   return runtimeStateLabel(state)
