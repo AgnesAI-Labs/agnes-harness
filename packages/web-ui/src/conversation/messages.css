@@ -1,0 +1,9 @@
+[data-agnes-conversation-messages] .node-body,
+[data-agnes-conversation-messages] .thinking-content,
+[data-agnes-conversation-messages] .tool-detail-text {
+  white-space: pre-wrap;
+}
+
+[data-agnes-conversation-messages] .tool-detail-body[hidden] {
+  display: none;
+}

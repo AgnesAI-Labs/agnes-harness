@@ -1,0 +1,18 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "composite": false,
+    "types": ["vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vitest.config.ts"],
+  "references": [
+    { "path": "../../../packages/cordis" },
+    { "path": "../../../packages/protocol" },
+    { "path": "../../../packages/web-client" },
+    { "path": "../../../packages/web" }
+  ]
+}

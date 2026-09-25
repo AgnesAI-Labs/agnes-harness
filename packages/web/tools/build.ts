@@ -44,7 +44,7 @@ await build({
   external: platformExternals,
 })
 // WC5：平台共享单例 /vendor/*。React 入口与外部化 React 的 UI vendor 分开构建；React 的代码只
-// 存在于共享入口/chunk 一份，antd、web-client 经 import map 引用同一套 React 说明符。产物落在
+// 存在于共享入口/chunk 一份，antd、assistant-ui、web-client 经 import map 引用同一套 React 说明符。产物落在
 // /vendor/ 命名空间，web-server 按固定文件名 + chunk 哈希模式放行。
 const vendorOptions = {
   outdir: join(out, 'vendor'),
@@ -70,6 +70,7 @@ await build({
 await build({
   entryPoints: {
     antd: join(root, 'tools', 'vendor', 'antd-entry.js'),
+    'assistant-ui': join(root, 'tools', 'vendor', 'assistant-ui-entry.js'),
     cordis: join(root, 'tools', 'vendor', 'cordis-entry.js'),
     'web-client': join(root, 'tools', 'vendor', 'web-client-entry.js'),
   },

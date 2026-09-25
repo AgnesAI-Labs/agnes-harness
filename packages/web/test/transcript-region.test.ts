@@ -1,8 +1,8 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode } from '@agnes/protocol'
-import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { createElement, useEffect } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSlotCardContext } from '../src/client-modules/timeline-slot.js'
 import { TRANSCRIPT_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
@@ -35,6 +35,20 @@ describe('rendered transcript region', () => {
   it('mounts slot cards with a per-card React root and restores the built-in after shadow unload', async () => {
     runtime = await mountRenderedIndex()
     bindSlotCardContext({ registry: runtime.registry, claim: () => true })
+    const lifecycle: string[] = []
+    function Card() {
+      useEffect(() => {
+        lifecycle.push('mount')
+        return () => {
+          lifecycle.push('unmount')
+        }
+      }, [])
+      return createElement('div', { id: 'fixture-slot-card' }, '插件卡')
+    }
+    const removeCard = runtime.registry.register('tool.card.inline', Card as never, {
+      owner: 'fixture.card',
+      id: 'fixture-slot-card',
+    })
     const slot: UINode = {
       kind: 'slot',
       id: 'slot-1',
@@ -46,6 +60,7 @@ describe('rendered transcript region', () => {
     expect(
       document.querySelector('[data-slot-node="tool.card.inline"] [data-slot="tool.card.inline"]'),
     ).toBeTruthy()
+    await vi.waitFor(() => expect(lifecycle).toContain('mount'))
 
     const remove = runtime.registry.register(
       { name: TRANSCRIPT_SLOT as string, id: 'fixture-transcript-shadow', owner: 'fixture', priority: -1 },
@@ -54,10 +69,12 @@ describe('rendered transcript region', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(document.querySelector('#shadow-transcript')?.textContent).toBe('替换时间线')
     expect(document.querySelector('#transcript-content')).toBeNull()
+    await vi.waitFor(() => expect(lifecycle).toEqual(['mount', 'unmount']))
 
     remove()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(document.querySelector('#transcript-content')).toBeTruthy()
     expect(document.querySelector('#shadow-transcript')).toBeNull()
+    removeCard()
   })
 })

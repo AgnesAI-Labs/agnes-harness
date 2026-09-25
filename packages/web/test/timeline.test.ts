@@ -3,7 +3,7 @@
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
-import { createElement } from 'react'
+import { createElement, useEffect } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
 
@@ -24,6 +24,38 @@ function renderer() {
 }
 
 describe('timeline reader semantics', () => {
+  it('releases a claimed DSH node when the renderer is disposed directly', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry)
+    const registry = (ctx as unknown as { slots: SlotRegistry }).slots
+    registry.declare('conversation.chat.node', { kind: 'keyed', scope: 'session' })
+    registry.setSession('session-a')
+    const lifecycle: string[] = []
+    function Card() {
+      useEffect(() => {
+        lifecycle.push('mount')
+        return () => {
+          lifecycle.push('unmount')
+        }
+      }, [])
+      return createElement('div', null, 'card')
+    }
+    const off = registry.register({ name: 'conversation.chat.node', key: 'assistant', id: 'card' }, Card)
+    const transcript = document.createElement('div')
+    document.body.append(transcript)
+    const timeline = createTimelineRenderer({
+      transcript,
+      newContentButton: document.createElement('button'),
+      registry,
+    })
+    timeline.render([{ kind: 'assistant', id: 'a', seq: 1, text: 'answer' }])
+    await vi.waitFor(() => expect(lifecycle).toContain('mount'))
+    timeline.dispose?.()
+    expect(lifecycle).toEqual(['mount', 'unmount'])
+    off()
+    await ctx.fiber.dispose()
+  })
+
   it('projects a keyed DSH chat renderer for one node kind and restores native fallback on removal', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry)
@@ -45,8 +77,9 @@ describe('timeline reader semantics', () => {
     const node: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: '原生回答' }
 
     timeline.render([node])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#custom-chat-node')?.textContent).toBe('扩展 assistant 节点')
+    await vi.waitFor(() =>
+      expect(transcript.querySelector('#custom-chat-node')?.textContent).toBe('扩展 assistant 节点'),
+    )
     expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(true)
 
     remove()

@@ -2,6 +2,24 @@
   "scope": "External dependencies directly used by product runtime or optional integration paths.",
   "packages": [
     {
+      "name": "@assistant-ui/react",
+      "version": "0.11.27",
+      "license": "MIT",
+      "source": "https://github.com/assistant-ui/assistant-ui/tree/main/packages/react",
+      "purpose": "Headless conversation runtime exposed through the shared Web UI package and vendor entry.",
+      "rationale": "Pins the B-0 verified React 18 compatible runtime while keeping external UI imports inside @agnes/web-ui.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "@assistant-ui/tap",
+      "version": "0.1.2",
+      "license": "MIT",
+      "source": "https://github.com/assistant-ui/assistant-ui",
+      "purpose": "Reactive state dependency used by the pinned assistant-ui conversation runtime.",
+      "rationale": "Pins the transitive version that passed B-0 because the newer compatible-range release failed the fixture's initial state read.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
       "name": "antd",
       "version": "6.6.5",
       "license": "MIT",

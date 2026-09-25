@@ -45,9 +45,19 @@ export function getSlotCardContext(): SlotCardContext | undefined {
 interface SlotMount {
   element: HTMLElement
   update(next: SlotNodeView): void
+  dispose(): void
 }
 
 const roots = new WeakMap<HTMLElement, { root: AntdRoot; node: SlotNodeView }>()
+
+function releaseSlotCard(element: HTMLElement): void {
+  const entry = roots.get(element)
+  if (!entry) return
+  roots.delete(element)
+  // A transcript can disappear during its parent React root's commit. Unmount the
+  // independent card root after that commit so React can complete both cleanups.
+  queueMicrotask(() => entry.root.unmount())
+}
 
 export function mountSlotCard(options: {
   node: SlotNodeView
@@ -65,6 +75,7 @@ export function mountSlotCard(options: {
       update(next: SlotNodeView) {
         element.setAttribute('data-slot-node', next.fill.slot)
       },
+      dispose() {},
     }
   }
   const root = createAntdRoot(element)
@@ -78,6 +89,9 @@ export function mountSlotCard(options: {
       if (!entry) return
       entry.node = next
       render(root, context, next)
+    },
+    dispose() {
+      releaseSlotCard(element)
     },
   }
 }
@@ -108,18 +122,10 @@ export function observeSlotCards(container: HTMLElement): () => void {
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const removed of mutation.removedNodes) {
-        if (removed instanceof HTMLElement && roots.has(removed)) {
-          const entry = roots.get(removed)
-          entry?.root.unmount()
-          roots.delete(removed)
-        }
+        if (removed instanceof HTMLElement && roots.has(removed)) releaseSlotCard(removed)
         if (removed instanceof HTMLElement) {
           removed.querySelectorAll<HTMLElement>('[data-slot-node]').forEach((child) => {
-            const entry = roots.get(child)
-            if (entry) {
-              entry.root.unmount()
-              roots.delete(child)
-            }
+            releaseSlotCard(child)
           })
         }
       }

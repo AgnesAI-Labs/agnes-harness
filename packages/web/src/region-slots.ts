@@ -58,6 +58,7 @@ import {
 } from '@agnes/web-units'
 import { createElement, useLayoutEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
+import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
 import {
   createDocumentPreview,
@@ -70,6 +71,7 @@ import { createPermissionPicker } from './permission-picker.js'
 import { isComposerSubmitShortcut, resizeComposer } from './presentation.js'
 import { bindSidebar } from './shell.js'
 import { createTimelineRenderer } from './timeline.js'
+import { TimelineNodeHost } from './timeline-node-host.js'
 import { createUsagePanel } from './usage.js'
 
 export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
@@ -1327,6 +1329,9 @@ export function mountTranscriptRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: {
+    /** Explicit W4a node-host probe; the default production path stays on the legacy renderer. */
+    nodeHost?: 'react'
+    claim?: ClaimResolver
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
     session?: SessionService
@@ -1356,22 +1361,32 @@ export function mountTranscriptRegion(
       },
     },
     () =>
-      createElement(Transcript, {
-        ref: handle,
-        dependencies: {
-          ...TRANSCRIPT_DEPENDENCIES,
-          createRenderer(rendererOptions) {
-            return createTimelineRenderer({
-              ...rendererOptions,
-              registry,
-              ...(options.session ? { session: options.session } : {}),
-              ...(options.locale ? { locale: options.locale } : {}),
-              ...(options.resources ? { resources: options.resources } : {}),
-            })
-          },
-        },
-        ...options,
-      }),
+      options.nodeHost === 'react'
+        ? createElement(TimelineNodeHost, {
+            ref: handle,
+            registry,
+            ...(options.claim ? { claim: options.claim } : {}),
+            ...(options.newContentButton ? { newContentButton: options.newContentButton } : {}),
+            ...(options.session ? { session: options.session } : {}),
+            ...(options.locale ? { locale: options.locale } : {}),
+            ...(options.resources ? { resources: options.resources } : {}),
+          })
+        : createElement(Transcript, {
+            ref: handle,
+            dependencies: {
+              ...TRANSCRIPT_DEPENDENCIES,
+              createRenderer(rendererOptions) {
+                return createTimelineRenderer({
+                  ...rendererOptions,
+                  registry,
+                  ...(options.session ? { session: options.session } : {}),
+                  ...(options.locale ? { locale: options.locale } : {}),
+                  ...(options.resources ? { resources: options.resources } : {}),
+                })
+              },
+            },
+            ...options,
+          }),
   )
   const removeViewBuiltin = registry.register(
     {

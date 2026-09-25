@@ -364,6 +364,9 @@ function createEntry(node: UINode): Entry {
         if (next.kind !== 'slot') return
         mount.update(next)
       },
+      dispose() {
+        mount.dispose()
+      },
     }
   }
 
@@ -805,23 +808,25 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     scrollContainer.focus({ preventScroll: true })
   })
 
+  const reset = () => {
+    for (const entry of entries.values()) {
+      entry.dispose?.()
+      entry.dshNode?.dispose()
+    }
+    options.transcript.replaceChildren()
+    entries.clear()
+    firstShown = undefined
+    turnProjector.reset()
+    follow = true
+    expectedTop = scrollContainer.scrollTop
+    options.newContentButton.hidden = true
+  }
+
   return {
     render,
-    reset() {
-      for (const entry of entries.values()) {
-        entry.dispose?.()
-        entry.dshNode?.dispose()
-      }
-      options.transcript.replaceChildren()
-      entries.clear()
-      firstShown = undefined
-      turnProjector.reset()
-      follow = true
-      expectedTop = scrollContainer.scrollTop
-      options.newContentButton.hidden = true
-    },
+    reset,
     dispose() {
-      turnProjector.reset()
+      reset()
       scrollContainer.removeEventListener('scroll', onScroll)
       sentinel?.disconnect()
       earlier.remove()
