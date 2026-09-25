@@ -862,6 +862,52 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     expect(acquire).toHaveBeenCalledTimes(2)
   })
 
+  // A session reopened by the resource-snapshot fence leaves the discarded generation's exit
+  // observer on the shared worker, next to the replacement's. When that worker goes, the stale
+  // observer runs first; it must not keep the replacement's own observer from starting recovery.
+  it('recovers a watched session whose earlier open was discarded on the same worker', async () => {
+    const key = 'reopened-then-crashed'
+    const workerExit: Array<() => void> = []
+    const channel = (token: string) => ({
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token,
+        sessionKey: key,
+        writerRunId: token,
+        generation: 1,
+        profileHash: 'sha256-profile',
+      }),
+      // Like a real session channel, exit is observed on the whole worker link.
+      onExit: (notify: () => void) => void workerExit.push(notify),
+      closeSession: vi.fn(async () => undefined),
+      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+    })
+    let releaseFirst: ((link: unknown) => void) | undefined
+    const first = new Promise<unknown>((resolve) => {
+      releaseFirst = resolve
+    })
+    const acquire = vi
+      .fn()
+      .mockImplementationOnce(() => first)
+      .mockResolvedValueOnce(channel('replacement'))
+      .mockResolvedValueOnce(channel('recovered'))
+    const registry = new WorkerRegistry({ acquire, retire: vi.fn() } as unknown as WorkerPool)
+    const opening = open(registry, { key, cwd: '/workspace', resume: true })
+    await vi.waitFor(() => expect(acquire).toHaveBeenCalledOnce())
+    registry.noteResourceSnapshotCommitted()
+    releaseFirst?.(channel('discarded'))
+    expect((await opening).session.writerRunId).toBe('replacement')
+    registry.subscribe(key, () => undefined)
+    expect(workerExit).toHaveLength(2)
+
+    for (const notify of workerExit.splice(0)) notify()
+
+    await vi.waitFor(() => expect(registry.get(key)?.session.writerRunId).toBe('recovered'))
+    expect(acquire).toHaveBeenCalledTimes(3)
+    await registry.closeAll()
+  })
+
   it('finishes pending and map cleanup after the first session close fails', async () => {
     const link = {
       alive: true,

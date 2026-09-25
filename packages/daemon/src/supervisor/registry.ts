@@ -686,7 +686,9 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     if (this.resourceRetirements.get(key)?.entry === entry) this.resourceRetirements.delete(key)
     // Only a session somebody is still subscribed to is worth reopening eagerly.
     const watched = (): boolean => (this.listenerSets.get(key)?.size ?? 0) > 0
-    if (!entry.recover || !watched() || this.recovering.has(key)) return
+    // An entry that no longer holds the key leaves recovery to the one that does. Starting a
+    // recovery here would find the key taken, end at once, and still block the holder's own.
+    if (!entry.recover || !watched() || this.recovering.has(key) || this.entries.has(key)) return
     const recovery = (async () => {
       let delayMs = 50
       while (entry.recover && watched() && !this.entries.has(key)) {
