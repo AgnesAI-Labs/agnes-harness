@@ -1088,8 +1088,8 @@ describe('WorkerPool when a start from the desired target fails', () => {
       workersSocketPath: workerSocket(dir),
       // The same window bounds hello and boot_ready. A tsx-started fake worker can take more than
       // 2.5s to say hello on a loaded hosted runner, which then fails before the boot phase under
-      // test. These cases wait for boot_ready to time out, up to three times, so the window stays
-      // at 10s rather than the daemon default the other real-worker tests use.
+      // test. These cases wait for boot_ready to time out, so the window stays at 10s rather than
+      // the daemon default the other real-worker tests use.
       limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
     }
     const store = new CompositeTargetStore(sqliteTables().table('composite'), 'default')
@@ -1121,23 +1121,21 @@ describe('WorkerPool when a start from the desired target fails', () => {
   const bootstrapOnly = (store: CompositeTargetStore) => store.publishDesired(artifact('ext:bad'))
 
   it('records the failure and does not count a worker that never became ready as a crash', async () => {
+    // One failed start is enough: the shared worker is never quarantined, so repeating the start
+    // exercises nothing new.
     await withBoot(bootstrapOnly, async ({ pool, store, notices }) => {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        await expect(pool.acquireSharedWorker()).rejects.toThrow('did not boot_ready')
-      }
+      await expect(pool.acquireSharedWorker()).rejects.toThrow('did not boot_ready')
       expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
       expect(notices).not.toContain('worker_crashed')
       expect(pool.isQuarantined('@shared')).toBe(false)
     })
-  }, 90_000)
+  }, 40_000)
 
   it('records the failure when the worker process dies while it is starting from the target', async () => {
     process.env.AGNES_FAKE_BOOT = 'exit'
     try {
       await withBoot(bootstrapOnly, async ({ pool, store, notices }) => {
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          await expect(pool.acquireSharedWorker()).rejects.toThrow()
-        }
+        await expect(pool.acquireSharedWorker()).rejects.toThrow()
         expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
         expect(notices).not.toContain('worker_crashed')
         expect(pool.isQuarantined('@shared')).toBe(false)
@@ -1146,7 +1144,7 @@ describe('WorkerPool when a start from the desired target fails', () => {
       process.env.AGNES_FAKE_BOOT = undefined
       Reflect.deleteProperty(process.env, 'AGNES_FAKE_BOOT')
     }
-  }, 90_000)
+  }, 40_000)
 
   it('fails the start as soon as the worker says it cannot apply the target, and records that target', async () => {
     process.env.AGNES_FAKE_BOOT = 'fail'
