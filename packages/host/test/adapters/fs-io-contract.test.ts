@@ -108,7 +108,10 @@ const FIXTURES: Array<[string, () => Fixture]> = [
     : ([['remote over loopback transport', remoteFixture]] as Array<[string, () => Fixture]>)),
 ]
 
-describe.each(FIXTURES)('FsIo contract through the fence: %s', (_name, open) => {
+// The remote fixture spawns a process for every lstat, readdir and mkdir the fence makes: a case
+// takes up to about a second alone and has run past vitest's 5 s default on a loaded macOS runner.
+// The local and memory fixtures finish in milliseconds either way.
+describe.each(FIXTURES)('FsIo contract through the fence: %s', { timeout: 30_000 }, (_name, open) => {
   const held: Fixture[] = []
   afterEach(() => {
     for (const f of held.splice(0)) f.dispose()
