@@ -213,8 +213,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // A-line settings selects: React-owned options replace imperative DOM; exact formatted counts.
   // 2026-09-25 C-line migration: web-ui carries the admin/resource component layer
   // (admin-list/admin-detail/admin-dialogs/admin-confirmation/admin-text/resource-* +
-  // select-picker/confirm/popover moved in from web-admin-frame). countLines 2589.
-  'packages/web-ui/src': 2589,
+  // select-picker/confirm/popover moved in from web-admin-frame). countLines 2610 (CSP antd-root joined).
+  'packages/web-ui/src': 2610,
   'packages/web-units/src': 3172,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
