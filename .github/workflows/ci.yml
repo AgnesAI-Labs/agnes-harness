@@ -14,7 +14,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       # Windows runners otherwise rewrite the checkout to CRLF before Biome sees it. Configure Git
       # before checkout so every matrix member validates the same committed LF bytes.
@@ -37,11 +37,12 @@ jobs:
       - run: node tools/public-docs/verify.mjs
       - run: pnpm typecheck
       # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
+      # The CLI override takes precedence over vitest.shared.ts; keep Windows at its reviewed 2-worker cap.
       # The root Vitest gate discovers and runs the complete Protocol fixture tree through the same
       # conformance core as the package CLI, so a newly added fixture cannot bypass CI.
       - name: test (includes Protocol conformance)
         id: suite
-        run: pnpm exec vitest run --maxWorkers=4
+        run: pnpm exec vitest run --maxWorkers=${{ runner.os == 'Windows' && '2' || '4' }}
       # Keep boot/session creation in the functional gate above. The isolated run reports wall-clock
       # time in the job summary even if another test fails; a stable performance runner can opt into
       # the 300 ms assertion. Do not restart this test after a cancelled or skipped suite.

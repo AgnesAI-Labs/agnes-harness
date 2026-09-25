@@ -442,7 +442,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS },
     }
     const notices: string[] = []
     const exited: string[] = []
@@ -491,7 +491,7 @@ describe('WorkerPool', () => {
 
     await pool.closeAll(1000)
     await server.close()
-  }, 20_000)
+  }, 45_000)
 
   it('never quarantines the shared worker, however many times it crashes', () => {
     const pool = new WorkerPool({

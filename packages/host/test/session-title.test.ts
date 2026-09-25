@@ -25,7 +25,8 @@ const hosts: Host[] = []
 afterEach(async () => {
   vi.useRealTimers()
   for (const host of hosts.splice(0)) await host.close()
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 const model = (id: string): ModelRecord => ({
@@ -308,6 +309,7 @@ it.each(['valid title', '```invalid title'])(
       await storage.close()
     }
   },
+  30_000,
 )
 
 it('closes a hanging title adapter, records unknown usage, and ignores late output', async () => {
@@ -332,7 +334,7 @@ it('closes a hanging title adapter, records unknown usage, and ignores late outp
   expect(costs.at(-1)?.data).toMatchObject({ purpose: 'title', interrupted: true })
   expect((costs.at(-1)?.data as { credits?: number } | undefined)?.credits).toBeUndefined()
   expect(reopened.calls).toHaveLength(0)
-})
+}, 30_000)
 
 it('opens and closes promptly while title ledger recovery is hung', async () => {
   let hang = false
@@ -465,7 +467,7 @@ it('waits through approval and generates once after the continued logical turn c
   const timeline = await f.session.projectUI()
   expect(timeline.turns[0]?.usage.calls.filter((call) => call.purpose === 'title')).toHaveLength(1)
   expect(f.calls.filter((call) => call.kind === 'summary')).toHaveLength(1)
-})
+}, 30_000)
 
 it('times out a non-cooperative provider without changing the completed turn', async () => {
   const f = await fixture({ waitTitle: new Promise<void>(() => undefined) })
