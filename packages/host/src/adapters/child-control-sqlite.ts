@@ -225,7 +225,9 @@ export function sqliteChildControl(
     ),
     cancelAttempt: db.prepare(
       `UPDATE child_tasks
-       SET creation_phase = 'cancelled', creation_revision = creation_revision + 1, cancelled_fact = ?
+       SET creation_phase = 'cancelled', creation_revision = creation_revision + 1, cancelled_fact = ?,
+         state = CASE WHEN state = 'creating' THEN ? ELSE state END,
+         state_revision = CASE WHEN state = 'creating' THEN state_revision + 1 ELSE state_revision END
        WHERE child_key = ? AND creation_id = ? AND attempt_id = ? AND creation_phase = 'creating'
          AND creation_revision = ?`,
     ),
@@ -444,6 +446,7 @@ export function sqliteChildControl(
         })
         const changed = q.cancelAttempt.run(
           JSON.stringify(fact),
+          input.reason === 'open_failed' ? 'failed' : 'cancelled',
           input.childKey,
           input.creationId,
           input.attemptId,
