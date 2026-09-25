@@ -885,7 +885,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O5 review fix: the register map keeps the set of op lanes beside its cells, so the
   // per-append relation check and lease renewal stop copying the whole table. Measured +16 on its
   // own base; with the batch-scan fix above the combined tree measures 25229, exact, no spare.
-  'packages/core/src': 25229,
+  // FOLD-CACHE-REMOVAL: the fold cache goes - its codec and write policy, the storage field and
+  // reader, the per-append trial fold and the open-time restore; every open folds from seq 1.
+  // Measured 25019, exact, no spare (-210).
+  // FOLD-CACHE-REMOVAL follow-up: encodeLedgerState, used only by tests, moves to the testkit.
+  // Measured 24962, exact, no spare (-57).
+  'packages/core/src': 24962,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2036,7 +2041,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20: biome format of runner/draw.ts wrapped long ACP option lines. Re-measured: 5131, exact.
   // 2026-09-23 terminal-client recovery: one supervised Runner at a time, teardown before rebuild.
   // Measured 5250 with countLines(); the guard still rejects any further growth.
-  'packages/channels/src': 5250,
+  // Durable WAL checkpoints on darwin: the outbound ref store sets checkpoint_fullfsync.
+  // Measured 5252, exact, no spare (+2).
+  'packages/channels/src': 5252,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
@@ -2408,7 +2415,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // WIN-SQLITE-CLOSE: storage-sqlite closes a database it refused or failed to open (+13).
   // Measured 38050, exact, no spare.
   // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
-  'packages/host/src': 38082,
+  // FOLD-CACHE-REMOVAL: SQLite no longer stores the fold cache; the old table is dropped on open.
+  // (-52). Measured on this tree: 38030, exact, no spare.
+  // Durable WAL checkpoints on darwin: the ledger, table-store and GC ledger-lock connections set
+  // checkpoint_fullfsync through one small helper. Measured 38043, exact, no spare (+13).
+  'packages/host/src': 38043,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2567,7 +2578,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // helper; measured 5042, exact, no spare (+32).
   // WIN-SQLITE-CLOSE: same change as packages/host/src. Measured 5023 (+13), exact.
   // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
-  'packages/host/src/adapters': 5055,
+  // FOLD-CACHE-REMOVAL: same change as packages/host/src. Measured on this tree: 5003, exact, no spare (-52).
+  // Durable WAL checkpoints on darwin: the helper plus its two storage call sites. Measured 5014,
+  // exact, no spare (+11).
+  'packages/host/src/adapters': 5014,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2584,7 +2598,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI-CACHE-INCREMENTAL C1 (rebased on 950fc6f3): measured 667, exact, no spare (-68).
   // WIN-SQLITE-CLOSE: a refused or failed open closes its database file again, so Windows can
   // delete it. Measured 680 (+13), exact, no spare.
-  'packages/host/src/adapters/storage-sqlite': 680,
+  // FOLD-CACHE-REMOVAL: fold cache statements, write, read and delete gone; the table is dropped on
+  // open. Measured on this tree: 632, exact, no spare (-48).
+  // Durable WAL checkpoints on darwin: the ledger and table-store connections call the checkpoint
+  // sync helper. Measured 635, exact, no spare (+3).
+  'packages/host/src/adapters/storage-sqlite': 635,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,

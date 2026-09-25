@@ -39,33 +39,6 @@ export function storageContract(
     expect(await s.scan('k', { toSeq: 1 })).not.toHaveProperty('0.integrity')
     await s.close()
   })
-  it(`${name}: atomically stores a fold checkpoint at the committed tail`, async () => {
-    const s = open()
-    await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
-    const record = {
-      version: 3 as const,
-      seq: 1,
-      payload: '{"lastSeq":1}',
-      checksum: 'a'.repeat(64),
-      integrity: { lastSeq: 1, legacyThroughSeq: 1, headDigest: null },
-    }
-    await s.commit('k', {
-      events: [ev('user/message', {})],
-      expectedWriterRunId: 'r1',
-      foldCache: record,
-    })
-    expect(await s.foldCache?.('k')).toEqual(record)
-    await expect(
-      s.commit('k', {
-        events: [ev('user/message', {})],
-        expectedWriterRunId: 'r1',
-        foldCache: { ...record, seq: 99 },
-      }),
-    ).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
-    expect((await s.scan('k', { toSeq: 10 })).map((event) => event.seq)).toEqual([1])
-    expect(await s.foldCache?.('k')).toEqual(record)
-    await s.close()
-  })
   it(`${name}: rejects mismatched integrity sequences before writing`, async () => {
     const s = open()
     await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })

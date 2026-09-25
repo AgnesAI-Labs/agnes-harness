@@ -17,6 +17,7 @@ import {
   privateArtifactDeleteAvailable,
 } from '@agnes/system-node'
 import { createPlatform } from './adapters/platform.js'
+import { syncCheckpointsToMedium } from './adapters/sqlite-durability.js'
 import { scanComputerUseArtifactCandidates } from './artifact-gc-candidate-scanner.js'
 import { computerUseArtifactRootSnapshot } from './artifact-gc-roots-sqlite.js'
 import {
@@ -184,6 +185,8 @@ export function createComputerUseArtifactGcRuntime(
             return run()
           }
           const database = new DatabaseSync(ledgerFile)
+          // Closing the last connection checkpoints the ledger, possibly this one.
+          syncCheckpointsToMedium(database, platform)
           database.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE')
           const locked = performance.now()
           // Every index wait under the ledger lock shares one budget.

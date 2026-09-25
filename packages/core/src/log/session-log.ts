@@ -1,5 +1,4 @@
 import { validateOpState } from '@agnes/protocol'
-import { decodeFoldCache } from '../project/cache.js'
 import {
   type Clock,
   CoreError,
@@ -64,16 +63,8 @@ export type OpenLogOptions = {
   /** `op` is the program-counter cell the batch will write, when it writes one. */
   relationCheck?: (events: PreparedEvent[], log: SessionLogImpl, op: OpWrite | undefined) => void
   onAppended?: (events: Event[], extra: AppendedExtra) => void
-  prepareFoldCache?: (
-    events: Event[],
-    integrity: IntegrityState,
-  ) => import('./storage.js').FoldCacheRecord | undefined
-  /**
-   * Folds the ledger while `open` verifies it. `start` runs once, before the first page, with the
-   * verified fold cache when there is one; `page` then receives every verified page in order.
-   */
+  /** Folds the ledger while `open` verifies it: `page` receives every verified page in order, from seq 1. */
   replay?: {
-    start(fold: { seq: Seq; state: import('../reduce/state.js').LedgerState } | undefined): void
     page(events: Event[]): void
   }
 }
@@ -158,7 +149,6 @@ export class SessionLogImpl {
     integrityState: IntegrityState,
     createdOnOpen: boolean,
     parent?: { key: SessionKey; boundarySeq: Seq },
-    readonly restoredFold?: { state: import('../reduce/state.js').LedgerState; integrity: IntegrityState },
   ) {
     this.lastSeqValue = lastSeq
     this.registersCache.replaceAll(rows)
@@ -172,35 +162,9 @@ export class SessionLogImpl {
   static async open(o: OpenLogOptions): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
-      let restoredFold:
-        | { state: import('../reduce/state.js').LedgerState; integrity: IntegrityState }
-        | undefined
-      const record = await o.storage.foldCache?.(o.key)
-      if (record) {
-        try {
-          restoredFold = decodeFoldCache(o.key, record, opened.lastSeq)
-          if (record.seq > 0) {
-            const [anchor] = await o.storage.scanIntegrity(o.key, {
-              fromSeq: record.seq,
-              toSeq: record.seq,
-              limit: 1,
-            })
-            if (
-              !anchor ||
-              anchor.event.seq !== record.seq ||
-              (anchor.integrity?.digest ?? null) !== restoredFold.integrity.headDigest
-            )
-              restoredFold = undefined
-          }
-        } catch {
-          restoredFold = undefined
-        }
-      }
-      // A cache is not a trust anchor: it lives in the same storage as the ledger. Verify the complete
-      // integrity chain before any cached state or replayed surface is exposed; a replay consumer only
-      // ever sees rows that have already passed.
+      // The complete integrity chain is verified before any replayed state is exposed; a replay
+      // consumer only ever sees rows that have already passed.
       const replay = o.replay
-      replay?.start(restoredFold ? { seq: restoredFold.state.lastSeq, state: restoredFold.state } : undefined)
       const integrityState = await verifyLedger(
         o.storage,
         o.key,
@@ -216,7 +180,6 @@ export class SessionLogImpl {
         integrityState,
         opened.created === true,
         opened.parent,
-        restoredFold,
       )
     } catch (error) {
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
@@ -312,14 +275,12 @@ export class SessionLogImpl {
   attach(hooks: {
     relationCheck: NonNullable<OpenLogOptions['relationCheck']>
     onAppended: NonNullable<OpenLogOptions['onAppended']>
-    prepareFoldCache?: NonNullable<OpenLogOptions['prepareFoldCache']>
   }): void {
     this.guard()
     if (this.o.relationCheck || this.o.onAppended)
       throw new CoreError('E_ENVELOPE', 'session log callbacks are already attached')
     this.o.relationCheck = hooks.relationCheck
     this.o.onAppended = hooks.onAppended
-    if (hooks.prepareFoldCache) this.o.prepareFoldCache = hooks.prepareFoldCache
   }
 
   /**
@@ -418,7 +379,6 @@ export class SessionLogImpl {
       let committed: CommitReceipt
       const stamped = events.map((e, i) => ({ ...e, seq: this.lastSeqValue + i + 1 }))
       const nextIntegrity = prepareIntegrity(this.o.key, stamped, this.integrityState)
-      const foldCache = this.o.prepareFoldCache?.(stamped, nextIntegrity.state)
       const claim = { ttlMs: this.o.ttlMs, expectedLastSeq: this.lastSeqValue }
       const writtenAt = this.o.clock()
       try {
@@ -427,7 +387,6 @@ export class SessionLogImpl {
           integrity: nextIntegrity.entries,
           expectedWriterRunId: this.o.writerRunId,
           ...(opts.expectedRegisterSeq ? { expectedRegisterSeq: opts.expectedRegisterSeq } : {}),
-          ...(foldCache ? { foldCache } : {}),
           ...(op ? { opState: op } : {}),
           claim,
         })

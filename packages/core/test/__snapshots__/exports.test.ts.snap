@@ -13,7 +13,6 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "CompactionRunner",
   "CoreError",
   "FS_DENIED",
-  "FoldCache",
   "HOOK_UNHANDLED",
   "HookEngine",
   "HookRegistry",

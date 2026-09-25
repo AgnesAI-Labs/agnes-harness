@@ -27,10 +27,6 @@ export const DDL = [
      generation INTEGER NOT NULL DEFAULT 1)`,
   `CREATE TABLE IF NOT EXISTS sessions (
      session_key TEXT PRIMARY KEY, format_version INTEGER NOT NULL DEFAULT 1, parent_key TEXT, boundary_seq INTEGER, created_at TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS fold_cache (
-     session_key TEXT PRIMARY KEY, version INTEGER NOT NULL, seq INTEGER NOT NULL, payload TEXT NOT NULL,
-     checksum TEXT NOT NULL, integrity_last_seq INTEGER NOT NULL, legacy_through_seq INTEGER NOT NULL,
-     head_digest TEXT)`,
   `CREATE TABLE IF NOT EXISTS child_control_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS child_tasks (
      child_key TEXT PRIMARY KEY, creation_id TEXT NOT NULL UNIQUE, parent_key TEXT NOT NULL,

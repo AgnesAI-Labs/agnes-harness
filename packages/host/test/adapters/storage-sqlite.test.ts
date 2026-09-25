@@ -40,7 +40,6 @@ describe('storage-sqlite', () => {
       'child_writer_gens',
       'cost_origins',
       'events',
-      'fold_cache',
       'registers',
       'sessions',
       'writer_claims',
@@ -75,6 +74,23 @@ describe('storage-sqlite', () => {
       rmSync(legacy, { recursive: true, force: true })
     }
   })
+  it('drops the retired fold cache table when a database is opened', async () => {
+    const legacy = mkdtempSync(join(tmpdir(), 'agnes-sqlite-fold-cache-'))
+    try {
+      const file = join(legacy, 'sessions.db')
+      const raw = new DatabaseSync(file)
+      raw.exec(
+        'CREATE TABLE fold_cache (session_key TEXT PRIMARY KEY, version INTEGER NOT NULL, payload TEXT NOT NULL)',
+      )
+      raw.exec("INSERT INTO fold_cache VALUES ('k', 3, '{}')")
+      raw.close()
+      const storage = createSqliteStorage({ file, tablesDir: join(legacy, 'tables') })
+      expect(storage.coreTableNames()).not.toContain('fold_cache')
+      await storage.close()
+    } finally {
+      rmSync(legacy, { recursive: true, force: true })
+    }
+  })
   it('discards every row of a newly opened session only while its writer lease is held', async () => {
     await s.open('discard', { writerRunId: 'r1', ttlMs: 1_000 })
     await s.commit('discard', {
@@ -87,7 +103,7 @@ describe('storage-sqlite', () => {
     expect(await s.registers('discard')).toEqual([])
     await expect(s.discardNewSession('discard', 'r1')).rejects.toMatchObject({ code: 'E_WRITER_LEASE' })
   })
-  it('reopens a 1000+ row session from SQLite, rebuilding the UI from the ledger and healing a corrupt fold cache', async () => {
+  it('reopens a 1000+ row session from SQLite, folding everything from the ledger while verifying it', async () => {
     const file = join(dir, 'sessions.db')
     const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
     const options = {
@@ -109,7 +125,6 @@ describe('storage-sqlite', () => {
         data: { content: [{ type: 'text' as const, text: `message-${index}` }] },
       })),
     )
-    expect(await s.foldCache?.('cached')).toMatchObject({ version: 3, seq: 1_001 })
     await first.log.close()
     await s.close()
 
@@ -120,24 +135,13 @@ describe('storage-sqlite', () => {
       scannedFrom.push(query.fromSeq ?? 1)
       return originalScan(key, query)
     }
-    const warm = await openTracked({ ...options, storage: s, writerRunId: 'r2' })
-    expect(warm.tracker.state.lastSeq).toBe(1_001)
-    expect(warm.surface.nodes()).toHaveLength(1_001)
-    expect(warm.ui.diagnostics().applied).toBe(1_001)
+    const reopened = await openTracked({ ...options, storage: s, writerRunId: 'r2' })
+    expect(reopened.tracker.state.lastSeq).toBe(1_001)
+    expect(reopened.surface.nodes()).toHaveLength(1_001)
+    expect(reopened.ui.diagnostics().applied).toBe(1_001)
     // Rows are folded while the open verifies them; nothing reads them a second time.
     expect(scannedFrom).toEqual([])
-    await warm.log.close()
-    await s.close()
-
-    const raw = new DatabaseSync(file)
-    raw.exec("UPDATE fold_cache SET payload = payload || ' '")
-    raw.close()
-    s = createSqliteStorage({ file, clock: () => now, tablesDir: join(dir, 'tables') })
-    const recovered = await openTracked({ ...options, storage: s, writerRunId: 'r3' })
-    expect(recovered.tracker.state.lastSeq).toBe(1_001)
-    expect(recovered.surface.nodes()).toHaveLength(1_001)
-    expect(recovered.ui.diagnostics().applied).toBe(1_001)
-    await recovered.log.close()
+    await reopened.log.close()
   })
   it('reports an op cell written as a cell to crash reclaim', async () => {
     await s.open('cell-op', { writerRunId: 'dead-run', ttlMs: 100 })
