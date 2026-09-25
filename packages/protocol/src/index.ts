@@ -107,6 +107,8 @@ export type {
   SessionProjectUIOpeningParams,
   SessionProjectUIParams,
   SessionProjectUIPatchParams,
+  SessionReadToolDetailParams,
+  SessionReadToolDetailResult,
   SessionRenameParams,
   SessionSetModelParams,
   SessionSetPresetParams,

@@ -222,6 +222,20 @@ it.skipIf(!entry)(
       const answer = await command(['-p', prompt])
       expect(answer.stdout).toContain('Shared backend acceptance reply.')
       expect(answer.stdout).toContain('中文验证通过。')
+      expect(provider.requests.some((request) => request.tools.includes('edit'))).toBe(true)
+      const toolResults = provider.requests.flatMap((request) =>
+        request.messages.flatMap((message) =>
+          message &&
+          typeof message === 'object' &&
+          'role' in message &&
+          message.role === 'tool' &&
+          'content' in message &&
+          typeof message.content === 'string'
+            ? [message.content]
+            : [],
+        ),
+      )
+      expect(toolResults).toContainEqual(expect.stringContaining('applied 1 edit(s)'))
       expect(await readFile(editedFile, 'utf8')).toBe('after 中文')
       expect(provider.requests.length).toBeGreaterThan(0)
       expect(provider.requests.some((request) => JSON.stringify(request.messages).includes(prompt))).toBe(

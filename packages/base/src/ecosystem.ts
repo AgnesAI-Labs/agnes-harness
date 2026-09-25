@@ -102,13 +102,21 @@ export function createEcosystemExtensions(init: SeamInitContext): {
   }
 }
 
+const darwin = process.platform === 'darwin' // guards-allow-platform: F_FULLFSYNC is darwin-only.
+
 function sqliteWorktreePersist(dataDir: string): {
   load(): Map<string, WorktreeEntry>
   save(entries: Map<string, WorktreeEntry>): void
   bind(childKey: string, entry: WorktreeEntry): void
 } {
   const dbPath = join(dataDir, 'sessions.db')
-  const open = (): DatabaseSync | null => (existsSync(dbPath) ? new DatabaseSync(dbPath) : null)
+  const open = (): DatabaseSync | null => {
+    if (!existsSync(dbPath)) return null
+    const db = new DatabaseSync(dbPath)
+    // A write here can checkpoint the WAL ledger; on darwin only F_FULLFSYNC makes that durable.
+    if (darwin) db.exec('PRAGMA checkpoint_fullfsync = ON')
+    return db
+  }
   return {
     load() {
       const db = open()

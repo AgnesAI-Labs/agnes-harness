@@ -372,6 +372,17 @@ const SCENARIOS: Record<string, (open: Open, record: Record_) => Promise<void>> 
   },
 }
 
+/** The recorded scenarios whose calls run side by side, so their commits interleave. */
+export const CONCURRENT_SCENARIOS: ReadonlySet<string> = new Set([
+  'batch-k4',
+  'batch-k8',
+  'side-lane',
+  'abort-with-pending',
+])
+
+/** Statuses a tool call passes through inside one commit, which no program-counter write shows. */
+export const MERGED_STATUSES: readonly string[] = ['approved', 'dispatch_pending', 'responded']
+
 /** The names of the recorded scenarios, in a stable order. */
 export const TRANSITION_SCENARIOS: readonly string[] = Object.keys(SCENARIOS)
 
@@ -497,6 +508,40 @@ const SEQ_KEYS = new Set([
 type Row = Record<string, unknown> & { seq: number }
 
 /**
+ * Rewrites every seq a value names — a key in SEQ_KEYS, or a surface range's start and end — through
+ * `to`, leaving everything else as it is.
+ */
+export function renumberSeqs(value: unknown, to: (seq: number, key: string) => number): unknown {
+  const move = (inner: unknown, key?: string): unknown => {
+    if (Array.isArray(inner))
+      return key !== undefined && SEQ_KEYS.has(key)
+        ? inner.map((seq) => move(seq, 'seq'))
+        : inner.map((item) => move(item))
+    if (inner && typeof inner === 'object')
+      return Object.fromEntries(
+        Object.entries(inner as Record<string, unknown>).map(([k, v]) => [
+          k,
+          k === 'surfaceOp' && v && typeof v === 'object'
+            ? move(v, 'surfaceOp')
+            : move(v, key === 'surfaceOp' && (k === 'start' || k === 'end') ? 'seq' : k),
+        ]),
+      )
+    if (typeof inner === 'number' && key !== undefined && SEQ_KEYS.has(key)) return to(inner, key)
+    return inner
+  }
+  return move(value)
+}
+
+/** A seq map as a `renumberSeqs` target that refuses a seq the map does not have. */
+const lookup =
+  (map: ReadonlyMap<number, number>, what: string) =>
+  (seq: number, key: string): number => {
+    const to = map.get(seq)
+    if (to === undefined) throw new Error(`${what} names seq ${seq} under ${key}, which no row has`)
+    return to
+  }
+
+/**
  * What the current format commits for a checked-in reference: the same rows without the
  * program-counter row, an `x/core/op-mark` row for each commit that had no other row, the program
  * counter as a cell at the seq of the commit's last row, and every seq a value names moved to where
@@ -527,27 +572,7 @@ export function expectedFromGolden(golden: GoldenCommit[]): RecordedCommit[] {
     if (commit.op.length > 0) moved.set(opSeq ?? ++oldHead, newHead)
     heads.push({ first, last: newHead, marked })
   }
-  const move = (value: unknown, key?: string): unknown => {
-    if (Array.isArray(value))
-      return key !== undefined && SEQ_KEYS.has(key)
-        ? value.map((seq) => move(seq, 'seq'))
-        : value.map((inner) => move(inner))
-    if (value && typeof value === 'object')
-      return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).map(([k, inner]) => [
-          k,
-          k === 'surfaceOp' && inner && typeof inner === 'object'
-            ? move(inner, 'surfaceOp')
-            : move(inner, key === 'surfaceOp' && (k === 'start' || k === 'end') ? 'seq' : k),
-        ]),
-      )
-    if (typeof value === 'number' && key !== undefined && SEQ_KEYS.has(key)) {
-      const to = moved.get(value)
-      if (to === undefined) throw new Error(`reference names seq ${value} under ${key}, which no row has`)
-      return to
-    }
-    return value
-  }
+  const move = (value: unknown): unknown => renumberSeqs(value, lookup(moved, 'reference'))
   const out: RecordedCommit[] = []
   let cells = new Map<string, { seq: number; data: unknown }>()
   golden.forEach((commit, index) => {
@@ -595,4 +620,202 @@ export function expectedFromGolden(golden: GoldenCommit[]): RecordedCommit[] {
     })
   })
   return out
+}
+
+type Call = { toolUseId: string; status: string; dispatchPhase?: string; dispatchAttempt?: number }
+type OpValue = { taint?: boolean; phase: { kind: string; batch?: { calls: Call[] } } } | null
+type MarkData = { calls?: Call[] }
+
+const onlyMark = (commit: RecordedCommit | undefined): MarkData | undefined => {
+  const [row, ...rest] = (commit?.events ?? []) as Array<{ type: string; data: MarkData }>
+  return row?.type === 'x/core/op-mark' && rest.length === 0 ? row.data : undefined
+}
+
+/** The one call an op-mark row names, when it names exactly one and gives it `status`. */
+const markedCall = (commit: RecordedCommit | undefined, status: string): Call | undefined => {
+  const calls = onlyMark(commit)?.calls
+  return calls?.length === 1 && calls[0]?.status === status ? calls[0] : undefined
+}
+
+const opCall = (commit: RecordedCommit | undefined, toolUseId: string): Call | undefined =>
+  (commit?.op[0]?.data as OpValue)?.phase.batch?.calls.find((call) => call.toolUseId === toolUseId)
+
+const hasRow = (commit: RecordedCommit | undefined, test: (row: Row) => boolean): boolean =>
+  ((commit?.events ?? []) as Row[]).some(test)
+
+const data = (row: Row): Record<string, unknown> => (row.data ?? {}) as Record<string, unknown>
+
+/** How many commits, starting at `index`, form one of the runs a tool call now commits as one. */
+function mergedRun(commits: RecordedCommit[], index: number): number {
+  const approved = markedCall(commits[index], 'approved')
+  if (approved) {
+    const id = approved.toolUseId
+    // Approved, then the tool's effect/intent with the call dispatch_pending, then — for a workspace
+    // call — the attempt-one `dispatched` mark.
+    const intent = commits[index + 1]
+    if (
+      !hasRow(intent, (row) => row.type === 'effect/intent' && (data(row).tool as Call)?.toolUseId === id) ||
+      opCall(intent, id)?.status !== 'dispatch_pending'
+    )
+      return 1
+    const dispatched = markedCall(commits[index + 2], 'dispatched')
+    return dispatched?.toolUseId === id && dispatched.dispatchAttempt === 1 ? 3 : 2
+  }
+  // The result with the call responded, then its settlement with the call completed.
+  const result = ((commits[index]?.events ?? []) as Row[]).find((row) => row.type === 'tool/result')
+  const id = result ? String(data(result).toolUseId) : undefined
+  if (
+    id !== undefined &&
+    opCall(commits[index], id)?.status === 'responded' &&
+    hasRow(commits[index + 1], (row) => row.type === 'effect/settled') &&
+    opCall(commits[index + 1], id)?.status === 'completed'
+  )
+    return 2
+  return 1
+}
+
+/**
+ * What a recording made before a tool call's adjacent transitions were committed together becomes
+ * once they are: each run `mergedRun` finds is one commit whose rows are the run's rows without its
+ * op-marks and whose program counter, cells and UI summary are the run's last — except the counter's
+ * `taint`, which is the run's first, since nothing is folded between the steps of one commit. A
+ * second pass moves every seq to where its row now lands and throws on a value that names a dropped
+ * op-mark. Only adjacent runs are merged; a concurrent batch interleaves its calls and is compared
+ * with `statusProjectionProblems` and `callEventProblems` instead.
+ */
+export function mergeLedgerWriteCommits(commits: RecordedCommit[]): RecordedCommit[] {
+  const dropped = new Set<number>()
+  // A cell's seq is its commit's last row; where that row was a dropped op-mark, the cell now sits
+  // at the merged commit's last row. Only a cell's own seq may point there.
+  const headOf = new Map<number, number>()
+  const merged: RecordedCommit[] = []
+  for (let index = 0; index < commits.length; ) {
+    const run = commits.slice(index, index + mergedRun(commits, index))
+    index += run.length
+    const last = run.at(-1) as RecordedCommit
+    if (run.length === 1) {
+      merged.push(last)
+      continue
+    }
+    const rows = run.flatMap((commit) => commit.events as Row[])
+    const kept = rows.filter((row) => row.type !== 'x/core/op-mark')
+    for (const row of rows)
+      if (row.type === 'x/core/op-mark') {
+        dropped.add(row.seq)
+        headOf.set(row.seq, (kept.at(-1) as Row).seq)
+      }
+    const taint = (run[0]?.op[0]?.data as OpValue)?.taint
+    const withTaint = (value: unknown) =>
+      value && typeof value === 'object' ? { ...(value as object), taint } : value
+    merged.push({
+      events: kept,
+      op: last.op.map((write) => ({ lane: write.lane, data: withTaint(write.data) })),
+      opCells: last.opCells.map((cell) =>
+        cell.key === last.op[0]?.lane ? { ...cell, data: withTaint(cell.data) } : cell,
+      ),
+      registers: last.registers,
+      uiOpState: last.uiOpState,
+    })
+  }
+  const head = Math.max(0, ...commits.flatMap((commit) => (commit.events as Row[]).map((row) => row.seq)))
+  const moved = new Map<number, number>()
+  let gone = 0
+  for (let seq = 1; seq <= head; seq++)
+    if (dropped.has(seq)) gone++
+    else moved.set(seq, seq - gone)
+  const to = lookup(moved, 'merged recording')
+  return merged.map((commit) => ({
+    events: renumberSeqs(commit.events, to) as unknown[],
+    op: renumberSeqs(commit.op, to) as RecordedCommit['op'],
+    opCells: commit.opCells.map(({ key, seq, data }) => ({
+      key,
+      seq: to(headOf.get(seq) ?? seq, 'seq'),
+      data: renumberSeqs(data, to),
+    })),
+    registers: renumberSeqs(commit.registers, to) as Cell[],
+    uiOpState: renumberSeqs(commit.uiOpState, to),
+  }))
+}
+
+/** Each call's status in every program-counter write of a recording, repeats in a row folded. */
+function statusRuns(commits: RecordedCommit[]): Map<string, string[]> {
+  const runs = new Map<string, string[]>()
+  for (const commit of withMintedIdsInOrder(commits))
+    for (const write of commit.op)
+      for (const call of (write.data as OpValue)?.phase.batch?.calls ?? []) {
+        const run = runs.get(call.toolUseId) ?? []
+        if (run.at(-1) !== call.status) run.push(call.status)
+        runs.set(call.toolUseId, run)
+      }
+  return runs
+}
+
+/**
+ * Every call whose statuses, as the program-counter writes of `recorded` show them one after
+ * another, are not the statuses `expected` shows with only `droppable` ones left out. Empty when the
+ * recording skipped nothing but the statuses its merged commits no longer store.
+ */
+export function statusProjectionProblems(
+  recorded: RecordedCommit[],
+  expected: RecordedCommit[],
+  droppable: readonly string[],
+): string[] {
+  const problems: string[] = []
+  const got = statusRuns(recorded)
+  const want = statusRuns(expected)
+  for (const id of new Set([...got.keys(), ...want.keys()])) {
+    const seen = got.get(id) ?? []
+    const full = want.get(id) ?? []
+    let at = 0
+    for (const status of full)
+      if (seen[at] === status) at++
+      else if (!droppable.includes(status)) {
+        problems.push(`${id}: [${seen}] skips ${status} of [${full}]`)
+        break
+      }
+    if (at < seen.length) problems.push(`${id}: [${seen}] is not within [${full}]`)
+  }
+  return problems
+}
+
+const blank = (value: unknown) => renumberSeqs(value, () => 0)
+
+/**
+ * For a batch whose calls interleave: every call's own rows in order (op-marks aside, seqs blanked,
+ * since they move with the rows around them), and the program-counter cells and UI summary each
+ * time a tools phase closes, must be the same in both recordings.
+ */
+export function callEventProblems(recorded: RecordedCommit[], expected: RecordedCommit[]): string[] {
+  const perCall = (commits: RecordedCommit[]) => {
+    const calls = new Map<string, unknown[]>()
+    const effects = new Map<string, string>()
+    const closes: unknown[] = []
+    let inTools = false
+    for (const commit of withMintedIdsInOrder(commits)) {
+      for (const row of commit.events as Row[]) {
+        if (row.type === 'x/core/op-mark') continue
+        const d = data(row)
+        const tool = (d.tool as Call | undefined)?.toolUseId
+        if (row.type === 'effect/intent' && tool) effects.set(String(d.effectId), tool)
+        const id =
+          (d.toolUseId as string | undefined) ?? tool ?? effects.get(String(d.effectId ?? '')) ?? undefined
+        if (id !== undefined) calls.set(id, [...(calls.get(id) ?? []), blank(row)])
+      }
+      const kind = (commit.op[0]?.data as OpValue)?.phase.kind
+      if (commit.op.length > 0) {
+        if (inTools && kind !== 'tools') closes.push(blank({ cells: commit.opCells, ui: commit.uiOpState }))
+        inTools = kind === 'tools'
+      }
+    }
+    return { calls, closes }
+  }
+  const got = perCall(recorded)
+  const want = perCall(expected)
+  const problems: string[] = []
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+  for (const id of new Set([...got.calls.keys(), ...want.calls.keys()]))
+    if (!same(got.calls.get(id), want.calls.get(id))) problems.push(`${id}: rows differ`)
+  if (!same(got.closes, want.closes))
+    problems.push('program counter or UI summary differs where a batch closes')
+  return problems
 }

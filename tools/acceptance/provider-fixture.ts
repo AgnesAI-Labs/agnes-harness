@@ -9,7 +9,7 @@ export async function startProviderFixture(
 ) {
   const apiKey = randomBytes(24).toString('hex')
   const queuedTools = initialTool ? [initialTool] : []
-  const requests: Array<{ model: string; messages: unknown[] }> = []
+  const requests: Array<{ model: string; messages: unknown[]; tools: string[] }> = []
   const server = createServer(async (request, response) => {
     if (request.headers.authorization !== `Bearer ${apiKey}`) {
       response.writeHead(401).end('fixture authentication failed')
@@ -31,9 +31,15 @@ export async function startProviderFixture(
       if (!body || typeof body !== 'object' || !('model' in body) || !('messages' in body))
         throw new Error('missing fixture payload')
       if (body.model !== model || !Array.isArray(body.messages)) throw new Error('unexpected fixture model')
-      requests.push({ model: body.model, messages: body.messages })
       // Background title requests have no tool catalog and must not consume the next test action.
       const available = 'tools' in body && Array.isArray(body.tools) ? body.tools : []
+      requests.push({
+        model: body.model,
+        messages: body.messages,
+        tools: available.flatMap((entry) =>
+          typeof entry?.function?.name === 'string' ? [entry.function.name] : [],
+        ),
+      })
       const next = queuedTools[0]
       const tool =
         next && available.some((entry) => entry?.function?.name === next.name)

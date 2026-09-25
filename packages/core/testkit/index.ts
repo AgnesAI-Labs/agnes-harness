@@ -20,11 +20,17 @@ export { OP_CHECK_CASES, type Tamperable } from './op-check-cases.js'
 export { type SweepResult, type SweepStore, sweepOpenPoints } from './op-check-sweep.js'
 export { opMarkProblems } from './op-mark-checks.js'
 export {
+  CONCURRENT_SCENARIOS,
+  callEventProblems,
   expectedFromGolden,
   type GoldenCommit,
+  MERGED_STATUSES,
+  mergeLedgerWriteCommits,
   type RecordedCommit,
   readGolden,
   recordTransitions,
+  renumberSeqs,
+  statusProjectionProblems,
   TRANSITION_SCENARIOS,
   withMintedIdsInOrder,
 } from './record-transitions.js'
