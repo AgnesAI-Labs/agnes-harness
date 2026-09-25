@@ -31,6 +31,29 @@ function fastest(runs: number, budgetMs: number, work: (budgetMs: number) => voi
   return best
 }
 
+/**
+ * The smallest large-to-small time ratio over `pairs` back-to-back pairs of runs. Each large run
+ * follows its own small run at once, so a burst of load on a shared runner slows both sides of the
+ * pair it lands in, instead of only the side measured while it lasted. The large run's fail-fast
+ * budget follows the small run it is paired with, for the same reason. One untimed small run warms
+ * the code first, so a cold first run cannot inflate the denominator and hide a slow large run.
+ */
+function bestRatio(
+  pairs: number,
+  smallBudgetMs: number,
+  small: (budgetMs: number) => void,
+  largeBudget: (smallMs: number) => number,
+  large: (budgetMs: number) => void,
+): number {
+  small(smallBudgetMs)
+  let best = Number.POSITIVE_INFINITY
+  for (let i = 0; i < pairs; i++) {
+    const smallMs = fastest(1, smallBudgetMs, small)
+    best = Math.min(best, fastest(1, largeBudget(smallMs), large) / smallMs)
+  }
+  return best
+}
+
 const fold = (calls: number) => (budgetMs: number) => {
   foldEvents(within(calls, budgetMs))
 }
@@ -48,9 +71,7 @@ const largeFoldBudget = (small: number): number => Math.max(3_000, small * 16)
 
 describe('folding scales linearly with the session', () => {
   it('folds 16k calls in at most eight times the time of 4k', { timeout: 120_000 }, () => {
-    const small = fastest(3, 2_500, fold(4000))
-    const large = fastest(3, largeFoldBudget(small), fold(16_000))
-    expect(large / small).toBeLessThan(8)
+    expect(bestRatio(5, 2_500, fold(4000), largeFoldBudget, fold(16_000))).toBeLessThan(8)
   })
 
   it('appends one more tool step at the head of a 16k-call session in a bounded time', {
@@ -79,8 +100,7 @@ describe('folding scales linearly with the session', () => {
     // Alone these take about 0.3 s and 1.1 s, and a loaded CI runner can be five times slower. The
     // large run's fail-fast budget therefore follows the measured small run, so machine load slows
     // both sides alike and only a clearly super-linear fold gives up early.
-    const small = fastest(3, 5_000, uiFold(4000))
-    const large = fastest(3, Math.max(6_000, small * 16), uiFold(16_000))
-    expect(large / small).toBeLessThan(8)
+    const ratio = bestRatio(5, 5_000, uiFold(4000), (small) => Math.max(6_000, small * 16), uiFold(16_000))
+    expect(ratio).toBeLessThan(8)
   })
 })
