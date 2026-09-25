@@ -6,7 +6,7 @@ import {
   useConversationRuntime,
 } from '@agnes/web-ui/assistant-ui'
 import type { TranscriptHandle } from '@agnes/web-units'
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { WebConversationMessages } from './conversation-message-adapter.js'
@@ -19,11 +19,12 @@ export interface TimelineNodeHostProps {
   session?: SessionService
   locale?: LocaleService
   resources?: ClientResourceService
+  onFork?: (turn: UITurn) => Promise<void>
 }
 
 /** W4a opt-in: the enclosing transcript root is the sole owner of every node article. */
 export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostProps>(function TimelineNodeHost(
-  { registry, claim, newContentButton, session, locale, resources },
+  { registry, claim, newContentButton, session, locale, resources, onFork },
   ref,
 ) {
   const content = useRef<HTMLDivElement>(null)
@@ -31,6 +32,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     createConversationProjectionStore({ sessionId: registry.sessionId ?? '', nodes: [] }),
   )
   const runtime = useConversationRuntime(store)
+  const projection = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   useImperativeHandle(
     ref,
     () => ({
@@ -66,6 +68,9 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
         <AssistantRuntimeProvider runtime={runtime}>
           <WebConversationMessages
             registry={registry}
+            {...(projection.turns ? { turns: projection.turns } : {})}
+            visibleNodeIds={projection.nodes.map((node) => node.id)}
+            {...(onFork ? { onFork } : {})}
             {...(claim ? { claim } : {})}
             {...(session ? { session } : {})}
             {...(locale ? { locale } : {})}

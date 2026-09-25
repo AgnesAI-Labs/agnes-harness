@@ -1367,6 +1367,7 @@ export function mountTranscriptRegion(
             registry,
             ...(options.claim ? { claim: options.claim } : {}),
             ...(options.newContentButton ? { newContentButton: options.newContentButton } : {}),
+            ...(options.onFork ? { onFork: options.onFork } : {}),
             ...(options.session ? { session: options.session } : {}),
             ...(options.locale ? { locale: options.locale } : {}),
             ...(options.resources ? { resources: options.resources } : {}),

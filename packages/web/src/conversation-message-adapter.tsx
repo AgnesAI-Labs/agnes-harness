@@ -1,4 +1,5 @@
-import type { UINode } from '@agnes/protocol'
+import type { UINode, UITurn } from '@agnes/protocol'
+import { bindAutoDismissDisclosure } from '@agnes/web-admin-frame'
 import {
   type ClientResourceService,
   type LocaleService,
@@ -9,7 +10,7 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import { ConversationMessages, type ConversationMessagesProps } from '@agnes/web-ui/assistant-ui'
-import { createConversationToolCard } from '@agnes/web-units'
+import { createConversationMessageActions, createConversationToolCard } from '@agnes/web-units'
 import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { createMarkdownRenderer } from './markdown.js'
@@ -20,6 +21,38 @@ type ToolNode = Extract<UINode, { kind: 'tool' }>
 type CostNode = Extract<UINode, { kind: 'cost' }>
 type SlotNode = Extract<UINode, { kind: 'slot' }>
 const noSessionSubscription = () => () => undefined
+
+function TurnActions({
+  turn,
+  finalText,
+  settled,
+  onFork,
+}: {
+  turn: UITurn
+  finalText: string
+  settled: boolean
+  onFork?: (turn: UITurn) => Promise<void>
+}) {
+  const host = useRef<HTMLDivElement>(null)
+  const actions = useRef<ReturnType<typeof createConversationMessageActions>>()
+  useLayoutEffect(() => {
+    const element = host.current
+    if (!element) return
+    const instance = createConversationMessageActions({
+      ...(onFork ? { onFork } : {}),
+      bindAutoDismiss: bindAutoDismissDisclosure,
+    })
+    actions.current = instance
+    element.append(instance.element)
+    return () => {
+      instance.dispose()
+      instance.element.remove()
+      actions.current = undefined
+    }
+  }, [onFork])
+  useLayoutEffect(() => actions.current?.update({ turn, finalText, settled }))
+  return <div ref={host} data-agnes-turn-actions="" />
+}
 
 function MarkdownLeaf({ text }: { text: string }) {
   const element = useRef<HTMLDivElement>(null)
@@ -164,18 +197,35 @@ export function WebConversationMessages({
   session,
   locale,
   resources,
+  turns,
+  visibleNodeIds,
+  onFork,
 }: {
   registry?: SlotRegistry
   claim?: ClaimResolver
   session?: SessionService
   locale?: LocaleService
   resources?: ClientResourceService
+  turns?: readonly UITurn[]
+  visibleNodeIds?: readonly string[]
+  onFork?: (turn: UITurn) => Promise<void>
 }) {
   const sessionScope = useSyncExternalStore(
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
     () => registry?.sessionId,
   )
   const props: ConversationMessagesProps = {
+    ...(turns ? { turns } : {}),
+    ...(visibleNodeIds ? { visibleNodeIds } : {}),
+    renderTurnActions: (turn, finalText, settled) => (
+      <TurnActions
+        key={turn.id}
+        turn={turn}
+        finalText={finalText}
+        settled={settled}
+        {...(onFork ? { onFork } : {})}
+      />
+    ),
     renderMarkdown: (text) => <MarkdownLeaf text={text} />,
     renderTool: (node) => <ToolLeaf node={node} />,
     renderCost: (node) => <CostLeaf node={node} />,
