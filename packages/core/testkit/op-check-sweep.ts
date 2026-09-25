@@ -1,12 +1,9 @@
 // Opens every session of a recorded scenario at every point the store could be left in: after each
 // commit and after each child is created, every key the scenario has touched is opened by a fresh
-// writer from a copy of the store, once replaying the whole ledger and once resuming from a fold
-// cache. Any open that fails is a legal state the open-time checks refuse.
+// writer from a copy of the store, replaying the whole ledger. Any open that fails is a legal state
+// the open-time checks refuse.
 import { defaultIds } from '../src/ids.js'
-import type { IntegrityState } from '../src/log/integrity.js'
-import type { SessionLogImpl } from '../src/log/session-log.js'
-import type { CommitTx, FoldCacheRecord, StorageAdapter } from '../src/log/storage.js'
-import { encodeFoldCache } from '../src/project/cache.js'
+import type { CommitTx, StorageAdapter } from '../src/log/storage.js'
 import { openTracked } from '../src/reduce/tracker.js'
 import { recordTransitions } from './record-transitions.js'
 
@@ -25,10 +22,8 @@ export type SweepStore = {
 export type SweepResult = {
   /** Commits and child creations after which the store was opened. */
   points: number
-  /** Opens made, with and without a fold cache. */
+  /** Opens made. */
   opens: number
-  /** Opens that resumed from a fold cache rather than replaying from the first row. */
-  cachedOpens: number
   /** Opens of a child ledger. */
   childOpens: number
   failures: string[]
@@ -45,53 +40,21 @@ const openCheck = (storage: StorageAdapter, key: string) =>
     timers: { setTimeout: () => 0, clearTimeout: () => undefined },
   })
 
-/** The store with its fold cache hidden, so an open replays every row. */
-const withoutFoldCache = (storage: StorageAdapter): StorageAdapter =>
-  new Proxy(storage, {
-    get(target, property, receiver) {
-      if (property === 'foldCache') return undefined
-      const value = Reflect.get(target, property, receiver) as unknown
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
-
-/** The store serving `record` as the fold cache of `key`. */
-const withFoldCache = (storage: StorageAdapter, key: string, record: FoldCacheRecord): StorageAdapter =>
-  new Proxy(storage, {
-    get(target, property, receiver) {
-      if (property === 'foldCache')
-        return async (asked: string) => (asked === key ? structuredClone(record) : target.foldCache?.(asked))
-      const value = Reflect.get(target, property, receiver) as unknown
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
-
-const integrityOf = (log: SessionLogImpl): IntegrityState =>
-  (log as unknown as { integrityState: IntegrityState }).integrityState
-
 export async function sweepOpenPoints(name: string, store: SweepStore): Promise<SweepResult> {
   const live = store.make()
   const keys: string[] = []
-  const result: SweepResult = { points: 0, opens: 0, cachedOpens: 0, childOpens: 0, failures: [] }
+  const result: SweepResult = { points: 0, opens: 0, childOpens: 0, failures: [] }
 
   const openAll = async (snapshot: StorageAdapter, known: string[], after: string): Promise<void> => {
     result.points++
     for (const key of known) {
       const where = `${name} ${after} (point ${result.points}), key ${key}`
       try {
-        const replayed = await openCheck(withoutFoldCache(snapshot), key)
-        const record = encodeFoldCache(key, replayed.tracker.state, integrityOf(replayed.log))
-        const isChild = replayed.log.parent !== undefined
-        await replayed.log.close()
+        const opened = await openCheck(snapshot, key)
+        const isChild = opened.log.parent !== undefined
+        await opened.log.close()
         result.opens++
         if (isChild) result.childOpens++
-        const cached = await openCheck(withFoldCache(snapshot, key, record), key)
-        const resumed = cached.log.restoredFold !== undefined
-        await cached.log.close()
-        result.opens++
-        if (isChild) result.childOpens++
-        if (resumed) result.cachedOpens++
-        else result.failures.push(`${where}: the fold cache was not used`)
       } catch (error) {
         result.failures.push(`${where}: ${error instanceof Error ? error.message : String(error)}`)
       }

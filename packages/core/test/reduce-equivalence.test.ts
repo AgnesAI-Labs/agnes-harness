@@ -1,11 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { encodeFoldCache, encodeLedgerState } from '../src/project/cache.js'
 import { initialState, reduce } from '../src/reduce/reducer.js'
 import type { LedgerState } from '../src/reduce/state.js'
 import { canonicalJson } from '../src/request/hash.js'
 import type { Event } from '../src/types.js'
+import { encodeLedgerState } from '../testkit/encode-ledger-state.js'
 import { TRANSITION_SCENARIOS } from '../testkit/record-transitions.js'
 import { goldenLedger, toolHeavyLedger } from '../testkit/tool-heavy-ledger.js'
 import * as reference from './helpers/reference-reducer.js'
@@ -13,12 +13,6 @@ import * as reference from './helpers/reference-reducer.js'
 // The reference folds into plain Maps and Sets; encoding reads either the same way.
 type AnyState = LedgerState | reference.LedgerState
 const encode = (state: AnyState) => canonicalJson(encodeLedgerState(state as LedgerState))
-const cacheBytes = (state: AnyState) =>
-  encodeFoldCache('k', state as LedgerState, {
-    lastSeq: state.lastSeq,
-    legacyThroughSeq: state.lastSeq,
-    headDigest: null,
-  }).payload
 
 type Outcome<S> = { state: S } | { error: string }
 const step = <S>(fold: (s: S, e: Event) => S, s: S, e: Event): Outcome<S> => {
@@ -48,10 +42,7 @@ function compare(rows: Iterable<Event>, every = 1): number {
     n++
     if (n % every === 0) expect(encode(ours), `row ${row.seq} (${row.type})`).toBe(encode(theirs))
   }
-  if (last) {
-    expect(encode(ours)).toBe(encode(theirs))
-    expect(cacheBytes(ours)).toBe(cacheBytes(theirs))
-  }
+  if (last) expect(encode(ours)).toBe(encode(theirs))
   return n
 }
 
@@ -107,7 +98,7 @@ describe('the fold matches the reference reducer row for row', () => {
     it(`crash fixture ${name}`, () => {
       expect(compare(readLedger(`${crashDir}${name}`))).toBeGreaterThan(0)
     })
-  it('a thousand-call tool-heavy ledger, and its fold-cache bytes', () => {
+  it('a thousand-call tool-heavy ledger', () => {
     expect(compare(toolHeavyLedger({ calls: 1000 }), 97)).toBeGreaterThan(19_000)
   })
 })

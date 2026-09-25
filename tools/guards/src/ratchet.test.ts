@@ -1,4 +1,4 @@
-// TRACE-INSPECTION-20260925: measured Core 25230, protocol 2201, SDK 5127,
+// TRACE-INSPECTION-20260925: measured Core 24963 after fold-cache removal, protocol 2201, SDK 5127,
 // daemon 26495, web 13269, and web/app 1783 after tool-detail RPC and trace UI.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
@@ -880,8 +880,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O5 review fix: the register map keeps the set of op lanes beside its cells, so the
   // per-append relation check and lease renewal stop copying the whole table. Measured +16 on its
   // own base; with the batch-scan fix above the combined tree measures 25229, exact, no spare.
-  // TRACE-INSPECTION-20260925: optional tool result sequence; measured 25230, exact.
-  'packages/core/src': 25230,
+  // FOLD-CACHE-REMOVAL: the fold cache goes - its codec and write policy, the storage field and
+  // reader, the per-append trial fold and the open-time restore; every open folds from seq 1.
+  // Measured 25019, exact, no spare (-210).
+  // FOLD-CACHE-REMOVAL follow-up: encodeLedgerState, used only by tests, moves to the testkit.
+  // Measured 24962, exact, no spare (-57).
+  // TRACE-INSPECTION-20260925: optional tool result sequence; merged count 24963, exact.
+  'packages/core/src': 24963,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2405,7 +2410,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // WIN-SQLITE-CLOSE: storage-sqlite closes a database it refused or failed to open (+13).
   // Measured 38050, exact, no spare.
   // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
-  'packages/host/src': 38082,
+  // FOLD-CACHE-REMOVAL: SQLite no longer stores the fold cache; the old table is dropped on open.
+  // (-52). Measured on this tree: 38030, exact, no spare.
+  'packages/host/src': 38030,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2564,7 +2571,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // helper; measured 5042, exact, no spare (+32).
   // WIN-SQLITE-CLOSE: same change as packages/host/src. Measured 5023 (+13), exact.
   // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
-  'packages/host/src/adapters': 5055,
+  // FOLD-CACHE-REMOVAL: same change as packages/host/src. Measured on this tree: 5003, exact, no spare (-52).
+  'packages/host/src/adapters': 5003,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2581,7 +2589,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI-CACHE-INCREMENTAL C1 (rebased on 950fc6f3): measured 667, exact, no spare (-68).
   // WIN-SQLITE-CLOSE: a refused or failed open closes its database file again, so Windows can
   // delete it. Measured 680 (+13), exact, no spare.
-  'packages/host/src/adapters/storage-sqlite': 680,
+  // FOLD-CACHE-REMOVAL: fold cache statements, write, read and delete gone; the table is dropped on
+  // open. Measured on this tree: 632, exact, no spare (-48).
+  'packages/host/src/adapters/storage-sqlite': 632,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,

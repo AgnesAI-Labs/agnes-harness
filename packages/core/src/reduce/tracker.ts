@@ -11,7 +11,6 @@ import { makeRelationCheck } from '../log/relations.js'
 import { scanPages } from '../log/scan-pages.js'
 import { type AppendedExtra, type OpenLogOptions, SessionLogImpl } from '../log/session-log.js'
 import { type RegisterRow, SCAN_PAGE_MAX } from '../log/storage.js'
-import { encodeFoldCache, FoldCache } from '../project/cache.js'
 import { SurfaceCache, seedSurface } from '../project/surface.js'
 import { markIncomplete, UIProjectionCell } from '../project/ui.js'
 import { canonicalJson } from '../request/hash.js'
@@ -29,17 +28,9 @@ export class StateTracker {
   }
 
   /** Folds a log from its first row, one bounded page at a time. */
-  static async rebuild(
-    log: SessionLogImpl,
-    pageSize = 500,
-    from?: { seq: Seq; state: LedgerState },
-  ): Promise<StateTracker> {
+  static async rebuild(log: SessionLogImpl, pageSize = 500): Promise<StateTracker> {
     const t = new StateTracker()
-    if (from && from.state.lastSeq !== from.seq)
-      throw new CoreError('E_ENVELOPE', 'fold cache seq does not match state')
-    if (from) t.state = from.state
-    for await (const page of scanPages((q) => log.scan(q), { fromSeq: (from?.seq ?? 0) + 1 }, pageSize))
-      t.apply(page)
+    for await (const page of scanPages((q) => log.scan(q), { fromSeq: 1 }, pageSize)) t.apply(page)
     return t
   }
 }
@@ -155,22 +146,12 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
 }> {
   const lane = o.lane ?? 'main'
   const tracker = new StateTracker()
-  const foldCache = new FoldCache({ clock: o.clock })
   let surface = new SurfaceCache(lane)
   let ui = new UIProjectionCell(o.key, lane)
   const surfaces = new Map([[lane, surface]])
   // The default check reads the tracker's live state and this surface, which are what the batch is
   // about to be appended to. A caller that brings its own check replaces it wholesale.
   const relationCheck = o.relationCheck ?? makeRelationCheck(tracker, surfaces)
-  const prepareFoldCache = o.storage.foldCache
-    ? (events: Event[], integrity: import('../log/integrity.js').IntegrityState) => {
-        const seq = events.at(-1)?.seq
-        if (seq === undefined || !foldCache.shouldWrite(seq)) return undefined
-        let state = tracker.state
-        for (const event of events) state = reduce(state, event)
-        return encodeFoldCache(o.key, state, integrity)
-      }
-    : undefined
   // The state and surface at the trigger of the last turn this process opened, kept so a delegated
   // child forked there can start from them instead of refolding the parent's history.
   let forkPoint: ForkBase | undefined
@@ -187,8 +168,6 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
     tracker.apply(after)
     ui.apply(events)
     ui.setOp(currentOp(log, lane))
-    const seq = events.at(-1)?.seq
-    if (seq !== undefined && foldCache.shouldWrite(seq)) foldCache.set(seq, tracker.state)
     // Every registered cache is fed, not just the opened lane's: each one filters the batch down
     // to its own lane, so feeding them all is how a later-registered lane stays live.
     for (const c of surfaces.values()) c.push(upto)
@@ -203,18 +182,9 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
     for (const c of surfaces.values()) c.push(after)
     o.onAppended?.(events, extra)
   }
-  // Folds ledger rows into the tracker, the surface and the UI cell. The tracker resumes after a
-  // verified fold cache; the surface and the UI cell fold every row.
-  let trackerFrom = 0
-  const startFold = (fold: { seq: Seq; state: LedgerState } | undefined): void => {
-    if (fold) {
-      tracker.state = fold.state
-      foldCache.set(fold.seq, fold.state)
-    }
-    trackerFrom = fold?.seq ?? 0
-  }
+  // Folds ledger rows into the tracker, the surface and the UI cell, every row from the first.
   const foldPage = (events: Event[]): void => {
-    tracker.apply(events.filter((event) => event.seq > trackerFrom))
+    tracker.apply(events)
     surface.push(events)
     ui.apply(events)
   }
@@ -226,18 +196,13 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
     log = o.existing
     seed = seededLogs.get(log)
     seededLogs.delete(log)
-    log.attach({
-      relationCheck,
-      onAppended,
-      ...(prepareFoldCache ? { prepareFoldCache } : {}),
-    })
+    log.attach({ relationCheck, onAppended })
   } else {
     log = await SessionLogImpl.open({
       ...o,
       relationCheck,
       onAppended,
-      ...(prepareFoldCache ? { prepareFoldCache } : {}),
-      replay: { start: startFold, page: foldPage },
+      replay: { page: foldPage },
     })
   }
   try {
@@ -270,8 +235,6 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
 
   async function replay(): Promise<void> {
     // An attached log was verified when it was opened elsewhere, so its rows are read again here.
-    const restored = log.restoredFold
-    startFold(restored ? { seq: restored.state.lastSeq, state: restored.state } : undefined)
     let firstPage = true
     for await (const page of scanPages((q) => log.scan(q), { fromSeq: 1 }, o.pageSize ?? SCAN_PAGE_MAX)) {
       if (!firstPage) await pageYield()
