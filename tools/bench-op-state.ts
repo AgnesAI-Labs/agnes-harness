@@ -247,13 +247,6 @@ async function longSession(turns: number) {
     }
     const rows = h.log.lastSeq
     await h.session.close()
-    const cold = new Proxy(storage, {
-      get(target, property, receiver) {
-        if (property === 'foldCache') return undefined
-        const value = Reflect.get(target, property, receiver) as unknown
-        return typeof value === 'function' ? value.bind(target) : value
-      },
-    }) as StorageAdapter
     let verifyMs = Number.POSITIVE_INFINITY
     let coldOpenMs = Number.POSITIVE_INFINITY
     for (let run = 0; run < 3; run++) {
@@ -262,7 +255,7 @@ async function longSession(turns: number) {
       verifyMs = Math.min(verifyMs, performance.now() - t0)
       const t1 = performance.now()
       const opened = await openTracked({
-        storage: cold,
+        storage,
         key: 'k',
         writerRunId: `bench-${run}`,
         ttlMs: 60_000,
