@@ -6,7 +6,7 @@
   "@agnes/web-slots": [],
   "@agnes/web-ui": ["@agnes/protocol"],
   "@agnes/web-client": ["@agnes/cordis", "@agnes/web-slots"],
-  "@agnes/web-units": ["@agnes/protocol", "@agnes/web-slots"],
+  "@agnes/web-units": ["@agnes/protocol", "@agnes/web-slots", "@agnes/web-ui"],
   "@agnes/resource-control-contracts": [],
   "@agnes/protocol": ["@agnes/resource-control-contracts", "@agnes/protocol-validation"],
   "@agnes/protocol-validation": [],
@@ -20,7 +20,7 @@
   "@agnes/resource-control-client-node": ["@agnes/protocol"],
   "@agnes/cli-launch": [],
   "@agnes/cli-tui": ["@agnes/protocol", "@agnes/sdk"],
-  "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/web-admin-frame"],
+  "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/web-ui"],
   "@agnes/resource-control-worker": [
     "@agnes/base",
     "@agnes/protocol",
@@ -122,6 +122,7 @@
     "@agnes/web-admin-frame",
     "@agnes/web-client",
     "@agnes/web-server",
+    "@agnes/web-ui",
     "@agnes/web-units"
   ],
   "@agnes/guards": [],

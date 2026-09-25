@@ -3875,7 +3875,8 @@ body {
 }
 /* 设置拆成独立插槽后，透过宿主包装保留表单到当前面板的高度链。
    隐藏面板仍由 [hidden] 排除，不为未选中的插槽留下空网格行。 */
-#config > div:has(> #config-form),
+#config > div:has(> div > #config-form),
+#config > div > div:has(> #config-form),
 #settings-dsh-shell-slots,
 #settings-dsh-shell-slots > [id^="settings-dsh-slot-"],
 #settings-dsh-shell-slots > [id^="settings-dsh-slot-"] > [data-slot],

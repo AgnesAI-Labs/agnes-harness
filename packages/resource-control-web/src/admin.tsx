@@ -9,11 +9,19 @@ import {
   type ConfirmController,
   createConfirmController,
   createSelectPicker,
-  createStateLights,
-  createSwitch,
+  McpDetailContent,
+  mountRegion,
+  type ResourceDetailAction,
+  ResourceEmpty,
+  ResourceListContent,
+  type ResourceProgress,
+  ResourceRoots,
+  ResourceRow,
+  renderRegion,
   type SelectPicker,
-  type StateTone,
-} from '@agnes/web-admin-frame'
+  SkillDetailContent,
+  unmountRegion,
+} from '@agnes/web-ui'
 import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from './mcp-form-validation.js'
 import { watchMcpPanel } from './mcp-refresh.js'
@@ -54,38 +62,10 @@ function normalizeWorkspaceId(workspaceId?: string): string | undefined {
 const errorOf = (error: unknown): ResourceAdminError =>
   error instanceof ResourceAdminApiError
     ? error.details
-    : { code: 'RESOURCE_ADMIN_UNAVAILABLE', message: '资源管理后台暂时不可用，请稍后重试。' }
-const text = (tag: keyof HTMLElementTagNameMap, value: string, className?: string): HTMLElement => {
-  const node = document.createElement(tag)
-  if (className) node.className = className
-  node.textContent = value
-  return node
-}
-function emptyState(title: string, description: string, hints: readonly string[] = []): HTMLElement {
-  const empty = document.createElement('div')
-  empty.className = 'admin-empty-state resource-empty'
-  const mark = document.createElement('span')
-  mark.className = 'agnes-mark admin-empty-state-mark'
-  mark.setAttribute('aria-hidden', 'true')
-  const hintList = document.createElement('ul')
-  hintList.className = 'admin-empty-state-hints'
-  for (const hint of hints) hintList.append(text('li', hint))
-  empty.append(mark, text('h2', title), text('p', description))
-  if (hints.length) empty.append(hintList)
-  return empty
-}
-function button(
-  label: string,
-  onClick: () => void | Promise<void>,
-  className = 'secondary-button compact',
-): HTMLButtonElement {
-  const node = document.createElement('button')
-  node.type = 'button'
-  node.className = className
-  node.textContent = label
-  node.addEventListener('click', () => void Promise.resolve(onClick()).catch(showError))
-  return node
-}
+    : {
+        code: 'RESOURCE_ADMIN_UNAVAILABLE',
+        message: '资源管理后台暂时不可用，请稍后重试。',
+      }
 function safeStatus(value: string): string {
   return (
     (
@@ -104,49 +84,12 @@ function safeStatus(value: string): string {
     )[value] ?? value
   )
 }
-/**
- * 扫描失败的原因码 → 用户可读说明。只描述原因，**不含路径或目录名**（DTO 本身也只带原因码）。
- * 有了它，页面才能回答"为什么这个来源没有结果"，而不只是"刷新失败"。
- */
-const ROOT_FAILURE_COPY: Record<NonNullable<SkillRootStatus['diagnostic']>['code'], string> = {
-  'root-unreadable': '目录读不到',
-  'root-unresolvable': '目录位置无法解析',
-  'entry-limit': '目录里的条目数超过上限',
-  'root-bytes-limit': '目录内容超过体积上限',
-  'workspace-key-missing': '缺少工作区标识',
-  'entry-outside-root': '有条目指向该来源之外',
-  'skill-file-unreadable': 'SKILL.md 读不到或大小不合法',
-  'skill-body-too-large': 'SKILL.md 正文超过体积上限',
-  'invalid-frontmatter': '有 SKILL.md 的 frontmatter 不合法（常见：description 为空）',
-  'entries-skipped': '部分条目不合规，已跳过',
-}
-/**
- * 信任 / 期望 / 实际三格各自的灯色。
- *
- * 三格回答的是三个不同问题，所以同一档颜色在三格里的含义必须一致：绿=这一格是"好的"、
- * 黄=还需要人看一眼、红=坏了、灰=正常的关闭态。未信任是黄而不是红——它只是还没被批准。
- */
-const trustTone = (trust: string): StateTone =>
-  trust === 'trusted' ? 'ok' : trust === 'rejected' ? 'bad' : 'warn'
-const desiredTone = (desired: string): StateTone => (desired === 'enabled' ? 'ok' : 'off')
-function actualTone(actual: string): StateTone {
-  if (actual === 'ready' || actual === 'enabled') return 'ok'
-  if (actual === 'disabled') return 'off'
-  if (actual === 'preparing' || actual === 'connecting' || actual === 'degraded') return 'warn'
-  if (actual === 'unavailable' || actual === 'rejected' || actual === 'failed') return 'bad'
-  return 'unknown'
-}
-
 function showError(error: unknown): void {
   const value = errorOf(error)
   notice.textContent = value.message
   notice.dataset.kind = 'error'
 }
 let confirmController: ConfirmController | undefined
-/**
- * 确认走共享弹窗（@agnes/web-admin-frame），不再用浏览器原生 confirm：原生弹窗无法跟随主题、
- * 无法展示结构化事实，也与插件页的确认体验不一致。
- */
 async function confirmEffect(summary: string): Promise<boolean> {
   confirmController ??= createConfirmController()
   return confirmController.ask({
@@ -156,8 +99,6 @@ async function confirmEffect(summary: string): Promise<boolean> {
 }
 
 /** 详情三段式：头部固定 / 中段滚动 / 动作固定。操作按钮因此永远留在可视区内。 */
-type DetailParts = Readonly<{ head: HTMLElement; body: HTMLElement; actions: HTMLElement }>
-
 class ResourceAdminPage {
   #api: ResourceAdminApi | undefined
   #context: ResourceAdminContext | undefined
@@ -391,6 +332,7 @@ class ResourceAdminPage {
     notice.textContent = '操作仍在后台运行；可稍后刷新状态。'
     notice.dataset.kind = 'warning'
   }
+
   render(): void {
     const skillTab = $('skills-tab', 'button')
     const mcpTab = $('mcp-tab', 'button')
@@ -405,173 +347,110 @@ class ResourceAdminPage {
     $('mcp-create', 'button').disabled = !this.writable() || busy
     list.dataset.state = this.#loadState
     list.setAttribute('aria-busy', String(this.#loadState === 'loading'))
-    if (this.#loadState === 'error' && !notice.querySelector('[data-resource-retry]')) {
-      const message = notice.textContent ?? '资源目录读取失败。'
-      const retry = button('重试读取', () => this.reload())
-      retry.dataset.resourceRetry = ''
-      notice.replaceChildren(document.createTextNode(message), retry)
-    }
-    list.replaceChildren()
-    detail.replaceChildren()
-    if (this.#tab === 'skills' && this.#skillRoots.length) list.append(this.#renderRoots())
-    if (!this.#items.length && this.#loadState !== 'loading' && this.#loadState !== 'error')
-      list.append(
-        this.#tab === 'skills'
-          ? emptyState(SKILL_EMPTY_TITLE, SKILL_EMPTY_DESCRIPTION, SKILL_LOCATION_HINTS)
-          : emptyState('还没有 MCP 服务', '添加一个 MCP 服务后，可以在这里查看连接、信任和启用状态。'),
-      )
-    for (const item of this.#items) {
-      // 行不再是 <button>：行内现在有一颗 Switch，而交互式元素不能嵌在 button 里。
-      // 与插件页一致，用 article + role="button" 承担"打开详情"。
-      const row = document.createElement('article')
-      row.className = 'plugin-row resource-row'
-      row.dataset.resourceId = item.resourceId
-      row.tabIndex = 0
-      row.setAttribute('role', 'button')
-      const selected = item.resourceId === this.#selected
-      row.dataset.selected = String(selected)
-      row.setAttribute('aria-pressed', String(selected))
-      row.setAttribute('aria-label', `查看 ${item.kind === 'skill' ? item.name : item.displayName} 的详情`)
-      row.append(this.#renderRowContent(item), this.#renderRowStates(item), this.#renderRowSwitch(item))
-      row.addEventListener('click', (event) => {
-        // 行内 Switch 自己处理点击（并已 stopPropagation）；这里再挡一次，
-        // 因为置灰的按钮在部分浏览器里不发 click，事件会落到行上。
-        if (event.target instanceof Element && event.target.closest('.switch')) return
-        this.select(item.resourceId, row)
-      })
-      row.addEventListener('keydown', (event) => {
-        // 行内控件的按键会冒泡到行：焦点在 Switch 上按空格是拨开关，不是打开详情。
-        if (event.target !== row) return
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          this.select(item.resourceId, row)
+    renderRegion(
+      list,
+      <ResourceListContent
+        tab={this.#tab}
+        loadState={this.#loadState}
+        items={this.#items}
+        skillRoots={this.#skillRoots}
+        selectedId={this.#selected}
+        nextCursor={this.#nextCursor}
+        loadingMore={this.#loadMorePromise !== undefined}
+        emptyTitle={this.#tab === 'skills' ? SKILL_EMPTY_TITLE : '还没有 MCP 服务'}
+        emptyDescription={
+          this.#tab === 'skills'
+            ? SKILL_EMPTY_DESCRIPTION
+            : '添加一个 MCP 服务后，可以在这里查看连接、信任和启用状态。'
         }
-      })
-      list.append(row)
-    }
+        emptyHints={this.#tab === 'skills' ? SKILL_LOCATION_HINTS : undefined}
+        switchDisabled={!this.writable() || this.#activeOperation !== undefined}
+        itemNameOf={(item) => this.#itemName(item)}
+        onOpen={(item) => this.select(item.resourceId, this.#rowOf(item.resourceId))}
+        onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
+        onLoadMore={() => void this.loadMore()}
+        onRetry={() => void this.reload()}
+      />,
+    )
     const selected = this.#items.find((item) => item.resourceId === this.#selected)
-    if (this.#nextCursor) {
-      const more = button('加载更多', () => this.loadMore())
-      more.disabled = !this.writable() || busy
-      more.setAttribute('aria-busy', String(this.#loadMorePromise !== undefined))
-      list.append(more)
-    }
     if (!selected) {
       this.#closeDetailDialog()
+      renderRegion(detail, <></>)
       return
     }
-    const parts = selected.kind === 'skill' ? this.renderSkill(selected) : this.renderMcp(selected)
-    detail.append(parts.head, parts.body, parts.actions)
-    this.openDetail(selected.kind === 'skill' ? selected.name : selected.displayName)
     const operationId = this.#activeOperation
+    let progress: ResourceProgress | undefined
     if (operationId) {
       const current = this.#operations.get(operationId)
-      const progress = current?.progress === undefined ? '正在等待后台…' : `正在执行 ${current.progress}%`
-      const progressRow = document.createElement('div')
-      progressRow.className = 'resource-operation'
-      const cancel = button('取消操作', async () => {
-        if (await confirmEffect(`取消正在执行的资源操作 ${operationId}`))
-          await this.track(await this.api().cancel(operationId))
-      })
-      cancel.disabled = !this.writable() || current?.kind === '_agnes/v1/skills.remove'
-      if (current?.kind === '_agnes/v1/skills.remove') cancel.title = '永久删除开始后不能取消'
-      progressRow.append(text('span', progress), cancel)
-      // 进度进滚动区，操作按钮永远留在吸底的动作区。
-      parts.body.append(progressRow)
+      progress = {
+        text: current?.progress === undefined ? '正在等待后台…' : `正在执行 ${current.progress}%`,
+        canCancel: this.writable() && current?.kind !== '_agnes/v1/skills.remove',
+        cancelTitle: current?.kind === '_agnes/v1/skills.remove' ? '永久删除开始后不能取消' : undefined,
+        onCancel: () =>
+          void (async () => {
+            if (await confirmEffect(`取消正在执行的资源操作 ${operationId}`))
+              await this.track(await this.api().cancel(operationId))
+          })().catch(showError),
+      }
     }
-  }
-
-  /**
-   * 来源扫描状态：默认只占一行摘要，展开才看每个来源。
-   * 文案面向用户，不暴露实现视角的措辞（"没有可保留的目录"之类）。
-   */
-  #renderRoots(): HTMLElement {
-    const counts = { ready: 0, empty: 0, failed: 0 }
-    for (const root of this.#skillRoots) {
-      if (root.state === 'ready') counts.ready += 1
-      else if (root.state === 'empty') counts.empty += 1
-      else counts.failed += 1
-    }
-    const details = document.createElement('details')
-    details.className = 'resource-roots'
-    const summary = document.createElement('summary')
-    summary.textContent = [
-      `技能来源 ${this.#skillRoots.length} 个`,
-      `已扫描 ${counts.ready}`,
-      `未发现技能 ${counts.empty}`,
-      counts.failed ? `失败 ${counts.failed}` : '',
-    ]
-      .filter(Boolean)
-      .join(' · ')
-    details.append(summary)
-    const labels: Record<SkillRootStatus['state'], string> = {
-      ready: '已扫描',
-      empty: '未发现技能',
-      stale: '刷新失败 · 正在使用上次成功的结果',
-      unavailable: '刷新失败 · 本次没有可用结果',
-    }
-    const listNode = document.createElement('ul')
-    for (const root of this.#skillRoots) {
-      const reason = root.diagnostic ? `（${ROOT_FAILURE_COPY[root.diagnostic.code]}）` : ''
-      listNode.append(text('li', `${root.scope} · ${root.rootKey}：${labels[root.state]}${reason}`))
-    }
-    details.append(listNode)
-    return details
-  }
-
-  /** 行骨架第一列：标题（单行截断 + title 全文）、说明、次要元信息。三类资源共用。 */
-  #renderRowContent(item: Item): HTMLElement {
-    const content = document.createElement('div')
-    content.className = 'plugin-row-content'
-    const title = document.createElement('h2')
-    title.textContent = item.kind === 'skill' ? item.name : item.displayName
-    title.title = title.textContent
-    content.append(title)
-    if (item.kind === 'skill') {
-      content.append(text('p', item.description ?? '该 Skill 未提供说明。'))
-      content.append(
-        text(
-          'p',
-          `${item.sourceIdentity.rootKey} · 优先级 ${item.priority} · ${item.resolution.winner ? '当前 winner' : '非 winner'}`,
-          'plugin-source',
-        ),
+    if (selected.kind === 'skill') {
+      renderRegion(
+        detail,
+        <SkillDetailContent
+          skill={selected}
+          disabled={!this.writable() || this.#activeOperation !== undefined}
+          actions={this.#detailActions(selected)}
+          progress={progress}
+          onAction={(action) => void this.#runAction(action)}
+          onPrioritySave={(next) => void this.#savePriority(selected, next)}
+          onClose={() => this.closeDetail()}
+        />,
       )
     } else {
-      content.append(text('p', `${item.serverId} · ${item.transportKind.toUpperCase()}`))
-      const allowed = item.definition.toolPolicy?.allow?.length ?? 0
-      content.append(
-        text(
-          'p',
-          `凭据 ${item.secretBindingKind} · ${allowed ? `允许 ${allowed} 个工具` : '未限制工具'}`,
-          'plugin-source',
-        ),
+      renderRegion(
+        detail,
+        <McpDetailContent
+          server={selected}
+          disabled={!this.writable()}
+          actions={this.#detailActions(selected)}
+          progress={progress}
+          onAction={(action) => void this.#runAction(action)}
+          onStatus={async () => {
+            const value = await this.api().mcpStatus(selected.serverId)
+            const panel: (readonly [string, string])[] = [
+              ['连接', value.connectionState],
+              ['工具数', String(value.toolCount)],
+              ['观察版本', value.observedRevision ?? '暂无'],
+              ['目录版本', value.catalogRevision ?? '暂无'],
+              ['更新时间', new Date(value.observedAt).toLocaleString()],
+            ]
+            if (value.lastSafeError)
+              panel.push(['安全错误', `${value.lastSafeError.code}：${value.lastSafeError.message}`])
+            return panel
+          }}
+          onTools={async (cursor) => {
+            const result = await this.api().mcpTools(selected.serverId, cursor)
+            return {
+              names: result.items.map((tool) =>
+                tool.description ? `${tool.name} — ${tool.description}` : tool.name,
+              ),
+              nextCursor: result.nextCursor,
+            }
+          }}
+          onEdit={() => openMcpDialog(selected)}
+          onClose={() => this.closeDetail()}
+        />,
       )
     }
-    return content
+    this.openDetail(this.#itemName(selected))
   }
 
-  /**
-   * 行骨架第二列：三颗红绿灯（信任 / 期望 / 实际）。
-   * 此前是两枚文字 chip，长短不一、扫读要逐字读，期望状态还挤不进来。
-   */
-  #renderRowStates(item: Item): HTMLElement {
-    return createStateLights([
-      { label: '信任', value: safeStatus(item.trust), tone: trustTone(item.trust) },
-      { label: '期望', value: safeStatus(item.desired), tone: desiredTone(item.desired) },
-      { label: '实际', value: safeStatus(item.actual), tone: actualTone(item.actual) },
-    ])
-  }
-
-  /** 行骨架第三列：Switch 拨的是「期望状态」；真实生效结果由本地后台回报。 */
-  #renderRowSwitch(item: Item): HTMLElement {
-    const enabled = item.desired === 'enabled'
-    const name = this.#itemName(item)
-    return createSwitch({
-      label: enabled ? `请求停用 ${name}` : `请求启用 ${name}`,
-      checked: enabled,
-      disabled: !this.writable() || this.#activeOperation !== undefined,
-      onToggle: (next) => void this.toggleDesired(item, next),
-    })
+  /** 在**新**列表里找回资源行（React 键控行复用 DOM，焦点可精确归还）。 */
+  #rowOf(resourceId: string): HTMLElement | undefined {
+    return (
+      list.querySelector<HTMLElement>(`.resource-row[data-resource-id="${CSS.escape(resourceId)}"]`) ??
+      undefined
+    )
   }
 
   #itemName(item: Item): string {
@@ -596,176 +475,65 @@ class ResourceAdminPage {
     }
   }
 
-  /** 详情头部：标题 + 关闭按钮，随后是说明。三段式的第一段，永远留在可视区。 */
-  #detailHead(kindLabel: string, title: string, subtitle: string): HTMLElement {
-    const head = document.createElement('div')
-    head.className = 'admin-detail-head'
-    const row = document.createElement('div')
-    row.className = 'plugin-detail-heading'
-    row.append(text('h2', title), this.#detailClose(title))
-    head.append(text('p', kindLabel, 'eyebrow'), row, text('p', subtitle, 'dialog-intro'))
-    return head
-  }
-
-  #detailClose(title: string): HTMLButtonElement {
-    const close = document.createElement('button')
-    close.type = 'button'
-    close.className = 'secondary-button compact plugin-detail-close'
-    close.textContent = '关闭详情'
-    close.setAttribute('aria-label', `关闭 ${title} 的详情`)
-    close.addEventListener('click', () => this.closeDetail())
-    return close
-  }
-
-  renderSkill(skill: SkillDescriptor): DetailParts {
-    const head = this.#detailHead('Skill 资源', skill.name, skill.description ?? '该 Skill 未提供说明。')
-    const body = document.createElement('div')
-    body.className = 'admin-detail-scroll'
-    const facts = document.createElement('dl')
-    facts.className = 'resource-facts'
-    const skillFacts: ReadonlyArray<readonly [string, string]> = [
-      ['来源', `${skill.sourceIdentity.scope} · ${skill.sourceIdentity.rootKey}`],
-      ['优先级', String(skill.priority)],
-      ['解析', skill.resolution.winner ? '当前 winner' : '非 winner'],
-      ['信任', safeStatus(skill.trust)],
-      ['期望状态', safeStatus(skill.desired)],
-      ['实际状态', safeStatus(skill.actual)],
-      ['版本', skill.revision],
-      ['目录状态', skill.stale ? '使用最近一次安全目录（刷新失败）' : '最新目录'],
-    ]
-    for (const [label, value] of skillFacts) {
-      facts.append(text('dt', label), text('dd', value))
-    }
-    body.append(facts)
-    if (skill.resolution.shadowed.length) {
-      const shadows = document.createElement('details')
-      shadows.className = 'confirm-review-section'
-      shadows.append(text('summary', `被遮蔽的候选（${skill.resolution.shadowed.length}）`))
-      const values = document.createElement('ul')
-      for (const candidate of skill.resolution.shadowed)
-        values.append(
-          text(
-            'li',
-            `${candidate.sourceIdentity.scope} · ${candidate.sourceIdentity.rootKey} · ${candidate.reason}`,
-          ),
-        )
-      shadows.append(values)
-      body.append(shadows)
-    }
-    if (skill.lastSafeError)
-      body.append(
-        text('p', `${skill.lastSafeError.code}：${skill.lastSafeError.message}`, 'resource-safe-error'),
-      )
-    const actions = document.createElement('div')
-    actions.className = 'admin-detail-actions'
+  /** 动作规格统一走壳的确认链：确认框 → 提交 → track 轮询。 */
+  #detailActions(item: Item): readonly ResourceDetailAction[] {
     const disabled = !this.writable() || this.#activeOperation !== undefined
-    const removing = skill.lastSafeError?.code === 'SKILL_REMOVAL_PENDING'
-    const add = (label: string, summary: string, action: () => Promise<{ operationId: string }>) => {
-      const control = button(label, async () => {
-        if (await confirmEffect(summary)) await this.track(await action())
-      })
-      control.disabled = disabled || (removing && label !== '永久删除')
-      actions.append(control)
-    }
-    add('信任', `信任 Skill「${skill.name}」\n版本：${skill.revision.slice(0, 12)}…`, () =>
-      this.api().skillTrust(skill.resourceId, skill.revision, 'trusted'),
-    )
-    add('拒绝', `拒绝 Skill「${skill.name}」\n版本：${skill.revision.slice(0, 12)}…`, () =>
-      this.api().skillTrust(skill.resourceId, skill.revision, 'rejected'),
-    )
-    add(
-      skill.desired === 'enabled' ? '停用' : '启用',
-      `${skill.desired === 'enabled' ? '停用' : '启用'} Skill「${skill.name}」\n期望状态：${skill.desired} → ${skill.desired === 'enabled' ? 'disabled' : 'enabled'}\n版本：${skill.revision.slice(0, 12)}…`,
-      () =>
-        this.api().skillDesired(
-          skill.resourceId,
-          skill.revision,
-          skill.desired === 'enabled' ? 'disabled' : 'enabled',
-        ),
-    )
-    const managed = skill.sourceIdentity.scope === 'runtime'
-    if (!managed && !removing) {
-      const label = document.createElement('label')
-      label.textContent = '同名覆盖优先级（50–500，越大越优先）'
-      const priority = document.createElement('input')
-      priority.type = 'number'
-      priority.min = '50'
-      priority.max = '500'
-      priority.step = '1'
-      priority.required = true
-      priority.value = String(skill.priority)
-      priority.disabled = disabled
-      label.append(priority)
-      body.append(label)
-      const save = button('保存优先级', async () => {
-        if (!priority.reportValidity()) return
-        const next = priority.valueAsNumber
-        if (!Number.isInteger(next) || next < 50 || next > 500) return
-        if (
-          await confirmEffect(
-            '调整同名 Skill「' +
-              skill.name +
-              '」的覆盖优先级：' +
-              skill.priority +
-              ' → ' +
-              next +
-              '。不会改变信任或启用状态。',
-          )
-        )
-          await this.track(
-            await this.api().skillPriority(skill.resourceId, skill.revision, skill.priority, next),
-          )
-      })
-      save.disabled = disabled
-      actions.append(save)
-      add('恢复默认优先级', `将「${skill.name}」恢复为来源默认优先级。`, () =>
-        this.api().skillPriority(skill.resourceId, skill.revision, skill.priority, null),
+    const specs: ResourceDetailAction[] = []
+    if (item.kind === 'skill') {
+      const skill = item
+      const removing = skill.lastSafeError?.code === 'SKILL_REMOVAL_PENDING'
+      const add = (
+        label: string,
+        summary: string,
+        run: () => Promise<{ operationId: string }>,
+        extra?: Partial<ResourceDetailAction>,
+      ): void => {
+        specs.push({
+          label,
+          summary,
+          run,
+          disabled: disabled || (removing && label !== '永久删除'),
+          ...extra,
+        })
+      }
+      add('信任', `信任 Skill「${skill.name}」\n版本：${skill.revision.slice(0, 12)}…`, () =>
+        this.api().skillTrust(skill.resourceId, skill.revision, 'trusted'),
       )
-    }
-    if (skill.sourceIdentity.scope === 'workspace' || skill.sourceIdentity.scope === 'user') {
+      add('拒绝', `拒绝 Skill「${skill.name}」\n版本：${skill.revision.slice(0, 12)}…`, () =>
+        this.api().skillTrust(skill.resourceId, skill.revision, 'rejected'),
+      )
       add(
-        '永久删除',
-        '永久删除 Skill「' +
-          skill.name +
-          '」及目录中的全部文件。不可恢复；同名的其他来源可能接替生效。用户目录中的 Skill 可能也被其他应用使用。',
-        () => this.api().skillRemove(skill.resourceId, skill.revision),
+        skill.desired === 'enabled' ? '停用' : '启用',
+        `${skill.desired === 'enabled' ? '停用' : '启用'} Skill「${skill.name}」\n期望状态：${skill.desired} → ${skill.desired === 'enabled' ? 'disabled' : 'enabled'}\n版本：${skill.revision.slice(0, 12)}…`,
+        () =>
+          this.api().skillDesired(
+            skill.resourceId,
+            skill.revision,
+            skill.desired === 'enabled' ? 'disabled' : 'enabled',
+          ),
       )
-    } else body.append(text('p', '此 Skill 由插件提供，请通过插件管理移除，不能单独删除文件。'))
-    return { head, body, actions }
-  }
-  renderMcp(server: McpServerDescriptor): DetailParts {
-    const head = this.#detailHead(
-      'MCP 服务',
-      server.displayName,
-      `${server.serverId} · ${server.transportKind.toUpperCase()} · 凭据：${server.secretBindingKind}`,
-    )
-    const body = document.createElement('div')
-    body.className = 'admin-detail-scroll'
-    const facts = document.createElement('dl')
-    facts.className = 'resource-facts'
-    const serverFacts: ReadonlyArray<readonly [string, string]> = [
-      ['信任', safeStatus(server.trust)],
-      ['期望状态', safeStatus(server.desired)],
-      ['实际状态', safeStatus(server.actual)],
-      ['来源', server.source],
-    ]
-    for (const [label, value] of serverFacts) facts.append(text('dt', label), text('dd', value))
-    body.append(facts)
-    if (server.lastSafeError)
-      body.append(
-        text('p', `${server.lastSafeError.code}：${server.lastSafeError.message}`, 'resource-safe-error'),
-      )
-    const actions = document.createElement('div')
-    actions.className = 'admin-detail-actions'
-    const disabled = !this.writable()
-    const add = (label: string, summary: string, action: () => Promise<{ operationId: string }>) => {
-      const control = button(label, async () => {
-        if (await confirmEffect(summary)) await this.track(await action())
-      })
-      control.disabled = disabled
-      actions.append(control)
+      if (skill.sourceIdentity.scope === 'workspace' || skill.sourceIdentity.scope === 'user') {
+        add(
+          '永久删除',
+          '永久删除 Skill「' +
+            skill.name +
+            '」及目录中的全部文件。不可恢复；同名的其他来源可能接替生效。用户目录中的 Skill 可能也被其他应用使用。',
+          () => this.api().skillRemove(skill.resourceId, skill.revision),
+          { className: 'danger-button compact' },
+        )
+      }
+      return specs
     }
+    const server = item
     const revision = `版本：${server.revision.slice(0, 12)}…`
+    const add = (
+      label: string,
+      summary: string,
+      run: () => Promise<{ operationId: string }>,
+      extra?: Partial<ResourceDetailAction>,
+    ): void => {
+      specs.push({ label, summary, run, disabled: !this.writable(), ...extra })
+    }
     add('测试连接', `测试 MCP「${server.displayName}」\n${revision}\n测试不会启用服务或调用工具。`, () =>
       this.api().mcpTest(server.serverId, server.revision),
     )
@@ -786,60 +554,38 @@ class ResourceAdminPage {
     add('重连', `重连 MCP「${server.displayName}」\n${revision}\n失败会保留已生效的旧连接。`, () =>
       this.api().mcpReconnect(server.serverId, server.revision),
     )
-    const edit = button('编辑', () => openMcpDialog(server))
-    edit.disabled = disabled
-    actions.append(edit)
     add(
       '移除',
       `移除 MCP「${server.displayName}」\n${revision}\n后台会阻断仍被使用或尚未安全退役的定义。`,
       () => this.api().mcpRemove(server.serverId, server.revision),
+      { className: 'danger-button compact' },
     )
-    const status = button('查看连接状态', async () => {
-      const value = await this.api().mcpStatus(server.serverId)
-      const panel = document.createElement('dl')
-      panel.className = 'resource-facts'
-      for (const [label, content] of [
-        ['连接', safeStatus(value.connectionState)],
-        ['工具数', String(value.toolCount)],
-        ['观察版本', value.observedRevision ?? '暂无'],
-        ['目录版本', value.catalogRevision ?? '暂无'],
-        ['更新时间', new Date(value.observedAt).toLocaleString()],
-      ] as const)
-        panel.append(text('dt', label), text('dd', content))
-      if (value.lastSafeError)
-        panel.append(
-          text('dt', '安全错误'),
-          text('dd', `${value.lastSafeError.code}：${value.lastSafeError.message}`),
-        )
-      status.replaceWith(panel)
-    })
-    body.append(status)
-    const catalog = button('查看工具目录', async () => {
-      const result = await this.api().mcpTools(server.serverId)
-      const panel = document.createElement('details')
-      panel.open = true
-      panel.className = 'confirm-review-section'
-      panel.append(text('summary', `工具目录（${result.items.length}）`))
-      const content = document.createElement('div')
-      const append = (page: Awaited<ReturnType<ResourceAdminApi['mcpTools']>>) => {
-        for (const tool of page.items)
-          content.append(text('p', tool.description ? `${tool.name} — ${tool.description}` : tool.name))
-        if (page.nextCursor) {
-          const more = button('加载更多工具', async () => {
-            const next = await this.api().mcpTools(server.serverId, page.nextCursor)
-            more.remove()
-            append(next)
-          })
-          content.append(more)
-        }
-      }
-      append(result)
-      panel.append(content)
-      body.append(panel)
-      catalog.remove()
-    })
-    body.append(catalog)
-    return { head, body, actions }
+    return specs
+  }
+
+  async #runAction(action: ResourceDetailAction): Promise<void> {
+    try {
+      if (await confirmEffect(action.summary)) await this.track(await action.run())
+    } catch (error) {
+      // 旧 button() helper 的错误路径：动作失败（如信任被拒）必须落到页面通知，不能静默。
+      showError(error)
+      this.render()
+    }
+  }
+
+  async #savePriority(skill: SkillDescriptor, next: number): Promise<void> {
+    if (
+      await confirmEffect(
+        '调整同名 Skill「' +
+          skill.name +
+          '」的覆盖优先级：' +
+          skill.priority +
+          ' → ' +
+          next +
+          '。不会改变信任或启用状态。',
+      )
+    )
+      await this.track(await this.api().skillPriority(skill.resourceId, skill.revision, skill.priority, next))
   }
 }
 
@@ -1046,7 +792,9 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   mcpPickers = [
     createSelectPicker(mcpTransport, { label: '传输' }),
     createSelectPicker(mcpSecretKind, { label: '凭据方式' }),
-    createSelectPicker($('mcp-header-name', 'select'), { label: 'HTTP Header' }),
+    createSelectPicker($('mcp-header-name', 'select'), {
+      label: 'HTTP Header',
+    }),
   ]
   const page = new ResourceAdminPage(options.workspaceId, options.tab)
 

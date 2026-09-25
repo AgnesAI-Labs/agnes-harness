@@ -79,4 +79,20 @@ describe('external UI libraries are only imported by the web-ui component layer'
     ) as Record<string, string[]>
     expect(allow[ALLOWED_PKG], 'web-ui missing from dependency-allowlist.json').toBeDefined()
   })
+
+  it('the web-ui package owns the Ant Design runtime and public component entry point', () => {
+    const webUi = listPackages(root).find((pkg) => pkg.name === ALLOWED_PKG)
+    expect(webUi).toBeDefined()
+    const dependencies = webUi?.json.dependencies as Record<string, string> | undefined
+    expect(dependencies?.antd, 'antd must be a direct web-ui runtime dependency').toBe('6.6.5')
+    expect(statSync(join(webUi?.dir ?? '', 'src', 'index.ts'), { throwIfNoEntry: false })?.isFile()).toBe(
+      true,
+    )
+  })
+
+  it('the web package consumes UI controls through the web-ui public entry point', () => {
+    const web = listPackages(root).find((pkg) => pkg.name === '@agnes/web')
+    const dependencies = web?.json.dependencies as Record<string, string> | undefined
+    expect(dependencies?.['@agnes/web-ui']).toBe('workspace:*')
+  })
 })

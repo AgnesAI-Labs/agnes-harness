@@ -111,7 +111,10 @@ export class PluginAdminApi {
     if (!response.ok)
       throw new AdminApiError(safeError(body, response.status === 403 ? '没有插件管理权限。' : undefined))
     if (!isContext(body))
-      throw new AdminApiError({ code: 'ADMIN_CONTEXT_INVALID', message: '管理上下文无效，请重新打开页面。' })
+      throw new AdminApiError({
+        code: 'ADMIN_CONTEXT_INVALID',
+        message: '管理上下文无效，请重新打开页面。',
+      })
     return body
   }
 
@@ -145,7 +148,10 @@ export class PluginAdminApi {
     const result = await json(response)
     if (!response.ok) throw new AdminApiError(safeError(result))
     if (!isSurfaceLinksResult(result))
-      throw new AdminApiError({ code: 'ADMIN_RESPONSE_INVALID', message: '后台返回的数据无法确认。' })
+      throw new AdminApiError({
+        code: 'ADMIN_RESPONSE_INVALID',
+        message: '后台返回的数据无法确认。',
+      })
     return result
   }
 
@@ -199,7 +205,11 @@ export class PluginAdminApi {
     expectedInstalledIntegrity: string,
     expectedActiveIntegrity: string | null,
   ): Promise<PackageOperationReceipt> {
-    return this.#effect('enable', { id, expectedInstalledIntegrity, expectedActiveIntegrity })
+    return this.#effect('enable', {
+      id,
+      expectedInstalledIntegrity,
+      expectedActiveIntegrity,
+    })
   }
 
   async disable(id: string): Promise<PackageOperationReceipt> {
@@ -237,7 +247,10 @@ export class PluginAdminApi {
   }
 
   async operation(operationId: string): Promise<PackageOperation> {
-    return this.#post('operation/get', { profile: this.#context.profile, operationId })
+    return this.#post('operation/get', {
+      profile: this.#context.profile,
+      operationId,
+    })
   }
 
   async cancel(operationId: string): Promise<PackageOperationReceipt> {
@@ -283,14 +296,20 @@ export class PluginAdminApi {
   async #post<T>(path: AdminPath, body: object): Promise<T> {
     const method = METHOD_BY_PATH[path]
     if (!validatePackageAdminCall(method, 'params', body).ok)
-      throw new AdminApiError({ code: 'ADMIN_REQUEST_INVALID', message: '管理请求参数无效。' })
+      throw new AdminApiError({
+        code: 'ADMIN_REQUEST_INVALID',
+        message: '管理请求参数无效。',
+      })
     // Calling a stored native fetch as `this.#fetch(...)` rebinds its receiver to this facade.
     // Keep it unbound so browser fetch retains its required global receiver.
     const fetcher = this.#fetch
     const response = await fetcher(`${ADMIN_API_ROOT}/${path}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(body),
     })
     const result = await json(response)
@@ -299,7 +318,10 @@ export class PluginAdminApi {
         safeError(result, response.status === 403 ? '没有执行此操作的权限。' : undefined),
       )
     if (!validatePackageAdminCall(method, 'result', result).ok)
-      throw new AdminApiError({ code: 'ADMIN_RESPONSE_INVALID', message: '后台返回的数据无法确认。' })
+      throw new AdminApiError({
+        code: 'ADMIN_RESPONSE_INVALID',
+        message: '后台返回的数据无法确认。',
+      })
     return result as T
   }
 }

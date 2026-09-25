@@ -1,3 +1,5 @@
+import { renderRegion } from '@agnes/web-ui'
+import { createElement, type ReactNode } from 'react'
 import { readSkinCache } from './skin.js'
 import {
   applyFontScale,
@@ -90,37 +92,53 @@ export type SkinGroupOptions = {
 
 export type SkinGroupController = { sync: () => void; refresh: () => Promise<void> }
 
-const SKIN_INPUT = 'input[name="agnes-skin"]'
 /** 内置外观那一项的值：空串，与任何合法皮肤 id 都不冲突。 */
 const NO_SKIN = ''
 
-function skinOption(
-  value: string,
-  name: string,
-  hint: string,
-  onChange: (input: HTMLInputElement) => void,
-): HTMLLabelElement {
-  const label = document.createElement('label')
-  label.className = 'appearance-option'
-  const input = document.createElement('input')
-  input.type = 'radio'
-  input.name = 'agnes-skin'
-  input.value = value
-  const copy = document.createElement('span')
-  copy.className = 'appearance-option-copy'
-  const title = document.createElement('span')
-  title.className = 'appearance-option-name'
-  title.textContent = name
-  copy.append(title)
-  if (hint !== '') {
-    const detail = document.createElement('span')
-    detail.className = 'appearance-option-hint'
-    detail.textContent = hint
-    copy.append(detail)
-  }
-  input.addEventListener('change', () => onChange(input))
-  label.append(input, copy)
-  return label
+type SkinOptionsProps = {
+  skins: readonly SkinOption[]
+  selected: string
+  status: string | null
+  failed: boolean
+  onChoose(value: string): void
+  onRetry(): void
+}
+
+function skinOption(value: string, name: string, hint: string, props: SkinOptionsProps): ReactNode {
+  return createElement(
+    'label',
+    { className: 'appearance-option' },
+    createElement('input', {
+      type: 'radio',
+      name: 'agnes-skin',
+      value,
+      checked: value === props.selected,
+      readOnly: true,
+    }),
+    createElement(
+      'span',
+      { className: 'appearance-option-copy' },
+      createElement('span', { className: 'appearance-option-name' }, name),
+      hint === '' ? null : createElement('span', { className: 'appearance-option-hint' }, hint),
+    ),
+  )
+}
+
+function skinOptions(props: SkinOptionsProps): ReactNode {
+  if (props.failed)
+    return createElement(
+      'p',
+      { className: 'appearance-option-hint' },
+      '皮肤清单读取失败。',
+      createElement('button', { type: 'button', onClick: props.onRetry }, '重试'),
+    )
+  return createElement(
+    'div',
+    null,
+    skinOption(NO_SKIN, '跟随主题（默认）', '只使用内置配色，不加载任何皮肤', props),
+    ...props.skins.map((skin) => skinOption(skin.id, skin.name, `来自 ${skin.packageName}`, props)),
+    createElement('p', { className: 'appearance-option-hint', hidden: props.status === null }, props.status),
+  )
 }
 
 /**
@@ -134,68 +152,65 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
   const container = options.scope.querySelector<HTMLElement>('#skin-option-items')
   if (container === null) throw new Error('skin options container is missing')
   let selected = readSkinCache(options.storage)?.id ?? NO_SKIN
+  let skins: readonly SkinOption[] = []
+  let status: string | null = null
+  let failed = false
 
-  const sync = (): void => {
-    for (const input of options.scope.querySelectorAll<HTMLInputElement>(SKIN_INPUT))
-      input.checked = input.value === selected
-  }
-
-  /** 选择失败必须说出来，否则用户只会看到单选框弹回原位而不知道发生了什么（设计 §8）。 */
-  const status = document.createElement('p')
-  status.className = 'appearance-option-hint'
-  const setStatus = (message: string | null): void => {
-    status.textContent = message ?? ''
-    status.hidden = message === null
-  }
-  setStatus(null)
-
-  const renderOptions = (skins: readonly SkinOption[]): void => {
-    setStatus(null)
-    container.replaceChildren(
-      skinOption(NO_SKIN, '跟随主题（默认）', '只使用内置配色，不加载任何皮肤', choose),
-      ...skins.map((skin) => skinOption(skin.id, skin.name, `来自 ${skin.packageName}`, choose)),
-      status,
+  const render = (): void => {
+    renderRegion(
+      container,
+      createElement(skinOptions, {
+        skins,
+        selected,
+        status,
+        failed,
+        onChoose: choose,
+        onRetry: () => void refresh(),
+      }),
     )
-    sync()
   }
 
-  const renderFailure = (retry: HTMLButtonElement): void => {
-    const row = document.createElement('p')
-    row.className = 'appearance-option-hint'
-    row.textContent = '皮肤清单读取失败。'
-    retry.type = 'button'
-    retry.textContent = '重试'
-    row.append(retry)
-    container.replaceChildren(row)
-    setStatus(null)
-  }
+  const sync = (): void => render()
 
   const refresh = async (): Promise<void> => {
     try {
-      const skins = await options.list()
+      skins = await options.list()
       selected = readSkinCache(options.storage)?.id ?? NO_SKIN
-      renderOptions(skins)
+      status = null
+      failed = false
+      render()
     } catch {
-      const retry = document.createElement('button')
-      retry.addEventListener('click', () => void refresh())
-      renderFailure(retry)
+      status = null
+      failed = true
+      render()
     }
   }
 
-  /** 单选组里只有刚被选中的那个会派发 change；忽略未选中项，避免用旧值覆盖新值。 */
-  const choose = (input: HTMLInputElement): void => {
-    if (!input.checked) return
+  const choose = (value: string): void => {
     const previous = selected
-    selected = input.value
+    selected = value
+    render()
     void Promise.resolve(options.select(selected === NO_SKIN ? null : selected))
-      .then(() => setStatus(null))
+      .then(() => {
+        status = null
+        render()
+      })
       .catch(() => {
         // 选择没有生效：回到原选择，而不是把一个假的选中态留在界面上。
         selected = previous
-        sync()
-        setStatus('这份皮肤没有生效，已保留原选择。')
+        status = '这份皮肤没有生效，已保留原选择。'
+        render()
       })
   }
+
+  container.addEventListener(
+    'change',
+    (event) => {
+      const input = event.target as HTMLInputElement | null
+      if (input?.type === 'radio' && input.name === 'agnes-skin' && input.checked) choose(input.value)
+    },
+    true,
+  )
 
   // 初始加载由调用方在打开面板时触发（`refresh`），避免绑定即发请求、也避免一次打开拉两遍。
   return { sync, refresh }

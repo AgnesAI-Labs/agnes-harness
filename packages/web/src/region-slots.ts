@@ -18,6 +18,8 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
+import type { AntdRoot } from '@agnes/web-ui'
+import { createAntdRoot } from '@agnes/web-ui'
 import {
   Approval,
   type ApprovalHandle,
@@ -57,7 +59,6 @@ import {
 } from '@agnes/web-units'
 import { createElement, useLayoutEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import { createRoot, type Root } from 'react-dom/client'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
 import {
   createDocumentPreview,
@@ -274,7 +275,7 @@ export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount
   const overlayHost = document.createElement('div')
   overlayHost.dataset.agnesDshShellOverlay = 'true'
   document.body.append(overlayHost)
-  const overlayRoot = createRoot(overlayHost)
+  const overlayRoot = createAntdRoot(overlayHost)
   flushSync(() => {
     overlayRoot.render(
       createElement(
@@ -363,15 +364,15 @@ export function mountSettingsPaneRegion(
     registry.declare(name, spec, 'web-shell')
   }
   const handle = { current: null as SettingsRegionHandle | null }
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(createElement(SettingsBuiltin, { ref: handle, options }))
   })
-  const dshRoots = new Map<string, Root>()
+  const dshRoots = new Map<string, AntdRoot>()
   const dshPaneSlots = new Map<SettingsPane, string[]>()
   const mountDshOutlet = (name: string, host: HTMLElement, pane?: SettingsPane): void => {
     if (dshRoots.has(name)) throw new Error(`settings DSH slot is mounted twice: ${name}`)
-    const dshRoot = createRoot(host)
+    const dshRoot = createAntdRoot(host)
     dshRoots.set(name, dshRoot)
     if (pane) dshPaneSlots.set(pane, [...(dshPaneSlots.get(pane) ?? []), name])
     flushSync(() => {
@@ -389,12 +390,12 @@ export function mountSettingsPaneRegion(
     if (!host) throw new Error(`settings shell is missing ${name}`)
     mountDshOutlet(name, host)
   }
-  const paneRoots = new Map<SettingsPane, Root>()
+  const paneRoots = new Map<SettingsPane, AntdRoot>()
   const removeBuiltin = new Map<SettingsPane, () => void>()
   for (const pane of Object.keys(PANE_IDS) as SettingsPane[]) {
     const slotHost = container.querySelector<HTMLElement>(`#${settingsPaneSlotHostId(pane)}`)
     if (!slotHost) throw new Error(`settings shell is missing ${settingsPaneSlotHostId(pane)}`)
-    const paneRoot = createRoot(slotHost)
+    const paneRoot = createAntdRoot(slotHost)
     paneRoots.set(pane, paneRoot)
     const remove = registry.register(
       {
@@ -575,7 +576,7 @@ export function mountComposerRegion(
     },
     () => createElement(SlotOutlet, { name: 'conversation.composer.bar' }),
   )
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -890,7 +891,7 @@ export function mountRightbarRegion(
       ),
     )
   }
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   const watchedSlots = [
     'rightbar',
     'rightbar.session',
@@ -947,7 +948,7 @@ export function mountTraceRegion(
     { name: TRACE_SLOT as string, id: 'builtin-trace', owner: '@agnes/web-trace', priority: 0 },
     () => createElement(Trace, { ref: handle, root: container, options }),
   )
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: TRACE_SLOT })))
   })
@@ -1004,7 +1005,7 @@ export function mountTopbarRegion(registry: SlotRegistry, container: HTMLElement
       }),
   )
   container.replaceChildren()
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -1080,7 +1081,7 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
     () => ApprovalDshFrame({ setHandle }),
   )
   container.replaceChildren()
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: APPROVAL_SLOT })),
@@ -1220,7 +1221,7 @@ export function mountConversationRegion(
       }),
   )
   container.replaceChildren()
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -1281,7 +1282,7 @@ export function mountSidebarRegion(
     { name: SIDEBAR_SLOT as string, id: 'builtin-sidebar', owner: '@agnes/web-sidebar', priority: 0 },
     () => createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'sidebar' as never })),
   )
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -1412,7 +1413,7 @@ export function mountTranscriptRegion(
     () => null,
   )
   container.replaceChildren()
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -1479,7 +1480,7 @@ export function mountEmptyStateRegion(
     EmptyStateBuiltin,
   )
   container.replaceChildren()
-  const root: Root = createRoot(container)
+  const root: AntdRoot = createAntdRoot(container)
   const providerProps = {
     registry,
     ...(services.session ? { session: services.session } : {}),

@@ -1,5 +1,7 @@
 // TRACE-INSPECTION-20260925: measured Core 24963 after fold-cache removal, protocol 2201, SDK 5127,
 // daemon 26495, web 13269, and web/app 1783 after tool-detail RPC and trace UI.
+// 2026-09-25 CSP nonce wiring: measured after shared Antd root wrapper and all production root call sites;
+// packages/web-ui/src 450, packages/web/src 13303. Exact measured totals, no spare allocation.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
 // PLUGIN-HELPER merge with b/main@8f2e20e7: daemon 25955, Host 38018, measured combined source.
@@ -210,6 +212,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
+  // A-line settings selects: React-owned options replace imperative DOM; exact formatted counts.
+  // 2026-09-25 C-line migration: web-ui carries the admin/resource component layer
+  // (admin-list/admin-detail/admin-dialogs/admin-confirmation/admin-text/resource-* +
+  // select-picker/confirm/popover moved in from web-admin-frame). countLines 2610 (CSP antd-root joined).
+  'packages/web-ui/src': 2610,
+  'packages/web-units/src': 3172,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -364,8 +372,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
   'packages/web/src/app': 1783,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
-  // 2026-09-17: composer permission listbox. Measured 203, exact.
-  'packages/web/src/permission-picker': 203,
+  // 2026-09-25 UI refactor: permission options now render through the React region contract.
+  // Re-measured with countLines(): 215, exact, no spare.
+  'packages/web/src/permission-picker': 215,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -373,11 +382,12 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/trace-panel': 478,
   // 2026-09-15/16 (admin-pages A5b): the popover placement and listbox key map moved to
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
-  // Tightened to the new exact measurement: 259.
-  'packages/web/src/model-picker': 259,
-  // 2026-09-17: DSH-style model-account cards add account-dialog lifecycle, explicit edit controls,
-  // credential/status metadata, and account-specific dialog copy. Measured exact: 572, no spare.
-  'packages/web/src/settings': 800,
+  // 2026-09-25 UI refactor: model options now render through the React region contract.
+  // Re-measured with countLines(): 274, exact, no spare.
+  'packages/web/src/model-picker': 274,
+  // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
+  // Re-measured with countLines(): 754, exact, no spare.
+  'packages/web/src/settings': 754,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -1962,9 +1972,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (13161) with the streaming-smoothness quick fixes (13313): the preview
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
-  // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
-  // TRACE-INSPECTION-20260925: trace detail callback wiring; measured 13269, exact.
-  'packages/web/src': 13269,
+  "packages/web/src": 13303,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2006,14 +2014,16 @@ const INITIAL_CEILING: Record<string, number> = {
   // a route-table entry only (no UI panel), needed to keep the BFF/Web lockstep guard valid. Measured
   // 240, exact.
   // Task 11 tree/get|list|apply|rollback client routes. Re-measured: 293, exact.
-  'packages/web/src/admin/plugins/api': 301,
+  // 2026-09-25 C-line: countLines 314 (biome import organization grew the header block).
+  'packages/web/src/admin/plugins/api': 314,
   // 2026-09-22 UI plugin management: browser runtime phase labels and safe failure messages.
   // Re-measured: 112, exact cap.
   'packages/web/src/admin/plugins/presentation': 112,
   // Task 11 tree actual fields. Re-measured: 69, exact.
   // 2026-09-22 UI plugin management: runtime snapshot/subscription source contract.
   // Re-measured: 77, exact cap.
-  'packages/web/src/admin/plugins/types': 77,
+  // 2026-09-25 C-line: countLines 79 (same import reorganization).
+  'packages/web/src/admin/plugins/types': 79,
   'packages/daemon/src/jobs': 800,
   'packages/bridges/src': 2600,
   // I7 Channels12/13 add durable refs, bounded multipart outbound delivery, gap recovery, and
