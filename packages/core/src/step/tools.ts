@@ -32,7 +32,7 @@ import { deferredEffectId } from './deferred.js'
 import { resolveModel } from './inference.js'
 import { type OpStateObj, type ToolCallState, withPhase } from './op-state.js'
 import { approvalContinuation } from './parked.js'
-import type { SessionImpl, StepOutcome } from './session.js'
+import type { ChainStep, SessionImpl, StepOutcome } from './session.js'
 import { stepVerifyInput, toolVerifyInput } from './verify-input.js'
 
 export type ExecOpts = {
@@ -870,6 +870,9 @@ export async function approveAndExecute(
   let effect: Pick<EffectHandle, 'effectId' | 'settle'>
   let startSeq: Seq
   let initialAttempt: ExecuteAttempt
+  // Set only on a first dispatch, whose commit above already recorded the workspace `dispatched`. A
+  // recovered dispatch has no such commit and records it in the loop before invoking.
+  let firstDispatchCommitted = false
   if (o.resumeDispatch) {
     if (!recoveredEffect) throw new CoreError('E_RELATION', 'recovered dispatch lacks its pending effect')
     effect = {
@@ -881,11 +884,12 @@ export async function approveAndExecute(
     initialAttempt = o.resumeDispatch.attempt
     s.restoreToolDispatchAttempt(effect.effectId, startSeq, 1)
   } else {
-    await s.transition([], (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }))
-    if (parent.aborted)
+    if (parent.aborted) {
+      await s.transition([], (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }))
       return {
         result: await refuse(s, call.toolUseId, 'CANCELLED', 'cancelled before dispatch', decisionId),
       }
+    }
     const started = s.effects.start({
       ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
       kind: 'tool',
@@ -894,18 +898,43 @@ export async function approveAndExecute(
       argsSeq: call.argsSeq,
     })
     effect = started
-    const startedSeqs = await s.transition([started.intent], (cur) =>
-      updateCall(cur, call.toolUseId, {
-        status: 'dispatch_pending',
-        effectId: started.effectId,
-        dispatchAttempt: 1,
-      }),
-    )
-    const committed = startedSeqs[0]
+    // Approved, intent written, and (for a workspace call) dispatched, as one commit. Only
+    // synchronous code runs between these edges — the loop below re-checks the abort signal before
+    // it invokes anything — so no crash can land between them, and a reopened session sees either
+    // the call still planned or the call dispatched with its intent. The intermediate statuses are
+    // implied by the intent row and are never stored on their own. A Host call records `dispatched`
+    // only once its port has returned, so it stops at dispatch_pending here.
+    const chain: ChainStep[] = [
+      { events: [], next: (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }) },
+      {
+        events: [started.intent],
+        next: (cur) =>
+          updateCall(cur, call.toolUseId, {
+            status: 'dispatch_pending',
+            effectId: started.effectId,
+            dispatchAttempt: 1,
+          }),
+      },
+    ]
+    if (call.executionDomain === 'workspace')
+      chain.push({
+        events: [],
+        next: (cur) =>
+          updateCall(cur, call.toolUseId, {
+            status: 'dispatched',
+            effectId: started.effectId,
+            dispatchAttempt: 1,
+            dispatchPhase: 'may_have_sent',
+          }),
+      })
+    // The intent's own seq: the only one a dispatch permit may be bound to.
+    const [, startedSeqs] = await s.transitionChain(chain)
+    const committed = startedSeqs?.[0]
     if (committed === undefined)
       throw new CoreError('E_RELATION', 'effect intent commit returned no sequence')
     startSeq = committed
     initialAttempt = 1
+    firstDispatchCommitted = call.executionDomain === 'workspace'
   }
   const timeoutMs = s.preset.tools.timeouts[call.name] ?? s.preset.tools.timeoutMs
   const ac = new AbortController()
@@ -1007,7 +1036,8 @@ export async function approveAndExecute(
           }),
         }
       }
-      if (call.executionDomain === 'workspace')
+      if (firstDispatchCommitted) firstDispatchCommitted = false
+      else if (call.executionDomain === 'workspace')
         await s.transition([], (cur) =>
           updateCall(cur, call.toolUseId, {
             status: 'dispatched',
@@ -1203,26 +1233,22 @@ export async function approveAndExecute(
         }),
       )
     } else {
-      // Result and responded state are one durable boundary. Settlement is intentionally later: a
-      // crash between them can finish the existing result without dispatching the tool again.
-      await s.transition(resultRows, (cur) =>
+      // The result, its settlement and the completed call are one commit: nothing but building the
+      // settlement row runs between them, so a crash leaves the call either dispatched with no
+      // result (the window every call already has while it runs) or completed. `responded` is still
+      // a state recovery understands, but this path no longer stores it on its own.
+      const done = (status: 'responded' | 'completed') => (cur: OpStateObj | null) =>
         updateCall(cur, call.toolUseId, {
-          status: 'responded',
+          status,
           effectId: effect.effectId,
           dispatchAttempt: attempt,
           dispatchPhase: 'responded',
           ...(recordedResult.terminate ? { terminate: true } : {}),
-        }),
-      )
-      await s.transition([effect.settle(effectOutcome({ failed })), verifierSignal], (cur) =>
-        updateCall(cur, call.toolUseId, {
-          status: 'completed',
-          effectId: effect.effectId,
-          dispatchAttempt: attempt,
-          dispatchPhase: 'responded',
-          ...(recordedResult.terminate ? { terminate: true } : {}),
-        }),
-      )
+        })
+      await s.transitionChain([
+        { events: resultRows, next: done('responded') },
+        { events: [effect.settle(effectOutcome({ failed })), verifierSignal], next: done('completed') },
+      ])
     }
     return {
       result: recordedResult,
