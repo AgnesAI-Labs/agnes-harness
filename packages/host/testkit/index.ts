@@ -204,6 +204,11 @@ export type TestHost = {
   host: Host
   audit: AuditSink & { events: AuditEvent[] }
   profile: ResolvedProfile
+  /**
+   * With `hangSessionClose`: lets every session close that was held back run for real, so the
+   * Host's deferred teardown can release its files before the test removes them.
+   */
+  releaseHungSessions?: () => void
 }
 
 export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
@@ -394,15 +399,23 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   // drops every prototype method, handing the test a session that is broken in ways the case is not
   // about.
   const openWorkspaceSession = host.createSession.bind(host)
+  const held: Array<() => void> = []
   const wrapped: Host = {
     ...host,
     createSession: async (opts) => {
       const s = await openWorkspaceSession(opts)
-      ;(s as { close: () => Promise<void> }).close = () => new Promise<void>(() => {})
+      const close = s.close.bind(s)
+      ;(s as { close: () => Promise<void> }).close = () =>
+        new Promise<void>((resolve, reject) => {
+          held.push(() => void close().then(resolve, reject))
+        })
       return s
     },
   }
-  return { host: wrapped, audit, profile }
+  const releaseHungSessions = () => {
+    for (const release of held.splice(0)) release()
+  }
+  return { host: wrapped, audit, profile, releaseHungSessions }
 }
 
 /**
