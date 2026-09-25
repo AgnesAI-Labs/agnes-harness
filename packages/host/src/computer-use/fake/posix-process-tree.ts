@@ -19,10 +19,13 @@ function validPid(value: number): boolean {
 
 function processTable(): Promise<ProcessRow[]> {
   return new Promise((resolve, reject) => {
+    // The timeout only guards against a ps that never returns. ps answers in about 10 ms on an idle
+    // machine, but a loaded macOS host has taken more than a second, and a timed-out snapshot fails
+    // the whole cleanup it belongs to.
     execFile(
       '/bin/ps',
       ['-axo', 'pid=,ppid='],
-      { env: baseEnvironment(), timeout: 1_000, maxBuffer: PROCESS_TABLE_LIMIT },
+      { env: baseEnvironment(), timeout: 5_000, maxBuffer: PROCESS_TABLE_LIMIT },
       (error, stdout) => {
         if (error) {
           reject(new Error('fake Computer Use could not inspect the POSIX process tree', { cause: error }))
