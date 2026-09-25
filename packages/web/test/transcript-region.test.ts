@@ -2,10 +2,14 @@
 
 import type { UINode } from '@agnes/protocol'
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSlotCardContext } from '../src/client-modules/timeline-slot.js'
 import { TRANSCRIPT_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
+
+// A slot card or shadow commits in a few milliseconds, but a loaded runner has taken longer than the
+// fixed 20 ms these checks used to sleep. Wait for the rendered state instead.
+const committed = { timeout: 5_000 }
 
 const assistant: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: '渲染后的时间线' }
 
@@ -41,23 +45,26 @@ describe('rendered transcript region', () => {
       fill: { slot: 'tool.card.inline', extId: 'fixture.card', payload: { value: 1 } },
     } as UINode
     runtime.transcript?.render([slot])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(document.querySelector('[data-slot-node="tool.card.inline"]')).toBeTruthy()
-    expect(
-      document.querySelector('[data-slot-node="tool.card.inline"] [data-slot="tool.card.inline"]'),
-    ).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-slot-node="tool.card.inline"]')).toBeTruthy()
+      expect(
+        document.querySelector('[data-slot-node="tool.card.inline"] [data-slot="tool.card.inline"]'),
+      ).toBeTruthy()
+    }, committed)
 
     const remove = runtime.registry.register(
       { name: TRANSCRIPT_SLOT as string, id: 'fixture-transcript-shadow', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'shadow-transcript' }, '替换时间线'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(document.querySelector('#shadow-transcript')?.textContent).toBe('替换时间线')
-    expect(document.querySelector('#transcript-content')).toBeNull()
+    await vi.waitFor(() => {
+      expect(document.querySelector('#shadow-transcript')?.textContent).toBe('替换时间线')
+      expect(document.querySelector('#transcript-content')).toBeNull()
+    }, committed)
 
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(document.querySelector('#transcript-content')).toBeTruthy()
-    expect(document.querySelector('#shadow-transcript')).toBeNull()
+    await vi.waitFor(() => {
+      expect(document.querySelector('#transcript-content')).toBeTruthy()
+      expect(document.querySelector('#shadow-transcript')).toBeNull()
+    }, committed)
   })
 })
