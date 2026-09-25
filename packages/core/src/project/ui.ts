@@ -767,6 +767,7 @@ export class UIProjectionCell {
                 ? 'failed'
                 : 'completed'
           node.resultPreview = clip(text(result.content), 4096)
+          node.resultSeq = seq
           node.enforcement = structuredClone(result.enforcement)
           this.completedResults.push({ seq, toolUseId: node.toolUseId })
           changed.add(node.id)

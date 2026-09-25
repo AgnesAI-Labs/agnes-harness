@@ -52,12 +52,17 @@ describe('channels boundary', () => {
     }
   })
 
-  it('confines platform inspection to the private credential reader', () => {
+  it('confines platform inspection to the private credential reader and the ref store sync', () => {
     for (const file of sourceFiles()) {
       let source = readFileSync(file, 'utf8')
       if (file === fileURLToPath(new URL('../src/runner/config.ts', import.meta.url)))
         source = source.replace(
           /^const windowsSecrets = process\.platform === 'win32' \/\/ guards-allow-platform: Channels private credential file reader\.\r?$/m,
+          '',
+        )
+      if (file === fileURLToPath(new URL('../src/runner/ref-store.ts', import.meta.url)))
+        source = source.replace(
+          /^const darwin = process\.platform === 'darwin' \/\/ guards-allow-platform: F_FULLFSYNC is darwin-only\.\r?$/m,
           '',
         )
       expect(source, file).not.toMatch(/process\.platform|os\.platform\(\)|os\.type\(\)/)
