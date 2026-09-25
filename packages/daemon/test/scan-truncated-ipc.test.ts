@@ -108,6 +108,8 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
       await server.close()
     }
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    // On Windows a worker's database files can stay locked for a moment after the process exits;
+    // retry the removal (rm retries EPERM and EBUSY with a linear backoff) instead of failing on it.
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 90_000)
