@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { createWebServer } from '../src/serve.js'
 
 const source = fileURLToPath(new URL('../src/serve.ts', import.meta.url))
@@ -345,7 +345,9 @@ it('keeps the native workspace picker exact-origin and single-flight without a c
       method: 'POST',
       headers: { Origin: server.url },
     })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The duplicate is only a duplicate once the first request holds the picker. One timer tick
+    // does not guarantee that on a loaded runner, so wait for the picker to be called.
+    await vi.waitFor(() => expect(calls).toBe(1), { timeout: 5_000 })
     const duplicate = await fetch(`${server.url}/api/workspace-picker`, {
       method: 'POST',
       headers: { Origin: server.url },
