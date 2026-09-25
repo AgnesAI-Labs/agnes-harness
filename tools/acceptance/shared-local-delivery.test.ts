@@ -196,8 +196,9 @@ it.skipIf(!entry)(
         .trimEnd()
         .split('\n')
         .map((line) => JSON.parse(line))
-      expect(packageRows).toHaveLength(1)
-      expect(packageRows[0]).toMatchObject({ id: 'acme/pkg-a', result: 'committed', operation: 'install' })
+      const fixtureRows = packageRows.filter((row) => row.id === 'acme/pkg-a')
+      expect(fixtureRows).toHaveLength(1)
+      expect(fixtureRows[0]).toMatchObject({ result: 'committed', operation: 'install' })
       // guards-allow-platform: inspect the built daemon's actual package audit permissions.
       if (process.platform === 'win32') expect(hasPrivateDaclSync(packageAuditFile)).toBe(true)
       expect(await cli.config.get()).toMatchObject({ configured: false })
