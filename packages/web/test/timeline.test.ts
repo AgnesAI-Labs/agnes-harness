@@ -916,9 +916,9 @@ describe('loading earlier records', () => {
     expect(scrollContainer.style.scrollBehavior).toBe('smooth')
   })
 
-  it('asks for the next page when the sentinel is still on screen after a prepend', () => {
-    // Mirrors the browser contract: a notification on observe(), then only on a visibility change.
-    let visible = true
+  /** Mirrors the browser contract: a notification after observe(), then only on a visibility change. */
+  function fakeIntersection() {
+    const state = { visible: true }
     const observers: FakeObserver[] = []
     class FakeObserver {
       readonly targets = new Map<Element, boolean | undefined>()
@@ -936,7 +936,7 @@ describe('loading earlier records', () => {
       }
       frame() {
         for (const [target, last] of this.targets) {
-          const now = visible && !(target as HTMLElement).hidden
+          const now = state.visible && !(target as HTMLElement).hidden
           if (now === last) continue
           this.targets.set(target, now)
           this.callback(
@@ -950,6 +950,11 @@ describe('loading earlier records', () => {
     const frame = () => {
       for (const observer of observers) observer.frame()
     }
+    return { state, frame }
+  }
+
+  it('asks for the next page when the sentinel is still on screen after a prepend', () => {
+    const { state, frame } = fakeIntersection()
     const { timeline } = scrolling()
     const loadEarlier = vi.fn()
     timeline.render([say('e', 9), say('f', 10)], [], { hasEarlier: true, loadEarlier })
@@ -968,7 +973,7 @@ describe('loading earlier records', () => {
     frame()
     expect(loadEarlier).toHaveBeenCalledTimes(2)
     // Once the restored position hides the sentinel, a landed page asks for nothing more.
-    visible = false
+    state.visible = false
     timeline.render([say('a', 5), say('b', 6), say('c', 7), say('d', 8), say('e', 9), say('f', 10)], [], {
       hasEarlier: true,
       loadEarlier,
@@ -976,6 +981,43 @@ describe('loading earlier records', () => {
     frame()
     frame()
     expect(loadEarlier).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry by itself when loading a page fails and the same window comes back', () => {
+    const { frame } = fakeIntersection()
+    const { scrollContainer, timeline } = scrolling()
+    const loadEarlier = vi.fn()
+    const tail = () => [say('e', 9), say('f', 10)]
+    timeline.render(tail(), [], { hasEarlier: true, loadEarlier })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // A failed load reopens the session: the same window is rendered again, several times.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      timeline.render(tail(), [], { hasEarlier: true, loadEarlier })
+      frame()
+    }
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // The row stays for the reader to ask again by hand.
+    const earlier = scrollContainer.querySelector<HTMLElement>('.transcript-earlier')
+    expect(earlier?.hidden).toBe(false)
+    earlier?.querySelector('button')?.click()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the button, without re-arming, when a page brings no new conversation entries', () => {
+    const { frame } = fakeIntersection()
+    const { timeline } = scrolling()
+    const loadEarlier = vi.fn()
+    timeline.render([say('e', 9)], [], { hasEarlier: true, loadEarlier })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // The page held only records the transcript does not show: nothing was prepended.
+    timeline.render([{ kind: 'assistant', id: 'x', seq: 8, text: ' ' }, say('e', 9)], [], {
+      hasEarlier: true,
+      loadEarlier,
+    })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
   })
 })
 

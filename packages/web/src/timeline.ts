@@ -723,7 +723,6 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
   sentinel?.observe(earlier)
   const render = (nodes: readonly UINode[], turns?: readonly UITurn[], nextMeta?: TimelineMeta): void => {
     meta = nextMeta
-    const requestedEarlier = loadingEarlier
     loadingEarlier = false
     earlier.hidden = !nextMeta?.hasEarlier
     const visibleNodes = nodes.filter(isConversationNode)
@@ -794,8 +793,9 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     restoreTranscriptSelection(options.transcript, savedSelection)
     // The observer only reports visibility changes. A sentinel that never left the screen while a
     // page loaded would never report again, so re-observing asks for a fresh reading, which the
-    // browser takes after this layout. The in-flight guard and one request per render bound it.
-    if (sentinel && nextMeta?.hasEarlier && (prepended || requestedEarlier)) {
+    // browser takes after this layout. Only a page that actually landed re-arms it: a failed load
+    // re-renders the same window, and re-arming then would retry without end.
+    if (sentinel && nextMeta?.hasEarlier && prepended) {
       sentinel.unobserve(earlier)
       sentinel.observe(earlier)
     }
