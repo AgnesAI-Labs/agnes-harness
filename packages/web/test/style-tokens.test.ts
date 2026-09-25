@@ -229,6 +229,23 @@ beforeAll(async () => {
 })
 
 describe('style.css token 门禁', () => {
+  it('键盘聚焦的按钮与表单控件保留可见焦点规则', () => {
+    const buttonFocus = rules.find((rule) =>
+      rule.selector.split(',').some((part) => part.trim() === 'button:focus-visible'),
+    )
+    const inputFocus = rules.find((rule) =>
+      rule.selector.split(',').some((part) => part.trim() === 'input:focus-visible'),
+    )
+    expect(declarationsOf(buttonFocus as Rule)).toContainEqual({
+      property: 'outline',
+      value: '2px solid var(--agnes-input-border-focus)',
+    })
+    expect(declarationsOf(inputFocus as Rule)).toContainEqual({
+      property: 'box-shadow',
+      value: '0 0 0 3px var(--agnes-brand-focus-ring)',
+    })
+  })
+
   it('解析出了完整的规则集（防止解析退化导致的假通过）', () => {
     expect(rules.length).toBeGreaterThan(200)
     expect(lightTokens.size).toBeGreaterThan(60)

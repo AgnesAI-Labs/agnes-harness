@@ -7,9 +7,9 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
+import { createAntdRoot } from '@agnes/web-ui'
 import { createConversationToolCard } from '@agnes/web-units'
 import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
-import { createRoot } from 'react-dom/client'
 import { getSlotCardContext, mountSlotCard } from './client-modules/timeline-slot.js'
 import { isConversationNode } from './conversation-visibility.js'
 import { createMarkdownRenderer } from './markdown.js'
@@ -418,8 +418,8 @@ function mountDshNode(
   const childHost = document.createElement('div')
   childHost.dataset.agnesDshChildren = projection.slotName
   native.append(childHost)
-  const root = createRoot(host)
-  const childRoot = createRoot(childHost)
+  const root = createAntdRoot(host)
+  const childRoot = createAntdRoot(childHost)
 
   // 流式期间每个 delta 都会走到 update()。没有任何插件认领本节点或其子槽位时，
   // 两遍 root.render 是无产出的 reconcile——原生内容才是显示者。此时跳过 React，

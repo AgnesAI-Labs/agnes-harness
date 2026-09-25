@@ -159,7 +159,10 @@ it('serves the fixed admin page and gives its BFF priority over static routing',
     throw error
   })
   try {
-    await writeFile(join(root, 'admin.html'), '<title>Plugin admin</title>')
+    await writeFile(
+      join(root, 'admin.html'),
+      '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__"><title>Plugin admin</title>',
+    )
     const page = await fetch(`${server.url}/admin/plugins`)
     expect(page.status).toBe(200)
     expect(await page.text()).toContain('Plugin admin')
@@ -168,6 +171,46 @@ it('serves the fixed admin page and gives its BFF priority over static routing',
     const api = await fetch(`${server.url}/admin/plugins/api/context`)
     expect(api.status).toBe(200)
     expect(await api.json()).toEqual({ handled: true })
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('issues a fresh CSP style nonce for each served HTML document', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-web-csp-nonce-'))
+  const port = await availablePort()
+  const server = await createWebServer({
+    root,
+    wsUrl: 'ws://127.0.0.1:4320',
+    port,
+    origin: `http://127.0.0.1:${port}`,
+  })
+  try {
+    const nonceMarker = '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__">'
+    await writeFile(join(root, 'index.html'), `${nonceMarker}<meta data-ws="__AGNES_WS_URL__">`)
+    await writeFile(join(root, 'admin.html'), nonceMarker)
+    await writeFile(join(root, 'resources.html'), nonceMarker)
+
+    const documents = await Promise.all([
+      fetch(`${server.url}/`),
+      fetch(`${server.url}/admin/plugins`),
+      fetch(`${server.url}/admin/resources`),
+      fetch(`${server.url}/`),
+    ])
+    const nonces: string[] = []
+    for (const document of documents) {
+      expect(document.status).toBe(200)
+      const body = await document.text()
+      const nonce = body.match(/name="agnes-csp-nonce" content="([^"]+)"/)?.[1]
+      expect(nonce).toBeTruthy()
+      expect(body).not.toContain('__AGNES_CSP_NONCE__')
+      const policy = document.headers.get('content-security-policy') ?? ''
+      expect(policy).toContain(`'nonce-${nonce}'`)
+      expect(policy).not.toContain("'unsafe-inline'")
+      nonces.push(nonce as string)
+    }
+    expect(new Set(nonces).size).toBe(nonces.length)
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })
@@ -210,7 +253,10 @@ it('serves the fixed resource management page and fails its BFF closed without a
     origin: `http://127.0.0.1:${port}`,
   })
   try {
-    await writeFile(join(root, 'resources.html'), '<title>Resources</title>')
+    await writeFile(
+      join(root, 'resources.html'),
+      '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__"><title>Resources</title>',
+    )
     expect(await (await fetch(`${server.url}/admin/resources`)).text()).toContain('Resources')
     const api = await fetch(`${server.url}/admin/resources/api/skills/list`, { method: 'POST' })
     expect(api.status).toBe(503)
@@ -564,6 +610,7 @@ it('serves skin assets through the injected resolver and 404s everything it refu
     expect(served.headers.get('x-content-type-options')).toBe('nosniff')
     expect(served.headers.get('cache-control')).toBe('no-store')
     expect(served.headers.get('content-security-policy')).toContain("style-src 'self'")
+    expect(served.headers.get('content-security-policy')).not.toContain("'nonce-")
     expect(await served.text()).toContain('background')
     // A resolver answer the MIME allowlist does not recognise is refused, not sniffed.
     expect((await fetch(`http://127.0.0.1:${port}/skins/midnight/notes.txt`)).status).toBe(404)

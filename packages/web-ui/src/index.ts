@@ -1,3 +1,5 @@
+export type { AntdRoot } from './antd-root.js'
+export { createAntdRoot } from './antd-root.js'
 export {
   createRegionHost,
   mountRegion,

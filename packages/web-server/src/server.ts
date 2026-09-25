@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, posix } from 'node:path'
+import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
 
 export const DEFAULT_WEB_PORT = 4177
 export const WORKSPACE_PICKER_PATH = '/api/workspace-picker'
@@ -240,10 +241,10 @@ function fileName(requestUrl: string): string {
   const isChunk = /^chunk-[A-Za-z0-9_-]+\.(?:js|css)(\.map)?$/.test(file)
   // WC5：/vendor/* 平台共享单例命名空间——入口文件名固定（import map 的映射目标），共享 chunk
   // 走 chunk- 哈希模式；命名空间内不允许任意文件，不放宽成目录列举。
+  const vendorEntry = /^vendor\/([a-z0-9-]+)\.js(?:\.map)?$/.exec(file)?.[1]
   const isVendor =
-    /^vendor\/(react|react-jsx-runtime|react-dom|react-dom-client|antd|cordis|web-client)\.js(\.map)?$/.test(
-      file,
-    ) || /^vendor\/chunk-[A-Za-z0-9_-]+\.js(\.map)?$/.test(file)
+    (vendorEntry !== undefined && VENDOR_ENTRY_NAMES.has(vendorEntry)) ||
+    /^vendor\/chunk-[A-Za-z0-9_-]+\.js(\.map)?$/.test(file)
   if (!(FILES.has(file) || isChunk || isVendor) || file.includes('..')) throw new Error('Web asset not found')
   return file
 }
@@ -285,8 +286,8 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
   // 不放宽策略）。哈希输入是 <script type="importmap"> 与 </script> 之间的精确字节（浏览器语义）。
   // 缺失或解析失败时不追加哈希：内联 import map 会被浏览器拒绝，页面退回无插件模块的现状（fail-closed）。
   const importMapHash = await importMapScriptHash(options.root)
-  // One CSP string for every same-origin document and asset this server returns, so the skin route
-  // cannot silently weaken or diverge from the page policy.
+  // Static assets share the base policy. Each HTML response adds its own nonce for Ant Design's
+  // CSS-in-JS styles; it is also inserted into that document for ConfigProvider to consume.
   const contentSecurityPolicy = `default-src 'self'; connect-src 'self' ${wsUrl.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
   const requestedPort = port(options.port ?? DEFAULT_WEB_PORT)
   const expectedOrigin = loopbackOrigin(options.origin ?? `http://${HOST}:${requestedPort}`)
@@ -586,6 +587,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       if (options.mountProxy?.(request, response)) return
       const file = fileName(request.url ?? '/')
       let body = await readFile(join(options.root, file))
+      const documentNonce = file.endsWith('.html') ? randomBytes(16).toString('base64') : undefined
       if (file === 'index.html') {
         const html = body.toString()
         const marker = '__AGNES_WS_URL__'
@@ -593,10 +595,20 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         if (occurrences !== 1) throw new Error('Web index is missing its connection marker')
         body = Buffer.from(html.replace(marker, wsUrl.href))
       }
+      if (documentNonce) {
+        const html = body.toString()
+        const marker = '__AGNES_CSP_NONCE__'
+        const occurrences = html.split(marker).length - 1
+        if (occurrences !== 1) throw new Error('Web document is missing its CSP nonce marker')
+        body = Buffer.from(html.replace(marker, documentNonce))
+      }
+      const responseCsp = documentNonce
+        ? contentSecurityPolicy.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)
+        : contentSecurityPolicy
       const headers = {
         'Content-Type': `${MIME[extname(file)] ?? 'application/octet-stream'}; charset=utf-8`,
         'Cache-Control': 'no-store',
-        'Content-Security-Policy': contentSecurityPolicy,
+        'Content-Security-Policy': responseCsp,
         'Referrer-Policy': 'no-referrer',
         'X-Content-Type-Options': 'nosniff',
       }
