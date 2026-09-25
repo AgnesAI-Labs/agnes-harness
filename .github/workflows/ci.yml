@@ -2,13 +2,52 @@ name: ci
 on:
   push: { branches: [main] }
   pull_request:
+  workflow_dispatch:
 permissions: { contents: read }
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  changes:
+    name: classify changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs-only: ${{ steps.scope.outputs.docs-only }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24 }
+      - id: scope
+        run: node tools/ci/scope.mjs
+  static:
+    name: static checks
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm lint
+      - run: node tools/public-docs/verify.mjs
+      - name: documentation examples and repository policy
+        run: >-
+          pnpm exec vitest run tools/ci tools/public-docs/examples.test.ts
+          tools/guards/src --maxWorkers=1
+      - run: pnpm typecheck
+        if: needs.changes.outputs.docs-only != 'true'
+      - run: pnpm gen:check
+        if: needs.changes.outputs.docs-only != 'true'
+      - name: verify working tree is clean
+        run: git diff --exit-code
   check:
     name: check (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -16,8 +55,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      # Windows runners otherwise rewrite the checkout to CRLF before Biome sees it. Configure Git
-      # before checkout so every matrix member validates the same committed LF bytes.
+      # Keep the same committed LF bytes on every platform, including Windows.
       - name: preserve repository line endings
         run: git config --global core.autocrlf false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -33,9 +71,6 @@ jobs:
       # the reviewed libproc helper needed by Host process identity is built explicitly.
       - run: pnpm --filter @agnes/host build:native
       - run: pnpm --filter @agnes/system-node build:native
-      - run: pnpm lint
-      - run: node tools/public-docs/verify.mjs
-      - run: pnpm typecheck
       # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
       # The root Vitest gate discovers and runs the complete Protocol fixture tree through the same
       # conformance core as the package CLI, so a newly added fixture cannot bypass CI.
@@ -63,14 +98,13 @@ jobs:
           $env:AGNES_ACCEPTANCE_POWERSHELL = (Get-Process -Id $PID).Path
           if (-not $env:AGNES_ACCEPTANCE_POWERSHELL) { throw 'Cannot identify the acceptance PowerShell process' }
           pnpm exec vitest run tools/acceptance/shared-local-delivery.test.ts
-      - run: pnpm gen:check
-      # 台账 R13：install / gen:check 之后工作树若被写脏（如 lockfile 的 workspace importer
-      # 被重写），此前的 workflow 抓不到。git diff 本身会打印差异并以非零退出，且命令
-      # 在 POSIX shell 与 PowerShell 中一致，避免三平台矩阵依赖 bash 语法。
+      # Installation and builds must not rewrite committed source or the lockfile.
       - name: verify working tree is clean
         run: git diff --exit-code
   runtime-package:
     name: runtime package (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -98,7 +132,8 @@ jobs:
         run: git diff --exit-code
   sea:
     name: SEA (${{ matrix.target }})
-    needs: check
+    needs: [changes, static, check]
+    if: needs.changes.outputs.docs-only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -144,3 +179,17 @@ jobs:
           name: agnes-${{ matrix.target }}
           path: packages/cli/dist/agnes-${{ matrix.target }}.tar.gz
           if-no-files-found: error
+  result:
+    name: CI result
+    if: always()
+    needs: [changes, static, check, runtime-package, sea]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24 }
+      - name: require every selected job to pass
+        run: node tools/ci/result.mjs
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
