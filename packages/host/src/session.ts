@@ -10,6 +10,7 @@ import {
   type WorkspaceInvocationPort,
 } from '@agnes/core'
 import type { Actor } from '@agnes/protocol'
+import type { FencedFs } from './adapters/fs.js'
 import { materializeRoutes, pinPresetRoutes } from './assemble/routes.js'
 import type { Assembled } from './assemble.js'
 import type { AuditSink } from './audit.js'
@@ -19,7 +20,7 @@ import type { HostSession } from './host.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
 import type { ResolvedProfile } from './profile/types.js'
 import { replaySwitchesOnOpen } from './session-switch.js'
-import type { SessionWorkspaceRuntime } from './session-workspace-runtime.js'
+import type { SessionWorkspaceRuntime, SessionWorkspaceRuntimeTable } from './session-workspace-runtime.js'
 import { assertWorkspaceBinding, type WorkspaceBinding } from './workspace-authority.js'
 
 /**
@@ -145,6 +146,97 @@ export function checkPresetHardRequirements(
   }
 }
 
+function workspaceFence(runtime: SessionWorkspaceRuntime): FencedFs {
+  if (runtime.fencedFs) return runtime.fencedFs
+  throw new HostError('E_WORKSPACE_UNTRUSTED', 'workspace runtime has no fenced filesystem', {
+    detail: { reason: 'workspace-fence-missing' },
+  })
+}
+
+/**
+ * The fs adapter enforces the policy the assembly bound after the seams came up: the sandbox seam's
+ * own full rule set, pinned by digest. What host owes at every session open - and on every
+ * fsPolicy() call, because core re-reads it on every tool path - is that the seam answering right
+ * now is still answering that same policy. A per-session sandbox override is checked by the same
+ * rule: a digest that differs from the bound one is a different policy, and racing a different
+ * policy onto the shared FsOps is refused rather than attempted.
+ *
+ * Root agreement against the live filesystem is settled once at open; the root string and the digest
+ * are re-checked on every call. Delegate every method explicitly so class-backed seams keep their
+ * receiver and frozen object seams do not trip Proxy invariants when fsPolicy is guarded.
+ */
+async function fenceSandbox(
+  sandbox: SandboxSeam,
+  sessionFs: Pick<FencedFs, 'resolveInside' | 'canonicalize'>,
+  boundDigest: () => string,
+): Promise<SandboxSeam> {
+  const fenced = await sessionFs.resolveInside('.')
+  // Captured as its own string, not the live policy object: the seam's fsPolicy() may return the
+  // same mutable object on every call, and the per-call check below must compare against the root
+  // this session opened with, not whatever that object holds by the time it is asked again.
+  const openWorkspaceRoot = sandbox.fsPolicy().workspaceRoot
+  // Root agreement is settled once, at open, against the live filesystem. The seam's digest hashes
+  // every rule including the workspace allow rule (policy.ts policyDigest), so a root change is a
+  // digest change; the string comparison below is the belt to that brace, on every call.
+  const claimed = await sessionFs.canonicalize(openWorkspaceRoot).catch(() => openWorkspaceRoot)
+  const rootMismatch = (): never => {
+    throw new HostError(
+      'E_WORKSPACE_UNTRUSTED',
+      'the sandbox seam and the fs adapter disagree about the workspace root',
+      { detail: { seam: 'sandbox', reason: 'workspace-root-mismatch' } },
+    )
+  }
+  if (claimed !== fenced) rootMismatch()
+  const agreedFsPolicy = (): ReturnType<SeamImplementations['sandbox']['fsPolicy']> => {
+    const policy = sandbox.fsPolicy()
+    if (policy.workspaceRoot !== openWorkspaceRoot) rootMismatch()
+    if (policy.digest !== boundDigest())
+      throw new HostError(
+        'E_WORKSPACE_UNTRUSTED',
+        'the sandbox seam answers a policy other than the one the host bound',
+        { detail: { seam: 'sandbox', reason: 'sandbox-policy-digest-mismatch' } },
+      )
+    return policy
+  }
+  agreedFsPolicy()
+  return Object.freeze<SandboxSeam>({
+    forWorkspace: (next) => sandbox.forWorkspace(next),
+    exec: (command, options) => sandbox.exec(command, options),
+    confine: (argv) => sandbox.confine(argv),
+    fsPolicy: agreedFsPolicy,
+    enforcement: () => sandbox.enforcement(),
+  })
+}
+
+/**
+ * A delegated child is opened by Core, not through createSession, so its reservation carries the
+ * sandbox a root session would get for the same runtime: the seam fitted to the reserved workspace,
+ * held to that runtime's fence and bound policy. Without it the child would fall back to the
+ * Kernel-level seam, which is bound to no workspace.
+ */
+function childSandboxes(
+  a: Assembled,
+  port: Pick<SessionWorkspaceRuntimeTable, 'reserve'>,
+): ChildWorkspaceRuntimePort {
+  return Object.freeze({
+    async reserve(parentKey: string, childKey: string) {
+      const child = await port.reserve(parentKey, childKey)
+      try {
+        const { runtime } = child
+        const sandbox = await fenceSandbox(
+          runtime.seam ?? a.seams.sandbox,
+          workspaceFence(runtime),
+          () => runtime.policy.digest,
+        )
+        return Object.freeze({ ...child, sandbox })
+      } catch (error) {
+        await child.close().catch(() => undefined)
+        throw error
+      }
+    },
+  })
+}
+
 export async function createSession(
   profile: ResolvedProfile,
   a: Assembled,
@@ -153,7 +245,7 @@ export async function createSession(
   workspace?: Readonly<{
     runtime: CoreSessionWorkspaceRuntime & SessionWorkspaceRuntime
     lifecycle: SessionWorkspaceLifecycle
-    children: ChildWorkspaceRuntimePort
+    children: Pick<SessionWorkspaceRuntimeTable, 'reserve'>
     invocation: WorkspaceInvocationPort
   }>,
 ): Promise<HostSession> {
@@ -205,14 +297,7 @@ export async function createSession(
   // realpathed root, so on any machine whose temp or home directory is a symlink - macOS, and every
   // container that bind-mounts one - a cwd inside the workspace was refused as outside it. The path
   // is not put in the message: it is the caller's and has no business in an error string.
-  const sessionFs = workspace
-    ? (workspace.runtime.fencedFs ??
-      (() => {
-        throw new HostError('E_WORKSPACE_UNTRUSTED', 'workspace runtime has no fenced filesystem', {
-          detail: { reason: 'workspace-fence-missing' },
-        })
-      })())
-    : a.adapters.fs
+  const sessionFs = workspace ? workspaceFence(workspace.runtime) : a.adapters.fs
   try {
     await sessionFs.resolveInside(cwd)
   } catch {
@@ -232,16 +317,6 @@ export async function createSession(
   const wanted = materializeRoutes(preset.view, profile)
   const view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
 
-  // The fs adapter enforces the policy the assembly bound after the seams came up: the sandbox
-  // seam's own full rule set, pinned by digest. What host owes at every session open - and on
-  // every fsPolicy() call, because core re-reads it on every tool path - is that the seam answering
-  // right now is still answering that same policy. A per-session sandbox override is checked by the
-  // same rule: a digest that differs from the bound one is a different policy, and racing a
-  // different policy onto the shared FsOps is refused rather than attempted.
-  //
-  // Root agreement against the live filesystem is settled once at open; the root string and the
-  // digest are re-checked on every call. Delegate every method explicitly so class-backed seams keep
-  // their receiver and frozen object seams do not trip Proxy invariants when fsPolicy is guarded.
   if (workspace && opts.seams?.sandbox)
     throw new HostError('E_SEAM_IMMUTABLE', 'the sandbox seam cannot override a workspace runtime', {
       detail: { seam: 'sandbox' },
@@ -251,43 +326,11 @@ export async function createSession(
     throw new HostError('E_SANDBOX_WORKSPACE', 'workspace runtime has no fitted sandbox seam', {
       detail: { reason: 'workspace-sandbox-missing' },
     })
-  const fenced = await sessionFs.resolveInside('.')
-  // Captured as its own string, not the live policy object: the seam's fsPolicy() may return the
-  // same mutable object on every call, and the per-call check below must compare against the root
-  // this session opened with, not whatever that object holds by the time it is asked again.
-  const openWorkspaceRoot = sandbox.fsPolicy().workspaceRoot
-  // Root agreement is settled once, at open, against the live filesystem. The seam's digest hashes
-  // every rule including the workspace allow rule (policy.ts policyDigest), so a root change is a
-  // digest change; the string comparison below is the belt to that brace, on every call.
-  const claimed = await sessionFs.canonicalize(openWorkspaceRoot).catch(() => openWorkspaceRoot)
-  const rootMismatch = (): never => {
-    throw new HostError(
-      'E_WORKSPACE_UNTRUSTED',
-      'the sandbox seam and the fs adapter disagree about the workspace root',
-      { detail: { seam: 'sandbox', reason: 'workspace-root-mismatch' } },
-    )
-  }
-  if (claimed !== fenced) rootMismatch()
-  const agreedFsPolicy = (): ReturnType<SeamImplementations['sandbox']['fsPolicy']> => {
-    const policy = sandbox.fsPolicy()
-    if (policy.workspaceRoot !== openWorkspaceRoot) rootMismatch()
-    if (policy.digest !== (workspace?.runtime.policy.digest ?? a.adapters.fs.fence().digest))
-      throw new HostError(
-        'E_WORKSPACE_UNTRUSTED',
-        'the sandbox seam answers a policy other than the one the host bound',
-        { detail: { seam: 'sandbox', reason: 'sandbox-policy-digest-mismatch' } },
-      )
-    return policy
-  }
-  agreedFsPolicy()
-  const guardedSandbox: SandboxSeam = {
-    forWorkspace: (next) => sandbox.forWorkspace(next),
-    exec: (command, options) => sandbox.exec(command, options),
-    confine: (argv) => sandbox.confine(argv),
-    fsPolicy: agreedFsPolicy,
-    enforcement: () => sandbox.enforcement(),
-  }
-  Object.freeze(guardedSandbox)
+  const guardedSandbox = await fenceSandbox(
+    sandbox,
+    sessionFs,
+    () => workspace?.runtime.policy.digest ?? a.adapters.fs.fence().digest,
+  )
 
   // 3 the opener's Actor - host is the only caller of principals.resolve
   const actor = await a.seams.principals.resolve(opts.credential ?? { kind: 'local' }, 'session')
@@ -342,7 +385,7 @@ export async function createSession(
           workspaceIdentity: workspace.runtime.binding,
           workspaceInvocation: workspace.invocation,
           workspaceLease: workspace.lifecycle,
-          childWorkspaceRuntime: workspace.children,
+          childWorkspaceRuntime: childSandboxes(a, workspace.children),
         }
       : {}),
     seams: { ...opts.seams, sandbox: guardedSandbox },
