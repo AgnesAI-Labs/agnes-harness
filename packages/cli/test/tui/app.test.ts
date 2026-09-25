@@ -1140,7 +1140,8 @@ it('the loader spins while a turn is in flight and shows the elapsed time once i
     )
     await vi.waitFor(() => expect(app?.busy).toBe(false), { timeout: 5_000 })
     await vi.waitFor(async () => {
-      expect((await screenOf(term, 80, 24)).join('\n')).toMatch(/✓ turn 1 · 0\.[0-9]s/)
+      // The provider alone takes 0.8 s; a loaded runner can push the whole turn past a second.
+      expect((await screenOf(term, 80, 24)).join('\n')).toMatch(/✓ turn 1 · [0-9]+\.[0-9]s/)
     })
   } finally {
     await app?.stop()

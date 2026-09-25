@@ -257,10 +257,12 @@ describe.each(
       await expect(fs.read(path), path).rejects.toThrow(/E_FS_DENIED/)
   })
 
+  // The remote row spawns a process per path segment here too: about 3 s alone, and more than five
+  // times that on a loaded macOS runner.
   it('passes the enforcement check the kernel runs before a session opens', async () => {
     const { fs, root } = impl.open()
     await expect(assertFsEnforces(fs, policyFor(impl, root))).resolves.toBeUndefined()
-  }, 15_000)
+  }, 60_000)
 
   it.runIf(impl.resolvesSymlinks)('refuses a directory link pointing at a denied path', async () => {
     const {

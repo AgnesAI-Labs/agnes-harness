@@ -14,6 +14,10 @@ const usage: UsageView = {
   model: { route: 'local', id: 'model-a', thinking: 'off', maxTokens: 1024 },
 }
 
+// A slot contribution renders in well under half a second, but under a loaded runner an
+// occasional commit takes longer than vi.waitFor's default one second.
+const slotRender = { timeout: 5_000 }
+
 describe('rendered composer region', () => {
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
 
@@ -119,14 +123,14 @@ describe('rendered composer region', () => {
       expect(document.querySelector('#shadow-composer')?.textContent).toBe('替换输入区')
       expect(document.querySelector('#composer')).toBeNull()
       expect(document.querySelector('#prompt')).toBeNull()
-    })
+    }, slotRender)
 
     remove()
     await vi.waitFor(() => {
       expect(document.querySelector('#composer')).toBeTruthy()
       expect(document.querySelector<HTMLTextAreaElement>('#prompt')?.value).toBe('保留草稿')
       expect(document.querySelector('#session-usage')).toBeTruthy()
-    })
+    }, slotRender)
   })
 
   it('places session input DSH contributions alongside the native composer controls', async () => {
@@ -147,7 +151,7 @@ describe('rendered composer region', () => {
       expect(document.querySelector('#fixture-input-overlay-content')?.closest('#composer')).toBeTruthy()
       expect(document.querySelector('#composer-workspace')).toBeTruthy()
       expect(document.querySelector('#send')).toBeTruthy()
-    })
+    }, slotRender)
     removeLeft()
     removeOverlay()
   })
@@ -164,7 +168,7 @@ describe('rendered composer region', () => {
         document.querySelector('#fixture-composer-dock-content')?.closest('[data-agnes-composer-dock]'),
       ).toBeTruthy()
       expect(document.querySelector('#send')).toBeTruthy()
-    })
+    }, slotRender)
     remove()
   })
 })
