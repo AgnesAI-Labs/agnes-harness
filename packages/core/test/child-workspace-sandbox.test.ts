@@ -1,5 +1,6 @@
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import { requireChildControl } from '../src/child/store.js'
 import type { SandboxSeam } from '../src/effects/seams.js'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
@@ -123,6 +124,31 @@ describe('delegated child sandbox', () => {
     await expect(
       parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'work' }),
     ).rejects.toMatchObject({ code: 'E_WORKSPACE_REQUIRED' })
+    await k.close()
+  })
+
+  it('settles a child whose open failed as failed, releasing its fan-out slot', async () => {
+    const storage = new MemoryStorage()
+    const k = kernel(storage, 1)
+    let fitted: SandboxSeam | undefined
+    const parent = await k.session('parent', {
+      ...parentOpts,
+      seams: { sandbox: bound() },
+      childWorkspaceRuntime: reservations(() => fitted),
+    })
+    await expect(
+      parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'first' }),
+    ).rejects.toMatchObject({ code: 'E_WORKSPACE_REQUIRED' })
+    const [failed] = await requireChildControl(storage).listByParent(parent.key)
+    expect(failed).toMatchObject({ creationPhase: 'cancelled', state: 'failed' })
+    expect(await parent.d.children.inspect?.(failed?.childKey as string)).toMatchObject({ state: 'error' })
+
+    fitted = bound()
+    const next = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'second' })
+    expect(await requireChildControl(storage).lookupByKey(next.key)).toMatchObject({
+      creationPhase: 'committed',
+      state: 'ready',
+    })
     await k.close()
   })
 })
