@@ -415,144 +415,16 @@ describe('production supervisor storage', () => {
     }
   }, 150_000)
 
-  it('manages a stdio MCP before default local-dev has a provider route', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-providerless-resource-'))
-    const server = join(dir, 'mcp-server.mjs')
-    const previousAllowlist = process.env.AGNES_MCP_STDIO_ALLOWLIST
-    const previousLoopback = process.env.AGNES_MCP_ALLOW_LOOPBACK_HTTP
-    const previousPath = process.env.PATH
-    process.env.AGNES_MCP_STDIO_ALLOWLIST = 'node'
-    process.env.AGNES_MCP_ALLOW_LOOPBACK_HTTP = '1'
-    process.env.PATH = `${dirname(process.execPath)}${process.platform === 'win32' ? ';' : ':'}${previousPath ?? ''}`
-    let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
-    let rpc: Awaited<ReturnType<typeof client>> | undefined
-    try {
-      writeFileSync(
-        server,
-        [
-          "import readline from 'node:readline'",
-          "const tool = { name: 'status', description: 'status', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }",
-          "const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n')",
-          "readline.createInterface({ input: process.stdin }).on('line', (line) => { const request = JSON.parse(line); if (request.method === 'initialize') reply(request.id, { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'providerless-fixture', version: '1' } }); else if (request.method === 'tools/list') reply(request.id, { tools: [tool] }); else if (request.id !== undefined) reply(request.id, {}); })",
-        ].join(';'),
-      )
-      const profile = await resolveProfile(
-        {
-          builtin: 'local-dev',
-          user: { name: 'local-dev', dataDir: dir, cacheDir: join(dir, 'cache') },
-        },
-        { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
-      )
-      expect(profile.provider.routes).toBeUndefined()
-      supervisor = await startProductionSupervisor({
-        config: {
-          ...config(dir),
-          limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS, jobsTickMs: 60_000 },
-        },
-        profile,
-        profileDir: join(dir, 'profiles', 'local-dev'),
-        profileFile: join(dir, 'profile.json'),
-        processIdentity: async (pid) =>
-          pid === process.pid ? { state: 'alive', startId: 'providerless-resource-test' } : { state: 'dead' },
-        workerExecPath: process.execPath,
-        workerExecArgv: ['--import', 'tsx'],
-        workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
-      })
-      const connection = await client(supervisor.socketPath)
-      rpc = connection
-      let id = 1
-      const call = (method: string, params: unknown): Promise<unknown> =>
-        connection.call(id++, method, params)
-      const wait = async (operationId: string): Promise<Record<string, unknown>> => {
-        let lastState: unknown
-        // A real resource worker may use the configured 10-second startup budget.
-        const deadline = performance.now() + SOURCE_WORKER_STARTUP_MS + 10_000
-        while (performance.now() < deadline) {
-          const operation = (await call('_agnes/v1/resources.operation.get', {
-            profile: 'local-dev',
-            operationId,
-          })) as Record<string, unknown>
-          lastState = operation.state
-          if (operation.state === 'succeeded') return operation
-          if (operation.state === 'failed' || operation.state === 'cancelled')
-            throw new Error(`resource operation ${String(operation.state)}: ${JSON.stringify(operation)}`)
-          await new Promise<void>((resolve) => setTimeout(resolve, 20))
-        }
-        throw new Error(`resource operation did not settle (last state: ${String(lastState)})`)
-      }
-      await call('initialize', {
-        protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-        _meta: { 'ai.agnes.harness': { clientId: 'providerless-resource-test' } },
-      })
-      const definition = {
-        serverId: 'providerless',
-        displayName: 'Providerless',
-        transport: { kind: 'stdio', executable: 'node', args: [server] },
-        secretBinding: { kind: 'none' },
-        toolPolicy: { allow: ['status'] },
-      }
-      const created = (await call('_agnes/v1/mcp.servers.create', {
-        profile: 'local-dev',
-        definition,
-        clientId: 'providerless-resource-test',
-        commandId: 'providerless-create',
-      })) as { operationId: string }
-      await wait(created.operationId)
-      const descriptor = (await call('_agnes/v1/mcp.servers.get', {
-        profile: 'local-dev',
-        serverId: 'providerless',
-      })) as { revision: string }
-      const trust = (await call('_agnes/v1/mcp.servers.trust.set', {
-        profile: 'local-dev',
-        serverId: 'providerless',
-        expectedRevision: descriptor.revision,
-        trust: 'trusted',
-        clientId: 'providerless-resource-test',
-        commandId: 'providerless-trust',
-      })) as { operationId: string }
-      await wait(trust.operationId)
-      const tested = (await call('_agnes/v1/mcp.servers.test', {
-        profile: 'local-dev',
-        serverId: 'providerless',
-        expectedRevision: descriptor.revision,
-        clientId: 'providerless-resource-test',
-        commandId: 'providerless-test',
-      })) as { operationId: string }
-      await expect(wait(tested.operationId)).resolves.toMatchObject({ result: { toolCount: 1 } })
-      const enabled = (await call('_agnes/v1/mcp.servers.enable', {
-        profile: 'local-dev',
-        serverId: 'providerless',
-        expectedRevision: descriptor.revision,
-        clientId: 'providerless-resource-test',
-        commandId: 'providerless-enable',
-      })) as { operationId: string }
-      await wait(enabled.operationId)
-      await expect(
-        call('_agnes/v1/mcp.servers.get', { profile: 'local-dev', serverId: 'providerless' }),
-      ).resolves.toMatchObject({ trust: 'trusted', desired: 'enabled', actual: 'ready' })
-    } finally {
-      rpc?.close()
-      await supervisor?.close()
-      if (previousAllowlist === undefined) delete process.env.AGNES_MCP_STDIO_ALLOWLIST
-      else process.env.AGNES_MCP_STDIO_ALLOWLIST = previousAllowlist
-      if (previousLoopback === undefined) delete process.env.AGNES_MCP_ALLOW_LOOPBACK_HTTP
-      else process.env.AGNES_MCP_ALLOW_LOOPBACK_HTTP = previousLoopback
-      if (previousPath === undefined) delete process.env.PATH
-      else process.env.PATH = previousPath
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 150_000)
-
   it('projects a killed stdio MCP generation without degrading an unrelated active server', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-mcp-health-'))
     const server = join(dir, 'mcp-health-server.mjs')
     const previousAllowlist = process.env.AGNES_MCP_STDIO_ALLOWLIST
+    const previousPath = process.env.PATH
     let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
     let rpc: Awaited<ReturnType<typeof client>> | undefined
-    // Windows enables its verified native executable without a deployment grant.
-    if (process.platform === 'win32') delete process.env.AGNES_MCP_STDIO_ALLOWLIST
-    else process.env.AGNES_MCP_STDIO_ALLOWLIST = process.execPath
+    // The servers name a bare `node`, so the grant and the lookup both go through PATH.
+    process.env.AGNES_MCP_STDIO_ALLOWLIST = 'node'
+    process.env.PATH = `${dirname(process.execPath)}${process.platform === 'win32' ? ';' : ':'}${previousPath ?? ''}`
     try {
       writeFileSync(
         server,
@@ -624,7 +496,7 @@ describe('production supervisor storage', () => {
         const definition = {
           serverId,
           displayName: serverId,
-          transport: { kind: 'stdio', executable: process.execPath, args: [server, pidFile] },
+          transport: { kind: 'stdio', executable: 'node', args: [server, pidFile] },
           secretBinding: { kind: 'none' },
           toolPolicy: { allow: ['status'] },
         }
@@ -707,6 +579,8 @@ describe('production supervisor storage', () => {
       await supervisor?.close()
       if (previousAllowlist === undefined) delete process.env.AGNES_MCP_STDIO_ALLOWLIST
       else process.env.AGNES_MCP_STDIO_ALLOWLIST = previousAllowlist
+      if (previousPath === undefined) delete process.env.PATH
+      else process.env.PATH = previousPath
       rmSync(dir, { recursive: true, force: true })
     }
   }, 150_000)
@@ -746,6 +620,8 @@ describe('production supervisor storage', () => {
         },
         { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
       )
+      // The resource worker manages MCP servers before default local-dev has any provider route.
+      expect(resourceProfile.provider.routes).toBeUndefined()
       const startOptions = {
         config: {
           ...config(dir),
