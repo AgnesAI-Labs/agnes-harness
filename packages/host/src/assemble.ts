@@ -1706,6 +1706,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         : {}),
       ...(runtimePromptPreloader ? { runtimePromptPreloader } : {}),
       workspacePublication: publicationDispatch,
+      // A spawned child's run is its own turn: activation waits for it, and one started while an
+      // activation holds the gate queues behind it.
+      detachedChildRun: async (run) => (await activationBarrier.enqueue('turn').start()).run(run),
       hooksFactory: extensionSessions.factory(
         (session) =>
           Object.freeze({

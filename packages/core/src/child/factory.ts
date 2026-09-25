@@ -28,6 +28,8 @@ type CreateOpts = Parameters<ChildrenFactory['create']>[0] & {
 export class KernelChildren implements ChildrenFactory {
   private readonly handles = new Map<string, ChildHandle>()
   private readonly opening = new Map<string, Promise<ChildHandle>>()
+  /** Each attached handle's run without Host admission, for callers already inside one. */
+  private readonly direct = new WeakMap<ChildHandle, ChildHandle['run']>()
 
   constructor(
     private readonly kernel: Kernel,
@@ -157,6 +159,12 @@ export class KernelChildren implements ChildrenFactory {
 
   get(childKey: string): ChildHandle | undefined {
     return this.handles.get(childKey)
+  }
+
+  /** A spawned child runs detached from the tool call that started it; the Host admits it. */
+  private detached<T>(run: () => Promise<T>): Promise<T> {
+    const admit = this.kernel.o.detachedChildRun
+    return admit ? admit(run) : run()
   }
 
   private async dropLocalChild(childKey: string, child: SessionImpl): Promise<void> {
@@ -385,20 +393,21 @@ export class KernelChildren implements ChildrenFactory {
     let inner: ChildHandle | undefined
     const handle: ChildHandle = {
       key: record.childKey,
-      run: async (input) => {
-        const live = (await store.lookupByKey(record.childKey)) ?? record
-        if (this.handles.get(record.childKey) === handle) this.handles.delete(record.childKey)
-        inner ??= await this.open(
-          kind,
-          parent,
-          live,
-          { ...opts, cwd: live.cwd, input: input ?? live.inputText },
-          modelTarget,
-          delegation,
-        )
-        this.handles.set(record.childKey, inner)
-        return inner.run(input ?? live.inputText)
-      },
+      run: (input) =>
+        this.detached(async () => {
+          const live = (await store.lookupByKey(record.childKey)) ?? record
+          if (this.handles.get(record.childKey) === handle) this.handles.delete(record.childKey)
+          inner ??= await this.open(
+            kind,
+            parent,
+            live,
+            { ...opts, cwd: live.cwd, input: input ?? live.inputText },
+            modelTarget,
+            delegation,
+          )
+          this.handles.set(record.childKey, inner)
+          return (this.direct.get(inner) ?? inner.run)(input ?? live.inputText)
+        }),
       status: async () => {
         if (inner) return inner.status()
         return snapshotFromRecord((await store.lookupByKey(record.childKey)) ?? record)
@@ -617,6 +626,9 @@ export class KernelChildren implements ChildrenFactory {
         if (idle) await this.dropLocalChild(record.childKey, child)
       },
     }
+    const run = handle.run
+    this.direct.set(handle, run)
+    if (kind === 'spawn') handle.run = (input) => this.detached(() => run(input))
     await parent.hooks
       .subagentStart?.({ childKey: record.childKey, kind, budget: opts.budget ?? null })
       .catch(() => undefined)

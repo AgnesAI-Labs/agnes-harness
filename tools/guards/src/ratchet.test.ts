@@ -892,7 +892,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Trajectory inspection adds the optional tool result sequence. Combined source: 25008, exact.
   // Delegated children open with the sandbox their workspace reservation carries. Measured 25010,
   // exact, no spare (+2).
-  'packages/core/src': 25010,
+  // A spawned child's run goes through a Host admission port. Measured 25020, exact, no spare (+10).
+  'packages/core/src': 25020,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1117,7 +1118,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // SINGLE-EXTENSION-PATH staged handoff: Skills/MCP rows, four row-owned services and Web
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
-  'packages/host/src/assemble': 4192,
+  // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
+  'packages/host/src/assemble': 4193,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2424,7 +2426,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // checkpoint_fullfsync through one small helper. Measured 38043, exact, no spare (+13).
   // Delegated child reservations carry the workspace-fitted sandbox under the same guard as a root
   // session. Measured 38075, exact, no spare (+32).
-  'packages/host/src': 38075,
+  // A spawned child's run is admitted as its own turn, queued behind an activation when started by a
+  // live invocation. Measured 38081, exact, no spare (+6).
+  'packages/host/src': 38081,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

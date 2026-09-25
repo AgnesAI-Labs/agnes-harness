@@ -86,6 +86,11 @@ export type KernelOptions = {
   contractForModel?: (target: { route: string; model: string }) => ContractRef
   preset: PresetView
   children?: ChildrenFactory
+  /**
+   * Host admission for a spawned child's run. The run outlives the tool call that started it, so
+   * the Host admits it as its own turn; without this port it runs unadmitted.
+   */
+  detachedChildRun?: <T>(run: () => Promise<T>) => Promise<T>
   hooks?: HookPort
   /** The engine is session-owned but reads the Kernel's shared registration table. */
   hooksFactory?: (session: SessionImpl, hooks: HookEngine) => HookPort
