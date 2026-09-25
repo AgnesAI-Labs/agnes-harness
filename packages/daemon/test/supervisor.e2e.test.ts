@@ -75,7 +75,7 @@ async function client(path: string): Promise<{
 // Minimal but real ResolvedProfile: only the fields this task's code path actually reads
 // (WorkerPool's hash check, session/new's preset gate, the supervisor host facade's
 // validatePresetSwitch) need to be genuine - everything else is asserted away, matching this
-// package's own worker-pool.test.ts precedent (`profile: { name: 'p', hash: 'h1' } as never`).
+// package's own worker-pool.e2e.test.ts precedent (`profile: { name: 'p', hash: 'h1' } as never`).
 function buildProfile(dataDir: string): ResolvedProfile {
   const body = {
     name: 'local-dev',

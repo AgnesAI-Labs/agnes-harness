@@ -5,7 +5,7 @@ import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
 import { say } from './host.js'
 
-// A `WorkerPool.workerEntry` override (the same extension point `worker-pool.test.ts`'s own
+// A `WorkerPool.workerEntry` override (the same extension point `worker-pool.e2e.test.ts`'s own
 // `fake-worker.ts` uses, via `execPath: process.execPath` + `execArgv: ['--import', 'tsx']`), but
 // unlike that file this one runs a REAL worker over the REAL internal wire protocol
 // (`runWorker`, from `src/worker/main.ts`) - just with its `Host` built by

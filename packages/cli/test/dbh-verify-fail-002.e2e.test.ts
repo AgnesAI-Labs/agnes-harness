@@ -1,4 +1,4 @@
-// DBH FAIL-002 verification, real subprocess (same form as dbh-m03-print-subprocess.test.ts).
+// DBH FAIL-002 verification, real subprocess (same form as dbh-m03-print-subprocess.e2e.test.ts).
 // Production entry: pump() in packages/cli/src/modes/jsonl.ts, reached by `agnes acp`.
 // Asserts the CORRECT behaviour, so a failure here reproduces the defect.
 //
