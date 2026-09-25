@@ -45,7 +45,9 @@ function buildProfile(dataDir: string): ResolvedProfile {
 }
 
 it('a truncated scan in the worker reaches the daemon with its range, and paging reads through it', async () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-scan-ipc-')))
+  // The binding below comes from a test authority that takes the root as given, so hand it the
+  // native spelling the daemon resolves the workspace to (Windows expands 8.3 short names).
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-scan-ipc-')))
   const key = 'agnes:local:default:daemon:dm:scan-ipc'
   try {
     // Seed the ledger before any worker owns it.
