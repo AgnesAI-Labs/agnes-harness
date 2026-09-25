@@ -160,6 +160,7 @@ export async function readToolDetailPage(
     const detail = { call: callData, ...(resultData ? { result: resultData } : {}) }
     if (!detailFitsByteLimit(detail)) return { ok: false, reason: 'detail-too-large' }
     bytes = Buffer.from(JSON.stringify(detail))
+    if (bytes.byteLength > MAX_DETAIL_BYTES) return { ok: false, reason: 'detail-too-large' }
     rememberBytes(session, key, bytes)
   }
   if (input.offset > bytes.byteLength) return { ok: false, reason: 'offset-out-of-range' }
