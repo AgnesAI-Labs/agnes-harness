@@ -20,8 +20,11 @@ import {
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
+  type SessionReadToolDetailResult,
   type SlotName,
   type ThinkingLevel,
+  type ToolCall,
+  type ToolResult,
   type TurnEndReason,
   toAcpStopReason,
   UI_HISTORY_DEFAULT_LIMIT,
@@ -32,9 +35,11 @@ import {
   type UIOpeningResult,
   type UIProjectionUpdate,
   type UITimeline,
+  validateAgainst,
   validateEvent,
   validateMethod,
 } from '@agnes/protocol'
+import { ToolCall as ToolCallSchema, ToolResult as ToolResultSchema } from '@agnes/protocol/gen/session-v1'
 import type { Client } from './client.js'
 import { JsonRpcError, ProtocolViolation, TransportClosed } from './errors.js'
 // A handle on one conversation. It owns two things the client cannot own for it:
@@ -52,6 +57,7 @@ export type TurnResult = {
 
 export type UIOpeningOptions = Pick<SessionProjectUIOpeningParams, 'surface' | 'maxNodes' | 'maxBytes'>
 export type UIHistoryOptions = Pick<SessionProjectUIHistoryParams, 'limit' | 'maxBytes'>
+export type ToolDetail = { call: ToolCall; result?: ToolResult }
 
 // Used only when a turn produced no terminal notification of its own; the ACP stop
 // reason is coarser than our own vocabulary, so this is a fallback, not the mapping.
@@ -555,6 +561,78 @@ export class Session {
     })
     checkHistoryPage(this.id, result, opts.limit, opts.maxBytes)
     return result
+  }
+
+  /** Reads one durable tool call and its optional result without changing the live attach cursor. */
+  async readToolDetail(
+    callSeq: number,
+    resultSeq?: number,
+    opts: { signal?: AbortSignal } = {},
+  ): Promise<ToolDetail> {
+    let complete: Uint8Array | undefined
+    let offset = 0
+    let totalBytes: number | undefined
+    for (;;) {
+      opts.signal?.throwIfAborted()
+      const page = await this.client.call<SessionReadToolDetailResult>('_agnes/v1/session.readToolDetail', {
+        sessionId: this.id,
+        callSeq,
+        ...(resultSeq === undefined ? {} : { resultSeq }),
+        offset,
+      })
+      opts.signal?.throwIfAborted()
+      if (
+        page.sessionId !== this.id ||
+        page.callSeq !== callSeq ||
+        page.resultSeq !== resultSeq ||
+        page.offset !== offset ||
+        (totalBytes !== undefined && page.totalBytes !== totalBytes)
+      )
+        throw new ProtocolViolation('invalid tool detail response: coordinates mismatch')
+      if (!Number.isSafeInteger(page.totalBytes) || page.totalBytes > 64 * 1024 * 1024)
+        throw new ProtocolViolation('invalid tool detail response: total byte limit')
+      totalBytes = page.totalBytes
+      complete ??= new Uint8Array(totalBytes)
+      let binary: string
+      try {
+        binary = atob(page.data)
+      } catch {
+        throw new ProtocolViolation('invalid tool detail response: base64')
+      }
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+      if (
+        bytes.byteLength > 256 * 1024 ||
+        offset + bytes.byteLength > totalBytes ||
+        page.nextOffset !== (offset + bytes.byteLength < totalBytes ? offset + bytes.byteLength : null) ||
+        (page.nextOffset !== null && bytes.byteLength === 0)
+      )
+        throw new ProtocolViolation('invalid tool detail response: page bounds')
+      complete.set(bytes, offset)
+      if (page.nextOffset === null) break
+      offset = page.nextOffset
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(complete))
+    } catch {
+      throw new ProtocolViolation('invalid tool detail response: JSON')
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw new ProtocolViolation('invalid tool detail response: shape')
+    const detail = parsed as Record<string, unknown>
+    const keys = Object.keys(detail).sort().join(',')
+    if (keys !== (resultSeq === undefined ? 'call' : 'call,result'))
+      throw new ProtocolViolation('invalid tool detail response: fields')
+    if (
+      !validateAgainst(ToolCallSchema, detail.call).ok ||
+      (resultSeq !== undefined && !validateAgainst(ToolResultSchema, detail.result).ok)
+    )
+      throw new ProtocolViolation('invalid tool detail response: event data')
+    const call = detail.call as ToolCall
+    const result = detail.result as ToolResult | undefined
+    if (result && result.toolUseId !== call.toolUseId)
+      throw new ProtocolViolation('invalid tool detail response: tool identity')
+    return { call, ...(result ? { result } : {}) }
   }
 
   async prompt(input: ContentBlock[] | string, opts: { signal?: AbortSignal } = {}): Promise<TurnResult> {

@@ -122,6 +122,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/session.projectUIHistory',
       '_agnes/v1/session.projectUIOpening',
       '_agnes/v1/session.projectUIPatch',
+      '_agnes/v1/session.readToolDetail',
       '_agnes/v1/session.rename',
       '_agnes/v1/session.setModel',
       '_agnes/v1/session.setPreset',
@@ -148,13 +149,55 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(115)
+    expect(Object.keys(METHODS)).toHaveLength(116)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
 
   it('keeps unknown method names outside the closed method table', () => {
     expect(Object.hasOwn(METHODS, '_agnes/v1/not-a-method')).toBe(false)
+  })
+
+  it('bounds on-demand tool detail reads and validates base64 chunks', () => {
+    const method = '_agnes/v1/session.readToolDetail'
+    expect(
+      validateMethod(method, 'params', {
+        sessionId: 'session-a',
+        callSeq: 3,
+        resultSeq: 7,
+        offset: 262144,
+        maxBytes: 262144,
+      }).ok,
+    ).toBe(true)
+    expect(
+      errorsOf(validateMethod(method, 'params', { sessionId: 'session-a', callSeq: 3, maxBytes: 262145 })),
+    ).toContainEqual(expect.objectContaining({ path: '/maxBytes', code: 'RANGE' }))
+    expect(
+      errorsOf(validateMethod(method, 'params', { sessionId: 'session-a', callSeq: 3, path: '/secret' })),
+    ).toContainEqual(expect.objectContaining({ code: 'UNKNOWN_KEY' }))
+    expect(
+      validateMethod(method, 'result', {
+        sessionId: 'session-a',
+        callSeq: 3,
+        resultSeq: 7,
+        offset: 0,
+        totalBytes: 2,
+        data: 'e30=',
+        nextOffset: null,
+      }).ok,
+    ).toBe(true)
+    expect(
+      errorsOf(
+        validateMethod(method, 'result', {
+          sessionId: 'session-a',
+          callSeq: 3,
+          offset: 0,
+          totalBytes: 2,
+          data: 'invalid!',
+          nextOffset: null,
+        }),
+      ),
+    ).toContainEqual(expect.objectContaining({ path: '/data', code: 'PATTERN' }))
   })
 
   it('binds artifact reads to a complete ref and one bounded range without path or owner authority', () => {

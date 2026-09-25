@@ -250,6 +250,12 @@ const clientModules = await startClientModules({
     toggle: button('view-trace'),
     chatToggle: button('view-chat'),
     conversation,
+    readToolDetail: async (sessionId, callSeq, resultSeq, signal) => {
+      const session = current
+      if (!session) throw new Error('没有当前会话，无法读取工具详情')
+      if (session.id !== sessionId) throw new Error('会话已切换，请等待轨迹更新')
+      return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
+    },
   },
   rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
   settingsPaneContainer: document.getElementById('config') ?? undefined,
@@ -795,10 +801,11 @@ function renderApproval(): void {
   })
   if (stick) renderer.pinToBottom()
 }
-function transcriptMeta(): { hasEarlier: boolean; loadEarlier?: () => void } {
+function transcriptMeta(): { hasEarlier: boolean; loadEarlier?: () => void; sessionId?: string } {
   const session = live
-  if (!session?.hasEarlier()) return { hasEarlier: false }
-  return { hasEarlier: true, loadEarlier: () => void session.loadEarlier().catch(showError) }
+  const identity = current ? { sessionId: current.id } : {}
+  if (!session?.hasEarlier()) return { hasEarlier: false, ...identity }
+  return { hasEarlier: true, ...identity, loadEarlier: () => void session.loadEarlier().catch(showError) }
 }
 /** Loads earlier pages, `limit` at most, until the parked approval's node is loaded. */
 function searchApproval(limit?: number): void {

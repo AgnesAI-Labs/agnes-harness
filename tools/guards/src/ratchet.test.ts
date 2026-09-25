@@ -1,3 +1,5 @@
+// TRACE-INSPECTION-20260925: measured Core 24963 after fold-cache removal, protocol 2201, SDK 5127,
+// daemon 26495, web 13269, and web/app 1783 after tool-detail RPC and trace UI.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
 // PLUGIN-HELPER merge with b/main@8f2e20e7: daemon 25955, Host 38018, measured combined source.
@@ -359,7 +361,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines() on the merged tree: 1767, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
-  'packages/web/src/app': 1776,
+  // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
+  'packages/web/src/app': 1783,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-17: composer permission listbox. Measured 203, exact.
   'packages/web/src/permission-picker': 203,
@@ -882,7 +885,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 25019, exact, no spare (-210).
   // FOLD-CACHE-REMOVAL follow-up: encodeLedgerState, used only by tests, moves to the testkit.
   // Measured 24962, exact, no spare (-57).
-  'packages/core/src': 24962,
+  // TRACE-INSPECTION-20260925: optional tool result sequence; merged count 24963, exact.
+  'packages/core/src': 24963,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1181,7 +1185,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O5: op.state leaves the event types; validateOpState exported for the register cell (the
   // formatter splits the validate.js export list once it no longer fits a line). Measured 2194,
   // exact, no spare (+9).
-  'packages/protocol/src': 2194,
+  // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
+  'packages/protocol/src': 2201,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1363,7 +1368,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5074, exact, no spare (+119).
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
-  'packages/sdk/src': 5051,
+  // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
+  'packages/sdk/src': 5127,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1720,7 +1726,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 26440, exact, no spare.
   // WIN-SHORT-NAMES: the Skill watcher hands fs.watch the native (long) spelling on Windows, since
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
-  'packages/daemon/src': 26451,
+  // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
+  'packages/daemon/src': 26495,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -1952,7 +1959,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
-  'packages/web/src': 13266,
+  // TRACE-INSPECTION-20260925: trace detail callback wiring; measured 13269, exact.
+  'packages/web/src': 13269,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

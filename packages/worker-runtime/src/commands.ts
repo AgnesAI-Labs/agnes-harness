@@ -18,6 +18,7 @@ import {
 
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
+import { readToolDetailPage } from './tool-detail.js'
 
 /** Direct unit-level invocation shape. Wire frames are the stricter SessionCommandFrame union. */
 type SessionCommandInvocation = Omit<SessionCommandFrame, 'sessionKey' | 'method'> & {
@@ -291,6 +292,13 @@ export async function handleCommand(
       return {}
     case 'scan':
       return session.scan(p as never)
+    case 'readToolDetail':
+      return readToolDetailPage(session, {
+        callSeq: Number(p.callSeq),
+        ...(p.resultSeq === undefined ? {} : { resultSeq: Number(p.resultSeq) }),
+        offset: Number(p.offset),
+        maxBytes: Number(p.maxBytes),
+      })
     case 'previewSnapshot':
       return session.previewSnapshot()
     case 'latest':
