@@ -336,8 +336,12 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         this.artifactQueues.delete(key)
         this.rejectArtifactProjectionWaiters(key)
         this.artifactProjectedThrough.delete(key)
+        // Frames this generation already sent for the key (its tail replay, typically) are still
+        // queued on the link. Wait for the close to drain them before reopening, with the replay
+        // buffer still absorbing them: projected after the entry is gone they would fail the key,
+        // and that failure would retire the replacement channel opened next.
+        await link.closeSession('resource-snapshot-reload').catch(() => undefined)
         this.artifactReplayBuffers.delete(key)
-        this.pool.retire([key], 'resource-snapshot-reload')
         return this.openFresh(key, o, sessionEpoch)
       }
       if (this.artifactAuthority) {
