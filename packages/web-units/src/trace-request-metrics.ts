@@ -121,7 +121,7 @@ function indexSpans(turns: readonly UITurn[]): Map<number, SpanPlacement[]> {
 /**
  * Project recorded model-call facts for the trace inspector. `usage.calls[].seq` is a ledger event,
  * while a matching span's `startSeq` records the effect start. The request number is the order of
- * ledger-backed effect starts, not a DSH-style request-header number. If any ledger call lacks a
+ * ledger-backed effect starts. If any ledger call lacks a
  * unique earlier start, this number is unknown rather than inferred from completion order.
  * Adjustments are omitted because they are billing corrections, not additional requests.
  */
