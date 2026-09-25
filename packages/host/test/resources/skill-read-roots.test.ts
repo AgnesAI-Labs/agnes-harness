@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { safeSkillReadRoots } from '../../src/resources/skill-read-roots.js'
 
@@ -13,7 +13,8 @@ describe('safeSkillReadRoots', () => {
       join(home, '.agnes', 'skills', 'x'),
       '/opt/skills/lint',
     ]
-    expect(safeSkillReadRoots(keep, context)).toEqual(keep)
+    // Roots come back absolute in the platform's spelling (a drive letter on Windows).
+    expect(safeSkillReadRoots(keep, context)).toEqual(keep.map((root) => resolve(root)))
   })
 
   it('drops the filesystem root, the home directory and anything above it', () => {
@@ -46,7 +47,7 @@ describe('safeSkillReadRoots', () => {
   it('honours a relocated installation home', () => {
     const moved = { ...context, agnesHome: '/srv/agh', dataDir: '/srv/agh/data' }
     expect(safeSkillReadRoots(['/srv/agh/profile', '/srv/agh/skills/a'], moved)).toEqual([
-      '/srv/agh/skills/a',
+      resolve('/srv/agh/skills/a'),
     ])
   })
 })
