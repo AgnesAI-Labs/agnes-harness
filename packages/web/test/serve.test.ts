@@ -232,6 +232,7 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
   })
   try {
     await writeFile(join(root, 'chunk-ABCDEF12.js'), 'export const shared = 1\n')
+    await writeFile(join(root, 'chunk-ABCDEF12.css'), '.shared { color: red; }\n')
     await writeFile(join(root, 'chunk-ABCDEF12.js.map'), '{}\n')
     await writeFile(join(root, 'secret.txt'), 'do not serve\n')
     // 侧栏品牌位与过程行头像用的位图：它必须被放行并以 image/png 提供，
@@ -243,6 +244,9 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
     const chunk = await fetch(`${server.url}/chunk-ABCDEF12.js`)
     expect(chunk.status).toBe(200)
     expect(await chunk.text()).toContain('shared')
+    const cssChunk = await fetch(`${server.url}/chunk-ABCDEF12.css`)
+    expect(cssChunk.status).toBe(200)
+    expect(cssChunk.headers.get('content-type')).toContain('text/css')
     // The allowlist stays closed for everything that is not a known entry or a chunk.
     expect((await fetch(`${server.url}/secret.txt`)).status).toBe(404)
     expect((await fetch(`${server.url}/chunk-ABCDEF12.txt`)).status).toBe(404)
@@ -259,6 +263,7 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
       'react-jsx-runtime',
       'react-dom',
       'react-dom-client',
+      'antd',
       'cordis',
       'web-client',
       'chunk-ABCDEF12',
@@ -290,6 +295,32 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
     ]) {
       expect((await fetch(`${server.url}${path}`)).status, path).toBe(404)
     }
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('serves the static Ant Design stylesheet from the build output', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-web-antd-css-'))
+  const port = await availablePort()
+  const server = await createWebServer({
+    root,
+    wsUrl: 'ws://127.0.0.1:4319',
+    port,
+    origin: `http://127.0.0.1:${port}`,
+  })
+  try {
+    await writeFile(join(root, 'antd.css'), '.ant-btn { color: var(--ant-color-primary); }\n')
+    await writeFile(join(root, 'tokens.css'), ':root { --ant-color-primary: var(--agnes-brand-primary); }\n')
+    const response = await fetch(`${server.url}/antd.css`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8')
+    expect(await response.text()).toContain('--ant-color-primary')
+    const tokens = await fetch(`${server.url}/tokens.css`)
+    expect(tokens.status).toBe(200)
+    expect(tokens.headers.get('content-type')).toBe('text/css; charset=utf-8')
+    expect(await tokens.text()).toContain('--agnes-brand-primary')
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })

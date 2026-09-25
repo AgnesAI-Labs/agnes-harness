@@ -1,4 +1,6 @@
 import { bindListboxKeys, positionPopover } from '@agnes/web-admin-frame'
+import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
+import { createElement, type ReactNode } from 'react'
 
 export type PermissionMode = 'view' | 'workspace' | 'full'
 
@@ -36,6 +38,45 @@ export type PermissionPicker = {
 
 const viewportPadding = 12
 
+function permissionOption(
+  option: PermissionOption,
+  index: number,
+  state: PermissionPickerState,
+  activeIndex: number,
+  onSelect: (index: number) => void,
+): ReactNode {
+  return createElement(
+    'div',
+    {
+      id: `permission-picker-option-${index}`,
+      key: option.id,
+      className: 'permission-picker-option',
+      role: 'option',
+      'aria-selected': option.id === state.selected,
+      'aria-disabled': state.pending,
+      'data-active': index === activeIndex,
+      onClick: () => onSelect(index),
+    },
+    createElement('span', { className: 'permission-picker-check' }, option.id === state.selected ? '✓' : ''),
+    createElement(
+      'span',
+      { className: 'permission-picker-copy' },
+      createElement('span', { className: 'permission-picker-label' }, option.label),
+      createElement('span', { className: 'permission-picker-hint' }, option.description),
+    ),
+  )
+}
+
+function permissionOptions(
+  state: PermissionPickerState,
+  activeIndex: number,
+  onSelect: (index: number) => void,
+): ReactNode[] {
+  return PERMISSION_OPTIONS.map((option, index) =>
+    permissionOption(option, index, state, activeIndex, onSelect),
+  )
+}
+
 export function createPermissionPicker(options: {
   onError(error: unknown): void
   onSelect(mode: PermissionMode): Promise<boolean>
@@ -64,43 +105,20 @@ export function createPermissionPicker(options: {
     if (label) label.textContent = permissionLabel(state.selected)
   }
 
-  function optionId(index: number): string {
-    return `permission-picker-option-${index}`
-  }
-
   function renderOptions(): void {
-    if (!popover || !listbox) return
-    listbox.replaceChildren()
-    listbox.setAttribute('aria-activedescendant', optionId(activeIndex))
-    for (const [index, option] of PERMISSION_OPTIONS.entries()) {
-      const entry = document.createElement('div')
-      entry.id = optionId(index)
-      entry.className = 'permission-picker-option'
-      entry.setAttribute('role', 'option')
-      entry.setAttribute('aria-selected', String(option.id === state.selected))
-      entry.dataset.active = String(index === activeIndex)
-      entry.addEventListener('click', () => {
+    if (!listbox) return
+    listbox.setAttribute('aria-activedescendant', `permission-picker-option-${activeIndex}`)
+    listbox.setAttribute('aria-busy', String(state.pending || selecting))
+    renderRegion(
+      listbox,
+      permissionOptions(state, activeIndex, (index) => {
         selectingFromPointer = true
         void select(index)
         queueMicrotask(() => {
           selectingFromPointer = false
         })
-      })
-      const mark = document.createElement('span')
-      mark.className = 'permission-picker-check'
-      mark.textContent = option.id === state.selected ? '✓' : ''
-      const copy = document.createElement('span')
-      copy.className = 'permission-picker-copy'
-      const title = document.createElement('span')
-      title.className = 'permission-picker-label'
-      title.textContent = option.label
-      const hint = document.createElement('span')
-      hint.className = 'permission-picker-hint'
-      hint.textContent = option.description
-      copy.append(title, hint)
-      entry.append(mark, copy)
-      listbox.append(entry)
-    }
+      }),
+    )
   }
 
   function position(): void {
@@ -112,6 +130,7 @@ export function createPermissionPicker(options: {
     interaction += 1
     selecting = false
     const wasOpen = popover !== undefined
+    if (listbox) unmountRegion(listbox)
     popover?.remove()
     popover = undefined
     listbox = undefined
@@ -123,9 +142,8 @@ export function createPermissionPicker(options: {
   function setActive(index: number): void {
     if (!listbox) return
     activeIndex = (index + PERMISSION_OPTIONS.length) % PERMISSION_OPTIONS.length
-    for (const [optionIndex, option] of Array.from(listbox.children).entries())
-      (option as HTMLElement).dataset.active = String(optionIndex === activeIndex)
-    listbox.setAttribute('aria-activedescendant', optionId(activeIndex))
+    listbox.setAttribute('aria-activedescendant', `permission-picker-option-${activeIndex}`)
+    renderOptions()
   }
 
   async function select(index: number): Promise<void> {
@@ -135,6 +153,7 @@ export function createPermissionPicker(options: {
     const request = ++interaction
     selecting = true
     setTrigger()
+    renderOptions()
     try {
       const accepted = await options.onSelect(option.id)
       if (request !== interaction) return
@@ -154,33 +173,27 @@ export function createPermissionPicker(options: {
     if (popover || state.disabled || state.pending || selecting) return
     interaction += 1
     activeIndex = selectedIndex()
-    popover = document.createElement('section')
+    popover = createRegionHost(document.body, 'section', 'permission-picker')
     popover.id = 'permission-picker-popover'
-    popover.className = 'permission-picker'
     popover.setAttribute('aria-label', '选择本会话权限')
-    const nextListbox = document.createElement('div')
-    nextListbox.id = 'permission-listbox'
-    nextListbox.className = 'permission-picker-list'
-    nextListbox.setAttribute('role', 'listbox')
-    nextListbox.setAttribute('aria-label', '本会话权限')
-    nextListbox.tabIndex = -1
-    bindListboxKeys(nextListbox, (intent) => {
+    listbox = createRegionHost(popover, 'div', 'permission-picker-list')
+    listbox.id = 'permission-listbox'
+    listbox.setAttribute('role', 'listbox')
+    listbox.setAttribute('aria-label', '本会话权限')
+    listbox.tabIndex = -1
+    bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)
       else if (intent.kind === 'first') setActive(0)
       else if (intent.kind === 'last') setActive(PERMISSION_OPTIONS.length - 1)
       else if (intent.kind === 'activate') void select(activeIndex)
       else close({ returnFocus: intent.returnFocus })
     })
-    popover.append(nextListbox)
-    document.body.append(popover)
-    listbox = nextListbox
-    trigger.setAttribute('aria-controls', nextListbox.id)
+    trigger.setAttribute('aria-controls', listbox.id)
     setTrigger()
     renderOptions()
-    setActive(activeIndex)
     position()
     requestAnimationFrame(position)
-    nextListbox.focus({ preventScroll: true })
+    listbox.focus({ preventScroll: true })
   }
 
   function closeOutside(event: MouseEvent): void {

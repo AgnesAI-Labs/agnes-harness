@@ -5,13 +5,15 @@
   "type": "module",
   "description": "Web UI component layer: the only package allowed to import antd/@assistant-ui (spec 2026-09-24-web-ui-component-system-design)",
   "exports": {
+    ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css"
   },
   "scripts": {
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@agnes/protocol": "workspace:*"
+    "@agnes/protocol": "workspace:*",
+    "antd": "6.6.5"
   },
   "devDependencies": {
     "@types/react": "18.3.12",

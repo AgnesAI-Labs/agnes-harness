@@ -183,7 +183,7 @@ function installPublicFixture(): void {
   // The entry point is imported directly below; removing only its production module tag keeps this
   // test rooted in the public DOM without attempting an HTTP fetch for /app.js.
   document.documentElement.innerHTML = publicHtml
-    .replace(/<link rel="stylesheet" href="\/style\.css" \/>/, '')
+    .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
     .replace(/<script type="module" src="\/app\.js"><\/script>/, '')
   if (!document.getElementById('new-session'))
     document.body.insertAdjacentHTML(

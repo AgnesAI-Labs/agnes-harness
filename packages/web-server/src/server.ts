@@ -23,6 +23,8 @@ const FILES = new Set([
   'resources-standalone.js',
   'resources-standalone.js.map',
   'style.css',
+  'antd.css',
+  'tokens.css',
   // 侧栏品牌位与过程行头像共用的客户端 AgnesMark 位图。白名单仍然逐文件放行
   // （不放宽成任意 .png），它由 packages/web/public 随 style.css 一起拷进发行目录。
   'brand-mark.png',
@@ -235,11 +237,11 @@ function fileName(requestUrl: string): string {
             posix.normalize(pathname).replace(/^[/\\]+/, '')
   // esbuild 的 splitting 会为动态 import() 产出带哈希的共享 chunk。它们与入口同为同源静态资源，
   // 所以用固定模式放行，而不是把路径校验放宽成任意文件。
-  const isChunk = /^chunk-[A-Za-z0-9_-]+\.js(\.map)?$/.test(file)
+  const isChunk = /^chunk-[A-Za-z0-9_-]+\.(?:js|css)(\.map)?$/.test(file)
   // WC5：/vendor/* 平台共享单例命名空间——入口文件名固定（import map 的映射目标），共享 chunk
   // 走 chunk- 哈希模式；命名空间内不允许任意文件，不放宽成目录列举。
   const isVendor =
-    /^vendor\/(react|react-jsx-runtime|react-dom|react-dom-client|cordis|web-client)\.js(\.map)?$/.test(
+    /^vendor\/(react|react-jsx-runtime|react-dom|react-dom-client|antd|cordis|web-client)\.js(\.map)?$/.test(
       file,
     ) || /^vendor\/chunk-[A-Za-z0-9_-]+\.js(\.map)?$/.test(file)
   if (!(FILES.has(file) || isChunk || isVendor) || file.includes('..')) throw new Error('Web asset not found')

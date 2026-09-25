@@ -156,6 +156,12 @@ describe('model picker', () => {
     pendingPicker.render(state())
     pendingTrigger.click()
     listbox().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+    expect([...listbox().children].every((child) => child.getAttribute('role') === 'option')).toBe(true)
+    expect(
+      [...listbox().querySelectorAll('[role="option"]')].every(
+        (row) => row.getAttribute('aria-disabled') === 'true',
+      ),
+    ).toBe(true)
     pendingPicker.render(state({ pending: true }))
     expect(document.querySelector('[role="listbox"]')).not.toBeNull()
     expect(pendingTrigger.disabled).toBe(true)
