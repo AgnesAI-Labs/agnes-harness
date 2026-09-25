@@ -224,7 +224,15 @@ describe.skipIf(!enabled)('--ephemeral ACP concurrency', () => {
         .map(({ value }) => value)
       const startupP95 = percentile95(measurements.map(({ startupMs }) => startupMs))
       const totalP95 = percentile95(measurements.map(({ totalMs }) => totalMs))
-      const limit = Math.max(single.startupMs * 3, 1_500)
+      // With two children per core and nothing else running, the batch starts in about twice a
+      // single start, so an explicitly requested run holds it to three times. In the full suite
+      // other test files share the same few cores and the batch can take as long as starting the
+      // children one after another (seven times a single start was seen with six children on a
+      // hosted macOS runner). There the bound only rejects a batch clearly worse than serial.
+      const limit = Math.max(
+        configured === undefined ? single.startupMs * concurrency * 2 : single.startupMs * 3,
+        1_500,
+      )
       console.info(
         `[acp-concurrency] n=${concurrency} simultaneous=true single-startup=${single.startupMs.toFixed(0)}ms startup-p95=${startupP95.toFixed(0)}ms total-p95=${totalP95.toFixed(0)}ms limit=${limit.toFixed(0)}ms`,
       )
