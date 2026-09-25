@@ -82,6 +82,56 @@ describe('readToolDetailPage', () => {
     expect(scans[2]).toHaveBeenCalledTimes(1)
   })
 
+  it('releases an idle cached detail when its lifetime ends', async () => {
+    vi.useFakeTimers()
+    try {
+      const session = ledger()
+      const scan = vi.spyOn(session, 'scan')
+      const read = () => readToolDetailPage(session, { callSeq: 7, offset: 0, maxBytes: 64 })
+      expect((await read()).ok).toBe(true)
+      expect(vi.getTimerCount()).toBe(1)
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect((await read()).ok).toBe(true)
+      expect(scan).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(vi.getTimerCount()).toBe(0)
+      expect((await read()).ok).toBe(true)
+      expect(scan).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects an oversized escaped detail before serializing the complete object', async () => {
+    const session = ledger()
+    const originalScan = session.scan
+    session.scan = async (q) => {
+      if (q.fromSeq !== 9) return originalScan(q)
+      const [result] = await originalScan(q)
+      return [
+        {
+          ...result,
+          data: {
+            ...(result?.data as object),
+            content: [{ type: 'text', text: '\n'.repeat(34 * 1024 * 1024) }],
+          },
+        },
+      ] as EventEnvelope[]
+    }
+    const originalStringify = JSON.stringify
+    const stringify = vi.spyOn(JSON, 'stringify').mockImplementation((value) => {
+      if (value !== null && typeof value === 'object') throw new Error('serialized oversized detail')
+      return originalStringify(value)
+    })
+    try {
+      await expect(
+        readToolDetailPage(session, { callSeq: 7, resultSeq: 9, offset: 0, maxBytes: 64 }),
+      ).resolves.toEqual({ ok: false, reason: 'detail-too-large' })
+    } finally {
+      stringify.mockRestore()
+    }
+  })
+
   it('rejects wrong seq, type, tool identity and offset', async () => {
     const session = ledger()
     const read = (callSeq: number, resultSeq?: number, offset = 0) =>
