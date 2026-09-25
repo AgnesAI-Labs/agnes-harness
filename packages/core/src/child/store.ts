@@ -31,6 +31,10 @@ export interface ChildControlStore {
   beginChildAttempt(input: BeginChildAttemptInput): Promise<ChildTaskRecord | null>
   deferCreatingChild(input: DeferCreatingChildInput): Promise<DeferredChildFact>
   commitCreatingChild(input: ChildCreationCasInput): Promise<boolean>
+  /**
+   * Cancels the creation attempt and, in the same write, moves a child still in `creating` out of
+   * the active set: `failed` for an open that failed, `cancelled` otherwise. It never ran.
+   */
   cancelCreatingChild(input: CancelCreatingChildInput): Promise<CancelledChildFact>
   casState(childKey: SessionKey, expectedRevision: number, next: ChildTaskRecord['state']): Promise<boolean>
   nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number>
