@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createConfigurationService, createPlatform, resolveProfile } from '@agnes/host'
+import { createConfigurationService, createPlatform, type ResolvedProfile, resolveProfile } from '@agnes/host'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { createPrivateDirectorySync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -104,6 +104,7 @@ it(
     const baseUrl = `http://127.0.0.1:${address.port}/v1`
     const configuration = createConfigurationService({ home, profile: 'local-dev' })
     const userBase = { name: 'local-dev', dataDir: data, cacheDir: join(home, 'cache') }
+    const started: ResolvedProfile[] = []
     const start = async () => {
       const reloadProfile = async () =>
         resolveProfile(
@@ -111,6 +112,7 @@ it(
           { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
         )
       const profile = await reloadProfile()
+      started.push(profile)
       const windows = createPlatform().snapshot().os === 'win32'
       const config = buildConfig({
         args: { profile: 'local-dev', dataDir: data },
@@ -188,7 +190,10 @@ it(
         authorization: 'Bearer fixture-key',
         path: '/v1/chat/completions',
       })
-      expect((await web.session.list({})).items.some((item) => item.sessionId === session.id)).toBe(true)
+      // The Web session list shows the platform's default preset for a session the CLI created.
+      expect((await web.session.list({})).items.find((item) => item.sessionId === session.id)?.preset).toBe(
+        createPlatform().snapshot().os === 'win32' ? 'standard-windows' : 'standard',
+      )
       const same = await web.session.load(session.id, { cwd: work })
       expect(JSON.stringify(await same.projectUI(undefined, { surface: 'web' }))).toContain(
         'Shared daemon works.',
@@ -283,6 +288,9 @@ it(
       await daemon.close()
       daemon = undefined
       daemon = await start()
+      // The saved configuration restarts the daemon on a file-backed secret store, and the prompts
+      // below authenticate with the key read back from it.
+      expect(started.at(-1)?.adapters.secrets).toEqual({ kind: 'file', path: join(home, 'secrets') })
       const restored = createClient({
         journal: memoryJournal(),
         auth: { kind: 'local' },
