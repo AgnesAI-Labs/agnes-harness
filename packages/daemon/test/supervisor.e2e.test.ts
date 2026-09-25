@@ -229,40 +229,6 @@ async function wsSourceAuthCall(
 }
 
 describe('agnesd supervisor: real end-to-end', () => {
-  it('leaves locked-package mutation readiness unknown when no trusted source is configured', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-cu-'))
-    const profile = buildProfile(dir)
-    const profileFile = join(dir, 'profile.json')
-    writeFileSync(profileFile, JSON.stringify(profile))
-    const tables = sqliteTables(join(dir, 'daemon.sqlite'))
-    const supervisor = await startSupervisor({
-      config: buildConfigFor(dir),
-      profile,
-      profileDir: join(dir, 'profiles', 'local-dev'),
-      profileFile,
-      workspaceRoot: dir,
-      jobTables: tables,
-      processIdentity,
-      ...workerSpawnOpts,
-    })
-    const rpc = await client(supervisor.socketPath)
-    try {
-      await rpc.call(1, 'initialize', {
-        protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-        _meta: { 'ai.agnes.harness': { clientId: 'mutation-status-unknown' } },
-      })
-      const status = await rpc.call(2, '_agnes/v1/computerUse.status', {})
-      expect(status).toMatchObject({ result: { status: 'blocked' } })
-      expect(status).not.toHaveProperty('result.lockedPackageMutations')
-    } finally {
-      rpc.socket.destroy()
-      await supervisor.close()
-      await tables.close()
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
   it.runIf(process.platform === 'win32')(
     'starts after a transient reader releases the existing profile snapshot',
     async () => {
@@ -300,27 +266,41 @@ describe('agnesd supervisor: real end-to-end', () => {
       }
     },
   )
-  it('replays a submit receipt after daemon restart under a long Unicode data directory', async () => {
+  // One restart carries every piece of durable supervisor state these checks need: submit receipts,
+  // auth claims, session metadata and source-auth nonces, all under a long Unicode data directory.
+  it('keeps submit receipts, claims, session metadata and source-auth nonces across a restart under a long Unicode data directory', async () => {
     const dir = mkdtempSync(join(tmpdir(), `agnes-${'中文长目录'.repeat(10)}-`))
     const profile = buildProfile(dir)
     const profileFile = join(dir, 'profile.json')
-    const config = buildConfigFor(dir)
+    const config = { ...buildConfigFor(dir), ws: { addr: '127.0.0.1:0', ...tls() } }
     const database = join(dir, 'daemon.sqlite')
-    writeFileSync(profileFile, JSON.stringify(profile))
-    let sessionId = ''
-    let firstSeq = 0
-    try {
-      const tables = sqliteTables(database)
-      const supervisor = await startSupervisor({
+    const secret = SOURCE_AUTH_KEY
+    const auth = {
+      clientId: 'channel-adapter',
+      nonce: '0123456789abcdef0123456789abcdef',
+      secret,
+      timestamp: Math.floor(Date.now() / 1000),
+    }
+    const start = (jobTables: ReturnType<typeof sqliteTables>) =>
+      startSupervisor({
         config,
         profile,
         profileDir: join(dir, 'profiles', 'local-dev'),
         profileFile,
         workspaceRoot: dir,
-        jobTables: tables,
+        jobTables,
+        remoteAuth: {
+          sourceAuthCredentials: [{ credentialId: 'secret://test/source-auth-restart', secret }],
+        },
         processIdentity,
         ...workerSpawnOpts,
       })
+    writeFileSync(profileFile, JSON.stringify(profile))
+    let sessionId = ''
+    let firstSeq = 0
+    try {
+      const tables = sqliteTables(database)
+      const supervisor = await start(tables)
       const rpc = await client(supervisor.socketPath)
       try {
         await rpc.call(1, 'initialize', {
@@ -355,6 +335,40 @@ describe('agnesd supervisor: real end-to-end', () => {
         expect(await rpc.call(21, '_agnes/v1/session.archive', { sessionId, archived: true })).toMatchObject({
           result: { archived: true },
         })
+
+        const firstWs = supervisor.ws
+        if (!firstWs) throw new Error('source-auth test requires ws')
+        // The random lifecycle bearer admits the HTTP upgrade only. Once source-auth is configured,
+        // presenting that bearer without an initialize credential must still fail closed.
+        expect(await wsInitialize(firstWs.url, firstWs.token)).toMatchObject({
+          error: { data: { reason: 'local auth not accepted on ws' } },
+        })
+        expect(await wsInitializeWithSourceAuth(firstWs.url, firstWs.token, auth)).toMatchObject({
+          result: { protocolVersion: 1 },
+        })
+        expect(
+          await wsSourceAuthCall(
+            firstWs.url,
+            firstWs.token,
+            { ...auth, nonce: 'fedcba9876543210fedcba9876543210' },
+            {
+              id: 100,
+              method: 'session/new',
+              params: {
+                cwd: dir,
+                mcpServers: [],
+                _meta: { 'ai.agnes.harness': { sessionKey: 'agnes:test:remote-explicit' } },
+              },
+            },
+          ),
+        ).toMatchObject({
+          error: {
+            data: {
+              code: 'CAPABILITY_DENIED',
+              reason: 'remote session actor authority unavailable',
+            },
+          },
+        })
       } finally {
         rpc.socket.end()
         await supervisor.close()
@@ -362,16 +376,7 @@ describe('agnesd supervisor: real end-to-end', () => {
       }
 
       const reopened = sqliteTables(database)
-      const restarted = await startSupervisor({
-        config,
-        profile,
-        profileDir: join(dir, 'profiles', 'local-dev'),
-        profileFile,
-        workspaceRoot: dir,
-        jobTables: reopened,
-        processIdentity,
-        ...workerSpawnOpts,
-      })
+      const restarted = await start(reopened)
       const retry = await client(restarted.socketPath)
       try {
         await retry.call(1, 'initialize', {
@@ -421,6 +426,12 @@ describe('agnesd supervisor: real end-to-end', () => {
             payload: { sessionId, content: [{ type: 'text', text: 'changed' }] },
           }),
         ).toMatchObject({ error: { data: { code: 'ID_CONFLICT' } } })
+
+        const restartedWs = restarted.ws
+        if (!restartedWs) throw new Error('source-auth restart test requires ws')
+        expect(await wsInitializeWithSourceAuth(restartedWs.url, restartedWs.token, auth)).toMatchObject({
+          error: { data: { reason: 'nonce' } },
+        })
       } finally {
         retry.socket.end()
         await restarted.close()
@@ -429,101 +440,7 @@ describe('agnesd supervisor: real end-to-end', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 30_000)
-
-  it('refuses a source-auth nonce replay after a supervisor restart', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-nonce-e2e-'))
-    const database = join(dir, 'daemon.sqlite')
-    const secret = SOURCE_AUTH_KEY
-    const now = Date.parse('2026-09-12T00:00:00Z')
-    const auth = {
-      clientId: 'channel-adapter',
-      nonce: '0123456789abcdef0123456789abcdef',
-      secret,
-      timestamp: now / 1000,
-    }
-    const profile = buildProfile(dir)
-    const profileFile = join(dir, 'profile.json')
-    const config = { ...buildConfigFor(dir), ws: { addr: '127.0.0.1:0', ...tls() } }
-    writeFileSync(profileFile, JSON.stringify(profile))
-    try {
-      const tables = sqliteTables(database)
-      const first = await startSupervisor({
-        config,
-        profile,
-        profileDir: join(dir, 'profiles', 'local-dev'),
-        profileFile,
-        workspaceRoot: dir,
-        clock: () => now,
-        jobTables: tables,
-        remoteAuth: {
-          sourceAuthCredentials: [{ credentialId: 'secret://test/source-auth-restart', secret }],
-        },
-        processIdentity,
-        ...workerSpawnOpts,
-      })
-      const firstWs = first.ws
-      if (!firstWs) throw new Error('source-auth test requires ws')
-      // The random lifecycle bearer admits the HTTP upgrade only. Once source-auth is configured,
-      // presenting that bearer without an initialize credential must still fail closed.
-      expect(await wsInitialize(firstWs.url, firstWs.token)).toMatchObject({
-        error: { data: { reason: 'local auth not accepted on ws' } },
-      })
-      expect(await wsInitializeWithSourceAuth(firstWs.url, firstWs.token, auth)).toMatchObject({
-        result: { protocolVersion: 1 },
-      })
-      expect(
-        await wsSourceAuthCall(
-          firstWs.url,
-          firstWs.token,
-          { ...auth, nonce: 'fedcba9876543210fedcba9876543210' },
-          {
-            id: 100,
-            method: 'session/new',
-            params: {
-              cwd: dir,
-              mcpServers: [],
-              _meta: { 'ai.agnes.harness': { sessionKey: 'agnes:test:remote-explicit' } },
-            },
-          },
-        ),
-      ).toMatchObject({
-        error: {
-          data: {
-            code: 'CAPABILITY_DENIED',
-            reason: 'remote session actor authority unavailable',
-          },
-        },
-      })
-      await first.close()
-      await tables.close()
-
-      const reopened = sqliteTables(database)
-      const restarted = await startSupervisor({
-        config,
-        profile,
-        profileDir: join(dir, 'profiles', 'local-dev'),
-        profileFile,
-        workspaceRoot: dir,
-        clock: () => now,
-        jobTables: reopened,
-        remoteAuth: {
-          sourceAuthCredentials: [{ credentialId: 'secret://test/source-auth-restart', secret }],
-        },
-        processIdentity,
-        ...workerSpawnOpts,
-      })
-      const restartedWs = restarted.ws
-      if (!restartedWs) throw new Error('source-auth restart test requires ws')
-      expect(await wsInitializeWithSourceAuth(restartedWs.url, restartedWs.token, auth)).toMatchObject({
-        error: { data: { reason: 'nonce' } },
-      })
-      await restarted.close()
-      await reopened.close()
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 30_000)
+  }, 60_000)
 
   it('serves initialize -> session/new -> session/prompt through a real worker subprocess, and refuses a second instance', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-sup-'))
@@ -842,7 +759,17 @@ it('restores one attached SDK session after its worker is replaced', async () =>
   }
 }, 30_000)
 
-it('local Web bearer plus exact origin permits SDK initialize and a worker-backed session', async () => {
+// One supervisor with both a unix and a local-Web ws listener serves every check here: Computer Use
+// status without a trusted package source, surfaces.mounts registered on unix only, a worker-backed
+// session over the local Web bearer and exact origin, and the activation barrier on RPC admission.
+//
+// surfaces.mounts used to be registered on every transport, including ws, even though its only
+// production consumer (`packages/cli/launch/surface-mounts.ts`'s `fetchSurfaceMountLookup`) always
+// connects over unix, like its siblings `registerPackageAdmin`/`registerResourceControl` restrict
+// themselves off ws. Over ws it must be genuinely unregistered, not merely unauthorized.
+it('serves Computer Use status, unix-only mounts, a local Web session and the activation barrier', async () => {
+  // Short prefix deliberately: on macOS the Unix domain socket path (this dir + '/daemon/agnesd.sock')
+  // must stay under sun_path's ~104-byte limit alongside an already-long `tmpdir()`.
   const dir = mkdtempSync(join(tmpdir(), 'agnes-local-web-'))
   const profile = buildProfile(dir)
   const profileFile = join(dir, 'profile.json')
@@ -863,65 +790,7 @@ it('local Web bearer plus exact origin permits SDK initialize and a worker-backe
     ...workerSpawnOpts,
   })
   if (!sup.ws) throw new Error('missing Web listener')
-  const sdk = createClient({
-    journal: memoryJournal(),
-    auth: { kind: 'local' },
-    transportFactories: {
-      ws: (option) =>
-        wsTransport({ ...option, url: sup.ws?.url ?? '', headers: { Origin: config.localWeb.origin } }),
-    },
-    transport: {
-      kind: 'ws',
-      url: sup.ws.url,
-      protocols: ['agnes-v1', `agnes-bearer.${sup.ws.token}`],
-    },
-  })
-  try {
-    await sdk.initialize()
-    const session = await sdk.session.new({ cwd: dir })
-    expect(session.id).toBeTruthy()
-    const result = await session.prompt('hello')
-    expect(result).toMatchObject({ stopReason: 'end_turn', reason: 'completed' })
-    expect((await sdk.session.list({ limit: 10 })).items.map((x) => x.sessionId)).toContain(session.id)
-  } finally {
-    await sdk.close()
-    await sup.close()
-    await tables.close()
-    rmSync(dir, { recursive: true, force: true })
-  }
-}, 30000)
-
-// M4 (final review, Minor): `registerSurfaces` (`_agnes/v1/surfaces.mounts`) used to be registered on
-// every transport, including ws -- both the local Web browser channel and a remote WSS listener --
-// even though its only real production consumer (`packages/cli/launch/surface-mounts.ts`'s
-// `fetchSurfaceMountLookup`) always connects over the `unix` transport, exactly like its sibling
-// methods `registerPackageAdmin`/`registerResourceControl` restrict themselves off ws by default.
-// This drives one real `startSupervisor()` boot with BOTH a unix and a local-Web ws listener live,
-// and proves the RPC method answers over unix but is genuinely unregistered (not merely
-// unauthorized) over ws.
-it('registers surfaces.mounts on the unix transport only, not on ws', async () => {
-  // Short prefix deliberately: on macOS the Unix domain socket path (this dir + '/daemon/agnesd.sock')
-  // must stay under sun_path's ~104-byte limit alongside an already-long `tmpdir()`.
-  const dir = mkdtempSync(join(tmpdir(), 'agnes-surf-gate-'))
-  const profile = buildProfile(dir)
-  const profileFile = join(dir, 'profile.json')
-  writeFileSync(profileFile, JSON.stringify(profile))
-  const tables = sqliteTables()
-  const config = {
-    ...buildConfigFor(dir),
-    localWeb: { addr: '127.0.0.1:0', origin: 'http://127.0.0.1:4177' },
-  }
-  const sup = await startSupervisor({
-    config,
-    profile,
-    profileDir: join(dir, 'profiles', 'local-dev'),
-    profileFile,
-    workspaceRoot: dir,
-    jobTables: tables,
-    processIdentity,
-    ...workerSpawnOpts,
-  })
-  if (!sup.ws) throw new Error('missing Web listener')
+  const rpc = await client(sup.socketPath)
   const unixClient = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
   const wsClient = createClient({
     journal: memoryJournal(),
@@ -937,6 +806,16 @@ it('registers surfaces.mounts on the unix transport only, not on ws', async () =
     },
   })
   try {
+    // No trusted source is configured, so locked-package mutation readiness stays unknown.
+    await rpc.call(1, 'initialize', {
+      protocolVersion: 1,
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      _meta: { 'ai.agnes.harness': { clientId: 'mutation-status-unknown' } },
+    })
+    const status = await rpc.call(2, '_agnes/v1/computerUse.status', {})
+    expect(status).toMatchObject({ result: { status: 'blocked' } })
+    expect(status).not.toHaveProperty('result.lockedPackageMutations')
+
     await unixClient.initialize()
     await expect(unixClient.surfaces.mounts()).resolves.toEqual({ mounts: [] })
 
@@ -944,46 +823,26 @@ it('registers surfaces.mounts on the unix transport only, not on ws', async () =
     await expect(wsClient.surfaces.mounts()).rejects.toMatchObject({
       rpc: { message: 'METHOD_NOT_FOUND', data: { code: 'NOT_REGISTERED' } },
     })
-  } finally {
-    await unixClient.close()
-    await wsClient.close()
-    await sup.close()
-    await tables.close()
-    rmSync(dir, { recursive: true, force: true })
-  }
-}, 30000)
 
-it('shares the activation barrier with supervisor RPC admission', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agnes-supervisor-barrier-'))
-  const profile = buildProfile(dir)
-  const profileFile = join(dir, 'profile.json')
-  writeFileSync(profileFile, JSON.stringify(profile))
-  const tables = sqliteTables()
-  const sup = await startSupervisor({
-    config: buildConfigFor(dir),
-    profile,
-    profileDir: join(dir, 'profiles', 'local-dev'),
-    profileFile,
-    workspaceRoot: dir,
-    jobTables: tables,
-    processIdentity,
-    ...workerSpawnOpts,
-  })
-  const rpc = await client(sup.socketPath)
-  try {
-    await rpc.call(1, 'initialize', {
-      protocolVersion: 1,
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+    const session = await wsClient.session.new({ cwd: dir })
+    expect(session.id).toBeTruthy()
+    const result = await session.prompt('hello')
+    expect(result).toMatchObject({ stopReason: 'end_turn', reason: 'completed' })
+    expect((await wsClient.session.list({ limit: 10 })).items.map((x) => x.sessionId)).toContain(session.id)
+
+    // The Web session holds this workspace's default key, so the barrier session names its own.
+    const made = await rpc.call(3, 'session/new', {
+      cwd: dir,
+      mcpServers: [],
+      _meta: { 'ai.agnes.harness': { sessionKey: 'agnes:local:default:daemon:dm:activation-barrier' } },
     })
-    const made = await rpc.call(2, 'session/new', { cwd: dir, mcpServers: [] })
     const sessionId = (made.result as { sessionId: string }).sessionId
-
     let release!: () => void
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
     const activation = sup.activationBarrier.quiesce('supervisor-activation', () => held)
-    const refused = await rpc.call(3, 'session/prompt', {
+    const refused = await rpc.call(4, 'session/prompt', {
       sessionId,
       prompt: [{ type: 'text', text: 'must not cross cutover' }],
     })
@@ -997,11 +856,13 @@ it('shares the activation barrier with supervisor RPC admission', async () => {
     await activation
   } finally {
     rpc.socket.end()
+    await unixClient.close()
+    await wsClient.close()
     await sup.close()
     await tables.close()
     rmSync(dir, { recursive: true, force: true })
   }
-}, 30_000)
+}, 60_000)
 
 describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
   async function supervisorFor(dir: string, audit?: (record: unknown) => void) {
