@@ -445,10 +445,11 @@ describe('main', () => {
     h.io.signals = signals
     const running = main([], h.io, h.boot)
     try {
-      await vi.waitFor(() => expect(raw).toBe(true))
+      // Booting the test Host takes over a second on the Windows runner.
+      await vi.waitFor(() => expect(raw).toBe(true), { timeout: 10_000 })
       input.write('keyboard from main')
       input.write('\r')
-      await vi.waitFor(() => expect(h.out()).toContain('main says hi'))
+      await vi.waitFor(() => expect(h.out()).toContain('main says hi'), { timeout: 10_000 })
       // Wait for the persisted terminal turn to reach the projected idle state before quitting.
       await new Promise((resolve) => setTimeout(resolve, 100))
       input.write('\x04')
@@ -474,7 +475,8 @@ describe('main', () => {
     const signals = new EventEmitter()
     h.io.signals = signals
     const running = main([], h.io, h.boot)
-    await vi.waitFor(() => expect(raw).toBe(true))
+    // Booting the test Host takes over a second on the Windows runner.
+    await vi.waitFor(() => expect(raw).toBe(true), { timeout: 10_000 })
     signals.emit('SIGTERM')
     expect(await running, h.err()).toBe(143)
     expect(raw).toBe(false)
