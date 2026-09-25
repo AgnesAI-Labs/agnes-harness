@@ -38,6 +38,14 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 5. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
 6. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
 
+### Inspect the trajectory
+
+Switch from Chat to Trajectory to inspect the loaded session by turn and step. Select a record to see its status, recorded duration, error code, and the owning turn's token totals when available. A matching recorded model call also shows its own token usage, request order when verifiable, ledger order, and cumulative recorded usage. Missing call timing or earlier history is labeled instead of estimated. Attachment-only user input shows image and resource counts, and the inspector lists their type and name metadata. The timing overview offers record order, compressed duration, recorded time, and actual duration modes. Drag an interval to filter the ledger, use the wheel to zoom, right-drag to pan, and press Escape or Clear range to reset. Clicking a linked bar selects and scrolls to its record, even when a filter had hidden it. Input markers sit at the turn start because the projection does not provide a separate input timestamp; a running span without a recorded duration appears as a start marker.
+
+Use a turn header to fold or expand one turn, or the toolbar control to fold or expand all turns. Tool records with recorded child calls have their own fold control. Search and time range selection temporarily show matching records inside folded turns or tool calls; clearing the filter restores the fold state. Long ledgers render only the visible rows, and dense timelines group nearby bars until zoomed in. Loading earlier history keeps the current scroll position, and newly appended records follow the end while the list is already at the end.
+
+The **Projected content** tab shows what the session UI projection retained. Tool arguments and results there are bounded previews. For a tool record, **Full input** and **Full output** read the corresponding ledger entries on demand; output text, structured data, and supported images are available there. The **Timing** tab shows recorded timing fields. A full detail request is limited to 64 MiB; a larger record produces an explicit error. Load earlier records with the control at the top of the ledger when the session is only partially loaded.
+
 <a id="日常管理"></a>
 
 ## Everyday management

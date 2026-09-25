@@ -11,6 +11,28 @@ const sdk = vi.hoisted(() => ({
 const configurationCallback = vi.hoisted(() => ({
   saved: undefined as ((snapshot: ConfigSnapshot) => Promise<void>) | undefined,
 }))
+const traceBridge = vi.hoisted(() => ({
+  options: undefined as unknown,
+  metas: [] as unknown[],
+}))
+vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/client-modules/boot.js')>()
+  return {
+    ...actual,
+    startClientModules: async (options: Parameters<typeof actual.startClientModules>[0]) => {
+      traceBridge.options = options.trace
+      const runtime = await actual.startClientModules(options)
+      if (runtime.trace) {
+        const render = runtime.trace.render.bind(runtime.trace)
+        runtime.trace.render = (nodes, turns, meta) => {
+          traceBridge.metas.push(meta)
+          render(nodes, turns, meta)
+        }
+      }
+      return runtime
+    },
+  }
+})
 vi.mock('../src/settings.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/settings.js')>()
   return {
@@ -74,6 +96,7 @@ type SessionDouble = {
   projectUIOpening: ReturnType<typeof vi.fn>
   projectUIPatch: ReturnType<typeof vi.fn>
   projectUIHistory: ReturnType<typeof vi.fn>
+  readToolDetail: ReturnType<typeof vi.fn>
   prompt: ReturnType<typeof vi.fn>
   setModel: ReturnType<typeof vi.fn>
   setYolo: ReturnType<typeof vi.fn>
@@ -168,6 +191,9 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
     onPermissionRequest: vi.fn(() => vi.fn()),
     onPreview: vi.fn(() => vi.fn()),
     projectUI: vi.fn(projectUI),
+    readToolDetail: vi.fn(async () => ({
+      call: { toolUseId: 'tool-1', name: 'read', args: { path: 'a' }, ordinal: 0 },
+    })),
     prompt: vi.fn(async () => undefined),
     setModel: vi.fn(async () => ({ effectiveFromSeq: 1 })),
     setYolo: vi.fn(async () => ({ effectiveFromSeq: 1 })),
@@ -210,6 +236,8 @@ afterEach(async () => {
   await Promise.resolve()
   vi.resetModules()
   vi.clearAllMocks()
+  traceBridge.options = undefined
+  traceBridge.metas.length = 0
   vi.unstubAllGlobals()
   document.documentElement.replaceChildren()
   sessionStorage.clear()
@@ -217,6 +245,51 @@ afterEach(async () => {
 })
 
 describe('web session selection', () => {
+  it('reads trace tool details from the selected session and tags trace snapshots with that session', async () => {
+    installPublicFixture()
+    const old = session('old', async () => idleTimeline('old'))
+    const next = session('next', async () => idleTimeline('next'))
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [] } })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: 'old' }, { sessionId: 'next' }] })),
+        load: vi.fn(async (id: string) => (id === 'old' ? old : next)),
+      },
+    })
+    binding.loadWebSession.mockImplementation(async (_load: unknown, id: string) => ({
+      session: id === 'old' ? old : next,
+      offPermission: vi.fn(),
+    }))
+
+    await import('../src/app.js')
+    await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
+    const trace = traceBridge.options as {
+      readToolDetail: (sessionId: string, callSeq: number, resultSeq?: number) => Promise<unknown>
+    }
+    await trace.readToolDetail('old', 3, 7)
+    expect(old.readToolDetail).toHaveBeenCalledWith(3, 7, undefined)
+
+    document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
+    await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'next' }))
+    await expect(trace.readToolDetail('old', 3, 7)).rejects.toThrow('会话已切换')
+    await trace.readToolDetail('next', 9)
+    expect(next.readToolDetail).toHaveBeenCalledWith(9, undefined, undefined)
+    expect(old.readToolDetail).toHaveBeenCalledTimes(1)
+
+    document.getElementById('new')?.click()
+    await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toBeUndefined())
+    await expect(trace.readToolDetail('next', 9)).rejects.toThrow('没有当前会话')
+    expect(next.readToolDetail).toHaveBeenCalledTimes(1)
+  })
+
   it('opens a new draft with the last model and permission', async () => {
     installPublicFixture()
     history.replaceState(null, '', '/#test-launcher-token')

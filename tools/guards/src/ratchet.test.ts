@@ -1,3 +1,5 @@
+// TRACE-INSPECTION-20260925: measured Core 25230, protocol 2201, SDK 5127,
+// daemon 26495, web 13269, and web/app 1783 after tool-detail RPC and trace UI.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
 // PLUGIN-HELPER merge with b/main@8f2e20e7: daemon 25955, Host 38018, measured combined source.
@@ -359,7 +361,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines() on the merged tree: 1767, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
-  'packages/web/src/app': 1776,
+  // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
+  'packages/web/src/app': 1783,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-17: composer permission listbox. Measured 203, exact.
   'packages/web/src/permission-picker': 203,
@@ -1951,7 +1954,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
-  'packages/web/src': 13266,
+  // TRACE-INSPECTION-20260925: trace detail callback wiring; measured 13269, exact.
+  'packages/web/src': 13269,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
