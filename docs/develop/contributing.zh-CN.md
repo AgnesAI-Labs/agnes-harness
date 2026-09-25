@@ -68,7 +68,7 @@ pnpm gen:check
 pnpm test
 ```
 
-两条 `build:native` 是包级脚本，与 [CI](../../.github/workflows/ci.yml) 的测试前置步骤一致。macOS 的进程身份测试需要 Host helper，Skill 安装的原子发布测试需要 system-node helper；源码测试前若缺少它们，会得到与产品缺陷不同的环境失败。`pnpm test` 是根目录脚本，默认单 worker 执行快速层，包含 guards；真实 daemon、worker 与 CLI 进程测试命名为 `*.e2e.test.ts`，大账本或依赖真实计时的测试命名为 `*.slow.test.ts`，`pnpm test:heavy` 只跑这两类，`pnpm test:all` 全部执行；`pnpm exec vitest run <文件>` 可单独运行任一层的文件。本地只改一个模块时先选择该模块相关测试，再按风险决定是否扩大范围。纯文档变更通常不需要重跑模型或全仓端到端。
+两条 `build:native` 是包级脚本，与 [CI](../../.github/workflows/ci.yml) 的测试前置步骤一致。macOS 的进程身份测试需要 Host helper，Skill 安装的原子发布测试需要 system-node helper；源码测试前若缺少它们，会得到与产品缺陷不同的环境失败。`pnpm test` 是根目录脚本，默认单 worker 执行快速层，包含 guards；真实 daemon、worker 与 CLI 进程测试命名为 `*.e2e.test.ts`，大账本或依赖真实计时的测试命名为 `*.slow.test.ts`，`pnpm test:heavy` 只跑这两类，`pnpm test:all` 全部执行；`pnpm exec vitest run <文件>` 可单独运行任一层的文件。测试所属层只由文件后缀决定：新测试命名为 `*.e2e.test.ts` 或 `*.slow.test.ts` 即归入重型层。包内自己的 `test` 脚本会运行该包的两层测试，而根目录 `pnpm test` 只运行快速层。本地只改一个模块时先选择该模块相关测试，再按风险决定是否扩大范围。纯文档变更通常不需要重跑模型或全仓端到端。
 
 ```sh
 pnpm exec vitest run packages/cli/test/args.test.ts --maxWorkers=1
