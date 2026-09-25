@@ -890,7 +890,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // A tool result and its settlement commit together through the same chain. Measured 25007, exact,
   // no spare (-6).
   // Trajectory inspection adds the optional tool result sequence. Combined source: 25008, exact.
-  'packages/core/src': 25008,
+  // Delegated children open with the sandbox their workspace reservation carries. Measured 25010,
+  // exact, no spare (+2).
+  'packages/core/src': 25010,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2420,7 +2422,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // (-52). Measured on this tree: 38030, exact, no spare.
   // Durable WAL checkpoints on darwin: the ledger, table-store and GC ledger-lock connections set
   // checkpoint_fullfsync through one small helper. Measured 38043, exact, no spare (+13).
-  'packages/host/src': 38043,
+  // Delegated child reservations carry the workspace-fitted sandbox under the same guard as a root
+  // session. Measured 38075, exact, no spare (+32).
+  'packages/host/src': 38075,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
