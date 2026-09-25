@@ -364,7 +364,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
   // Daemon-restart recovery: the page probes its own bootstrap before reloading and keeps a visible
   // manual retry after the automatic window. Measured 1811, exact, no spare (+28).
-  'packages/web/src/app': 1811,
+  // Reload only into a new daemon address, recover after a failed first connection, resume on
+  // tab show, and a notice consistent with the recovery status. Measured 1824, exact (+13).
+  'packages/web/src/app': 1824,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-17: composer permission listbox. Measured 203, exact.
   'packages/web/src/permission-picker': 203,
@@ -1980,7 +1982,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Per-node roots in the timeline unmount after the current commit: measured 13268, exact.
   // Daemon-restart recovery: probe-before-reload controller and its page wiring. Measured 13344, exact (+76).
   // Load earlier: instant restore after a prepend and a sentinel re-read. Measured 13350, exact (+6).
-  'packages/web/src': 13350,
+  // Reload only into a new daemon address, failed first connection, resume and probe hardening.
+  // Measured 13382, exact (+32).
+  'packages/web/src': 13382,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
