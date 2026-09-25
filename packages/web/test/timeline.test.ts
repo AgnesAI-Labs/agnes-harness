@@ -890,6 +890,93 @@ describe('loading earlier records', () => {
     timeline.render([node])
     expect(reads).toBe(afterFirst)
   })
+
+  it('restores the reader position after a prepend without a smooth-scroll animation', () => {
+    const { scrollContainer, timeline } = scrolling()
+    // The document skin enables smooth scrolling on the transcript.
+    scrollContainer.style.scrollBehavior = 'smooth'
+    let top = 0
+    const writes: { top: number; behavior: string }[] = []
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        writes.push({ top: value, behavior: scrollContainer.style.scrollBehavior })
+        top = value
+      },
+    })
+    timeline.render([say('c', 7), say('d', 8), say('e', 9)], [], { hasEarlier: true, loadEarlier: vi.fn() })
+    top = 20
+    scrollContainer.dispatchEvent(new Event('scroll'))
+    writes.length = 0
+    timeline.render([say('a', 5), say('b', 6), say('c', 7), say('d', 8), say('e', 9)], [], {
+      hasEarlier: false,
+    })
+    expect(writes).toEqual([{ top: 220, behavior: 'auto' }])
+    expect(scrollContainer.style.scrollBehavior).toBe('smooth')
+  })
+
+  it('asks for the next page when the sentinel is still on screen after a prepend', () => {
+    // Mirrors the browser contract: a notification on observe(), then only on a visibility change.
+    let visible = true
+    const observers: FakeObserver[] = []
+    class FakeObserver {
+      readonly targets = new Map<Element, boolean | undefined>()
+      constructor(readonly callback: IntersectionObserverCallback) {
+        observers.push(this)
+      }
+      observe(target: Element) {
+        this.targets.set(target, undefined)
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target)
+      }
+      disconnect() {
+        this.targets.clear()
+      }
+      frame() {
+        for (const [target, last] of this.targets) {
+          const now = visible && !(target as HTMLElement).hidden
+          if (now === last) continue
+          this.targets.set(target, now)
+          this.callback(
+            [{ target, isIntersecting: now } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+      }
+    }
+    vi.stubGlobal('IntersectionObserver', FakeObserver)
+    const frame = () => {
+      for (const observer of observers) observer.frame()
+    }
+    const { timeline } = scrolling()
+    const loadEarlier = vi.fn()
+    timeline.render([say('e', 9), say('f', 10)], [], { hasEarlier: true, loadEarlier })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // The in-flight request is not repeated while the page is still loading.
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // The page lands, the sentinel never left the screen: the next page is requested anyway.
+    timeline.render([say('c', 7), say('d', 8), say('e', 9), say('f', 10)], [], {
+      hasEarlier: true,
+      loadEarlier,
+    })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+    // Once the restored position hides the sentinel, a landed page asks for nothing more.
+    visible = false
+    timeline.render([say('a', 5), say('b', 6), say('c', 7), say('d', 8), say('e', 9), say('f', 10)], [], {
+      hasEarlier: true,
+      loadEarlier,
+    })
+    frame()
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('an attempt whose streamed text was lost', () => {
