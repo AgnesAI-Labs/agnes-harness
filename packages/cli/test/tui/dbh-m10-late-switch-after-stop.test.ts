@@ -166,10 +166,13 @@ it('[M-10b] stop() landing while a switch waits for the old projection to stop: 
 // the observable is whether the process exits by itself once teardown is done (bin.ts relies on the
 // event loop draining). The parent kills it after a bounded wait.
 const ROOT = resolve(import.meta.dirname, '../../../..')
+// The child's imports need file URLs: a bare Windows path is not an ESM specifier, and its
+// backslashes would be read as escapes inside the generated string literal.
+const source = (path: string): string => JSON.stringify(pathToFileURL(join(ROOT, path)).href)
 const CHILD = `
-import { createClient } from '${ROOT}/packages/sdk/src/index.node.ts'
-import { TuiApp, FakeTerminal } from '${ROOT}/packages/cli-tui/src/index.ts'
-import { FakeEndpoint } from '${ROOT}/packages/cli/test/fake-endpoint.ts'
+import { createClient } from ${source('packages/sdk/src/index.node.ts')}
+import { TuiApp, FakeTerminal } from ${source('packages/cli-tui/src/index.ts')}
+import { FakeEndpoint } from ${source('packages/cli/test/fake-endpoint.ts')}
 const late = process.argv[2] === 'late'
 const SID1 = '${SID1}', SID2 = '${SID2}'
 let news = 0, release
