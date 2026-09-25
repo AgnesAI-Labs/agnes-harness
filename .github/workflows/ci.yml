@@ -7,8 +7,10 @@ on:
   schedule:
     - cron: '0 18 * * *'
 permissions: { contents: read }
+# The event name keeps a nightly run on main and a push to main from cancelling each other; a
+# newer push to the same pull request still cancels its older run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   changes:
