@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { APPROVAL_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -34,9 +34,12 @@ describe('rendered approval region', () => {
       ],
       disabled: false,
     })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await vi.waitFor(() => {
+      expect(approval?.hidden).toBe(false)
+      expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
+      expect(approval?.querySelectorAll('.approval-actions button')).toHaveLength(2)
+    })
 
-    expect(approval?.hidden).toBe(false)
     expect(
       approval?.querySelector('[data-slot="ui:approval"] [data-agnes-region-unit="approval"]'),
     ).toBeTruthy()
@@ -57,10 +60,13 @@ describe('rendered approval region', () => {
       ],
       disabled: true,
     })
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    const disabledReject = approval?.querySelector<HTMLButtonElement>('.approval-actions button:nth-child(2)')
-    expect(document.activeElement).not.toBe(disabledReject)
-    expect(disabledReject?.disabled).toBe(true)
+    await vi.waitFor(() => {
+      const disabledReject = approval?.querySelector<HTMLButtonElement>(
+        '.approval-actions button:nth-child(2)',
+      )
+      expect(disabledReject?.disabled).toBe(true)
+      expect(document.activeElement).not.toBe(disabledReject)
+    })
     handle?.render({
       key: 'live:tool-1',
       title: '需要你的确认',
@@ -72,12 +78,13 @@ describe('rendered approval region', () => {
       ],
       disabled: false,
     })
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    const restoredReject = approval?.querySelector<HTMLButtonElement>('.approval-actions button:nth-child(2)')
-    expect(document.activeElement).toBe(restoredReject)
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(
+        approval?.querySelector<HTMLButtonElement>('.approval-actions button:nth-child(2)'),
+      )
+    })
     handle?.render(undefined)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(approval?.hidden).toBe(true)
+    await vi.waitFor(() => expect(approval?.hidden).toBe(true))
     expect(selected).toEqual([])
   })
 
@@ -93,7 +100,9 @@ describe('rendered approval region', () => {
       actions: [{ id: 'allow', label: '允许', onSelect: () => selected.push('allow') }],
       disabled: false,
     })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await vi.waitFor(() => {
+      expect(document.querySelector('#approval .approval-actions button')).toBeTruthy()
+    })
 
     const allow = document.querySelector<HTMLButtonElement>('#approval .approval-actions button')
     expect(allow?.type).toBe('button')
@@ -116,7 +125,7 @@ describe('rendered approval region', () => {
       actions: [],
       disabled: false,
     })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await vi.waitFor(() => expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认'))
     const remove = runtime.registry.register(
       {
         name: APPROVAL_SLOT as string,
@@ -126,18 +135,20 @@ describe('rendered approval region', () => {
       },
       () => createElement('div', { id: 'shadow-approval' }, '替换审批'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await vi.waitFor(() => {
+      expect(approval?.querySelector('#shadow-approval')?.textContent).toBe('替换审批')
+      expect(approval?.querySelector('#approval-content')).toBeNull()
+    })
 
-    expect(approval?.querySelector('#shadow-approval')?.textContent).toBe('替换审批')
-    expect(approval?.querySelector('#approval-content')).toBeNull()
     expect(document.querySelector('[data-slot="ui:conversation"] #transcript')).toBeTruthy()
     expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
 
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(approval?.querySelector('[data-agnes-region-unit="approval"]')).toBeTruthy()
-    expect(approval?.querySelector('#approval-content')).toBeTruthy()
-    expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
-    expect(approval?.querySelector('p')?.textContent).toBe('恢复当前审批')
+    await vi.waitFor(() => {
+      expect(approval?.querySelector('[data-agnes-region-unit="approval"]')).toBeTruthy()
+      expect(approval?.querySelector('#approval-content')).toBeTruthy()
+      expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
+      expect(approval?.querySelector('p')?.textContent).toBe('恢复当前审批')
+    })
   })
 })

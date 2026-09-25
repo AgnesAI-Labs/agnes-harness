@@ -8,9 +8,10 @@ export default defineConfig({
   test: {
     include: ['**/*.test.ts'],
     exclude: [...defaultExclude, '**/dist/**'],
-    // Windows suites start real PowerShell, daemon and worker processes. Bound file fan-out
-    // and allow for process startup under CI load without changing product-level deadlines.
+    // Windows suites start real PowerShell, daemon and worker processes; macOS hosted runners
+    // also hit the default 5s deadline in unrelated suites when the full gate runs concurrently.
+    // Keep functional checks finite without changing product-level deadlines.
     // Explicit per-test timeouts and CLI maxWorkers overrides still take precedence.
-    ...(process.platform === 'win32' ? { maxWorkers: 2, testTimeout: 15_000 } : {}), // guards-allow-platform: Windows test-runner limits.
+    ...(['win32', 'darwin'].includes(process.platform) ? { maxWorkers: 2, testTimeout: 15_000 } : {}), // guards-allow-platform: hosted OS test-runner limits.
   },
 })
