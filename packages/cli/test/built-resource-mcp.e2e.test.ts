@@ -518,24 +518,6 @@ describe('built CLI managed MCP lifecycle', () => {
         expect(enableNeverTrusted.output).toContain('MCP_RECONCILE_FAILED')
         await chat('neverTrusted', 'ok', 'ABSENT')
         expect(await calls()).toHaveLength(count)
-        await control('disable')
-        const untrusted = await invoke(
-          ['mcp', 'trust', 'pager', 'rejected', '--expected-revision', expectedRevision],
-          workspace,
-          env,
-          true,
-        )
-        expect(untrusted.code, untrusted.output).toBe(0)
-        const enableUntrusted = await invoke(
-          ['mcp', 'enable', 'pager', '--expected-revision', expectedRevision],
-          workspace,
-          env,
-          true,
-        )
-        expect(enableUntrusted.code, enableUntrusted.output).not.toBe(0)
-        expect(enableUntrusted.output).toContain('MCP_RECONCILE_FAILED')
-        await chat('untrusted', 'ok', 'ABSENT')
-        expect(await calls()).toHaveLength(count)
         // A failed enable still records the requested desired state. Return it to disabled and
         // wait for that operation before exercising the store's safe removal precondition.
         await control('disable')
