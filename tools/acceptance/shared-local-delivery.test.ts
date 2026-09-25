@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
+import { getApiKeyProvider } from '../../packages/ai/src/index.js'
 import { unixConnectTarget } from '../../packages/cli/src/boot/connect.js'
 import { ExitCode } from '../../packages/cli/src/errors.js'
 import { probePowerShell } from '../../packages/host/src/adapters/powershell.js'
@@ -98,10 +99,18 @@ it.skipIf(!entry)(
       })
     const editedFile = join(cwd, '中文 编辑.txt')
     await writeFile(editedFile, 'before', 'utf8')
-    const provider = await startProviderFixture('Shared backend acceptance reply. 中文验证通过。', {
-      name: 'edit',
-      args: { path: editedFile, edits: [{ oldText: 'before', newText: 'after 中文' }] },
-    })
+    const deepseek = getApiKeyProvider('deepseek')
+    if (!deepseek) throw new Error('DeepSeek provider is unavailable')
+    const model = (await deepseek.createAdapter()).models(deepseek.route)[0]?.id
+    if (!model) throw new Error('DeepSeek model catalogue is empty')
+    const provider = await startProviderFixture(
+      'Shared backend acceptance reply. 中文验证通过。',
+      {
+        name: 'edit',
+        args: { path: editedFile, edits: [{ oldText: 'before', newText: 'after 中文' }] },
+      },
+      model,
+    )
     const clients: ReturnType<typeof createClient>[] = []
     let web: ChildProcess | undefined
     try {
@@ -206,7 +215,7 @@ it.skipIf(!entry)(
         providerId: 'deepseek',
         baseUrl: provider.baseUrl,
         apiKey: provider.apiKey,
-        model: 'deepseek-v4-flash',
+        model,
         expectedRevision: 0,
       })
       const prompt = "共享后台中文请求，it's a test."
