@@ -1,4 +1,5 @@
-import type { LedgerState } from '../reduce/state.js'
+// Ledger state as plain data, so tests and shared cases compare two states by content.
+import type { LedgerState } from '../src/reduce/state.js'
 
 export type EncodedLedgerState = Omit<
   LedgerState,

@@ -5,12 +5,12 @@ import { MemoryStorage } from '../src/log/memory-storage.js'
 import { scanPages } from '../src/log/scan-pages.js'
 import { SessionLogImpl } from '../src/log/session-log.js'
 import type { StorageAdapter } from '../src/log/storage.js'
-import { encodeLedgerState } from '../src/project/cache.js'
 import { computeSurface } from '../src/project/surface.js'
 import { projectUI, UIProjectionCell } from '../src/project/ui.js'
 import { openTracked, StateTracker } from '../src/reduce/tracker.js'
 import { canonicalJson } from '../src/request/hash.js'
 import type { Event, EventInput } from '../src/types.js'
+import { encodeLedgerState } from '../testkit/encode-ledger-state.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const base = { actor, origin: 'system', trust: 'trusted' } as const
@@ -419,6 +419,20 @@ async function busySession(storage: MemoryStorage, lane: string) {
       }),
     ]),
   )
+  // End on a cost row while the approval stays parked: credits, usage and the cost node all add up,
+  // so a replay that folds the last row twice cannot come out equal to the writer.
+  await live.log.append(
+    onLane([
+      row('cost/ledger', {
+        purpose: 'inference',
+        effectId: 'last-inference',
+        tokens: { input: 7, output: 3, cacheRead: 2, cacheWrite: 1 },
+        credits: 5,
+        creditSource: 'gateway',
+        model: 'm',
+      }),
+    ]),
+  )
   return live
 }
 
@@ -439,6 +453,8 @@ describe('a cold reopen matches the live writer', () => {
     const live = await busySession(storage, lane)
     const tools = (await live.ui.view()).nodes.filter((node) => node.kind === 'tool')
     expect(tools.find((node) => node.toolUseId === 'parent-tool')?.children?.length).toBe(1)
+    expect(live.tracker.state.pendingApprovals.has('parked')).toBe(true)
+    expect((await live.log.scan({ order: 'desc', limit: 1 }))[0]?.type).toBe('cost/ledger')
     const expected = await snapshot(live)
     await live.log.close()
     const reopened = await openTracked({

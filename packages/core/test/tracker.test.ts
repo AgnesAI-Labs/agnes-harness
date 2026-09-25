@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { defaultIds } from '../src/ids.js'
 import type { EventInput, StorageAdapter } from '../src/index.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
-import { encodeLedgerState } from '../src/project/cache.js'
 import { initialState } from '../src/reduce/reducer.js'
 import { effectTree } from '../src/reduce/state.js'
 import {
@@ -13,6 +12,7 @@ import {
   verifyRegisters,
 } from '../src/reduce/tracker.js'
 import { canonicalJson } from '../src/request/hash.js'
+import { encodeLedgerState } from '../testkit/encode-ledger-state.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const noTimers = { setTimeout: () => 0, clearTimeout: () => undefined }

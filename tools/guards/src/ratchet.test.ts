@@ -880,7 +880,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // FOLD-CACHE-REMOVAL: the fold cache goes - its codec and write policy, the storage field and
   // reader, the per-append trial fold and the open-time restore; every open folds from seq 1.
   // Measured 25019, exact, no spare (-210).
-  'packages/core/src': 25019,
+  // FOLD-CACHE-REMOVAL follow-up: encodeLedgerState, used only by tests, moves to the testkit.
+  // Measured 24962, exact, no spare (-57).
+  'packages/core/src': 24962,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

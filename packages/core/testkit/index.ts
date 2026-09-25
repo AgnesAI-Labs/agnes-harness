@@ -13,6 +13,7 @@ export {
 } from '../test/helpers/fake-provider.js'
 export { fakeSeams } from '../test/helpers/fake-seams.js'
 export { actor, noTimers, openSession, readTool, shellTool } from '../test/helpers/open-session.js'
+export { type EncodedLedgerState, encodeLedgerState } from './encode-ledger-state.js'
 export { fencedFs, testFsPolicy } from './fenced-fs.js'
 export { OP_CELL_CASES } from './op-cell-cases.js'
 export { OP_CHECK_CASES, type Tamperable } from './op-check-cases.js'
