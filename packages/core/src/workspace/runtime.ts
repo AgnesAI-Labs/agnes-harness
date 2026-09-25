@@ -424,6 +424,11 @@ export interface SessionWorkspaceLifecycle {
 /** A pending child alias. Its state is pending -> committed -> closed or pending -> closed. */
 export interface ChildWorkspaceLifecycle extends SessionWorkspaceLifecycle {
   readonly runtime: SessionWorkspaceRuntime
+  /**
+   * Host-fitted sandbox bound to this child's workspace. The child session is opened with it in place
+   * of the Kernel-level seam, which a Host leaves unbound to any workspace.
+   */
+  readonly sandbox?: SandboxSeam
   commit(): boolean
 }
 
