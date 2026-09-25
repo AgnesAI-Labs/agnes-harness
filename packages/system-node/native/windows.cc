@@ -270,11 +270,24 @@ static napi_value protectPrivateDirectory(napi_env env, napi_callback_info info)
                                 nullptr, nullptr, &dacl, nullptr, &raw);
   if (status != ERROR_SUCCESS) return failure(env, "GetSecurityInfo", status);
   Local descriptor(raw);
-  // Exclusive directory access prevents SetSecurityInfo from propagating ACEs to children.
-  status = SetSecurityInfo(directory.value, SE_FILE_OBJECT,
-                          DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                          nullptr, nullptr, dacl, nullptr);
-  if (status != ERROR_SUCCESS) return failure(env, "SetSecurityInfo", status);
+  // SetSecurityInfo propagates a container's inheritable entries into every existing child,
+  // whatever the handle's sharing mode, so it would rewrite the children's ACLs. Set the
+  // descriptor on this handle alone instead, which never propagates. A protected ACL no longer
+  // inherits, so the entries this directory inherited are kept as its own explicit entries.
+  if (!dacl) return failure(env, "Private directory validation", ERROR_ACCESS_DENIED);
+  for (DWORD i = 0; i < dacl->AceCount; i++) {
+    void* rawAce = nullptr;
+    if (!GetAce(dacl, i, &rawAce)) return failure(env, "GetAce", GetLastError());
+    auto* header = static_cast<ACE_HEADER*>(rawAce);
+    header->AceFlags = static_cast<BYTE>(header->AceFlags & ~INHERITED_ACE);
+  }
+  SECURITY_DESCRIPTOR frozen;
+  if (!InitializeSecurityDescriptor(&frozen, SECURITY_DESCRIPTOR_REVISION) ||
+      !SetSecurityDescriptorDacl(&frozen, TRUE, dacl, FALSE) ||
+      !SetSecurityDescriptorControl(&frozen, SE_DACL_PROTECTED, SE_DACL_PROTECTED))
+    return failure(env, "Private directory descriptor", GetLastError());
+  if (!SetKernelObjectSecurity(directory.value, DACL_SECURITY_INFORMATION, &frozen))
+    return failure(env, "SetKernelObjectSecurity", GetLastError());
   if (!checkPrivateDacl(env, directory.value, valid)) return nullptr;
   if (!valid) return failure(env, "Private directory validation", ERROR_ACCESS_DENIED);
   napi_value result; napi_get_undefined(env, &result); return result;
