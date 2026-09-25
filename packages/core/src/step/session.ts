@@ -45,7 +45,7 @@ import type { InvariantRegistry } from '../invariants/registry.js'
 import type { CoreDiagName } from '../kernel.js'
 import { scanAll, scanPages } from '../log/scan-pages.js'
 import type { SessionLogImpl, Timers } from '../log/session-log.js'
-import type { ScanQuery } from '../log/storage.js'
+import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -1018,7 +1018,7 @@ export class SessionImpl {
       const rows = await this.d.log.scan({
         type: INBOX_BUDGET_EVENT,
         order: 'desc',
-        limit: 500,
+        limit: SCAN_PAGE_MAX,
         ...(toSeq === undefined ? {} : { toSeq }),
       })
       for (const event of rows) {
@@ -1030,7 +1030,7 @@ export class SessionImpl {
           throw new CoreError('E_RELATION', `duplicate budget override for inbox item ${itemId}`)
         found = data.creditsCap
       }
-      if (rows.length < 500) return found
+      if (rows.length < SCAN_PAGE_MAX) return found
       const oldest = rows.at(-1)
       if (!oldest || oldest.seq <= 1) return found
       toSeq = (oldest.seq - 1) as Seq
@@ -1046,7 +1046,7 @@ export class SessionImpl {
         toSeq: this.lastSeq,
         type: TURN_BUDGET_EVENT,
         order: 'asc',
-        limit: 500,
+        limit: SCAN_PAGE_MAX,
       })
       for (const event of rows) {
         const data = event.data as Partial<TurnBudgetOverride> | null
@@ -1062,7 +1062,7 @@ export class SessionImpl {
           throw new CoreError('E_RELATION', `duplicate budget override for turn ${op.meta.turn}`)
         found = data.creditsCap
       }
-      if (rows.length < 500) return found
+      if (rows.length < SCAN_PAGE_MAX) return found
       const newest = rows.at(-1)
       if (!newest || newest.seq >= this.lastSeq) return found
       fromSeq = (newest.seq + 1) as Seq
@@ -1941,7 +1941,7 @@ export class SessionImpl {
     const events: Event[] = []
     let fromSeq = 1
     while (fromSeq <= cut) {
-      const page = await this.d.log.scan({ fromSeq, toSeq: cut, limit: 500 })
+      const page = await this.d.log.scan({ fromSeq, toSeq: cut, limit: SCAN_PAGE_MAX })
       if (page.length === 0)
         throw new CoreError('E_STORAGE_FAULT', 'UI projection scan ended before its captured cut', {
           fromSeq,

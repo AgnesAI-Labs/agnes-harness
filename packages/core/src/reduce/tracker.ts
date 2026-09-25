@@ -28,7 +28,7 @@ export class StateTracker {
   }
 
   /** Folds a log from its first row, one bounded page at a time. */
-  static async rebuild(log: SessionLogImpl, pageSize = 500): Promise<StateTracker> {
+  static async rebuild(log: SessionLogImpl, pageSize = SCAN_PAGE_MAX): Promise<StateTracker> {
     const t = new StateTracker()
     for await (const page of scanPages((q) => log.scan(q), { fromSeq: 1 }, pageSize)) t.apply(page)
     return t
