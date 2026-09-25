@@ -425,7 +425,7 @@ packagedIsolation('runs an opted-in hook through the packaged Node runner and re
         sessionKey,
         workspaceId: 'a'.repeat(64),
         revision: 1,
-        canonicalRoot: realpathSync(x.deps.workspaceRoot),
+        canonicalRoot: realpathSync.native(x.deps.workspaceRoot),
       },
       sessionKey,
     )

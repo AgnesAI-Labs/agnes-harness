@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import {
@@ -19,6 +18,7 @@ import type {
 import { type Event, prepareIntegrity, scanAll, verifyLedger } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { localRealpathSync } from '../src/adapters/fs-io-local.js'
 import type { CapabilityLevel, PlatformBackend } from '../src/adapters/platform.js'
 import { createPlatform } from '../src/adapters/platform.js'
 import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
@@ -240,7 +240,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
       // the bound fence compares canonical spellings, so the policy must name the real one.
       fsPolicy: () => {
         const policy = testFsPolicy('/workspace')
-        const workspaceRoot = realpathSync(o.dataDir)
+        const workspaceRoot = localRealpathSync(o.dataDir)
         const rules = policy.rules.map((rule) => ({
           ...rule,
           path: join(workspaceRoot, ...rule.path.slice(policy.workspaceRoot.length).split('/')),

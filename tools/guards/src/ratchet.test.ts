@@ -2390,7 +2390,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // re-measured, exact, no spare.
   // SKILL-CATALOG-CLEAN-REWRITE merge: retained skill-preload header (+4), combined exact total.
   // Skill import and approved reinstall on the merged tree: measured 38038, no spare.
-  'packages/host/src': 38038,
+  // WIN-SHORT-NAMES: the local fence spells paths as the native resolver does on Windows, so 8.3
+  // short names and long names canonicalize alike; measured 38069, exact, no spare (+31).
+  'packages/host/src': 38069,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2545,7 +2547,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O1: same change as packages/host/src. Measured: 5068 (+7), exact.
   // UI-CACHE-INCREMENTAL C1 (rebased on 950fc6f3): measured 4995, exact, no spare (-73).
   // SKILL-GITHUB-RATE-LIMIT: measured 5010, no spare.
-  'packages/host/src/adapters': 5010,
+  // WIN-SHORT-NAMES: FsIo.finalPath, its local and session-workspace wiring, and one local realpath
+  // helper; measured 5042, exact, no spare (+32).
+  'packages/host/src/adapters': 5042,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.

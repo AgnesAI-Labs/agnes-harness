@@ -226,7 +226,7 @@ describe('createSession', () => {
       seams: { sandbox: { fsPolicy: () => testFsPolicy('/w') } },
     })
     const session = await host.createSession({ cwd: dataDir })
-    expect(realpathSync(session.d.cwd)).toBe(realpathSync(dataDir))
+    expect(realpathSync.native(session.d.cwd)).toBe(realpathSync.native(dataDir))
     await host.close()
   })
   it('does not let a per-session sandbox override bypass the Host workspace runtime', async () => {

@@ -72,7 +72,7 @@ describe('bootLocal', () => {
 
   it('restores an explicitly registered session workspace after a fresh local boot', async () => {
     const dir = home()
-    const canonicalDir = realpathSync(dir)
+    const canonicalDir = realpathSync.native(dir)
     const sessionKey = 'agnes:local:local-dev:cli:workspace:durable-authority'
     const opened: Array<Parameters<Host['createSession']>[0]> = []
     const baseCreateHost = testDeps(dir).createHostImpl

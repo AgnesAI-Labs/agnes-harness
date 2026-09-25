@@ -38,7 +38,7 @@ describe('authenticated session ownership RPC guard', () => {
           params: { cwd: h.dataDir, mcpServers: [] },
         }),
       ).resolves.toMatchObject({
-        result: { sessionId: canonicalSessionKey(h.host.profile, actor, realpathSync(h.dataDir)) },
+        result: { sessionId: canonicalSessionKey(h.host.profile, actor, realpathSync.native(h.dataDir)) },
       })
     } finally {
       await endpoint.close()

@@ -133,7 +133,7 @@ async function buildFixture(): Promise<{ assembled: Assembled; profile: Resolved
     models: [modelRecord('gw', 'm')],
   }
   const seams = fakeSeams()
-  seams.sandbox = { ...seams.sandbox, fsPolicy: () => testFsPolicy(realpathSync(dataDir)) }
+  seams.sandbox = { ...seams.sandbox, fsPolicy: () => testFsPolicy(realpathSync.native(dataDir)) }
   const alternate: RouteDecl = {
     route: 'alt',
     api: 'openai-completions',

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, realpathSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { isAbsolute, join, posix, resolve } from 'node:path'
 import type { ApprovalRequest, FsPolicy, FsRule, Verdict } from '@agnes/core'
 import { validateFsPolicy } from '@agnes/core'
@@ -19,7 +19,7 @@ import {
 import { createRemoteExec } from './exec-remote.js'
 import { createFs, type FencedFs, type FsBinding, type HostFs } from './fs.js'
 import type { FsIo } from './fs-io.js'
-import { localFsIo } from './fs-io-local.js'
+import { localFsIo, localRealpathSync } from './fs-io-local.js'
 import { createRemoteFsIo } from './fs-io-remote.js'
 import { createPlatform, type PlatformBackend, type SandboxBackendReport } from './platform.js'
 import { type PowerShellDescriptor, resolveConfiguredPowerShell } from './powershell.js'
@@ -115,7 +115,7 @@ export const samePlatformPath = (left: string, right: string, caseSensitive: boo
 /** Canonical, or the lexical spelling when the path does not exist yet to be realpath'ed. */
 const canonicalRoot = (path: string): string => {
   try {
-    return realpathSync(path)
+    return localRealpathSync(path)
   } catch {
     return resolve(path)
   }
@@ -292,7 +292,7 @@ export async function openAdapters(
     // elsewhere would otherwise read and write outside its own workspace, because the fence would be
     // pinned to wherever the host process happened to start.
     //
-    // In remote mode it is a remote-absolute path (RA15), so `canonicalRoot`'s `realpathSync` is
+    // In remote mode it is a remote-absolute path (RA15), so `canonicalRoot`'s local realpath is
     // wrong twice over: it is a local syscall about a remote path, and where that spelling happens to
     // exist locally too (`/tmp`, `/home/<same name>`, a symlinked `/var`) it silently rewrites the
     // fence's root to the LOCAL realpath of a remote directory. The remote spelling is normalized

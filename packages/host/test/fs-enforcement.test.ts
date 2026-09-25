@@ -87,12 +87,12 @@ const IMPLEMENTATIONS: Record<string, Impl> = {
       const root = scratch()
       seedReal(root, WORKSPACE_DENY)
       const fs = createFs(() => ({
-        policy: testFsPolicy(realpathSync(root), { deny: WORKSPACE_DENY }),
+        policy: testFsPolicy(realpathSync.native(root), { deny: WORKSPACE_DENY }),
         caseSensitive: false,
       }))
       return { fs, root }
     },
-    realRoot: (r) => realpathSync(r),
+    realRoot: (r) => realpathSync.native(r),
     resolvesSymlinks: true,
     foldsCase: true,
   },
@@ -104,12 +104,12 @@ const IMPLEMENTATIONS: Record<string, Impl> = {
       const root = scratch()
       seedReal(root, DATA_DENY)
       const fs = createFs(() => ({
-        policy: testFsPolicy(realpathSync(root), { deny: DATA_DENY }),
+        policy: testFsPolicy(realpathSync.native(root), { deny: DATA_DENY }),
         caseSensitive: false,
       }))
       return { fs, root }
     },
-    realRoot: (r) => realpathSync(r),
+    realRoot: (r) => realpathSync.native(r),
     resolvesSymlinks: true,
     foldsCase: true,
   },
@@ -188,12 +188,15 @@ const IMPLEMENTATIONS: Record<string, Impl> = {
       const root = scratch()
       seedReal(root, WORKSPACE_DENY)
       const fs = createFs(
-        () => ({ policy: testFsPolicy(realpathSync(root), { deny: WORKSPACE_DENY }), caseSensitive: true }),
+        () => ({
+          policy: testFsPolicy(realpathSync.native(root), { deny: WORKSPACE_DENY }),
+          caseSensitive: true,
+        }),
         createRemoteFsIo(createLoopbackTransport({ root })),
       )
       return { fs, root }
     },
-    realRoot: (r) => realpathSync(r),
+    realRoot: (r) => realpathSync.native(r),
     resolvesSymlinks: true,
     // Case-fold behaviour lives in fs.ts itself, already exercised by the two real-disk rows above;
     // this row's only new coverage is the io, not the fold, so it skips the redundant run.
@@ -270,7 +273,7 @@ describe.each(
       root,
       link = (at, target) => {
         symlinkSync(target, at, process.platform === 'win32' ? 'junction' : 'dir')
-        expect(realpathSync(at)).toBe(realpathSync(target))
+        expect(realpathSync.native(at)).toBe(realpathSync.native(target))
       },
     } = impl.open()
     link(join(root, 'link'), join(root, impl.deny[0] as string))
@@ -292,7 +295,7 @@ describe.each(
     const root = scratch()
     const deny = impl.deny[0] as string
     const folded = createFs(() => ({
-      policy: testFsPolicy(realpathSync(root), { deny: impl.deny }),
+      policy: testFsPolicy(realpathSync.native(root), { deny: impl.deny }),
       caseSensitive: false,
     }))
     await expect(folded.read(`${flipCase(deny)}/inside`)).rejects.toThrow(/E_FS_DENIED/)
@@ -300,7 +303,7 @@ describe.each(
     // has to keep working: on such a volume the variant names a different file. Whether that file
     // then exists is the platform's business, so only the reason is asserted, not the outcome.
     const sensitive = createFs(() => ({
-      policy: testFsPolicy(realpathSync(root), { deny: impl.deny }),
+      policy: testFsPolicy(realpathSync.native(root), { deny: impl.deny }),
       caseSensitive: true,
     }))
     const why = await sensitive.read(`${flipCase(deny)}/inside`).then(

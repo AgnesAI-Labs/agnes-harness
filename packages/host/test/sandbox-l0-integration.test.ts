@@ -290,7 +290,7 @@ async function assembleWithSandbox(opts: {
       sessionKey,
       workspaceId: 'a'.repeat(64),
       revision: 1,
-      canonicalRoot: realpathSync(workspace),
+      canonicalRoot: realpathSync.native(workspace),
     },
     sessionKey,
   )
@@ -434,11 +434,11 @@ describe('the bound policy is enforced by the real host FsOps on real directorie
       // trip its cycle guard on a coincidence, not a real cycle. Resolving the target first keeps
       // this a single-hop symlink - exactly what the assertion below is pinning - without depending
       // on where the OS happens to put its temp directory.
-      symlinkSync(realpathSync(real), link)
+      symlinkSync(realpathSync.native(real), link)
       const f = await assembleWithSandbox({ workspace: link })
       try {
         // The seam asked the host resolver, not the lexical spelling it was handed.
-        expect(f.seam.fsPolicy().workspaceRoot).toBe(realpathSync(real))
+        expect(f.seam.fsPolicy().workspaceRoot).toBe(realpathSync.native(real))
         expect(f.seam.fsPolicy().workspaceRoot).not.toBe(link)
       } finally {
         await f.a.rollback.unwind()

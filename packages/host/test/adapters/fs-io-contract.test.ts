@@ -34,7 +34,7 @@ const enc = (s: string): Uint8Array => new TextEncoder().encode(s)
 function localFixture(): Fixture {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-fsio-local-'))
   const out = mkdtempSync(join(tmpdir(), 'agnes-fsio-out-'))
-  const root = realpathSync(dir)
+  const root = realpathSync.native(dir)
   return {
     io: localFsIo,
     root,
@@ -46,7 +46,7 @@ function localFixture(): Fixture {
     link: (at, target) => symlinkSync(target, join(root, at)),
     outside: () => {
       writeFileSync(join(out, 'secret'), 'x', 'utf8')
-      return realpathSync(out)
+      return realpathSync.native(out)
     },
     dispose: () => {
       rmSync(dir, { recursive: true, force: true })
@@ -76,7 +76,7 @@ function memoryFixture(): Fixture {
 function remoteFixture(): Fixture {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-fsio-remote-'))
   const out = mkdtempSync(join(tmpdir(), 'agnes-fsio-out-'))
-  const root = realpathSync(dir)
+  const root = realpathSync.native(dir)
   return {
     io: createRemoteFsIo(createLoopbackTransport({ root })),
     root,
@@ -88,7 +88,7 @@ function remoteFixture(): Fixture {
     link: (at, target) => symlinkSync(target, join(root, at)),
     outside: () => {
       writeFileSync(join(out, 'secret'), 'x', 'utf8')
-      return realpathSync(out)
+      return realpathSync.native(out)
     },
     dispose: () => {
       rmSync(dir, { recursive: true, force: true })

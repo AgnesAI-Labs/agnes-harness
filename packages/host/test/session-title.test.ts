@@ -63,7 +63,7 @@ async function fixture(
     ledger?: LedgerSeam
   } = {},
 ) {
-  const root = options.root ?? realpathSync(mkdtempSync(join(tmpdir(), 'agnes-title-')))
+  const root = options.root ?? realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-')))
   if (!options.root) roots.push(root)
   const calls: RequestBody[] = []
   const callOptions: Array<Parameters<Provider['infer']>[1]> = []
@@ -210,7 +210,7 @@ it('generates with the captured model, persists once, and bills the first turn w
 })
 
 it('records equal-sequence title costs from separate sessions in the real ledger without replay duplicates', async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-title-ledger-')))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-ledger-')))
   roots.push(root)
   const storage = createSqliteStorage({ file: join(root, 'audit.db'), tablesDir: join(root, 'audit-tables') })
   const init = fakeSeamInit()
@@ -255,7 +255,7 @@ it('records equal-sequence title costs from separate sessions in the real ledger
 it.each(['valid title', '```invalid title'])(
   'recovers persisted title cost after ledger failure: %s',
   async (title) => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-title-recovery-')))
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-recovery-')))
     roots.push(root)
     const storage = createSqliteStorage({
       file: join(root, 'audit.db'),
