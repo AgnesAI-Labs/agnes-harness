@@ -123,16 +123,12 @@
   --agnes-bg-surface: var(--agnes-color-neutral-025);
   --agnes-bg-popover: var(--agnes-color-white);
   --agnes-bg-card: var(--agnes-color-neutral-150-a40);
-  /* 代码面：DSH 的 markdown-code-block 是 rgb(249,250,251)，但那是压在纯白内容底上的；
-     B 的内容底已是 #fafafa，同值灰会看不见。改用客户端既有的内嵌面，
-     保持 DSH 的关系（代码面比内容底深一档）。 */
   --agnes-bg-code: var(--agnes-color-neutral-150-a40);
   --agnes-bg-selected: var(--agnes-color-neutral-575-a12);
   --agnes-bg-hover: var(--agnes-color-neutral-150-a40);
   --agnes-bg-scrim: var(--agnes-color-white-a50);
   --agnes-bg-lightbox: var(--agnes-color-black-a85);
-  /* 头部与设置面板表头按 DSH 不再磨砂上色，--agnes-surface-glass 随之失去消费点，已删除；
-     -soft / -hover 仍有消费点。 */
+  /* 头部和设置表头不使用磨砂底；-soft / -hover 仍有消费点。 */
   --agnes-surface-glass-soft: rgb(255 255 255 / 72%);
   --agnes-surface-glass-hover: rgb(255 255 255 / 54%);
 
@@ -147,8 +143,7 @@
   /* Line */
   --agnes-line-emphasis: var(--agnes-color-line-light-a80);
   --agnes-line-primary: var(--agnes-color-line-light-a30);
-  /* --agnes-line-secondary（最浅一档 a20）在 DSH 对齐后失去消费点，已删除；
-     需要最浅发丝的场合由 --agnes-line-primary 承担。 */
+  /* --agnes-line-secondary 已无消费点；最浅发丝由 --agnes-line-primary 承担。 */
 
   /* Button —— secondary 在 .secondary-button 里是描边按钮，不需要填充角色；
      disabled 沿用 --agnes-text-tertiary + --agnes-bg-card（单独配 disabled 底色会掉到 1.43:1）。 */
@@ -159,7 +154,6 @@
 
   /* Status */
   --agnes-status-success-text: var(--agnes-color-green-600);
-  /* 连接成功胶囊的底色（照 DSH state-success-tertiary）。 */
   --agnes-status-success-bg: var(--agnes-color-green-bg-light);
   --agnes-status-warning-text: var(--agnes-color-yellow-700);
   /* 警告背景：桌面端只有 warning 文字色，本次补齐（设计 §5.4） */
@@ -173,25 +167,15 @@
   --shadow-elevation: 0 4px 20px -12px rgb(0 0 0 / 12%);
   --shadow-hairline: 0 0 0 1px rgb(0 0 0 / 5%);
   --shadow-dialog: 0 28px 80px rgb(22 30 25 / 20%);
-  /* 抬升面（照 DSH 的 --dsw-elevation-*）：0.5px 发丝描边画在阴影的**首层**，
-     所以抬升元素自身 border: 0 —— 描边不占布局，也不会与阴影叠成双层边。
-     描边色跟随主题，等价于 DSH 可重绑的 --dsw-elevation-stroke-color。 */
   --shadow-elevation-soft:
     0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
-  /* 菜单 / 浮层 / 对话框面（DSH --dsw-elevation-prominent 的逐值照抄）。 */
   --shadow-elevation-prominent:
     0 0 0 0.5px var(--agnes-line-primary), 0 3px 8px rgb(0 0 0 / 4%), 0 0 20px rgb(0 0 0 / 5%);
 
-  /* --agnes-highlight-inset（品牌填充上的内高光）在 DSH 对齐后失去消费点：
-     DSH 的品牌填充没有内高光，故删除。 */
+  /* 品牌填充不使用内高光，--agnes-highlight-inset 已删除。 */
 
   /* Product-specific */
-  /* 侧栏面：照 DSH 的 specific-sidebar-fill（近白 rgb(249,250,251)），
-     用客户端最接近的基础色 neutral-050 (#fbfbfb)。此前按"角色名"映射到 neutral-150-a40 的灰，
-     名字对得上但观感差一档。 */
-  /* 侧栏与内容区必须分得开：照 DSH 的关系（内容面是纯白 bg-base，侧栏是浅灰
-     specific-sidebar-fill），而不是两个几乎同值的近白。此前是侧栏 #fbfbfb /
-     内容 #fafafa —— 只差 1 个色阶，观感上糊成一片。 */
+  /* 内容面保持纯白，侧栏使用浅灰，避免相邻表面只差一个色阶而难以区分。 */
   --agnes-bg-app-sidebar: var(--agnes-color-neutral-075);
   --agnes-bg-app-content: var(--agnes-bg-page);
 
@@ -251,7 +235,6 @@
   --agnes-bg-surface: var(--agnes-color-neutral-800);
   --agnes-bg-popover: var(--agnes-color-neutral-800);
   --agnes-bg-card: var(--agnes-color-white-a04);
-  /* 照 DSH 深色 markdown-code-block 的 rgb(27,27,28)。 */
   --agnes-bg-code: var(--agnes-color-neutral-850);
   --agnes-bg-selected: var(--agnes-color-neutral-750);
   --agnes-bg-hover: var(--agnes-color-white-a04);
@@ -290,7 +273,6 @@
   --shadow-elevation: 0 4px 20px -12px rgb(0 0 0 / 55%);
   --shadow-hairline: 0 0 0 1px rgb(255 255 255 / 8%);
   --shadow-dialog: 0 28px 80px rgb(0 0 0 / 55%);
-  /* 与浅色同值：分离感由发丝描边承担（深色下描边换成浅环），与 DSH 一致。 */
   --shadow-elevation-soft:
     0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
   --shadow-elevation-prominent:
@@ -299,7 +281,6 @@
   /* 与浅色同值：品牌填充仍是靛蓝，顶部高光的角色不变 */
 
   /* Product-specific */
-  /* 深色侧栏面：照 DSH 的 bluish-900（比页面亮一档），用客户端 neutral-850。 */
   --agnes-bg-app-sidebar: var(--agnes-color-neutral-850);
   --agnes-bg-app-content: var(--agnes-color-neutral-950);
 
@@ -410,11 +391,6 @@ body {
   display: grid;
   grid-template-columns: 288px minmax(0, 1fr);
   overflow: hidden;
-  /* 照 DSH 的列宽轴：正文列宽 W，输入卡 = W + 32px（ConversationRoot 的
-     --dsh-chat-content-width / --dsh-composer-card-max-width 关系）。
-     此前正文 52rem、输入卡 47rem，输入卡反而比正文窄，与 DSH 相反。 */
-  /* DSH 的列宽轴上限是 920px（clamp(680px, 列宽*0.64, 920px) 的 cap），
-     此前取 52rem(832px) 显得窄。 */
 }
 /* 区域表面钩子（不变量 R1，设计 §20）：可换肤表面属性必须声明在 data-agnes-region 选择器 (0,1,0) 上，
    不能声明在元素的 #id (1,0,0) 上。皮肤样式表靠 adoptedStyleSheets 排在文档样式表之后取胜，
@@ -491,9 +467,6 @@ textarea:focus-visible {
   border-color: var(--agnes-input-border-focus);
   box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
 }
-/* 禁用态照 DSH 用不透明度表达，**不换底色**——换底色会把"输入面/卡片面"的语义搅在一起
-   （此前 disabled 用了 --agnes-bg-card，使禁用的输入框看起来像一张卡）。
-   按钮取 0.4（DSH .primary/.add 的值）；输入类取 0.5（客户端 Input 的 disabled:opacity-50）。 */
 button:disabled {
   cursor: not-allowed;
   opacity: 0.4;
@@ -604,7 +577,6 @@ textarea {
   padding: 0.25rem 0.625rem;
 }
 .icon-button {
-  /* 照 DSH 的 iconButton：28px 正圆、无边框、ink 用 secondary 一档。 */
   width: 1.75rem;
   min-width: 1.75rem;
   height: 1.75rem;
@@ -705,7 +677,6 @@ textarea {
   line-height: 1.35;
   text-transform: uppercase;
 }
-/* 侧栏分组标题照 DSH 的 sectionLabel：不做大小写变换、14px、字重 400。 */
 .section-label {
   color: var(--agnes-text-tertiary);
   font-size: 0.875rem;
@@ -718,8 +689,6 @@ textarea {
   display: grid;
 }
 .sidebar-actions .primary-button {
-  /* 照 DSH 的 newSession：38px 高、圆角 12、0.5px 描边、14px/500、抬升底且无投影。
-     用 height 而不是 min-height：内边距 + 行高 + 0.5px 描边合计 39px，min-height 会撑到 39。 */
   height: 2.375rem;
   justify-content: center;
   padding: 0.5rem 1rem;
@@ -748,9 +717,6 @@ textarea {
   overscroll-behavior: contain;
 }
 .session-row {
-  /* 照 DSH 的 `.sessionRow`：悬停/选中底色画在**行**上，不画在内层按钮上。
-     内层 `.session` 是 `flex: 1` 的按钮，行尾的三点动作槽在按钮之外；底色画在按钮上时，
-     悬停底色会在动作槽左侧断掉，三点浮在没有底色的区域上。 */
   display: flex;
   align-items: center;
   position: relative;
@@ -770,12 +736,6 @@ textarea {
 }
 .session-menu {
   flex: none;
-  /* 动作位**常驻占位、悬停显现**（照 DSH）：占位常在，悬停显隐时标题的省略点
-     不会左右跳动，标题与「⋯」之间是一条恒定的缝。显隐用 opacity 而不是
-     display:none —— none 会让按钮不可聚焦，键盘用户永远够不到这个入口
-     （opacity 只是不响应指针，Tab 仍可达，焦点进行内即显现）。菜单打开期间钉住。
-     `data-menu-open` 由菜单模块写在行上：不用 `:has()`，因为 Chrome 对"元素插入后再改属性"的
-     `:has()` 重算不可靠（实测同一条规则里 `display` 会刷新而 `background` 不会）。 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -802,9 +762,7 @@ textarea {
   }
 }
 .session-menu-trigger {
-  /* 照 DSH 的行内动作：16px 裸图标、三级文字色、悬停转主色，没有底色也没有描边。
-     min-height 必须显式给：全局 `button { min-height: 2.25rem }` 会把触发器撑成 16×36，
-     行高随之在悬停时多 4px（实测过）。 */
+  /* 行内动作使用 16px 裸图标、三级文字色；显式设置 min-height，避免悬停时行高跳动。 */
   width: 1rem;
   min-height: 1rem;
   height: 1rem;
@@ -821,9 +779,8 @@ textarea {
   color: var(--agnes-text-primary);
   background: transparent;
 }
-/* 照 DSH 的 Menu 卡：4px 内边距、圆角 20px、border: 0（发丝描边画在阴影首层）、
-   elevation-prominent。宽 218px 与落点由 `positionPopover` 写进行内样式。
-   必须是 fixed —— 面板挂在 body 上，`.sidebar` 的 overflow 裁不到它。 */
+/* 菜单卡使用 4px 内边距和 20px 圆角；宽度与落点由 positionPopover 设置。
+   面板挂在 body 上，必须用 fixed 避开侧栏的 overflow 裁剪。 */
 .session-menu-actions {
   position: fixed;
   z-index: 70;
@@ -838,9 +795,7 @@ textarea {
   background: var(--agnes-bg-popover);
   box-shadow: var(--shadow-elevation-prominent), var(--shadow-hairline);
 }
-/* 照 DSH 的菜单单元：最小高 40px、8px/10px 内边距、圆角 10px、14px/22px、图文间距 8px。
-   `justify-content` 必须显式左对齐：全局 `button` 是 `inline-flex` + `justify-content: center`，
-   只写 `text-align: left` 会被 flex 居中盖掉（截图核验出来的）。 */
+/* 菜单单元显式左对齐；全局 button 使用 inline-flex 居中，text-align 不会覆盖它。 */
 .session-menu-actions button {
   display: flex;
   align-items: center;
@@ -862,7 +817,6 @@ textarea {
   border-color: transparent;
   background: var(--agnes-bg-hover);
 }
-/* 图标槽三级色、文字主色 —— 与 DSH 的图标槽/文字分工一致。 */
 .session-menu-actions .icon {
   color: var(--agnes-text-tertiary);
 }
@@ -1133,8 +1087,6 @@ textarea {
   border-color: transparent;
   background: transparent;
 }
-/* 照 DSH：选中与 hover 同底，不额外改字色/字重，也不加左侧色条；底色同样画在行上
-   （`.session-row[data-active="true"]`），所以这里只剩语义标记，没有可上色的属性。 */
 .session.active {
   color: var(--agnes-text-primary);
   font-weight: 400;
@@ -1166,13 +1118,8 @@ main {
   flex-direction: column;
   background: var(--agnes-bg-app-content);
 }
-/* 照 DSH 的对话头（ConversationRoot .header / .titleRow / .titleCluster）：
-   76px 高、padding 10px 28px 0 20px、0.5px 底分隔线；头部自己不铺色也不模糊，
-   底色交给内容区（DSH .header 没有 background / backdrop-filter）。 */
 .topbar {
   min-height: 4.75rem;
-  /* 顶栏内容上下居中：DSH 原本是 flex-start + padding-bottom 0（内容贴顶，
-     观感偏上），这里改成 center + 上下等内边距。 */
   align-items: center;
   gap: 0;
   padding: 0.625rem 1.75rem;
@@ -1190,8 +1137,6 @@ main {
   align-items: center;
   gap: 0.625rem;
 }
-/* 照 DSH 面包屑 .crumb：14/20、当前项 500 + label-primary、padding 4px 8px、
-   圆角 12px、220px 上限后省略号。 */
 .task-heading h1 {
   max-width: 220px;
   overflow: hidden;
@@ -1203,7 +1148,6 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 头部没有第二行：状态与标题同排，按 DSH .crumbSubagent 的次级 12/18 呈现。 */
 .task-heading span {
   min-width: 0;
   overflow: hidden;
@@ -1219,8 +1163,6 @@ main {
 #status[data-state="error"] {
   color: var(--agnes-status-danger-text);
 }
-/* 照 DSH ConnectionIndicator：28px 高、padding 0 8px、13px 圆角、1px 透明描边、
-   12/18 500；图标列 14px（7px 圆点 + 左右各 3px 补齐 DSH 的 14px 图标位）。 */
 .connection-group {
   flex: 0 0 auto;
   gap: 0.25rem;
@@ -1858,18 +1800,11 @@ button.trace-gantt-bar:focus-visible {
      （长代码串、长路径）把整条会话推出横向滚动。 */
   overflow-x: hidden;
   overflow-y: auto;
-  /* 照 DSH ChatView .scroll：上下 16px、左右 clearance(16) + 16 = 32px。
-     此前左右 24px、下方 5rem——下方留白是"输入卡浮在滚动区之上"时代的残留，
-     现在输入卡是会话区的流内兄弟，不需要这段占位。 */
   padding: 1rem 2rem;
   scroll-behavior: smooth;
   width: min(100%, var(--chat-content-width));
 }
-/* 空态用输入卡的宽度轴（DSH HeroShell .stack 的 max-width 就是
-   --dsh-composer-card-max-width），与下方输入卡左右对齐。 */
 #empty-state {
-  /* 照 DSH HeroShell .root：在滚动区里 flex 居中，底部留 32px
-     （DSH .composerHero 的 padding-bottom: 32px）。 */
   position: absolute;
   inset: 0;
   width: min(100%, var(--composer-card-max-width));
@@ -1894,9 +1829,6 @@ button.trace-gantt-bar:focus-visible {
 #empty-state .eyebrow {
   color: var(--agnes-text-emphasis);
 }
-/* 照 DSH HeroShell .headline：26/32、500、label-primary、居中。
-   此前是 clamp(1.45rem,3vw,2rem) / 700 / -0.035em 的标题排版。 */
-/* hero 标题放大（原 26/32，DSH HeroShell .headline 的值）。 */
 .empty-state-heading {
   max-width: 30rem;
   margin: 0;
@@ -1905,7 +1837,6 @@ button.trace-gantt-bar:focus-visible {
   font-weight: 500;
   line-height: 2.5rem;
 }
-/* 照 DSH HeroShell .stack 的 12px 堆叠间距；DSH 没有副标题，这段说明保持次级 13/20。 */
 .empty-state-copy {
   max-width: 30rem;
   margin: 0.75rem 0 0;
@@ -1958,8 +1889,6 @@ button.trace-gantt-bar:focus-visible {
 /* `.user` 原有一条卡片样式（padding/border/radius/background）。.user 只会以
    "timeline-node user" 出现，那 4 条全被 .timeline-node.user 与 .user .node-body
    覆盖，属死值，已删除。 */
-/* 照 DSH AssistantMarkdown：正文 14px/24px、无内边距；名字标签已删，
-   正文不再需要 8px 上外边距（流间距由 .conversation-turn 的 16px 承担）。 */
 .assistant {
   padding: 0;
 }
@@ -1978,7 +1907,6 @@ button.trace-gantt-bar:focus-visible {
 .markdown > :last-child {
   margin-bottom: 0;
 }
-/* 照 DSH CodeBlock：圆角 12px、border: 0，底色取代码面。 */
 .code-block {
   overflow: hidden;
   border: 0;
@@ -2000,8 +1928,6 @@ button.trace-gantt-bar:focus-visible {
 .markdown .code-block {
   margin: 0 0 1rem;
 }
-/* 照 DSH MarkdownText 的标题阶梯：h1 21/30、h2 19/28、h3 18/26（700），
-   h4 14/24（600）；h1-h3 上 32px、h4 上下 16px。 */
 .markdown h1,
 .markdown h2,
 .markdown h3,
@@ -2028,7 +1954,6 @@ button.trace-gantt-bar:focus-visible {
   font-weight: 600;
   line-height: 1.5rem;
 }
-/* 照 DSH MarkdownText 列表：padding-left 18px、项间距 6px、项内段落 8px。 */
 .markdown ul,
 .markdown ol {
   padding-inline-start: 18px;
@@ -2052,7 +1977,6 @@ button.trace-gantt-bar:focus-visible {
 .markdown li > ol {
   margin: 0.25em 0 0.35em;
 }
-/* 照 DSH MarkdownText blockquote：2px 左侧引线、padding-left 14px。 */
 .markdown blockquote {
   padding: 0 0 0 14px;
   border-inline-start: 2px solid var(--agnes-text-tertiary);
@@ -2074,7 +1998,6 @@ button.trace-gantt-bar:focus-visible {
 #approval p {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
-/* 照 DSH MarkdownText 行内代码：圆角 6px、padding 0 5px、0.5px 发丝描边。 */
 .markdown :where(:not(pre)) > code {
   display: inline-flex;
   align-items: center;
@@ -2085,7 +2008,6 @@ button.trace-gantt-bar:focus-visible {
   background: var(--agnes-bg-code);
   font-size: 0.875em;
 }
-/* 照 DSH CodeBlock banner：padding 9px 14px、gap 12px、11/18、无分隔线。 */
 .code-toolbar {
   min-height: 2.25rem;
   display: flex;
@@ -2099,7 +2021,6 @@ button.trace-gantt-bar:focus-visible {
   font-size: 0.6875rem;
   line-height: 1.125rem;
 }
-/* 照 DSH CodeBlock 的语言名：等宽 11/18、label-primary、不做大写转换。 */
 .code-language {
   overflow: hidden;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -2121,7 +2042,6 @@ button.trace-gantt-bar:focus-visible {
   background: var(--agnes-bg-surface);
   font-size: var(--font-size-xs);
 }
-/* 照 DSH CodeBlock pre：等宽 11/19、内边距 16px。 */
 .code-block pre {
   max-width: 100%;
   margin: 0;
@@ -2142,8 +2062,6 @@ button.trace-gantt-bar:focus-visible {
   width: max-content;
   min-width: 100%;
 }
-/* 照 DSH MarkdownText 表格：13/22、th 500 / td 400、padding 10px 16px、
-   0.5px 下描边、表头不铺底、首列去左内边距 / 末列去右内边距。 */
 .markdown table {
   width: 100%;
   min-width: 32rem;
@@ -2212,8 +2130,6 @@ button.trace-gantt-bar:focus-visible {
   white-space: pre-wrap;
   word-break: break-word;
 }
-/* 照 DSH GenericCommandCard：没有卡片外壳（无 border / 圆角 / 底色 / 内边距），
-   只有一条 24px 的行 + 可展开的结果块。 */
 .tool {
   padding: 0;
   border: 0;
@@ -2223,7 +2139,6 @@ button.trace-gantt-bar:focus-visible {
 .tool:hover {
   box-shadow: none;
 }
-/* 照 DSH DisclosureRow：标题行 24px 高、名称 13/24 二级色、右侧摘要 13/24 三级色单行省略。 */
 .tool-head,
 .approval-head {
   min-height: 1.5rem;
@@ -2357,8 +2272,6 @@ button.trace-gantt-bar:focus-visible {
   background: var(--agnes-button-primary-bg-hover);
   box-shadow: var(--shadow-elevation-prominent);
 }
-/* 照 DSH ApprovalPanel：卡片最大宽 = 正文列宽、圆角 20px、1px 警告描边、
-   白底（警告色只用在描边与文案，不整卡铺底）、按钮右对齐 8px。 */
 #approval {
   width: min(calc(100% - 2rem), var(--chat-content-width));
   margin: 0 auto 0.75rem;
@@ -2406,8 +2319,6 @@ button.trace-gantt-bar:focus-visible {
   gap: 0.5rem;
   margin-top: 0.875rem;
 }
-/* 新会话的输入区抬高到 DSH hero 的下限（52px = 两行 24px 行盒 + 4px 上内边距），
-   停靠态保持 36px。 */
 body:has(#transcript:empty) #prompt {
   min-height: 3.25rem;
 }
@@ -2422,7 +2333,6 @@ body:has(#transcript:empty) .conversation-shell {
 body:has(#transcript:empty) #empty-state {
   position: static;
   inset: auto;
-  /* 底边距保持 32px（DSH .composerHero 的 padding-bottom），与输入卡拉开距离。 */
 }
 /* 空态下会话清单里没有内容，但它带着 16px 上下内边距会占位、把 hero 顶下去，
    于是 hero 跑出 shell 而整体偏离居中。空态时直接让位。 */
@@ -2452,24 +2362,17 @@ body.session-switching #approval {
   gap: 0.75rem;
   padding: 0.5rem 0 0;
   transition: box-shadow var(--transition);
-  /* 卡片首层的 0.5px 发丝描边画在 border-box 之外，而上面的 .conversation-shell
-     是 position: relative（定位元素晚于静态元素绘制），会把这条上边裁掉。
-     DSH 用 sticky + z-index: 7 把输入卡抬到会话层之上，这里取同一层级。 */
   position: relative;
   z-index: 7;
 }
 [data-agnes-region="composer"] {
-  /* 照 DSH 的输入卡：圆角 22px、border: 0，分离感由阴影首层的 0.5px 发丝描边承担。
-     backdrop-filter 必须声明在区域钩子上（R1 不变量，皮肤可覆盖）——DSH 的卡片不模糊，故为 none。 */
+  /* 输入卡的 backdrop-filter 必须声明在区域钩子上，供皮肤覆盖（R1 不变量）。 */
   border: 0;
   border-radius: 1.375rem;
   background: var(--agnes-bg-page);
   box-shadow: var(--shadow-elevation-soft);
   backdrop-filter: none;
 }
-/* DSH 的输入卡没有任何 focus 态样式（InputBar.module.css 的 .card 无 :focus-within，
-   也没有 focus 环）：聚焦反馈由光标承担。此前这里叠了一圈 3px 品牌环，去掉 1px 边框后
-   它直接贴在最外层，视觉上就是"边框变粗"。 */
 .composer-writing {
   min-height: 0;
   /* 卡片圆角 22px 而卡片本身没有水平内边距：writing 区全宽铺到卡缘时，
@@ -2519,8 +2422,6 @@ body.session-switching #approval {
   align-items: center;
   gap: 0.75rem;
   padding: 0.125rem 0.5rem 0.375rem;
-  /* 照 DSH 的 .row：这一行是尺寸容器，`#model` 的 45cqw 上限才有参照物
-     （百分比会对着自身收缩宽度算成循环依赖）。 */
   container-type: inline-size;
 }
 .model-field {
@@ -2542,8 +2443,6 @@ body.session-switching #approval {
 #model {
   min-width: 0;
   width: auto;
-  /* 照 DSH ModelSelect .trigger 的上限：让长模型名多拿一点宽度又不吃掉整行。
-     45cqw 以 .composer-controls 这个尺寸容器为参照；容器缺失时按规范退回视口宽度。 */
   max-width: min(360px, 45cqw);
   min-height: 1.75rem;
   flex: 0 1 auto;
@@ -2560,7 +2459,6 @@ body.session-switching #approval {
   font-size: 0.8125rem;
   font-weight: 500;
 }
-/* 照 DSH 的 .triggerLabel：名字自己省略，别把 chevron 挤出去。 */
 .model-field [data-model-label] {
   min-width: 0;
   overflow: hidden;
@@ -2580,8 +2478,6 @@ body.session-switching #approval {
   outline: 2px solid var(--agnes-input-border-focus);
   outline-offset: 2px;
 }
-/* 照 DSH ModelSelect .menu / Menu 卡：padding 4px、圆角 20px、border: 0、
-   elevation-prominent，宽度随内容并在视口内夹取。 */
 .model-picker {
   position: fixed;
   z-index: 70;
@@ -2620,8 +2516,6 @@ body.session-switching #approval {
   overscroll-behavior: contain;
   outline: 0;
 }
-/* 照 DSH ModelSelect 的模型行：min-height 38px、padding 6px 8px、圆角 10px、
-   gap 8px；选中态不铺底，只在尾部给一个勾（DSH .selected { background: transparent }）。 */
 .model-picker-option {
   position: relative;
   display: grid;
@@ -2685,8 +2579,6 @@ body.session-switching #approval {
   white-space: nowrap;
 }
 #send[data-mode="idle"] {
-  /* 照 DSH InputBar .primary：34px 圆、translateY(-2px) 让它停在原座位
-     （控制行整体因 padding 2px 下移时不跟着动）。 */
   width: 2.125rem;
   min-width: 2.125rem;
   height: 2.125rem;
@@ -2695,8 +2587,6 @@ body.session-switching #approval {
   border-radius: 999px;
   transform: translateY(-2px);
 }
-/* 照 DSH Modal：border: 0（描边由 elevation 首层的 0.5px 发丝承担）、圆角 24px、
-   elevation-prominent。各弹窗自己的 width 覆盖仍生效。 */
 dialog {
   inset: 0;
   margin: auto;
@@ -2730,7 +2620,6 @@ dialog {
 dialog:not([open]) {
   display: none;
 }
-/* 照 DSH Modal 的遮罩：模糊 2px（--dsw-mask-blur）。底色仍取客户端的遮罩面。 */
 dialog::backdrop {
   background: var(--agnes-bg-scrim);
   backdrop-filter: blur(2px);
@@ -2758,7 +2647,6 @@ dialog::backdrop {
   flex: 0 0 auto;
   gap: 0.5rem;
 }
-/* 照 DSH Modal 的标题：16/24、500。 */
 .dialog-heading h2,
 #config-form h2,
 #new-session-form h2 {
@@ -2815,7 +2703,6 @@ dialog::backdrop {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  /* 标签在上、控件在下（DSH ui-settings-plugins .field：flex column + gap 6px）。 */
   gap: 0.375rem;
   color: var(--agnes-text-primary);
   font-size: var(--font-size-sm);
@@ -2877,7 +2764,6 @@ dialog::backdrop {
   display: none;
 }
 body.sidebar-collapsed {
-  /* 照 DSH：折叠不是"整条消失"，而是收成 56px 图标轨道 —— 轨道始终可见。 */
   grid-template-columns: 3.5rem minmax(0, 1fr);
 }
 body {
@@ -2889,8 +2775,6 @@ body {
     padding var(--transition),
     opacity var(--transition);
 }
-/* 轨道几何照 DSH 的 rail spec：56px 列、左右 10px、36×36 控件盒、12px 纵向节奏。
-   只在宽屏启用：窄屏（≤900px）的侧栏是覆盖层，没有轨道概念。 */
 @media (min-width: 901px) {
   body.sidebar-collapsed .sidebar {
     align-items: center;
@@ -2923,7 +2807,6 @@ body {
   body.sidebar-collapsed .sidebar-actions .primary-button span {
     display: none;
   }
-  /* 轨道里不出现工作区与会话列表（DSH 的 rail 同样收起浏览区） */
   body.sidebar-collapsed .sidebar-section-heading,
   body.sidebar-collapsed #sessions {
     display: none;
@@ -3156,8 +3039,6 @@ body {
   display: inline-grid;
   place-items: center;
   border: 0;
-  /* 照 DSH EmptyHero / HeroShell：品牌标是 label-primary（墨色）、无底色、无阴影、
-     不描边，与侧栏 .brand-mark 同一套处理。 */
   color: var(--agnes-text-primary);
   background: transparent;
   box-shadow: none;
@@ -3239,7 +3120,6 @@ body {
   height: 2rem;
   min-height: 2rem;
 }
-/* DSH 的鱼标宽 34px、与标题的间距 12px（HeroShell .stack 的 gap）。 */
 /* hero 品牌标：用客户端 AgnesMark 位图（与侧栏品牌位同一资源）代替原来的 "AGH" 文字占位。
    mask 靠 background 显色，所以这里必须显式给 currentColor —— 上面那条基础规则里的
    background: transparent 是在"文字标"时代写的，会盖掉 .agnes-mark 的着色。 */
@@ -3251,7 +3131,6 @@ body {
   color: var(--agnes-brand-primary);
   background: currentColor;
 }
-/* 照 DSH ChatView 的流间距 --dsh-chat-flow-gap: 16px（此前 48px）。 */
 .conversation-turn {
   margin: 0 0 1rem;
 }
@@ -3405,8 +3284,6 @@ body {
   font-weight: 400;
   line-height: 1.5rem;
 }
-/* 步骤正文：命令/输出这类内容用等宽内嵌块（照 DSH GenericCommandCard 的 .body：
-   0.5px 描边 + 圆角 + 代码面 + 等宽小字号）。 */
 .turn-process-body .tool-summary {
   margin: 0.25rem 0 0;
   padding: 0.375rem 0.5rem;
@@ -3465,8 +3342,6 @@ body {
 .tool[data-expanded="true"] .tool-detail-body {
   grid-template-rows: 1fr;
 }
-/* 展开体固定在 260px 内滚动，不再把整段内容全摊开
-   （DSH ToolRow .bodyScroll：max-height 260px + overflow-y auto）。 */
 .tool-detail-text {
   max-height: 16.25rem;
   overflow-y: auto;
@@ -3498,9 +3373,6 @@ body {
 .turn-final .assistant {
   margin-top: 0;
 }
-/* 照 DSH MessageIconActions .actions：gap 8px、高 28px，外层
-   AssistantMarkdown .actions 的 margin-top 16px / margin-left -6px
-   （-6px 是让 28px 图标命中区里的 15px 字形与上方正文左缘光学校齐）。 */
 .turn-footer {
   display: flex;
   flex-wrap: wrap;
@@ -3511,14 +3383,10 @@ body {
   margin: 1rem 0 0 -0.375rem;
   color: var(--agnes-text-tertiary);
 }
-/* 复制 / 分支与过程摘要、用量摘要共用 DSH 的 28px 圆角 pill：
-   6px 8px 内边距、28px 圆角、13/24 三级色，悬停换成交互底色 + 二级色。 */
 .turn-action,
 .turn-meta {
   min-width: 1.75rem;
   min-height: 1.75rem;
-  /* DSH 的 pill 是固定 28px 高、border-box：24px 行盒在 16px 内容盒里居中溢出，
-     这样标签不会把 pill 撑高。 */
   height: 1.75rem;
   display: inline-flex;
   align-items: center;
@@ -3551,7 +3419,6 @@ body {
 }
 .turn-meta {
   min-width: 0;
-  /* 相邻统计 pill 回退一部分内边距，让两个 pill 读成一簇（DSH .root + .root）。 */
   margin-left: -0.375rem;
   overflow: hidden;
   font-variant-numeric: tabular-nums;
@@ -3567,11 +3434,6 @@ body {
 .turn-usage > summary::-webkit-details-marker {
   display: none;
 }
-/* 照 DSH 的 stat-dialog 面板皮（回合用量与 ContextMeter 共用）：
-   padding 16px、圆角 12px、border: 0、elevation-prominent、12/18；
-   行栅格 minmax(76px,auto) / minmax(0,1fr)、6px 16px 间距。
-   定位由 turns.ts 的 positionUsagePopover 负责（照 DSH 的 stat-dialog：按触发器
-   矩形给 left/top 并夹进视口）——注意内联样式优先于本表，改锚点要改那段 JS。 */
 .turn-usage-grid {
   position: fixed;
   z-index: 60;
@@ -3626,24 +3488,18 @@ body {
 }
 .timeline-node.user {
   width: fit-content;
-  /* 照 DSH MessageItem .userStack：min(内容宽 × 0.702, 82%)。 */
   max-width: min(calc(var(--chat-content-width) * 0.702), 82%);
   margin: 0 0 0 auto;
   padding: 0;
   border: 0;
   background: transparent;
 }
-/* DSH 的用户回合同样没有名字标签。 */
 .user .node-label {
   display: none;
 }
 .user .node-body {
-  /* 照 DSH MessageItem 的气泡：10px 16px 内边距、22px 统一圆角、border: 0、14/22 正文。
-     底色仍取客户端的卡片面——客户端没有 DSH 的 specific-bubble 品牌浅蓝。 */
   padding: 0.625rem 1rem;
   border: 0;
-  /* 圆角取客户端的 `--radius-btn-default: 12px`（agnes-code UserMessage 的气泡就是它）；
-     DSH 的 22px 对单行短消息会圆成胶囊，观感太圆。 */
   border-radius: var(--radius-lg);
   color: var(--agnes-text-primary);
   background: var(--agnes-bg-card);
@@ -3651,7 +3507,6 @@ body {
   line-height: 1.375rem;
   white-space: pre-wrap;
 }
-/* DSH 的助手回合没有头像、没有名字标签：正文直接从列左缘开始，也没有 2rem 缩进。 */
 .timeline-node.assistant {
   position: relative;
   margin: 0;
@@ -3683,7 +3538,6 @@ body {
 .composer-workspace {
   align-items: center;
   min-height: 1.75rem;
-  /* 与 #model 同一套 DSH 上限；百分比会对着自身收缩宽度算成循环依赖。 */
   max-width: min(360px, 45cqw);
   justify-content: flex-start;
   padding: 0 0.25rem 0 0.5rem;
@@ -3799,13 +3653,9 @@ body {
   z-index: 15;
 }
 .session-usage {
-  /* 锚在触发 pill 上（照 DSH ContextMeter：面板 `bottom: calc(100% + 8px)` 相对
-     触发器）。触发器在输入卡底部的控制行里，所以面板是**盖在输入卡上**向上展开，
-     而不是整个浮在卡片上方；触发器已移到模型旁边（卡片右侧），向左展开不出卡片。 */
   position: relative;
 }
 .session-usage > summary {
-  /* 照 DSH ContextMeter .trigger：28px 圆形命中区，与 + / 模型触发器同族。 */
   width: 1.75rem;
   height: 1.75rem;
   display: grid;
@@ -3842,11 +3692,6 @@ body {
   overflow: hidden;
   clip-path: inset(50%);
 }
-/* 照 DSH ContextMeter .panel：264px 宽、12px 内边距、12px 圆角、border: 0、
-   elevation-prominent，正文 12/20。整块用普通块级流，不再用栅格——此前把
-   「标题 / 读数 / 说明」放进 `max-content max-content minmax(0,1fr)` 三列栅格，
-   说明文字（中文无空格，min-content 就是整串）把第三列顶宽，面板横向溢出、
-   明细行的数值被推到可视区之外（用户看到"进度条太长、文字都看不见了"）。 */
 .session-usage > .usage-popover {
   position: absolute;
   right: 0;
@@ -3866,8 +3711,6 @@ body {
   line-height: 1.25rem;
   cursor: default;
 }
-/* 照 DSH ContextMeter .header：一行 flex、6px 间距；
-   「上下文已用」三级色 → 百分比 500 主色 → 数值靠 margin-left:auto 顶到最右。 */
 .usage-popover-head {
   display: flex;
   align-items: center;
@@ -3881,7 +3724,6 @@ body {
   font-weight: 400;
   white-space: nowrap;
 }
-/* 照 DSH .percent：500 + label-primary + tabular-nums。 */
 .usage-context-value {
   margin: 0;
   color: var(--agnes-text-primary);
@@ -3889,7 +3731,6 @@ body {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-/* 照 DSH .figures：读数顶到行尾，不参与换行。 */
 .usage-context-caption {
   margin: 0 0 0 auto;
   overflow: hidden;
@@ -3900,7 +3741,6 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 照 DSH ContextMeter .bar：4px 高、999 圆角、1px 分段间隙。 */
 .usage-bar {
   display: flex;
   gap: 1px;
@@ -3918,8 +3758,6 @@ body {
   border-radius: 1px;
   background: var(--agnes-brand-primary);
 }
-/* 照 DSH ContextMeter .rows / .row：一行一条、左标签右数值、12px 间距、
-   纵向 2px 节距、数值 tabular-nums；面板里不另加分隔线。 */
 :where(.usage-popover) .usage-grid {
   display: grid;
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
@@ -4025,8 +3863,6 @@ body {
   font-size: var(--font-size-xs);
 }
 #config {
-  /* 照 DSH SettingsRoot .panel：宽 800、高 min(800px, 100vh - 48px)、
-     max-width 100vw - 48px、圆角 32px、border: 0 + elevation-prominent。 */
   position: relative;
   width: 800px;
   max-width: calc(100vw - 48px);
@@ -4052,7 +3888,6 @@ body {
   display: contents;
 }
 #config-form {
-  /* 照 DSH .nav 的 188px 宽。 */
   grid-template-columns: 11.75rem minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   border-radius: inherit;
@@ -4094,8 +3929,6 @@ body {
   gap: 0.5rem;
 }
 .settings-rail {
-  /* 照 DSH .nav：188px 宽、padding 22px 12px 0、gap 18px、不铺底（面板白透上来）、
-     没有右边框。 */
   background: transparent;
   min-width: 0;
   display: flex;
@@ -5207,7 +5040,6 @@ body.admin-page {
 #config-form #config-account-context {
   margin: 0;
 }
-/* DSH 的设置导航只有标题一项，没有 eyebrow。 */
 #config-form .settings-rail-heading .eyebrow {
   display: none;
   color: var(--agnes-text-disabled);
@@ -5220,9 +5052,6 @@ body.admin-page {
   font-weight: 500;
   line-height: 1.5rem;
 }
-/* 照 DSH .header + .close：关闭按钮坐在面板内容列的表头右上角
-   （header 的 padding 20px 14px 8px 10px），28px 圆形、14px 字形；
-   这里用绝对定位把它从 rail 挪到该位置，省掉一次 DOM 结构改动。 */
 #config-close {
   position: absolute;
   top: 20px;
@@ -5240,7 +5069,6 @@ body.admin-page {
   width: 0.875rem;
   height: 0.875rem;
 }
-/* 照 DSH .navTitle：16/24、500、label-primary、左右 12px 内边距。 */
 .settings-rail-heading {
   display: flex;
   align-items: center;
@@ -5249,15 +5077,12 @@ body.admin-page {
   padding: 0 0.75rem;
 }
 .settings-nav-group {
-  /* 照 DSH .navList 的 gap 4px。 */
   display: grid;
   gap: 0.25rem;
 }
 .settings-nav-label {
   display: none;
 }
-/* 照 DSH .navCell：40px 高、padding 9px 16px 9px 12px、圆角 12px、gap 8px、
-   14/22 400 label-primary；hover/选中走侧栏导航底色。 */
 .settings-nav-item {
   width: 100%;
   height: 2.5rem;
@@ -5296,11 +5121,8 @@ body.admin-page {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* DSH 的内容列不铺底：面板那一层白直接透上来。 */
   background: transparent;
 }
-/* 照 DSH SettingsRoot .header：54px、padding 20px 14px 8px 10px、无底分隔线、
-   不磨砂。B 多一行说明文案，故用 min-height 而不是固定 height。 */
 #config-form .config-heading {
   min-height: 3.375rem;
   display: flex;
@@ -5311,7 +5133,6 @@ body.admin-page {
   border-bottom: 1px solid var(--agnes-line-primary);
   background: transparent;
 }
-/* DSH 的面板标题没有 eyebrow，标题本身是 16/24 500。 */
 #config-form .config-heading .eyebrow {
   display: none;
 }
@@ -5328,7 +5149,6 @@ body.admin-page {
   font-size: 0.875rem;
   line-height: 1.375rem;
 }
-/* 照 DSH .options 的 padding 0 24px 24px。 */
 /* 模型账户页：账户列表在上、账户详情在下（用户要求改成上下结构）。
    外观页仍沿用两栏，未动。 */
 #model-settings-pane .config-workspace {
@@ -6205,7 +6025,6 @@ body.admin-page {
   accent-color: var(--agnes-brand-primary);
 }
 
-/* 通用设置按 DSH 的单列 options 结构纵向排列，三组偏好项共享同一条内容轴。 */
 #appearance-settings-pane .config-workspace {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
