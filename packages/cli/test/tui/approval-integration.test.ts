@@ -83,18 +83,15 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
           '"path": "receipt.txt"',
         )
+        // FakeTerminal handles the key immediately; Renderer paints the new selection next microtask.
         term.feed('\x1b[A')
-        await vi.waitFor(async () =>
-          expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'allow_always',
-          ),
+        await Promise.resolve()
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
+          'allow_always',
         )
         term.feed('\x1b[A')
-        await vi.waitFor(async () =>
-          expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'allow_once',
-          ),
-        )
+        await Promise.resolve()
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain('allow_once')
       } else {
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
           '"path": "receipt.txt"',
@@ -137,12 +134,12 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
           ),
         )
       }
-      if (mode !== 'stop')
-        await vi.waitFor(async () =>
-          expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
-            'Approval: write',
-          ),
+      if (mode !== 'stop') {
+        await Promise.resolve()
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
+          'Approval: write',
         )
+      }
     } finally {
       await app?.stop()
       await client.close()

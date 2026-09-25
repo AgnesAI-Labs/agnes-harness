@@ -40,7 +40,15 @@ jobs:
       # The root Vitest gate discovers and runs the complete Protocol fixture tree through the same
       # conformance core as the package CLI, so a newly added fixture cannot bypass CI.
       - name: test (includes Protocol conformance)
+        id: suite
         run: pnpm exec vitest run --maxWorkers=4
+      # Keep boot/session creation in the functional gate above. The isolated run reports wall-clock
+      # time in the job summary even if another test fails; a stable performance runner can opt into
+      # the 300 ms assertion. Do not restart this test after a cancelled or skipped suite.
+      - name: startup budget (shared-runner diagnostic)
+        if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+        env: { AGH_BOOT_BUDGET_REPORT: '1' }
+        run: pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1
       - name: build local acceptance package on each platform
         run: pnpm --filter @agnes/cli build:local
       - name: verify packaged directory publication capability

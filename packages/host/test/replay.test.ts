@@ -479,8 +479,12 @@ function midTurnSwitchProvider(
 /**
  * Placeholders a case may use for facts that belong to the machine rather than to the case: the
  * shell dialect the prompt names is the platform's own, so a case asserts it without restating it.
+ * Windows names the selected PowerShell version and executable rather than the generic dialect.
  */
-const MACHINE_FACTS: Readonly<Record<string, string>> = { '{{shell}}': createPlatform().shell() }
+const platformShell = createPlatform().shell()
+const MACHINE_FACTS: Readonly<Record<string, string>> = {
+  '{{shell}}': platformShell === 'powershell' ? 'PowerShell ' : platformShell,
+}
 const withMachineFacts = (line: string): string =>
   Object.entries(MACHINE_FACTS).reduce((text, [token, value]) => text.replaceAll(token, value), line)
 

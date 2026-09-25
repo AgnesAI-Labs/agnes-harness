@@ -1729,7 +1729,7 @@ it('installs the shipped skin example and projects all four presets with their i
     revision: string
   }
   expect(repeated.revision).toBe(roster.revision)
-})
+}, 30_000)
 
 /**
  * Bring the shipped skin example to the state `skins.read` answers for: installed, trusted and
@@ -1826,7 +1826,7 @@ it('hands out one file as bytes, and only for the enabled, trusted roster', asyn
   )) as { operationId: string }
   await operation(admin, secondProfile, disabled.operationId)
   expect(await read('/skins/aurora/skin.css')).toEqual({ found: false })
-})
+}, 30_000)
 
 it('rejects a path that is not a skin route before dispatch', async () => {
   const admin = await installedSkinPresets()

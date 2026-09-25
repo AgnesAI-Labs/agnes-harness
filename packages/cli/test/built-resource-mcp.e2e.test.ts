@@ -288,7 +288,7 @@ describe('built CLI managed MCP lifecycle', () => {
       expect(added.output).not.toContain(home)
       expect(added.output).not.toMatch(/(?:Error:|\bat\s+file:)/)
 
-      const expectedRevision = await revision(home)
+      let expectedRevision = await revision(home)
       await recordDaemon()
       const trust = ['mcp', 'trust', 'pager', 'trusted', '--expected-revision', expectedRevision]
       const enable = ['mcp', 'enable', 'pager', '--expected-revision', expectedRevision]
@@ -508,6 +508,8 @@ describe('built CLI managed MCP lifecycle', () => {
         )
         expect(neverTrusted.code, neverTrusted.output).toBe(0)
         expect(neverTrusted.output).not.toContain(providerCredential)
+        // Recreating the server with a different executable changes its definition revision on Windows.
+        expectedRevision = await revision(home)
         const enableNeverTrusted = await invoke(
           ['mcp', 'enable', 'pager', '--expected-revision', expectedRevision],
           workspace,
