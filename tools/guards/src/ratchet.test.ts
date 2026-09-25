@@ -893,7 +893,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Delegated children open with the sandbox their workspace reservation carries. Measured 25010,
   // exact, no spare (+2).
   // A spawned child's run goes through a Host admission port. Measured 25020, exact, no spare (+10).
-  'packages/core/src': 25020,
+  // Cancelling a child's creation also settles its execution state, in the same write. Measured
+  // 25024, exact, no spare (+4).
+  'packages/core/src': 25024,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2428,7 +2430,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // session. Measured 38075, exact, no spare (+32).
   // A spawned child's run is admitted as its own turn, queued behind an activation when started by a
   // live invocation. Measured 38081, exact, no spare (+6).
-  'packages/host/src': 38081,
+  // Cancelling a child's creation also settles its execution state in the same SQLite statement.
+  // Measured 38084, exact, no spare (+3).
+  'packages/host/src': 38084,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2590,7 +2594,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // FOLD-CACHE-REMOVAL: same change as packages/host/src. Measured on this tree: 5003, exact, no spare (-52).
   // Durable WAL checkpoints on darwin: the helper plus its two storage call sites. Measured 5014,
   // exact, no spare (+11).
-  'packages/host/src/adapters': 5014,
+  // Cancelling a child's creation also settles its execution state in the same statement. Measured
+  // 5017, exact, no spare (+3).
+  'packages/host/src/adapters': 5017,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.

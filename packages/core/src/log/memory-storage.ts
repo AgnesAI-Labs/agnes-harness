@@ -480,6 +480,10 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     row.creationPhase = 'cancelled'
     row.creationRevision = fact.revision
     row.cancelledFact = fact
+    if (row.state === 'creating') {
+      row.state = input.reason === 'open_failed' ? 'failed' : 'cancelled'
+      row.stateRevision += 1
+    }
     return fact
   }
 
