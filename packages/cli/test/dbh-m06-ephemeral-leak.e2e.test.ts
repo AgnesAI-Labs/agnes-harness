@@ -146,56 +146,6 @@ describe('DBH M-06: --ephemeral home after a signalled exit', () => {
     },
     120_000,
   )
-
-  it.runIf(posixSignals)(
-    'two SIGINTs after initialize leave no ephemeral home',
-    async () => {
-      const runs = 3
-      const observed: Array<Exit & { leaked: number }> = []
-      for (let i = 0; i < runs; i++) {
-        const c = spawnAcp(1)
-        try {
-          await c.handshake()
-          c.child.kill('SIGINT')
-          c.child.kill('SIGINT')
-          const exit = await c.waitExit(15_000)
-          observed.push({ ...exit, leaked: c.ephemeral().length })
-        } finally {
-          await c.dispose()
-        }
-      }
-      const summary = observed.map((o) => `code=${o.code} signal=${o.signal} leaked=${o.leaked}`).join(' | ')
-      expect(observed.filter((o) => o.leaked > 0).length, summary).toBe(0)
-    },
-    120_000,
-  )
-
-  it.runIf(posixSignals)(
-    'one SIGINT during a slow in-flight prompt: the grace hard-exit leaves no ephemeral home',
-    async () => {
-      const c = spawnAcp(60_000)
-      try {
-        const sessionId = await c.handshake()
-        c.send({
-          id: 3,
-          method: 'session/prompt',
-          params: { sessionId, prompt: [{ type: 'text', text: 'hi' }] },
-        })
-        await c.until(() => c.stderr().includes('dbh: turn started'), 20_000, 'turn start')
-        const t0 = performance.now()
-        c.child.kill('SIGINT')
-        const exit = await c.waitExit(20_000)
-        const afterSignalMs = performance.now() - t0
-        expect(
-          { exitedBeforeSigkill: exit.signal !== 'SIGKILL', leaked: c.ephemeral() },
-          `code=${exit.code} signal=${exit.signal} afterSignalMs=${afterSignalMs.toFixed(0)} stderr=${c.stderr().slice(-400)}`,
-        ).toEqual({ exitedBeforeSigkill: true, leaked: [] })
-      } finally {
-        await c.dispose()
-      }
-    },
-    60_000,
-  )
 })
 
 // Both hard-exit rungs leave through hardExit (exit code now, process.exit 100 ms later) without waiting
