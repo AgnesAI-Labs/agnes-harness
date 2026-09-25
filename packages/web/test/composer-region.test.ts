@@ -143,7 +143,10 @@ describe('rendered composer region', () => {
       { name: 'conversation.input.overlay', id: 'fixture-input-overlay', owner: 'fixture' },
       () => createElement('span', { id: 'fixture-input-overlay-content' }, '输入层扩展'),
     )
-    runtime.registry.setSession('session-1')
+    // The page's session service is the source the registry is bound to. Setting the registry
+    // directly races that binding: a region root that commits later binds the service and resets
+    // the registry to the service's (empty) session, which hides every session-scoped entry.
+    runtime.session.setSession('session-1')
     await vi.waitFor(() => {
       expect(
         document.querySelector('#fixture-input-left-content')?.closest('.composer-controls'),
