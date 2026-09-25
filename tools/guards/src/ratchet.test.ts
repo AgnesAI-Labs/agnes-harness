@@ -877,7 +877,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O5 review fix: the register map keeps the set of op lanes beside its cells, so the
   // per-append relation check and lease renewal stop copying the whole table. Measured +16 on its
   // own base; with the batch-scan fix above the combined tree measures 25229, exact, no spare.
-  'packages/core/src': 25229,
+  // TRACE-INSPECTION-20260925: optional tool result sequence; measured 25230, exact.
+  'packages/core/src': 25230,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1176,7 +1177,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O5: op.state leaves the event types; validateOpState exported for the register cell (the
   // formatter splits the validate.js export list once it no longer fits a line). Measured 2194,
   // exact, no spare (+9).
-  'packages/protocol/src': 2194,
+  // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
+  'packages/protocol/src': 2201,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1358,7 +1360,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5074, exact, no spare (+119).
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
-  'packages/sdk/src': 5051,
+  // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
+  'packages/sdk/src': 5127,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1715,7 +1718,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 26440, exact, no spare.
   // WIN-SHORT-NAMES: the Skill watcher hands fs.watch the native (long) spelling on Windows, since
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
-  'packages/daemon/src': 26451,
+  // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
+  'packages/daemon/src': 26495,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left

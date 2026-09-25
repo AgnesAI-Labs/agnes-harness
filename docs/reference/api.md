@@ -65,6 +65,8 @@ Node transports include unix, stdio, and ws. Deployment contracts determine auth
 
 Exact method names, directions, params/results, and management permissions are defined by the [method table](../../packages/protocol/src/methods.ts), [package-management table](../../packages/protocol/src/package-admin.ts), and [resource-management table](../../packages/protocol/src/resource-control.ts). Do not derive fields from the shorthand above.
 
+For full recorded tool details, `_agnes/v1/session.readToolDetail` reads the tool call and its matching result on demand. Pass `sessionId` and the tool node's `seq` as `callSeq`; pass its `resultSeq` when available. Optional `offset` and `maxBytes` select a UTF-8 byte chunk, capped at 262,144 bytes per response. The result includes base64 `data`, `totalBytes`, and `nextOffset` (`null` after the last chunk). Decode and concatenate chunks before parsing the JSON object `{call, result?}`. The daemon authorizes access to the session before reading events. The SDK's `Session.readToolDetail(callSeq, resultSeq?)` assembles up to 64 MiB; callers needing a larger record can page the RPC directly. The ordinary UI projection retains bounded previews and exposes `resultSeq` as an optional tool-node field.
+
 Writes commonly use clientId/commandId and expected revision/integrity to return a persistent operation receipt, followed by a final-state query. Receiving a receipt does not mean an effect succeeded. Do not change commandId to repeat an external effect with an unknown outcome.
 
 <a id="skills-写接口"></a>
