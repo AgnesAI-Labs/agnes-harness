@@ -526,6 +526,9 @@ export class KernelChildren implements ChildrenFactory {
           locked || outcome === 'cancelled' ? 'cancelled' : outcome === 'completed' ? 'completed' : 'failed',
         )
       }
+      // Hooks and the cost row report what was stored, which an earlier settlement may have decided.
+      const stored = (await store.lookupByKey(record.childKey))?.state
+      if (stored && isTerminalChildState(stored)) outcome = stored as typeof outcome
       await parent.hooks
         .subagentEnd?.({ childKey: record.childKey, outcome, credits: Math.max(0, child.state.creditsUsed) })
         .catch(() => undefined)

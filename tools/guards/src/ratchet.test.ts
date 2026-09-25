@@ -895,7 +895,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // A spawned child's run goes through a Host admission port. Measured 25020, exact, no spare (+10).
   // Cancelling a child's creation also settles its execution state, in the same write. Measured
   // 25024, exact, no spare (+4).
-  'packages/core/src': 25024,
+  // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
+  // no spare (+2).
+  'packages/core/src': 25026,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
