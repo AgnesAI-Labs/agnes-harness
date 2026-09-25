@@ -2030,7 +2030,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20: biome format of runner/draw.ts wrapped long ACP option lines. Re-measured: 5131, exact.
   // 2026-09-23 terminal-client recovery: one supervised Runner at a time, teardown before rebuild.
   // Measured 5250 with countLines(); the guard still rejects any further growth.
-  'packages/channels/src': 5250,
+  // Durable WAL checkpoints on darwin: the outbound ref store sets checkpoint_fullfsync.
+  // Measured 5252, exact, no spare (+2).
+  'packages/channels/src': 5252,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,

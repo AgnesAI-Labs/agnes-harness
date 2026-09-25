@@ -38,7 +38,7 @@
   "packages/web/src/admin/plugins/types": 77,
   "packages/daemon/src/jobs": 800,
   "packages/bridges/src": 2600,
-  "packages/channels/src": 5250,
+  "packages/channels/src": 5252,
   "packages/code/src": 1600,
   "packages/cli/src/args": 300,
   "packages/runtime-python/src": 400,
