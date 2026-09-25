@@ -3,6 +3,9 @@ on:
   push: { branches: [main] }
   pull_request:
   workflow_dispatch:
+  # Nightly run of every job, including the heavy tier on all three platforms.
+  schedule:
+    - cron: '0 18 * * *'
 permissions: { contents: read }
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -72,10 +75,11 @@ jobs:
       - run: pnpm --filter @agnes/host build:native
       - run: pnpm --filter @agnes/system-node build:native
       # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
-      # The root Vitest gate discovers and runs the complete Protocol fixture tree through the same
-      # conformance core as the package CLI, so a newly added fixture cannot bypass CI.
-      - name: test (includes Protocol conformance)
-        run: pnpm exec vitest run --maxWorkers=4
+      # The fast tier discovers and runs the complete Protocol fixture tree through the same
+      # conformance core as the package CLI, so a newly added fixture cannot bypass CI. The heavy
+      # tier (*.e2e.test.ts, *.slow.test.ts) runs in its own job below.
+      - name: test fast tier (includes Protocol conformance)
+        run: pnpm exec vitest run --project fast --maxWorkers=4
       - name: build local acceptance package on each platform
         run: pnpm --filter @agnes/cli build:local
       - name: verify packaged directory publication capability
@@ -99,6 +103,38 @@ jobs:
           if (-not $env:AGNES_ACCEPTANCE_POWERSHELL) { throw 'Cannot identify the acceptance PowerShell process' }
           pnpm exec vitest run tools/acceptance/shared-local-delivery.test.ts
       # Installation and builds must not rewrite committed source or the lockfile.
+      - name: verify working tree is clean
+        run: git diff --exit-code
+  # Real daemon, worker and CLI process tests, and large-ledger or timer-bound tests. Every PR runs
+  # them on Linux; pushes to main, the nightly schedule and manual runs cover all three platforms.
+  heavy:
+    name: heavy (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - name: preserve repository line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: prepare Windows native headers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
+      - run: pnpm --filter @agnes/host build:native
+      - run: pnpm --filter @agnes/system-node build:native
+      # These tests start real processes and are the most sensitive to a loaded runner, so they
+      # run with less file fan-out than the fast tier.
+      - name: test heavy tier
+        run: pnpm exec vitest run --project heavy --maxWorkers=2
       - name: verify working tree is clean
         run: git diff --exit-code
   runtime-package:
@@ -182,7 +218,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, static, check, runtime-package, sea]
+    needs: [changes, static, check, heavy, runtime-package, sea]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
