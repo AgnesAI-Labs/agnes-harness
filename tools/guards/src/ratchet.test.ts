@@ -362,7 +362,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
   // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
-  'packages/web/src/app': 1783,
+  // Daemon-restart recovery: the page probes its own bootstrap before reloading and keeps a visible
+  // manual retry after the automatic window. Measured 1811, exact, no spare (+28).
+  'packages/web/src/app': 1811,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-17: composer permission listbox. Measured 203, exact.
   'packages/web/src/permission-picker': 203,
@@ -1974,7 +1976,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
   // TRACE-INSPECTION-20260925: trace detail callback wiring; measured 13269, exact.
   // Per-node roots in the timeline unmount after the current commit: measured 13268, exact.
-  'packages/web/src': 13268,
+  // Daemon-restart recovery: probe-before-reload controller and its page wiring. Measured 13344, exact (+76).
+  'packages/web/src': 13344,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
