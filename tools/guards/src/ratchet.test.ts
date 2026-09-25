@@ -882,7 +882,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 25019, exact, no spare (-210).
   // FOLD-CACHE-REMOVAL follow-up: encodeLedgerState, used only by tests, moves to the testkit.
   // Measured 24962, exact, no spare (-57).
-  'packages/core/src': 24962,
+  // Multi-step phase transitions committed as one append; a tool call's approval, intent and first
+  // dispatch now commit together. Measured 25013, exact, no spare (+51).
+  'packages/core/src': 25013,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 41,
+    "seq": 42,
     "data": {
       "meta": {
         "turn": 2,
@@ -44,7 +44,7 @@
               "policyHash": "2440d18ddde5694e1a0e604fdf1d3b640a264a87334416a7073bbce13e310b9a",
               "definitionFingerprint": "1dcc0de216bb73976c128ab2eac6bebde822afef6c0bf3528572169edbea17fd",
               "executionDomain": "workspace",
-              "effectId": "e-00000000000000000000000000000045",
+              "effectId": "e-00000000000000000000000000000044",
               "dispatchAttempt": 1,
               "dispatchPhase": "responded"
             },
@@ -54,7 +54,7 @@
               "name": "shell",
               "argsSeq": 33,
               "replay": "never",
-              "status": "planned",
+              "status": "dispatched",
               "resolvedPolicy": {
                 "isReadOnly": false,
                 "isDestructive": true,
@@ -67,7 +67,10 @@
               },
               "policyHash": "e1c825ad9e611d86b8c9e9bd7bfa0bd5690058117d3c27e0e1d8c2b6b6583fbc",
               "definitionFingerprint": "f3946b9d2174572b0ce3f4433e97dcfd42b5611f08469897d4f8f812aab427d1",
-              "executionDomain": "workspace"
+              "executionDomain": "workspace",
+              "effectId": "e-00000000000000000000000000000052",
+              "dispatchAttempt": 1,
+              "dispatchPhase": "may_have_sent"
             }
           ]
         }

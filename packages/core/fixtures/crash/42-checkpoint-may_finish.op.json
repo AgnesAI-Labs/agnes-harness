@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 43,
+    "seq": 21,
     "data": {
       "meta": {
         "turn": 1,
@@ -16,13 +16,14 @@
       "control": {
         "status": "running"
       },
-      "step": 2,
-      "latestAssistantSeq": 40,
+      "step": 1,
+      "latestAssistantSeq": 16,
       "taint": false,
       "phase": {
         "kind": "checkpoint",
         "continuation": "may_finish",
-        "triggerSeq": 4
+        "triggerSeq": 4,
+        "thresholdCheckedSeq": 4
       }
     }
   }

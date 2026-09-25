@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 17,
+    "seq": 22,
     "data": {
       "meta": {
         "turn": 1,
@@ -30,7 +30,7 @@
               "name": "do_batch",
               "argsSeq": 14,
               "replay": "safe",
-              "status": "approved",
+              "status": "dispatched",
               "resolvedPolicy": {
                 "isReadOnly": true,
                 "isDestructive": false,
@@ -43,7 +43,36 @@
               },
               "policyHash": "2440d18ddde5694e1a0e604fdf1d3b640a264a87334416a7073bbce13e310b9a",
               "definitionFingerprint": "a5240d83b5a172c1997c4c48e64921a65eaf3922385eceddf8803d227e1309f5",
-              "executionDomain": "workspace"
+              "executionDomain": "workspace",
+              "effectId": "e-00000000000000000000000000000021",
+              "dispatchAttempt": 1,
+              "dispatchPhase": "may_have_sent"
+            },
+            {
+              "toolUseId": "t1-00000000000000000000000000000023",
+              "name": "read",
+              "ordinal": 1,
+              "argsSeq": 18,
+              "status": "completed",
+              "replay": "safe",
+              "depth": 1,
+              "parentEffectId": "e-00000000000000000000000000000021",
+              "resolvedPolicy": {
+                "isReadOnly": true,
+                "isDestructive": false,
+                "isConcurrencySafe": true,
+                "isOpenWorld": false,
+                "replay": "safe",
+                "requiresApproval": "never",
+                "approvalScopes": [],
+                "policyVersion": "static-v1"
+              },
+              "policyHash": "2440d18ddde5694e1a0e604fdf1d3b640a264a87334416a7073bbce13e310b9a",
+              "definitionFingerprint": "1dcc0de216bb73976c128ab2eac6bebde822afef6c0bf3528572169edbea17fd",
+              "executionDomain": "workspace",
+              "effectId": "e-00000000000000000000000000000025",
+              "dispatchAttempt": 1,
+              "dispatchPhase": "responded"
             }
           ]
         }
