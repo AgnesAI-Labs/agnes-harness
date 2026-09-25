@@ -2404,7 +2404,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
   // FOLD-CACHE-REMOVAL: SQLite no longer stores the fold cache; the old table is dropped on open.
   // (-52). Measured on this tree: 38030, exact, no spare.
-  'packages/host/src': 38030,
+  // Durable WAL checkpoints on darwin: the ledger, table-store and GC ledger-lock connections set
+  // checkpoint_fullfsync through one small helper. Measured 38043, exact, no spare (+13).
+  'packages/host/src': 38043,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2564,7 +2566,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // WIN-SQLITE-CLOSE: same change as packages/host/src. Measured 5023 (+13), exact.
   // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
   // FOLD-CACHE-REMOVAL: same change as packages/host/src. Measured on this tree: 5003, exact, no spare (-52).
-  'packages/host/src/adapters': 5003,
+  // Durable WAL checkpoints on darwin: the helper plus its two storage call sites. Measured 5014,
+  // exact, no spare (+11).
+  'packages/host/src/adapters': 5014,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2583,7 +2587,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // delete it. Measured 680 (+13), exact, no spare.
   // FOLD-CACHE-REMOVAL: fold cache statements, write, read and delete gone; the table is dropped on
   // open. Measured on this tree: 632, exact, no spare (-48).
-  'packages/host/src/adapters/storage-sqlite': 632,
+  // Durable WAL checkpoints on darwin: the ledger and table-store connections call the checkpoint
+  // sync helper. Measured 635, exact, no spare (+3).
+  'packages/host/src/adapters/storage-sqlite': 635,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,
