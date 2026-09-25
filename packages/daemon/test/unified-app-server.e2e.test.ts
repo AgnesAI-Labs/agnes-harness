@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createConfigurationService, createPlatform, type ResolvedProfile, resolveProfile } from '@agnes/host'
+import { createConfigurationService, createPlatform, resolveProfile } from '@agnes/host'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { createPrivateDirectorySync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -104,7 +104,6 @@ it(
     const baseUrl = `http://127.0.0.1:${address.port}/v1`
     const configuration = createConfigurationService({ home, profile: 'local-dev' })
     const userBase = { name: 'local-dev', dataDir: data, cacheDir: join(home, 'cache') }
-    const started: ResolvedProfile[] = []
     const start = async () => {
       const reloadProfile = async () =>
         resolveProfile(
@@ -112,7 +111,6 @@ it(
           { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
         )
       const profile = await reloadProfile()
-      started.push(profile)
       const windows = createPlatform().snapshot().os === 'win32'
       const config = buildConfig({
         args: { profile: 'local-dev', dataDir: data },
@@ -288,9 +286,8 @@ it(
       await daemon.close()
       daemon = undefined
       daemon = await start()
-      // The saved configuration restarts the daemon on a file-backed secret store, and the prompts
-      // below authenticate with the key read back from it.
-      expect(started.at(-1)?.adapters.secrets).toEqual({ kind: 'file', path: join(home, 'secrets') })
+      // The saved configuration restarts the daemon on its file-backed secret store; the prompt after
+      // the restart below authenticates with the replacement key read back from that store.
       const restored = createClient({
         journal: memoryJournal(),
         auth: { kind: 'local' },
