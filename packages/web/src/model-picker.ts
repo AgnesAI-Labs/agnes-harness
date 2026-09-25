@@ -1,4 +1,6 @@
-import { bindListboxKeys, positionPopover } from '@agnes/web-admin-frame'
+import { bindListboxKeys, positionPopover } from '@agnes/web-ui'
+import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
+import { createElement, type ReactNode } from 'react'
 
 export type ModelPickerOption = {
   id: string
@@ -53,10 +55,43 @@ function sameState(left: ModelPickerState, right: ModelPickerState): boolean {
   )
 }
 
-/**
- * Owns only the DOM interaction for the transient model list. The app retains the confirmed
- * session model and decides whether a requested switch belongs to the currently selected session.
- */
+function modelOption(
+  option: ModelPickerOption,
+  index: number,
+  state: ModelPickerState,
+  activeIndex: number,
+  selecting: boolean,
+  onSelect: (index: number) => void,
+): ReactNode {
+  return createElement(
+    'div',
+    {
+      id: `model-picker-option-${index}`,
+      key: `${option.route}:${option.id}`,
+      className: 'model-picker-option',
+      role: 'option',
+      'aria-selected': sameOption(option, state.selected),
+      'aria-disabled': state.pending || selecting,
+      'data-active': index === activeIndex,
+      onClick: () => onSelect(index),
+    },
+    createElement('span', { className: 'model-picker-model' }, option.id),
+    createElement('span', { className: 'model-picker-route' }, option.label ?? '已配置账户'),
+  )
+}
+
+function modelOptions(
+  state: ModelPickerState,
+  activeIndex: number,
+  selecting: boolean,
+  onSelect: (index: number) => void,
+): ReactNode[] {
+  return state.options.map((option, index) =>
+    modelOption(option, index, state, activeIndex, selecting, onSelect),
+  )
+}
+
+/** Owns the transient model list while the app retains the confirmed session model. */
 export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   const { trigger } = options
   let state: ModelPickerState = {
@@ -71,6 +106,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   let selecting = false
   let selectingFromPointer = false
   let popover: HTMLElement | undefined
+  let help: HTMLElement | undefined
   let listbox: HTMLElement | undefined
 
   function isUnavailable(): boolean {
@@ -100,48 +136,28 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function renderOptions(): void {
     if (!popover || !listbox) return
-    const previousActive = activeIndex
-    activeIndex = Math.min(Math.max(previousActive, 0), Math.max(state.options.length - 1, 0))
-    listbox.replaceChildren()
+    activeIndex = Math.min(Math.max(activeIndex, 0), Math.max(state.options.length - 1, 0))
     listbox.setAttribute('aria-busy', String(state.pending || selecting))
     if (state.options.length) listbox.setAttribute('aria-activedescendant', activeOptionId())
     else listbox.removeAttribute('aria-activedescendant')
-
-    const help = popover.querySelector<HTMLElement>('[data-model-picker-help]')
     if (help) {
       help.hidden = state.selected !== undefined
       help.textContent = '选择此任务使用的模型'
     }
-    for (const [index, option] of state.options.entries()) {
-      const entry = document.createElement('div')
-      entry.id = `model-picker-option-${index}`
-      entry.className = 'model-picker-option'
-      entry.setAttribute('role', 'option')
-      entry.setAttribute('aria-selected', String(sameOption(option, state.selected)))
-      entry.setAttribute('aria-disabled', String(state.pending || selecting))
-      entry.dataset.active = String(index === activeIndex)
-      entry.addEventListener('click', () => {
+    renderRegion(
+      listbox,
+      modelOptions(state, activeIndex, selecting, (index) => {
         selectingFromPointer = true
         void select(index)
         queueMicrotask(() => {
           selectingFromPointer = false
         })
-      })
-
-      const model = document.createElement('span')
-      model.className = 'model-picker-model'
-      model.textContent = option.id
-      const route = document.createElement('span')
-      route.className = 'model-picker-route'
-      route.textContent = option.label ?? '已配置账户'
-      entry.append(model, route)
-      listbox.append(entry)
-    }
+      }),
+    )
   }
 
   function position(): void {
     if (!popover) return
-    // 定位算法与 listbox 键盘映射已抽到 @agnes/web-admin-frame，选择器只保留自己的状态机与渲染。
     positionPopover(trigger, popover, { preferredWidth, preferredHeight, viewportPadding })
   }
 
@@ -149,8 +165,11 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     interaction += 1
     selecting = false
     const wasOpen = popover !== undefined
+    if (help) unmountRegion(help)
+    if (listbox) unmountRegion(listbox)
     popover?.remove()
     popover = undefined
+    help = undefined
     listbox = undefined
     trigger.removeAttribute('aria-controls')
     setTrigger()
@@ -160,9 +179,8 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   function setActive(index: number): void {
     if (!listbox || !state.options.length) return
     activeIndex = (index + state.options.length) % state.options.length
-    for (const [optionIndex, option] of Array.from(listbox.children).entries())
-      (option as HTMLElement).dataset.active = String(optionIndex === activeIndex)
     listbox.setAttribute('aria-activedescendant', activeOptionId())
+    renderOptions()
     listbox.querySelector<HTMLElement>(`#${activeOptionId()}`)?.scrollIntoView({ block: 'nearest' })
   }
 
@@ -193,37 +211,30 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     if (popover || isUnavailable()) return
     interaction += 1
     activeIndex = Math.min(Math.max(initialIndex, 0), Math.max(state.options.length - 1, 0))
-    popover = document.createElement('section')
+    popover = createRegionHost(document.body, 'section', 'model-picker')
     popover.id = 'model-picker-popover'
-    popover.className = 'model-picker'
     popover.setAttribute('aria-label', '选择当前会话模型')
-
-    const help = document.createElement('p')
-    help.className = 'model-picker-help'
+    help = createRegionHost(popover, 'p', 'model-picker-help')
     help.dataset.modelPickerHelp = ''
-    const nextListbox = document.createElement('div')
-    nextListbox.id = 'model-listbox'
-    nextListbox.className = 'model-picker-list'
-    nextListbox.setAttribute('role', 'listbox')
-    nextListbox.setAttribute('aria-label', '可用模型')
-    nextListbox.tabIndex = -1
-    bindListboxKeys(nextListbox, (intent) => {
+    listbox = createRegionHost(popover, 'div', 'model-picker-list')
+    listbox.id = 'model-listbox'
+    listbox.setAttribute('role', 'listbox')
+    listbox.setAttribute('aria-label', '可用模型')
+    listbox.tabIndex = -1
+    bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)
       else if (intent.kind === 'first') setActive(0)
       else if (intent.kind === 'last') setActive(state.options.length - 1)
       else if (intent.kind === 'activate') void select(activeIndex)
       else close({ returnFocus: intent.returnFocus })
     })
-    popover.append(help, nextListbox)
-    document.body.append(popover)
-    listbox = nextListbox
-    trigger.setAttribute('aria-controls', nextListbox.id)
+    trigger.setAttribute('aria-controls', listbox.id)
     setTrigger()
     renderOptions()
     setActive(activeIndex)
     position()
     requestAnimationFrame(position)
-    nextListbox.focus({ preventScroll: true })
+    listbox.focus({ preventScroll: true })
   }
 
   function toggle(): void {
@@ -249,11 +260,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   }
 
   function closeOutside(event: MouseEvent): void {
-    if (!popover) return
-    // Selecting rebuilds the option rows to expose their pending state. The original clicked row
-    // is then detached before this document listener runs, so containment alone would misread it
-    // as an outside click. The event path retains the original in-picker dispatch route.
-    if (selectingFromPointer) return
+    if (!popover || selectingFromPointer) return
     const path = event.composedPath()
     if (path.includes(popover) || path.includes(trigger)) return
     const target = event.target

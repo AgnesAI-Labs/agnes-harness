@@ -2,6 +2,15 @@
   "scope": "External dependencies directly used by product runtime or optional integration paths.",
   "packages": [
     {
+      "name": "antd",
+      "version": "6.6.5",
+      "license": "MIT",
+      "source": "https://github.com/ant-design/ant-design",
+      "purpose": "Accessible browser UI primitives used by the shared Web UI foundation.",
+      "rationale": "Keeps the A-line UI migration on one pinned component implementation while the web package consumes only the @agnes/web-ui boundary.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
       "name": "@earendil-works/pi-ai",
       "version": "0.87.0",
       "license": "MIT",

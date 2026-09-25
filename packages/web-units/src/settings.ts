@@ -1,3 +1,4 @@
+import { mountSettingsSelectOptions, SettingsAccountDialog, SettingsModelPane } from '@agnes/web-ui'
 import { createElement, forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef } from 'react'
 
 export type SettingsPane = 'model' | 'plugin' | 'resources' | 'archived' | 'computer-use' | 'appearance'
@@ -91,8 +92,6 @@ function settingsShellMarkup(): string {
   // This modal is an overlay owned by the settings shell, rather than a child of the replaceable
   // model pane. Keeping it stable means an account edit can finish even while that pane is
   // reconciled or hot-reloaded.
-  const accountDialog = template.content.getElementById('account-dialog')
-  if (!accountDialog) throw new Error('settings markup is missing #account-dialog')
   const railHeading = form.querySelector('.settings-rail-heading')
   railHeading?.appendChild(createSettingsDshSlotHost('settings.close'))
   const navGroup = form.querySelector('.settings-nav-group')
@@ -126,7 +125,7 @@ function settingsShellMarkup(): string {
   content.id = 'settings-content-slots'
   content.append(dshShellSlots, host)
   form.appendChild(content)
-  return `${form.outerHTML}${accountDialog.outerHTML}`
+  return form.outerHTML
 }
 
 /** Render exactly one pane, rather than cloning the complete settings tree into every web row. */
@@ -234,22 +233,50 @@ function SettingsBuiltinImpl(
       for (const dispose of listeners) dispose()
     }
   }, [open, options])
-  return createElement('div', {
-    ref: host,
-    // biome-ignore lint/security/noDangerouslySetInnerHtml: this is the fixed in-module template that creates row mount points.
-    dangerouslySetInnerHTML: { __html: settingsShellMarkup() },
-  })
+  return createElement(
+    'div',
+    { ref: host },
+    createElement('div', {
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: this is the fixed in-module template that creates row mount points.
+      dangerouslySetInnerHTML: { __html: settingsShellMarkup() },
+    }),
+    createElement(SettingsAccountDialog),
+  )
 }
 
 /** Used by DOM-contract tests and non-React fixtures; production mounts the same markup through React. */
-export function renderSettingsMarkup(container: HTMLElement): void {
+export function renderSettingsMarkup(container: HTMLElement): () => void {
   container.innerHTML = SETTINGS_MARKUP
+  const dispose: Array<() => void> = []
+  for (const id of ['config-provider', 'config-auth-method', 'config-model']) {
+    const select = container.querySelector<HTMLSelectElement>(`#${id}`)
+    if (!select) throw new Error(`missing settings select #${id}`)
+    dispose.push(mountSettingsSelectOptions(select))
+  }
+  return () => {
+    for (const unmount of dispose) unmount()
+  }
 }
 
 export const SettingsBuiltin = forwardRef(SettingsBuiltinImpl)
 
 /** One independently mounted settings contribution. Its lifetime is owned by the corresponding row. */
 export function SettingsPaneBuiltin({ pane }: { pane: SettingsPane }): ReturnType<typeof createElement> {
+  if (pane === 'model')
+    return createElement(
+      'div',
+      { 'data-agnes-region-owner': 'builtin', 'data-agnes-region-unit': 'settings-model' },
+      createElement(SettingsModelPane, {
+        beforeAccounts: createElement('div', {
+          id: settingsDshSlotHostId('settings.models.provider-card'),
+          'data-agnes-dsh-slot': 'settings.models.provider-card',
+        }),
+        afterAccounts: createElement('div', {
+          id: settingsDshSlotHostId('settings.models.footer'),
+          'data-agnes-dsh-slot': 'settings.models.footer',
+        }),
+      }),
+    )
   return createElement('div', {
     'data-agnes-region-owner': 'builtin',
     'data-agnes-region-unit': `settings-${pane}`,

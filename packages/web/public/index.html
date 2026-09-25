@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__" />
     <link rel="icon" href="/brand-mark.png" type="image/png" />
     <meta id="agnes-config" data-ws="__AGNES_WS_URL__" />
     <title>Agnes Harness</title>
@@ -10,6 +11,8 @@
          CSP 为 script-src 'self' 且无 unsafe-inline，内联脚本会被拦。 -->
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/antd.css" />
+    <link rel="stylesheet" href="/tokens.css" />
     <!-- WC5：平台共享单例 import map。说明符集合构建期固定；本脚本体被 web-server 以 SHA-256
          计入 CSP script-src（严格哈希，不放宽策略）。手工修改本块后必须重新构建使哈希一致。 -->
     <script type="importmap">
@@ -19,6 +22,7 @@
     "react/jsx-runtime": "/vendor/react-jsx-runtime.js",
     "react-dom": "/vendor/react-dom.js",
     "react-dom/client": "/vendor/react-dom-client.js",
+    "antd": "/vendor/antd.js",
     "@agnes/cordis": "/vendor/cordis.js",
     "@agnes/web-client": "/vendor/web-client.js"
   }

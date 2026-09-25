@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
     "@agnes/web-slots": "workspace:*"
   },
   "devDependencies": {

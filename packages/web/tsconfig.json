@@ -3,9 +3,10 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx"
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["dist", "node_modules"],
   "references": [
     { "path": "../../tsconfig.config.json" },
@@ -17,6 +18,7 @@
     { "path": "../sdk" },
     { "path": "../resource-control-web" },
     { "path": "../web-admin-frame" },
-    { "path": "../web-server" }
+    { "path": "../web-server" },
+    { "path": "../web-ui" }
   ]
 }

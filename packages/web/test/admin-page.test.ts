@@ -28,7 +28,10 @@ async function mountAdmin(
   return mountPluginAdmin(options)
 }
 
-const html = readFileSync(join(process.cwd(), 'packages/web/public/admin.html'), 'utf8')
+const html = readFileSync(join(process.cwd(), 'packages/web/public/admin.html'), 'utf8').replace(
+  /<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g,
+  '',
+)
 const timestamp = '2026-09-13T00:00:00.000Z'
 const capabilityHash = 'c'.repeat(64)
 const families = [

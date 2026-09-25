@@ -77,7 +77,9 @@ export type AdminSurfaceLink = Readonly<{
   mount: string
 }>
 
-export type AdminSurfaceLinksResult = Readonly<{ surfaces: readonly AdminSurfaceLink[] }>
+export type AdminSurfaceLinksResult = Readonly<{
+  surfaces: readonly AdminSurfaceLink[]
+}>
 
 export type {
   PackageAdminError,

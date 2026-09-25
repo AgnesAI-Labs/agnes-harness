@@ -1,9 +1,13 @@
 import { cp, mkdir, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const require = createRequire(import.meta.url)
+const antdCss = require.resolve('antd/dist/antd.css', { paths: [join(root, '..', 'web-ui')] })
+const tokensCss = join(root, '..', 'web-ui', 'src', 'tokens.css')
 const out = join(root, 'dist', 'web')
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
@@ -16,6 +20,7 @@ const platformExternals = [
   'react-dom/client',
   '@agnes/cordis',
   '@agnes/web-client',
+  'antd',
 ]
 await build({
   entryPoints: {
@@ -38,29 +43,38 @@ await build({
   sourcemap: true,
   external: platformExternals,
 })
-// WC5：平台共享单例 /vendor/*。六个入口在同一次构建里 splitting——react 的代码只存在于共享 chunk
-// 一份，react-dom/client、JSX runtime 经相对路径引用同一 chunk，共享单例由构建图保证（M10 的门：
-// 任何把 React 内联进插件 chunk 的构建配置在依赖图上无处遁形）。产物落在 /vendor/ 命名空间，
-// web-server 按固定文件名 + chunk 哈希模式放行。
+// WC5：平台共享单例 /vendor/*。React 入口与外部化 React 的 UI vendor 分开构建；React 的代码只
+// 存在于共享入口/chunk 一份，antd、web-client 经 import map 引用同一套 React 说明符。产物落在
+// /vendor/ 命名空间，web-server 按固定文件名 + chunk 哈希模式放行。
+const vendorOptions = {
+  outdir: join(out, 'vendor'),
+  outbase: join(root, 'tools', 'vendor'),
+  bundle: true,
+  splitting: true,
+  format: 'esm' as const,
+  platform: 'browser' as const,
+  target: ['es2023'],
+  sourcemap: true,
+  entryNames: '[name]',
+  chunkNames: 'chunk-[hash]',
+}
 await build({
   entryPoints: {
     react: join(root, 'tools', 'vendor', 'react-entry.js'),
     'react-jsx-runtime': join(root, 'tools', 'vendor', 'react-jsx-runtime-entry.js'),
     'react-dom': join(root, 'tools', 'vendor', 'react-dom-entry.js'),
     'react-dom-client': join(root, 'tools', 'vendor', 'react-dom-client-entry.js'),
+  },
+  ...vendorOptions,
+})
+await build({
+  entryPoints: {
+    antd: join(root, 'tools', 'vendor', 'antd-entry.js'),
     cordis: join(root, 'tools', 'vendor', 'cordis-entry.js'),
     'web-client': join(root, 'tools', 'vendor', 'web-client-entry.js'),
   },
-  outdir: join(out, 'vendor'),
-  outbase: join(root, 'tools', 'vendor'),
-  bundle: true,
-  splitting: true,
-  format: 'esm',
-  platform: 'browser',
-  target: ['es2023'],
-  sourcemap: true,
-  entryNames: '[name]',
-  chunkNames: 'chunk-[hash]',
+  ...vendorOptions,
+  external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
 })
 // 首帧主题必须用阻塞式 <script> 在 <head> 里跑完，早于第一次绘制。
 // ESM 一律 defer，会闪一帧浅色，所以这一份单独打成 IIFE。
@@ -75,7 +89,7 @@ await build({
   sourcemap: true,
 })
 await Promise.all(
-  ['index.html', 'admin.html', 'resources.html', 'style.css', 'brand-mark.png'].map((file) =>
-    cp(join(root, 'public', file), join(out, file)),
-  ),
+  ['index.html', 'admin.html', 'resources.html', 'style.css', 'brand-mark.png']
+    .map((file) => cp(join(root, 'public', file), join(out, file)))
+    .concat([cp(antdCss, join(out, 'antd.css')), cp(tokensCss, join(out, 'tokens.css'))]),
 )

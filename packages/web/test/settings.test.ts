@@ -1,137 +1,58 @@
 import type { ConfigSnapshot, ConfigTestResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { unmountRegion } from '@agnes/web-ui'
+import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSettingsController } from '../src/settings.js'
+import { renderSettingsMarkup } from '../src/settings-region.js'
 
-// This suite's minimal fake DOM tests the controller. Real picker integration is covered by
-// settings-accounts/settings-oauth; keyboard and dismissal behavior lives in provider-picker.test.
+// Picker interaction is covered by settings-accounts/settings-oauth; these cases exercise the
+// controller against real DOM nodes because the account and select subtrees are React-owned.
 vi.mock('../src/provider-picker.js', () => ({
   createAccountPickers: () => ({ sync: vi.fn(), close: vi.fn() }),
 }))
 
-type FakeEvent = { preventDefault(): void }
-
-class FakeElement {
-  readonly tagName: string
-  readonly id: string
-  value = ''
-  textContent = ''
-  hidden = false
-  disabled = false
-  open = false
-  isConnected = true
-  children: FakeElement[] = []
-  dataset: Record<string, string> = {}
-  #listeners = new Map<string, Array<(event: FakeEvent) => void>>()
-
-  constructor(tagName: string, id = '') {
-    this.tagName = tagName.toUpperCase()
-    this.id = id
-  }
-
-  addEventListener(type: string, listener: (event: FakeEvent) => void): void {
-    const listeners = this.#listeners.get(type) ?? []
-    listeners.push(listener)
-    this.#listeners.set(type, listeners)
-  }
-
-  dispatch(type: string): void {
-    const event: FakeEvent = { preventDefault: () => undefined }
-    for (const listener of this.#listeners.get(type) ?? []) listener(event)
-  }
-
-  append(...nodes: FakeElement[]): void {
-    this.children.push(...nodes)
-  }
-
-  replaceChildren(...nodes: FakeElement[]): void {
-    this.children = nodes
-    if (this.tagName === 'SELECT') this.value = ''
-  }
-
-  querySelectorAll(selector: string): FakeElement[] {
-    return selector === 'button' ? this.children.filter((child) => child.tagName === 'BUTTON') : []
-  }
-
-  setAttribute(name: string): void {
-    if (name === 'open') this.open = true
-  }
-
-  removeAttribute(name: string): void {
-    if (name === 'open') this.open = false
-  }
-
-  showModal(): void {
-    this.open = true
-  }
-
-  close(): void {
-    this.open = false
-  }
-
-  closest(): null {
-    return null
-  }
-
-  focus(): void {
-    fakeDocument.activeElement = this
-  }
-}
-
-class FakeDocument {
-  readonly elements = new Map<string, FakeElement>()
-  activeElement: FakeElement | null = null
-
-  getElementById(id: string): FakeElement | null {
-    return this.elements.get(id) ?? null
-  }
-
-  createElement(tagName: string): FakeElement {
-    return new FakeElement(tagName)
-  }
-
-  add(tagName: string, id: string): FakeElement {
-    const node = new FakeElement(tagName, id)
-    this.elements.set(id, node)
-    return node
-  }
-}
-
-let fakeDocument: FakeDocument
-const originalDocument = globalThis.document
+let fixtureWindow: Window
+let disposeMarkup: (() => void) | undefined
 
 function installDom(): void {
-  fakeDocument = new FakeDocument()
-  fakeDocument.add('dialog', 'config')
-  fakeDocument.add('form', 'config-form')
-  fakeDocument.add('select', 'config-provider')
-  fakeDocument.add('label', 'config-auth-method-field')
-  fakeDocument.add('select', 'config-auth-method')
-  fakeDocument.add('div', 'config-oauth-controls')
-  fakeDocument.add('input', 'config-base-url')
-  fakeDocument.add('input', 'config-api-key')
-  fakeDocument.add('button', 'config-test')
-  fakeDocument.add('select', 'config-model')
-  fakeDocument.add('button', 'config-save')
-  fakeDocument.add('p', 'config-error')
-  fakeDocument.add('p', 'config-state')
-  fakeDocument.add('div', 'config-accounts')
-  fakeDocument.add('button', 'config-add-account')
-  fakeDocument.add('button', 'config-retry')
-  fakeDocument.add('p', 'config-key-hint')
-  fakeDocument.add('button', 'config-close')
-  Object.defineProperty(globalThis, 'document', { configurable: true, value: fakeDocument })
+  fixtureWindow = new Window()
+  vi.stubGlobal('window', fixtureWindow)
+  vi.stubGlobal('document', fixtureWindow.document)
+  vi.stubGlobal('getComputedStyle', fixtureWindow.getComputedStyle.bind(fixtureWindow))
+  fixtureWindow.document.body.innerHTML = '<dialog id="config"></dialog>'
+  disposeMarkup = renderSettingsMarkup(
+    fixtureWindow.document.getElementById('config') as unknown as HTMLElement,
+  )
 }
 
 afterEach(() => {
-  Object.defineProperty(globalThis, 'document', { configurable: true, value: originalDocument })
+  for (const host of (fixtureWindow?.document.querySelectorAll(
+    '#config-accounts, .agnes-ui-button-host, .agnes-ui-field-host',
+  ) ?? []) as unknown as HTMLElement[])
+    unmountRegion(host)
+  disposeMarkup?.()
+  disposeMarkup = undefined
+  fixtureWindow?.happyDOM.abort()
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
-function node(id: string): FakeElement {
-  const found = fakeDocument.getElementById(id)
+function node(
+  id: string,
+): HTMLElement & { value: string; disabled: boolean; open: boolean; dispatch(type: string): void } {
+  const found = fixtureWindow.document.getElementById(id)
   if (!found) throw new Error(`missing fake element ${id}`)
-  return found
+  return Object.assign(found, {
+    dispatch(type: string) {
+      found.dispatchEvent(new fixtureWindow.Event(type, { bubbles: true, cancelable: true }))
+    },
+  }) as unknown as HTMLElement & {
+    value: string
+    disabled: boolean
+    open: boolean
+    dispatch(type: string): void
+  }
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
@@ -263,7 +184,7 @@ describe('settings controller', () => {
 
   it('keeps the settings flow compatible with markup that lacks the optional key hint', async () => {
     installDom()
-    fakeDocument.elements.delete('config-key-hint')
+    node('config-key-hint').remove()
     const settings = createSettingsController({
       client: client(),
       onSaved: vi.fn(async () => undefined),
@@ -321,8 +242,10 @@ describe('settings controller', () => {
     }))
     const onSaved = vi.fn(async () => undefined)
     const settings = createSettingsController({ client: client({ save }), onSaved, onError: vi.fn() })
-    const returnFocus = fakeDocument.add('button', 'settings')
-    fakeDocument.activeElement = returnFocus
+    const returnFocus = fixtureWindow.document.createElement('button')
+    returnFocus.id = 'settings'
+    fixtureWindow.document.body.append(returnFocus)
+    returnFocus.focus()
 
     await settings.open()
     expect(node('config').open).toBe(true)
@@ -338,7 +261,7 @@ describe('settings controller', () => {
       '第 3 步：连接成功，发现 2 个模型。确认或选择默认模型后保存；当前会话模型不会改变。',
     )
     expect(node('config-api-key').value).toBe('secret-value')
-    expect(node('config-model').children.map((entry) => entry.value)).toEqual([
+    expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([
       '',
       'deepseek-chat',
       'deepseek-reasoner',
@@ -385,7 +308,9 @@ describe('settings controller', () => {
     pending.resolve(testResult)
     await Promise.resolve()
     await Promise.resolve()
-    expect(node('config-model').children.map((entry) => entry.value)).toEqual([''])
+    expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([
+      '',
+    ])
     expect(node('config-save').disabled).toBe(true)
   })
 
@@ -502,7 +427,9 @@ describe('settings controller', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(node('config').open).toBe(false)
-    expect(node('config-model').children.map((entry) => entry.value)).toEqual([''])
+    expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([
+      '',
+    ])
     expect(node('config-api-key').value).toBe('')
   })
 
@@ -521,7 +448,9 @@ describe('settings controller', () => {
     expect(node('config-api-key').disabled).toBe(true)
     pending.resolve(testResult)
     await Promise.resolve()
-    expect(node('config-model').children.map((entry) => entry.value)).toEqual([''])
+    expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([
+      '',
+    ])
   })
 
   it('guards duplicate saves and refreshes the app after a late save without reopening the dialog', async () => {

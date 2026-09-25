@@ -82,9 +82,11 @@ export class ResourceAdminApi {
       })
     return body
   }
-  async skills(
-    cursor?: string,
-  ): Promise<{ items: SkillDescriptor[]; nextCursor?: string; skillRoots?: SkillRootStatus[] }> {
+  async skills(cursor?: string): Promise<{
+    items: SkillDescriptor[]
+    nextCursor?: string
+    skillRoots?: SkillRootStatus[]
+  }> {
     return this.#post('skills/list', {
       profile: this.#context.profile,
       kind: 'skill',
@@ -93,7 +95,10 @@ export class ResourceAdminApi {
     })
   }
   async skill(resourceId: string): Promise<SkillDescriptor> {
-    return this.#post('skills/get', { profile: this.#context.profile, resourceId })
+    return this.#post('skills/get', {
+      profile: this.#context.profile,
+      resourceId,
+    })
   }
   async refresh(rootKey?: string): Promise<ResourceOperationReceipt> {
     return this.#effect('skills/refresh', {
@@ -110,36 +115,59 @@ export class ResourceAdminApi {
     expectedPriority: number,
     priority: number | null,
   ): Promise<ResourceOperationReceipt> {
-    return this.#effect('skills/priority', { resourceId, expectedRevision, expectedPriority, priority })
+    return this.#effect('skills/priority', {
+      resourceId,
+      expectedRevision,
+      expectedPriority,
+      priority,
+    })
   }
   async skillTrust(
     resourceId: string,
     expectedRevision: string,
     trust: TrustState,
   ): Promise<ResourceOperationReceipt> {
-    return this.#effect('skills/trust', { resourceId, expectedRevision, trust })
+    return this.#effect('skills/trust', {
+      resourceId,
+      expectedRevision,
+      trust,
+    })
   }
   async skillDesired(
     resourceId: string,
     expectedRevision: string,
     state: 'enabled' | 'disabled',
   ): Promise<ResourceOperationReceipt> {
-    return this.#effect('skills/desired', { resourceId, expectedRevision, state, config: { kind: 'none' } })
+    return this.#effect('skills/desired', {
+      resourceId,
+      expectedRevision,
+      state,
+      config: { kind: 'none' },
+    })
   }
   async operation(operationId: string): Promise<ResourceOperation> {
-    return this.#post('operations/get', { profile: this.#context.profile, operationId })
+    return this.#post('operations/get', {
+      profile: this.#context.profile,
+      operationId,
+    })
   }
   async cancel(operationId: string): Promise<ResourceOperationReceipt> {
     return this.#effect('operations/cancel', { operationId })
   }
   async mcp(cursor?: string): Promise<{ items: McpServerDescriptor[]; nextCursor?: string }> {
-    return this.#post('mcp/list', { profile: this.#context.profile, ...(cursor ? { cursor } : {}) })
+    return this.#post('mcp/list', {
+      profile: this.#context.profile,
+      ...(cursor ? { cursor } : {}),
+    })
   }
   async mcpGet(serverId: string): Promise<McpServerDescriptor> {
     return this.#post('mcp/get', { profile: this.#context.profile, serverId })
   }
   async mcpStatus(serverId: string): Promise<McpStatus> {
-    return this.#post('mcp/status', { profile: this.#context.profile, serverId })
+    return this.#post('mcp/status', {
+      profile: this.#context.profile,
+      serverId,
+    })
   }
   async mcpTools(serverId: string, cursor?: string): Promise<McpToolCatalogPage> {
     return this.#post('mcp/tools', {
@@ -156,7 +184,11 @@ export class ResourceAdminApi {
     expectedRevision: string,
     definition: McpServerDefinitionInput,
   ): Promise<ResourceOperationReceipt> {
-    return this.#effect('mcp/update', { serverId, expectedRevision, definition })
+    return this.#effect('mcp/update', {
+      serverId,
+      expectedRevision,
+      definition,
+    })
   }
   async mcpRemove(serverId: string, expectedRevision: string): Promise<ResourceOperationReceipt> {
     return this.#effect('mcp/remove', { serverId, expectedRevision })
@@ -196,7 +228,10 @@ export class ResourceAdminApi {
     const response = await fetcher(`${RESOURCE_ADMIN_API_ROOT}/${path}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(body),
     })
     const result = await json(response)

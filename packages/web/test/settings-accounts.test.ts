@@ -1,13 +1,21 @@
 import { readFileSync } from 'node:fs'
 import type { ConfigAccount, ConfigSnapshot } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { unmountRegion } from '@agnes/web-ui'
 import { Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 
 let window: Window | undefined
+let disposeMarkup: (() => void) | undefined
 afterEach(() => {
+  for (const host of (window?.document.querySelectorAll(
+    '#config-accounts, .agnes-ui-button-host, .agnes-ui-field-host',
+  ) ?? []) as unknown as HTMLElement[])
+    unmountRegion(host)
+  disposeMarkup?.()
+  disposeMarkup = undefined
   vi.unstubAllGlobals()
   window?.happyDOM.abort()
   window = undefined
@@ -26,10 +34,16 @@ const account = (id: string): ConfigAccount => ({
 })
 async function setup() {
   window = new Window()
-  window.document.write(readFileSync(new URL('../public/index.html', import.meta.url), 'utf8'))
-  renderSettingsMarkup(window.document.getElementById('config') as unknown as HTMLElement)
+  window.document.write(
+    readFileSync(new URL('../public/index.html', import.meta.url), 'utf8').replace(
+      /<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g,
+      '',
+    ),
+  )
   vi.stubGlobal('document', window.document)
   vi.stubGlobal('window', window)
+  vi.stubGlobal('getComputedStyle', window.getComputedStyle.bind(window))
+  disposeMarkup = renderSettingsMarkup(window.document.getElementById('config') as unknown as HTMLElement)
   const snapshot: ConfigSnapshot = {
     profile: 'local-dev',
     revision: 4,

@@ -64,7 +64,10 @@ export const MCP_FORM_LIMITS = {
 
 export type McpFormFieldId = 'mcp-id' | 'mcp-executable' | 'mcp-args' | 'mcp-url' | 'mcp-secret' | 'mcp-tools'
 
-export type McpFormFieldIssue = Readonly<{ field: McpFormFieldId; message: string }>
+export type McpFormFieldIssue = Readonly<{
+  field: McpFormFieldId
+  message: string
+}>
 
 export type McpFormFieldSnapshot = Readonly<{
   /** select 的原样取值；未知值跳过传输相关校验，由 definitionFromForm 在提交时报错。 */
@@ -95,7 +98,12 @@ function urlIssues(url: string): McpFormFieldIssue[] {
     return [{ field: 'mcp-url', message: '地址格式不正确，请填写完整 URL。' }]
   }
   if (parsed.username || parsed.password || parsed.hash)
-    return [{ field: 'mcp-url', message: '地址不能携带用户名、密码或 #fragment（凭据请用 SecretRef）。' }]
+    return [
+      {
+        field: 'mcp-url',
+        message: '地址不能携带用户名、密码或 #fragment（凭据请用 SecretRef）。',
+      },
+    ]
   if ([...parsed.searchParams.keys()].some((name) => URL_CREDENTIAL_QUERY.test(name)))
     return [
       {
@@ -105,7 +113,12 @@ function urlIssues(url: string): McpFormFieldIssue[] {
       },
     ]
   if (url.length > MCP_FORM_LIMITS.urlMaxLength || !MCP_FORM_PATTERNS.url.test(url))
-    return [{ field: 'mcp-url', message: '地址需为 https:// 或 loopback 的 http:// URL，且不含空格。' }]
+    return [
+      {
+        field: 'mcp-url',
+        message: '地址需为 https:// 或 loopback 的 http:// URL，且不含空格。',
+      },
+    ]
   return []
 }
 
@@ -118,7 +131,10 @@ function stdioIssues(executable: string, argsText: string): McpFormFieldIssue[] 
     })
   const args = lines(argsText)
   if (args.length > MCP_FORM_LIMITS.argsMaxItems)
-    issues.push({ field: 'mcp-args', message: `参数最多 ${MCP_FORM_LIMITS.argsMaxItems} 个，每行一个。` })
+    issues.push({
+      field: 'mcp-args',
+      message: `参数最多 ${MCP_FORM_LIMITS.argsMaxItems} 个，每行一个。`,
+    })
   const badIndex = args.findIndex(
     (arg) => arg.length > MCP_FORM_LIMITS.argMaxLength || !MCP_FORM_PATTERNS.arg.test(arg),
   )
@@ -154,14 +170,24 @@ function secretIssues(secretKind: string, secretText: string): McpFormFieldIssue
     return []
   }
   if (secretText && !MCP_FORM_PATTERNS.secretRef.test(secretText))
-    return [{ field: 'mcp-secret', message: 'SecretRef 需形如 secret://namespace/name。' }]
+    return [
+      {
+        field: 'mcp-secret',
+        message: 'SecretRef 需形如 secret://namespace/name。',
+      },
+    ]
   return []
 }
 
 function toolIssues(toolsText: string): McpFormFieldIssue[] {
   const tools = lines(toolsText)
   if (tools.length > MCP_FORM_LIMITS.toolsMaxItems)
-    return [{ field: 'mcp-tools', message: `允许工具最多 ${MCP_FORM_LIMITS.toolsMaxItems} 个。` }]
+    return [
+      {
+        field: 'mcp-tools',
+        message: `允许工具最多 ${MCP_FORM_LIMITS.toolsMaxItems} 个。`,
+      },
+    ]
   const badIndex = tools.findIndex(
     (tool) => tool.length > MCP_FORM_LIMITS.toolMaxLength || !MCP_FORM_PATTERNS.toolName.test(tool),
   )
@@ -173,7 +199,13 @@ function toolIssues(toolsText: string): McpFormFieldIssue[] {
       },
     ]
   const duplicated = tools.find((tool, index) => tools.indexOf(tool) !== index)
-  if (duplicated) return [{ field: 'mcp-tools', message: `允许工具中有重复项：「${duplicated}」。` }]
+  if (duplicated)
+    return [
+      {
+        field: 'mcp-tools',
+        message: `允许工具中有重复项：「${duplicated}」。`,
+      },
+    ]
   return []
 }
 
@@ -202,7 +234,10 @@ export function mcpFormIssues(
   } else if (snapshot.transport === 'http' || snapshot.transport === 'sse') {
     if (!snapshot.url) {
       if (options.requireFilled)
-        issues.push({ field: 'mcp-url', message: '请填写 HTTPS 地址，或本地策略允许的 loopback HTTP 地址。' })
+        issues.push({
+          field: 'mcp-url',
+          message: '请填写 HTTPS 地址，或本地策略允许的 loopback HTTP 地址。',
+        })
     } else issues.push(...urlIssues(snapshot.url))
   }
   if (!snapshot.secretText && snapshot.secretKind !== 'none' && options.requireFilled)
