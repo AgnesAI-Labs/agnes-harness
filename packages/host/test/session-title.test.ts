@@ -63,7 +63,7 @@ async function fixture(
     ledger?: LedgerSeam
   } = {},
 ) {
-  const root = options.root ?? realpathSync(mkdtempSync(join(tmpdir(), 'agnes-title-')))
+  const root = options.root ?? realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-')))
   if (!options.root) roots.push(root)
   const calls: RequestBody[] = []
   const callOptions: Array<Parameters<Provider['infer']>[1]> = []
@@ -163,6 +163,7 @@ async function titleRecord(session: HostSession) {
   return events[0] && readSessionTitle(events[0])
 }
 
+// Two Hosts and three real turns: about 0.4 s alone, past the 5 s default on the Windows runner.
 it('generates with the captured model, persists once, and bills the first turn without changing context', async () => {
   let finish!: () => void
   const f = await fixture({
@@ -207,10 +208,11 @@ it('generates with the captured model, persists once, and bills the first turn w
   expect((await reopened.session.projectUI()).usage?.totals.input).toBe(2015)
   await run(reopened.session)
   expect(reopened.calls.every((call) => !call.sessionKey.startsWith('title:'))).toBe(true)
-})
+}, 30_000)
 
+// Two sessions with real turns and a ledger: about 0.3 s alone, past 5 s on the Windows runner.
 it('records equal-sequence title costs from separate sessions in the real ledger without replay duplicates', async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-title-ledger-')))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-ledger-')))
   roots.push(root)
   const storage = createSqliteStorage({ file: join(root, 'audit.db'), tablesDir: join(root, 'audit-tables') })
   const init = fakeSeamInit()
@@ -250,12 +252,12 @@ it('records equal-sequence title costs from separate sessions in the real ledger
     await host?.close()
     await storage.close()
   }
-})
+}, 30_000)
 
 it.each(['valid title', '```invalid title'])(
   'recovers persisted title cost after ledger failure: %s',
   async (title) => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-title-recovery-')))
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-recovery-')))
     roots.push(root)
     const storage = createSqliteStorage({
       file: join(root, 'audit.db'),
@@ -384,6 +386,7 @@ it('does not start a late ledger write after recovery scan times out', async () 
   }
 })
 
+// Two Hosts and real turns: about 0.2 s alone, past the 5 s default on the Windows runner.
 it('ignores forged and mismatched cost rows across pages when recovering title usage', async () => {
   const f = await fixture()
   await run(f.session)
@@ -419,7 +422,7 @@ it('ignores forged and mismatched cost rows across pages when recovering title u
     lastSeq.mockRestore()
     record.mockRestore()
   }
-})
+}, 30_000)
 
 it('keeps fallback on invalid output and never retries on later turns', async () => {
   const f = await fixture({ title: '标题\n解释' })

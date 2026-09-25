@@ -85,7 +85,10 @@ function tracingRemoteTransport(ownerCommands: string[][]) {
   }
 }
 
-it('the real remote worker fork keeps the parent owner directory and child binding', async () => {
+it('the real remote worker fork keeps the parent owner directory and child binding', async ({ skip }) => {
+  // A remote owner root is a posix path by contract, and this transport stands in for the remote
+  // host with a directory on this disk, which on win32 has no posix spelling.
+  skip(process.platform === 'win32', 'remote roots are posix paths')
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-worker-fork-workspace-'))
   dirs.push(dataDir)
   const root = realpathSync(dataDir)
@@ -261,4 +264,4 @@ it('the real remote worker fork keeps the parent owner directory and child bindi
     await hosted.closeAll()
     await built.host.close()
   }
-}, 30_000)
+}, 90_000)

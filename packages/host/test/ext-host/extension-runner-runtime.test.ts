@@ -75,8 +75,12 @@ it('falls through a rejected bundled candidate to an explicitly configured stand
     bundledNode: { executable: '/bin/sh', readRoots: ['/bin'] },
     configuredNode: { executable: process.execPath, readRoots: [dirname(process.execPath)] },
     hostNode: false,
+    // The resolver probes canonical paths, and /bin/sh is a symlink on many Linux systems
+    // (/bin -> /usr/bin, sh -> dash). Treat everything except the configured Node as Electron.
     probe: (executable) =>
-      executable === '/bin/sh' ? { node: '24.14.0', electron: '41.2.0' } : { node: '24.14.0' },
+      executable === realpathSync(process.execPath)
+        ? { node: '24.14.0' }
+        : { node: '24.14.0', electron: '41.2.0' },
   })
   expect(runtime.source).toBe('configured')
 })

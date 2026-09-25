@@ -74,7 +74,7 @@ describe('Task 5 production workspace acceptance', () => {
     const dataDir = tempDir()
     mkdirSync(join(dataDir, 'secret'), { recursive: true })
     writeFileSync(join(dataDir, 'secret', 'value.txt'), 'private')
-    const root = realpathSync(dataDir)
+    const root = realpathSync.native(dataDir)
     const { host } = await createTestHost({
       dataDir,
       allowed: ['standard', 'strict'],

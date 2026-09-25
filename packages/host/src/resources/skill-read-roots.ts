@@ -1,5 +1,5 @@
-import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { localRealpathSync } from '../adapters/fs-io-local.js'
 
 export type SkillReadRootContext = Readonly<{
   homeDir: string
@@ -23,9 +23,11 @@ const within = (inner: string[], outer: string[]): boolean =>
 const skillInside = (segs: string[], base: string[]): boolean =>
   segs.length > base.length + 1 && within(segs, [...base, 'skills'])
 
+// One spelling for the roots and the directories they are measured against; on Windows that is the
+// native one, which expands 8.3 short names.
 const canonical = (path: string): string => {
   try {
-    return realpathSync(path)
+    return localRealpathSync(path)
   } catch {
     return resolve(path)
   }
@@ -42,7 +44,8 @@ export function safeSkillReadRoots(roots: readonly string[], context: SkillReadR
   const home = segments(canonical(context.homeDir))
   const data = segments(canonical(context.dataDir))
   const agnesHome = segments(canonical(context.agnesHome))
-  return roots.filter((root) => {
+  // Each root is judged, and handed on, in the spelling the fence will compare it in.
+  return roots.map(canonical).filter((root) => {
     const segs = segments(root)
     if (segs.length < 2 || within(home, segs)) return false
     if (within(segs, data) || within(data, segs)) return false

@@ -94,8 +94,8 @@ describe('remote assembly wiring (RA17)', () => {
     // (RA15) and is no longer run through this machine's realpath, so a fixture handing over
     // `/var/...` where the volume's real name is `/private/var/...` would be fencing a spelling the
     // remote io then canonicalizes to something else. Real remote roots arrive canonical; so does
-    // this one.
-    dir = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-remote-wiring-')))
+    // this one. The native realpath also expands Windows 8.3 short names, the way the local io does.
+    dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-remote-wiring-')))
     const dataDir = join(dir, 'data')
     const workspaceRoot = join(dir, 'work')
     mkdirSync(workspaceRoot, { recursive: true })
@@ -217,7 +217,7 @@ describe('remote assembly wiring (RA17)', () => {
     // directory, and realpathSync prefers the second. A remote-absolute path that also happens to
     // exist on this machine is exactly the case where the old local canonicalization silently
     // re-pointed the fence at this machine's answer.
-    expect(realpathSync(link)).toBe(workspaceRoot)
+    expect(realpathSync.native(link)).toBe(workspaceRoot)
     const profile = await remoteSeamProfile(dir)
     const bundle = await openAdapters(profile, {
       dataDir,
@@ -272,12 +272,16 @@ describe('remote assembly wiring (RA17)', () => {
   })
 })
 
-describe('the remote seam over a real openAdapters bundle (C1: the exec gate is in the path)', () => {
+// A remote workspace root is a posix path by contract, and the loopback transport stands in for the
+// remote host with a directory on this disk, which on win32 has no posix spelling.
+const onPosix = process.platform === 'win32' ? describe.skip : describe
+
+onPosix('the remote seam over a real openAdapters bundle (C1: the exec gate is in the path)', () => {
   let dir: string
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
   const openRemote = async () => {
-    dir = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-remote-seam-')))
+    dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-remote-seam-')))
     const dataDir = join(dir, 'data')
     const workspaceRoot = join(dir, 'work')
     const homeDir = join(dir, 'home')

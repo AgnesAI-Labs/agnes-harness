@@ -289,7 +289,7 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(fresh.setModel).toHaveBeenCalled())
     expect(fresh.setModel).toHaveBeenCalledWith({ slot: 'primary', route: 'local', model: 'model-b' })
     expect(fresh.setYolo).toHaveBeenCalledWith(true)
-  })
+  }, 20_000)
 
   it('keeps controls usable after a pending model update and refreshes both old and new drafts', async () => {
     installPublicFixture()

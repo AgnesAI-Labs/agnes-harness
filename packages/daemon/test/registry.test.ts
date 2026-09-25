@@ -354,6 +354,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         profileHash: 'sha256-profile',
       }),
       onExit: vi.fn(),
+      closeSession: vi.fn(async () => undefined),
       command: vi.fn(),
     })
     const initial = link('old-generation')
@@ -378,8 +379,68 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     const opened = await opening
 
     expect(opened.session.writerRunId).toBe('new-generation')
-    expect(retire).toHaveBeenCalledWith(['opening-session'], 'resource-snapshot-reload')
+    expect(initial.closeSession).toHaveBeenCalledWith('resource-snapshot-reload')
     expect(pool.acquire).toHaveBeenCalledTimes(2)
+  })
+
+  // The worker's tail replay for the discarded open can still be in flight when the fence trips. Were
+  // those frames projected after the entry was gone they would fail the key, and that failure retires
+  // whichever channel then holds the key: the replacement, so the open failed as an internal error.
+  it('absorbs frames the discarded open sends while it closes, and publishes the replacement', async () => {
+    let registry!: WorkerRegistry
+    let releaseFirst: ((link: unknown) => void) | undefined
+    const first = new Promise<unknown>((resolve) => {
+      releaseFirst = resolve
+    })
+    const staleDeliveries: Array<Promise<unknown>> = []
+    const link = (token: string, closeSession: () => Promise<void>) => ({
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token,
+        sessionKey: 'opening-session',
+        writerRunId: token,
+        generation: 1,
+        profileHash: 'sha256-profile',
+      }),
+      onExit: vi.fn(),
+      closeSession: vi.fn(closeSession),
+      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+    })
+    const initial = link('old-generation', async () => {
+      staleDeliveries.push(
+        Promise.resolve().then(() =>
+          registry.deliver('opening-session', { seq: 1, type: 'session/opened' } as unknown as EventEnvelope),
+        ),
+      )
+      await staleDeliveries.at(-1)
+    })
+    const replacement = link('new-generation', async () => undefined)
+    let acquireCalls = 0
+    // Like the real pool, retiring the key closes its current channel without waiting.
+    const retire = vi.fn(() => void initial.closeSession())
+    const pool = {
+      acquire: vi.fn(async () => (++acquireCalls === 1 ? first : replacement)),
+      retire,
+    } as unknown as WorkerPool
+    registry = new WorkerRegistry(pool, { observe: async () => undefined, resetSession: () => undefined })
+    const opening = registry.open({
+      key: 'opening-session',
+      cwd: '/workspace',
+      binding: await workspaceBinding('opening-session'),
+      resume: true,
+    })
+    await Promise.resolve()
+
+    registry.noteResourceSnapshotCommitted()
+    releaseFirst?.(initial)
+    const opened = await opening
+
+    await expect(Promise.all(staleDeliveries)).resolves.toBeDefined()
+    expect(initial.closeSession).toHaveBeenCalledWith('resource-snapshot-reload')
+    expect(opened.session.writerRunId).toBe('new-generation')
+    expect(registry.get('opening-session')).toBe(opened)
+    expect(retire).not.toHaveBeenCalled()
   })
 
   // Task 7 (resource-live-reload plan): the daemon's wiring (supervisor.ts's
@@ -434,6 +495,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         profileHash: 'sha256-profile',
       }),
       onExit: vi.fn(),
+      closeSession: vi.fn(async () => undefined),
       command: vi.fn(),
     })
     const initial = link('old-generation')

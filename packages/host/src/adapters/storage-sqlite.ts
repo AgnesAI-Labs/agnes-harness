@@ -248,6 +248,16 @@ export function createSqliteStorage(opts: {
   tablesDir?: string
 }): SqliteStorage {
   const db = new DatabaseSync(opts.file)
+  try {
+    return openSqliteStorage(db, opts)
+  } catch (error) {
+    // A refused or failed migration must not keep the file open; Windows cannot delete it then.
+    db.close()
+    throw error
+  }
+}
+
+function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqliteStorage>[0]): SqliteStorage {
   const tablesDir = opts.tablesDir ?? join(dirname(opts.file), 'tables')
   const owned = new Map<string, DatabaseSync>()
   let closed = false
@@ -701,14 +711,20 @@ export function createSqliteStorage(opts: {
       if (!odb) {
         mkdirSync(tablesDir, { recursive: true })
         odb = new DatabaseSync(join(tablesDir, `${ownerFile(owner)}.db`))
-        odb.exec('PRAGMA journal_mode = WAL')
-        for (const row of odb.prepare('SELECT name FROM sqlite_master WHERE type = ?').all('table') as {
-          name: string
-        }[]) {
-          assertSessionTreeTableName(row.name)
+        try {
+          odb.exec('PRAGMA journal_mode = WAL')
+          for (const row of odb.prepare('SELECT name FROM sqlite_master WHERE type = ?').all('table') as {
+            name: string
+          }[]) {
+            assertSessionTreeTableName(row.name)
+          }
+          // After the journal pragma, not before: the authorizer refuses PRAGMA to everyone.
+          confineToOwnFile(odb)
+        } catch (error) {
+          // A refused owner file is not kept open behind the error.
+          odb.close()
+          throw error
         }
-        // After the journal pragma, not before: the authorizer refuses PRAGMA to everyone.
-        confineToOwnFile(odb)
         owned.set(owner, odb)
       }
       const conn = odb

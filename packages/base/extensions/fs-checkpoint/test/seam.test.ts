@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, promises as fs, realpathSync } from 'node:fs'
+import { existsSync, promises as fs, realpathSync as realpathSyncPortable } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { FsEntry } from '@agnes/extension-api'
@@ -10,6 +10,9 @@ import { createFsCheckpoint } from '../src/seam.js'
 import { type CheckpointManifest, ShadowGit } from '../src/shadow-git.js'
 
 const denied = (path: string) => Object.assign(new Error(`E_FS_DENIED: ${path}`), { code: 'E_FS_DENIED' })
+// The native resolver, as the host's fence spells paths: on Windows the portable one keeps 8.3
+// short names, and a workspace hash taken from one spelling names another shadow repository.
+const realpathSync = realpathSyncPortable.native
 function realFs(root: string): HostFs {
   const inside = (path: string): string => {
     const base = realpathSync(root)

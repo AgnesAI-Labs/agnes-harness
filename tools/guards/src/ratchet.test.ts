@@ -1713,7 +1713,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // not INTERNAL: open-path mapping, approval reopen and the endpoint audit (+23). Re-measured on this tree:
   // 26440, exact, no spare.
-  'packages/daemon/src': 26440,
+  // WIN-SHORT-NAMES: the Skill watcher hands fs.watch the native (long) spelling on Windows, since
+  // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
+  'packages/daemon/src': 26451,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2390,7 +2392,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // re-measured, exact, no spare.
   // SKILL-CATALOG-CLEAN-REWRITE merge: retained skill-preload header (+4), combined exact total.
   // Skill import and approved reinstall on the merged tree: measured 38038, no spare.
-  'packages/host/src': 38038,
+  // WIN-SHORT-NAMES: the local fence spells paths as the native resolver does on Windows, so 8.3
+  // short names and long names canonicalize alike; measured 38069, exact, no spare (+31).
+  // WIN-SQLITE-CLOSE: storage-sqlite closes a database it refused or failed to open (+13).
+  // Measured 38050, exact, no spare.
+  // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
+  'packages/host/src': 38082,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2545,7 +2552,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O1: same change as packages/host/src. Measured: 5068 (+7), exact.
   // UI-CACHE-INCREMENTAL C1 (rebased on 950fc6f3): measured 4995, exact, no spare (-73).
   // SKILL-GITHUB-RATE-LIMIT: measured 5010, no spare.
-  'packages/host/src/adapters': 5010,
+  // WIN-SHORT-NAMES: FsIo.finalPath, its local and session-workspace wiring, and one local realpath
+  // helper; measured 5042, exact, no spare (+32).
+  // WIN-SQLITE-CLOSE: same change as packages/host/src. Measured 5023 (+13), exact.
+  // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
+  'packages/host/src/adapters': 5055,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2560,7 +2571,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // rebased onto main after #6+#7 C4: merged tree re-measured with countLines(): 728, exact.
   // OPSTATE O1: same change. Measured: 735 (+7), exact.
   // UI-CACHE-INCREMENTAL C1 (rebased on 950fc6f3): measured 667, exact, no spare (-68).
-  'packages/host/src/adapters/storage-sqlite': 667,
+  // WIN-SQLITE-CLOSE: a refused or failed open closes its database file again, so Windows can
+  // delete it. Measured 680 (+13), exact, no spare.
+  'packages/host/src/adapters/storage-sqlite': 680,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,

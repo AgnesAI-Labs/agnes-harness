@@ -9,8 +9,12 @@ import { describe, expect, it } from 'vitest'
 const execute = promisify(execFile)
 const entry = new URL('../src/bin.ts', import.meta.url)
 
+// Each case starts the daemon bin from TypeScript source through tsx: under a second alone, but
+// past vitest's 5 s default on a loaded macOS runner.
+const bin = { timeout: 30_000 }
+
 describe('agnesd control commands through the real bin', () => {
-  it('prints status JSON and uses a nonzero exit when no daemon is running', async () => {
+  it('prints status JSON and uses a nonzero exit when no daemon is running', bin, async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-bin-status-'))
     try {
       let failure: { code?: unknown; stdout?: unknown } | undefined
@@ -30,7 +34,7 @@ describe('agnesd control commands through the real bin', () => {
     }
   })
 
-  it('makes stop idempotent when no owner exists', async () => {
+  it('makes stop idempotent when no owner exists', bin, async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-bin-stop-'))
     try {
       const result = await execute(

@@ -14,6 +14,7 @@ import {
   type SkillRefreshTarget,
   startSkillWatcher,
   type WatchFn,
+  watchedPath,
 } from '../src/supervisor/skill-watcher.js'
 
 type FakeHandle = {
@@ -72,6 +73,20 @@ function recorder() {
 }
 
 const settle = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms))
+
+describe('watchedPath', () => {
+  it('hands the platform watcher the long spelling of a Windows path and POSIX paths as given', () => {
+    const expand = (path: string) => path.replace('RUNNER~1', 'runneradmin')
+    expect(watchedPath('C:\\Users\\RUNNER~1\\home\\skills', true, expand)).toBe(
+      'C:\\Users\\runneradmin\\home\\skills',
+    )
+    expect(watchedPath('/srv/agh/skills', false, expand)).toBe('/srv/agh/skills')
+    const missing = () => {
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+    }
+    expect(watchedPath('C:\\gone', true, missing)).toBe('C:\\gone')
+  })
+})
 
 describe('isSkillChange', () => {
   it('accepts Skill entries and attachments but not dot folders, node_modules, or deep paths', () => {

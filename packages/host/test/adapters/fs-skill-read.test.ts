@@ -15,7 +15,7 @@ describe('fs adapter: Skill directories open for reading', () => {
   let policy: FsPolicy
   let roots: string[]
   beforeEach(() => {
-    base = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-skill-read-')))
+    base = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-skill-read-')))
     root = join(base, 'work')
     skill = join(base, 'skills', 'review')
     mkdirSync(join(root, '.git'), { recursive: true })

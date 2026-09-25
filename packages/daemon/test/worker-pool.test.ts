@@ -745,6 +745,54 @@ describe('WorkerPool', () => {
     }
   }, 20_000)
 
+  // On Linux a worker that exits with the start gate still unread resets its pipe, and the error
+  // surfaces on the supervisor's end after the gate was written.
+  it('treats an error on the written start gate as nothing the supervisor has to handle', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-gate-reset-'))
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
+    const config: DaemonConfig = {
+      profileName: 'p',
+      dataDir: dir,
+      socketPath: join(dir, 'a.sock'),
+      workersSocketPath: workerSocket(dir),
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+    }
+    const { spawn } = await import('node:child_process')
+    const children: ChildProcess[] = []
+    const pool = new WorkerPool({
+      config,
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile,
+      execPath: process.execPath,
+      workerEntry: fakeWorker,
+      execArgv: ['--import', 'tsx'],
+      clock: () => 0,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      notices: { emit() {} },
+      spawn: ((...args: Parameters<typeof spawn>) => {
+        const child = spawn(...args)
+        children.push(child)
+        return child
+      }) as typeof spawn,
+    })
+    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
+    try {
+      const link = await acquire(pool, 'agnes:t:a:x:dm:gate-reset')
+      const gate = children[0]?.stdio[3]
+      expect(gate).toBeDefined()
+      const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET', syscall: 'read' })
+      expect(() => gate?.emit('error', reset)).not.toThrow()
+      expect(link.alive).toBe(true)
+    } finally {
+      await pool.closeAll(1_000).catch(() => undefined)
+      pool.killAll()
+      await server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 20_000)
+
   it('does not finish pool shutdown before worker exit recovery settles', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shutdown-recovery-'))
     const profileFile = join(dir, 'profile.json')
@@ -1082,7 +1130,10 @@ describe('WorkerPool when a start from the desired target fails', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 2500 },
+      // The same window bounds hello and boot_ready. A tsx-started fake worker can take more than
+      // 2.5s to say hello on a loaded hosted runner, which then fails before the boot phase under
+      // test; use the 10s window the other real-worker tests in this file use.
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
     }
     const store = new CompositeTargetStore(sqliteTables().table('composite'), 'default')
     setup(store)
@@ -1121,7 +1172,7 @@ describe('WorkerPool when a start from the desired target fails', () => {
       expect(notices).not.toContain('worker_crashed')
       expect(pool.isQuarantined('@shared')).toBe(false)
     })
-  }, 40_000)
+  }, 90_000)
 
   it('records the failure when the worker process dies while it is starting from the target', async () => {
     process.env.AGNES_FAKE_BOOT = 'exit'
@@ -1138,7 +1189,7 @@ describe('WorkerPool when a start from the desired target fails', () => {
       process.env.AGNES_FAKE_BOOT = undefined
       Reflect.deleteProperty(process.env, 'AGNES_FAKE_BOOT')
     }
-  }, 40_000)
+  }, 90_000)
 
   it('fails the start as soon as the worker says it cannot apply the target, and records that target', async () => {
     process.env.AGNES_FAKE_BOOT = 'fail'

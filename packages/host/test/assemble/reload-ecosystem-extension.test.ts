@@ -100,7 +100,7 @@ const seamsOnCode = (
     forWorkspace,
     fsPolicy: () => {
       const policy = testFsPolicy('/workspace')
-      const workspaceRoot = realpathSync(dataDir)
+      const workspaceRoot = realpathSync.native(dataDir)
       const rules = policy.rules.map((rule) => ({
         ...rule,
         path: join(workspaceRoot, ...rule.path.slice(policy.workspaceRoot.length).split('/')),

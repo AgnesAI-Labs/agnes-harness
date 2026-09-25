@@ -1008,7 +1008,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           exec,
           fsPolicy: () => {
             const policy = testFsPolicy('/workspace')
-            const workspaceRoot = realpathSync(dataDir)
+            const workspaceRoot = realpathSync.native(dataDir)
             const rules = policy.rules.map((rule) => ({
               ...rule,
               path: join(workspaceRoot, ...rule.path.slice(policy.workspaceRoot.length).split('/')),
@@ -1058,7 +1058,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(exec).toHaveBeenCalledWith(
         ['$SHELL', './deny.sh'],
         expect.objectContaining({
-          cwd: realpathSync(dataDir),
+          cwd: realpathSync.native(dataDir),
           stdin: expect.stringContaining('"hook_event_name":"PreToolUse"'),
         }),
       )

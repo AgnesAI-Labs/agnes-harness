@@ -23,7 +23,7 @@ describe('the writer lease setting does not reach builtin extension rows', () =>
       dataDir,
       packageDirs,
       limits: { 'lease.ttl_ms': 1000 },
-      script: [callTool('ls', { path: realpathSync(dataDir) }), say('done')],
+      script: [callTool('ls', { path: realpathSync.native(dataDir) }), say('done')],
     })
     try {
       await new Promise((resolve) => setTimeout(resolve, 1200))

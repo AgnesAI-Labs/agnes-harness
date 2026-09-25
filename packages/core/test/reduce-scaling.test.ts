@@ -41,17 +41,22 @@ const uiFold = (calls: number) => (budgetMs: number) => {
   cell.sealReplay()
 }
 
+// Alone a 4k fold takes about 0.1 s and a 16k fold about 0.4 s, and a loaded CI runner can be ten
+// times slower. A 16k run's fail-fast budget therefore follows a measured 4k run, so machine load
+// slows both sides alike and only a clearly super-linear fold gives up early.
+const largeFoldBudget = (small: number): number => Math.max(3_000, small * 16)
+
 describe('folding scales linearly with the session', () => {
   it('folds 16k calls in at most eight times the time of 4k', { timeout: 120_000 }, () => {
-    const small = fastest(3, 1_000, fold(4000))
-    const large = fastest(3, 3_000, fold(16_000))
+    const small = fastest(3, 2_500, fold(4000))
+    const large = fastest(3, largeFoldBudget(small), fold(16_000))
     expect(large / small).toBeLessThan(8)
   })
 
   it('appends one more tool step at the head of a 16k-call session in a bounded time', {
     timeout: 120_000,
   }, () => {
-    const head = foldEvents(within(16_000, 3_000))
+    const head = foldEvents(within(16_000, largeFoldBudget(fastest(1, 2_500, fold(4000)))))
     const rows = [...toolHeavyLedger({ calls: 16_001 })]
     const step = rows.filter((row) => row.seq > head.lastSeq)
     const times: number[] = []
@@ -71,9 +76,11 @@ describe('folding scales linearly with the session', () => {
   it('builds the UI cell of 16k calls in at most eight times the time of 4k', {
     timeout: 120_000,
   }, () => {
-    // Alone these take about 0.3 s and 1.1 s; the budgets leave room for a loaded parallel run.
-    const small = fastest(3, 2_000, uiFold(4000))
-    const large = fastest(3, 6_000, uiFold(16_000))
+    // Alone these take about 0.3 s and 1.1 s, and a loaded CI runner can be five times slower. The
+    // large run's fail-fast budget therefore follows the measured small run, so machine load slows
+    // both sides alike and only a clearly super-linear fold gives up early.
+    const small = fastest(3, 5_000, uiFold(4000))
+    const large = fastest(3, Math.max(6_000, small * 16), uiFold(16_000))
     expect(large / small).toBeLessThan(8)
   })
 })

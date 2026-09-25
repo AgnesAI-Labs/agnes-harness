@@ -151,4 +151,6 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       rmSync(root, { recursive: true, force: true })
     }
   },
+  // A real Host turn plus TUI paging: under a second alone, past the 5 s default on the Windows runner.
+  30_000,
 )

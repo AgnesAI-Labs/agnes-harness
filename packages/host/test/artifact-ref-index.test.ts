@@ -48,6 +48,9 @@ async function ledgerFixture() {
   const writer = new DatabaseSync(file)
   open.push(writer)
   writer.exec('PRAGMA journal_mode = WAL')
+  // A fixture writer: skipping the per-row fsync keeps thousands of single-row commits fast on
+  // Windows, where each flush costs milliseconds. Readers see the same rows either way.
+  writer.exec('PRAGMA synchronous = OFF')
   for (const ddl of DDL) writer.exec(ddl)
   const insert = writer.prepare(
     `INSERT INTO events (session_key, seq, ts, id, type, lane, actor, origin, trust, data, integrity_digest)

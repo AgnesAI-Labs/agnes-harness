@@ -147,8 +147,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
+// Store activation deliberately fails closed on Windows until a trusted directory-handle
+// implementation exists, so cases that need a working store run only where activation is supported.
+const storeIt = it.skipIf(process.platform === 'win32')
+
 describe('locked Computer Use package activation', () => {
-  it('verifies, stages and atomically selects a candidate without claiming it is LKG', async () => {
+  storeIt('verifies, stages and atomically selects a candidate without claiming it is LKG', async () => {
     const { source, store, manifest, archive } = await fixture()
     const record = await activateLockedPackage({
       sourceDirectory: source,
@@ -171,7 +175,7 @@ describe('locked Computer Use package activation', () => {
     expect(verifySignature).toHaveBeenCalledTimes(2)
   })
 
-  it('requires an explicit confirmation before rollback can select LKG', async () => {
+  storeIt('requires an explicit confirmation before rollback can select LKG', async () => {
     const first = await fixture('first\n')
     const one = await activateLockedPackage({
       ...first,
@@ -249,7 +253,7 @@ describe('locked Computer Use package activation', () => {
     await expect(readFile(join(store, 'activation.json'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('rejects missing signature evidence, digest mutation, symlinks and extra files', async () => {
+  storeIt('rejects missing signature evidence, digest mutation, symlinks and extra files', async () => {
     const missing = await fixture()
     await expect(
       activateLockedPackage({
@@ -303,7 +307,7 @@ describe('locked Computer Use package activation', () => {
     ).rejects.toThrow('do not match')
   })
 
-  it('rejects a symlinked versions directory before publishing outside the store', async () => {
+  storeIt('rejects a symlinked versions directory before publishing outside the store', async () => {
     const { root, source, store, manifest, archive } = await fixture()
     const outside = join(root, 'outside')
     await mkdir(outside)
@@ -321,7 +325,7 @@ describe('locked Computer Use package activation', () => {
     expect(await readFile(join(source, 'skill/SKILL.md'), 'utf8')).toContain('reviewed skill')
   })
 
-  it('will not confirm a candidate whose stored bytes changed after activation', async () => {
+  storeIt('will not confirm a candidate whose stored bytes changed after activation', async () => {
     const { source, store, manifest, archive } = await fixture()
     const record = await activateLockedPackage({
       sourceDirectory: source,
@@ -381,7 +385,7 @@ describe('locked Computer Use package activation', () => {
     ).toThrow(/platforms exceeds its item limit/)
   })
 
-  it('holds a fail-closed cross-process lock across verification and publication', async () => {
+  storeIt('holds a fail-closed cross-process lock across verification and publication', async () => {
     const { source, store, manifest, archive } = await fixture()
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
@@ -408,7 +412,8 @@ describe('locked Computer Use package activation', () => {
       environment,
       verifySignature: blockingVerifier,
     })
-    await started
+    // Wait for the verifier to be entered, but surface an early rejection instead of hanging on it.
+    await Promise.race([started, first])
     await expect(
       activateLockedPackage({
         sourceDirectory: source,
@@ -423,7 +428,7 @@ describe('locked Computer Use package activation', () => {
     await first
   })
 
-  it('rejects forged nested state, changed trust, and a symlinked selected package', async () => {
+  storeIt('rejects forged nested state, changed trust, and a symlinked selected package', async () => {
     const { root, source, store, manifest, archive } = await fixture()
     const record = await activateLockedPackage({
       sourceDirectory: source,
@@ -465,7 +470,7 @@ describe('locked Computer Use package activation', () => {
     await expect(confirmLockedPackageLkg(stored(store))).rejects.toThrow(/real directory|escapes/)
   })
 
-  it('keeps the prior active record when a destination collision aborts publication', async () => {
+  storeIt('keeps the prior active record when a destination collision aborts publication', async () => {
     const { source, store, manifest, archive } = await fixture()
     const active = await activateLockedPackage({
       sourceDirectory: source,
@@ -489,57 +494,60 @@ describe('locked Computer Use package activation', () => {
     expect(state.active).toEqual(active)
   })
 
-  it('hashes archive bytes internally and reconciles a crash after destination publication', async () => {
-    const { source, store, manifest, archive } = await fixture()
-    await expect(
-      activateLockedPackage({
+  storeIt(
+    'hashes archive bytes internally and reconciles a crash after destination publication',
+    async () => {
+      const { source, store, manifest, archive } = await fixture()
+      await expect(
+        activateLockedPackage({
+          sourceDirectory: source,
+          storeDirectory: store,
+          manifest,
+          sourceArchiveBytes: new TextEncoder().encode('different archive bytes'),
+          environment,
+          verifySignature,
+        }),
+      ).rejects.toThrow('source artifact digest does not match')
+      expect(verifySignature).not.toHaveBeenCalled()
+      await expect(
+        activateLockedPackage({
+          sourceDirectory: source,
+          storeDirectory: store,
+          manifest,
+          sourceArchiveBytes: new Uint8Array(8 * 1024 * 1024 + 1),
+          environment,
+          verifySignature,
+        }),
+      ).rejects.toThrow(/archive exceeds the size limit/)
+
+      const active = await activateLockedPackage({
         sourceDirectory: source,
         storeDirectory: store,
         manifest,
-        sourceArchiveBytes: new TextEncoder().encode('different archive bytes'),
+        ...artifact(archive),
         environment,
         verifySignature,
-      }),
-    ).rejects.toThrow('source artifact digest does not match')
-    expect(verifySignature).not.toHaveBeenCalled()
-    await expect(
-      activateLockedPackage({
+      })
+      await rm(join(store, 'activation.json'))
+      await mkdir(join(store, '.staging-interrupted', 'skill'), { recursive: true })
+      await writeFile(join(store, '.staging-interrupted', 'skill/SKILL.md'), 'partial')
+      const recovered = await activateLockedPackage({
         sourceDirectory: source,
         storeDirectory: store,
         manifest,
-        sourceArchiveBytes: new Uint8Array(8 * 1024 * 1024 + 1),
+        ...artifact(archive),
         environment,
         verifySignature,
-      }),
-    ).rejects.toThrow(/archive exceeds the size limit/)
+        now: () => new Date(active.activatedAt),
+      })
+      expect(recovered).toEqual(active)
+      await expect(readFile(join(store, '.staging-interrupted', 'skill/SKILL.md'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      })
+    },
+  )
 
-    const active = await activateLockedPackage({
-      sourceDirectory: source,
-      storeDirectory: store,
-      manifest,
-      ...artifact(archive),
-      environment,
-      verifySignature,
-    })
-    await rm(join(store, 'activation.json'))
-    await mkdir(join(store, '.staging-interrupted', 'skill'), { recursive: true })
-    await writeFile(join(store, '.staging-interrupted', 'skill/SKILL.md'), 'partial')
-    const recovered = await activateLockedPackage({
-      sourceDirectory: source,
-      storeDirectory: store,
-      manifest,
-      ...artifact(archive),
-      environment,
-      verifySignature,
-      now: () => new Date(active.activatedAt),
-    })
-    expect(recovered).toEqual(active)
-    await expect(readFile(join(store, '.staging-interrupted', 'skill/SKILL.md'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
-  })
-
-  it('reconciles a durable prepared receipt after the state mutation without replaying it', async () => {
+  storeIt('reconciles a durable prepared receipt after the state mutation without replaying it', async () => {
     const { source, store, manifest, archive } = await fixture()
     const receipts = new MemoryReceiptPort()
     const durableOperation = operation(receipts)
@@ -583,7 +591,7 @@ describe('locked Computer Use package activation', () => {
     expect(verifySignature).toHaveBeenCalledTimes(1)
   })
 
-  it('snapshots and freezes receipt proposals before invoking the Host port', async () => {
+  storeIt('snapshots and freezes receipt proposals before invoking the Host port', async () => {
     const { source, store, manifest, archive } = await fixture()
     const receipts = new AliasingReceiptPort()
     const record = await activateLockedPackageWithReceipt({
@@ -601,7 +609,7 @@ describe('locked Computer Use package activation', () => {
     expect(state.active).toEqual(record)
   })
 
-  it('binds receipts to the canonical store and activate request', async () => {
+  storeIt('binds receipts to the canonical store and activate request', async () => {
     const first = await fixture('binding one\n')
     const second = await fixture('binding two\n')
     const receipts = new MemoryReceiptPort()
@@ -632,7 +640,7 @@ describe('locked Computer Use package activation', () => {
     ).rejects.toThrow('does not match the mutation')
   })
 
-  it('re-verifies stored bytes on the committed fast path', async () => {
+  storeIt('re-verifies stored bytes on the committed fast path', async () => {
     const { source, store, manifest, archive } = await fixture()
     const durableOperation = operation()
     const record = await activateLockedPackageWithReceipt({
@@ -712,7 +720,7 @@ describe('locked Computer Use package activation', () => {
     expect(getterCalls).toBe(0)
   })
 
-  it('snapshots environment, verifier, timeout, and clock before the first await', async () => {
+  storeIt('snapshots environment, verifier, timeout, and clock before the first await', async () => {
     const { source, store, manifest, archive } = await fixture()
     const mutableEnvironment = { ...environment }
     const originalVerifier = vi.fn(async ({ keyId }: { keyId: string }) => ({
@@ -807,7 +815,7 @@ describe('locked Computer Use package activation', () => {
     expect(callableTrapCalls).toBe(0)
   })
 
-  it('records fenced receipts for confirm and rollback and rejects operation-id reuse', async () => {
+  storeIt('records fenced receipts for confirm and rollback and rejects operation-id reuse', async () => {
     const first = await fixture('first durable\n')
     const activateOperation = operation()
     const firstRecord = await activateLockedPackageWithReceipt({
@@ -842,7 +850,7 @@ describe('locked Computer Use package activation', () => {
     })
   })
 
-  it('redacts receipt-port failures and reports a missing operation without mutation', async () => {
+  storeIt('redacts receipt-port failures and reports a missing operation without mutation', async () => {
     const { source, store, manifest, archive } = await fixture()
     const receipts = new MemoryReceiptPort()
     const durableOperation = operation(receipts)
@@ -863,7 +871,7 @@ describe('locked Computer Use package activation', () => {
     ).resolves.toEqual({ historyOnly: true, outcome: 'not-found' })
   })
 
-  it('rejects noncanonical persisted JSON, unsafe lock files and non-private stores', async () => {
+  storeIt('rejects noncanonical persisted JSON, unsafe lock files and non-private stores', async () => {
     const first = await fixture()
     const record = await activateLockedPackage({
       sourceDirectory: first.source,
@@ -964,7 +972,7 @@ describe('locked Computer Use package activation', () => {
     )
   })
 
-  it('bounds signature verification and rejects hostile evidence without invoking getters', async () => {
+  storeIt('bounds signature verification and rejects hostile evidence without invoking getters', async () => {
     const hostile = await fixture()
     let evidenceGetterCalls = 0
     await expect(
@@ -1019,22 +1027,21 @@ describe('locked Computer Use package activation', () => {
 
   it('fails closed without native Windows security and does not misreport SQLite corruption as busy', async () => {
     const windows = await fixture()
-    if (process.platform !== 'win32') {
-      const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-      try {
-        await expect(
-          activateLockedPackage({
-            sourceDirectory: windows.source,
-            storeDirectory: windows.store,
-            manifest: windows.manifest,
-            ...artifact(windows.archive),
-            environment,
-            verifySignature,
-          }),
-        ).rejects.toThrow(/trusted Windows directory-handle implementation/)
-      } finally {
-        platform.mockRestore()
-      }
+    const platform =
+      process.platform === 'win32' ? undefined : vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    try {
+      await expect(
+        activateLockedPackage({
+          sourceDirectory: windows.source,
+          storeDirectory: windows.store,
+          manifest: windows.manifest,
+          ...artifact(windows.archive),
+          environment,
+          verifySignature,
+        }),
+      ).rejects.toThrow(/trusted Windows directory-handle implementation/)
+    } finally {
+      platform?.mockRestore()
     }
 
     const corrupt = await fixture()

@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import {
@@ -19,6 +18,7 @@ import type {
 import { type Event, prepareIntegrity, scanAll, verifyLedger } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { localRealpathSync } from '../src/adapters/fs-io-local.js'
 import type { CapabilityLevel, PlatformBackend } from '../src/adapters/platform.js'
 import { createPlatform } from '../src/adapters/platform.js'
 import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
@@ -204,6 +204,11 @@ export type TestHost = {
   host: Host
   audit: AuditSink & { events: AuditEvent[] }
   profile: ResolvedProfile
+  /**
+   * With `hangSessionClose`: lets every session close that was held back run for real, so the
+   * Host's deferred teardown can release its files before the test removes them.
+   */
+  releaseHungSessions?: () => void
 }
 
 export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
@@ -240,7 +245,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
       // the bound fence compares canonical spellings, so the policy must name the real one.
       fsPolicy: () => {
         const policy = testFsPolicy('/workspace')
-        const workspaceRoot = realpathSync(o.dataDir)
+        const workspaceRoot = localRealpathSync(o.dataDir)
         const rules = policy.rules.map((rule) => ({
           ...rule,
           path: join(workspaceRoot, ...rule.path.slice(policy.workspaceRoot.length).split('/')),
@@ -394,15 +399,23 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   // drops every prototype method, handing the test a session that is broken in ways the case is not
   // about.
   const openWorkspaceSession = host.createSession.bind(host)
+  const held: Array<() => void> = []
   const wrapped: Host = {
     ...host,
     createSession: async (opts) => {
       const s = await openWorkspaceSession(opts)
-      ;(s as { close: () => Promise<void> }).close = () => new Promise<void>(() => {})
+      const close = s.close.bind(s)
+      ;(s as { close: () => Promise<void> }).close = () =>
+        new Promise<void>((resolve, reject) => {
+          held.push(() => void close().then(resolve, reject))
+        })
       return s
     },
   }
-  return { host: wrapped, audit, profile }
+  const releaseHungSessions = () => {
+    for (const release of held.splice(0)) release()
+  }
+  return { host: wrapped, audit, profile, releaseHungSessions }
 }
 
 /**

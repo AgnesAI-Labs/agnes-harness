@@ -24,7 +24,7 @@ export async function realHosted(
   } = {},
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-hosted-real-'))
-  const root = realpathSync(dataDir)
+  const root = realpathSync.native(dataDir)
   let gate: Promise<void> = Promise.resolve()
   const inner = new ScriptedProvider({
     scripts: [[{ type: 'text_delta', delta: 'ok' } as InferenceEvent, { type: 'done', reason: 'stop' }]],
