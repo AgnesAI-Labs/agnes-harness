@@ -237,9 +237,12 @@ const policyFor = (impl: Impl, root: string) =>
     floor: impl.floor,
   })
 
+// The remote row spawns a process for every path segment the fence resolves, so even its smallest
+// case takes about a second alone and has run past vitest's 5 s default on a loaded macOS runner.
+// Cases that need more still set their own budget below; the other rows finish in milliseconds.
 describe.each(
   Object.entries(IMPLEMENTATIONS).filter(([, i]) => !i.posixOnly || process.platform !== 'win32'),
-)('%s', (_name, impl) => {
+)('%s', { timeout: 30_000 }, (_name, impl) => {
   // The remote io spawns one python3 process per canonicalized path segment; the local and
   // in-memory rows finish in milliseconds, but this loop's ~500 subprocess spawns for the remote
   // row alone need more than vitest's 5s default.
