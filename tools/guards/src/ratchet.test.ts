@@ -1713,7 +1713,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // not INTERNAL: open-path mapping, approval reopen and the endpoint audit (+23). Re-measured on this tree:
   // 26440, exact, no spare.
-  'packages/daemon/src': 26440,
+  // WIN-SHORT-NAMES: the Skill watcher hands fs.watch the native (long) spelling on Windows, since
+  // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
+  'packages/daemon/src': 26451,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left

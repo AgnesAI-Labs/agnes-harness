@@ -17,7 +17,7 @@
   "packages/sdk/src/package-admin.node": 147,
   "packages/sdk/src/surface.browser": 3,
   "packages/sdk/src/surface.node": 163,
-  "packages/daemon/src": 26440,
+  "packages/daemon/src": 26451,
   "packages/daemon/src/packages/admin-session": 46,
   "packages/daemon/src/packages/admin-surface": 231,
   "packages/daemon/src/packages/handler": 1509,

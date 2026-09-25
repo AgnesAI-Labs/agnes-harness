@@ -56,8 +56,28 @@ function nodeLinks(root: string): readonly SkillLink[] {
   return found
 }
 
+/**
+ * The spelling a directory is handed to the platform watcher in. On Windows, libuv reports each
+ * change under the long name of the watched directory, and the version Node ships aborts the
+ * whole process when that directory was given with an 8.3 short name (C:\\Users\\ABCDEF~1). The
+ * native resolver expands those names. A path it cannot resolve is passed on unchanged, so the
+ * watcher reports the failure as it would have.
+ */
+export function watchedPath(
+  path: string,
+  windows: boolean = process.platform === 'win32', // guards-allow-platform: libuv short-name watch abort.
+  resolveNative: (path: string) => string = realpathSync.native,
+): string {
+  if (!windows) return path
+  try {
+    return resolveNative(path)
+  } catch {
+    return path
+  }
+}
+
 const nodeWatch: WatchFn = (path, recursive, onEvent, onError) => {
-  const watcher = watchFs(path, { recursive, persistent: false }, (_event, file) =>
+  const watcher = watchFs(watchedPath(path), { recursive, persistent: false }, (_event, file) =>
     onEvent(typeof file === 'string' ? file : null),
   )
   watcher.on('error', onError)
