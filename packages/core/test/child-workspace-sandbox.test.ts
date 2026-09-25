@@ -5,6 +5,7 @@ import type { SandboxSeam } from '../src/effects/seams.js'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { presetDefaults } from '../src/step/preset.js'
+import { type HookPort, noopHooks } from '../src/step/session.js'
 import { testFsPolicy } from '../testkit/fenced-fs.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -58,8 +59,9 @@ function bound(): SandboxSeam {
   }
 }
 
-function kernel(storage: MemoryStorage, maxFanOut = 4) {
+function kernel(storage: MemoryStorage, maxFanOut = 4, hooks?: HookPort) {
   return Kernel.create({
+    ...(hooks ? { hooks } : {}),
     storage,
     seams: fakeSeams({ sandbox: unbound }),
     provider: Object.assign(fakeProvider([textTurn('ok')]), { models: () => [catalogue()] }),
@@ -73,7 +75,7 @@ function kernel(storage: MemoryStorage, maxFanOut = 4) {
   })
 }
 
-function reservations(sandbox: () => SandboxSeam | undefined) {
+function reservations(sandbox: () => SandboxSeam | undefined, commit = () => true) {
   return {
     reserve: async (_parentKey: string, childKey: string) => {
       const fitted = sandbox()
@@ -88,7 +90,7 @@ function reservations(sandbox: () => SandboxSeam | undefined) {
           },
         },
         ...(fitted ? { sandbox: fitted } : {}),
-        commit: () => true,
+        commit,
         close: async () => undefined,
       }
     },
@@ -149,6 +151,29 @@ describe('delegated child sandbox', () => {
       creationPhase: 'committed',
       state: 'ready',
     })
+    await k.close()
+  })
+
+  it('reports the settled outcome to subagent_end when a child fails after attach', async () => {
+    const outcomes: string[] = []
+    const storage = new MemoryStorage()
+    const k = kernel(storage, 4, {
+      ...noopHooks,
+      subagentEnd: async (payload) => {
+        outcomes.push(payload.outcome)
+      },
+    })
+    const parent = await k.session('parent', {
+      ...parentOpts,
+      seams: { sandbox: bound() },
+      childWorkspaceRuntime: reservations(bound, () => false),
+    })
+    await expect(
+      parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'lost commit' }),
+    ).rejects.toMatchObject({ code: 'E_WORKSPACE_CLOSED' })
+    const [record] = await requireChildControl(storage).listByParent(parent.key)
+    expect(record).toMatchObject({ creationPhase: 'cancelled', state: 'failed' })
+    expect(outcomes).toEqual(['failed'])
     await k.close()
   })
 })
