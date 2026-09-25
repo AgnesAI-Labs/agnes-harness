@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "private-dacl-policy.h"
 
 class Handle {
  public:
@@ -163,6 +164,12 @@ static napi_value renameWriteThrough(napi_env env, napi_callback_info info) {
   napi_value result; napi_get_undefined(env, &result); return result;
 }
 
+static PrivatePrincipal privatePrincipal(PSID sid, PSID user) {
+  if (EqualSid(sid, user)) return PrivatePrincipal::CurrentUser;
+  if (IsWellKnownSid(sid, WinLocalSystemSid)) return PrivatePrincipal::LocalSystem;
+  if (IsWellKnownSid(sid, WinBuiltinAdministratorsSid)) return PrivatePrincipal::Administrators;
+  return PrivatePrincipal::Other;
+}
 static bool checkPrivateDacl(napi_env env, HANDLE file, bool& valid, bool requireProtected = true) {
   BY_HANDLE_FILE_INFORMATION attributes;
   if (!GetFileInformationByHandle(file, &attributes)) {
@@ -181,19 +188,21 @@ static bool checkPrivateDacl(napi_env env, HANDLE file, bool& valid, bool requir
   if (!GetSecurityDescriptorControl(raw, &control, &revision)) {
     failure(env, "GetSecurityDescriptorControl", GetLastError()); return false;
   }
-  valid = owner && EqualSid(owner, user) && dacl && (!requireProtected || (control & SE_DACL_PROTECTED)) &&
-               !(attributes.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+  valid = owner && privateOwnerTrusted(privatePrincipal(owner, user)) && dacl &&
+          (!requireProtected || (control & SE_DACL_PROTECTED)) &&
+          !(attributes.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
   if (valid) {
     for (DWORD i = 0; i < dacl->AceCount; i++) {
       void* rawAce = nullptr;
       if (!GetAce(dacl, i, &rawAce)) { failure(env, "GetAce", GetLastError()); return false; }
       auto* header = static_cast<ACE_HEADER*>(rawAce);
-      if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
-      if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) { valid = false; break; }
-      auto* ace = static_cast<ACCESS_ALLOWED_ACE*>(rawAce);
-      PSID sid = &ace->SidStart;
-      if (ace->Mask && !EqualSid(sid, user) && !IsWellKnownSid(sid, WinLocalSystemSid) &&
-          !IsWellKnownSid(sid, WinBuiltinAdministratorsSid)) { valid = false; break; }
+      PrivateAce entry{PrivateAceKind::Unsupported, 0, PrivatePrincipal::Other};
+      if (header->AceType == ACCESS_DENIED_ACE_TYPE) entry.kind = PrivateAceKind::Denied;
+      if (header->AceType == ACCESS_ALLOWED_ACE_TYPE) {
+        auto* ace = static_cast<ACCESS_ALLOWED_ACE*>(rawAce);
+        entry = {PrivateAceKind::Allowed, ace->Mask, privatePrincipal(&ace->SidStart, user)};
+      }
+      if (!privateAceTrusted(entry)) { valid = false; break; }
     }
   }
   return true;
