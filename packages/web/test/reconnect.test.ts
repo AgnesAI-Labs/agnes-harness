@@ -1,7 +1,12 @@
 /** @vitest-environment happy-dom */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createReconnectController, probeBootstrap, type ReconnectPhase } from '../src/reconnect.js'
+import {
+  bootstrapProbe,
+  createReconnectController,
+  probeBootstrap,
+  type ReconnectPhase,
+} from '../src/reconnect.js'
 
 /** Lets pending probe promises settle between timer steps. */
 async function advance(ms: number): Promise<void> {
@@ -9,7 +14,7 @@ async function advance(ms: number): Promise<void> {
 }
 
 function harness(answers: () => boolean) {
-  const probe = vi.fn(async (_signal: AbortSignal) => answers())
+  const probe = vi.fn(async (_signal: AbortSignal, _manual: boolean) => answers())
   const reload = vi.fn()
   const phases: ReconnectPhase[] = []
   const controller = createReconnectController({ probe, reload, onPhase: (phase) => phases.push(phase) })
@@ -119,23 +124,104 @@ describe('reconnect controller', () => {
     await advance(500)
     expect(reload).toHaveBeenCalledTimes(1)
   })
+
+  it('ignores a manual retry while a probe is still in flight', async () => {
+    vi.useFakeTimers()
+    let answer: ((up: boolean) => void) | undefined
+    const probe = vi.fn(
+      (_signal: AbortSignal, _manual: boolean) =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve
+        }),
+    )
+    const reload = vi.fn()
+    const controller = createReconnectController({ probe, reload })
+    controller.start()
+    await advance(500)
+    expect(probe).toHaveBeenCalledTimes(1)
+    controller.retry()
+    controller.retry()
+    await advance(0)
+    expect(probe).toHaveBeenCalledTimes(1)
+    answer?.(false)
+    await advance(1000)
+    expect(probe).toHaveBeenCalledTimes(2)
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('marks only the user-requested attempt as manual, and resumes a stalled window automatically', async () => {
+    vi.useFakeTimers()
+    const { probe, reload, controller } = harness(() => false)
+    controller.resume()
+    expect(controller.phase()).toBe('idle')
+    controller.start()
+    await advance(65_000)
+    expect(controller.phase()).toBe('stalled')
+    expect(probe.mock.calls.every(([, manual]) => manual === false)).toBe(true)
+    let probes = probe.mock.calls.length
+    controller.resume()
+    await advance(0)
+    expect(probe).toHaveBeenCalledTimes(probes + 1)
+    expect(probe.mock.calls.at(-1)?.[1]).toBe(false)
+    // While waiting again, resume is a no-op rather than a second loop.
+    controller.resume()
+    await advance(0)
+    expect(probe).toHaveBeenCalledTimes(probes + 1)
+    await advance(65_000)
+    probes = probe.mock.calls.length
+    controller.retry()
+    await advance(0)
+    expect(probe).toHaveBeenCalledTimes(probes + 1)
+    expect(probe.mock.calls.at(-1)?.[1]).toBe(true)
+    // The manual attempt failed; the follow-ups in its window are ordinary probes again.
+    await advance(1000)
+    expect(probe).toHaveBeenCalledTimes(probes + 2)
+    expect(probe.mock.calls.at(-1)?.[1]).toBe(false)
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('keeps retrying when the probe throws synchronously', async () => {
+    vi.useFakeTimers()
+    const probe = vi.fn((_signal: AbortSignal, _manual: boolean): Promise<boolean> => {
+      throw new Error('probe broke')
+    })
+    const reload = vi.fn()
+    const controller = createReconnectController({ probe, reload })
+    controller.start()
+    await advance(500)
+    await advance(1000)
+    expect(probe).toHaveBeenCalledTimes(2)
+    expect(controller.phase()).toBe('waiting')
+    expect(reload).not.toHaveBeenCalled()
+  })
 })
 
 describe('bootstrap probe', () => {
-  const page = '<!doctype html><meta id="agnes-config" data-ws="ws://127.0.0.1:1/" />'
-  it('answers only when the Web page itself is served', async () => {
-    const signal = new AbortController().signal
-    const ok = vi.fn(async (_input: string, _init?: RequestInit) => new Response(page, { status: 200 }))
-    expect(await probeBootstrap(ok, signal)).toBe(true)
+  const page = (ws: string) => `<!doctype html><meta id="agnes-config" data-ws="${ws}" />`
+  const serve =
+    (body: string, status = 200) =>
+    async (_input: string, _init?: RequestInit) =>
+      new Response(body, { status })
+  const signal = new AbortController().signal
+
+  it('reads the daemon address the Web page serves', async () => {
+    const ok = vi.fn(serve(page('ws://127.0.0.1:1/')))
+    expect(await probeBootstrap(ok, signal)).toBe('ws://127.0.0.1:1/')
     expect(ok).toHaveBeenCalledWith('/', expect.objectContaining({ cache: 'no-store', signal }))
-    expect(await probeBootstrap(async () => new Response('', { status: 503 }), signal)).toBe(false)
-    expect(await probeBootstrap(async () => new Response('<html></html>', { status: 200 }), signal)).toBe(
-      false,
-    )
+    expect(await probeBootstrap(serve('', 503), signal)).toBeUndefined()
+    expect(await probeBootstrap(serve('<html></html>'), signal)).toBeUndefined()
     expect(
       await probeBootstrap(async () => {
         throw new TypeError('Failed to fetch')
       }, signal),
-    ).toBe(false)
+    ).toBeUndefined()
+  })
+
+  it('wants a reload only for a different daemon address, unless the user asked', async () => {
+    const current = 'ws://127.0.0.1:1/'
+    expect(await bootstrapProbe(serve(page(current)), current)(signal, false)).toBe(false)
+    expect(await bootstrapProbe(serve(page(current)), current)(signal, true)).toBe(true)
+    expect(await bootstrapProbe(serve(page('ws://127.0.0.1:2/')), current)(signal, false)).toBe(true)
+    expect(await bootstrapProbe(serve('', 502), current)(signal, true)).toBe(false)
   })
 })
