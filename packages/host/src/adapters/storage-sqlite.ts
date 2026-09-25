@@ -6,7 +6,6 @@ import {
   type CommitTx,
   CoreError,
   type Event,
-  type FoldCacheRecord,
   type IntegrityRow,
   type IntegrityScanQuery,
   type LeaseClaim,
@@ -311,8 +310,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   )
   if (!workspaceColumns.has('root')) db.exec(`ALTER TABLE child_workspaces ADD COLUMN root TEXT`)
   if (!workspaceColumns.has('branch')) db.exec(`ALTER TABLE child_workspaces ADD COLUMN branch TEXT`)
-  // The UI projection is rebuilt from the verified ledger on every open; its old cache table goes.
+  // The UI projection and the ledger state are rebuilt from the verified ledger on every open; their
+  // old cache tables go.
   db.exec('DROP TABLE IF EXISTS ui_projection_cache')
+  db.exec('DROP TABLE IF EXISTS fold_cache')
   const q = {
     lease: db.prepare('SELECT run_id, until, ttl_ms FROM writer_claims WHERE session_key = ?'),
     upsertLease: db.prepare(
@@ -350,15 +351,8 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     releaseExpired: db.prepare(
       'DELETE FROM writer_claims WHERE session_key = ? AND run_id = ? AND until = ? AND until < ?',
     ),
-    foldCache: db.prepare(
-      'SELECT version, seq, payload, checksum, integrity_last_seq, legacy_through_seq, head_digest FROM fold_cache WHERE session_key = ?',
-    ),
-    upsertFoldCache: db.prepare(
-      'INSERT INTO fold_cache (session_key, version, seq, payload, checksum, integrity_last_seq, legacy_through_seq, head_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_key) DO UPDATE SET version = excluded.version, seq = excluded.seq, payload = excluded.payload, checksum = excluded.checksum, integrity_last_seq = excluded.integrity_last_seq, legacy_through_seq = excluded.legacy_through_seq, head_digest = excluded.head_digest',
-    ),
     deleteEvents: db.prepare('DELETE FROM events WHERE session_key = ?'),
     deleteRegisters: db.prepare('DELETE FROM registers WHERE session_key = ?'),
-    deleteFoldCache: db.prepare('DELETE FROM fold_cache WHERE session_key = ?'),
     deleteLease: db.prepare('DELETE FROM writer_claims WHERE session_key = ? AND run_id = ?'),
     deleteSession: db.prepare('DELETE FROM sessions WHERE session_key = ?'),
   }
@@ -545,21 +539,6 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           if (c.opState.data === null) q.deleteRegister.run(key, 'op.state', lane)
           else q.upsertRegister.run(key, 'op.state', lane, seq, JSON.stringify(c.opState.data))
         }
-        if (c.foldCache) {
-          const cache = c.foldCache
-          if (cache.seq !== seq)
-            throw new CoreError('E_STORAGE_FAULT', 'fold cache cursor does not match commit')
-          q.upsertFoldCache.run(
-            key,
-            cache.version,
-            cache.seq,
-            cache.payload,
-            cache.checksum,
-            cache.integrity.lastSeq,
-            cache.integrity.legacyThroughSeq,
-            cache.integrity.headDigest,
-          )
-        }
         return { firstSeq: seqs[0] as number, seqs, ...(c.opState ? { opState: { seq } } : {}) }
       })
     },
@@ -582,7 +561,6 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         holdLease(key, runId, claim)
         q.deleteEvents.run(key)
         q.deleteRegisters.run(key)
-        q.deleteFoldCache.run(key)
         q.deleteLease.run(key, runId)
         q.deleteSession.run(key)
       })
@@ -613,31 +591,6 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           data: string
         }>
       ).map((r) => ({ register: r.register, key: keyText(r.key), seq: r.seq, data: JSON.parse(r.data) }))
-    },
-    async foldCache(key): Promise<FoldCacheRecord | undefined> {
-      const row = q.foldCache.get(key) as
-        | {
-            version: number
-            seq: number
-            payload: string
-            checksum: string
-            integrity_last_seq: number
-            legacy_through_seq: number
-            head_digest: string | null
-          }
-        | undefined
-      if (!row) return undefined
-      return {
-        version: row.version as FoldCacheRecord['version'],
-        seq: row.seq,
-        payload: row.payload,
-        checksum: row.checksum,
-        integrity: {
-          lastSeq: row.integrity_last_seq,
-          legacyThroughSeq: row.legacy_through_seq,
-          headDigest: row.head_digest,
-        },
-      }
     },
     async createChild(parentKey, boundarySeq, childKey) {
       tx(() => {

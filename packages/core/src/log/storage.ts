@@ -67,8 +67,6 @@ export type CommitTx = {
   integrity?: IntegrityCommit[]
   expectedWriterRunId: string
   expectedRegisterSeq?: { register: string; key: string; seq: Seq | null }
-  /** Non-authoritative fold checkpoint, committed atomically with the events it describes. */
-  foldCache?: FoldCacheRecord
   /**
    * Renew on write. A held lease is extended by its ttl; a lapsed one of this writer's own, or a
    * missing row, is taken again only while no other writer holds the row and the ledger is still at
@@ -90,14 +88,6 @@ export type CommitReceipt = { firstSeq: Seq; seqs: Seq[]; opState?: { seq: Seq }
 
 export type LeaseClaim = { ttlMs: number; expectedLastSeq: Seq }
 
-export type FoldCacheRecord = {
-  version: 3
-  seq: Seq
-  payload: string
-  checksum: string
-  integrity: { lastSeq: Seq; legacyThroughSeq: Seq; headDigest: string | null }
-}
-
 export type OpenResult = {
   lastSeq: Seq
   formatVersion: number
@@ -114,8 +104,6 @@ export interface StorageAdapter {
   scan(key: SessionKey, q: ScanQuery): Promise<Event[]>
   scanIntegrity(key: SessionKey, q: IntegrityScanQuery): Promise<IntegrityRow[]>
   registers(key: SessionKey): Promise<RegisterRow[]>
-  /** Optional for legacy adapters; absence means every open takes the cold path. */
-  foldCache?(key: SessionKey): Promise<FoldCacheRecord | undefined>
   /** Remove a session only after Core proves this open created it and storage verifies its writer lease. */
   discardNewSession?(key: SessionKey, expectedWriterRunId: string, claim?: LeaseClaim): Promise<void>
   createChild(parentKey: SessionKey, boundarySeq: Seq, childKey: SessionKey): Promise<void>

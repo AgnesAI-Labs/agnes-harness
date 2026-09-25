@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { defaultIds } from '../src/ids.js'
 import type { EventInput, StorageAdapter } from '../src/index.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
-import { encodeFoldCache, encodeLedgerState } from '../src/project/cache.js'
-import { foldEvents, initialState } from '../src/reduce/reducer.js'
+import { encodeLedgerState } from '../src/project/cache.js'
+import { initialState } from '../src/reduce/reducer.js'
 import { effectTree } from '../src/reduce/state.js'
 import {
   openTracked,
@@ -48,7 +48,6 @@ const wrapped = (storage: MemoryStorage, over: Partial<StorageAdapter>): Storage
   scan: storage.scan.bind(storage),
   scanIntegrity: storage.scanIntegrity.bind(storage),
   registers: storage.registers.bind(storage),
-  foldCache: storage.foldCache.bind(storage),
   createChild: storage.createChild.bind(storage),
   close: storage.close.bind(storage),
   ...over,
@@ -300,46 +299,7 @@ describe('StateTracker', () => {
     await log.close()
   })
 
-  it('rebuild() resumes strictly after a supplied fold-cache line', async () => {
-    const storage = new MemoryStorage()
-    const { log } = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await log.append(
-      [
-        { ...base, type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
-        note(),
-        {
-          ...base,
-          type: 'effect/intent',
-          data: { effectId: 'tail', kind: 'job', replay: 'safe' },
-        },
-      ],
-      running,
-    )
-    const prefix = foldEvents(await log.scan({ toSeq: 2 }))
-    const scans: number[] = []
-    const originalScan = log.scan.bind(log)
-    log.scan = async (query) => {
-      scans.push(query.fromSeq ?? 1)
-      return originalScan(query)
-    }
-
-    const rebuilt = await StateTracker.rebuild(log, 2, { seq: 2, state: prefix })
-    expect(scans).toEqual([3])
-    expect(rebuilt.state.lastSeq).toBe(3)
-    expect(rebuilt.state.pendingEffects.has('tail')).toBe(true)
-    await log.close()
-  })
-
-  it('rebuild() refuses a cache cursor that would skip past its state', async () => {
-    const storage = new MemoryStorage()
-    const { log } = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await expect(StateTracker.rebuild(log, 2, { seq: 2, state: initialState() })).rejects.toThrow(
-      'fold cache seq does not match state',
-    )
-    await log.close()
-  })
-
-  it('persists the fold line; a warm open folds the tracker from it and replays the UI in full', async () => {
+  it('reopens by folding every row from the first while verifying, reading nothing twice', async () => {
     const storage = new MemoryStorage()
     const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
     await first.log.append(
@@ -349,7 +309,6 @@ describe('StateTracker', () => {
         data: { content: [{ type: 'text', text: `message-${index}` }] },
       })),
     )
-    expect(await storage.foldCache('k')).toMatchObject({ version: 3, seq: 200 })
     await first.log.close()
 
     const scannedFrom: number[] = []
@@ -358,13 +317,25 @@ describe('StateTracker', () => {
       scannedFrom.push(query.fromSeq ?? 1)
       return originalScan(key, query)
     }
-    const warm = await openTracked({ ...common, storage, writerRunId: 'r2', ids: defaultIds() })
-    expect(warm.tracker.state.lastSeq).toBe(200)
-    expect(warm.surface.nodes()).toHaveLength(200)
-    expect(warm.ui.diagnostics().applied).toBe(200)
+    const applied: number[] = []
+    const original = StateTracker.prototype.apply
+    StateTracker.prototype.apply = function (this: StateTracker, events) {
+      applied.push(...events.map((event) => event.seq))
+      return original.call(this, events)
+    }
+    let reopened: Awaited<ReturnType<typeof openTracked>>
+    try {
+      reopened = await openTracked({ ...common, storage, writerRunId: 'r2', ids: defaultIds() })
+    } finally {
+      StateTracker.prototype.apply = original
+    }
+    expect(applied).toEqual(Array.from({ length: 200 }, (_, i) => i + 1))
+    expect(reopened.tracker.state.lastSeq).toBe(200)
+    expect(reopened.surface.nodes()).toHaveLength(200)
+    expect(reopened.ui.diagnostics().applied).toBe(200)
     // The rows were folded while the open verified them; nothing reads them a second time.
     expect(scannedFrom).toEqual([])
-    await warm.log.close()
+    await reopened.log.close()
   })
 
   it('keeps no UI projection state in storage: commits carry none and close only releases', async () => {
@@ -404,55 +375,11 @@ describe('StateTracker', () => {
     expect(calls).toEqual(['release'])
     for (const keys of commits)
       expect(
-        keys.filter(
-          (key) => !['claim', 'events', 'expectedWriterRunId', 'foldCache', 'integrity'].includes(key),
-        ),
+        keys.filter((key) => !['claim', 'events', 'expectedWriterRunId', 'integrity'].includes(key)),
       ).toEqual([])
   })
 
-  it('folds only the tail after a durable line and falls back cold when the line is corrupt', async () => {
-    const storage = new MemoryStorage()
-    const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await first.log.append(
-      Array.from({ length: 200 }, (_, index) => ({
-        ...base,
-        type: 'user/message',
-        data: { content: [{ type: 'text', text: `prefix-${index}` }] },
-      })),
-    )
-    await first.log.close()
-    const warm = await openTracked({ ...common, storage, writerRunId: 'r2', ids: defaultIds() })
-    await warm.log.append([
-      {
-        ...base,
-        type: 'cost/ledger',
-        data: {
-          purpose: 'inference',
-          effectId: 'tail',
-          tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
-          credits: 1,
-          creditSource: 'estimated',
-          model: 'test',
-        },
-      },
-    ])
-    expect(warm.tracker.state.lastSeq).toBe(201)
-    await warm.log.close()
-
-    const corrupt = wrapped(storage, {
-      foldCache: async (key) => {
-        const line = await storage.foldCache(key)
-        return line ? { ...line, payload: `${line.payload} ` } : undefined
-      },
-    })
-    const cold = await openTracked({ ...common, storage: corrupt, writerRunId: 'r3', ids: defaultIds() })
-    expect(cold.tracker.state.lastSeq).toBe(201)
-    expect(cold.tracker.state.creditsUsed).toBe(1)
-    expect(cold.surface.nodes()).toHaveLength(200)
-    await cold.log.close()
-  })
-
-  it('does not let a warm fold line bypass integrity verification of its prefix', async () => {
+  it('does not let a reopen past a tampered prefix row', async () => {
     const storage = new MemoryStorage()
     const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
     await first.log.append(
@@ -478,7 +405,7 @@ describe('StateTracker', () => {
     ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
   })
 
-  it('serializes concurrent appends into one checkpoint for the committed state', async () => {
+  it('serializes concurrent appends, and a reopen folds the committed state', async () => {
     const storage = new MemoryStorage()
     const opened = await openTracked({
       ...common,
@@ -495,7 +422,6 @@ describe('StateTracker', () => {
       }))
     await Promise.all([opened.log.append(batch('a')), opened.log.append(batch('b'))])
     expect(opened.tracker.state.lastSeq).toBe(200)
-    expect(await storage.foldCache('k')).toMatchObject({ seq: 200 })
     await opened.log.close()
 
     const reopened = await openTracked({
@@ -510,7 +436,7 @@ describe('StateTracker', () => {
     await reopened.log.close()
   })
 
-  it('round-trips populated register, map and set state deeply across a cold and warm open', async () => {
+  it('round-trips populated register, map and set state deeply across a reopen', async () => {
     const storage = new MemoryStorage()
     const first = await openTracked({
       ...common,
@@ -643,85 +569,25 @@ describe('StateTracker', () => {
     expect(coldState.pendingEffects.size).toBe(1)
     expect(coldState.pendingApprovals.size).toBe(1)
     expect(Object.values(coldState.registers).every((register) => register.size === 1)).toBe(true)
-    // Compared as the fold cache encodes it: structuredClone drops the chunked tables' private
-    // contents, which would make the comparison below pass whatever the tables held.
+    // Compared encoded: structuredClone drops the chunked tables' private contents, which would make
+    // the comparison below pass whatever the tables held.
     const cold = canonicalJson(encodeLedgerState(coldState))
     const coldUI = await first.ui.view()
     await first.log.close()
 
-    const warm = await openTracked({
+    const reopened = await openTracked({
       ...common,
       storage,
       writerRunId: 'r2',
       ids: defaultIds(),
       relationCheck: () => undefined,
     })
-    expect(canonicalJson(encodeLedgerState(warm.tracker.state))).toBe(cold)
-    expect(await warm.ui.view()).toEqual(coldUI)
-    await warm.log.close()
-  })
-
-  it('discards a cache line whose head digest no longer matches its ledger row', async () => {
-    const storage = new MemoryStorage()
-    const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await first.log.append(
-      Array.from({ length: 200 }, (_, index) => ({
-        ...base,
-        type: 'user/message',
-        data: { content: [{ type: 'text', text: `prefix-${index}` }] },
-      })),
-    )
-    const state = first.tracker.state
-    const line = await storage.foldCache('k')
-    if (!line) throw new Error('missing fold cache fixture')
-    await first.log.close()
-    const badState = { ...state, creditsUsed: 999 }
-    const badLine = encodeFoldCache('k', badState, line.integrity)
-    let anchorProbe = true
-    const mismatch = wrapped(storage, {
-      foldCache: async () => badLine,
-      scanIntegrity: async (key, query) => {
-        const rows = await storage.scanIntegrity(key, query)
-        if (anchorProbe && query.fromSeq === 200 && query.toSeq === 200) {
-          anchorProbe = false
-          return rows.map((row) =>
-            row.integrity ? { ...row, integrity: { ...row.integrity, digest: 'f'.repeat(64) } } : row,
-          )
-        }
-        return rows
-      },
-    })
-    const reopened = await openTracked({ ...common, storage: mismatch, writerRunId: 'r2', ids: defaultIds() })
-    expect(reopened.tracker.state.creditsUsed).toBe(0)
+    expect(canonicalJson(encodeLedgerState(reopened.tracker.state))).toBe(cold)
+    expect(await reopened.ui.view()).toEqual(coldUI)
     await reopened.log.close()
   })
 
-  it('keeps a legacy adapter without foldCache on the cold path', async () => {
-    const storage = new MemoryStorage()
-    const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
-    await first.log.append(
-      Array.from({ length: 200 }, (_, index) => ({
-        ...base,
-        type: 'user/message',
-        data: { content: [{ type: 'text', text: `legacy-${index}` }] },
-      })),
-    )
-    const expected = canonicalJson(encodeLedgerState(first.tracker.state))
-    await first.log.close()
-    const legacy = new Proxy(storage, {
-      get(target, property, receiver) {
-        if (property === 'foldCache') return undefined
-        const value = Reflect.get(target, property, receiver) as unknown
-        return typeof value === 'function' ? value.bind(target) : value
-      },
-    }) as StorageAdapter
-    const reopened = await openTracked({ ...common, storage: legacy, writerRunId: 'r2', ids: defaultIds() })
-    expect(canonicalJson(encodeLedgerState(reopened.tracker.state))).toBe(expected)
-    expect(reopened.surface.nodes()).toHaveLength(200)
-    await reopened.log.close()
-  })
-
-  it('keeps parent and child fold checkpoints isolated by session key', async () => {
+  it('keeps a live parent and its forked child apart', async () => {
     const storage = new MemoryStorage()
     const parent = await openTracked({ ...common, storage, writerRunId: 'parent', ids: defaultIds() })
     await parent.log.append(
@@ -750,8 +616,6 @@ describe('StateTracker', () => {
     await child.log.append([
       { ...base, type: 'user/message', data: { content: [{ type: 'text', text: 'child-only' }] } },
     ])
-    expect(await storage.foldCache('k')).toMatchObject({ seq: 200 })
-    expect(await storage.foldCache('child')).toMatchObject({ seq: 204 })
     expect(parent.surface.nodes()).toHaveLength(200)
     expect(child.surface.nodes()).toHaveLength(201)
     await child.log.close()

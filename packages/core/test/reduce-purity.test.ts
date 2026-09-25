@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { checkRelations } from '../src/log/relations.js'
-import { decodeFoldCache, encodeFoldCache, encodeLedgerState } from '../src/project/cache.js'
+import { encodeLedgerState } from '../src/project/cache.js'
 import { ChunkedMap } from '../src/reduce/chunked-map.js'
 import { foldEvents, initialState, reduce } from '../src/reduce/reducer.js'
 import type { LedgerState } from '../src/reduce/state.js'
@@ -70,15 +70,10 @@ describe('a fold step never changes the state it was given', () => {
     60_000,
   )
 
-  it('starts, decodes and forks with chunked growing tables', () => {
+  it('starts and forks with chunked growing tables', () => {
     expect(initialState().toolCalls).toBeInstanceOf(ChunkedMap)
     expect(initialState().decisions).toBeInstanceOf(ChunkedMap)
     const state = foldEvents(toolHeavyLedger({ calls: 30 }))
-    const integrity = { lastSeq: state.lastSeq, legacyThroughSeq: state.lastSeq, headDigest: null }
-    const decoded = decodeFoldCache('k', encodeFoldCache('k', state, integrity), state.lastSeq).state
-    expect(decoded.toolCalls).toBeInstanceOf(ChunkedMap)
-    expect(decoded.decisions).toBeInstanceOf(ChunkedMap)
-    expect(encode(decoded)).toBe(encode(state))
     const [first] = toolHeavyLedger({ calls: 1 })
     const forked = reduce(state, {
       ...(first as Event),
