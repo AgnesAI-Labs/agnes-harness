@@ -1,4 +1,4 @@
-import { bindListboxKeys, positionPopover } from '@agnes/web-admin-frame'
+import { bindListboxKeys, positionPopover } from '@agnes/web-ui'
 import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 

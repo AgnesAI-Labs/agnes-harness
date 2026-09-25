@@ -8,36 +8,36 @@ import type {
   RuntimePinDescriptor,
   RuntimePinReleaseResult,
 } from '@agnes/protocol'
-import type { ReactNode } from 'react'
-import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import {
-  ConfirmDialogContent,
-  DetailContent,
-  type DetailActionSpec,
-  OrphanPins,
-  PluginList,
-  PreviewConfirmationFacts,
-  RollbackActivationFacts,
-  SourceDialogContent,
-  TrustConfirmationFacts,
-  UntrustConfirmationFacts,
-  UpdateActivationFacts,
   actualIdentity,
   blockerText,
+  ConfirmDialogContent,
   contributionText,
+  type DetailActionSpec,
+  DetailContent,
   hasPermission,
   installedState,
   integrityLabel,
   mountRegion,
+  OrphanPins,
   operationLabel,
+  PluginList,
+  PreviewConfirmationFacts,
+  RollbackActivationFacts,
+  type RuntimeStateView,
   renderRegion,
   runtimeStateLabel,
   runtimeStateMessage,
+  SourceDialogContent,
   sourceLabel,
+  TrustConfirmationFacts,
   terminal,
+  UntrustConfirmationFacts,
+  UpdateActivationFacts,
   unmountRegion,
-  type RuntimeStateView,
 } from '@agnes/web-ui'
+import type { ReactNode } from 'react'
+import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
 import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from './source-form.js'
 import {
@@ -59,7 +59,11 @@ const RECONNECT_REFRESH_MS = 3_000
 const PIN_RELEASE_BATCH_SIZE = 64
 
 type PreviewMode = 'install' | 'update'
-type TrackedOperation = Readonly<{ operationId: string; mode?: PreviewMode; packageId?: string }>
+type TrackedOperation = Readonly<{
+  operationId: string
+  mode?: PreviewMode
+  packageId?: string
+}>
 type PendingConfirm = {
   title: string
   description: string
@@ -73,7 +77,10 @@ type PluginAdminOptions = Readonly<{
   runtime?: PluginRuntimeSource
 }>
 
-const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS).map((type) => ({ value: type, label: type }))
+const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS).map((type) => ({
+  value: type,
+  label: type,
+}))
 
 function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {
   const found = document.getElementById(id)
@@ -119,7 +126,10 @@ function setDialog(dialog: HTMLDialogElement, open: boolean, focus?: HTMLElement
 
 function safeMessage(error: unknown): AdminError {
   if (error instanceof AdminApiError) return error.details
-  return { code: 'ADMIN_UNAVAILABLE', message: '无法连接插件管理后台。已保留当前页面内容。' }
+  return {
+    code: 'ADMIN_UNAVAILABLE',
+    message: '无法连接插件管理后台。已保留当前页面内容。',
+  }
 }
 
 function hasClientContribution(item: PackageInstalledDescriptor): boolean {
@@ -203,7 +213,10 @@ class PluginAdminPage {
   #sourceTypeValue = 'npm'
   #sourceRefValue = ''
   #sourceError = ''
-  #noticeState: { message: string; kind: 'error' | 'state' | '' } = { message: '', kind: '' }
+  #noticeState: { message: string; kind: 'error' | 'state' | '' } = {
+    message: '',
+    kind: '',
+  }
   #orphanPinList: RuntimePinDescriptor[] = []
   #orphanPinErrors = new Map<string, string>()
   #orphanPinNotice: string | undefined
@@ -380,7 +393,11 @@ class PluginAdminPage {
     this.#tab = tab
     this.#query = ''
     this.#queryRaw = ''
-    this.#state = { ...this.#state, selectedCatalog: undefined, preview: undefined }
+    this.#state = {
+      ...this.#state,
+      selectedCatalog: undefined,
+      preview: undefined,
+    }
     this.render()
     if (tab === 'discover') await this.loadCatalog()
   }
@@ -402,7 +419,12 @@ class PluginAdminPage {
       }
     } catch (error) {
       if (generation !== this.#generation) return
-      this.#state = { ...this.#state, loading: false, error: safeMessage(error), connection: 'offline' }
+      this.#state = {
+        ...this.#state,
+        loading: false,
+        error: safeMessage(error),
+        connection: 'offline',
+      }
     }
     this.render()
   }
@@ -414,18 +436,28 @@ class PluginAdminPage {
     packageId?: string,
   ): Promise<{ ok: true } | { ok: false; message: string }> {
     const api = this.effectApi('packages.install')
-    if (!api) return { ok: false, message: this.#noticeState.message || '暂时无法检查来源。' }
+    if (!api)
+      return {
+        ok: false,
+        message: this.#noticeState.message || '暂时无法检查来源。',
+      }
     try {
       const receipt = packageId
         ? await this.submitPackage(packageId, () => api.inspect(source))
         : await api.inspect(source)
-      this.track(receipt.operationId, { mode, ...(packageId ? { packageId } : {}) })
+      this.track(receipt.operationId, {
+        mode,
+        ...(packageId ? { packageId } : {}),
+      })
       this.#confirmTrigger = trigger
       this.setNotice('正在检查来源、完整性与权限变化。', 'state')
       return { ok: true }
     } catch (error) {
       this.showError(error)
-      return { ok: false, message: this.#noticeState.message || '检查来源失败。' }
+      return {
+        ok: false,
+        message: this.#noticeState.message || '检查来源失败。',
+      }
     }
   }
 
@@ -457,13 +489,20 @@ class PluginAdminPage {
               ? {
                   expectedInstalledIntegrity: installed.integrity,
                   expectedActiveIntegrity: activeIntegrity,
-                  trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
+                  trust: {
+                    integrity: preview.integrity,
+                    capabilityHash: preview.capabilityHash,
+                  },
                 }
               : undefined,
           ),
     )
     this.track(receipt.operationId, { packageId: preview.id })
-    this.#state = { ...this.#state, preview: undefined, previewMode: undefined }
+    this.#state = {
+      ...this.#state,
+      preview: undefined,
+      previewMode: undefined,
+    }
     this.setNotice(
       mode === 'install' ? '正在安装。完成后仍需单独信任和启用。' : '正在更新，实际运行状态将由后台确认。',
       'state',
@@ -574,9 +613,17 @@ class PluginAdminPage {
         },
       }
     } else if (operation.state === 'cancelled') {
-      this.#state = { ...this.#state, lastOperation: operation, error: undefined }
+      this.#state = {
+        ...this.#state,
+        lastOperation: operation,
+        error: undefined,
+      }
     } else {
-      this.#state = { ...this.#state, lastOperation: operation, error: undefined }
+      this.#state = {
+        ...this.#state,
+        lastOperation: operation,
+        error: undefined,
+      }
     }
     await this.refresh({ preserveError: operation.state === 'failed' })
     window.dispatchEvent(new CustomEvent('agnes:packages-changed'))
@@ -606,9 +653,11 @@ class PluginAdminPage {
             ? '将原子执行更新、目标信任和安全激活，并绑定当前安装与运行摘要。'
             : '将按兼容模式更新为停用且未信任状态；后台未声明组合热更新能力，或当前摘要条件不完整。',
       label: mode === 'install' ? '确认安装' : combined ? '确认更新并激活' : '确认更新（保持停用）',
-      facts: combined
-        ? <UpdateActivationFacts installed={installed!} preview={preview} />
-        : <PreviewConfirmationFacts preview={preview} />,
+      facts: combined ? (
+        <UpdateActivationFacts installed={installed!} preview={preview} />
+      ) : (
+        <PreviewConfirmationFacts preview={preview} />
+      ),
       run: () => this.confirmPreview(),
     })
   }
@@ -616,11 +665,17 @@ class PluginAdminPage {
   configureConfirm(pending: PendingConfirm): void {
     this.#pendingConfirm = pending
     this.#confirmActionDisabled = false
-    setDialog(this.#confirmDialog, true, this.#confirmDialog.querySelector('button.primary-button') ?? undefined)
+    this.renderConfirm()
+    setDialog(
+      this.#confirmDialog,
+      true,
+      this.#confirmDialog.querySelector('button.primary-button') ?? undefined,
+    )
   }
 
   closeConfirm(): void {
     this.#pendingConfirm = undefined
+    this.renderConfirm()
     setDialog(this.#confirmDialog, false)
     this.#confirmTrigger?.focus({ preventScroll: true })
     this.#confirmTrigger = undefined
@@ -628,19 +683,31 @@ class PluginAdminPage {
 
   effectApi(permission: string): PluginAdminApi | undefined {
     if (!this.#api || !this.#state.context) {
-      this.showError({ code: 'ADMIN_UNAVAILABLE', message: '管理会话尚未就绪。' })
+      this.showError({
+        code: 'ADMIN_UNAVAILABLE',
+        message: '管理会话尚未就绪。',
+      })
       return undefined
     }
     if (this.#state.context.readOnly) {
-      this.showError({ code: 'RECOVERY_READ_ONLY', message: '当前处于只读恢复模式，无法执行插件操作。' })
+      this.showError({
+        code: 'RECOVERY_READ_ONLY',
+        message: '当前处于只读恢复模式，无法执行插件操作。',
+      })
       return undefined
     }
     if (this.#state.loading || this.#state.connection !== 'connected') {
-      this.showError({ code: 'ADMIN_UNAVAILABLE', message: '管理后台尚未恢复，无法执行插件操作。' })
+      this.showError({
+        code: 'ADMIN_UNAVAILABLE',
+        message: '管理后台尚未恢复，无法执行插件操作。',
+      })
       return undefined
     }
     if (!this.can(permission)) {
-      this.showError({ code: 'ADMIN_FORBIDDEN', message: '当前账户没有执行此操作的权限。' })
+      this.showError({
+        code: 'ADMIN_FORBIDDEN',
+        message: '当前账户没有执行此操作的权限。',
+      })
       return undefined
     }
     return this.#api
@@ -702,7 +769,10 @@ class PluginAdminPage {
 
   async submitPackage<T>(packageId: string, submit: () => Promise<T>): Promise<T> {
     if (this.packageBusy(packageId))
-      throw new AdminApiError({ code: 'PACKAGE_BUSY', message: '此插件已有操作正在提交或执行。' })
+      throw new AdminApiError({
+        code: 'PACKAGE_BUSY',
+        message: '此插件已有操作正在提交或执行。',
+      })
     this.#submittingPackages.add(packageId)
     this.render()
     try {
@@ -727,7 +797,11 @@ class PluginAdminPage {
     if (metadata.mode) this.#operationModes.set(operationId, metadata.mode)
     if (metadata.packageId) this.#operationPackages.set(operationId, metadata.packageId)
     this.#detailDismissed = false
-    this.#state = { ...this.#state, lastOperation: undefined, error: undefined }
+    this.#state = {
+      ...this.#state,
+      lastOperation: undefined,
+      error: undefined,
+    }
     const records = new Map(this.operationRecords(context).map((entry) => [entry.operationId, entry]))
     records.set(operationId, { operationId, ...metadata })
     sessionStorage.setItem(this.operationStorageKey(context), JSON.stringify([...records.values()]))
@@ -755,7 +829,12 @@ class PluginAdminPage {
       if (packageId) this.#submittingPackages.delete(packageId)
       const operations = new Map(this.#state.operations)
       operations.set(operationId, operation)
-      this.#state = { ...this.#state, operations, connection: 'connected', error: undefined }
+      this.#state = {
+        ...this.#state,
+        operations,
+        connection: 'connected',
+        error: undefined,
+      }
       this.render()
       if (terminal(operation)) {
         await this.operationUpdated(operation)
@@ -831,8 +910,7 @@ class PluginAdminPage {
     const { context, connection, error, loading, tree } = this.#state
     // 通知条/树状态/恢复横幅是骨架上的单行文本节点，命令式赋值即可；真正的手工业（列表行、
     // 详情体、对话框内容）全部在下面的 React 区域里。
-    this.#tabs.installed.disabled = this.#tabs.discover.disabled =
-      !context || !this.can('packages.read')
+    this.#tabs.installed.disabled = this.#tabs.discover.disabled = !context || !this.can('packages.read')
     this.syncTabs()
     this.#search.placeholder = this.#tab === 'installed' ? '筛选当前已安装列表' : '搜索目录中的插件'
     this.#search.setAttribute('aria-label', this.#search.placeholder)
@@ -852,7 +930,7 @@ class PluginAdminPage {
       ? `${this.#state.lastOperation ? `${operationLabel(this.#state.lastOperation)}：` : ''}${error.message}`
       : this.#state.lastOperation
         ? `${operationLabel(this.#state.lastOperation)}。已读取最新状态。`
-        : (this.#noticeState.message || connectionNotice)
+        : this.#noticeState.message || connectionNotice
     const noticeKind = error ? 'error' : connection === 'connected' ? this.#noticeState.kind : 'state'
     this.#notice.textContent = noticeMessage
     this.#notice.dataset.kind = noticeKind
@@ -936,7 +1014,12 @@ class PluginAdminPage {
           version={undefined}
           stateText={undefined}
           facts={[]}
-          blockerSections={[{ title: '此操作的阻断项', items: (this.#state.error?.blockers ?? []).map(blockerText) }]}
+          blockerSections={[
+            {
+              title: '此操作的阻断项',
+              items: (this.#state.error?.blockers ?? []).map(blockerText),
+            },
+          ]}
           operations={this.detailOperations()}
           lastOperationLabel={
             this.#state.lastOperation
@@ -984,15 +1067,23 @@ class PluginAdminPage {
       this.#detail,
       <DetailContent
         heading={item.id}
-        intro=''
+        intro=""
         version={`版本 ${item.version}`}
         stateText={
-          'trusted' in item ? installedState(item, this.effectiveActual(item)) : `兼容性：${item.compatibility}`
+          'trusted' in item
+            ? installedState(item, this.effectiveActual(item))
+            : `兼容性：${item.compatibility}`
         }
         facts={facts}
         blockerSections={[
-          { title: '当前阻断项', items: ('blockers' in item ? item.blockers : []).map(blockerText) },
-          { title: '此操作的阻断项', items: (this.#state.error?.blockers ?? []).map(blockerText) },
+          {
+            title: '当前阻断项',
+            items: ('blockers' in item ? item.blockers : []).map(blockerText),
+          },
+          {
+            title: '此操作的阻断项',
+            items: (this.#state.error?.blockers ?? []).map(blockerText),
+          },
         ]}
         operations={this.detailOperations(item.id)}
         lastOperationLabel={undefined}
@@ -1031,9 +1122,8 @@ class PluginAdminPage {
       const links = this.surfaceLinks(item.id)
       for (const link of links) {
         specs.push({
-          label:
-            links.length === 1 ? `打开页面 · ${link.mount}` : `${link.surfaceId} · ${link.mount}`,
-          className: 'secondary-button',
+          label: links.length === 1 ? `打开页面 · ${link.mount}` : `${link.surfaceId} · ${link.mount}`,
+          className: 'secondary-button compact plugin-surface-link',
           href: link.mount,
           ariaLabel: `打开 ${item.id} 的 ${link.surfaceId} 页面 ${link.mount}`,
           onClick: () => {},
@@ -1096,7 +1186,12 @@ class PluginAdminPage {
         !this.canEffect('packages.install') ||
         (installed && this.packageBusy(catalog.id)),
       onClick: () =>
-        void this.inspect(catalog.source, installed ? 'update' : 'install', button('install-source'), installed ? catalog.id : undefined),
+        void this.inspect(
+          catalog.source,
+          installed ? 'update' : 'install',
+          button('install-source'),
+          installed ? catalog.id : undefined,
+        ),
     })
     return specs
   }
@@ -1133,7 +1228,10 @@ class PluginAdminPage {
     if (!expectedRevision) {
       this.#state = {
         ...this.#state,
-        error: { code: 'RUNTIME_NOT_CONFIRMED', message: '后台已完成，浏览器 UI 状态待确认。' },
+        error: {
+          code: 'RUNTIME_NOT_CONFIRMED',
+          message: '后台已完成，浏览器 UI 状态待确认。',
+        },
       }
       this.render()
       return
@@ -1143,7 +1241,10 @@ class PluginAdminPage {
     } catch {
       this.#state = {
         ...this.#state,
-        error: { code: 'RUNTIME_NOT_CONFIRMED', message: '后台已完成，浏览器 UI 状态待确认。' },
+        error: {
+          code: 'RUNTIME_NOT_CONFIRMED',
+          message: '后台已完成，浏览器 UI 状态待确认。',
+        },
       }
       this.render()
       return
@@ -1170,7 +1271,10 @@ class PluginAdminPage {
     }
     this.#state = {
       ...this.#state,
-      error: { code: 'RUNTIME_NOT_CONFIRMED', message: '后台已完成，浏览器 UI 状态待确认。' },
+      error: {
+        code: 'RUNTIME_NOT_CONFIRMED',
+        message: '后台已完成，浏览器 UI 状态待确认。',
+      },
     }
     this.render()
   }
@@ -1235,7 +1339,10 @@ class PluginAdminPage {
           } catch {
             this.#state = {
               ...this.#state,
-              error: { code: 'RUNTIME_NOT_CONFIRMED', message: '浏览器 UI 状态待确认，可稍后重试。' },
+              error: {
+                code: 'RUNTIME_NOT_CONFIRMED',
+                message: '浏览器 UI 状态待确认，可稍后重试。',
+              },
             }
             this.render()
           }
@@ -1278,7 +1385,11 @@ class PluginAdminPage {
       undefined
     this.#detailDismissed = false
     if (this.#tab === 'installed') {
-      this.#state = { ...this.#state, selectedId: item.id, selectedCatalog: undefined }
+      this.#state = {
+        ...this.#state,
+        selectedId: item.id,
+        selectedCatalog: undefined,
+      }
     } else {
       this.#state = {
         ...this.#state,
@@ -1303,7 +1414,11 @@ class PluginAdminPage {
   closeDetail(): void {
     const targetId = this.#detailTrigger?.dataset.pluginId
     this.#detailDismissed = true
-    this.#state = { ...this.#state, selectedId: undefined, selectedCatalog: undefined }
+    this.#state = {
+      ...this.#state,
+      selectedId: undefined,
+      selectedCatalog: undefined,
+    }
     this.#detailTrigger = undefined
     this.render()
     if (!targetId) return
@@ -1319,7 +1434,11 @@ class PluginAdminPage {
     this.#tab = 'discover'
     this.#query = item.id
     this.#queryRaw = item.id
-    this.#state = { ...this.#state, selectedCatalog: undefined, selectedId: undefined }
+    this.#state = {
+      ...this.#state,
+      selectedCatalog: undefined,
+      selectedId: undefined,
+    }
     this.render()
     await this.loadCatalog()
   }
@@ -1327,7 +1446,10 @@ class PluginAdminPage {
   confirmTrust(item: PackageInstalledDescriptor): Promise<void> {
     const capabilityHash = item.capabilityHash
     if (!capabilityHash) {
-      this.showError({ code: 'E_PACKAGE_TRUST', message: '缺少已确认的能力摘要，不能信任此版本。' })
+      this.showError({
+        code: 'E_PACKAGE_TRUST',
+        message: '缺少已确认的能力摘要，不能信任此版本。',
+      })
       return Promise.resolve()
     }
     this.configureConfirm({
@@ -1350,7 +1472,10 @@ class PluginAdminPage {
   confirmUntrust(item: PackageInstalledDescriptor): void {
     const capabilityHash = item.capabilityHash
     if (!capabilityHash) {
-      this.showError({ code: 'E_PACKAGE_TRUST', message: '缺少已确认的能力摘要，不能安全撤销信任。' })
+      this.showError({
+        code: 'E_PACKAGE_TRUST',
+        message: '缺少已确认的能力摘要，不能安全撤销信任。',
+      })
       return
     }
     this.configureConfirm({
@@ -1375,7 +1500,10 @@ class PluginAdminPage {
       hasFeature(this.#state.context, ADMIN_FEATURES.runtimeIdentity) &&
       this.activeIntegrity(item) === undefined
     ) {
-      this.showError({ code: 'RUNTIME_IDENTITY_UNKNOWN', message: '实际运行摘要尚未确认，不能安全启用。' })
+      this.showError({
+        code: 'RUNTIME_IDENTITY_UNKNOWN',
+        message: '实际运行摘要尚未确认，不能安全启用。',
+      })
       return Promise.resolve()
     }
     this.configureConfirm({
@@ -1452,7 +1580,10 @@ class PluginAdminPage {
           api.rollback(item.id, target.integrity, {
             expectedInstalledIntegrity: item.integrity,
             expectedActiveIntegrity: activeIntegrity,
-            trust: { integrity: target.integrity, capabilityHash: target.capabilityHash },
+            trust: {
+              integrity: target.integrity,
+              capabilityHash: target.capabilityHash,
+            },
           }),
         )
         this.track(receipt.operationId, { packageId: item.id })
@@ -1530,12 +1661,15 @@ class PluginAdminPage {
         onAction={() => {
           if (!this.#pendingConfirm) return
           this.#confirmActionDisabled = true
+          this.renderConfirm()
           void this.#pendingConfirm
             .run()
             .then(() => this.closeConfirm())
             .catch((error: unknown) => this.showError(error))
             .finally(() => {
+              // 确认框在失败路径保持打开：按钮必须复位为可重试，而不是停在置灰。
               this.#confirmActionDisabled = false
+              this.renderConfirm()
             })
         }}
         onCancel={() => this.closeConfirm()}
@@ -1585,7 +1719,10 @@ class PluginAdminPage {
   }
 }
 
-export type PluginAdminMount = Readonly<{ reload(): Promise<void>; dispose(): void }>
+export type PluginAdminMount = Readonly<{
+  reload(): Promise<void>
+  dispose(): void
+}>
 
 /**
  * Binds the plugin admin surface to markup already present in the current document.
