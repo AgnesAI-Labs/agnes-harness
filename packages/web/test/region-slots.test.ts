@@ -4,7 +4,7 @@ import { Context } from '@agnes/cordis'
 import type { UINode } from '@agnes/protocol'
 import { ClientResourceService, SessionService, SlotRegistry } from '@agnes/web-client'
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   APPROVAL_SLOT,
   CONVERSATION_SLOT,
@@ -25,6 +25,10 @@ import {
   TRACE_SLOT,
   TRANSCRIPT_SLOT,
 } from '../src/region-slots.js'
+
+// A slot change commits in a few milliseconds, but a loaded runner has taken longer than the fixed
+// sleeps these checks used before. Wait for the rendered state instead.
+const committed = { timeout: 5_000 }
 
 const mounts: Array<ReturnType<typeof mountEmptyStateRegion>> = []
 const contexts: Context[] = []
@@ -54,19 +58,19 @@ describe('DSH top-level shell', () => {
       { name: 'shell.overlay', id: 'fixture-shell-overlay', owner: 'fixture' },
       () => createElement('button', { id: 'fixture-shell-overlay-content', type: 'button' }, '全局浮层'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(slots.spec('main')).toMatchObject({ kind: 'keyed', scope: 'root' })
-    expect(slots.spec('main.conversation')).toMatchObject({ kind: 'single', scope: 'session-maybe' })
-    expect(slots.spec('conversation.composer')).toMatchObject({ kind: 'chain', scope: 'session' })
-    expect(slots.spec('conversation.composer.bar')).toMatchObject({
-      kind: 'single',
-      scope: 'session-maybe',
-    })
-    expect(conversation.querySelector('[data-slot="main"] #empty-state')).toBeTruthy()
-    expect(
-      document.querySelector('[data-agnes-dsh-shell-overlay] #fixture-shell-overlay-content'),
-    ).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(slots.spec('main')).toMatchObject({ kind: 'keyed', scope: 'root' })
+      expect(slots.spec('main.conversation')).toMatchObject({ kind: 'single', scope: 'session-maybe' })
+      expect(slots.spec('conversation.composer')).toMatchObject({ kind: 'chain', scope: 'session' })
+      expect(slots.spec('conversation.composer.bar')).toMatchObject({
+        kind: 'single',
+        scope: 'session-maybe',
+      })
+      expect(conversation.querySelector('[data-slot="main"] #empty-state')).toBeTruthy()
+      expect(
+        document.querySelector('[data-agnes-dsh-shell-overlay] #fixture-shell-overlay-content'),
+      ).toBeTruthy()
+    }, committed)
     remove()
   })
 })
@@ -81,11 +85,11 @@ describe('migrated empty-state region', () => {
 
     mounts.push(mountEmptyStateRegion(slots, section))
     expect(section.textContent).not.toContain('legacy duplicate')
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(section.querySelector('[data-slot="ui:empty-state"]')).toBeTruthy()
-    expect(section.querySelector('[data-agnes-region-unit="empty-state"]')).toBeTruthy()
-    expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+    await vi.waitFor(() => {
+      expect(section.querySelector('[data-slot="ui:empty-state"]')).toBeTruthy()
+      expect(section.querySelector('[data-agnes-region-unit="empty-state"]')).toBeTruthy()
+      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+    }, committed)
   })
 
   it('allows a lower-priority replaceable unit without changing the outer section', async () => {
@@ -98,11 +102,11 @@ describe('migrated empty-state region', () => {
       { name: EMPTY_STATE_SLOT as string, id: 'plugin-empty-state', owner: 'fixture', priority: -1 },
       () => createElement('div', { 'data-fixture-unit': 'replacement' }, '替换空态'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(section.id).toBe('empty-state')
-    expect(section.textContent).toContain('替换空态')
-    expect(section.textContent).not.toContain('Agnes Harness')
+    await vi.waitFor(() => {
+      expect(section.id).toBe('empty-state')
+      expect(section.textContent).toContain('替换空态')
+      expect(section.textContent).not.toContain('Agnes Harness')
+    }, committed)
     remove()
   })
 
@@ -116,10 +120,10 @@ describe('migrated empty-state region', () => {
       { name: 'conversation.hero.workspace', id: 'fixture-hero-workspace', owner: 'fixture' },
       () => createElement('button', { id: 'fixture-hero-workspace', type: 'button' }, '选择工作区'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(section.querySelector('[data-agnes-conversation-hero] #fixture-hero-workspace')).toBeTruthy()
-    expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+    await vi.waitFor(() => {
+      expect(section.querySelector('[data-agnes-conversation-hero] #fixture-hero-workspace')).toBeTruthy()
+      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+    }, committed)
     remove()
   })
 })
@@ -140,9 +144,10 @@ describe('migrated sidebar region', () => {
       { name: SIDEBAR_SLOT as string, id: 'plugin-sidebar', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-sidebar' }, '替换侧栏'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(sidebar.querySelector('#replacement-sidebar')).toBeTruthy()
-    expect(sidebar.querySelector('#new')).toBeNull()
+    await vi.waitFor(() => {
+      expect(sidebar.querySelector('#replacement-sidebar')).toBeTruthy()
+      expect(sidebar.querySelector('#new')).toBeNull()
+    }, committed)
     remove()
   })
 
@@ -157,12 +162,12 @@ describe('migrated sidebar region', () => {
       { name: 'sidebar.footer.action', id: 'fixture-footer-action', owner: 'fixture' },
       () => createElement('button', { id: 'fixture-sidebar-action', type: 'button' }, '扩展动作'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(sidebar.querySelector('#new')).toBeTruthy()
-    expect(sidebar.querySelector('#fixture-sidebar-action')?.textContent).toBe('扩展动作')
-    expect(sidebar.querySelector('#fixture-sidebar-action')?.closest('.sidebar-footer')).toBeTruthy()
-    expect(slots.entriesByOwner('fixture').map((entry) => entry.name)).toEqual(['sidebar.footer.action'])
+    await vi.waitFor(() => {
+      expect(sidebar.querySelector('#new')).toBeTruthy()
+      expect(sidebar.querySelector('#fixture-sidebar-action')?.textContent).toBe('扩展动作')
+      expect(sidebar.querySelector('#fixture-sidebar-action')?.closest('.sidebar-footer')).toBeTruthy()
+      expect(slots.entriesByOwner('fixture').map((entry) => entry.name)).toEqual(['sidebar.footer.action'])
+    }, committed)
     remove()
   })
 
@@ -177,11 +182,11 @@ describe('migrated sidebar region', () => {
       { name: 'sidebar.workspaces.directoryFlow', id: 'fixture-directory-flow', owner: 'fixture' },
       () => createElement('span', { id: 'fixture-directory-flow-content' }, '目录流程'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(
-      sidebar.querySelector('#fixture-directory-flow-content')?.closest('.sidebar-section-heading'),
-    ).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(
+        sidebar.querySelector('#fixture-directory-flow-content')?.closest('.sidebar-section-heading'),
+      ).toBeTruthy()
+    }, committed)
     remove()
   })
 })
@@ -207,9 +212,10 @@ describe('migrated transcript region', () => {
       { name: TRANSCRIPT_SLOT as string, id: 'plugin-transcript', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-transcript' }, '替换时间线'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#replacement-transcript')).toBeTruthy()
-    expect(transcript.querySelector('#transcript-content')).toBeNull()
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#replacement-transcript')).toBeTruthy()
+      expect(transcript.querySelector('#transcript-content')).toBeNull()
+    }, committed)
     remove()
   })
 
@@ -246,16 +252,16 @@ describe('migrated transcript region', () => {
         slots: [],
       },
     ])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(slots.spec('conversation.chat.assistant-actions')).toMatchObject({
-      kind: 'list',
-      scope: 'session',
-    })
-    expect(slots.spec('tool.view.cordis')).toMatchObject({ kind: 'keyed', scope: 'session' })
-    expect(transcript.querySelector('#fixture-assistant-actions-content')?.textContent).toBe('消息动作')
-    expect(transcript.querySelector('#fixture-cordis-content')?.textContent).toBe('Cordis 视图')
-    expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
+    await vi.waitFor(() => {
+      expect(slots.spec('conversation.chat.assistant-actions')).toMatchObject({
+        kind: 'list',
+        scope: 'session',
+      })
+      expect(slots.spec('tool.view.cordis')).toMatchObject({ kind: 'keyed', scope: 'session' })
+      expect(transcript.querySelector('#fixture-assistant-actions-content')?.textContent).toBe('消息动作')
+      expect(transcript.querySelector('#fixture-cordis-content')?.textContent).toBe('Cordis 视图')
+      expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
+    }, committed)
 
     removeActions()
     removeCordis()
@@ -318,20 +324,20 @@ describe('migrated settings panes', () => {
       },
       () => createElement('span', { id: 'fixture-settings-plugin-item-content' }, '扩展插件项'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(
-      config.querySelector('#fixture-settings-header-content')?.closest('#settings-dsh-shell-slots'),
-    ).toBeTruthy()
-    expect(
-      config.querySelector('#fixture-settings-footer-content')?.closest('.config-workspace'),
-    ).toBeTruthy()
-    expect(
-      config.querySelector('#fixture-settings-plugin-item-content')?.closest('#plugin-list'),
-    ).toBeTruthy()
-    expect(config.querySelector('#config-add-account')).toBeTruthy()
-    expect(config.querySelector('#installed-tab')).toBeTruthy()
-    expect(config.querySelector('#account-dialog')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(
+        config.querySelector('#fixture-settings-header-content')?.closest('#settings-dsh-shell-slots'),
+      ).toBeTruthy()
+      expect(
+        config.querySelector('#fixture-settings-footer-content')?.closest('.config-workspace'),
+      ).toBeTruthy()
+      expect(
+        config.querySelector('#fixture-settings-plugin-item-content')?.closest('#plugin-list'),
+      ).toBeTruthy()
+      expect(config.querySelector('#config-add-account')).toBeTruthy()
+      expect(config.querySelector('#installed-tab')).toBeTruthy()
+      expect(config.querySelector('#account-dialog')).toBeTruthy()
+    }, committed)
 
     mount.unmountPane('plugin')
     expect(config.querySelector('#fixture-settings-plugin-item-content')).toBeNull()
@@ -360,13 +366,15 @@ describe('migrated conversation region', () => {
       { name: CONVERSATION_SLOT as string, id: 'plugin-conversation', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-conversation' }, '替换对话'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(conversation.querySelector('#replacement-conversation')).toBeTruthy()
-    expect(conversation.querySelector('#transcript')).toBeNull()
+    await vi.waitFor(() => {
+      expect(conversation.querySelector('#replacement-conversation')).toBeTruthy()
+      expect(conversation.querySelector('#transcript')).toBeNull()
+    }, committed)
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(conversation.querySelector('#transcript')).toBeTruthy()
-    expect(conversation.querySelector('#empty-state')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(conversation.querySelector('#transcript')).toBeTruthy()
+      expect(conversation.querySelector('#empty-state')).toBeTruthy()
+    }, committed)
   })
 
   it('exposes the session and session header DSH outlets inside the native conversation shell', async () => {
@@ -384,11 +392,11 @@ describe('migrated conversation region', () => {
       { name: 'conversation.session.header', id: 'fixture-conversation-header', owner: 'fixture' },
       () => createElement('span', { id: 'fixture-conversation-header-content' }, '会话头部扩展'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(conversation.querySelector('#fixture-conversation-session-content')).toBeTruthy()
-    expect(conversation.querySelector('#fixture-conversation-header-content')).toBeTruthy()
-    expect(conversation.querySelector('#transcript')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(conversation.querySelector('#fixture-conversation-session-content')).toBeTruthy()
+      expect(conversation.querySelector('#fixture-conversation-header-content')).toBeTruthy()
+      expect(conversation.querySelector('#transcript')).toBeTruthy()
+    }, committed)
     removeSession()
     removeHeader()
   })
@@ -418,12 +426,14 @@ describe('migrated topbar region', () => {
       { name: TOPBAR_SLOT as string, id: 'plugin-topbar', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-topbar' }, '替换顶部栏'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(topbar.querySelector('#replacement-topbar')).toBeTruthy()
-    expect(topbar.querySelector('#task-title')).toBeNull()
+    await vi.waitFor(() => {
+      expect(topbar.querySelector('#replacement-topbar')).toBeTruthy()
+      expect(topbar.querySelector('#task-title')).toBeNull()
+    }, committed)
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(topbar.querySelector('#task-title')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(topbar.querySelector('#task-title')).toBeTruthy()
+    }, committed)
   })
 })
 
@@ -457,11 +467,12 @@ describe('migrated approval region', () => {
       ],
       disabled: false,
     })
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(approval.hidden).toBe(false)
-    expect(approval.querySelector('h2')?.textContent).toBe('需要你的确认')
-    expect(approval.querySelector('pre')?.textContent).toBe('{"path":"README.md"}')
-    expect(approval.querySelector('#fixture-approval-detail-content')?.textContent).toBe('扩展审批详情')
+    await vi.waitFor(() => {
+      expect(approval.hidden).toBe(false)
+      expect(approval.querySelector('h2')?.textContent).toBe('需要你的确认')
+      expect(approval.querySelector('pre')?.textContent).toBe('{"path":"README.md"}')
+      expect(approval.querySelector('#fixture-approval-detail-content')?.textContent).toBe('扩展审批详情')
+    }, committed)
     const allow = approval.querySelector<HTMLButtonElement>('button')
     allow?.focus()
     mount.render({
@@ -476,10 +487,11 @@ describe('migrated approval region', () => {
       ],
       disabled: true,
     })
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    const disabledAllow = approval.querySelector<HTMLButtonElement>('button')
-    expect(document.activeElement).not.toBe(disabledAllow)
-    expect(disabledAllow?.disabled).toBe(true)
+    await vi.waitFor(() => {
+      const disabledAllow = approval.querySelector<HTMLButtonElement>('button')
+      expect(document.activeElement).not.toBe(disabledAllow)
+      expect(disabledAllow?.disabled).toBe(true)
+    }, committed)
     mount.render({
       key: 'approval-1',
       title: '需要你的确认',
@@ -492,9 +504,10 @@ describe('migrated approval region', () => {
       ],
       disabled: false,
     })
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    const restoredAllow = approval.querySelector<HTMLButtonElement>('button')
-    expect(document.activeElement).toBe(restoredAllow)
+    await vi.waitFor(() => {
+      const restoredAllow = approval.querySelector<HTMLButtonElement>('button')
+      expect(document.activeElement).toBe(restoredAllow)
+    }, committed)
     approval.querySelectorAll<HTMLButtonElement>('button')[2]?.click()
     expect(selected).toEqual(['cancel'])
 
@@ -502,15 +515,18 @@ describe('migrated approval region', () => {
       { name: APPROVAL_SLOT as string, id: 'plugin-approval', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-approval' }, '替换审批'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(approval.querySelector('#replacement-approval')).toBeTruthy()
-    expect(approval.querySelector('#approval-content')).toBeNull()
+    await vi.waitFor(() => {
+      expect(approval.querySelector('#replacement-approval')).toBeTruthy()
+      expect(approval.querySelector('#approval-content')).toBeNull()
+    }, committed)
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(approval.querySelector('#approval-content')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(approval.querySelector('#approval-content')).toBeTruthy()
+    }, committed)
     mount.render(undefined)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(approval.hidden).toBe(true)
+    await vi.waitFor(() => {
+      expect(approval.hidden).toBe(true)
+    }, committed)
     removeDetail()
   })
 })
@@ -549,12 +565,14 @@ describe('migrated trace region', () => {
       { name: TRACE_SLOT as string, id: 'plugin-trace', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-trace' }, '替换轨迹'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(trace.querySelector('#replacement-trace')).toBeTruthy()
-    expect(trace.querySelector('#trace-content')).toBeNull()
+    await vi.waitFor(() => {
+      expect(trace.querySelector('#replacement-trace')).toBeTruthy()
+      expect(trace.querySelector('#trace-content')).toBeNull()
+    }, committed)
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(trace.querySelector('#trace-content')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(trace.querySelector('#trace-content')).toBeTruthy()
+    }, committed)
   })
 })
 
@@ -573,14 +591,16 @@ describe('DSH rightbar region', () => {
       () => createElement('section', { id: 'fixture-rightbar-content' }, '右侧扩展面板'),
     )
     slots.setSession('session-1')
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(rightbar.hidden).toBe(false)
-    expect(rightbar.querySelector('#fixture-rightbar-content')?.textContent).toBe('右侧扩展面板')
-    expect(rightbar.querySelector('[data-slot="rightbar.session"]')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(rightbar.hidden).toBe(false)
+      expect(rightbar.querySelector('#fixture-rightbar-content')?.textContent).toBe('右侧扩展面板')
+      expect(rightbar.querySelector('[data-slot="rightbar.session"]')).toBeTruthy()
+    }, committed)
 
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(rightbar.hidden).toBe(true)
+    await vi.waitFor(() => {
+      expect(rightbar.hidden).toBe(true)
+    }, committed)
   })
 
   it('mounts document and guide child slots with a safe document renderer fallback', async () => {
@@ -592,13 +612,13 @@ describe('DSH rightbar region', () => {
     })
     mounts.push(mount)
     slots.setSession('session-1')
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(rightbar.hidden).toBe(false)
-    expect(rightbar.querySelector('[data-agnes-rightbar-session]')).toBeTruthy()
-    expect(rightbar.querySelector('[data-rightbar-tab="document"] h1')?.textContent).toBe('右栏文档')
-    expect(slots.spec('sidebar.right.tab.document')).toMatchObject({ kind: 'keyed', scope: 'session' })
-    expect(slots.spec('sidebar.right.tab.guide')).toMatchObject({ kind: 'chain', scope: 'session' })
+    await vi.waitFor(() => {
+      expect(rightbar.hidden).toBe(false)
+      expect(rightbar.querySelector('[data-agnes-rightbar-session]')).toBeTruthy()
+      expect(rightbar.querySelector('[data-rightbar-tab="document"] h1')?.textContent).toBe('右栏文档')
+      expect(slots.spec('sidebar.right.tab.document')).toMatchObject({ kind: 'keyed', scope: 'session' })
+      expect(slots.spec('sidebar.right.tab.guide')).toMatchObject({ kind: 'chain', scope: 'session' })
+    }, committed)
 
     const remove = slots.register(
       {
@@ -611,8 +631,9 @@ describe('DSH rightbar region', () => {
       ({ owner }: { owner?: { title?: string } }) =>
         createElement('strong', { id: 'fixture-document-renderer' }, owner?.title ?? '替换文档'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(rightbar.querySelector('#fixture-document-renderer')?.textContent).toBe('指南')
+    await vi.waitFor(() => {
+      expect(rightbar.querySelector('#fixture-document-renderer')?.textContent).toBe('指南')
+    }, committed)
     remove()
   })
 
@@ -650,9 +671,9 @@ describe('DSH rightbar region', () => {
     })
     mounts.push(mount)
 
-    await new Promise((resolve) => setTimeout(resolve, 30))
-
-    expect(rightbar.querySelector('pre')?.textContent).toBe('DSH-doc!')
+    await vi.waitFor(() => {
+      expect(rightbar.querySelector('pre')?.textContent).toBe('DSH-doc!')
+    }, committed)
   })
 
   it('says a screenshot was removed by the retention policy when the daemon answers 410', async () => {
@@ -676,8 +697,8 @@ describe('DSH rightbar region', () => {
       }),
     )
 
-    await new Promise((resolve) => setTimeout(resolve, 30))
-
-    expect(rightbar.querySelector('pre')?.textContent).toBe('截图已按保留策略清理')
+    await vi.waitFor(() => {
+      expect(rightbar.querySelector('pre')?.textContent).toBe('截图已按保留策略清理')
+    }, committed)
   })
 })

@@ -22,6 +22,11 @@ import {
   ThemeService,
 } from '../src/index.js'
 
+// Roots here render without a flush, and a slot change commits on a later scheduler task. That takes a
+// few milliseconds, but a loaded runner has taken longer than the fixed sleeps these checks used
+// before. Wait for the rendered state instead.
+const committed = { timeout: 5_000 }
+
 const containers: { root: Root; el: HTMLElement }[] = []
 
 function mount(node: ReactNode): HTMLElement {
@@ -636,24 +641,26 @@ describe('SlotOutlet', () => {
         createElement(SlotOutlet, { name: 'conversation.input.left', props: { value: 'owner' } }),
       ),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(createStore).toHaveBeenCalledWith('session-a')
-    expect(injected).toHaveBeenCalledWith('session-a', { scopeKey: 'session-a' })
-    expect(received).toMatchObject({
-      value: 'owner',
-      sessionId: 'session-a',
-      injectedSessionId: 'session-a',
-      injectedScope: 'session-a',
-    })
-    expect(received?.actions).toEqual({ scopeKey: 'session-a' })
-    expect(typeof received?.t).toBe('function')
-    expect(el.textContent).toContain('session-a')
+    await vi.waitFor(() => {
+      expect(createStore).toHaveBeenCalledWith('session-a')
+      expect(injected).toHaveBeenCalledWith('session-a', { scopeKey: 'session-a' })
+      expect(received).toMatchObject({
+        value: 'owner',
+        sessionId: 'session-a',
+        injectedSessionId: 'session-a',
+        injectedScope: 'session-a',
+      })
+      expect(received?.actions).toEqual({ scopeKey: 'session-a' })
+      expect(typeof received?.t).toBe('function')
+      expect(el.textContent).toContain('session-a')
+    }, committed)
 
     session.setSession('session-b')
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(createStore).toHaveBeenLastCalledWith('session-b')
-    expect(injected).toHaveBeenLastCalledWith('session-b', { scopeKey: 'session-b' })
-    expect(el.textContent).toContain('session-b')
+    await vi.waitFor(() => {
+      expect(createStore).toHaveBeenLastCalledWith('session-b')
+      expect(injected).toHaveBeenLastCalledWith('session-b', { scopeKey: 'session-b' })
+      expect(el.textContent).toContain('session-b')
+    }, committed)
 
     await fiber.dispose()
     expect(registry.entries('conversation.input.left')).toHaveLength(0)
@@ -689,15 +696,17 @@ describe('SlotOutlet', () => {
         createElement(SlotOutlet, { name: 'conversation.input.attachments' }),
       ),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(injected).toHaveBeenLastCalledWith(undefined, undefined)
-    expect(el.textContent).toContain('empty:no-actions')
+    await vi.waitFor(() => {
+      expect(injected).toHaveBeenLastCalledWith(undefined, undefined)
+      expect(el.textContent).toContain('empty:no-actions')
+    }, committed)
 
     registry.setSession('session-a')
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(injected).toHaveBeenLastCalledWith('session-a', { ready: true })
-    expect(createStore).toHaveBeenLastCalledWith('session-a')
-    expect(el.textContent).toContain('session-a')
+    await vi.waitFor(() => {
+      expect(injected).toHaveBeenLastCalledWith('session-a', { ready: true })
+      expect(createStore).toHaveBeenLastCalledWith('session-a')
+      expect(el.textContent).toContain('session-a')
+    }, committed)
   })
 
   it('keeps a session-maybe component mounted across empty to first session, then remounts between sessions', async () => {
@@ -727,9 +736,10 @@ describe('SlotOutlet', () => {
         createElement(SlotOutlet, { name: 'session-maybe-fixture' as never }),
       ),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(el.querySelector('[data-session-maybe="fixture"]')).toBeTruthy()
-    expect(mounted).toBe(1)
+    await vi.waitFor(() => {
+      expect(el.querySelector('[data-session-maybe="fixture"]')).toBeTruthy()
+      expect(mounted).toBe(1)
+    }, committed)
 
     registry.setSession('session-a')
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -737,14 +747,16 @@ describe('SlotOutlet', () => {
     expect(unmounted).toBe(0)
 
     registry.setSession('session-b')
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(mounted).toBe(2)
-    expect(unmounted).toBe(1)
+    await vi.waitFor(() => {
+      expect(mounted).toBe(2)
+      expect(unmounted).toBe(1)
+    }, committed)
 
     registry.setSession(undefined)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(mounted).toBe(3)
-    expect(unmounted).toBe(2)
+    await vi.waitFor(() => {
+      expect(mounted).toBe(3)
+      expect(unmounted).toBe(2)
+    }, committed)
   })
 
   it('renders only the selected business key for a keyed slot', async () => {
@@ -759,9 +771,10 @@ describe('SlotOutlet', () => {
         createElement(SlotOutlet, { name: 'keyed-fixture' as never, entryKey: 'b' }),
       ),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(el.textContent).toContain('B')
-    expect(el.textContent).not.toContain('A')
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('B')
+      expect(el.textContent).not.toContain('A')
+    }, committed)
   })
 
   it('空槽位渲染占位，注册后原地变卡片', async () => {
@@ -774,13 +787,15 @@ describe('SlotOutlet', () => {
     const el = mount(
       createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'workbench.panel' })),
     )
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(el.textContent).toContain('此槽位的插件未就绪')
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('此槽位的插件未就绪')
+    }, committed)
     ctx.plugin(clientModule(mod), { packageId: 'p', revision: 'r1' })
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(el.textContent).toContain('hello-card')
-    expect(el.textContent).not.toContain('此槽位的插件未就绪')
-    expect(el.querySelector('[data-slot="workbench.panel"]')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('hello-card')
+      expect(el.textContent).not.toContain('此槽位的插件未就绪')
+      expect(el.querySelector('[data-slot="workbench.panel"]')).toBeTruthy()
+    }, committed)
   })
 
   it('宿主可隐藏空面板，注册后仍原地显示插件', async () => {
@@ -792,16 +807,18 @@ describe('SlotOutlet', () => {
         createElement(SlotOutlet, { name: 'workbench.panel', hideWhenEmpty: true }),
       ),
     )
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    const empty = el.querySelector('[data-slot="workbench.panel"]')
-    expect(empty?.hasAttribute('hidden')).toBe(true)
-    expect(el.textContent).not.toContain('此槽位的插件未就绪')
+    await vi.waitFor(() => {
+      const empty = el.querySelector('[data-slot="workbench.panel"]')
+      expect(empty?.hasAttribute('hidden')).toBe(true)
+      expect(el.textContent).not.toContain('此槽位的插件未就绪')
+    }, committed)
 
     registry.register('workbench.panel', () => createElement('div', {}, 'ready-panel'))
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    const ready = el.querySelector('[data-slot="workbench.panel"]')
-    expect(ready?.hasAttribute('hidden')).toBe(false)
-    expect(el.textContent).toContain('ready-panel')
+    await vi.waitFor(() => {
+      const ready = el.querySelector('[data-slot="workbench.panel"]')
+      expect(ready?.hasAttribute('hidden')).toBe(false)
+      expect(el.textContent).toContain('ready-panel')
+    }, committed)
   })
 
   it('插件停用后回到 tool.card.inline 的现有占位路径', async () => {
@@ -809,19 +826,23 @@ describe('SlotOutlet', () => {
     const el = mount(
       createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'tool.card.inline' })),
     )
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    const host = el.querySelector('[data-slot="tool.card.inline"]')
-    expect(host?.textContent).toContain('此槽位的插件未就绪')
+    let host: Element | null = null
+    await vi.waitFor(() => {
+      host = el.querySelector('[data-slot="tool.card.inline"]')
+      expect(host?.textContent).toContain('此槽位的插件未就绪')
+    }, committed)
 
     const off = registry.register('tool.card.inline', () => createElement('div', {}, 'inline-card'))
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(el.textContent).toContain('inline-card')
-    expect(el.querySelector('[data-slot="tool.card.inline"]')).toBe(host)
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('inline-card')
+      expect(el.querySelector('[data-slot="tool.card.inline"]')).toBe(host)
+    }, committed)
 
     off()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(el.textContent).toContain('此槽位的插件未就绪')
-    expect(el.querySelector('[data-slot="tool.card.inline"]')).toBe(host)
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('此槽位的插件未就绪')
+      expect(el.querySelector('[data-slot="tool.card.inline"]')).toBe(host)
+    }, committed)
   })
 
   it('单插件渲染失败被边界隔离（G6）', async () => {
@@ -840,12 +861,13 @@ describe('SlotOutlet', () => {
     const el = mount(
       createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'workbench.panel' })),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(el.textContent).toContain('插件渲染失败')
-    expect(el.textContent).toContain('good')
-    expect(el.querySelector('[data-slot="workbench.panel"]')).toBeTruthy()
-    expect(errSpy.length).toBeGreaterThan(0)
-    expect(errSpy.flat().some((item) => item === secret || item instanceof Error)).toBe(false)
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('插件渲染失败')
+      expect(el.textContent).toContain('good')
+      expect(el.querySelector('[data-slot="workbench.panel"]')).toBeTruthy()
+      expect(errSpy.length).toBeGreaterThan(0)
+      expect(errSpy.flat().some((item) => item === secret || item instanceof Error)).toBe(false)
+    }, committed)
     vi.restoreAllMocks()
   })
 })
