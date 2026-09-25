@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { defaultIds, openTracked, SessionLogImpl } from '@agnes/core'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSqliteStorage, DDL, ownerFile, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 import { ev } from './events.js'
 
@@ -520,7 +520,14 @@ describe('storage-sqlite', () => {
     const legacy = new DatabaseSync(join(tablesDir, `${ownerFile(owner)}.db`))
     legacy.exec('CREATE TABLE session_profiles (k TEXT)')
     legacy.close()
-    expect(() => storage.tables(owner)).toThrow(/E_SESSION_TREE_SCHEMA/)
+    // The refused owner file is closed again: Windows cannot delete a directory holding it open.
+    const closes = vi.spyOn(DatabaseSync.prototype, 'close')
+    try {
+      expect(() => storage.tables(owner)).toThrow(/E_SESSION_TREE_SCHEMA/)
+      expect(closes).toHaveBeenCalledOnce()
+    } finally {
+      closes.mockRestore()
+    }
     await storage.close()
     rmSync(dir, { recursive: true, force: true })
   })
