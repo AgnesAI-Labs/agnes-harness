@@ -217,7 +217,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // (admin-list/admin-detail/admin-dialogs/admin-confirmation/admin-text/resource-* +
   // select-picker/confirm/popover moved in from web-admin-frame). countLines 2610 (CSP antd-root joined).
   'packages/web-ui/src': 2610,
-  'packages/web-units/src': 3172,
+  // 2026-09-25 C-line merge re-measure: main's diagnostics-viewer/zip + trace modules
+  // (1589 lines) landed without a ratchet update; countLines 4761.
+  'packages/web-units/src': 4761,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
