@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 42,
+    "seq": 45,
     "data": {
       "meta": {
         "turn": 2,
@@ -54,7 +54,7 @@
               "name": "shell",
               "argsSeq": 33,
               "replay": "never",
-              "status": "dispatched",
+              "status": "completed",
               "resolvedPolicy": {
                 "isReadOnly": false,
                 "isDestructive": true,
@@ -70,7 +70,7 @@
               "executionDomain": "workspace",
               "effectId": "e-00000000000000000000000000000052",
               "dispatchAttempt": 1,
-              "dispatchPhase": "may_have_sent"
+              "dispatchPhase": "responded"
             }
           ]
         }

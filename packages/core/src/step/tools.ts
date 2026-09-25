@@ -1233,26 +1233,22 @@ export async function approveAndExecute(
         }),
       )
     } else {
-      // Result and responded state are one durable boundary. Settlement is intentionally later: a
-      // crash between them can finish the existing result without dispatching the tool again.
-      await s.transition(resultRows, (cur) =>
+      // The result, its settlement and the completed call are one commit: nothing but building the
+      // settlement row runs between them, so a crash leaves the call either dispatched with no
+      // result (the window every call already has while it runs) or completed. `responded` is still
+      // a state recovery understands, but this path no longer stores it on its own.
+      const done = (status: 'responded' | 'completed') => (cur: OpStateObj | null) =>
         updateCall(cur, call.toolUseId, {
-          status: 'responded',
+          status,
           effectId: effect.effectId,
           dispatchAttempt: attempt,
           dispatchPhase: 'responded',
           ...(recordedResult.terminate ? { terminate: true } : {}),
-        }),
-      )
-      await s.transition([effect.settle(effectOutcome({ failed })), verifierSignal], (cur) =>
-        updateCall(cur, call.toolUseId, {
-          status: 'completed',
-          effectId: effect.effectId,
-          dispatchAttempt: attempt,
-          dispatchPhase: 'responded',
-          ...(recordedResult.terminate ? { terminate: true } : {}),
-        }),
-      )
+        })
+      await s.transitionChain([
+        { events: resultRows, next: done('responded') },
+        { events: [effect.settle(effectOutcome({ failed })), verifierSignal], next: done('completed') },
+      ])
     }
     return {
       result: recordedResult,

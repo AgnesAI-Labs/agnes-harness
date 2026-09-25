@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 11,
+    "seq": 34,
     "data": {
       "meta": {
         "turn": 1,
@@ -16,15 +16,15 @@
       "control": {
         "status": "running"
       },
-      "step": 1,
-      "latestAssistantSeq": null,
+      "step": 2,
+      "latestAssistantSeq": 13,
       "taint": false,
       "phase": {
         "kind": "inference",
         "gen": {
           "status": "effect_pending",
           "attempt": 0,
-          "effectId": "e-00000000000000000000000000000011",
+          "effectId": "e-00000000000000000000000000000037",
           "slot": "primary"
         }
       }

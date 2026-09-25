@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 5,
+    "seq": 30,
     "data": {
       "meta": {
         "turn": 1,
@@ -16,13 +16,15 @@
       "control": {
         "status": "running"
       },
-      "step": 0,
-      "latestAssistantSeq": null,
+      "step": 1,
+      "latestAssistantSeq": 13,
       "taint": false,
       "phase": {
-        "kind": "checkpoint",
-        "continuation": "need_assistant",
-        "triggerSeq": 4
+        "kind": "inference",
+        "gen": {
+          "status": "ready",
+          "attempt": 0
+        }
       }
     }
   }

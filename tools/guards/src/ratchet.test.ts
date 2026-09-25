@@ -884,7 +884,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 24962, exact, no spare (-57).
   // Multi-step phase transitions committed as one append; a tool call's approval, intent and first
   // dispatch now commit together. Measured 25013, exact, no spare (+51).
-  'packages/core/src': 25013,
+  // A tool result and its settlement commit together through the same chain. Measured 25007, exact,
+  // no spare (-6).
+  'packages/core/src': 25007,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

@@ -381,7 +381,7 @@ export const CONCURRENT_SCENARIOS: ReadonlySet<string> = new Set([
 ])
 
 /** Statuses a tool call passes through inside one commit, which no program-counter write shows. */
-export const MERGED_STATUSES: readonly string[] = ['approved', 'dispatch_pending']
+export const MERGED_STATUSES: readonly string[] = ['approved', 'dispatch_pending', 'responded']
 
 /** The names of the recorded scenarios, in a stable order. */
 export const TRANSITION_SCENARIOS: readonly string[] = Object.keys(SCENARIOS)
@@ -661,6 +661,16 @@ function mergedRun(commits: RecordedCommit[], index: number): number {
     const dispatched = markedCall(commits[index + 2], 'dispatched')
     return dispatched?.toolUseId === id && dispatched.dispatchAttempt === 1 ? 3 : 2
   }
+  // The result with the call responded, then its settlement with the call completed.
+  const result = ((commits[index]?.events ?? []) as Row[]).find((row) => row.type === 'tool/result')
+  const id = result ? String(data(result).toolUseId) : undefined
+  if (
+    id !== undefined &&
+    opCall(commits[index], id)?.status === 'responded' &&
+    hasRow(commits[index + 1], (row) => row.type === 'effect/settled') &&
+    opCall(commits[index + 1], id)?.status === 'completed'
+  )
+    return 2
   return 1
 }
 

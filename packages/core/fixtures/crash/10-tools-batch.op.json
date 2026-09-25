@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 37,
+    "seq": 39,
     "data": {
       "meta": {
         "turn": 2,
@@ -30,7 +30,7 @@
               "name": "read",
               "argsSeq": 32,
               "replay": "safe",
-              "status": "responded",
+              "status": "completed",
               "resolvedPolicy": {
                 "isReadOnly": true,
                 "isDestructive": false,

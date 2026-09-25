@@ -89,7 +89,7 @@ function toolStates(rows: Array<{ data: unknown }>) {
 }
 
 describe('durable tool dispatch state', () => {
-  it('persists workspace may_have_sent before entering author code, then records responded before settle', async () => {
+  it('persists workspace may_have_sent before entering author code, then commits result, settlement and completed together', async () => {
     let stateAtExecute: unknown
     let opened: Awaited<ReturnType<typeof ready>> | undefined
     const registry = new ToolRegistry()
@@ -120,21 +120,25 @@ describe('durable tool dispatch state', () => {
     })
     const rows = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq })
     const resultSeq = rows.find((row) => row.type === 'tool/result')?.seq ?? 0
-    // The counter the result's own commit wrote: that commit ends at or after the result row.
+    // The counter the result's own commit wrote: that commit ends at or after the result row, and
+    // the settlement is in it.
     const written = opened.opWrites().find((write) => write.seq >= resultSeq)
     expect((written?.data as { phase?: unknown } | null | undefined)?.phase).toMatchObject({
       kind: 'tools',
       batch: {
         calls: [
           expect.objectContaining({
-            status: 'responded',
+            status: 'completed',
             dispatchAttempt: 1,
             dispatchPhase: 'responded',
           }),
         ],
       },
     })
-    expect(rows.some((row) => row.seq > (written?.seq ?? 0) && row.type === 'effect/settled')).toBe(true)
+    const settled = rows.find((row) => row.type === 'effect/settled' && row.seq > resultSeq)?.seq ?? 0
+    expect(settled).toBeGreaterThan(resultSeq)
+    expect(settled).toBeLessThanOrEqual(written?.seq ?? 0)
+    expect(toolStates(opened.opWrites()).map((call) => call.status)).not.toContain('responded')
   })
 
   it('retries a Host-attested not_sent once under the same effect intent', async () => {
@@ -175,7 +179,7 @@ describe('durable tool dispatch state', () => {
     )
     expect(states).toContainEqual(
       expect.objectContaining({
-        status: 'responded',
+        status: 'completed',
         dispatchAttempt: 2,
         dispatchPhase: 'responded',
       }),
@@ -398,8 +402,14 @@ describe('durable tool dispatch state', () => {
     expect(
       (seen[0] as { batch: { calls: Array<Record<string, unknown>> } }).batch.calls[0],
     ).not.toHaveProperty('dispatchPhase')
+    // Three commits move the call: intent, dispatched, and result with settlement.
     const writes = toolStates(opened.opWrites())
-    expect(writes.map((call) => call.status)).not.toContain('approved')
+    expect(writes.map((call) => call.status)).toEqual([
+      'planned',
+      'dispatch_pending',
+      'dispatched',
+      'completed',
+    ])
     expect(
       (await opened.log.scan({ type: 'x/core/op-mark', order: 'desc', limit: 5 })).map((row) => row.data),
     ).toContainEqual(
@@ -495,5 +505,46 @@ describe('durable tool dispatch state', () => {
     expect(call).not.toHaveProperty('dispatchPhase')
     expect((await reopened.session.resume()).actions[0]?.action).toBe('unknown')
     expect(dispatches).toBe(0)
+  })
+  it('reopens a Host call whose result commit failed as dispatched, unknown, and never dispatches it again', async () => {
+    const storage = new MemoryStorage()
+    const failing = new Proxy(storage, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown
+        if (property === 'commit')
+          return (key: string, tx: CommitTx) =>
+            tx.events.some((e) => e.type === 'tool/result')
+              ? Promise.reject(new Error('injected'))
+              : (value as MemoryStorage['commit']).call(target, key, tx)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    let dispatches = 0
+    const port: HostToolDispatchPort = {
+      dispatch: async (input) => {
+        dispatches++
+        return { phase: 'responded', result: await input.invoke() }
+      },
+    }
+    const tool = () => computerTool(async () => ({ content: [{ type: 'text', text: 'clicked' }] }))
+    const first = await ready(computerRegistry(tool()), port, failing as MemoryStorage)
+    await expect(first.session.runToolsPhase()).rejects.toThrow('injected')
+    await first.log.close().catch(() => undefined)
+    expect(dispatches).toBe(1)
+    const provider = fakeProvider([textTurn('after')])
+    Object.assign(provider, { models: () => [imageModel] })
+    const reopened = await openSession({
+      provider,
+      registry: computerRegistry(tool()),
+      hostToolDispatch: port,
+      storage,
+    })
+    expect(toolStates([{ data: reopened.session.op() }])[0]).toMatchObject({
+      status: 'dispatched',
+      dispatchPhase: 'may_have_sent',
+      dispatchAttempt: 1,
+    })
+    expect((await reopened.session.resume()).actions[0]?.action).toBe('unknown')
+    expect(dispatches).toBe(1)
   })
 })

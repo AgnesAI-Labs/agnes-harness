@@ -10,9 +10,14 @@ import type { CommitTx, RegisterRow } from '../src/log/storage.js'
 import { openTracked } from '../src/reduce/tracker.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import type { OpStateObj, ToolCallState } from '../src/step/op-state.js'
-import { readGolden, recordTransitions } from '../testkit/record-transitions.js'
+import {
+  expectedFromGolden,
+  readGolden,
+  recordTransitions,
+  TRANSITION_SCENARIOS,
+} from '../testkit/record-transitions.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
-import { actor, openSession, readTool, shellTool } from './helpers/open-session.js'
+import { actor, openSession, openWorldTool, readTool, shellTool } from './helpers/open-session.js'
 
 type Tx = { key: string; tx: CommitTx }
 type Opened = Awaited<ReturnType<typeof openSession>>
@@ -47,6 +52,9 @@ const callIn = (data: unknown, toolUseId?: string): ToolCallState | undefined =>
 
 const isToolIntent = ({ tx }: Tx) =>
   tx.events.some((e) => e.type === 'effect/intent' && (e.data as { kind?: string }).kind === 'tool')
+/** A tool's own result, not a synthetic closer. */
+const hasToolResult = ({ tx }: Tx) =>
+  tx.events.some((e) => e.type === 'tool/result' && (e.data as { code?: string }).code === undefined)
 
 const go = { content: [{ type: 'text' as const, text: 'go' }], actor }
 const turnEnd = () => ({ until: 'turn-end' as const, signal: new AbortController().signal })
@@ -129,18 +137,79 @@ describe('commits of one tool call', () => {
       dispatchAttempt: 1,
     })
     expect(runs.seen).toEqual([expect.objectContaining({ status: 'dispatched', dispatchAttempt: 1 })])
+    // The result, its settlement and the completed call are the other commit, and the last.
+    const result = commits.findIndex(hasToolResult)
+    expect(commits[result]?.tx.events.map((e) => e.type)).toEqual([
+      'tool/result',
+      'effect/settled',
+      'verifier/signal',
+    ])
+    expect(callIn(commits[result]?.tx.opState?.data)).toMatchObject({
+      status: 'completed',
+      dispatchPhase: 'responded',
+      dispatchAttempt: 1,
+    })
+    const moved = commits.filter((c, i) => {
+      const call = callIn(c.tx.opState?.data)
+      const was = callIn(commits.slice(0, i).findLast((p) => p.tx.opState)?.tx.opState?.data)
+      return call !== undefined && was !== undefined && call.status !== was.status
+    })
+    expect(moved).toHaveLength(2)
     // Nothing on the ledger stands for the in-between statuses.
     const marks = await opened.log.scan({ type: 'x/core/op-mark', limit: 50 })
     expect(marks.filter((row) => (row.data as { calls?: unknown[] }).calls?.length)).toEqual([])
   })
 
   it.each([
-    ['batch-k1', 2],
-    ['batch-k4', 8],
-    ['batch-k8', 16],
-  ])('%s makes %i fewer commits than the reference', async (name, fewer) => {
+    ['batch-k1', 19, 2],
+    ['batch-k4', 25, 2],
+    ['batch-k8', 33, 2],
+    ['nested-m6', 37, 2],
+  ])('%s commits %i times, %i of them op-marks', async (name, total, marks) => {
     const recorded = await recordTransitions(name, new MemoryStorage())
-    expect(recorded.length).toBe(readGolden(name).length - fewer)
+    expect(recorded.length).toBe(total)
+    const rows = recorded.flatMap((commit) => commit.events as Array<{ type: string }>)
+    expect(rows.filter((row) => row.type === 'x/core/op-mark')).toHaveLength(marks)
+    // Every row but the op-marks the merged commits no longer need is still written.
+    const reference = expectedFromGolden(readGolden(name)).flatMap(
+      (commit) => commit.events as Array<{ type: string }>,
+    )
+    const count = (list: Array<{ type: string }>) => {
+      const by: Record<string, number> = {}
+      for (const row of list) if (row.type !== 'x/core/op-mark') by[row.type] = (by[row.type] ?? 0) + 1
+      return by
+    }
+    expect(count(rows)).toEqual(count(reference))
+  })
+
+  it.each(TRANSITION_SCENARIOS)('%s never stores a call as responded', async (name) => {
+    for (const commit of await recordTransitions(name, new MemoryStorage()))
+      for (const write of commit.op)
+        expect(callsOf(write.data).map((call) => call.status)).not.toContain('responded')
+  })
+
+  it('writes an open-world result with the counter it had, and the next commit carries the taint', async () => {
+    let opened: Opened | undefined
+    const at: Array<{ counter: boolean | undefined; lane: boolean | undefined }> = []
+    const { proxy, commits } = tapped(({ tx }) => {
+      // Just before the commit after the result's: what a reader of the program counter sees then.
+      if (commits.at(-1)?.tx.events.some((e) => e.type === 'tool/result') && tx.opState)
+        at.push({ counter: opened?.session.op()?.taint, lane: opened?.session.laneTaint() })
+      return false
+    })
+    opened = await openSession({
+      provider: fakeProvider([toolTurn('fetch_page', {}), textTurn('done')]),
+      registry: registryOf(openWorldTool()),
+      storage: proxy,
+    })
+    await opened.session.enqueue('next-turn', go)
+    await opened.session.run(turnEnd())
+    const result = commits.findIndex(hasToolResult)
+    expect(commits[result]?.tx.events[0]?.trust).toBe('untrusted')
+    expect((commits[result]?.tx.opState?.data as OpStateObj | undefined)?.taint).toBe(false)
+    // Every reader takes the counter's copy or the fold's answer, and the fold already has the row.
+    expect(at[0]).toEqual({ counter: false, lane: true })
+    expect((commits[result + 1]?.tx.opState?.data as OpStateObj | undefined)?.taint).toBe(true)
   })
 })
 
@@ -209,22 +278,24 @@ describe('a stop around the pre-dispatch commit', () => {
 const isToolIntentRow = (row: { type: string; data: unknown }) =>
   row.type === 'effect/intent' && (row.data as { kind?: string }).kind === 'tool'
 
+/** The store a session leaves when the first commit `at` picks out fails and seals it. */
+async function failedAt(kind: 'read' | 'shell', at: (commit: Tx) => boolean) {
+  const { storage, proxy } = tapped(at)
+  const h = await openSession({
+    provider: fakeProvider([toolTurn(kind, {})]),
+    registry: registryOf(kind === 'read' ? readTool() : shellTool()),
+    storage: proxy,
+  })
+  await h.session.enqueue('next-turn', go)
+  await h.session.acceptInput()
+  await h.session.runInference()
+  await expect(h.session.runToolsPhase()).rejects.toThrow('injected')
+  await h.log.close().catch(() => undefined)
+  return storage
+}
+
 describe('a crash at the pre-dispatch commit', () => {
-  /** A session whose pre-dispatch commit failed: the store holds the call still planned. */
-  async function failedBeforeDispatch(kind: 'read' | 'shell') {
-    const { storage, proxy } = tapped(isToolIntent)
-    const h = await openSession({
-      provider: fakeProvider([toolTurn(kind, {})]),
-      registry: registryOf(kind === 'read' ? readTool() : shellTool()),
-      storage: proxy,
-    })
-    await h.session.enqueue('next-turn', go)
-    await h.session.acceptInput()
-    await h.session.runInference()
-    await expect(h.session.runToolsPhase()).rejects.toThrow('injected')
-    await h.log.close().catch(() => undefined)
-    return storage
-  }
+  const failedBeforeDispatch = (kind: 'read' | 'shell') => failedAt(kind, isToolIntent)
 
   it('before it: the call reopens planned and runs exactly once on resume', async () => {
     const storage = await failedBeforeDispatch('read')
@@ -349,45 +420,102 @@ describe('a crash after the pre-dispatch commit, while the call runs', () => {
   })
 })
 
-// Every store a failed pre-dispatch commit can leave behind, in every recorded scenario that
-// dispatches a tool: a fresh writer opens it (the open-time program-counter checks pass) and finds the
-// call the failed commit was for still planned.
-describe('every pre-dispatch commit point, failed', () => {
+describe('a crash at the result commit', () => {
+  it('before it: a safe read reopens dispatched and reruns under the same effect at attempt two', async () => {
+    const storage = await failedAt('read', hasToolResult)
+    let opened: Opened | undefined
+    const runs = counted('read', () => opened?.session)
+    opened = await reopen(storage, runs.tool)
+    const before = callIn(opened.session.op())
+    expect(before).toMatchObject({ status: 'dispatched', dispatchPhase: 'may_have_sent', dispatchAttempt: 1 })
+    expect((await opened.session.resume()).actions).toEqual([{ effectId: before?.effectId, action: 'rerun' }])
+    expect((await opened.session.run(turnEnd())).reason).toBe('completed')
+    expect(runs.seen).toEqual([
+      expect.objectContaining({ status: 'dispatched', effectId: before?.effectId, dispatchAttempt: 2 }),
+    ])
+    expect(await opened.log.scan({ type: 'tool/result', limit: 10 })).toHaveLength(1)
+  })
+
+  it('before it: a call that must not be replayed is unknown, with one synthetic result', async () => {
+    const storage = await failedAt('shell', hasToolResult)
+    const runs = counted('shell', () => undefined)
+    const opened = await reopen(storage, runs.tool)
+    expect(callIn(opened.session.op())).toMatchObject({ status: 'dispatched', dispatchAttempt: 1 })
+    expect((await opened.session.resume()).actions[0]?.action).toBe('unknown')
+    expect(runs.seen).toEqual([])
+    const results = await opened.log.scan({ type: 'tool/result', limit: 10 })
+    expect(results.map((row) => (row.data as { code?: string }).code)).toEqual(['TOOL_OUTCOME_UNKNOWN'])
+  })
+
+  it('before it: closing reports the outcome as unknown', async () => {
+    const storage = await failedAt('read', hasToolResult)
+    const runs = counted('read', () => undefined)
+    const opened = await reopen(storage, runs.tool)
+    await opened.session.resume({ mode: 'close' })
+    expect(runs.seen).toEqual([])
+    expect((await opened.log.scan({ type: 'tool/result', limit: 10 }))[0]?.data).toMatchObject({
+      code: 'TOOL_OUTCOME_UNKNOWN',
+    })
+    expect(
+      (await opened.log.scan({ type: 'effect/settled', order: 'desc', limit: 5 })).map((r) => r.data),
+    ).toContainEqual(expect.objectContaining({ outcome: 'unknown' }))
+  })
+})
+
+// Every store a failed merged commit can leave behind, in every recorded scenario that dispatches a
+// tool: a fresh writer opens it (the open-time program-counter checks pass) and finds the call the
+// failed commit was for where it was before that commit — still planned when the pre-dispatch commit
+// failed, still dispatched when the result's did.
+describe('every merged commit point, failed', () => {
   const SCENARIOS = ['batch-k1', 'batch-k4', 'nested-m6', 'approval-sync', 'approval-parked', 'side-lane']
-  it.each(SCENARIOS)('%s', async (name) => {
-    const points = (await (async () => {
+  const KINDS = [
+    { name: 'pre-dispatch', at: isToolIntent, before: 'planned' },
+    { name: 'result', at: hasToolResult, before: 'dispatched' },
+  ] as const
+  const callOfCommit = ({ tx }: Tx): string | undefined => {
+    for (const e of tx.events) {
+      const d = e.data as { toolUseId?: string; kind?: string; tool?: { toolUseId?: string } }
+      if (e.type === 'effect/intent' && d.kind === 'tool') return d.tool?.toolUseId
+      if (e.type === 'tool/result') return d.toolUseId
+    }
+    return undefined
+  }
+  it.each(SCENARIOS.flatMap((name) => KINDS.map((kind) => [name, kind.name] as const)))(
+    '%s, %s',
+    async (name, kindName) => {
+      const kind = KINDS.find((k) => k.name === kindName) as (typeof KINDS)[number]
       const { proxy, commits } = tapped()
       await recordTransitions(name, proxy)
-      return commits.map((commit, index) => (isToolIntent(commit) ? index : -1)).filter((i) => i >= 0)
-    })()) as number[]
-    expect(points.length).toBeGreaterThan(0)
-    for (const point of points) {
-      let failed: Tx | undefined
-      const { storage, proxy } = tapped((commit, index) => {
-        if (index !== point) return false
-        failed = commit
-        return true
-      })
-      await recordTransitions(name, proxy).catch(() => undefined)
-      const intent = failed?.tx.events.find((e) => e.type === 'effect/intent')
-      const toolUseId = (intent?.data as { tool?: { toolUseId?: string } } | undefined)?.tool?.toolUseId
-      const lane = failed?.tx.opState?.lane as string
-      const opened = await openTracked({
-        storage,
-        key: failed?.key as string,
-        // The writer the failed commit sealed; its lease is still on the store.
-        writerRunId: 'r1',
-        ttlMs: 60_000,
-        ids: defaultIds(() => 0),
-        clock: () => 0,
-        timers: { setTimeout: () => 0, clearTimeout: () => undefined },
-        lane,
-      }).catch((error: unknown) => {
-        throw new Error(`${name} point ${point}: ${String(error)}`)
-      })
-      const cell = opened.log.allRegisters().find((row) => row.register === 'op.state' && row.key === lane)
-      expect(callIn(cell?.data, toolUseId)?.status, `${name} point ${point}`).toBe('planned')
-      await opened.log.close()
-    }
-  })
+      const points = commits.map((commit, index) => (kind.at(commit) ? index : -1)).filter((i) => i >= 0)
+      expect(points.length).toBeGreaterThan(0)
+      for (const point of points) {
+        let failed: Tx | undefined
+        const { storage, proxy } = tapped((commit, index) => {
+          if (index !== point) return false
+          failed = commit
+          return true
+        })
+        await recordTransitions(name, proxy).catch(() => undefined)
+        const lane = failed?.tx.opState?.lane as string
+        const opened = await openTracked({
+          storage,
+          key: failed?.key as string,
+          // The writer the failed commit sealed; its lease is still on the store.
+          writerRunId: 'r1',
+          ttlMs: 60_000,
+          ids: defaultIds(() => 0),
+          clock: () => 0,
+          timers: { setTimeout: () => 0, clearTimeout: () => undefined },
+          lane,
+        }).catch((error: unknown) => {
+          throw new Error(`${name} point ${point}: ${String(error)}`)
+        })
+        const cell = opened.log.allRegisters().find((row) => row.register === 'op.state' && row.key === lane)
+        expect(callIn(cell?.data, callOfCommit(failed as Tx))?.status, `${name} point ${point}`).toBe(
+          kind.before,
+        )
+        await opened.log.close()
+      }
+    },
+  )
 })
