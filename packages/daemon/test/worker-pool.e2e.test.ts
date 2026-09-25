@@ -894,11 +894,16 @@ describe('WorkerPool', () => {
     }
   }, 60_000)
 
-  it('refreshes the idle watermark when a late worker reply arrives', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-activity-'))
+  // Reverse-verification (not optional per the task brief): prove the 5-minute rolling window
+  // actually ages crashes out, not just that three crashes in a row trips the breaker. Drives
+  // `crashed()` directly with a controllable clock - no real subprocess needed, since `crashed()`'s
+  // window/backoff math has no dependency on how a crash was detected.
+  it('never evicts the shared worker for idling, only a differently-keyed worker', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shared-idle-'))
     const profileFile = join(dir, 'profile.json')
     writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
     let now = 0
+    const notices: string[] = []
     const config: DaemonConfig = {
       profileName: 'p',
       dataDir: dir,
@@ -906,7 +911,6 @@ describe('WorkerPool', () => {
       workersSocketPath: workerSocket(dir),
       limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS, workerIdleEvictMs: 100 },
     }
-    const notices: string[] = []
     const pool = new WorkerPool({
       config,
       profile: { name: 'p', hash: 'h1' } as never,
@@ -921,61 +925,6 @@ describe('WorkerPool', () => {
     })
     const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
     try {
-      const key = 'agnes:t:a:x:dm:activity'
-      const link = await acquire(pool, key)
-      const reply = link.command('ping', {})
-      // Models a command that began before the idle threshold but only replied after it. The reply,
-      // not the old acquire time, would be the worker's real last activity - moot here because a
-      // session-kind acquire always lands on '@shared', which P1 exempts from idle eviction
-      // altogether (see the dedicated exemption test further down): evictIdle stays 0 forever,
-      // however long the gap, so this no longer distinguishes a refreshed watermark from a stale one.
-      now = 150
-      await expect(reply).resolves.toEqual({ ok: true })
-      expect(pool.evictIdle(now, () => false)).toBe(0)
-      now = 250
-      expect(pool.evictIdle(now, () => false)).toBe(0)
-      now = 251
-      expect(pool.evictIdle(now, () => false)).toBe(0)
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(notices).not.toContain('worker_crashed')
-      expect(notices).not.toContain('worker_quarantined')
-    } finally {
-      await pool.closeAll(1_000)
-      await server.close()
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 60_000)
-
-  // Reverse-verification (not optional per the task brief): prove the 5-minute rolling window
-  // actually ages crashes out, not just that three crashes in a row trips the breaker. Drives
-  // `crashed()` directly with a controllable clock - no real subprocess needed, since `crashed()`'s
-  // window/backoff math has no dependency on how a crash was detected.
-  it('never evicts the shared worker for idling, only a differently-keyed worker', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shared-idle-'))
-    const profileFile = join(dir, 'profile.json')
-    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
-    let now = 0
-    const config: DaemonConfig = {
-      profileName: 'p',
-      dataDir: dir,
-      socketPath: join(dir, 'a.sock'),
-      workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS, workerIdleEvictMs: 100 },
-    }
-    const pool = new WorkerPool({
-      config,
-      profile: { name: 'p', hash: 'h1' } as never,
-      profileFile,
-      execPath: process.execPath,
-      workerEntry: fakeWorker,
-      execArgv: ['--import', 'tsx'],
-      clock: () => now,
-      onEvent: () => undefined,
-      onRequest: async () => undefined,
-      notices: { emit() {} },
-    })
-    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
-    try {
       const link = await acquire(pool, 'agnes:t:a:x:dm:shared-idle', { cwd: dir })
       await link.closeSession()
       now = 1_000
@@ -984,6 +933,8 @@ describe('WorkerPool', () => {
       // however long it sits with no active session.
       expect(pool.evictIdle(now, () => false)).toBe(0)
       expect(pool.businessWorker()?.link.alive).toBe(true)
+      expect(notices).not.toContain('worker_crashed')
+      expect(notices).not.toContain('worker_quarantined')
     } finally {
       await pool.closeAll(1_000)
       await server.close()
