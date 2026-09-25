@@ -60,6 +60,7 @@ const hostFor = async (
   })
 
 describe('the shipped presets, loaded from disk', () => {
+  // One Host and one session per shipped recipe: each is about a second on the Windows runner.
   it('every registered recipe is a document the assembly accepts and a session opens on', async () => {
     expect(PRESET_NAMES.length).toBeGreaterThan(0)
     for (const name of PRESET_NAMES) {
@@ -72,7 +73,7 @@ describe('the shipped presets, loaded from disk', () => {
         await t.host.close()
       }
     }
-  })
+  }, 30_000)
 
   it('the default recipe carries a turn end to end', async () => {
     const dataDir = tmp()

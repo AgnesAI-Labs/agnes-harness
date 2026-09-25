@@ -179,6 +179,7 @@ describe('hooks-runner as a row, isolated', () => {
     expect(auditKinds(h as never, 'extension.revoke_failed')).toEqual([])
   })
 
+  // Two runner generations plus a held shutdown: over a second on macOS, past 5 s on the Windows runner.
   it('ignores a crash reported by an already-evicted generation and keeps the live successor', async () => {
     // Regression: eviction does not wait for the incumbent's shutdown dispatch to finish (it just
     // starts winding down in the background), so a stale generation's own crash listener stays armed
@@ -227,10 +228,11 @@ describe('hooks-runner as a row, isolated', () => {
       'close:4001',
       'close:4002',
     ])
-  })
+  }, 30_000)
 })
 
 describe('hooks-runner as a row, isolation unavailable', () => {
+  // Two Hosts assembled from the packages on disk: 3 to 5 s on the Windows runner.
   it('leaves required unloaded with an isolation note and Host up; preferred falls back in-process', async () => {
     const required = await createTestHost({
       dataDir: scratch(),
@@ -266,5 +268,5 @@ describe('hooks-runner as a row, isolation unavailable', () => {
     })
     expect(preferred.host.kernel.registrations(ID).length).toBeGreaterThan(0)
     await preferred.host.close()
-  })
+  }, 30_000)
 })

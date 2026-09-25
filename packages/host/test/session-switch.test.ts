@@ -287,6 +287,7 @@ function twoRouteHostOptions(
 }
 
 describe('replaySwitchesOnOpen', () => {
+  // Two Hosts and a reopen, and the file's first session open: 2 to 6 s on the Windows runner.
   it('reopening a session with a recorded model switch lands on the switched model, not the preset default', async () => {
     const dataDir = scratch()
     const provider = () =>
@@ -307,7 +308,7 @@ describe('replaySwitchesOnOpen', () => {
     } finally {
       await second.host.close()
     }
-  })
+  }, 30_000)
 
   it('preserves an unavailable recorded model on reopen so the user can choose a replacement', async () => {
     const dataDir = scratch()
