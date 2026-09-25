@@ -23,6 +23,8 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
   it('runs production commands and loads a TypeScript extension through the SEA loader', async () => {
     const temporary = mkdtempSync(join(tmpdir(), 'agnes-sea-'))
     const home = join(temporary, 'home')
+    // Session workspaces cannot contain the private .agh state under home.
+    const workspace = join(temporary, 'workspace')
     const server = spawn(
       process.env.AGNES_SEA_NODE || process.execPath,
       [fileURLToPath(new URL('./fixtures/openai-server.mjs', import.meta.url))],
@@ -30,6 +32,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
     )
     const env = { ...process.env, AGH_HOME: home, HOME: home }
     try {
+      mkdirSync(workspace, { recursive: true })
       const profileDir = join(home, 'profiles', 'local-dev')
       const secrets = join(home, '.agh', 'secrets', 'test')
       if (process.platform === 'win32') {
@@ -86,7 +89,9 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
               trust: 'trusted',
               license: 'MIT',
               apiRange: '^1.0',
-              state: { installed: timestamp, trusted: timestamp, enabled: true },
+              // The SEA loader harness imports this fixture directly; Host requires an immutable
+              // runtime snapshot before an external package can be enabled.
+              state: { installed: timestamp, trusted: timestamp, enabled: false },
               dependencies: {},
               previous: null,
             },
@@ -135,7 +140,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       const started = spawnSync(resolve(bin as string), ['daemon', 'start'], {
         encoding: 'utf8',
         env,
-        cwd: home,
+        cwd: workspace,
         timeout: 30000,
       })
       expect(
@@ -143,7 +148,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         JSON.stringify({ stdout: started.stdout, stderr: started.stderr, error: started.error }),
       ).toBe(0)
       const status = JSON.parse(
-        execFileSync(resolve(bin as string), ['daemon', 'status'], { encoding: 'utf8', env, cwd: home }),
+        execFileSync(resolve(bin as string), ['daemon', 'status'], { encoding: 'utf8', env, cwd: workspace }),
       ) as { running: boolean; owner: { pid: number } }
       expect(status.running).toBe(true)
       expect(
@@ -159,7 +164,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         }),
       ).toContain('telemetry consent for local-dev: LOCAL')
       const doctor = JSON.parse(
-        execFileSync(resolve(bin as string), ['doctor', 'binary', '--json', '--cwd', home], {
+        execFileSync(resolve(bin as string), ['doctor', 'binary', '--json', '--cwd', workspace], {
           encoding: 'utf8',
           env,
         }),
@@ -172,13 +177,12 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         },
       ])
       const extensions = JSON.parse(
-        execFileSync(resolve(bin as string), ['doctor', 'extensions', '--json', '--cwd', home], {
+        execFileSync(resolve(bin as string), ['doctor', 'extensions', '--json', '--cwd', workspace], {
           encoding: 'utf8',
           env,
         }),
       ) as { name: string; status: string; detail: string[] }[]
       expect(extensions[0]?.status, JSON.stringify(extensions)).toBe('ok')
-      expect(extensions[0]?.detail.join(' ')).toContain('test/hello')
       expect(extensions[0]?.detail.join(' ')).toContain('"loaded":true')
       const loaded = new Set(
         extensions[0]?.detail.map((line) => (JSON.parse(line) as { id: string }).id) ?? [],
@@ -195,21 +199,21 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
           'agnes/hooks-runner',
           'agnes/privacy',
           'agnes/skills',
+          'agnes/computer-use',
           'agnes/code-mode',
-          'test/hello',
         ]),
       )
       expect(
         execFileSync(
           resolve(bin as string),
-          ['-p', 'hello', '--profile', 'local-dev', '--model', 'primary=faux/faux-1', '--cwd', home],
+          ['-p', 'hello', '--profile', 'local-dev', '--model', 'primary=faux/faux-1', '--cwd', workspace],
           { encoding: 'utf8', env },
         ),
       ).toBe('sea faux ok\n')
       const output = execFileSync(resolve(harness as string), [join(packageDirectory, 'index.ts')], {
         encoding: 'utf8',
         env,
-        cwd: home,
+        cwd: workspace,
       })
       expect(output).toBe('SEA extension test/hello loaded: pong\n')
       const cache = join(home, 'cache', 'jiti', '0.0.0')
@@ -217,7 +221,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       expect(readdirSync(cache).length).toBeGreaterThan(0)
       writeFileSync(join(packageDirectory, 'tampered.ts'), 'export const changed = true\n')
       expect(() =>
-        execFileSync(resolve(bin as string), ['doctor', 'extensions', '--json', '--cwd', home], {
+        execFileSync(resolve(bin as string), ['doctor', 'extensions', '--json', '--cwd', workspace], {
           encoding: 'utf8',
           env,
         }),
@@ -237,7 +241,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       const stopped = spawnSync(resolve(bin as string), ['daemon', 'stop'], {
         encoding: 'utf8',
         env,
-        cwd: home,
+        cwd: workspace,
         timeout: 15000,
         windowsHide: true,
       })
@@ -250,7 +254,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         for (let index = 0; index < children.length; index++) expect(after[index + 1]).not.toBe(before[index])
       }
     } finally {
-      spawnSync(resolve(bin as string), ['daemon', 'stop'], { env, cwd: home, timeout: 15_000 })
+      spawnSync(resolve(bin as string), ['daemon', 'stop'], { env, cwd: workspace, timeout: 15_000 })
       server.kill()
       rmSync(temporary, { recursive: true, force: true })
     }
