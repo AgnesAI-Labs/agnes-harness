@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import type { SupervisorToWorker } from '../src/supervisor/frames.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 
-// A worker-pool.test.ts-only stand-in for worker/main.ts: it speaks the real internal wire (hello,
+// A worker-pool.e2e.test.ts-only stand-in for worker/main.ts: it speaks the real internal wire (hello,
 // gate fd, command/reply) but never touches @agnes/host, so WorkerPool's process-management and
 // crash-breaker behavior can be tested without a real Host assembly. It answers 'ping' with
 // `{ ok: true }` and exits non-zero on a 'crash' method - a method that exists only here, not in the
@@ -59,7 +59,7 @@ socket.once('connect', () => {
     }),
   )
   // Drains the start-gate pipe so the supervisor's write to it never backs up; this fake worker does
-  // not withhold command processing on it (worker-pool.test.ts does not depend on that ordering).
+  // not withhold command processing on it (worker-pool.e2e.test.ts does not depend on that ordering).
   createReadStream('', { fd: 3 }).once('data', () => undefined)
 
   const dec = new JsonlDecoder()

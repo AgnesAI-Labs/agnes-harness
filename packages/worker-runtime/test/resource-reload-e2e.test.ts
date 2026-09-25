@@ -33,7 +33,7 @@ import { runWorker } from '../src/main.js'
 // respawn of) the worker synchronously, before the lightweight resource.stale/next-run path this task
 // verifies ever gets a chance to run - and for a busy session, it races the exact same turn-boundary
 // this task's reload check uses. Driving this test through a real spawned daemon (startSupervisor +
-// WorkerPool, as packages/daemon/test/supervisor-e2e.test.ts does for a real worker.pid) would make the
+// WorkerPool, as packages/daemon/test/supervisor.e2e.test.ts does for a real worker.pid) would make the
 // test's own pass/fail depend on winning that race, which is tracked as its own separate, not-yet-fixed
 // follow-up (narrowing retireForResourceSnapshot to only affected sessions) - not something Task 6 is
 // scoped to fix or paper over. Testing at worker-runtime's own boundary, one layer below the daemon's
