@@ -476,16 +476,18 @@ describe('session.preview over a local connection', () => {
       .map((n) => (n as unknown as { params: PreviewUpdate & { sessionId: string } }).params)
   }
 
+  // Each lateJoin builds a real test Host: about 0.1 s on macOS, 1.5 s on the Windows runner and
+  // past the 5 s default there under the full suite.
   it('gives a viewer who attaches mid-stream the text so far, then the rest', async () => {
     const previews = await lateJoin({ preview: true, acpUpdates: false })
     expect(previews[0]).toMatchObject({ offset: 0, delta: 'partial ', stream: 'text', lane: 'main' })
     expect(merged(previews)).toBe('partial tail')
-  })
+  }, 30_000)
 
   it('sends nothing to a connection that did not ask, or that filtered the lane out', async () => {
     expect(await lateJoin({ acpUpdates: false })).toEqual([])
     expect(await lateJoin({ preview: true, lanes: ['side'], acpUpdates: false })).toEqual([])
-  })
+  }, 30_000)
 })
 
 describe('streamed text is never persisted', () => {
