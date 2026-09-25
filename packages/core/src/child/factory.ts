@@ -471,6 +471,7 @@ export class KernelChildren implements ChildrenFactory {
             workspaceRuntime: workspace.runtime,
             workspaceIdentity: workspace.runtime.identity,
             workspaceLease: workspace,
+            ...(workspace.sandbox ? { seams: { sandbox: workspace.sandbox } } : {}),
           }
         : {}),
       ...(parent.d.childWorkspaceRuntime ? { childWorkspaceRuntime: parent.d.childWorkspaceRuntime } : {}),
