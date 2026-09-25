@@ -43,7 +43,9 @@ describe('TUI composer memory', () => {
       model: { route: 'deepseek', id: 'deepseek-v4-pro', thinking: 'medium' },
     })
     writeComposerMemoryFile(path, { permission: 'full' })
-    expect(statSync(path).mode & 0o777).toBe(0o600)
+    // Windows has no POSIX permission bits (Node reports 0o666 for any writable file); the file
+    // there relies on the per-user profile directory's access list.
+    if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600)
     expect(readComposerMemoryFile(path)).toEqual({
       model: { route: 'deepseek', id: 'deepseek-v4-pro', thinking: 'medium' },
       permission: 'full',
