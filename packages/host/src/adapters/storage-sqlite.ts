@@ -22,6 +22,7 @@ import { assertSessionTreeTableName } from '../session-tree-schema.js'
 import { sqliteChildControl } from './child-control-sqlite.js'
 import { DDL } from './ddl.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
+import { syncCheckpointsToMedium } from './sqlite-durability.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
@@ -266,6 +267,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   db.exec('PRAGMA busy_timeout = 5000')
   db.exec('PRAGMA journal_mode = WAL')
   db.exec('PRAGMA synchronous = NORMAL')
+  syncCheckpointsToMedium(db)
   db.exec('PRAGMA foreign_keys = ON')
   for (const ddl of DDL) db.exec(ddl)
   const eventColumns = new Set(
@@ -666,6 +668,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         odb = new DatabaseSync(join(tablesDir, `${ownerFile(owner)}.db`))
         try {
           odb.exec('PRAGMA journal_mode = WAL')
+          syncCheckpointsToMedium(odb)
           for (const row of odb.prepare('SELECT name FROM sqlite_master WHERE type = ?').all('table') as {
             name: string
           }[]) {
