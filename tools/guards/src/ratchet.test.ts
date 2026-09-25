@@ -397,7 +397,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Per-node roots unmount after the current commit instead of inside it: measured 730, exact.
   // Load earlier: the position restore after a prepend is instant, and a landed page re-reads the
   // sentinel's visibility. Measured 736, exact, no spare (+6).
-  'packages/web/src/timeline': 736,
+  // Re-arm the sentinel only after a page that landed, so a failing load cannot retry by itself.
+  // Measured 735, exact (-1).
+  'packages/web/src/timeline': 735,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1984,7 +1986,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Load earlier: instant restore after a prepend and a sentinel re-read. Measured 13350, exact (+6).
   // Reload only into a new daemon address, failed first connection, resume and probe hardening.
   // Measured 13382, exact (+32).
-  'packages/web/src': 13382,
+  // Load earlier re-arms only after a landed page. Measured 13381, exact (-1).
+  'packages/web/src': 13381,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
