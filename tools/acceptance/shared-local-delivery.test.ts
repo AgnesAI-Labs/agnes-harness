@@ -97,7 +97,10 @@ it.skipIf(!entry)(
         // Print mode consumes redirected input before sending the prompt. This caller has none.
         child.stdin?.end()
       })
-    const editedFile = join(cwd, '中文 编辑.txt')
+    // The tool resolves workspace-relative paths against the daemon's own root. On Windows the
+    // test runner and detached daemon can spell the same temporary root differently.
+    const editedName = '中文 编辑.txt'
+    const editedFile = join(cwd, editedName)
     await writeFile(editedFile, 'before', 'utf8')
     const deepseek = getApiKeyProvider('deepseek')
     if (!deepseek) throw new Error('DeepSeek provider is unavailable')
@@ -107,7 +110,7 @@ it.skipIf(!entry)(
       'Shared backend acceptance reply. 中文验证通过。',
       {
         name: 'edit',
-        args: { path: editedFile, edits: [{ oldText: 'before', newText: 'after 中文' }] },
+        args: { path: editedName, edits: [{ oldText: 'before', newText: 'after 中文' }] },
       },
       model,
     )
