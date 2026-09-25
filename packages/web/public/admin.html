@@ -8,6 +8,21 @@
     <!-- 与 index.html 同理：本页也会被嵌进设置对话框，必须同源跟随主题且不闪。 -->
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/antd.css" />
+    <link rel="stylesheet" href="/tokens.css" />
+    <script type="importmap">
+{
+  "imports": {
+    "react": "/vendor/react.js",
+    "react/jsx-runtime": "/vendor/react-jsx-runtime.js",
+    "react-dom": "/vendor/react-dom.js",
+    "react-dom/client": "/vendor/react-dom-client.js",
+    "antd": "/vendor/antd.js",
+    "@agnes/cordis": "/vendor/cordis.js",
+    "@agnes/web-client": "/vendor/web-client.js"
+  }
+}
+    </script>
     <script type="module" src="/admin-standalone.js"></script>
   </head>
   <body data-agnes-region="app" id="plugin-admin-page" class="admin-page">

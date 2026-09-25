@@ -5,7 +5,10 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
 
-const html = readFileSync(join(process.cwd(), 'packages/web/public/admin.html'), 'utf8')
+const html = readFileSync(join(process.cwd(), 'packages/web/public/admin.html'), 'utf8').replace(
+  /<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g,
+  '',
+)
 
 type Fetcher = ReturnType<typeof vi.fn<typeof fetch>>
 

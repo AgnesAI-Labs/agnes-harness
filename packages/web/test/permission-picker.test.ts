@@ -22,6 +22,13 @@ it('opens the list and reports the chosen mode', async () => {
   picker.render({ disabled: false, pending: false, selected: 'workspace' })
   expect(label.textContent).toBe('工作区内修改')
   trigger.click()
+  const listbox = document.querySelector('[role="listbox"]')
+  if (!listbox) throw new Error('permission listbox did not open')
+  expect([...listbox.children].map((child) => child.getAttribute('role'))).toEqual([
+    'option',
+    'option',
+    'option',
+  ])
   const full = [...document.querySelectorAll('[role="option"]')].find((row) =>
     row.textContent?.includes('完全权限'),
   )

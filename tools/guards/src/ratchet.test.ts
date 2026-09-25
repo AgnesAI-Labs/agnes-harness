@@ -208,6 +208,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
+  // A-line settings selects: React-owned options replace imperative DOM; exact formatted counts.
+  'packages/web-ui/src': 429,
+  'packages/web-units/src': 3172,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -361,8 +364,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
   'packages/web/src/app': 1776,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
-  // 2026-09-17: composer permission listbox. Measured 203, exact.
-  'packages/web/src/permission-picker': 203,
+  // 2026-09-25 UI refactor: permission options now render through the React region contract.
+  // Re-measured with countLines(): 215, exact, no spare.
+  'packages/web/src/permission-picker': 215,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -370,11 +374,12 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/trace-panel': 478,
   // 2026-09-15/16 (admin-pages A5b): the popover placement and listbox key map moved to
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
-  // Tightened to the new exact measurement: 259.
-  'packages/web/src/model-picker': 259,
-  // 2026-09-17: DSH-style model-account cards add account-dialog lifecycle, explicit edit controls,
-  // credential/status metadata, and account-specific dialog copy. Measured exact: 572, no spare.
-  'packages/web/src/settings': 800,
+  // 2026-09-25 UI refactor: model options now render through the React region contract.
+  // Re-measured with countLines(): 274, exact, no spare.
+  'packages/web/src/model-picker': 274,
+  // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
+  // Re-measured with countLines(): 754, exact, no spare.
+  'packages/web/src/settings': 754,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -1944,8 +1949,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (13161) with the streaming-smoothness quick fixes (13313): the preview
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
-  // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
-  'packages/web/src': 13266,
+  // 2026-09-25 UI refactor: shared controls and React region rendering in the settings perimeter.
+  // Re-measured with countLines(): 13300, exact, no spare.
+  'packages/web/src': 13300,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
