@@ -82,7 +82,7 @@ pnpm gen:check
 pnpm test
 ```
 
-Both `build:native` commands are package-level scripts matching [CI](../../.github/workflows/ci.yml) prerequisites. On macOS, process-identity tests need the Host helper and atomic Skill publication tests need the system-node helper. Missing helpers cause environment failures, which should be distinguished from product defects. Root `pnpm test` runs the full suite with one worker by default, including guards. For a local module change, start with relevant tests and expand according to risk. Documentation-only changes usually do not require model or full end-to-end reruns.
+Both `build:native` commands are package-level scripts matching [CI](../../.github/workflows/ci.yml) prerequisites. On macOS, process-identity tests need the Host helper and atomic Skill publication tests need the system-node helper. Missing helpers cause environment failures, which should be distinguished from product defects. Root `pnpm test` runs the fast tier with one worker by default, including guards. Real daemon, worker and CLI process tests are named `*.e2e.test.ts`, and large-ledger or timer-bound tests `*.slow.test.ts`; `pnpm test:heavy` runs only those, and `pnpm test:all` runs everything. `pnpm exec vitest run <file>` runs one file of either tier. For a local module change, start with relevant tests and expand according to risk. Documentation-only changes usually do not require model or full end-to-end reruns.
 
 ```sh
 pnpm exec vitest run packages/cli/test/args.test.ts --maxWorkers=1
