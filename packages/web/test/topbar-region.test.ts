@@ -1,9 +1,13 @@
 /** @vitest-environment happy-dom */
 
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TOPBAR_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
+
+// A slot change commits in a few milliseconds, but a loaded runner has taken longer than the fixed
+// 20 ms these checks used to sleep. Wait for the rendered state instead.
+const committed = { timeout: 5_000 }
 
 describe('rendered topbar region', () => {
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
@@ -54,16 +58,17 @@ describe('rendered topbar region', () => {
       },
       () => createElement('div', { id: 'shadow-topbar' }, '替换顶部栏'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(topbar?.querySelector('#shadow-topbar')?.textContent).toBe('替换顶部栏')
-    expect(topbar?.querySelector('#task-title')).toBeNull()
-    expect(document.querySelector('[data-slot="ui:conversation"] #transcript')).toBeTruthy()
-    expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(topbar?.querySelector('#shadow-topbar')?.textContent).toBe('替换顶部栏')
+      expect(topbar?.querySelector('#task-title')).toBeNull()
+      expect(document.querySelector('[data-slot="ui:conversation"] #transcript')).toBeTruthy()
+      expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
+    }, committed)
 
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(topbar?.querySelector('[data-agnes-region-unit="topbar"] #task-title')).toBeTruthy()
-    expect(topbar?.querySelector('#sidebar-toggle')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(topbar?.querySelector('[data-agnes-region-unit="topbar"] #task-title')).toBeTruthy()
+      expect(topbar?.querySelector('#sidebar-toggle')).toBeTruthy()
+    }, committed)
   })
 })
