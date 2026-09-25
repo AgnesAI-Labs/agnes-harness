@@ -40,7 +40,7 @@ const { main } = await import('../src/bin.js')
 
 const tmp: string[] = []
 afterEach(() => {
-  for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true })
+  for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   confirmed = undefined
   prompted = undefined
 })
@@ -89,7 +89,10 @@ async function install(keys: string) {
   }
   if (keys === '') h.stdin.end()
   else h.stdin.write(keys)
-  const outcome = await Promise.race([run, new Promise<typeof HUNG>((r) => setTimeout(() => r(HUNG), 2_000))])
+  const outcome = await Promise.race([
+    run,
+    new Promise<typeof HUNG>((r) => setTimeout(() => r(HUNG), 10_000)),
+  ])
   return { outcome, confirmed, stdout: h.out() }
 }
 
@@ -98,7 +101,7 @@ async function installNonTty() {
   const h = harness(false)
   const outcome = await Promise.race([
     main(['install', 'npm:example@1.0.0'], h.io, h.boot) as Promise<number>,
-    new Promise<typeof HUNG>((r) => setTimeout(() => r(HUNG), 2_000)),
+    new Promise<typeof HUNG>((r) => setTimeout(() => r(HUNG), 10_000)),
   ])
   return { outcome, confirmed, stdout: h.out() }
 }

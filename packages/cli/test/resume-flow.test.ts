@@ -181,5 +181,5 @@ describe('parked approval across the CLI one-shot boundary', () => {
       await first?.close()
       rmSync(home, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 })

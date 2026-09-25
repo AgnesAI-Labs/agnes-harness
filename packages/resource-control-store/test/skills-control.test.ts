@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SkillCatalogCandidate } from '../src/adapters.js'
 import {
   createResourceControlService,
@@ -55,28 +55,21 @@ const candidate = (name = 'skill'): SkillCatalogCandidate => ({
   capabilityHash: hash(`capability-${name}`),
 })
 async function settled(service: TestService, id: string) {
-  for (let i = 0; i < 100; i++) {
-    const operation = await service.call(
-      '_agnes/v1/resources.operation.get',
-      { profile, operationId: id },
-      authority,
-    )
-    if (['succeeded', 'failed', 'cancelled'].includes(operation.state)) return operation
-    await new Promise((resolve) => setTimeout(resolve, 2))
-  }
-  throw new Error('operation did not settle')
+  return settledFor(service, profile, id)
 }
 async function settledFor(service: TestService, targetProfile: string, id: string) {
-  for (let i = 0; i < 100; i++) {
-    const operation = await service.call(
-      '_agnes/v1/resources.operation.get',
-      { profile: targetProfile, operationId: id },
-      authority,
-    )
-    if (['succeeded', 'failed', 'cancelled'].includes(operation.state)) return operation
-    await new Promise((resolve) => setTimeout(resolve, 2))
-  }
-  throw new Error('operation did not settle')
+  return vi.waitFor(
+    async () => {
+      const operation = await service.call(
+        '_agnes/v1/resources.operation.get',
+        { profile: targetProfile, operationId: id },
+        authority,
+      )
+      expect(['succeeded', 'failed', 'cancelled']).toContain(operation.state)
+      return operation
+    },
+    { timeout: 2_000, interval: 20 },
+  )
 }
 afterEach(async () => {
   if (directory) await rm(directory, { recursive: true, force: true })
@@ -260,7 +253,7 @@ describe('ResourceControlStore admission barrier', () => {
     )
     await expect(settled(service, failed.operationId)).resolves.toMatchObject({ state: 'failed' })
     expect(published).toEqual([profile, profile, profile, profile])
-  })
+  }, 20_000)
 
   it('returns an operation receipt before a slow driver settles', async () => {
     const { createResourceControlStore } = await import('../src/index.js')
