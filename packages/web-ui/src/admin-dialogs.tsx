@@ -3,6 +3,8 @@ import type { JSX, ReactNode } from 'react'
 /**
  * 来源检查对话框的内容体。`<dialog>` 与 showModal/焦点归还留在壳里；字段受控，
  * 值与格式示例由壳提供，提交时把原始输入交回壳做格式校验。
+ * 提交走显式按钮回调（happy-dom 的 requestSubmit 触达不了 React 的委托 onSubmit），
+ * Enter 键在引用输入框上补齐表单提交语义。
  */
 export function SourceDialogContent({
   title,
@@ -37,7 +39,6 @@ export function SourceDialogContent({
       className="plugin-dialog-form"
       onSubmit={(event) => {
         event.preventDefault()
-        if (!busy) onSubmit()
       }}
     >
       <div className="dialog-heading">
@@ -49,11 +50,7 @@ export function SourceDialogContent({
       <p className="dialog-intro">{intro}</p>
       <label className="form-field" htmlFor="source-type">
         来源类型
-        <select
-          id="source-type"
-          value={type}
-          onChange={(event) => onTypeChange(event.currentTarget.value)}
-        >
+        <select id="source-type" value={type} onChange={(event) => onTypeChange(event.currentTarget.value)}>
           {typeOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -71,6 +68,12 @@ export function SourceDialogContent({
           placeholder={placeholder}
           value={ref_}
           onChange={(event) => onRefChange(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              if (!busy) onSubmit()
+            }
+          }}
         />
       </label>
       <p id="source-error" className="plugin-form-error" role="alert">
@@ -80,7 +83,7 @@ export function SourceDialogContent({
         <button id="source-cancel" type="button" className="secondary-button" onClick={onCancel}>
           取消
         </button>
-        <button type="submit" className="primary-button" disabled={busy}>
+        <button type="button" className="primary-button" disabled={busy} onClick={onSubmit}>
           {busy ? '正在检查…' : '检查来源'}
         </button>
       </div>

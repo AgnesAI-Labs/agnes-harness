@@ -209,7 +209,10 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
   // A-line settings selects: React-owned options replace imperative DOM; exact formatted counts.
-  'packages/web-ui/src': 429,
+  // 2026-09-25 C-line migration: web-ui carries the admin/resource component layer
+  // (admin-list/admin-detail/admin-dialogs/admin-confirmation/admin-text/resource-* +
+  // select-picker/confirm/popover moved in from web-admin-frame). countLines 2589.
+  'packages/web-ui/src': 2589,
   'packages/web-units/src': 3172,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
@@ -1995,14 +1998,16 @@ const INITIAL_CEILING: Record<string, number> = {
   // a route-table entry only (no UI panel), needed to keep the BFF/Web lockstep guard valid. Measured
   // 240, exact.
   // Task 11 tree/get|list|apply|rollback client routes. Re-measured: 293, exact.
-  'packages/web/src/admin/plugins/api': 301,
+  // 2026-09-25 C-line: countLines 314 (biome import organization grew the header block).
+  'packages/web/src/admin/plugins/api': 314,
   // 2026-09-22 UI plugin management: browser runtime phase labels and safe failure messages.
   // Re-measured: 112, exact cap.
   'packages/web/src/admin/plugins/presentation': 112,
   // Task 11 tree actual fields. Re-measured: 69, exact.
   // 2026-09-22 UI plugin management: runtime snapshot/subscription source contract.
   // Re-measured: 77, exact cap.
-  'packages/web/src/admin/plugins/types': 77,
+  // 2026-09-25 C-line: countLines 79 (same import reorganization).
+  'packages/web/src/admin/plugins/types': 79,
   'packages/daemon/src/jobs': 800,
   'packages/bridges/src': 2600,
   // I7 Channels12/13 add durable refs, bounded multipart outbound delivery, gap recovery, and

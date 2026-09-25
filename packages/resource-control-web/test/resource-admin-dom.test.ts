@@ -93,7 +93,7 @@ beforeEach(async () => {
     )
   )
     .replace('<script type="module" src="/resources.js"></script>', '')
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
+    .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string, init?: RequestInit) => {
@@ -417,8 +417,7 @@ it('returns focus to the row it was opened from when the detail modal closes', a
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(false)
   const restored = byId('resource-list').querySelector<HTMLElement>('.resource-row')
   expect(restored).not.toBeNull()
-  // 重建后的行是新元素，且焦点必须落在它上面（而不是 body）。
-  expect(restored).not.toBe(opened)
+  // React 键控行复用 DOM（不再整表重建），所以断言焦点落在正确的行上，而不是落在 body。
   expect(document.activeElement).toBe(restored)
 })
 
@@ -583,11 +582,17 @@ it('offers permanent skill deletion and validates priority without submitting in
   const input = byId('resource-detail').querySelector<HTMLInputElement>('input[type="number"]')
   if (!input) throw new Error('missing priority input')
   expect(input.closest('label')?.textContent).toContain('同名覆盖优先级')
-  input.value = '501'
+  // React 受控字段跟随事件：原生 setter 写值再派发 input，onChange 才会更新组件状态。
+  const setNativeValue = (element: HTMLInputElement, value: string): void => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(element, value)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  setNativeValue(input, '501')
   action('保存优先级')
   await settle()
   expect(submitted('skills/priority')).toHaveLength(0)
-  input.value = '450'
+  setNativeValue(input, '450')
   action('保存优先级')
   await vi.waitFor(() => expect(submitted('skills/priority')).toHaveLength(1))
   expect(submitted('skills/priority')[0]?.body).toMatchObject({ expectedPriority: 400, priority: 450 })

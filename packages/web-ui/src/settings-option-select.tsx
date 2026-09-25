@@ -3,7 +3,10 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 
 export type SettingsSelectOption = { label: string; value: string }
-export type SettingsSelectGroup = { label: string; options: readonly SettingsSelectOption[] }
+export type SettingsSelectGroup = {
+  label: string
+  options: readonly SettingsSelectOption[]
+}
 
 type SelectContent = {
   options: readonly SettingsSelectOption[]
@@ -62,7 +65,10 @@ export function setSettingsSelectOptions(
 
 export function SettingsOptionSelect({ id }: { id: string }) {
   const ref = useRef<HTMLSelectElement>(null)
-  const [content, setContent] = useState<SelectContent>({ options: [], groups: [] })
+  const [content, setContent] = useState<SelectContent>({
+    options: [],
+    groups: [],
+  })
 
   useLayoutEffect(() => {
     const select = ref.current
@@ -81,7 +87,10 @@ export function SettingsOptionSelect({ id }: { id: string }) {
 export function mountSettingsSelectOptions(select: HTMLSelectElement): () => void {
   const root = createRoot(select)
   function FixtureOptions() {
-    const [content, setContent] = useState<SelectContent>({ options: [], groups: [] })
+    const [content, setContent] = useState<SelectContent>({
+      options: [],
+      groups: [],
+    })
     useLayoutEffect(() => {
       return subscribe(select, setContent)
     }, [])

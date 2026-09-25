@@ -4,7 +4,7 @@ import { operationLabel } from './admin-text.js'
 
 export type DetailActionSpec = Readonly<{
   label: string
-  className: 'primary-button' | 'secondary-button' | 'danger-button'
+  className: string
   disabled?: boolean
   title?: string
   ariaLabel?: string
@@ -18,14 +18,20 @@ export type DetailOperationRow = Readonly<{
   canCancel: boolean
 }>
 
-function BlockersSection({ title, items }: { title: string; items: readonly string[] }): JSX.Element | undefined {
+function BlockersSection({
+  title,
+  items,
+}: {
+  title: string
+  items: readonly string[]
+}): JSX.Element | undefined {
   if (!items.length) return undefined
   return (
     <section className="plugin-blockers">
       <h3>{title}</h3>
       <ul>
-        {items.map((item, index) => (
-          <li key={`${index}:${item}`}>{item}</li>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
         ))}
       </ul>
     </section>

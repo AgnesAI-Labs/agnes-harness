@@ -3,12 +3,12 @@ import type { PackageInstalledDescriptor, PackagePreview } from '@agnes/protocol
 import { createElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  mountRegion,
   PreviewConfirmationFacts,
   RollbackActivationFacts,
   TrustConfirmationFacts,
   UntrustConfirmationFacts,
   UpdateActivationFacts,
-  mountRegion,
 } from '../src/index.js'
 
 afterEach(() => {
@@ -132,9 +132,7 @@ describe('plugin confirmation facts (React)', () => {
   })
 
   it('shows both baselines for the atomic update-and-activate confirmation', () => {
-    const rendered = renderText(
-      createElement(UpdateActivationFacts, { installed, preview }),
-    )
+    const rendered = renderText(createElement(UpdateActivationFacts, { installed, preview }))
 
     expect(rendered).toContain('当前安装与运行基线')
     expect(rendered).toContain('目标信任摘要')

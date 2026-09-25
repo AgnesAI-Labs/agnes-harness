@@ -5,6 +5,8 @@
     "packages/web/src/model-picker.ts",
     "packages/web/src/oauth-controls.ts",
     "packages/web/src/permission-picker.ts",
-    "packages/web/src/settings.ts"
+    "packages/web/src/settings.ts",
+    "packages/web/src/admin/plugins/admin.tsx",
+    "packages/resource-control-web/src/admin.tsx"
   ]
 }

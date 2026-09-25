@@ -21,7 +21,12 @@ export function StateLights({ states }: { states: readonly StateLight[] }): JSX.
   return (
     <div className="state-lights">
       {states.map((state) => (
-        <span key={state.label} className="state-light" data-tone={state.tone} title={`${state.label}：${state.value}`}>
+        <span
+          key={state.label}
+          className="state-light"
+          data-tone={state.tone}
+          title={`${state.label}：${state.value}`}
+        >
           <span className="state-light-dot" aria-hidden="true" />
           <span className="state-light-copy">
             <span className="state-light-name">{state.label}</span>

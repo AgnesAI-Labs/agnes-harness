@@ -20,7 +20,7 @@
   "@agnes/resource-control-client-node": ["@agnes/protocol"],
   "@agnes/cli-launch": [],
   "@agnes/cli-tui": ["@agnes/protocol", "@agnes/sdk"],
-  "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/web-admin-frame"],
+  "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/web-ui"],
   "@agnes/resource-control-worker": [
     "@agnes/base",
     "@agnes/protocol",

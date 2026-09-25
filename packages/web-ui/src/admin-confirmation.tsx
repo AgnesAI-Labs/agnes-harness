@@ -1,4 +1,3 @@
-import { isWebClientModuleSlotName } from '@agnes/protocol'
 import type {
   Capabilities,
   PackageBlocker,
@@ -7,6 +6,7 @@ import type {
   PackagePreview,
   SurfaceServiceGrant,
 } from '@agnes/protocol'
+import { isWebClientModuleSlotName } from '@agnes/protocol'
 import type { JSX, ReactNode } from 'react'
 import { blockerText, sourceLabel } from './admin-text.js'
 
@@ -160,8 +160,8 @@ function Contributions({ values }: { values: readonly PackageContributionSummary
   }
   return (
     <ul className="confirm-contributions">
-      {values.map((contribution, index) => (
-        <li key={`${contribution.kind}:${contribution.id}:${index}`}>
+      {values.map((contribution) => (
+        <li key={`${contribution.kind}:${contribution.id}:${contributionLines(contribution).join('|')}`}>
           {contributionLines(contribution).map((line) => (
             <p key={line}>{line}</p>
           ))}
@@ -184,9 +184,7 @@ function CapabilityDiff({ preview }: { preview: PackagePreview }): JSX.Element {
     ...diff.dependenciesAdded.map((item) => `新增依赖：${item}`),
     ...diff.serviceGrantsAdded.map((item) => `新增服务授权：${serviceGrant(item)}`),
   ]
-  return (
-    <TextList items={changes} empty="后台未报告相对于当前基线的能力差异；这不表示这个包不包含能力。" />
-  )
+  return <TextList items={changes} empty="后台未报告相对于当前基线的能力差异；这不表示这个包不包含能力。" />
 }
 
 function Dependencies({ entries }: { entries: Readonly<Record<string, string>> }): JSX.Element {
@@ -332,7 +330,11 @@ export function UpdateActivationFacts({
 }
 
 /** Shows the verified rollback target and current baselines without exposing internal tree hashes. */
-export function RollbackActivationFacts({ installed }: { installed: PackageInstalledDescriptor }): JSX.Element {
+export function RollbackActivationFacts({
+  installed,
+}: {
+  installed: PackageInstalledDescriptor
+}): JSX.Element {
   const target = installed.rollbackTarget
   return (
     <>

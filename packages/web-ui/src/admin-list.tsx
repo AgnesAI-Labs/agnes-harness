@@ -1,6 +1,6 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageSource } from '@agnes/protocol'
 import type { JSX } from 'react'
-import { contributionText, runtimeStateLabel, sourceLabel, type RuntimeStateView } from './admin-text.js'
+import { contributionText, type RuntimeStateView, runtimeStateLabel, sourceLabel } from './admin-text.js'
 import { StateLights, StateSwitch, type StateTone } from './ui/state-lights.js'
 
 export type AdminTab = 'installed' | 'discover'
@@ -12,7 +12,11 @@ export type SurfaceLinkItem = Readonly<{
 }>
 
 /** 行内主动作。label/disabled 由壳按权限与忙碌态推导，run 是壳的确认流程入口。 */
-export type RowAction = Readonly<{ label: string; disabled: boolean; run: () => Promise<void> | void }>
+export type RowAction = Readonly<{
+  label: string
+  disabled: boolean
+  run: () => Promise<void> | void
+}>
 
 function SurfaceLinks({
   links,
@@ -74,7 +78,12 @@ export function OrphanPins({
           id="orphan-pins-release-all"
           className="secondary-button compact"
           disabled={!canRelease || pins.length === 0}
-          onClick={(event) => onRelease(pins.map((pin) => pin.pinId), event.currentTarget)}
+          onClick={(event) =>
+            onRelease(
+              pins.map((pin) => pin.pinId),
+              event.currentTarget,
+            )
+          }
         >
           全部释放
         </button>
@@ -333,9 +342,7 @@ export function PluginList({
             <p className="plugin-source">
               {item.version} · {sourceLabel(item.source as PackageSource)}
             </p>
-            {tab === 'installed' && (
-              <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} />
-            )}
+            {tab === 'installed' && <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} />}
           </div>
           <RowStates tab={tab} item={item} runtime={runtimeOf(item.id)} />
           <RowControl
