@@ -90,7 +90,6 @@ export { SessionLogImpl } from './log/session-log.js'
 // rule out, so the one function that spells a key stays inside the package.
 export type {
   CommitTx,
-  FoldCacheRecord,
   IntegrityCommit,
   IntegrityMetadata,
   IntegrityMode,
@@ -133,7 +132,6 @@ export {
   executeAuxiliaryVision,
 } from './orchestrator/auxiliary-vision-executor.js'
 export { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from './orchestrator/request-media-surface.js'
-export { FoldCache } from './project/cache.js'
 export type { ProjectionCacheLine, ProjectionDef, ProjectionSnapshot } from './project/named.js'
 export { ProjectionRegistry } from './project/named.js'
 export type { RlafDump, RlafRange } from './project/rlaf.js'

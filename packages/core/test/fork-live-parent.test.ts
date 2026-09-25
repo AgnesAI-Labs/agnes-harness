@@ -6,12 +6,12 @@ import { verifyLedger } from '../src/log/integrity.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { type OpenLogOptions, SessionLogImpl } from '../src/log/session-log.js'
 import type { StorageAdapter } from '../src/log/storage.js'
-import { encodeLedgerState } from '../src/project/cache.js'
 import { canonicalJson } from '../src/request/hash.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { SessionImpl } from '../src/step/session.js'
 import type { Event, IdMinter, Seq } from '../src/types.js'
+import { encodeLedgerState } from '../testkit/encode-ledger-state.js'
 import { type FakeProvider, fakeProvider, type Script, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, readTool, testFsOps } from './helpers/open-session.js'
@@ -113,13 +113,13 @@ async function compact(s: SessionImpl): Promise<void> {
   expect(s.surface().some((n) => n.kind === 'summary')).toBe(true)
 }
 
-type ParentState = 'cold' | 'fold'
+type ParentState = 'cold' | 'reopened'
 type Path = 'fast' | 'cold'
 type Scenario = { parent: ParentState; kind: 'fork' | 'spawn'; beforeHead?: boolean; twice?: boolean }
 
 /**
  * A parent with a compacted tool-heavy turn, a plain turn, and an accepted turn to delegate from;
- * optionally closed and reopened from its fold cache first. The child is made on the live parent,
+ * optionally closed and reopened first. The child is made on the live parent,
  * by the live-parent path or (with the parent's fork point withheld) by a cold open.
  */
 async function delegate(sc: Scenario, path: Path) {
@@ -142,7 +142,6 @@ async function delegate(sc: Scenario, path: Path) {
     provider = fakeProvider(scripts.slice(22))
     k = kernel(storage, provider, warnings, fixedIds())
     parent = await k.session('parent', { ...sessionOpts, writerRunId: 'r2' })
-    expect(parent.d.log.restoredFold).toBeDefined()
   }
   await readTurn(parent, 'second')
   await parent.enqueue('next-turn', { content: [{ type: 'text', text: 'delegate' }], actor })
@@ -210,8 +209,8 @@ const scenarios: Scenario[] = [
   { parent: 'cold', kind: 'fork' },
   { parent: 'cold', kind: 'spawn', beforeHead: true },
   { parent: 'cold', kind: 'spawn', beforeHead: true, twice: true },
-  { parent: 'fold', kind: 'spawn' },
-  { parent: 'fold', kind: 'fork' },
+  { parent: 'reopened', kind: 'spawn' },
+  { parent: 'reopened', kind: 'fork' },
 ]
 
 describe('a delegated child made on its live parent equals the same child made by a cold open', () => {
@@ -241,8 +240,6 @@ describe('a delegated child made on its live parent equals the same child made b
       expect(fast.view.replaceGeneration).toBe(cold.view.replaceGeneration)
       expect(fast.view.projections).toBe(cold.view.projections)
       expect(fast.firstRequest).toBe(cold.firstRequest)
-      // The live-parent child's fold cache is written as usual.
-      expect(await fast.storage.foldCache(fast.childKey)).toBeDefined()
     },
     60_000,
   )

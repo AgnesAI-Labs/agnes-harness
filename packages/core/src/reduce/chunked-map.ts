@@ -7,7 +7,7 @@ const CHUNK = 256
  * exactly what it saw. Iteration order is the order a plain Map would have: an overwritten key keeps
  * its place. There is no delete; the ledger tables built on it only grow, and a fork starts from an
  * empty one. JSON.stringify and structuredClone do not see it as a Map, so ledger state holding one is
- * encoded with encodeLedgerState, never serialized or cloned directly.
+ * compared or serialized by encoding its entries explicitly, never by passing it to either directly.
  */
 export class ChunkedMap<K, V> implements ReadonlyMap<K, V> {
   readonly #chunks: readonly ReadonlyMap<K, V>[]
@@ -103,7 +103,7 @@ export class ChunkedMap<K, V> implements ReadonlyMap<K, V> {
 
 /**
  * The set counterpart of ChunkedMap: `add` returns a new set sharing every untouched chunk. Like
- * ChunkedMap, it is not a Set to JSON.stringify or structuredClone; encode state with encodeLedgerState.
+ * ChunkedMap, it is not a Set to JSON.stringify or structuredClone; encode its entries explicitly.
  */
 export class ChunkedSet<T> implements ReadonlySet<T> {
   readonly #map: ChunkedMap<T, true>
