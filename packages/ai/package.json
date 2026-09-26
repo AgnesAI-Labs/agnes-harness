@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
-    "@earendil-works/pi-ai": "0.87.0"
+    "@earendil-works/pi-ai": "0.87.1"
   },
   "devDependencies": {
     "@sinclair/typebox": "0.34.33"
