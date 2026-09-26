@@ -210,8 +210,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  // W5b-1 adds stream/interaction snapshots and delays selected thinking handover/folding. Exact: 1458.
-  'packages/web-ui/src': 1458,
+  // W5b-2: bounded React suffix plans, synchronous facade compatibility and table ARIA. Exact: 1688.
+  'packages/web-ui/src': 1688,
   'packages/web-units/src': 3172,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
@@ -313,7 +313,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
   'packages/web/src/presentation': 116,
-  'packages/web/src/markdown': 446,
+  'packages/web/src/markdown': 48,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
   // machine is added to Web. SDK adds reconnect-start and pre-load permission registration.
@@ -395,7 +395,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
   // W4a explicitly disposes legacy slot roots on node removal and direct renderer disposal. Exact 735.
-  'packages/web/src/timeline': 735,
+  'packages/web/src/timeline': 741,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1956,8 +1956,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // 2026-09-25 UI refactor: shared controls and React region rendering in the settings perimeter.
   // Re-measured with countLines(): 13300, exact, no spare.
-  // W5b-1 forwards explicit XMarkdown opt-in and message-owned stream state. Exact: 13827.
-  'packages/web/src': 13827,
+  // W5b-2 removes the imperative Markdown implementation/adapter leaf; explicit node state. Exact: 13415.
+  'packages/web/src': 13415,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

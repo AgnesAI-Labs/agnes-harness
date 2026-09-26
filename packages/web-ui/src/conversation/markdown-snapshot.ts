@@ -1,8 +1,8 @@
 import { type RefObject, useLayoutEffect, useMemo, useState } from 'react'
 
-type Snapshot = Readonly<{ source: string; streaming: boolean }>
+type Snapshot = Readonly<{ source: string; streaming: boolean; reveal: boolean }>
 
-function interactionInside(element: HTMLElement | null): boolean {
+export function interactionInside(element: HTMLElement | null): boolean {
   if (!element) return false
   const document = element.ownerDocument
   if (element.contains(document.activeElement)) return true
@@ -16,12 +16,17 @@ function interactionInside(element: HTMLElement | null): boolean {
 }
 
 /** Hold the entire React-owned source snapshot while a reader uses its current DOM. */
-export function useInteractionSnapshot<T>(host: RefObject<HTMLElement>, next: T): T {
+export function useInteractionSnapshot<T>(
+  host: RefObject<HTMLElement>,
+  next: T,
+  deferred?: (next: T) => T,
+  release?: (commit: () => void) => void,
+): T {
   const [shown, setShown] = useState<T>(() => next)
   useLayoutEffect(() => {
     const element = host.current
     const document = element?.ownerDocument
-    const apply = () => setShown(() => next)
+    const apply = (held = false) => setShown(() => (held && deferred ? deferred(next) : next))
     if (!document || !interactionInside(element)) {
       apply()
       return
@@ -35,7 +40,8 @@ export function useInteractionSnapshot<T>(host: RefObject<HTMLElement>, next: T)
     }
     const flush = () => {
       if (!alive || interactionInside(host.current)) return
-      apply()
+      if (release) release(() => apply(true))
+      else apply(true)
       stop()
     }
     const afterFocusOut = () => queueMicrotask(flush)
@@ -47,7 +53,7 @@ export function useInteractionSnapshot<T>(host: RefObject<HTMLElement>, next: T)
       alive = false
       stop()
     }
-  }, [host, next])
+  }, [host, next, deferred, release])
   return shown
 }
 
@@ -55,7 +61,12 @@ export function useMarkdownSnapshot(
   host: RefObject<HTMLElement>,
   source: string,
   streaming: boolean,
+  release?: (commit: () => void) => void,
 ): Snapshot {
-  const next = useMemo(() => ({ source, streaming }), [source, streaming])
-  return useInteractionSnapshot(host, next)
+  const next = useMemo(() => ({ source, streaming, reveal: true }), [source, streaming])
+  return useInteractionSnapshot(host, next, directSnapshot, release)
+}
+
+function directSnapshot(next: Snapshot): Snapshot {
+  return { ...next, reveal: false }
 }

@@ -233,11 +233,16 @@ function createEntry(node: UINode): Entry {
     thinkingContent.className = 'thinking-content markdown'
     thinking.append(thinkingSummary, thinkingContent)
     element.append(thinking)
-    const thinkingRenderer = createMarkdownRenderer(thinkingContent, node.thinking ?? '')
+    const thinkingRenderer = createMarkdownRenderer(thinkingContent, node.thinking ?? '', {
+      part: 'thinking',
+      streaming: node.streaming === true,
+    })
     const body = document.createElement('div')
     body.className = 'node-body markdown'
     element.append(body)
-    const bodyRenderer = createMarkdownRenderer(body, assistantText(node))
+    const bodyRenderer = createMarkdownRenderer(body, assistantText(node), {
+      streaming: node.streaming === true,
+    })
     element.dataset.streaming = String(node.streaming === true)
     return {
       kind: node.kind,
@@ -263,8 +268,9 @@ function createEntry(node: UINode): Entry {
         if (thinkingWasActive && !active) thinkingPreference = false
         thinkingWasActive = active
         thinking.open = thinkingPreference ?? active
-        if (next.thinking !== undefined) thinkingRenderer.update(next.thinking)
-        bodyRenderer.update(assistantText(next))
+        if (next.thinking !== undefined)
+          thinkingRenderer.update(next.thinking, { streaming: next.streaming === true })
+        bodyRenderer.update(assistantText(next), { streaming: next.streaming === true })
       },
       dispose() {
         thinkingRenderer.dispose()

@@ -1,6 +1,8 @@
 import { Context } from '@agnes/cordis'
 import { SlotRegistry } from '@agnes/web-client'
 import { createLiveProjection } from '../../../../packages/web/src/live-projection.ts'
+import { createTimelineRenderer } from '../../../../packages/web/src/timeline.ts'
+import { createMarkdownRenderer } from '../../../../packages/web/src/markdown.ts'
 import { mountTranscriptRegion } from '../../../../packages/web/src/region-slots.ts'
 
 // Only transport/server data are synthetic. Projection, adapters, stores, region and vendors are real.
@@ -47,7 +49,16 @@ const live = createLiveProjection(session, connection, {
 })
 await live.start()
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+const legacyHost = document.createElement('section')
+legacyHost.id = 'legacy-transcript'
+const staticHost = document.createElement('section')
+staticHost.id = 'static-preview'
+document.body.append(legacyHost, staticHost)
+const legacy = createTimelineRenderer({ transcript: legacyHost, newContentButton: document.createElement('button') })
+const preview = createMarkdownRenderer(staticHost, 'static preview')
 const api = {
+  legacyRender(text, streaming = true) { legacy.render([assistant('legacy-a', 1, 'legacy-effect', text, '', streaming)]) },
+  staticRender(text) { preview.update(text) },
   async render(text, thinking = '', streaming = true, status = 'running', final = false) {
     mounted.render([user('u1', 1), assistant('a1', 2, 'e1', text, thinking, streaming)], [turn('t1', 1, status, final)])
     await settle()
@@ -71,7 +82,7 @@ const api = {
   async next() { state.upto = 5; state.nodes.push(user('u2', 4), assistant('a2', 5, 'e2')); state.turns.push(turn('t2', 2)); await live.refresh(); await settle() },
   async replay() { await live.refresh(); await settle() },
   async switchSession() { await live.stop(); registry.setSession('other'); mounted.reset(); mounted.render([assistant('a1', 1, 'other', 'new session', '', false)]); await settle() },
-  async dispose() { await live.stop(); mounted.dispose(); await ctx.fiber.dispose(); await settle() },
+  async dispose() { await live.stop(); mounted.dispose(); await ctx.fiber.dispose(); legacy.dispose(); preview.dispose(); await settle() },
   snapshot() { return { text: transcript.textContent, ids: [...transcript.querySelectorAll('[data-node-id]')].map((node) => node.dataset.nodeId), selected: document.getSelection()?.toString(), errors, violations, counters, previewListeners: previewListeners.size, connectionListeners: [...handlers.values()].reduce((n, set) => n + set.size, 0) } },
 }
 window.__aghStreamingProbe = api

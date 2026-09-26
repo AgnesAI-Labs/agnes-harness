@@ -46,6 +46,97 @@ try {
     events = []
     await send('Page.navigate', { url: origin + page })
     await evaluate(async () => { for (let i = 0; i < 80; i++) { if (window.__aghStreamingProbe) return true; await new Promise((resolve) => setTimeout(resolve, 25)) } throw new Error('Probe startup timeout') })
+    const animation = await evaluate(async () => {
+      const api = window.__aghStreamingProbe
+      const expect = (value, message) => { if (!value) throw new Error(message) }
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+      const body = () => document.querySelector('[data-node-id="a1"] .node-body')
+      await api.render('history', '', false)
+      expect(!body().querySelector('.message-reveal-fragment'), 'history is immediate')
+      await api.render('prefix')
+      expect(!body().querySelector('.message-reveal-fragment'), 'replacement is immediate')
+      const paragraph = body().querySelector('p')
+      await api.render('prefix first')
+      const first = body().querySelector('.message-reveal-fragment')
+      expect(first?.textContent === ' first', 'only appended first suffix')
+      const animation = first.getAnimations()[0]
+      expect(animation?.effect.getTiming().duration === 480, 'actual animation lasts 480ms')
+      await animation.ready
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const start = animation.startTime
+      const time = animation.currentTime
+      const opacity = Number(getComputedStyle(first).opacity)
+      expect(opacity > 0.08 && opacity < 1, 'fade is actually in progress')
+      await wait(50)
+      await api.render('prefix first second')
+      expect(body().querySelector('p') === paragraph && body().querySelector('.message-reveal-fragment') === first, 'paragraph and first fragment keep identity')
+      expect(first.getAnimations()[0] === animation && animation.startTime === start && animation.currentTime > time, 'old fragment never restarts its clock')
+      expect([...body().querySelectorAll('.message-reveal-fragment')].map(node => node.textContent).join('') === ' first second', 'only new suffix ranges')
+      const selection = document.getSelection()
+      const range = document.createRange(); range.selectNodeContents(paragraph); selection.addRange(range)
+      const selected = selection.toString()
+      await api.render('prefix first second backlog')
+      expect(selection.toString() === selected && !body().textContent.includes('backlog'), 'selection holds content and fragments')
+      selection.removeAllRanges(); document.dispatchEvent(new Event('selectionchange')); await wait(30)
+      expect(body().textContent.includes('backlog') && !body().querySelector('.message-reveal-fragment'), 'selection backlog paints directly')
+      await api.render('prefix first second backlog live')
+      expect(body().querySelector('.message-reveal-fragment')?.textContent === ' live', 'next delta resumes animation')
+      await wait(510)
+      expect(Number(getComputedStyle(body().querySelector('.message-reveal-fragment')).opacity) === 1, '480ms fade finishes')
+      await api.render('prefix first second backlog live done')
+      expect(body().querySelectorAll('.message-reveal-fragment').length === 1 && body().querySelector('.message-reveal-fragment').textContent === ' done', 'retired ranges do not repeat')
+      api.legacyRender('legacy history', false)
+      const legacy = document.querySelector('#legacy-transcript .node-body')
+      expect(legacy.querySelector('p')?.textContent === 'legacy history' && !legacy.querySelector('.message-reveal-fragment'), 'legacy facade is synchronous and history immediate')
+      api.legacyRender('legacy history live')
+      expect(legacy.querySelector('.message-reveal-fragment')?.textContent === ' live', 'legacy facade injects streaming and shares suffix animation')
+      api.staticRender('| key | value |\n| :--- | ---: |\n| a | 1 |')
+      const table = document.querySelector('#static-preview .table-scroll')
+      expect(table?.tabIndex === 0 && table.getAttribute('aria-label') === '表格，可横向滚动', 'table is keyboard accessible')
+      expect(table.querySelector('th').scope === 'col' && getComputedStyle(table.querySelector('td:last-child')).textAlign === 'right', 'table scope and alignment retained')
+      expect(!document.querySelector('#static-preview .message-reveal-fragment'), 'document preview stays static')
+      await api.render('```ts\ncopy code\n```')
+      const copy = body().querySelector('.code-copy'); copy.focus()
+      expect(document.activeElement === copy, 'copy is visible and focused')
+      await api.render('```ts\ncopy code\n```\n\nbacklog')
+      expect(!body().textContent.includes('backlog'), 'copy focus holds backlog')
+      copy.blur(); await wait(30)
+      expect(body().textContent.includes('backlog') && !body().querySelector('.message-reveal-fragment'), 'copy backlog paints directly')
+      await api.render('```ts\ncopy code\n```\n\nbacklog live')
+      expect(!body().querySelector('.code-toolbar .message-reveal-fragment') && body().querySelector('.message-reveal-fragment')?.textContent === ' live', 'copy controls excluded from ranges')
+      await api.render('<script>window.__unsafeReveal = true</script>\n\nFish &amp; Chips **safe** \\<img src="https://example.test/literal.png"> ![alt](https://example.test/blocked.png) [bad](java&#x73;cript:alert(1)) [good](https://example.test/docs)\n\n<agnes-reveal-root data-agnes-plan="broken">literal owner</agnes-reveal-root>', '', false)
+      expect(!body().querySelector('script,img,agnes-reveal-root') && !window.__unsafeReveal, 'HTML and ownership tags remain inert')
+      expect(body().textContent.includes('<script>window.__unsafeReveal = true</script>') && body().textContent.includes('Fish & Chips') && body().textContent.includes('<img src="https://example.test/literal.png">') && body().textContent.includes('literal owner'), 'encoded parser data preserves literal text')
+      expect(body().querySelectorAll('a').length === 1 && body().querySelector('a').href === 'https://example.test/docs' && body().textContent.includes('[bad](java&#x73;cript:alert(1))'), 'safe link policy remains effective in Chrome')
+      return { safety: true, durationMs: 480, suffixOnly: true, clockRetained: true, initialOpacity: opacity, selectionBacklog: true, focusBacklog: true, retiredRanges: true, legacyFacade: true, staticPreview: true }
+    })
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    const reduced = await evaluate(async () => {
+      const api = window.__aghStreamingProbe
+      await api.render('reduced'); await api.render('reduced suffix')
+      const body = document.querySelector('[data-node-id="a1"] .node-body')
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches || body.querySelector('.message-reveal-fragment') || !body.textContent.includes('reduced suffix')) throw new Error('native reduced-motion gate')
+      return true
+    })
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
+    await send('Emulation.setFocusEmulationEnabled', { enabled: false })
+    const backgroundTarget = await send('Target.createTarget', { url: 'about:blank', background: false })
+    let background
+    try {
+      await send('Target.activateTarget', { targetId: backgroundTarget.targetId })
+      background = await evaluate(async () => {
+        const api = window.__aghStreamingProbe
+        if (document.visibilityState !== 'hidden') throw new Error('actual background tab must be hidden')
+        await api.render('background'); await api.render('background suffix')
+        const body = document.querySelector('[data-node-id="a1"] .node-body')
+        if (body.querySelector('.message-reveal-fragment') || !body.textContent.includes('background suffix')) throw new Error('native background gate')
+        return { visibility: document.visibilityState, suffixImmediate: true }
+      })
+    } finally {
+      await send('Target.closeTarget', { targetId: backgroundTarget.targetId })
+      await send('Page.bringToFront')
+      await send('Emulation.setFocusEmulationEnabled', { enabled: true })
+    }
     const results = await evaluate(async () => {
       const api = window.__aghStreamingProbe
       if (!document.hasFocus()) throw new Error('Chrome probe document must have focus')
@@ -94,7 +185,7 @@ try {
       select(thought.querySelector('p'))
       await api.render('final body', 'final thought', false, 'completed', true)
       expect(thought.isConnected && document.getSelection().toString() === 'selected thought', 'thinking retained before handover')
-      expect(document.querySelectorAll('[data-conversation-markdown="thinking"]').length === 1, 'one thought during handover')
+      expect(document.querySelectorAll('#transcript [data-conversation-markdown="thinking"]').length === 1, 'one thought during handover')
       await release()
       expect(document.querySelector('.turn-process [data-conversation-markdown="thinking"]').textContent.includes('final thought'), 'thinking moves after release')
       await api.render('', '```ts\nold thought\n```')
@@ -103,7 +194,7 @@ try {
       expect(document.activeElement === thoughtCopy, 'thinking copy starts focused')
       await api.render('answer', '```ts\nfinal thought\n```', false, 'completed', true)
       expect(document.activeElement === thoughtCopy && thoughtCopy.isConnected, 'thinking copy focus survives handover')
-      expect(document.querySelectorAll('[data-conversation-markdown="thinking"]').length === 1, 'one focused thinking tree')
+      expect(document.querySelectorAll('#transcript [data-conversation-markdown="thinking"]').length === 1, 'one focused thinking tree')
       thoughtCopy.blur(); await wait()
       expect(document.querySelector('.turn-process .thinking-content code').textContent === 'final thought\n', 'thinking copy release hands over latest')
       await api.render('', 'selected removable thought')
@@ -112,7 +203,7 @@ try {
       await api.render('answer', '', false, 'completed', true)
       expect(removable.isConnected && !removable.closest('[hidden]') && document.getSelection().toString() === 'selected removable thought', 'removed thinking stays visible until release')
       await release()
-      expect(document.querySelectorAll('[data-conversation-markdown="thinking"]').length === 0, 'removed thinking clears after release')
+      expect(document.querySelectorAll('#transcript [data-conversation-markdown="thinking"]').length === 0, 'removed thinking clears after release')
       for (const status of ['failed', 'cancelled']) {
         await api.render('selected process')
         const processBody = body()
@@ -159,7 +250,8 @@ try {
     })
     const errors = events.filter((event) => event.method === 'Runtime.exceptionThrown' || event.method === 'Runtime.consoleAPICalled' && event.params.type === 'error' || event.method === 'Log.entryAdded' && event.params.entry.level === 'error')
     const badScripts = events.filter((event) => event.method === 'Network.responseReceived' && event.params.type === 'Script' && event.params.response.status !== 200)
-    assert.deepEqual(errors, [], 'Chrome errors'); assert.deepEqual(badScripts, [], 'Script responses')
-    console.log(JSON.stringify({ page, importMapHash: hash, results, chromeErrors: errors.length, badScripts: badScripts.length }))
+    const unexpectedImages = events.filter(event => event.method === 'Network.requestWillBeSent' && /^https:\/\/example\.test\/.*\.png$/.test(event.params.request.url))
+    assert.deepEqual(unexpectedImages, [], 'No unrequested Markdown images'); assert.deepEqual(errors, [], 'Chrome errors'); assert.deepEqual(badScripts, [], 'Script responses')
+    console.log(JSON.stringify({ page, importMapHash: hash, animation, reduced, background, results, chromeErrors: errors.length, badScripts: badScripts.length }))
   }
 } finally { socket.close() }

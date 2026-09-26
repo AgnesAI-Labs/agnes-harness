@@ -1,11 +1,18 @@
 import { type ComponentProps, type Tokens, XMarkdown, type XMarkdownProps } from '@ant-design/x-markdown'
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   decodeMarkdownEntities,
   escapeMarkdownHtml,
   protectEscapedMarkdownTags,
   safeMarkdownHref,
 } from './markdown-policy.js'
+import {
+  MarkdownRevealOwner,
+  planMarkdownReveal,
+  type RevealPlan,
+  RevealRoot,
+  RevealText,
+} from './markdown-reveal.js'
 import { useMarkdownSnapshot } from './markdown-snapshot.js'
 
 /** One React-owned Markdown subtree; the Web legacy DOM renderer never receives this root. */
@@ -14,12 +21,18 @@ export interface ConversationMarkdownProps {
   part: 'body' | 'thinking'
   /** Message-owned next-chunk state; terminal snapshots flush all buffered syntax. */
   streaming?: boolean
+  /** Imperative facades may preserve synchronous release; normal React callers omit it. */
+  onRelease?: ((commit: () => void) => void) | undefined
+  /** Immediate parsing preserves synchronous legacy facade reads, including unfinished syntax. */
+  syntax?: 'streaming' | 'immediate'
   theme?: 'light' | 'dark'
   onCopy?: ((text: string) => Promise<void>) | undefined
   onFragment?: ((id: string) => void) | undefined
 }
 
-const Callbacks = createContext<Pick<ConversationMarkdownProps, 'onCopy' | 'onFragment'>>({})
+const Callbacks = createContext<
+  Pick<ConversationMarkdownProps, 'onCopy' | 'onFragment' | 'onRelease' | 'syntax'>
+>({})
 const dompurifyConfig = { ADD_ATTR: ['key'] }
 
 function defaultFragment(id: string): void {
@@ -59,13 +72,8 @@ function Link({ children, title, ...props }: ComponentProps) {
   )
 }
 
-function LiteralSpan({ children, domNode }: ComponentProps) {
-  const literal = (domNode as { attribs?: Record<string, string> }).attribs?.['data-agnes-literal']
-  return literal === undefined ? <span>{children}</span> : literal
-}
-
 function CodeBlock({ children, domNode }: ComponentProps) {
-  const { onCopy: writeCode } = useContext(Callbacks)
+  const { onCopy: writeCode, onRelease, syntax } = useContext(Callbacks)
   const node = domNode as { children?: Array<{ name?: string; attribs?: Record<string, string> }> }
   const label =
     node.children
@@ -84,17 +92,18 @@ function CodeBlock({ children, domNode }: ComponentProps) {
     }
   }, [])
   const copy = async () => {
-    const text = (codeRef.current?.textContent ?? '').replace(/\n$/, '')
+    const displayed = codeRef.current?.textContent ?? ''
+    const text = syntax === 'immediate' ? displayed : displayed.replace(/\n$/, '')
     try {
       if (writeCode) await writeCode(text)
       else await navigator.clipboard.writeText(text)
-      if (mounted.current) setState('success')
+      if (mounted.current) (onRelease ?? ((commit) => commit()))(() => setState('success'))
     } catch {
-      if (mounted.current) setState('failure')
+      if (mounted.current) (onRelease ?? ((commit) => commit()))(() => setState('failure'))
     }
     if (!mounted.current) return
     if (timer.current !== undefined) clearTimeout(timer.current)
-    timer.current = setTimeout(() => setState('idle'), 1_600)
+    timer.current = setTimeout(() => (onRelease ?? ((commit) => commit()))(() => setState('idle')), 1_600)
   }
   return (
     <div className="code-block">
@@ -120,7 +129,14 @@ const components: NonNullable<XMarkdownProps['components']> = {
   a: Link,
   pre: CodeBlock,
   img: ({ alt }) => <>{alt}</>,
-  span: LiteralSpan,
+  span: RevealText,
+  'agnes-reveal-root': RevealRoot,
+  table: ({ children }) => (
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of wide tables.
+    <section className="table-scroll" tabIndex={0} aria-label="表格，可横向滚动">
+      <table>{children}</table>
+    </section>
+  ),
 }
 
 export function ConversationMarkdown({
@@ -130,9 +146,19 @@ export function ConversationMarkdown({
   theme = 'light',
   onCopy,
   onFragment,
+  onRelease,
+  syntax = 'streaming',
 }: ConversationMarkdownProps) {
   const host = useRef<HTMLDivElement>(null)
-  const shown = useMarkdownSnapshot(host, source, streaming)
+  const shown = useMarkdownSnapshot(host, source, streaming, onRelease)
+  const reveal = useRef<RevealPlan | undefined>(
+    source ? undefined : { source: '', value: '', ranges: [], serial: 0 },
+  )
+  useLayoutEffect(() => {
+    if (!shown.source)
+      reveal.current = { source: '', value: '', ranges: [], serial: reveal.current?.serial ?? 0 }
+  }, [shown.source])
+  const revealOwner = useMemo(() => ({ source: shown.source, committed: reveal }), [shown.source])
   const protectedSource = useMemo(() => protectEscapedMarkdownTags(shown.source), [shown.source])
   // The installed cache buffers a trailing reference definition until its line ends.
   const content =
@@ -146,10 +172,28 @@ export function ConversationMarkdown({
           let codeIndex = 0
           // Renderer keys normally count every inline node. A late reference would remount an
           // unchanged later code control. Key emitted code blocks by their own ordinal instead.
-          return html.replace(/<pre>/g, () => `<pre key="agnes-code-${codeIndex++}">`)
+          const keyed = html.replace(/<pre>/g, () => `<pre key="agnes-code-${codeIndex++}">`)
+          return planMarkdownReveal(
+            keyed,
+            shown.source,
+            shown.streaming && shown.reveal,
+            host.current,
+            reveal.current,
+          )
         },
       },
       renderer: {
+        tablecell(token) {
+          const tag = token.header ? 'th' : 'td'
+          const scope = token.header ? ' scope="col"' : ''
+          const align = token.align ? ` data-align="${token.align}"` : ''
+          return `<${tag}${scope}${align}>${this.parser.parseInline(token.tokens)}</${tag}>`
+        },
+        code(token) {
+          if (syntax !== 'immediate') return false
+          const lang = token.lang ? ` data-lang="${escapeMarkdownHtml(token.lang)}"` : ''
+          return `<pre><code data-block="true"${lang}>${escapeMarkdownHtml(token.text)}</code></pre>\n`
+        },
         link(token) {
           const href = safeMarkdownHref(token.href)
           if (!href) return escapeMarkdownHtml(token.raw)
@@ -175,23 +219,32 @@ export function ConversationMarkdown({
         },
       },
     }),
-    [protectedSource],
+    [protectedSource, shown, syntax],
   )
-  const callbacks = useMemo(() => ({ onCopy, onFragment }), [onCopy, onFragment])
-  const stream = useMemo(() => ({ hasNextChunk: shown.streaming, enableAnimation: false }), [shown.streaming])
+  const callbacks = useMemo(
+    () => ({ onCopy, onFragment, onRelease, syntax }),
+    [onCopy, onFragment, onRelease, syntax],
+  )
+  const stream = useMemo(
+    () => ({ hasNextChunk: shown.streaming && syntax === 'streaming', enableAnimation: false }),
+    [shown.streaming, syntax],
+  )
   return (
     <div ref={host} data-conversation-markdown={part}>
-      <Callbacks.Provider value={callbacks}>
-        <XMarkdown
-          content={content}
-          rootClassName={`conversation-markdown markdown x-markdown-${theme}`}
-          config={config}
-          components={components}
-          dompurifyConfig={dompurifyConfig}
-          escapeRawHtml
-          streaming={stream}
-        />
-      </Callbacks.Provider>
+      <MarkdownRevealOwner.Provider value={revealOwner}>
+        <Callbacks.Provider value={callbacks}>
+          <XMarkdown
+            key={shown.source ? 'content' : 'empty'}
+            content={content}
+            rootClassName={`conversation-markdown markdown x-markdown-${theme}`}
+            config={config}
+            components={components}
+            dompurifyConfig={dompurifyConfig}
+            escapeRawHtml
+            streaming={stream}
+          />
+        </Callbacks.Provider>
+      </MarkdownRevealOwner.Provider>
     </div>
   )
 }

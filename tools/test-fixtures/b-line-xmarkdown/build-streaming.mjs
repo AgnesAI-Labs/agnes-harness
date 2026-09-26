@@ -4,8 +4,11 @@ import { build } from 'esbuild'
 
 const fixture = resolve(import.meta.dirname)
 const repo = resolve(fixture, '../../..')
-const out = process.env.AGNES_XMD_STREAM_OUT || '/private/tmp/agh-w5b1-streaming-browser'
+const cliProbe = process.argv.includes('--cli')
+const cliRoot = '/private/tmp/agh-w5b2-cli'
 const assets = resolve(repo, 'packages/cli/dist/local/web')
+const out = process.env.AGNES_XMD_STREAM_OUT || (cliProbe ? resolve(cliRoot, 'web') : '/private/tmp/agh-w5b1-streaming-browser')
+if (cliProbe) await cp(resolve(repo, 'packages/cli/dist/local'), cliRoot, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
 await cp(assets, out, { recursive: true, force: true })
 await build({
@@ -22,7 +25,7 @@ await build({
 const original = await readFile(resolve(assets, 'index.html'), 'utf8')
 const importMap = original.match(/<script type="importmap">[\s\S]*?<\/script>/)?.[0]
 if (!importMap) throw new Error('Packaged import map missing')
-const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>W5b-1 streaming probe</title>
+const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>W5b-2 streaming / animation probe</title>
 <meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__"><meta id="agnes-config" data-ws="__AGNES_WS_URL__">
 <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/antd.css">
 ${importMap}<script type="module" src="/app.js"></script></head>

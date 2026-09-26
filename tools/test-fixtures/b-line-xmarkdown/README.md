@@ -99,3 +99,44 @@ listener/unmount cleanup and all three routes' import-map/CSP/Chrome errors. It 
 model call or physical network interruption and does not prove backend exactly-once execution.
 No animation is enabled in this checkpoint. Stop the probe server and its Chrome process after
 inspection; generated roots/profiles are disposable. The original/default Web pages are unchanged.
+
+## W5b-2 suffix animation and synchronous facade acceptance
+
+The current streaming checker also verifies real CSS animation objects: 480ms duration,
+only appended text, retained fragment/node identity and start time, completed range retirement,
+selection and copy-focus backlog painted immediately, actual background-tab visibility and
+native reduced-motion emulation. It exercises the unchanged legacy timeline host through the
+new `markdown.ts` facade, static document-preview updates and accessible/aligned tables.
+All attached Markdown text/fragments belong to React; detached parsed-output plans are committed
+only with the rendered tree. Limits are 65536 text characters, 4096 visited nodes, 32 active
+ranges and 128 intersections, with surrogate-pair checks. The production Markdown component
+never invokes the old DOM renderer or `web-admin-frame` reveal helper.
+
+For the full CLI boundary instead of the source Web server, use:
+
+```sh
+pnpm --filter @agnes/cli build:local
+node tools/test-fixtures/b-line-xmarkdown/build-streaming.mjs --cli
+AGH_HOME=/private/tmp/agh-w5b2-cli-home AGNES_PROFILE=local-dev node /private/tmp/agh-w5b2-cli/agnes.mjs serve --port 4196
+```
+
+`--cli` copies the entire same-round CLI distribution into `/private/tmp/agh-w5b2-cli`, then
+replaces only its probe HTML pages/app. Its executable, daemon, native dependencies, import map,
+shared React/vendor/CSS and licenses come from that build; the original distribution remains
+available for normal use. Start the isolated Chrome/debug endpoint as above and run the same
+`check-streaming-browser.mjs`. The checker temporarily disables focus emulation during the
+background-tab test (focus emulation otherwise forces the page visible), then restores it for
+native blur checks. Stop the CLI serve process and Chrome after acceptance, and stop only the
+probe's isolated daemon with:
+
+```sh
+AGH_HOME=/private/tmp/agh-w5b2-cli-home AGNES_PROFILE=local-dev node /private/tmp/agh-w5b2-cli/agnes.mjs daemon stop
+node tools/test-fixtures/b-line-xmarkdown/check-streaming-browser.mjs --closed
+```
+
+The facade remains synchronous for create/update/dispose and interaction release. It injects
+`syntax="immediate"`: the pinned library's normal stream cache is passive-effect driven and
+cannot provide the old synchronous DOM read contract. React message consumers retain normal
+stream caching; both paths use XMarkdown and the same safe React components/reveal planner.
+The default timeline host is unchanged. Session facts and clipboard writes in the probe remain
+synthetic, so these checks do not prove real model execution or physical network recovery.

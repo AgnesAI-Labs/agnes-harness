@@ -17,7 +17,6 @@ import {
 import { createConversationMessageActions, createConversationToolCard } from '@agnes/web-units'
 import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
-import { createMarkdownRenderer } from './markdown.js'
 import { toolIcon } from './tool-icon.js'
 import { createCostDetails } from './usage.js'
 
@@ -56,22 +55,6 @@ function TurnActions({
   }, [onFork])
   useLayoutEffect(() => actions.current?.update({ turn, finalText, settled }))
   return <div ref={host} data-agnes-turn-actions="" />
-}
-
-function MarkdownLeaf({ text }: { text: string }) {
-  const element = useRef<HTMLDivElement>(null)
-  const renderer = useRef<ReturnType<typeof createMarkdownRenderer>>()
-  useLayoutEffect(() => {
-    const host = element.current
-    if (!host) return
-    renderer.current = createMarkdownRenderer(host, '')
-    return () => {
-      renderer.current?.dispose()
-      renderer.current = undefined
-    }
-  }, [])
-  useLayoutEffect(() => renderer.current?.update(text), [text])
-  return <div ref={element} data-agnes-markdown-leaf="" />
 }
 
 function ToolLeaf({ node }: { node: ToolNode }) {
@@ -204,7 +187,6 @@ export function WebConversationMessages({
   turns,
   visibleNodeIds,
   onFork,
-  markdownRenderer = 'legacy',
 }: {
   registry?: SlotRegistry
   claim?: ClaimResolver
@@ -214,7 +196,7 @@ export function WebConversationMessages({
   turns?: readonly UITurn[]
   visibleNodeIds?: readonly string[]
   onFork?: (turn: UITurn) => Promise<void>
-  /** Explicit W5b probe; existing consumers keep the legacy DOM-owned leaf. */
+  /** Compatibility selector; both values now use the same React-owned Markdown. */
   markdownRenderer?: 'legacy' | 'xmarkdown'
 }) {
   const sessionScope = useSyncExternalStore(
@@ -233,17 +215,14 @@ export function WebConversationMessages({
         {...(onFork ? { onFork } : {})}
       />
     ),
-    renderMarkdown: (text, part, state) =>
-      markdownRenderer === 'xmarkdown' ? (
-        <ConversationMarkdown
-          key={`${state?.nodeId ?? ''}:${part}`}
-          source={text}
-          part={part}
-          streaming={state?.streaming ?? false}
-        />
-      ) : (
-        <MarkdownLeaf text={text} />
-      ),
+    renderMarkdown: (text, part, state) => (
+      <ConversationMarkdown
+        key={`${state?.nodeId ?? ''}:${part}`}
+        source={text}
+        part={part}
+        streaming={state?.streaming ?? false}
+      />
+    ),
     renderTool: (node) => <ToolLeaf node={node} />,
     renderCost: (node) => <CostLeaf node={node} />,
     renderSlot: (node) => <SlotLeaf key={node.id} node={node} registry={registry} claim={claim} />,

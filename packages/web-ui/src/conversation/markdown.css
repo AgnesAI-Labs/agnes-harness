@@ -97,3 +97,26 @@
   line-height: 1.5rem;
   white-space: pre;
 }
+
+/* React owns fragment lifetimes; the shared skin hook/keyframes remain available to skins. */
+.conversation-markdown .message-reveal-fragment {
+  animation-duration: 480ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-markdown .message-reveal-fragment {
+    animation: none;
+  }
+}
+
+.conversation-markdown [data-align="left"] {
+  text-align: left;
+}
+
+.conversation-markdown [data-align="center"] {
+  text-align: center;
+}
+
+.conversation-markdown [data-align="right"] {
+  text-align: right;
+}
