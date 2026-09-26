@@ -1,21 +1,14 @@
 import { applyVars, loadPrompt } from '../../prompts/sections.js'
 
 /**
- * The facts the environment section states, as one record. Only what stays the same for the whole
- * session (or, for date, the whole day) belongs here: everything that can change between one
- * request and the next in the same session — which model answers, which preset and disclosure mode
- * apply, the working directory, the sandbox level — is RuntimeSnapshotFacts below, rendered into
- * the tail runtime-context message instead of this section. Splitting the two is what keeps this
- * section, and therefore the system string it is part of, byte-identical across a model switch, a
- * preset switch or a cd: nothing in this record can change without one of those events, and none of
- * those events touches this record.
+ * Only installation and platform facts belong in the environment section. Session identity, date,
+ * model, preset, disclosure, cwd and sandbox level can differ across requests or sessions, so they
+ * are rendered into the tail runtime-context message instead of the shared system prefix.
  */
 export type EnvironmentFacts = {
   agnesVersion: string
   platform: string
   shell: string
-  date: string
-  sessionKey: string
 }
 
 export function renderEnvironment(facts: EnvironmentFacts): string {
@@ -32,6 +25,8 @@ export function renderEnvironment(facts: EnvironmentFacts): string {
  * hash differs from the one the previous request in this turn carried.
  */
 export type RuntimeSnapshotFacts = {
+  date: string
+  sessionKey: string
   model: string
   route: string
   slot: string

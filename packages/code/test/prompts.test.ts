@@ -138,10 +138,9 @@ const PROMPT_TEXT: Record<string, string> = {
     '',
     '- Harness: Agnes Harness {{agnesVersion}}.',
     '- Platform: {{platform}}. Shell dialect for any shell tool: {{shell}}.',
-    '- Date: {{date}}.',
-    '- Transcript: this session is an append-only event ledger the harness keeps under the session key {{sessionKey}}. Your requests, your answers, every tool call and every tool result are rows in it. Nothing outside that ledger carries over between sessions.',
+    '- Transcript: this session is an append-only event ledger the harness keeps under the session key stated in the most recent message beginning "[runtime context]". Your requests, your answers, every tool call and every tool result are rows in it. Nothing outside that ledger carries over between sessions.',
     '',
-    'Which model answers this request, which preset and tool-disclosure mode apply, your working directory, and the operating-system sandbox level in force are stated in the most recent message beginning "[runtime context]", not here: those five facts can change between requests in the same session, and restating them here would rewrite this section every time one does.',
+    'The UTC date, session key, answering model, preset, tool-disclosure mode, working directory, and operating-system sandbox level in force are stated in the most recent message beginning "[runtime context]", not here: those seven facts can change between requests or sessions, and restating them here would rewrite this section every time one does.',
   ].join('\n'),
   persona: [
     'You are Agnes, a general-purpose AI agent powered by Agnes Harness. You help users understand problems, plan work, and complete tasks using the tools and capabilities available in the current session.',
@@ -202,8 +201,7 @@ describe('prompt text', () => {
 
   it('environment.md is a template with the documented placeholders', () => {
     const t = loadPrompt('environment')
-    for (const p of ['{{platform}}', '{{shell}}', '{{date}}', '{{agnesVersion}}', '{{sessionKey}}'])
-      expect(t, p).toContain(p)
+    for (const p of ['{{platform}}', '{{shell}}', '{{agnesVersion}}']) expect(t, p).toContain(p)
     for (const moved of [
       '{{cwd}}',
       '{{slot}}',
@@ -212,6 +210,8 @@ describe('prompt text', () => {
       '{{preset}}',
       '{{disclosure}}',
       '{{enforcement}}',
+      '{{date}}',
+      '{{sessionKey}}',
     ])
       expect(t, moved).not.toContain(moved)
   })
@@ -220,7 +220,7 @@ describe('prompt text', () => {
   // measures rather than a phrase it likes, so a rewording that drops one is a loss of information.
   it('persona and environment together name the harness and the transcript, and name neither the model nor the cwd', () => {
     const t = `${loadPrompt('persona')}\n${loadPrompt('environment')}`
-    for (const needle of ['Agnes Harness', 'append-only event ledger', 'session key {{sessionKey}}'])
+    for (const needle of ['Agnes Harness', 'append-only event ledger', 'session key stated'])
       expect(t, needle).toContain(needle)
     for (const moved of ['{{model}}', '{{cwd}}']) expect(t, moved).not.toContain(moved)
   })
@@ -244,8 +244,6 @@ describe('prompt rendering', () => {
     agnesVersion: '0.1.0',
     platform: 'darwin-arm64',
     shell: 'posix',
-    date: '2026-09-09',
-    sessionKey: 'agnes:local:local-dev:cli:workspace:f63a',
   }
 
   it('fills every environment placeholder, leaving none standing', () => {
