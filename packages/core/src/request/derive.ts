@@ -13,7 +13,7 @@ import {
   consumeAuxiliaryVisionDerivedText,
 } from './auxiliary-vision-derived-text.js'
 import { harnessSections, type Merged, type PromptSection } from './contribute.js'
-import { type EnvelopeCache, pruneEnvelopeCache } from './envelope-cache.js'
+import type { EnvelopeCache } from './envelope-cache.js'
 import { canonicalJson, sha256Hex, utf8 } from './hash.js'
 import { type LedgerRequest, mintFrom, type RequestBody, type RequestMessage } from './mint.js'
 
@@ -33,12 +33,10 @@ export type DeriveInput = {
   model: { slot: string; route: string; model: string; thinking?: ThinkingLevel }
   contract: ContractRef
   nonce: string
+  /** The first durable header after a node determines the nonce of its historical envelope. */
+  envelopeNonceFor: (nodeSeq: number) => string | undefined
   /**
-   * Memoized wrapped-envelope text, keyed by surface node seq. Owned by the caller (a session's
-   * lifetime, not a turn's) and mutated in place: a hit reuses the exact bytes a previous
-   * derivation produced for that node, a miss wraps under this call's nonce and is written back —
-   * see `envelope-cache.ts` for why that is what keeps already-sent history byte identical across
-   * turns instead of re-wrapping the whole surface under each new turn's nonce.
+   * Pure performance memo; historical identity comes from envelopeNonceFor, not this map.
    */
   envelopeCache: EnvelopeCache
   /** Already preflighted with caller-supplied limits; this layer never selects images or invents caps. */
@@ -556,7 +554,8 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
   // identical turn over turn: the node's underlying event is immutable once appended, so nothing
   // here can make a cached wrapping stale. A miss wraps under this call's nonce and is cached
   // below, so new content still rotates nonce with whichever turn first sends it.
-  const cached = envelopeCache.get(node.seq)
+  const memoKey = `${node.seq}\0${nonce}`
+  const cached = envelopeCache.get(memoKey)
   const produced: string[] = []
   // One region per wrapped block, numbered within the node, so no two envelopes in the request
   // carry the same id — see wrapUntrusted. The count and order are a function of the node's own
@@ -617,7 +616,7 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
     msg = { role: 'assistant', seq: node.seq, content }
   }
   // Locked in the first time this node is rendered, never again.
-  if (untrusted && !cached) envelopeCache.set(node.seq, produced)
+  if (untrusted && !cached) envelopeCache.set(memoKey, produced)
   return msg
 }
 
@@ -715,7 +714,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // A summary renders as an assistant message, and a replace may now end just before an assistant, so
   // a fixed user line keeps two assistant messages from meeting. Written by core, never from input.
   const messages = input.surface.flatMap((n, k) => {
-    const message = toMessage(n, input.nonce, input.envelopeCache)
+    const message = toMessage(n, input.envelopeNonceFor(n.seq) ?? input.nonce, input.envelopeCache)
     if (n.kind !== 'summary' || input.surface[k + 1]?.kind !== 'assistant') return [message]
     return [
       message,
@@ -750,10 +749,6 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     block.text += `\n<untrusted id="${id}" bytes="${utf8(body).length}">${body}</untrusted id="${id}">`
     auxiliaryVisionBindingHash = projection.bindingHash
   }
-  // Only a `turn` derivation's surface is the session's full current surface; a `summary`
-  // derivation's surface is a sub-range (see Task 3), and pruning against it would evict cached
-  // wrappings for history outside that range that the very next ordinary turn still needs.
-  if (input.kind === 'turn') pruneEnvelopeCache(input.envelopeCache, input.surface)
   // Attached after the messages are built, so a call whose assistant message is masked by a
   // summary is dropped along with it rather than re-attached to whatever now sits at that seq.
   // Every field is scrubbed: `name` and `args` are echoed straight back to the model, and

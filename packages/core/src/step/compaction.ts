@@ -258,6 +258,7 @@ async function summarize(
   if (!t) throw new CoreError('E_RELATION', 'compaction outside an active turn')
   const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
   const thinking = thinkingOverride ?? s.preset.model.thinking.compaction
+  await s.ensureEnvelopeEpochs()
   let derived = deriveRequest({
     kind: 'summary',
     merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
@@ -272,6 +273,7 @@ async function summarize(
     },
     contract,
     nonce: t.nonce,
+    envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
     summaryPlan: { system: plan.prompts.system, instruction: segment.instruction },
   })

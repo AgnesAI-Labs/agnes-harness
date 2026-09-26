@@ -909,9 +909,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 25024, exact, no spare (+4).
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
-  // The tool registry also bounds a description after sanitization. Measured 25029, exact, no spare
-  // (+3).
-  'packages/core/src': 25029,
+  // Tool bounds (+3) and ledger-backed envelope epochs (+47). Measured 25076, exact, no spare.
+  'packages/core/src': 25076,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2460,8 +2459,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // live invocation. Measured 38081, exact, no spare (+6).
   // Cancelling a child's creation also settles its execution state in the same SQLite statement.
   // Measured 38084, exact, no spare (+3).
-  // Tool-definition refusals name the tool and each problem. Measured 38096, exact, no spare (+12).
-  'packages/host/src': 38096,
+  // Tool-definition refusals and title nonce query. Measured 38097, exact, no spare.
+  'packages/host/src': 38097,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

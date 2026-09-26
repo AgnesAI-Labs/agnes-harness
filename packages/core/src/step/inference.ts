@@ -567,6 +567,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       })
     }
   }
+  await s.ensureEnvelopeEpochs()
   let out = deriveRequest({
     kind: 'turn',
     merged: { ...merged, sections },
@@ -581,6 +582,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     },
     contract,
     nonce: t.nonce,
+    envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
@@ -748,6 +750,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     if (writesHeader) {
       t.lastHeader = header
       t.lastHeaderSeq = transitionSeqs[headerIndex] ?? null
+      if (t.lastHeaderSeq !== null) s.recordEnvelopeHeader(t.lastHeaderSeq, header.envelopeNonce)
     }
     const effectIntentSeq = transitionSeqs[intentIndex]
     if (t.lastHeaderSeq === null || effectIntentSeq === undefined)

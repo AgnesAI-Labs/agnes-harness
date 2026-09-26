@@ -85,6 +85,7 @@ import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/too
 import type { PromptSection } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
+import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from '../runtime/current.js'
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
@@ -497,16 +498,37 @@ export class SessionImpl {
    */
   readonly sessionAllows = new Set<string>()
   readonly preview = new PreviewHub()
-  /**
-   * Wrapped-untrusted-envelope memoization, shared by every derivation this session makes for its
-   * whole process lifetime — not scoped to a turn, because the guarantee it exists for (a node's
-   * envelope id never changes once minted) has to survive the turn that minted it. Empty again
-   * after a process restart: a cold rebuild has no record of which turn originally wrapped a given
-   * node, so the first post-restart derivation re-wraps history once under whichever nonce that
-   * resume's first turn mints. That is a bounded, one-time cost, not the steady-state failure mode
-   * this fixes — see the spec's B1 for the failure mode itself.
-   */
+  /** Wrapping memo is optional; the durable header epochs determine historical envelope ids. */
   readonly envelopeCache: EnvelopeCache = createEnvelopeCache()
+  readonly envelopeEpochs: EnvelopeEpochs = []
+  private envelopeEpochsReady: Promise<void> | undefined
+  async ensureEnvelopeEpochs(): Promise<void> {
+    if (!this.envelopeEpochsReady) {
+      this.envelopeEpochsReady = (async () => {
+        if (this.lastSeq < 1) return
+        for await (const page of scanPages((query) => this.d.log.scan(query), {
+          fromSeq: 1,
+          toSeq: this.lastSeq,
+          type: 'request/header',
+          lane: this.lane,
+        })) {
+          for (const row of page) {
+            const nonce = (row.data as { envelopeNonce?: unknown }).envelopeNonce
+            if (typeof nonce !== 'string')
+              throw new CoreError('E_RELATION', 'request header lacks envelope nonce')
+            recordHeader(this.envelopeEpochs, row.seq, nonce)
+          }
+        }
+      })()
+    }
+    await this.envelopeEpochsReady
+  }
+  envelopeNonceFor(nodeSeq: number): string | undefined {
+    return nonceFor(this.envelopeEpochs, nodeSeq)
+  }
+  recordEnvelopeHeader(headerSeq: number, nonce: string): void {
+    recordHeader(this.envelopeEpochs, headerSeq, nonce)
+  }
   private grantsRestored = false
   private async restoreGrants(): Promise<void> {
     if (this.grantsRestored) return
