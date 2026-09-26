@@ -1962,7 +1962,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // W5b-2 removes the imperative Markdown implementation/adapter leaf; explicit node state. Exact: 13415.
   // W5c-1 removes Web CostLeaf and re-exports shared cost policy; context panel stays imperative. Exact: 13346.
   // W5c-2: context factory becomes a synchronous compatibility root; exact measured total.
-  'packages/web/src': 13292,
+  // Computer Use: DOM-free snapshots/coordination and subscribed legacy pane; measured exact total.
+  'packages/web/src': 13511,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
