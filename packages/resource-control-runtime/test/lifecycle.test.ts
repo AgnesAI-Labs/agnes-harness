@@ -154,7 +154,7 @@ describe('resource runtime lifecycle boundaries', () => {
       credentials: async () => '',
       stdioPolicy: { allowedExecutables: ['example'] },
       connect,
-      inspectCatalog: async (connection) => connection.listTools(),
+      inspectCatalog: async (connection) => ({ tools: await connection.listTools(), skipped: [] }),
       apply: applied,
       onStatus: (status) => reports.push(status),
     })
@@ -228,7 +228,7 @@ describe('resource runtime lifecycle boundaries', () => {
       credentials: async () => '',
       stdioPolicy: { allowedExecutables: ['example'] },
       connect,
-      inspectCatalog: async (connection) => connection.listTools(),
+      inspectCatalog: async (connection) => ({ tools: await connection.listTools(), skipped: [] }),
       apply: async () => undefined,
     })
     manager.stage({ definition, revision: 'e'.repeat(64), desired: 'enabled', trust: 'trusted' })
@@ -293,7 +293,7 @@ describe('resource runtime lifecycle boundaries', () => {
       credentials: async () => '',
       stdioPolicy: { allowedExecutables: ['example'] },
       connect,
-      inspectCatalog: async (connection) => connection.listTools(),
+      inspectCatalog: async (connection) => ({ tools: await connection.listTools(), skipped: [] }),
       // The real production implementation (packages/resource-control-runtime/src/notify.ts), not a
       // mock: this proves notifyLiveSessionWorkers() genuinely drives a real reconcile()/applyActive()
       // through to the pool, not just that some callback fired. `McpApply` wants Promise<void>, so the

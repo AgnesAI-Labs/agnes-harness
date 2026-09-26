@@ -45,7 +45,7 @@
       "required": ["name", "description", "parameters"],
       "properties": {
         "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
-        "description": { "type": "string", "maxLength": 8192 },
+        "description": { "type": "string", "maxLength": 4096 },
         "parameters": { "$ref": "#/$defs/JsonValue" }
       }
     },

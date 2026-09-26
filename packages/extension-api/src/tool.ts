@@ -374,6 +374,49 @@ export function resolveToolCallPolicy<P extends TSchema>(
   })
 }
 
+/** Longest tool description a model is shown, in UTF-16 code units; Core also holds it after sanitizing. */
+export const TOOL_DESCRIPTION_MAX_LENGTH = 4096
+/** Largest parameter schema, as UTF-8 bytes of its JSON form (string keys only). */
+export const TOOL_PARAMETERS_MAX_BYTES = 262_144
+/** Deepest value in a parameter schema, counting the root as depth 0. */
+export const TOOL_PARAMETERS_MAX_DEPTH = 32
+
+// Walks own string keys only: TypeBox tags schemas with symbol keys that never reach JSON. Tracks
+// the active path, so a shared subschema passes and a cycle is reported instead of recursing.
+function parametersProblem(root: object): string | undefined {
+  const notJson = 'parameters: must be JSON data'
+  const active = new Set<object>()
+  const walk = (value: unknown, depth: number): string | undefined => {
+    if (depth > TOOL_PARAMETERS_MAX_DEPTH)
+      return `parameters: nesting must be at most ${TOOL_PARAMETERS_MAX_DEPTH}`
+    if (value === null || value === undefined || typeof value === 'string' || typeof value === 'boolean')
+      return
+    if (typeof value === 'number') return Number.isFinite(value) ? undefined : notJson
+    if (typeof value !== 'object') return notJson
+    if (active.has(value)) return 'parameters: must be acyclic JSON data'
+    const proto = Object.getPrototypeOf(value)
+    if (Array.isArray(value) ? proto !== Array.prototype : proto !== Object.prototype && proto !== null)
+      return notJson
+    active.add(value)
+    for (const key of Object.keys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)
+      const problem = descriptor && 'value' in descriptor ? walk(descriptor.value, depth + 1) : notJson
+      if (problem) return problem
+    }
+    active.delete(value)
+  }
+  try {
+    const problem = walk(root, 0)
+    if (problem) return problem
+    const bytes = new TextEncoder().encode(JSON.stringify(root)).byteLength
+    if (bytes > TOOL_PARAMETERS_MAX_BYTES)
+      return `parameters: serialized size must be at most ${TOOL_PARAMETERS_MAX_BYTES} bytes`
+  } catch {
+    // A Proxy or exotic object can throw from any reflective read; the check itself stays total.
+    return notJson
+  }
+}
+
 // The single definition of a well-formed tool: the kernel's registry and the author-facing
 // CLI check both call this, so a tool that passes locally passes at registration.
 export function checkToolDef(
@@ -389,8 +432,14 @@ export function checkToolDef(
     problems.push(`name: must start with prefix '${opts.prefix}'`)
   if (typeof d.description !== 'string' || d.description.length === 0)
     problems.push('description: expected non-empty string')
+  else if (d.description.length > TOOL_DESCRIPTION_MAX_LENGTH)
+    problems.push(`description: must be at most ${TOOL_DESCRIPTION_MAX_LENGTH} UTF-16 code units`)
   if (typeof d.parameters !== 'object' || d.parameters === null)
     problems.push('parameters: expected schema object')
+  else {
+    const problem = parametersProblem(d.parameters)
+    if (problem) problems.push(problem)
+  }
   if (typeof d.execute !== 'function') problems.push('execute: expected function')
   const hasClassifier = typeof d.classify === 'function'
   if (d.classify !== undefined && !hasClassifier) problems.push('classify: expected function | undefined')

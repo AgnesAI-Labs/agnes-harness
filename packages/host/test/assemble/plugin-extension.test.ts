@@ -229,3 +229,40 @@ describe('installing a third-party tool row', () => {
     expect(installed.system).toBe(bare.system)
   })
 })
+
+describe('a third-party tool whose description is too long for the wire', () => {
+  it('fails that row with the tool name and the problem, and the next turn still reaches the model', async () => {
+    const provider = fakeProvider([textTurn('done')], '2')
+    const h = await pluginHost(
+      pluginSource(`  agnes.registerTool({ ...tool('plugin_verbose'), description: 'v'.repeat(9000) })`),
+      { provider },
+    )
+    try {
+      let failure: unknown
+      try {
+        await h.host.applyRuntimeTarget(targetOf([pluginRow()]))
+      } catch (error) {
+        failure = error
+      }
+      await settle()
+      expect(String(failure)).toContain('plugin_verbose')
+      expect(String(failure)).toContain('description: must be at most 4096 UTF-16 code units')
+      expect(h.host.kernel.tools.resolve('plugin_verbose')).toBeUndefined()
+      const session = await h.host.createSession({ cwd: h.dataDir, key: 'verbose-tool-fixture' })
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'hello' }],
+        actor: session.d.actor,
+        kind: 'prompt',
+      })
+      const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(out.reason).toBe('completed')
+      const types = (await session.scan({ toSeq: session.lastSeq })).map((event) => event.type)
+      expect(JSON.stringify(types)).not.toContain('E_ENVELOPE')
+      expect(provider.requests).toHaveLength(1)
+      expect(provider.requests[0]?.tools.map((t) => t.name)).not.toContain('plugin_verbose')
+      await session.close()
+    } finally {
+      await h.host.close()
+    }
+  })
+})

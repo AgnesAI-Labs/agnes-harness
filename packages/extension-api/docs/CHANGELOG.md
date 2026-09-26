@@ -4,6 +4,13 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`checkToolDef` now bounds what a model is shown: a description of at most `TOOL_DESCRIPTION_MAX_LENGTH`
+(4096) UTF-16 code units, and a parameter schema of at most `TOOL_PARAMETERS_MAX_BYTES` (262144)
+serialized bytes and `TOOL_PARAMETERS_MAX_DEPTH` (32) levels, root at depth 0. Symbol keys are ignored,
+so TypeBox schemas are measured as the JSON a provider receives; a cyclic schema is reported. A tool
+outside these bounds now fails registration with the problem named, where it used to register and then
+break every request. The three constants are new runtime exports.
+
 ## 1.4.0
 
 - Optional `ToolContext.pluginManage` port for approved AGH plugin authoring and installation. Host controls identity, invocation lifetime and native approval.

@@ -8,8 +8,11 @@ import {
   defineTool,
   MAX_APPROVAL_SCOPES,
   resolveToolCallPolicy,
+  TOOL_DESCRIPTION_MAX_LENGTH,
   TOOL_META_KEYS,
   TOOL_NAME_PATTERN,
+  TOOL_PARAMETERS_MAX_BYTES,
+  TOOL_PARAMETERS_MAX_DEPTH,
   TOOL_POLICY_VERSION_PATTERN,
 } from '../src/index.js'
 
@@ -280,5 +283,81 @@ describe('checkToolDef', () => {
     expect(() => resolveToolCallPolicy(privilegedDef, { q: 'read' })).toThrow(
       'classify: invalid resolved policy: unknown key: transportPhase',
     )
+  })
+})
+
+describe('checkToolDef bounds on what a model is shown', () => {
+  const base = {
+    name: 'sales_query',
+    description: 'Query sales',
+    parameters: Type.Object({ q: Type.String() }, { additionalProperties: false }),
+    meta: fullMeta,
+    execute: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }),
+  }
+  const problems = (over: Record<string, unknown>): string[] => {
+    const r = checkToolDef({ ...base, ...over })
+    return r.ok ? [] : r.problems
+  }
+  /** A schema whose deepest value sits `depth` levels below the root (the root is depth 0). */
+  const nested = (depth: number): Record<string, unknown> => {
+    let value: unknown = 'leaf'
+    for (let i = 0; i < depth; i++) value = { a: value }
+    return value as Record<string, unknown>
+  }
+  /** `{"type":"object","description":"…"}` padded to exactly `bytes` UTF-8 bytes. */
+  const sized = (bytes: number) => ({ type: 'object', description: 'x'.repeat(bytes - 34) })
+
+  it('accepts a 4096-unit description and names the problem at 4097', () => {
+    expect(problems({ description: 'd'.repeat(4096) })).toEqual([])
+    expect(problems({ description: 'd'.repeat(4097) })).toEqual([
+      'description: must be at most 4096 UTF-16 code units',
+    ])
+  })
+
+  it('bounds the serialized parameter schema at 262144 bytes', () => {
+    expect(new TextEncoder().encode(JSON.stringify(sized(262_145))).byteLength).toBe(262_145)
+    expect(problems({ parameters: sized(262_144) })).toEqual([])
+    expect(problems({ parameters: sized(262_145) })).toEqual([
+      'parameters: serialized size must be at most 262144 bytes',
+    ])
+  })
+
+  it('bounds parameter nesting at 32 with the root at depth 0', () => {
+    expect(problems({ parameters: nested(32) })).toEqual([])
+    expect(problems({ parameters: nested(33) })).toEqual(['parameters: nesting must be at most 32'])
+  })
+
+  it('ignores symbol keys, so a TypeBox schema with its kind markers passes', () => {
+    const schema = Type.Object({ q: Type.Optional(Type.String()) })
+    expect(Object.getOwnPropertySymbols(schema).length).toBeGreaterThan(0)
+    expect(problems({ parameters: { ...schema, [Symbol('extra')]: () => undefined } })).toEqual([])
+    const shared = Type.String()
+    expect(problems({ parameters: Type.Object({ a: shared, b: shared }) })).toEqual([])
+  })
+
+  it('reports a cyclic schema instead of overflowing the stack', () => {
+    const cyclic: Record<string, unknown> = { type: 'object', properties: {} }
+    ;(cyclic.properties as Record<string, unknown>).self = cyclic
+    expect(problems({ parameters: cyclic })).toEqual(['parameters: must be acyclic JSON data'])
+  })
+
+  it('reports a schema holding values JSON cannot carry', () => {
+    expect(problems({ parameters: { type: 'object', default: Number.NaN } })).toEqual([
+      'parameters: must be JSON data',
+    ])
+    expect(problems({ parameters: { type: 'object', format: () => 'x' } })).toEqual([
+      'parameters: must be JSON data',
+    ])
+    expect(problems({ parameters: { type: 'object', default: new Date(0) } })).toEqual([
+      'parameters: must be JSON data',
+    ])
+    const accessor = Object.defineProperty({ type: 'object' }, 'title', { get: () => 't', enumerable: true })
+    expect(problems({ parameters: accessor })).toEqual(['parameters: must be JSON data'])
+  })
+
+  it('exports the bounds it enforces', () => {
+    expect(TOOL_DESCRIPTION_MAX_LENGTH).toBe(4096)
+    expect(TOOL_PARAMETERS_MAX_BYTES).toBe(262_144)
+    expect(TOOL_PARAMETERS_MAX_DEPTH).toBe(32)
   })
 })

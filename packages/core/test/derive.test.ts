@@ -1807,4 +1807,19 @@ describe('toProviderRequest (fix round 1)', () => {
     const wire = toProviderRequest(out.request, { sessionKey: 'k', derivedHash: out.header.derived_hash })
     expect(out.header.prompt_prefix_hash).toBe(sha256Hex(`turn\n${wire.system}`))
   })
+
+  it('holds a tool description to 4096 units on the wire, the same bound a registered tool meets', () => {
+    const withDescription = (description: string) =>
+      body({ tools: [{ name: 't', description, parameters: { type: 'object' } }] })
+    const o = { sessionKey: 'k', derivedHash: '0'.repeat(64) }
+    expect(toProviderRequest(withDescription('d'.repeat(4096)), o).tools).toHaveLength(1)
+    let caught: unknown
+    try {
+      toProviderRequest(withDescription('d'.repeat(4097)), o)
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(CoreError)
+    expect((caught as CoreError).code).toBe('E_ENVELOPE')
+  })
 })
