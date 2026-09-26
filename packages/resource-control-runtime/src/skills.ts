@@ -92,6 +92,12 @@ type RegistryState = {
 }
 /** Between workspace-agnes (500) and user-agnes (400). Internal; not a protocol promise. */
 export const RUNTIME_SKILL_PRIORITY = 450
+/** Name and description bounds in UTF-16 code units; the protocol SkillDescriptor uses the same. */
+export const MAX_NAME_LENGTH = 128
+/** Agent Skills specification: description is 1–1024 characters. */
+export const MAX_DESCRIPTION_LENGTH = 1024
+/** Protocol limit on a winner's shadowed list. Every loser is still reported as its own descriptor. */
+export const MAX_SHADOWED = 32
 const rootPolicy: ReadonlyMap<
   SkillSourceIdentity['rootKey'],
   Readonly<{ scope: SkillSourceIdentity['scope']; priority: number }>
@@ -140,18 +146,19 @@ const trustFor = (state: RegistryState, candidate: SkillCandidate): TrustState =
   )?.state ?? 'untrusted'
 const stale = (state: RegistryState, candidate: SkillCandidate) =>
   state.roots.get(candidate.sourceIdentity.rootKey)?.stale === true
-const descriptorDescription = (description: string) => {
-  if (description.length <= 512) return description
-  const prefix = description.slice(0, 512)
-  // The protocol validator counts UTF-16 code units; avoid ending on half a surrogate pair.
-  return /[\uD800-\uDBFF]$/.test(prefix) ? prefix.slice(0, -1) : prefix
-}
+const withinBounds = (candidate: SkillCandidate) =>
+  typeof candidate.name === 'string' &&
+  typeof candidate.description === 'string' &&
+  candidate.name.length >= 1 &&
+  candidate.name.length <= MAX_NAME_LENGTH &&
+  candidate.description.length >= 1 &&
+  candidate.description.length <= MAX_DESCRIPTION_LENGTH
 const safe = (candidate: SkillCandidate) =>
   Object.freeze({
     kind: 'skill' as const,
     resourceId: candidate.resourceId,
     name: candidate.name,
-    description: descriptorDescription(candidate.description),
+    description: candidate.description,
     revision: candidate.revision,
     sourceIdentity: Object.freeze({ ...candidate.sourceIdentity }),
     priority: candidate.priority,
@@ -275,7 +282,7 @@ const actual = (state: RegistryState): readonly SkillActual[] =>
       .flatMap((group) => {
         const winner = group[0]
         if (!winner) return []
-        const shadows = group.slice(1).map(shadow)
+        const shadows = group.slice(1, 1 + MAX_SHADOWED).map(shadow)
         return group.map((candidate, index) =>
           actualFor(state, candidate, index === 0, index === 0 ? shadows : []),
         )
@@ -413,6 +420,7 @@ export function createSkillCandidateRegistry(options: Options) {
         )
       )
         throw new TypeError('candidate source does not match replacement root')
+      if (!next.every(withinBounds)) throw new TypeError('skill name or description is out of bounds')
       stage((state) =>
         state.roots.set(
           root,
@@ -431,6 +439,7 @@ export function createSkillCandidateRegistry(options: Options) {
         )
       )
         throw new TypeError('invalid package skill contribution')
+      if (!next.every(withinBounds)) throw new TypeError('skill name or description is out of bounds')
       stage((state) =>
         state.roots.set(
           'package',
@@ -466,6 +475,7 @@ export function createSkillCandidateRegistry(options: Options) {
     registerRuntime(candidate: SkillCandidate, owner: RuntimeSkillOwner = { scope: 'suite' }): string {
       if (!isRuntimeCandidate(candidate) || candidate.priority !== RUNTIME_SKILL_PRIORITY)
         throw new TypeError('runtime skill candidate must use the runtime source')
+      if (!withinBounds(candidate)) throw new TypeError('skill name or description is out of bounds')
       if (owner.scope.length === 0) throw new TypeError('runtime skill owner is required')
       const key = skillNameKey(candidate.name)
       const storedOwner = Object.freeze({

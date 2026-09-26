@@ -9,9 +9,9 @@ export type SkillFrontmatter = Readonly<{
 }>
 
 const MAX_FRONTMATTER_BYTES = 16 * 1024
-const MAX_NAME_LENGTH = 128
+export const MAX_NAME_LENGTH = 128
 /** Agent Skills specification: description is 1–1024 characters. */
-const MAX_DESCRIPTION_LENGTH = 1024
+export const MAX_DESCRIPTION_LENGTH = 1024
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex')
 const hasControlCharacter = (value: string): boolean =>

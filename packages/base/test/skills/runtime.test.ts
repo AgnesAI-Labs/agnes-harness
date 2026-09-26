@@ -3,7 +3,10 @@ import type { ExtensionAPI, HookContext, ResourceEntry, ToolDef } from '@agnes/e
 import { validateAgainst } from '@agnes/protocol'
 import { ContextReturn } from '@agnes/protocol/gen/hooks'
 import { describe, expect, it, vi } from 'vitest'
+import { toolSearchTool } from '../../extensions/mcp-search/src/search-tools.js'
 import { skillsExtension } from '../../extensions/skills/src/runtime.js'
+import { MemFts } from '../../testkit/mem-fts.js'
+import { fakeToolContext } from '../../testkit/tool-context.js'
 
 const BASE_SENTINEL = 'BASE_SENTINEL_SKILL_S00'
 const baseSection = { id: 'persona', order: 100, text: BASE_SENTINEL, source: 'core' }
@@ -275,7 +278,7 @@ describe('skill runtime extension', () => {
           Array.from({ length: 100 }, (_, index) => ({
             resourceId: `skill/workspace/workspace-agnes/${String(index).padStart(64, '0')}`,
             name: `skill-${index}`,
-            description: 'd'.repeat(800),
+            description: '界'.repeat(400),
             revision: 'a'.repeat(64),
             sourceIdentity: {
               scope: 'workspace',
@@ -302,11 +305,13 @@ describe('skill runtime extension', () => {
     const descriptions = [...text.matchAll(/^skill-\d+\t(.*)$/gmu)].map((match) => match[1] ?? '')
     expect(descriptions).toHaveLength(100)
     expect(new Set(descriptions.map((item) => new TextEncoder().encode(item).byteLength)).size).toBe(1)
-    expect(new TextEncoder().encode(descriptions[0] ?? '').byteLength).toBeLessThan(800)
+    expect(new TextEncoder().encode(descriptions[0] ?? '').byteLength).toBeLessThan(
+      new TextEncoder().encode(`${'界'.repeat(249)}…`).byteLength,
+    )
   })
 
   it.each([
-    { count: 80, nameLength: 9, description: 'd'.repeat(815), omitted: false },
+    { count: 90, nameLength: 9, description: '界'.repeat(400), omitted: false },
     { count: 500, nameLength: 128, description: '界🙂', omitted: false },
     { count: 600, nameLength: 128, description: '界🙂', omitted: true },
   ])('keeps accurate catalog coverage with $count rows of name length $nameLength', async (fixture) => {
@@ -340,6 +345,104 @@ describe('skill runtime extension', () => {
     }
     if (fixture.nameLength === 128) expect(lines.every((line) => line.endsWith('\t'))).toBe(true)
     expect(read).not.toHaveBeenCalled()
+  })
+
+  it('caps each catalog description at 250 UTF-16 units while tool_search keeps the full text', async () => {
+    const skill = (name: string, description: string, index: number) => ({
+      resourceId: `skill/user/user-agnes/${String(index).padStart(64, 'c')}`,
+      name,
+      description,
+      revision: 'a'.repeat(64),
+      sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: String(index).padStart(64, 'c') },
+      actual: 'ready' as const,
+    })
+    const long = `${'x'.repeat(1023)}y`
+    const skills = [
+      skill('cap-long', long, 1),
+      skill('cap-surrogate', `${'a'.repeat(248)}😀${'b'.repeat(100)}`, 2),
+      skill('cap-exact', 'e'.repeat(250), 3),
+      skill('cap-ellipsis', `${'m'.repeat(248)}…${'n'.repeat(10)}`, 4),
+      skill('cap-space', `${'s'.repeat(248)} ${'t'.repeat(10)}`, 5),
+    ]
+    const discovery = { list: () => skills, runInWorkspace }
+    const { hooks } = install({
+      skillResources: { ...discovery, read: () => ({ ok: false as const, code: 'NOT_FOUND' as const }) },
+    } as unknown as Parameters<typeof skillsExtension>[0])
+    const text = authorCatalog(await hooks.get('context')?.({}, { session: { key: 's' } } as HookContext))
+    const row = (name: string) => new RegExp(`^${name}\\t(.*)$`, 'mu').exec(text)?.[1]
+
+    expect(row('cap-long')).toBe(`${'x'.repeat(249)}…`)
+    expect(row('cap-long')).toHaveLength(250)
+    expect(row('cap-surrogate')).toBe(`${'a'.repeat(248)}…`)
+    expect(row('cap-exact')).toBe('e'.repeat(250))
+    expect(row('cap-ellipsis')).toBe(`${'m'.repeat(248)}…`)
+    expect(row('cap-space')).toBe(`${'s'.repeat(248)}…`)
+    expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u)
+
+    const search = toolSearchTool(new MemFts(), discovery as never)
+    const found = await search.execute({ query: 'cap-long' }, fakeToolContext())
+    expect((found.content[0] as { text: string }).text).toContain(`Skill cap-long — ${long}\n`)
+  })
+
+  it('keys the catalog on the capped text', async () => {
+    const skill = {
+      resourceId: `skill/user/user-agnes/${'d'.repeat(64)}`,
+      name: 'cap-key',
+      description: 'k'.repeat(400),
+      revision: 'a'.repeat(64),
+      sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'd'.repeat(64) },
+      actual: 'ready' as const,
+    }
+    const { hooks } = install({
+      skillResources: {
+        list: () => [skill],
+        read: () => ({ ok: false as const, code: 'NOT_FOUND' as const }),
+        runInWorkspace,
+      },
+    } as unknown as Parameters<typeof skillsExtension>[0])
+    const render = async () =>
+      authorCatalog(await hooks.get('context')?.({}, { session: { key: 's' } } as HookContext))
+    const first = await render()
+    expect(await render()).toBe(first)
+    skill.description = `${'k'.repeat(299)}Z${'k'.repeat(100)}`
+    expect(await render()).toBe(first)
+    skill.description = `${'k'.repeat(9)}Z${'k'.repeat(390)}`
+    expect(await render()).not.toBe(first)
+  })
+
+  it('logs one count-only warning when the catalog is shortened', async () => {
+    const warn = vi.fn()
+    const log = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() }
+    const skills = Array.from({ length: 100 }, (_, index) => ({
+      resourceId: `skill/user/user-agnes/${String(index).padStart(64, 'b')}`,
+      name: `warn-${index}`,
+      description: '界'.repeat(400),
+      revision: 'a'.repeat(64),
+      sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: String(index).padStart(64, 'b') },
+      actual: 'ready' as const,
+    }))
+    const { hooks } = install({
+      skillResources: {
+        list: () => skills,
+        read: () => ({ ok: false as const, code: 'NOT_FOUND' as const }),
+        runInWorkspace,
+      },
+    } as unknown as Parameters<typeof skillsExtension>[0])
+    const context = { session: { key: 's' }, log } as unknown as HookContext
+    await hooks.get('context')?.({}, context)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith('skill catalog exceeded its budget', {
+      ready: 100,
+      listed: 100,
+      descriptionBytes: expect.any(Number),
+    })
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('warn-')
+    await hooks.get('context')?.({}, context)
+    expect(warn).toHaveBeenCalledTimes(1)
+
+    skills.splice(10)
+    await hooks.get('context')?.({}, context)
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the catalog stable when only a revision changes', async () => {
@@ -376,7 +479,7 @@ describe('skill runtime extension', () => {
     const { hooks } = install({
       skillResources: {
         list: () =>
-          Array.from({ length: 80 }, (_, index) => ({
+          Array.from({ length: 100 }, (_, index) => ({
             resourceId: `skill/workspace/workspace-agnes/${String(index).padStart(64, 'e')}`,
             name: `wide-${index}`,
             description: '界'.repeat(400),
@@ -397,9 +500,10 @@ describe('skill runtime extension', () => {
     }
     const text = authorCatalog(injected)
     const descriptions = [...text.matchAll(/^wide-\d+\t(.*)$/gmu)].map((match) => match[1] ?? '')
-    expect(descriptions.length).toBe(80)
+    expect(descriptions.length).toBe(100)
     for (const description of descriptions) {
-      expect(description.endsWith('…') || description === '界'.repeat(400)).toBe(true)
+      expect(description.endsWith('…')).toBe(true)
+      expect(description.length).toBeLessThan(250)
       expect(() =>
         new TextDecoder('utf-8', { fatal: true }).decode(new TextEncoder().encode(description)),
       ).not.toThrow()
