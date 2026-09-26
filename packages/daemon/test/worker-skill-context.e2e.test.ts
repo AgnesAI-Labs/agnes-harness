@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { ecosystem as baseEcosystem } from '@agnes/base'
+import { canonicalJson, sha256hex } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
+import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { bootstrapWorkerResources, scanSkills } from '@agnes/resource-control-worker'
 import { afterEach, expect, it } from 'vitest'
 import { workspaceBinding } from './workspace-authority.js'
@@ -19,9 +21,9 @@ const roots: string[] = []
 // current assembly; previous pins a27a12ea / 513280f4 predate those four tools.
 // 2026-09-22: both the legacy explicit-cwd and shared-worker paths produce these hashes;
 // complete tool-name assertions below remain unchanged across the merged dependency/schema update.
-// 2026-09-24: skill_read accepts names from catalog/search; both tool descriptions match ready discovery.
-const TEST_DISCOVERY_TOOL_SCHEMA_HASH = '28972080581de40668c05ff0d995607dcf8900e2f3ba4cd5141addd4cb70fc1b'
-const ACTIVE_SKILL_TOOL_SCHEMA_HASH = 'e0933a9d30aaaee8ad6429f45523d5702e84fff99fbd17aeb11d02f3d390a4ba'
+// Pagination adds skill_read offset/pageKey and skill_read_file offset to the disclosed schemas.
+const TEST_DISCOVERY_TOOL_SCHEMA_HASH = 'c35a8f64eefcf614f96ae3f4eb3f2c221091f4f3973f07d79cee004dd12efa69'
+const ACTIVE_SKILL_TOOL_SCHEMA_HASH = 'a6172175c1ba66fa365e505ad8995c61498bf2bdb39eeaf1e1663e6d76d6b66e'
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -257,9 +259,13 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
     const headers = (await session.scan({ fromSeq: 1, toSeq: session.lastSeq })).filter(
       (row) => row.type === 'request/header',
     )
+    const firstRequest = provider.calls[0]
+    if (!firstRequest) throw new Error('missing first Skill request')
+    const firstToolSchemaHash = sha256hex(canonicalJson(firstRequest.tools).normalize('NFC'))
     expect(headers.map((row) => (row.data as { tool_schema_hash?: string }).tool_schema_hash)).toEqual([
-      ACTIVE_SKILL_TOOL_SCHEMA_HASH,
+      firstToolSchemaHash,
     ])
+    expect(firstToolSchemaHash).toBe(ACTIVE_SKILL_TOOL_SCHEMA_HASH)
     expect(contextSawPreloadedBody).toBe(false)
     expect(mcpReceivedSkillResources).toBe(false)
     expect(mcpDiscoveryHasRead).toBe(false)
@@ -277,9 +283,11 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
     )
     const lastHeader = genericHeaders.at(-1)
     if (!lastHeader) throw new Error('expected at least one request/header row')
-    expect((lastHeader.data as { tool_schema_hash?: string }).tool_schema_hash).toBe(
-      TEST_DISCOVERY_TOOL_SCHEMA_HASH,
-    )
+    const genericRequest = provider.calls.at(-1)
+    if (!genericRequest) throw new Error('missing generic Skill request')
+    const genericToolSchemaHash = sha256hex(canonicalJson(genericRequest.tools).normalize('NFC'))
+    expect((lastHeader.data as { tool_schema_hash?: string }).tool_schema_hash).toBe(genericToolSchemaHash)
+    expect(genericToolSchemaHash).toBe(TEST_DISCOVERY_TOOL_SCHEMA_HASH)
     const saved = await readFile(snapshot, 'utf8')
     for (const enabled of [false, true]) {
       const next = JSON.parse(saved)
@@ -337,6 +345,141 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
       await editedGeneration.runtime.mcp.close()
     }
     expect(provider.calls).toHaveLength(6)
+  } finally {
+    await host.close()
+    await resources.runtime.mcp.close()
+  }
+})
+
+it('discovers 45 disk Skills and lets the model page a 100 KiB Skill after preload declines it', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'agnes-worker-skill-pages-')))
+  roots.push(root)
+  const dataDir = join(root, 'agnes-home')
+  const homeDir = join(root, 'worker-home')
+  const workspace = join(dataDir, 'workspace')
+  const skillRoot = join(workspace, '.agh', 'skills')
+  const largeBody = `PAGE_START\n${'界😀\n'.repeat(12_800)}PAGE_END`
+  await Promise.all(
+    Array.from({ length: 45 }, async (_, index) => {
+      const name = index === 0 ? 'large-review' : `small-${index}`
+      const directory = join(skillRoot, name)
+      await mkdir(directory, { recursive: true })
+      await writeFile(
+        join(directory, 'SKILL.md'),
+        `---\nname: ${name}\ndescription: ${index === 1 ? '界'.repeat(400) : `Synthetic skill ${index}`}\n---\n${index === 0 ? largeBody : 'Short fixture.'}`,
+      )
+    }),
+  )
+  const discovered = await scanSkills(workspace, undefined, undefined, homeDir)
+  const candidates = discovered.roots.find((item) => item.rootKey === 'workspace-agnes')?.candidates ?? []
+  expect(candidates).toHaveLength(45)
+  const large = candidates.find((item) => item.name === 'large-review')
+  if (!large) throw new Error('large disk Skill was not discovered')
+  const snapshot = join(root, 'resource-snapshot.json')
+  await writeFile(
+    snapshot,
+    JSON.stringify({
+      version: 1,
+      mcpAuthority: 'resource-control',
+      skills: {
+        control: {
+          desired: candidates.map((item) => ({ resourceId: item.resourceId, state: 'enabled' })),
+          trust: candidates.map((item) => ({
+            resourceId: item.resourceId,
+            revision: item.revision,
+            capabilityHash: item.capabilityHash,
+            state: 'trusted',
+          })),
+        },
+      },
+      mcp: [],
+    }),
+  )
+  const resources = await bootstrapWorkerResources({
+    env: { AGNES_RESOURCE_SNAPSHOT: snapshot, HOME: homeDir },
+    cwd: workspace,
+    profile: { name: 'local-dev', dataDir, adapters: { secrets: { kind: 'env' } } } as never,
+    createBarrier: () => barrier,
+    createSecrets: () => ({ resolve: () => '' }),
+  })
+  if (!resources) throw new Error('worker bootstrap did not return the managed Skill snapshot')
+  let requests = 0
+  let pages = 0
+  const scripts = Array.from({ length: 12 }, () => (request: RequestBody): InferenceEvent[] => {
+    requests++
+    const names = request.system.match(/^small-\d+\t/gmu) ?? []
+    expect(names).toHaveLength(44)
+    expect(request.system).toContain('large-review\t')
+    const longDescription = /^small-1\t(.*)$/mu.exec(request.system)?.[1]
+    expect(longDescription).toBeTruthy()
+    expect(longDescription?.length).toBeLessThanOrEqual(250)
+    expect(request.system).not.toContain('PAGE_START')
+    expect(request.tools.some((tool) => tool.name === 'skill_read')).toBe(true)
+    if (requests === 1)
+      return [
+        {
+          type: 'toolcall_end',
+          call: { toolUseId: '', name: 'skill_read', args: { name: 'large-review' }, ordinal: 0 },
+          via: 'native',
+        },
+        { type: 'done', reason: 'toolUse' },
+      ]
+    const latest = request.messages.filter((message) => message.role === 'tool_result').at(-1)
+    const result = latest?.content.find((block) => block.type === 'text')?.text ?? ''
+    expect(result).toContain('resourceId: ')
+    if (pages === 0) expect(result).toContain('PAGE_START')
+    const visible = result.slice(result.indexOf('resourceId: '), result.lastIndexOf('</untrusted'))
+    expect(new TextEncoder().encode(visible).byteLength).toBeLessThanOrEqual(32768)
+    pages++
+    const continuation = /call skill_read with (\{[^\n]+\})\]/u.exec(result)?.[1]
+    if (continuation)
+      return [
+        {
+          type: 'toolcall_end',
+          call: { toolUseId: '', name: 'skill_read', args: JSON.parse(continuation), ordinal: 0 },
+          via: 'native',
+        },
+        { type: 'done', reason: 'toolUse' },
+      ]
+    expect(result).toContain('PAGE_END')
+    return [
+      { type: 'text_delta', delta: 'The complete Skill was read.' },
+      { type: 'done', reason: 'stop' },
+    ]
+  })
+  const provider = new ScriptedProvider({
+    models: [fakeModel({ route: 'gw', id: 'm1', contextWindow: 200_000 })],
+    scripts,
+    onExhausted: 'error',
+  })
+  const { host } = await createTestHost({
+    dataDir,
+    packageDirs: { '@agnes/base': baseDir },
+    provider,
+    disableSessionTitle: true,
+    skillResources: resources.skillResources,
+  })
+  try {
+    const key = 'worker-skill-pages'
+    const canonicalWorkspace = await realpath(workspace)
+    const envelope = await workspaceBinding(key, canonicalWorkspace)
+    const session = await host.createSession({
+      key,
+      cwd: canonicalWorkspace,
+      binding: host.acceptWorkspaceBinding(envelope, key),
+    })
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'Use the large-review Skill.' }],
+      actor: session.d.actor,
+      kind: 'prompt',
+    })
+    await expect(
+      session.run({ until: 'turn-end', signal: new AbortController().signal }),
+    ).resolves.toMatchObject({
+      reason: 'completed',
+    })
+    expect(pages).toBeGreaterThan(2)
+    expect(requests).toBe(pages + 1)
   } finally {
     await host.close()
     await resources.runtime.mcp.close()
