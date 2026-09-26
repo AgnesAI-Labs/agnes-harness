@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CONVERSATION_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
+// A slot change commits in a few milliseconds, but a loaded runner has taken longer than the fixed
+// 20 ms these checks used to sleep. Wait for the rendered state instead.
+const committed = { timeout: 5_000 }
+
 describe('rendered conversation region', () => {
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
 
@@ -20,10 +24,11 @@ describe('rendered conversation region', () => {
     await vi.waitFor(
       () =>
         expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy(),
-      { timeout: 5_000 },
+      committed,
     )
     expect(conversation?.querySelector('[data-slot="ui:conversation"]')).toBeTruthy()
     expect(conversation?.querySelector('[data-slot="ui:transcript"] #transcript-content')).toBeTruthy()
+    expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy()
     expect(conversation?.querySelector('#new-content')).toBeInstanceOf(HTMLButtonElement)
     expect(document.querySelector('[data-slot="ui:approval"] #approval-content')).toBeTruthy()
     expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
@@ -41,18 +46,20 @@ describe('rendered conversation region', () => {
       },
       () => createElement('div', { id: 'shadow-conversation' }, '替换对话容器'),
     )
-    await vi.waitFor(() =>
-      expect(conversation?.querySelector('#shadow-conversation')?.textContent).toBe('替换对话容器'),
-    )
-    expect(conversation?.querySelector('#transcript')).toBeNull()
-    expect(conversation?.querySelector('#empty-state')).toBeNull()
+    await vi.waitFor(() => {
+      expect(conversation?.querySelector('#shadow-conversation')?.textContent).toBe('替换对话容器')
+      expect(conversation?.querySelector('#transcript')).toBeNull()
+      expect(conversation?.querySelector('#empty-state')).toBeNull()
+    }, committed)
     expect(document.querySelector('[data-slot="ui:approval"] #approval-content')).toBeTruthy()
     expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
 
     remove()
-    await vi.waitFor(() => expect(conversation?.querySelector('#shadow-conversation')).toBeNull())
-    expect(conversation?.querySelector('[data-slot="ui:transcript"] #transcript-content')).toBeTruthy()
-    expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(conversation?.querySelector('#shadow-conversation')).toBeNull()
+      expect(conversation?.querySelector('[data-slot="ui:transcript"] #transcript-content')).toBeTruthy()
+      expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy()
+    }, committed)
   })
 
   it('mounts session header child outlets only after a session becomes available', async () => {
@@ -71,10 +78,12 @@ describe('rendered conversation region', () => {
           owner.sessionId,
         ),
     )
-    await vi.waitFor(() => expect(document.querySelector('.conversation-session-header')).toBeTruthy())
-    expect(document.querySelector('#fixture-session-header-action-button')?.textContent).toBe(
-      'session-header-1',
-    )
+    await vi.waitFor(() => {
+      expect(document.querySelector('.conversation-session-header')).toBeTruthy()
+      expect(document.querySelector('#fixture-session-header-action-button')?.textContent).toBe(
+        'session-header-1',
+      )
+    }, committed)
     remove()
   })
 })

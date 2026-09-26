@@ -249,8 +249,9 @@ it.each(['stdio-env', 'http-bearer', 'http-header'])(
             ...(kind === 'http-header' ? { headerName: 'x-api-token' } : {}),
           },
     })
-    await settle()
-    expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false)
+    await vi.waitFor(() => expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false), {
+      timeout: 5_000,
+    })
   },
 )
 
@@ -537,8 +538,9 @@ it('submits SSE transport with bearer token SecretRef from the form', async () =
       credentialRef: 'secret://dom/sse-token',
     },
   })
-  await settle()
-  expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false)
+  await vi.waitFor(() => expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false), {
+    timeout: 5_000,
+  })
 })
 
 it('rejects an unrecognized mcp-transport value instead of silently submitting an SSE definition', async () => {

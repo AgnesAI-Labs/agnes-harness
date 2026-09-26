@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, UITimeline } from '@agnes/protocol'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sdk = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -1315,6 +1315,7 @@ describe('incremental opening', () => {
     opening: () => Promise<UITimeline>,
     titled = true,
     configure?: (old: SessionDouble) => void,
+    clientOverrides: Record<string, unknown> = {},
   ) {
     installPublicFixture()
     const on = vi.fn()
@@ -1334,6 +1335,7 @@ describe('incremental opening', () => {
       },
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: { list, load: vi.fn(async () => old) },
+      ...clientOverrides,
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
     await import('../src/app.js')
@@ -1432,6 +1434,95 @@ describe('incremental opening', () => {
     const approval = document.getElementById('approval') as HTMLElement
     await vi.waitFor(() => expect(approval.textContent).toContain('正在查找'))
     expect(approval.querySelectorAll('button')).toHaveLength(0)
+  })
+
+  describe('recovery after the connection is gone', () => {
+    // The fixture page carries the unreplaced marker as its daemon address.
+    const page = (ws: string) => new Response(`<meta id="agnes-config" data-ws="${ws}" />`, { status: 200 })
+    const samePage = () => page('__AGNES_WS_URL__')
+    const newPage = () => page('ws://127.0.0.1:1/')
+    const probes = (fetcher: { mock: { calls: unknown[][] } }) =>
+      fetcher.mock.calls.filter(([input]) => input === '/').length
+    let reload: { mockRestore(): void; mock: { calls: unknown[][] } }
+    beforeEach(() => {
+      reload = vi.spyOn(location, 'reload').mockImplementation(() => undefined)
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      reload.mockRestore()
+    })
+
+    it('reloads once the Web page serves a new daemon address, never into the old one', async () => {
+      const { emit } = await bootWith(async () => idleTimeline('old'))
+      const connection = document.getElementById('connection') as HTMLElement
+      await vi.waitFor(() => expect(connection.dataset.state).toBe('connected'))
+      const fetcher = vi.fn<typeof fetch>(async () => new Response('', { status: 502 }))
+      vi.stubGlobal('fetch', fetcher)
+      emit('closed', { reason: 'closed' })
+      // Two probes land at 0.5 s and 1.5 s; the server is still down, so the page must stay put.
+      await new Promise((resolve) => setTimeout(resolve, 1700))
+      expect(reload.mock.calls.length).toBe(0)
+      expect(probes(fetcher)).toBe(2)
+      const status = document.getElementById('reconnect-notice') as HTMLElement
+      const notice = document.getElementById('notice') as HTMLElement
+      expect(status.hidden).toBe(false)
+      expect(connection.dataset.state).toBe('reconnecting')
+      // The notice states the fact without contradicting the automatic recovery.
+      expect(notice.textContent).not.toContain('重新运行')
+      // A Web process that outlived the daemon still serves the old address: no reload into it.
+      fetcher.mockImplementation(async () => samePage())
+      await vi.waitFor(() => expect(probes(fetcher)).toBe(3), { timeout: 4000 })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(reload.mock.calls.length).toBe(0)
+      fetcher.mockImplementation(async () => newPage())
+      await vi.waitFor(() => expect(reload.mock.calls.length).toBe(1), { timeout: 5000 })
+      expect(status.textContent).toContain('正在重新载入')
+    }, 20_000)
+
+    it('starts recovering when the first connection fails', async () => {
+      const fetcher = vi.fn<typeof fetch>(async () => newPage())
+      await bootWith(async () => idleTimeline('old'), true, undefined, {
+        initialize: vi.fn(async () => {
+          throw new Error('connect failed')
+        }),
+      })
+      vi.stubGlobal('fetch', fetcher)
+      const status = document.getElementById('reconnect-notice') as HTMLElement
+      await vi.waitFor(() => expect(status.hidden).toBe(false))
+      await vi.waitFor(() => expect(reload.mock.calls.length).toBe(1), { timeout: 4000 })
+    }, 15_000)
+
+    it('keeps a retry control through later errors, retries by hand, and resumes when shown again', async () => {
+      const { emit } = await bootWith(async () => idleTimeline('old'))
+      const connection = document.getElementById('connection') as HTMLElement
+      await vi.waitFor(() => expect(connection.dataset.state).toBe('connected'))
+      const fetcher = vi.fn<typeof fetch>(async () => new Response('', { status: 502 }))
+      vi.stubGlobal('fetch', fetcher)
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+      emit('closed', { reason: 'closed' })
+      await vi.advanceTimersByTimeAsync(65_000)
+      const status = document.getElementById('reconnect-notice') as HTMLElement
+      const retry = status.querySelector('button')
+      expect(retry?.textContent).toBe('重试连接')
+      expect(connection.dataset.state).toBe('closed')
+      // A later message rewrites the notice, not the recovery status.
+      emit('gap', { sessionId: 'old', earliestSeq: 1 })
+      const notice = document.getElementById('notice') as HTMLElement
+      expect(notice.textContent).toContain('部分历史事件')
+      expect(status.querySelector('button')).toBe(retry)
+      // Showing the tab again resumes automatic probing, which still refuses the old address.
+      fetcher.mockImplementation(async () => samePage())
+      const before = probes(fetcher)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(probes(fetcher)).toBe(before + 1)
+      expect(reload.mock.calls.length).toBe(0)
+      await vi.advanceTimersByTimeAsync(65_000)
+      // The retry button accepts any served page, for a restart that reused the same address.
+      status.querySelector('button')?.click()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(reload.mock.calls.length).toBe(1)
+    }, 15_000)
   })
 
   it('looks for the approval again after a reopen, and ignores gaps of other sessions', async () => {

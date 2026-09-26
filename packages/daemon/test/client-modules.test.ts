@@ -893,8 +893,10 @@ describe('client module immutable snapshots', () => {
     currentInventory = inventory(row)
     await registry.list(input())
     events.length = 0
-    await new Promise((resolve) => setTimeout(resolve, 60))
-    expect(events).toContain('resources')
+    // The expiry timer fires after the 20 ms retention, then rewrites the snapshot state on disk
+    // before it reports; on a loaded runner that can take longer than any fixed sleep. The state
+    // file is written before the event, so it is final once the event has arrived.
+    await vi.waitFor(() => expect(events).toContain('resources'), { timeout: 5_000 })
     const state = JSON.parse(readFileSync(join(files.snapshots, '_client-modules.json'), 'utf8')) as {
       packages: Record<string, { retained: unknown[] }>
     }

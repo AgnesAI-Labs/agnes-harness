@@ -84,6 +84,7 @@ export function createExtensionActivationBarrier(
   const counts: Record<ActivationInvocationKind, number> = { turn: 0, tool: 0, service: 0 }
   const queued: Record<ActivationInvocationKind, number> = { turn: 0, tool: 0, service: 0 }
   const activeInvocations = new WeakSet<object>()
+  const liveInvocations = new WeakSet<ActivationInvocation>()
   const invocationContext = new AsyncLocalStorage<ActivationInvocation>()
   const quiescenceWaiters = new Set<() => void>()
   const gateWaiters = new Set<GateWaiter>()
@@ -106,6 +107,7 @@ export function createExtensionActivationBarrier(
       if (!active) return
       active = false
       activeInvocations.delete(identity)
+      liveInvocations.delete(invocation)
       counts[kind]--
       signalQuiescence()
     }
@@ -144,6 +146,7 @@ export function createExtensionActivationBarrier(
         })
       },
     })
+    liveInvocations.add(invocation)
     return invocation
   }
   const waitForOpenGate = () => {
@@ -201,7 +204,11 @@ export function createExtensionActivationBarrier(
       return makeInvocation(kind)
     },
     enqueue(kind: ActivationInvocationKind) {
-      if (state !== 'accepting') throw new ActivationInProgressError(operationId as string)
+      // Work queued by a live invocation (a spawned child's turn) waits behind the activation;
+      // anything else is refused so the caller can retry.
+      const parent = invocationContext.getStore()
+      if (state !== 'accepting' && !(parent && liveInvocations.has(parent)))
+        throw new ActivationInProgressError(operationId as string)
       queued[kind]++
       let status: 'queued' | 'starting' | 'started' | 'cancelled' = 'queued'
       let cancelled = false

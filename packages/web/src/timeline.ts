@@ -504,8 +504,9 @@ function mountDshNode(
     },
     dispose() {
       for (const stop of stops) stop()
-      root.unmount()
-      childRoot.unmount()
+      // A reset can run inside another root's commit (the transcript is torn down on a session
+      // switch), where React cannot unmount a root synchronously; let that commit finish first.
+      for (const nested of [root, childRoot]) queueMicrotask(() => nested.unmount())
       host.remove()
       native.remove()
     },
@@ -669,15 +670,18 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
   // details、底部内容塌缩，scrollTop 被向上钳制，视图跳到顶只剩"有新内容"。
   let follow = true
   let expectedTop = scrollContainer.scrollTop
-  const scrollToBottom = (): void => {
-    // The document skin intentionally enables smooth reader scrolling. It must not turn each
-    // streaming frame into a new animation, otherwise repeated deltas never catch up with the
-    // bottom and the next real user scroll cannot reliably leave follow mode.
+  const jumpTo = (top: number): void => {
+    // The document skin intentionally enables smooth reader scrolling. Programmatic positioning
+    // must not animate: a streaming frame would never catch up with the bottom, and anchoring
+    // after a prepend would visibly slide the whole transcript.
     const previousBehavior = scrollContainer.style.scrollBehavior
     scrollContainer.style.scrollBehavior = 'auto'
-    scrollContainer.scrollTop = scrollContainer.scrollHeight
+    scrollContainer.scrollTop = top
     scrollContainer.style.scrollBehavior = previousBehavior
     expectedTop = scrollContainer.scrollTop
+  }
+  const scrollToBottom = (): void => {
+    jumpTo(scrollContainer.scrollHeight)
     options.newContentButton.hidden = true
   }
   // Node objects are immutable once rendered, so an unchanged object keeps its fingerprint.
@@ -783,12 +787,18 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
 
     if (changed) {
       if (follow) scrollToBottom()
-      else if (prepended) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight - fromBottom
-        expectedTop = scrollContainer.scrollTop
-      } else options.newContentButton.hidden = nearBottom(scrollContainer)
+      else if (prepended) jumpTo(scrollContainer.scrollHeight - fromBottom)
+      else options.newContentButton.hidden = nearBottom(scrollContainer)
     }
     restoreTranscriptSelection(options.transcript, savedSelection)
+    // The observer only reports visibility changes. A sentinel that never left the screen while a
+    // page loaded would never report again, so re-observing asks for a fresh reading, which the
+    // browser takes after this layout. Only a page that actually landed re-arms it: a failed load
+    // re-renders the same window, and re-arming then would retry without end.
+    if (sentinel && nextMeta?.hasEarlier && prepended) {
+      sentinel.unobserve(earlier)
+      sentinel.observe(earlier)
+    }
   }
 
   const onScroll = () => {
