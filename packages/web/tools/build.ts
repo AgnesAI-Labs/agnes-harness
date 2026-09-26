@@ -1,4 +1,4 @@
-import { cp, mkdir, rm } from 'node:fs/promises'
+import { appendFile, cp, mkdir, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const antdCss = require.resolve('antd/dist/antd.css', { paths: [join(root, '..', 'web-ui')] })
 const tokensCss = join(root, '..', 'web-ui', 'src', 'tokens.css')
+const conversationCss = join(root, '..', 'web-ui', 'src', 'conversation', 'messages.css')
 const out = join(root, 'dist', 'web')
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
@@ -20,6 +21,7 @@ const platformExternals = [
   'react-dom/client',
   '@agnes/cordis',
   '@agnes/web-client',
+  '@agnes/web-ui/assistant-ui',
   'antd',
 ]
 await build({
@@ -94,3 +96,6 @@ await Promise.all(
     .map((file) => cp(join(root, 'public', file), join(out, file)))
     .concat([cp(antdCss, join(out, 'antd.css')), cp(tokensCss, join(out, 'tokens.css'))]),
 )
+// Conversation rules share the existing style.css URL on all three pages. The local CLI build
+// must apply the same composition when copying Web assets into its own static root.
+await appendFile(join(out, 'style.css'), `\n${await readFile(conversationCss, 'utf8')}`)
