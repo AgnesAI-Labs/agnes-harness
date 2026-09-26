@@ -67,6 +67,7 @@ async function open(o: Setup) {
   const preset = presetDefaults()
   preset.compaction.reserveTokens = o.reserve
   preset.compaction.keepRecentTokens = o.keep
+  if (o.compactionWindow) preset.model.id.compaction = 'compaction-model'
   preset.budget.maxSteps = 200
   preset.telemetry.invariants = 'strict'
   const opened = await openSession({
@@ -320,6 +321,7 @@ describe('compaction inside long tool loops', () => {
     expect(m.replaces).toBe(1)
     expect(m.elided).toBe(0)
     expect(m.summaryRequests).toBe(1)
+    expect(provider.requests.find((request) => request.kind === 'summary')?.model).toBe('compaction-model')
     expect(m.quotes).toBe(0)
     expect(m.failed).toBe(0)
   }, 60_000)
