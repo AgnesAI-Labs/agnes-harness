@@ -4165,7 +4165,7 @@ body.admin-page {
   align-items: flex-end;
   gap: 1.375rem;
   padding: 0;
-  border-bottom: 1px solid var(--agnes-line-primary);
+  border-bottom: 0;
   border-radius: 0;
   background: transparent;
 }
@@ -4180,6 +4180,19 @@ body.admin-page {
   box-shadow: none;
   font-size: var(--font-size-sm);
   font-weight: 400;
+  transition: color var(--transition-fast) ease;
+}
+.plugin-tabs button::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--agnes-brand-primary);
+  content: "";
+  opacity: 0;
+  transition: opacity var(--transition-fast) ease;
 }
 .plugin-tabs button:hover:not(:disabled),
 .plugin-tabs button[aria-selected="true"] {
@@ -4187,15 +4200,11 @@ body.admin-page {
   color: var(--agnes-text-primary);
   background: transparent;
 }
+.plugin-tabs button:hover:not(:disabled)::after {
+  opacity: 0.35;
+}
 .plugin-tabs button[aria-selected="true"]::after {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  background: var(--agnes-text-primary);
-  content: "";
+  opacity: 1;
 }
 .plugin-search-field {
   min-width: min(19rem, 45%);
