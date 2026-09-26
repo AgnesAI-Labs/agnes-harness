@@ -91,9 +91,9 @@ describe('SessionHookPort', () => {
     await expect(port.turnStopping({ turn: 1, step: 1, proposedReason: 'completed' })).resolves.toEqual({
       action: 'stop',
     })
-    await expect(port.context([])).resolves.toEqual([])
+    await expect(port.context([])).resolves.toEqual({ sections: [], additionalContext: '' })
     const existing = [{ id: 'additional-context', order: 199, text: 'existing', source: 'caller' }]
-    await expect(port.context(existing)).resolves.toEqual(existing)
+    await expect(port.context(existing)).resolves.toEqual({ sections: [], additionalContext: '' })
     expect(await port.beforeRequest(request, 'primary', 0)).toBe(request)
   })
 
@@ -286,14 +286,14 @@ describe('SessionHookPort', () => {
     engine.on(
       'context',
       (payload) => {
-        expect(payload.sections[0]?.content).toBe('界'.repeat(2730))
+        expect(payload.sections).toEqual([])
         return { additionalContext: '界'.repeat(3000) }
       },
       meta,
     )
-    const sections = await port.context([])
-    expect(sections).toHaveLength(1)
-    expect(sections[0]?.text).toBe('界'.repeat(2730))
+    const result = await port.context([])
+    expect(result.sections).toEqual([])
+    expect(result.additionalContext).toBe('界'.repeat(2730))
     expect(overflow).toEqual([{ ext: 'agnes/test', bytes: 9000 }])
   })
 
@@ -382,7 +382,7 @@ it('pins all five turn adapter events until resetTurn replaces their shared memb
       action: 'continue',
       note: label,
     })
-    expect((await port.context([])).map((section) => section.text)).toEqual([label])
+    expect((await port.context([])).additionalContext).toBe(label)
     expect((await port.beforeRequest(make(), 'primary', 0)).request.maxTokens).toBe(label === 'old' ? 17 : 23)
   }
   await check('old')

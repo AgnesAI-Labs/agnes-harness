@@ -39,6 +39,12 @@ export type DeriveInput = {
    * Pure performance memo; historical identity comes from envelopeNonceFor, not this map.
    */
   envelopeCache: EnvelopeCache
+  /** Trusted tail notes are persisted with the request and deduplicated against visible history. */
+  notes?: ReadonlyArray<{
+    prefix: string
+    text: string
+    dedup: { kind: 'latest' } | { kind: 'present'; key: string }
+  }>
   /** Already preflighted with caller-supplied limits; this layer never selects images or invents caps. */
   media?: LedgerPreparedRequestMedia
   /** Canonical session identity supplied by the same owner that reads the ledger. */
@@ -81,6 +87,7 @@ export type DeriveOutput = {
   header: RequestHeaderData
   media?: LedgerPreparedRequestMedia
   runtimeContext: { changed: boolean; event?: EventInput }
+  notes: EventInput[]
 }
 
 type RequestMediaAuthority = Readonly<{
@@ -659,15 +666,29 @@ const SUMMARY_BRIDGE_TEXT =
  * between two turns must not hide the snapshot behind it, or an unchanged snapshot is sent twice.
  */
 export function lastRuntimeContextText(surface: readonly SurfaceNode[]): string | null {
+  return lastNoteText(surface, RUNTIME_CONTEXT_PREFIX)
+}
+
+function lastNoteText(surface: readonly SurfaceNode[], prefix: string): string | null {
   for (let i = surface.length - 1; i >= 0; i--) {
     const node = surface[i]
     if (node === undefined || node.kind !== 'user' || node.event.type !== 'user/message') continue
     const data = node.event.data as { kind?: unknown; content?: unknown }
     if (data.kind !== 'runtime_context') continue
     const text = textOf(blocksOf(data.content))
-    if (text.startsWith(RUNTIME_CONTEXT_PREFIX)) return text
+    if (text.startsWith(prefix)) return text
   }
   return null
+}
+
+function noteEvent(text: string): EventInput {
+  return {
+    type: 'user/message',
+    origin: 'system',
+    trust: 'trusted',
+    actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
+    data: { content: [{ type: 'text', text }], kind: 'runtime_context' },
+  }
 }
 
 /**
@@ -803,17 +824,42 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // scans at all.
   const changed = Object.keys(rc).length > 0 && runtimeContextText !== lastRuntimeContextText(input.surface)
   let event: EventInput | undefined
+  const notes: EventInput[] = []
   if (changed) {
-    event = {
-      type: 'user/message',
-      origin: 'system',
-      trust: 'trusted',
-      actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
-      data: { content: [{ type: 'text', text: runtimeContextText }], kind: 'runtime_context' },
-    }
+    event = noteEvent(runtimeContextText)
+    notes.push(event)
     // seq 0: the row has not been written yet, so it has no sequence. Storage assigns one when the
     // event above is appended, and the next derivation reads it off the surface like any other row.
     messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text: runtimeContextText }] })
+  }
+  if (input.kind === 'turn') {
+    const rank = (prefix: string) =>
+      prefix === '[hook context]\n' ? 0 : prefix === '[skill loaded]\n' ? 1 : 2
+    for (const note of [...(input.notes ?? [])].sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
+      const previous = lastNoteText(input.surface, note.prefix)
+      if (note.dedup.kind === 'present') {
+        const key = sanitize(note.dedup.key)
+        if (
+          input.surface.some((node) => {
+            if (node.kind !== 'user' || node.event.type !== 'user/message') return false
+            const data = node.event.data as { kind?: unknown; content?: unknown }
+            const text = textOf(blocksOf(data.content))
+            return (
+              data.kind === 'runtime_context' &&
+              text.startsWith(note.prefix) &&
+              text.slice(note.prefix.length).split('\n', 1)[0] === key
+            )
+          })
+        )
+          continue
+      }
+      const body = note.text ? note.text : previous ? '(none)' : ''
+      if (!body) continue
+      const rendered = sanitize(`${note.prefix}${body}`)
+      if (note.dedup.kind === 'latest' && rendered === previous) continue
+      notes.push(noteEvent(rendered))
+      messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text: rendered }] })
+    }
   }
   // Tool schemas are scrubbed in every field, `parameters` to the leaves. A `ToolDef` arrives
   // through `registerTool`, the same tier as a contributed prompt section — and a tool description
@@ -988,6 +1034,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     header,
     ...(input.media === undefined ? {} : { media: input.media }),
     runtimeContext: { changed, ...(event ? { event } : {}) },
+    notes,
   }
 }
 

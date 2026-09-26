@@ -273,7 +273,7 @@ export async function assembleRequestPrefix(
   s: SessionImpl,
   ctx: OpContext,
   triggerSeq: number,
-): Promise<{ merged: Merged; disclosed: DeriveInput['disclosed'] }> {
+): Promise<{ merged: Merged; disclosed: DeriveInput['disclosed']; additionalContext: string }> {
   const t = s.turn
   if (!t) throw new CoreError('E_RELATION', 'request prefix outside an active turn')
   const contribs: Contribution[] = [
@@ -288,9 +288,22 @@ export async function assembleRequestPrefix(
   const preloaded = await preloadRuntimeSection(s, triggerSeq)
   const suppressed = new Set(preloaded?.suppressTools ?? [])
   merged.tools = merged.tools.filter((name) => permitted.has(name) && !suppressed.has(name))
-  // Host-private Skill content is appended after extension context hooks have finished.
-  const hookSections = await s.hooks.context(merged.sections)
-  merged.sections = preloaded ? [...hookSections, preloaded.section] : hookSections
+  // Freeze context-hook output for identical assembly inputs within this turn. Host-private Skill
+  // content is appended afterwards, so context hooks cannot observe current-prompt matching.
+  const prefixKey = canonicalJson([
+    ctx.model.route,
+    ctx.model.model,
+    s.preset.name,
+    s.preset.disclosure,
+    t.snapshot.hash,
+    sha256Hex(canonicalJson(merged.sections)),
+  ])
+  const hookContext =
+    t.prefix?.key === prefixKey
+      ? structuredClone({ sections: t.prefix.sections, additionalContext: t.prefix.additionalContext })
+      : await s.hooks.context(merged.sections)
+  if (t.prefix?.key !== prefixKey) t.prefix = { key: prefixKey, ...structuredClone(hookContext) }
+  merged.sections = preloaded ? [...hookContext.sections, preloaded.section] : hookContext.sections
   if (
     !s.computerUseAllowed({ route: ctx.model.route, model: ctx.model.model }) &&
     t.snapshot.byName.has('computer_use')
@@ -305,7 +318,7 @@ export async function assembleRequestPrefix(
     const def = t.snapshot.byName.get(name)
     return def ? [def] : []
   })
-  return { merged, disclosed }
+  return { merged, disclosed, additionalContext: hookContext.additionalContext }
 }
 
 /**
@@ -481,7 +494,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   // list it reads off `ctx` are already resolved, so an Operation here sees exactly what is about to
   // go out rather than having to recompute either one itself.
   await runSlot(s, 'before-inference', ctx)
-  const { merged, disclosed } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
+  const { merged, disclosed, additionalContext } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
   const surface = s.surface()
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
@@ -609,6 +622,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     nonce: t.nonce,
     envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
+    notes: [{ prefix: '[hook context]\n', text: additionalContext, dedup: { kind: 'latest' } }],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
   })
@@ -758,7 +772,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       // Only when the deny path did not already write it: that path carries the count in its own
       // transaction, and a second copy here would record one recount as two.
       ...(cal.event && !cal.deny ? [cal.event] : []),
-      ...(out.runtimeContext.event ? [out.runtimeContext.event] : []),
+      ...out.notes,
       ...(headerEvent ? [headerEvent] : []),
       effect.intent,
     ]

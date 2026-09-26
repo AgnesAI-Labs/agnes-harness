@@ -1,6 +1,7 @@
 import type { HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import type { Billing, InferenceEvent, ThinkingLevel } from '@agnes/protocol'
 import { settleTreeSpend } from '../child/runtime-budget.js'
+import { HookBlockedError } from '../hooks/block.js'
 import type { SurfaceNode } from '../project/surface.js'
 import { pairClosed, validateReplace } from '../project/surface.js'
 import type { CostLedger, TokenCounts } from '../reduce/shapes.js'
@@ -796,9 +797,19 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const primaryTarget = resolveModel(s, 'primary')
   const turn = s.turn
   if (!turn) throw new CoreError('E_RELATION', 'compaction outside an active turn')
+  let currentPrefix: Prefix
+  try {
+    // Even a narrow or differently routed summary must run the cold prompt gate before sending.
+    // When a primary request already ran, this just returns its saved prefix.
+    currentPrefix = await primaryPrefix(s)
+  } catch (error) {
+    if (!(error instanceof HookBlockedError)) throw error
+    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: error.reason } })
+    return { phase: 'terminal', reason: 'blocked' }
+  }
   const prefix: Prefix =
     from === 0 && primaryTarget.route === target.route && primaryTarget.model === target.model
-      ? await primaryPrefix(s)
+      ? currentPrefix
       : (turn.lastPrefix ?? {
           sections: [],
           tools: [],

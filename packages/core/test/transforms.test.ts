@@ -55,9 +55,9 @@ it('adopts protocol sections with trusted source, deduplicates and fits UTF8 inc
     ]
   const before = structuredClone({ base, results })
   const r = applyContextResults(base, results)
-  expect(r.sections.map((s) => s.id)).toEqual(['persona', 'env', 'additional-context'])
+  expect(r.sections.map((s) => s.id)).toEqual(['persona', 'env'])
   expect(r.sections[1]?.source).toBe('c/ext')
-  const ac = r.sections[2]?.text ?? ''
+  const ac = r.additionalContext
   expect(ac).toBe(`note\n${'界'.repeat(2729)}`)
   expect(bytes(ac)).toBe(8192)
   expect(ac).not.toContain('�')
@@ -92,9 +92,8 @@ it('drops a participant-submitted id of additional-context even under merge-by-i
     { ext: 'b/ext', result: { additionalContext: 'real' } },
   ]
   const r = applyContextResults(base, results)
-  const additional = r.sections.find((s) => s.id === 'additional-context')
-  expect(additional?.text).toBe('real')
-  expect(additional?.source).toBe('hooks')
+  expect(r.sections.find((s) => s.id === 'additional-context')).toBeUndefined()
+  expect(r.additionalContext).toBe('real')
 })
 
 it('is idempotent for a participant that echoes payload.sections and appends its own, the old convention', () => {
@@ -128,8 +127,8 @@ it('does not append a separator when no complete codepoint fits and reports ever
       { ext: 'd', result: { additionalContext: 'y' } },
     ],
   )
-  expect(r.sections[0]?.text).toBe(`${'x'.repeat(8190)}\ny`)
-  expect(bytes(r.sections[0]?.text ?? '')).toBe(8192)
+  expect(r.additionalContext).toBe(`${'x'.repeat(8190)}\ny`)
+  expect(bytes(r.additionalContext)).toBe(8192)
   expect(r.overflow).toEqual([{ ext: 'b', bytes: 4 }])
 })
 it('no-result context preserves base data without aliasing or reserved stale additional context', () => {

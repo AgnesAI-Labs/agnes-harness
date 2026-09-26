@@ -62,6 +62,7 @@ export type {
 } from './effects/tool-dispatch.js'
 export type { SeamFailure } from './effects/wrap.js'
 export { SeamRuntime, withTimeout } from './effects/wrap.js'
+export { HookBlockedError } from './hooks/block.js'
 export { type DispatchContext, HOOK_UNHANDLED, HookEngine, WORKSPACE_HOOK_SANDBOX } from './hooks/engine.js'
 export { type SessionHookInputs, SessionHookPort } from './hooks/port.js'
 export { defaultIds } from './ids.js'

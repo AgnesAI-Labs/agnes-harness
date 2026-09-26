@@ -261,7 +261,7 @@ export type HookPort = {
     proposedReason: string
     verifier?: VerifierVerdict
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
-  context(sections: PromptSection[]): Promise<PromptSection[]>
+  context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
   beforeStep(p: { turn: number; step: number; depth: number }): Promise<{ block?: boolean; reason?: string }>
   toolResult?(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']>
@@ -279,7 +279,7 @@ export type BeforeCompactHookSelection =
 export const noopHooks: HookPort = {
   toolCall: async () => ({ allow: true }),
   turnStopping: async () => ({ action: 'stop' }),
-  context: async (s) => s,
+  context: async (s) => ({ sections: s, additionalContext: '' }),
   beforeRequest: async (o) => o,
   beforeStep: async () => ({}),
 }
@@ -430,6 +430,8 @@ export type QuietGate = {
 /** What one turn holds in memory. It is lost on a kill; everything durable is on the ledger. */
 export type TurnMemory = {
   snapshot: RegistrySnapshot
+  /** Context-hook output is frozen for identical assembly inputs within this turn. */
+  prefix?: { key: string; sections: PromptSection[]; additionalContext: string }
   nonce: string
   /** Prefix of the most recent primary request after all request hooks have run. */
   lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>

@@ -42,6 +42,62 @@ const readRegistry = () => {
   return r
 }
 
+it('reuses context hooks within a turn and moves changed context to a tail note', async () => {
+  const { session, provider } = await primed(
+    [toolTurn('read', { path: 'a' }), toolTurn('read', { path: 'b' }), textTurn('done'), textTurn('next')],
+    readRegistry(),
+  )
+  let calls = 0
+  let contextText = 'first'
+  session.hooks = {
+    ...session.hooks,
+    context: async (sections) => {
+      calls++
+      return { sections, additionalContext: contextText }
+    },
+  }
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(1)
+  expect(provider.requests).toHaveLength(3)
+  const first = provider.requests[0]
+  const second = provider.requests[1]
+  if (!first || !second) throw new Error('missing request')
+  expect(second.system).toBe(first.system)
+  expect(first.messages.at(-1)?.content).toEqual([{ type: 'text', text: '[hook context]\nfirst' }])
+  contextText = 'second'
+  await session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(2)
+  const next = provider.requests[3]
+  if (!next) throw new Error('missing next-turn request')
+  expect(next.system).toBe(first.system)
+  expect(next.messages.at(-1)?.content).toEqual([{ type: 'text', text: '[hook context]\nsecond' }])
+})
+
+it('recomputes the context hook when the primary model changes mid-turn', async () => {
+  const { session } = await primed([toolTurn('read', { path: 'a' }), textTurn('done')], readRegistry())
+  let calls = 0
+  session.hooks = {
+    ...session.hooks,
+    beforeStep: async ({ step }) => {
+      if (step === 2) session.preset.model.id.primary = 'another-model'
+      return {}
+    },
+    context: async (sections) => {
+      calls++
+      return { sections, additionalContext: 'same' }
+    },
+  }
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(2)
+})
+
 const mediaJpeg = Uint8Array.from([
   0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 8, 0, 8, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0, 0xff,
   0xd9,
