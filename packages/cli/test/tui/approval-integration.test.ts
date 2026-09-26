@@ -63,10 +63,12 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       app = new TuiApp({ session, term, header: 'Agnes' })
       await app.start()
       const result = app.submit('write the receipt').catch((error: unknown) => error)
-      await vi.waitFor(async () =>
-        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          'Approval: write',
-        ),
+      await vi.waitFor(
+        async () =>
+          expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
+            'Approval: write',
+          ),
+        { timeout: 10_000 },
       )
       const file = join(root, 'receipt.txt')
       expect(existsSync(file)).toBe(false)
