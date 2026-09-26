@@ -53,7 +53,14 @@ export type DeriveInput = {
    * kind is the sub-range being summarized, not the whole session, and it is expected to carry
    * whatever untrusted tool results and prior summary node that range naturally includes.
    */
-  summaryPlan?: { system: string; instruction: string }
+  summaryPlan?: {
+    system?: string
+    instruction: string
+    /** Core-owned quotation appended after the ordinary instruction is scrubbed. */
+    quote?: { node: SurfaceNode; text: string }
+  }
+  /** The exact, already scrubbed prefix of a primary request sent in this turn. */
+  mintedPrefix?: Pick<RequestBody, 'sections' | 'tools'>
   /**
    * The tool uses the model asked for, each named by the assistant message that asked for it. It
    * is a second input rather than a surface kind because `tool/call` is not something the model
@@ -837,10 +844,39 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // same cached id an ordinary turn's derivation already minted for it (see envelope-cache.ts).
   // This closes what used to be recorded here as an open gap: the summary history was the one
   // request shape whose entire body was recycled untrusted content with no envelope around any of
-  // it. `instruction` is the one piece that is still a flat string — the trailing "please
-  // summarize" line the extension authored — and it is scrubbed like any other contributed text,
-  // on the exception list for nothing.
+  // it. The extension-authored instruction is scrubbed before Core appends any quoted trigger;
+  // only Core may add that quote's envelope after scrubbing, with a reserved negative block index
+  // so it cannot reuse the historical message's envelope id.
   const summary = input.kind === 'summary' ? input.summaryPlan : undefined
+  const quote = summary?.quote
+  if (quote && !input.surface.includes(quote.node))
+    throw new CoreError('E_ENVELOPE', 'summary quote must name a node in its own history')
+  const quotedTrigger = quote
+    ? quote.node.event.trust === 'untrusted'
+      ? wrapUntrusted(quote.node, input.envelopeNonceFor(quote.node.seq) ?? input.nonce, quote.text, -1)
+      : sanitize(quote.text)
+    : undefined
+  if (input.mintedPrefix && input.kind !== 'summary')
+    throw new CoreError('E_ENVELOPE', 'minted prefix belongs only to a summary request')
+  if (input.mintedPrefix) {
+    const scrubbed = (value: unknown): boolean => {
+      if (typeof value === 'string') return sanitize(value) === value
+      if (Array.isArray(value)) return value.every(scrubbed)
+      if (value && typeof value === 'object')
+        return Object.entries(value).every(([key, child]) => sanitize(key) === key && scrubbed(child))
+      return true
+    }
+    const { sections: prefixSections, tools: prefixTools } = input.mintedPrefix
+    if (
+      prefixSections[0]?.id !== UNTRUSTED_RULE_SECTION.id ||
+      prefixSections[0]?.text !== UNTRUSTED_RULE_SECTION.text ||
+      prefixSections[0]?.order !== UNTRUSTED_RULE_SECTION.order ||
+      prefixSections[0]?.source !== UNTRUSTED_RULE_SECTION.source ||
+      !prefixSections.slice(1).every(scrubbed) ||
+      !prefixTools.every(scrubbed)
+    )
+      throw new CoreError('E_ENVELOPE', 'minted prefix contains unsanitized text')
+  }
   // **Every string in a `RequestBody` is scrubbed, or is one of the exceptions named here.** The
   // recurring failure in this area has not been any single path; it is that the set of paths was
   // enumerated from memory, and a different one was forgotten each time. So the enumeration lives
@@ -883,19 +919,32 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   const body: RequestBody = {
     kind: input.kind,
     contractId,
-    sections: summary
-      ? [
-          UNTRUSTED_RULE_SECTION,
-          { id: 'summary:system', order: 1, text: sanitize(summary.system), source: 'core' },
-        ]
-      : sections,
+    sections: input.mintedPrefix
+      ? [...input.mintedPrefix.sections]
+      : summary
+        ? [
+            UNTRUSTED_RULE_SECTION,
+            { id: 'summary:system', order: 1, text: sanitize(summary.system ?? ''), source: 'core' },
+          ]
+        : sections,
     messages: summary
       ? [
           ...messages,
-          { role: 'user', seq: 0, content: [{ type: 'text', text: sanitize(summary.instruction) }] },
+          {
+            role: 'user',
+            seq: 0,
+            content: [
+              {
+                type: 'text',
+                text:
+                  sanitize(summary.instruction) +
+                  (quotedTrigger === undefined ? '' : ` 「${quotedTrigger}」`),
+              },
+            ],
+          },
         ]
       : messages,
-    tools,
+    tools: input.mintedPrefix ? [...input.mintedPrefix.tools] : tools,
     model,
     nonce: input.nonce,
     ...(input.model.thinking === undefined ? {} : { samplingParams: { thinking: input.model.thinking } }),
@@ -919,7 +968,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     // Provider stamps normalise the canonical disclosure because Unicode spelling is not visible
     // to the model. Use the same bytes here or an NFD name, description or schema key makes the
     // dispatch receipt disagree with the request header even though both describe the same tools.
-    tool_schema_hash: sha256Hex(canonicalJson(tools).normalize('NFC')),
+    tool_schema_hash: sha256Hex(canonicalJson(body.tools).normalize('NFC')),
     parser_version: input.contract.parser_version,
     contract_id: contractId,
     model: model.model,

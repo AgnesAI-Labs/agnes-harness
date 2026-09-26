@@ -9,6 +9,7 @@ import { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '../src/orchestrator/request-me
 import { ToolRegistry } from '../src/registry/tools.js'
 import { headerEquals, type RequestHeaderData } from '../src/request/derive.js'
 import { canonicalJson, sha256Hex } from '../src/request/hash.js'
+import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import { surfaceToolCalls } from '../src/step/inference.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
@@ -135,6 +136,21 @@ const imageModel: ModelRecord = {
 }
 
 describe('Inference segment', () => {
+  it('captures the post-hook primary prefix for later summary requests', async () => {
+    const registry = readRegistry()
+    const { session } = await primed([toolTurn('read', { path: 'x' })], registry)
+    session.hooks = {
+      ...session.hooks,
+      beforeRequest: async (out) =>
+        applyBeforeRequestPatches(out, [{ ext: 'test', patch: { samplingParams: { temperature: 0.2 } } }]),
+    }
+    await session.runInference()
+    const prefix = session.turn?.lastPrefix
+    expect(prefix?.samplingParams?.temperature).toBe(0.2)
+    expect(prefix?.sections[0]?.id).toBe('core:untrusted-envelope')
+    expect(prefix?.tools.map((tool) => tool.name)).toContain('read')
+  })
+
   it('preflights surface artifacts and sends native images only to an image-capable primary model', async () => {
     const provider = fakeProvider([toolTurn('computer_use', {}), textTurn('done')])
     Object.assign(provider, { models: () => [primaryModel(['text', 'image'])] })

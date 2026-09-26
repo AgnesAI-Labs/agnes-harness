@@ -30,7 +30,12 @@ import {
 import type { BudgetState } from '../reduce/shapes.js'
 import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { prepareAuxiliaryVisionDerivedText } from '../request/auxiliary-vision-derived-text.js'
-import type { ContextBreakdownDiag, ContextSectionSummary, Contribution } from '../request/contribute.js'
+import type {
+  ContextBreakdownDiag,
+  ContextSectionSummary,
+  Contribution,
+  Merged,
+} from '../request/contribute.js'
 import { mergeContributions } from '../request/contribute.js'
 import {
   type DeriveInput,
@@ -263,6 +268,46 @@ async function preloadRuntimeSection(
   }
 }
 
+/** Shared prompt assembly for a primary request and a cold compaction before its first send. */
+export async function assembleRequestPrefix(
+  s: SessionImpl,
+  ctx: OpContext,
+  triggerSeq: number,
+): Promise<{ merged: Merged; disclosed: DeriveInput['disclosed'] }> {
+  const t = s.turn
+  if (!t) throw new CoreError('E_RELATION', 'request prefix outside an active turn')
+  const contribs: Contribution[] = [
+    { op: 'core', tools: [...ctx.disclosed] },
+    ...s.d.operations
+      .filter((o) => o.contribute)
+      .map((o) => ({ op: o.name, ...(o.contribute as NonNullable<typeof o.contribute>)(ctx) })),
+  ]
+  const merged = mergeContributions(contribs, t.snapshot)
+  for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)
+  const permitted = new Set(ctx.disclosed)
+  const preloaded = await preloadRuntimeSection(s, triggerSeq)
+  const suppressed = new Set(preloaded?.suppressTools ?? [])
+  merged.tools = merged.tools.filter((name) => permitted.has(name) && !suppressed.has(name))
+  // Host-private Skill content is appended after extension context hooks have finished.
+  const hookSections = await s.hooks.context(merged.sections)
+  merged.sections = preloaded ? [...hookSections, preloaded.section] : hookSections
+  if (
+    !s.computerUseAllowed({ route: ctx.model.route, model: ctx.model.model }) &&
+    t.snapshot.byName.has('computer_use')
+  )
+    merged.sections.push({
+      id: 'core:computer-use-model',
+      order: 111,
+      source: 'core',
+      text: 'Computer Use is configured but is not offered to this model: its capability record does not include image input. For desktop-control requests, explain that the user needs to select a model that supports images. This model restriction does not mean that the desktop driver is missing or broken.',
+    })
+  const disclosed = merged.tools.flatMap((name) => {
+    const def = t.snapshot.byName.get(name)
+    return def ? [def] : []
+  })
+  return { merged, disclosed }
+}
+
 /**
  * The route a slot names, and the model id that route is asked to run. They are two different
  * values: a route names an endpoint the assembly declared, a model id names what that endpoint
@@ -276,6 +321,12 @@ async function preloadRuntimeSection(
  * only answer available from a provider that publishes no models at all.
  */
 export function resolveModel(s: SessionImpl, slot: string): { route: string; model: string } {
+  if (
+    slot === 'compaction' &&
+    s.preset.model.route.compaction === undefined &&
+    s.preset.model.id.compaction === undefined
+  )
+    return resolveModel(s, 'primary')
   const route = s.preset.model.route[slot] ?? 'default'
   const pinned = s.preset.model.id[slot]
   if (pinned) return { route, model: pinned }
@@ -430,33 +481,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   // list it reads off `ctx` are already resolved, so an Operation here sees exactly what is about to
   // go out rather than having to recompute either one itself.
   await runSlot(s, 'before-inference', ctx)
-  const contribs: Contribution[] = [
-    { op: 'core', tools: coreTools },
-    ...s.d.operations
-      .filter((o) => o.contribute)
-      .map((o) => ({ op: o.name, ...(o.contribute as NonNullable<typeof o.contribute>)(ctx) })),
-  ]
-  const merged = mergeContributions(contribs, t.snapshot)
-  for (const c of merged.conflicts) await s.diag('contribute-conflict', c)
-  const permitted = new Set(coreTools)
-  const preloaded = await preloadRuntimeSection(s, op.meta.triggerSeq)
-  const suppressed = new Set(preloaded?.suppressTools ?? [])
-  merged.tools = merged.tools.filter((name) => permitted.has(name) && !suppressed.has(name))
-  // The Host-private body is appended only after extension context hooks finish. A hook may shape
-  // normal contributed context but must never observe raw current-prompt matching or a Skill body.
-  const hookSections = await s.hooks.context(merged.sections)
-  const sections = preloaded ? [...hookSections, preloaded.section] : hookSections
-  if (!computerUseAllowed && t.snapshot.byName.has('computer_use'))
-    sections.push({
-      id: 'core:computer-use-model',
-      order: 111,
-      source: 'core',
-      text: 'Computer Use is configured but is not offered to this model: its capability record does not include image input. For desktop-control requests, explain that the user needs to select a model that supports images. This model restriction does not mean that the desktop driver is missing or broken.',
-    })
-  const disclosed = merged.tools.flatMap((n) => {
-    const def = t.snapshot.byName.get(n)
-    return def ? [def] : []
-  })
+  const { merged, disclosed } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
   const surface = s.surface()
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
@@ -570,7 +595,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   await s.ensureEnvelopeEpochs()
   let out = deriveRequest({
     kind: 'turn',
-    merged: { ...merged, sections },
+    merged,
     harnessEntries: [...s.state.registers.harnessEntries.values()].map((c) => c.value),
     surface,
     disclosed,
@@ -588,6 +613,12 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
   })
   out = await s.hooks.beforeRequest(out, slot, attempt)
+  const mintedPrefix = {
+    sections: out.request.sections,
+    tools: out.request.tools,
+    model: out.request.model,
+    ...(out.request.samplingParams ? { samplingParams: out.request.samplingParams } : {}),
+  }
   // Cheap and unconditional: section text never leaves process memory (to-provider.ts flattens it
   // away before the wire body exists), so this is the only point that can ever record what the
   // request's system prefix was actually made of. Written every turn, not deduplicated against the
@@ -998,6 +1029,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
               sourceEventSeqs: [headerSeq, effectIntentSeq],
             }),
           ])
+          t.lastPrefix = mintedPrefix
           sentWritten = true
         } else if (!sentWritten && ev.type !== 'error') {
           error = {

@@ -909,8 +909,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 25024, exact, no spare (+4).
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
-  // Tool bounds (+3) and ledger-backed envelope epochs (+47). Measured 25076, exact, no spare.
-  'packages/core/src': 25076,
+  // Compaction prefix stability and quoted-trigger envelope (+236): measured 25312, exact, no spare.
+  'packages/core/src': 25312,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
