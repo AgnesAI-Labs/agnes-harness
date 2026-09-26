@@ -42,9 +42,9 @@ const APIS: Record<string, () => ProviderStreams> = {
  * dispatcher fills a missing key in from the environment, choosing which variable to read from the
  * model's *provider name* while still sending the request to the model's *declared endpoint* — so a
  * route named after one of the library's builtin providers and pointed anywhere would carry the
- * operator's key for that provider to that anywhere. Dispatching by api instead removes the class
- * of mistake rather than fencing it: nothing below reads the environment, so a request is
- * authenticated with the credential the route was handed, or with none.
+ * operator's key for that provider to that anywhere. Dispatching by api removes that dispatcher
+ * credential fallback. Cache retention is pinned by streamOptions instead of inherited from
+ * PI_CACHE_RETENTION in the environment.
  *
  * It is also the entrypoint the library's own header schedules for deletion, which is a second
  * reason not to build on it.
