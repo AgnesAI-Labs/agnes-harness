@@ -96,7 +96,7 @@
   "packages/cli/src/commands/sessions": 60,
   "packages/cli/launch": 1113,
   "packages/cli/launch/package-admin": 303,
-  "packages/cli/tools/build-local": 246,
+  "packages/cli/tools/build-local": 269,
   "packages/daemon/src/supervisor/scope": 214,
   "packages/daemon/src/supervisor/discovery": 430,
   "packages/daemon/src/supervisor/startup": 18,

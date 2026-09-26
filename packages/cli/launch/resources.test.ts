@@ -11,24 +11,43 @@ afterEach(async () => {
   await Promise.all(temporary.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
 })
 
-async function packagedDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'agnes-launch-resources-'))
-  temporary.push(directory)
-  await mkdir(join(directory, 'web'))
-  await Promise.all([
-    writeFile(join(directory, 'agnes.mjs'), ''),
-    writeFile(join(directory, 'daemon.mjs'), ''),
-    writeFile(join(directory, 'worker.mjs'), ''),
-    ...[
+async function writeWebFixture(directory: string): Promise<void> {
+  await mkdir(join(directory, 'vendor'), { recursive: true })
+  await Promise.all(
+    [
       'index.html',
       'admin.html',
       'resources.html',
       'app.js',
       'admin.js',
       'resources.js',
+      'admin-standalone.js',
+      'resources-standalone.js',
+      'theme.js',
       'style.css',
+      'antd.css',
+      'tokens.css',
+      'vendor/react.js',
+      'vendor/react-jsx-runtime.js',
+      'vendor/react-dom.js',
+      'vendor/react-dom-client.js',
+      'vendor/antd.js',
+      'vendor/assistant-ui.js',
+      'vendor/cordis.js',
+      'vendor/web-client.js',
       'brand-mark.png',
-    ].map((asset) => writeFile(join(directory, 'web', asset), '')),
+    ].map((asset) => writeFile(join(directory, asset), '')),
+  )
+}
+
+async function packagedDirectory(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), 'agnes-launch-resources-'))
+  temporary.push(directory)
+  await writeWebFixture(join(directory, 'web'))
+  await Promise.all([
+    writeFile(join(directory, 'agnes.mjs'), ''),
+    writeFile(join(directory, 'daemon.mjs'), ''),
+    writeFile(join(directory, 'worker.mjs'), ''),
   ])
   return directory
 }
@@ -40,19 +59,9 @@ describe('local launch resources', () => {
     const cli = join(root, 'cli')
     const web = join(root, 'web', 'dist', 'web')
     const backend = join(cli, 'dist', 'local')
-    await mkdir(web, { recursive: true })
+    await writeWebFixture(web)
     await mkdir(join(cli, 'launch'), { recursive: true })
     await Promise.all([
-      ...[
-        'index.html',
-        'admin.html',
-        'resources.html',
-        'app.js',
-        'admin.js',
-        'resources.js',
-        'style.css',
-        'brand-mark.png',
-      ].map((asset) => writeFile(join(web, asset), '')),
       writeFile(join(cli, 'launch', 'daemon-entry.ts'), ''),
       writeFile(join(cli, 'launch', 'worker-entry.ts'), ''),
     ])

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { chmod, copyFile, cp, mkdir, readdir, readFile } from 'node:fs/promises'
+import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build, type Plugin } from 'esbuild'
@@ -10,6 +11,7 @@ import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repoPackages = join(cliRoot, '..')
+const require = createRequire(import.meta.url)
 const computerUseNoticeSource = join(repoPackages, 'base', 'extensions', 'computer-use', 'NOTICE')
 const computerUseNoticeRelative = join('THIRD-PARTY-NOTICES', 'computer-use-hermes.txt')
 const isDarwin = (): boolean => process.platform === 'darwin' // guards-allow-platform: target native
@@ -154,6 +156,8 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     'react-dom/client',
     '@agnes/cordis',
     '@agnes/web-client',
+    '@agnes/web-ui/assistant-ui',
+    'antd',
   ]
   await build({
     entryPoints: {
@@ -180,28 +184,40 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   })
   // Keep the local launcher's import-map targets and platform singleton graph identical to the
   // standalone Web build.
+  const vendorOptions = {
+    outdir: join(webOut, 'vendor'),
+    outbase: join(repoPackages, 'web', 'tools', 'vendor'),
+    bundle: true,
+    splitting: true,
+    format: 'esm' as const,
+    platform: 'browser' as const,
+    target: ['es2023'],
+    sourcemap: false,
+    legalComments: 'eof' as const,
+    charset: 'utf8' as const,
+    logLevel: 'warning' as const,
+    entryNames: '[name]',
+    chunkNames: 'chunk-[hash]',
+  }
   await build({
     entryPoints: {
       react: join(repoPackages, 'web', 'tools', 'vendor', 'react-entry.js'),
       'react-jsx-runtime': join(repoPackages, 'web', 'tools', 'vendor', 'react-jsx-runtime-entry.js'),
       'react-dom': join(repoPackages, 'web', 'tools', 'vendor', 'react-dom-entry.js'),
       'react-dom-client': join(repoPackages, 'web', 'tools', 'vendor', 'react-dom-client-entry.js'),
+    },
+    ...vendorOptions,
+  })
+  // UI vendors import the same React modules supplied by the first pass and the page import map.
+  await build({
+    entryPoints: {
+      antd: join(repoPackages, 'web', 'tools', 'vendor', 'antd-entry.js'),
+      'assistant-ui': join(repoPackages, 'web', 'tools', 'vendor', 'assistant-ui-entry.js'),
       cordis: join(repoPackages, 'web', 'tools', 'vendor', 'cordis-entry.js'),
       'web-client': join(repoPackages, 'web', 'tools', 'vendor', 'web-client-entry.js'),
     },
-    outdir: join(webOut, 'vendor'),
-    outbase: join(repoPackages, 'web', 'tools', 'vendor'),
-    bundle: true,
-    splitting: true,
-    format: 'esm',
-    platform: 'browser',
-    target: ['es2023'],
-    sourcemap: false,
-    legalComments: 'none',
-    charset: 'utf8',
-    logLevel: 'warning',
-    entryNames: '[name]',
-    chunkNames: 'chunk-[hash]',
+    ...vendorOptions,
+    external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
   })
   // 首帧主题必须早于第一次绘制，所以这一份单独打成 IIFE 并以阻塞式 <script> 引入。
   // ESM 一律 defer，会先闪一帧浅色。CSP 是 script-src 'self' 无 unsafe-inline，内联脚本不可用。
@@ -223,6 +239,14 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
       copyFile(join(repoPackages, 'web', 'public', file), join(webOut, file)),
     ),
   )
+  const webUi = join(repoPackages, 'web-ui')
+  const antdCss = require.resolve('antd/dist/antd.css', { paths: [webUi] })
+  await Promise.all([
+    copyFile(antdCss, join(webOut, 'antd.css')),
+    copyFile(join(webUi, 'src', 'tokens.css'), join(webOut, 'tokens.css')),
+  ])
+  const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
+  await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)
 }
 
 async function buildLocal(out: string, nativeOutput?: string): Promise<void> {

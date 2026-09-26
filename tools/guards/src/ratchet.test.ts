@@ -556,7 +556,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // directly: 187, exact.
   // 2026-09-17: local packaging copies the fixed-Hermes MIT NOTICE into the transactional output;
   // SEA reuses that exact directory. Measured build-local total: 203; exact cap.
-  'packages/cli/tools/build-local': 246,
+  // 2026-09-26: match Web's shared React/UI vendor graph and ship Ant Design, tokens and
+  // conversation styles in local CLI output. Measured with countLines(): 269, exact cap.
+  'packages/cli/tools/build-local': 269,
   // The PM5 bootstrap fallback retains the existing scoped owner/data-dir contract when a selected
   // Profile has not yet been materialized. The final recovery retry admits only an explicit
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility
