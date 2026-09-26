@@ -9,7 +9,11 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
-import { ConversationMessages, type ConversationMessagesProps } from '@agnes/web-ui/assistant-ui'
+import {
+  ConversationMarkdown,
+  ConversationMessages,
+  type ConversationMessagesProps,
+} from '@agnes/web-ui/assistant-ui'
 import { createConversationMessageActions, createConversationToolCard } from '@agnes/web-units'
 import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
@@ -200,6 +204,7 @@ export function WebConversationMessages({
   turns,
   visibleNodeIds,
   onFork,
+  markdownRenderer = 'legacy',
 }: {
   registry?: SlotRegistry
   claim?: ClaimResolver
@@ -209,6 +214,8 @@ export function WebConversationMessages({
   turns?: readonly UITurn[]
   visibleNodeIds?: readonly string[]
   onFork?: (turn: UITurn) => Promise<void>
+  /** Explicit W5b probe; existing consumers keep the legacy DOM-owned leaf. */
+  markdownRenderer?: 'legacy' | 'xmarkdown'
 }) {
   const sessionScope = useSyncExternalStore(
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
@@ -226,7 +233,17 @@ export function WebConversationMessages({
         {...(onFork ? { onFork } : {})}
       />
     ),
-    renderMarkdown: (text) => <MarkdownLeaf text={text} />,
+    renderMarkdown: (text, part, state) =>
+      markdownRenderer === 'xmarkdown' ? (
+        <ConversationMarkdown
+          key={`${state?.nodeId ?? ''}:${part}`}
+          source={text}
+          part={part}
+          streaming={state?.streaming ?? false}
+        />
+      ) : (
+        <MarkdownLeaf text={text} />
+      ),
     renderTool: (node) => <ToolLeaf node={node} />,
     renderCost: (node) => <CostLeaf node={node} />,
     renderSlot: (node) => <SlotLeaf key={node.id} node={node} registry={registry} claim={claim} />,

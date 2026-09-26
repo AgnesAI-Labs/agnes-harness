@@ -210,8 +210,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  // W5a adds static XMarkdown and policy, including literal malformed-tag recovery. Exact: 1329.
-  'packages/web-ui/src': 1329,
+  // W5b-1 adds stream/interaction snapshots and delays selected thinking handover/folding. Exact: 1458.
+  'packages/web-ui/src': 1458,
   'packages/web-units/src': 3172,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
@@ -1956,8 +1956,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // 2026-09-25 UI refactor: shared controls and React region rendering in the settings perimeter.
   // Re-measured with countLines(): 13300, exact, no spare.
-  // W4c scroll/history and user-selected stream continuity across reconnect. Exact count.
-  'packages/web/src': 13807,
+  // W5b-1 forwards explicit XMarkdown opt-in and message-owned stream state. Exact: 13827.
+  'packages/web/src': 13827,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

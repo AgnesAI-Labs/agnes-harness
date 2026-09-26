@@ -65,3 +65,37 @@ ws://127.0.0.1:4199 --port 4198 --root /private/tmp/agh-w5a-production-browser`.
 probe plus actual `ConversationMarkdown` static/body/thinking/theme/safety/copy controls.
 This is an opt-in boundary probe; the default CLI pages remain unmodified. Stop the server after
 inspection. The temporary output can be rebuilt or discarded.
+
+## W5b-1 streaming and real-region browser acceptance
+
+Build the complete local CLI first, then run `node tools/test-fixtures/b-line-xmarkdown/build-streaming.mjs`.
+It keeps the packaged shared vendors, themes, tokens, licenses and original import map, while
+building the actual `mountTranscriptRegion` / `TimelineNodeHost` / message adapter and live
+projection into an opt-in probe. Its static root is `/private/tmp/agh-w5b1-streaming-browser`.
+Only the Session transport/server facts and clipboard writer are synthetic; the renderers,
+projection transformations, stores, DOM, selection, focus and project HTTP/CSP server are real.
+
+```sh
+pnpm --filter @agnes/cli build:local
+node tools/test-fixtures/b-line-xmarkdown/build-streaming.mjs
+pnpm exec tsx packages/web/src/serve-entry.ts --ws ws://127.0.0.1:4199 --port 4196 --root /private/tmp/agh-w5b1-streaming-browser
+```
+
+Open the three routes in Chrome to use the manual controls, or start a separate headless Chrome
+with a disposable profile and DevTools port 9231, then run
+`node tools/test-fixtures/b-line-xmarkdown/check-streaming-browser.mjs`. The checker brings its
+page to the front and enables CDP focus emulation: an inactive page can change activeElement
+without emitting native focusout, so that setup is required to test blur. Override the probe
+origin/debug endpoint with `AGNES_XMD_STREAM_ORIGIN` / `AGNES_XMD_STREAM_DEBUG` if necessary.
+The manual API opens the process disclosure when a test reuses a completed turn; normal
+production requests use new turn IDs. The checker asserts that focus actually enters a visible
+control before updating it.
+
+Acceptance covers incomplete/closed/terminal syntax, late references and unchanged code-control
+identity, selected body and thinking, focused copy and its displayed content/feedback, delayed
+thinking handover/removal and process folding, cancellation/failure, two reconnects, fresh
+preview versus final-result replacement, a later request, replay/order/dedup, session reset,
+listener/unmount cleanup and all three routes' import-map/CSP/Chrome errors. It performs no
+model call or physical network interruption and does not prove backend exactly-once execution.
+No animation is enabled in this checkpoint. Stop the probe server and its Chrome process after
+inspection; generated roots/profiles are disposable. The original/default Web pages are unchanged.

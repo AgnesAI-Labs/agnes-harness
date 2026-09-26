@@ -1331,6 +1331,8 @@ export function mountTranscriptRegion(
   options: {
     /** Explicit W4a node-host probe; the default production path stays on the legacy renderer. */
     nodeHost?: 'react'
+    /** XMarkdown is available only with the explicit React host probe. */
+    markdownRenderer?: 'legacy' | 'xmarkdown'
     claim?: ClaimResolver
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
@@ -1365,6 +1367,7 @@ export function mountTranscriptRegion(
         ? createElement(TimelineNodeHost, {
             ref: handle,
             registry,
+            ...(options.markdownRenderer ? { markdownRenderer: options.markdownRenderer } : {}),
             ...(options.claim ? { claim: options.claim } : {}),
             ...(options.newContentButton ? { newContentButton: options.newContentButton } : {}),
             ...(options.onFork ? { onFork: options.onFork } : {}),

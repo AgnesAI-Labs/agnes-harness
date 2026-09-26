@@ -1,22 +1,26 @@
 import { type ComponentProps, type Tokens, XMarkdown, type XMarkdownProps } from '@ant-design/x-markdown'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   decodeMarkdownEntities,
   escapeMarkdownHtml,
   protectEscapedMarkdownTags,
   safeMarkdownHref,
 } from './markdown-policy.js'
+import { useMarkdownSnapshot } from './markdown-snapshot.js'
 
 /** One React-owned Markdown subtree; the Web legacy DOM renderer never receives this root. */
 export interface ConversationMarkdownProps {
   source: string
   part: 'body' | 'thinking'
-  /** Reserved for W5b streaming coordination; static output is settled in this checkpoint. */
+  /** Message-owned next-chunk state; terminal snapshots flush all buffered syntax. */
   streaming?: boolean
   theme?: 'light' | 'dark'
   onCopy?: ((text: string) => Promise<void>) | undefined
   onFragment?: ((id: string) => void) | undefined
 }
+
+const Callbacks = createContext<Pick<ConversationMarkdownProps, 'onCopy' | 'onFragment'>>({})
+const dompurifyConfig = { ADD_ATTR: ['key'] }
 
 function defaultFragment(id: string): void {
   const target = document.getElementById(id)
@@ -26,12 +30,8 @@ function defaultFragment(id: string): void {
   target.focus({ preventScroll: true })
 }
 
-function Link({
-  children,
-  title,
-  onFragment,
-  ...props
-}: ComponentProps & { onFragment: ((id: string) => void) | undefined }) {
+function Link({ children, title, ...props }: ComponentProps) {
+  const { onFragment } = useContext(Callbacks)
   const safe = safeMarkdownHref(typeof props.href === 'string' ? props.href : '')
   if (!safe) return <>{children}</>
   if (safe.startsWith('#')) {
@@ -64,11 +64,8 @@ function LiteralSpan({ children, domNode }: ComponentProps) {
   return literal === undefined ? <span>{children}</span> : literal
 }
 
-function CodeBlock({
-  children,
-  domNode,
-  writeCode,
-}: ComponentProps & { writeCode: ((text: string) => Promise<void>) | undefined }) {
+function CodeBlock({ children, domNode }: ComponentProps) {
+  const { onCopy: writeCode } = useContext(Callbacks)
   const node = domNode as { children?: Array<{ name?: string; attribs?: Record<string, string> }> }
   const label =
     node.children
@@ -119,16 +116,39 @@ function CodeBlock({
   )
 }
 
+const components: NonNullable<XMarkdownProps['components']> = {
+  a: Link,
+  pre: CodeBlock,
+  img: ({ alt }) => <>{alt}</>,
+  span: LiteralSpan,
+}
+
 export function ConversationMarkdown({
   source,
   part,
+  streaming = false,
   theme = 'light',
   onCopy,
   onFragment,
 }: ConversationMarkdownProps) {
-  const protectedSource = useMemo(() => protectEscapedMarkdownTags(source), [source])
+  const host = useRef<HTMLDivElement>(null)
+  const shown = useMarkdownSnapshot(host, source, streaming)
+  const protectedSource = useMemo(() => protectEscapedMarkdownTags(shown.source), [shown.source])
+  // The installed cache buffers a trailing reference definition until its line ends.
+  const content =
+    shown.streaming && /(?:^|\n)\[[^\]\n]+\]:\s+\S+[^\n]$/.test(protectedSource.content)
+      ? `${protectedSource.content}\n`
+      : protectedSource.content
   const config = useMemo<NonNullable<XMarkdownProps['config']>>(
     () => ({
+      hooks: {
+        postprocess(html) {
+          let codeIndex = 0
+          // Renderer keys normally count every inline node. A late reference would remount an
+          // unchanged later code control. Key emitted code blocks by their own ordinal instead.
+          return html.replace(/<pre>/g, () => `<pre key="agnes-code-${codeIndex++}">`)
+        },
+      },
       renderer: {
         link(token) {
           const href = safeMarkdownHref(token.href)
@@ -157,25 +177,21 @@ export function ConversationMarkdown({
     }),
     [protectedSource],
   )
-  const components = useMemo<NonNullable<XMarkdownProps['components']>>(
-    () => ({
-      a: (props) => <Link {...props} onFragment={onFragment} />,
-      pre: (props) => <CodeBlock {...props} writeCode={onCopy} />,
-      img: ({ alt }) => <>{alt}</>,
-      span: LiteralSpan,
-    }),
-    [onCopy, onFragment],
-  )
+  const callbacks = useMemo(() => ({ onCopy, onFragment }), [onCopy, onFragment])
+  const stream = useMemo(() => ({ hasNextChunk: shown.streaming, enableAnimation: false }), [shown.streaming])
   return (
-    <div data-conversation-markdown={part}>
-      <XMarkdown
-        content={protectedSource.content}
-        rootClassName={`conversation-markdown markdown x-markdown-${theme}`}
-        config={config}
-        components={components}
-        escapeRawHtml
-        streaming={{ hasNextChunk: false, enableAnimation: false }}
-      />
+    <div ref={host} data-conversation-markdown={part}>
+      <Callbacks.Provider value={callbacks}>
+        <XMarkdown
+          content={content}
+          rootClassName={`conversation-markdown markdown x-markdown-${theme}`}
+          config={config}
+          components={components}
+          dompurifyConfig={dompurifyConfig}
+          escapeRawHtml
+          streaming={stream}
+        />
+      </Callbacks.Provider>
     </div>
   )
 }
