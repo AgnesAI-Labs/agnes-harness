@@ -113,7 +113,7 @@ it('keeps the wire system string byte-identical across a real model switch', asy
   expect(requestA.system.length).toBeGreaterThan(500)
   expect(requestA.system).toBe(requestB.system)
   // The other axis (installing a tool-contributing extension) is host/test/assemble/plugin-extension.test.ts.
-})
+}, 30_000)
 
 it.each(['standard', 'hybrid', 'code'] as const)(
   'sends the real prompt operation SDK only in the %s tier',

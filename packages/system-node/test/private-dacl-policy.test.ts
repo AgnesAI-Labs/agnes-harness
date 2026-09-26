@@ -65,7 +65,7 @@ describe.skipIf(!hasCompiler())('Windows private descriptor policy', () => {
       binary,
       source,
     ])
-  })
+  }, 60_000)
 
   afterAll(() => {
     rmSync(workDirectory, { recursive: true, force: true })

@@ -7,6 +7,9 @@ import { snapshot, tool } from './fixtures/sdk.js'
 const schema = (value: unknown) => value as ToolDef['parameters']
 // guards-allow-platform: Windows Python installations expose python.exe; python3 can be a Store alias.
 const python = process.env.AGNES_TEST_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3')
+// A cold Python process can take over 10s to start while the Windows CI runner executes other files.
+const pythonTimeout = process.platform === 'win32' ? 40_000 : undefined
+const pythonIt = (name: string, run: () => void) => it(name, run, pythonTimeout)
 function parse(text: string) {
   const result = spawnSync(
     python,
@@ -21,13 +24,18 @@ compile(source, '<sdk>', 'exec')
 tree=ast.parse(source)
 print(json.dumps({'methods':[n.name for n in ast.walk(tree) if isinstance(n,ast.AsyncFunctionDef)],'strings':[n.value for n in ast.walk(tree) if isinstance(n,ast.Constant) and isinstance(n.value,str)]}))`,
     ],
-    { input: text, encoding: 'utf8', timeout: 10_000, windowsHide: true },
+    {
+      input: text,
+      encoding: 'utf8',
+      timeout: process.platform === 'win32' ? 30_000 : 10_000,
+      windowsHide: true,
+    },
   )
   expect(result.error).toBeUndefined()
   expect(result.status, `${python}: ${result.stderr}; set AGNES_TEST_PYTHON to a Python executable`).toBe(0)
   return JSON.parse(result.stdout) as { methods: string[]; strings: string[] }
 }
-it('uses actual registry metadata, excludes self/deferred, and reports every skipped reason', () => {
+pythonIt('uses actual registry metadata, excludes self/deferred, and reports every skipped reason', () => {
   const skipped: string[] = []
   const text = renderPython(
     snapshot([tool('read'), tool('later', undefined, true), tool('run_code'), tool('class')]),
@@ -38,13 +46,13 @@ it('uses actual registry metadata, excludes self/deferred, and reports every ski
   expect(skipped).toEqual(['class:reserved-word', 'later:deferred', 'run_code:self'])
   expect(text.split('\n')[0]).toContain('every call goes back through the harness')
 })
-it('produces valid empty SDKs without advertising a nonexistent tool', () => {
+pythonIt('produces valid empty SDKs without advertising a nonexistent tool', () => {
   const text = renderPython(snapshot([]))
   expect(parse(text).methods).toEqual([])
   expect(text).not.toContain('tools.read')
   expect(text).toContain('    pass')
 })
-it('renders required and optional keyword parameters without inventing nullability', () => {
+pythonIt('renders required and optional keyword parameters without inventing nullability', () => {
   const text = renderPython(
     snapshot([
       tool('read', {
@@ -58,7 +66,7 @@ it('renders required and optional keyword parameters without inventing nullabili
   expect(text).not.toContain('int | None')
   expect(parse(text).methods).toEqual(['read'])
 })
-it('preserves nested object fields and unsafe keyword keys with TypedDict and Unpack', () => {
+pythonIt('preserves nested object fields and unsafe keyword keys with TypedDict and Unpack', () => {
   const text = renderPython(
     snapshot([
       tool('send', {
@@ -77,7 +85,7 @@ it('preserves nested object fields and unsafe keyword keys with TypedDict and Un
   expect(text).toContain('"nested": NotRequired[_AgnesShape2]')
   expect(parse(text).methods).toEqual(['send'])
 })
-it('keeps malicious literal contents as data and emits parseable Python', () => {
+pythonIt('keeps malicious literal contents as data and emits parseable Python', () => {
   const attack = "中文 x']\nraise RuntimeError('injected')\n#\\\u0000"
   const text = renderPython(
     snapshot([tool('send', { type: 'object', properties: { choice: { enum: [attack, true, null] } } })]),
@@ -94,7 +102,7 @@ it('maps union, enum, object, array and unsupported annotations without parsing 
   expect(annotate(schema({ enum: [] }))).toBe('Any')
   expect(annotate(schema({ $ref: '#recursive' }))).toBe('Any')
 })
-it('normalizes planned separator names without relaxing the actual registry guard', () => {
+pythonIt('normalizes planned separator names without relaxing the actual registry guard', () => {
   expect(pythonBinding('read-')).toEqual({ binding: 'read_', renamed: true })
   expect(pythonBinding('a.b')).toEqual({ binding: 'a_b', renamed: true })
   expect(pythonBinding('9lives')).toBeNull()
