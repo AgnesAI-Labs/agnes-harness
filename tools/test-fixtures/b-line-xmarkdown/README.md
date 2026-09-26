@@ -140,3 +140,23 @@ cannot provide the old synchronous DOM read contract. React message consumers re
 stream caching; both paths use XMarkdown and the same safe React components/reveal planner.
 The default timeline host is unchanged. Session facts and clipboard writes in the probe remain
 synthetic, so these checks do not prove real model execution or physical network recovery.
+
+## W5c-1 single-call cost contract
+
+The streaming probe/checker also exercises cost nodes before the Markdown checks. Rebuild the
+complete CLI and run `node tools/test-fixtures/b-line-xmarkdown/build-streaming.mjs --cli`, then
+serve its isolated web root and run the existing Chrome checker as described above. The probe
+uses actual `mountTranscriptRegion(..., {nodeHost: 'react'})` and the legacy timeline with the
+same synthetic protocol cost nodes. It verifies complete scope/model/token/cache/reasoning/
+billing/credit/timing details, compact summary, estimate-to-gateway replacement, zero and
+missing values, interrupted state, literal HTML/Markdown model names, unknown-purpose fallback,
+replay/order/removal, stable disclosure/summary/row identity and real focus/expanded state.
+The probe pages declare the production brand icon, avoiding Chrome's implicit favicon request.
+
+`ConversationCost({node})`, `CostNode`, `costSummary` and `costDetails` are exported from the
+existing `@agnes/web-ui/assistant-ui` entry. The component uses ordinary React text children,
+keyed detail rows and a native uncontrolled disclosure. `usage.ts` re-exports the pure formatter
+contract for legacy callers; its existing DOM cost wrapper and composer context panel remain
+compatible. The Web React adapter uses the default shared cost component. No new dependencies,
+CSS assets or listeners are required. Context-panel migration is W5c-2; the default timeline
+host and the unresolved S2 plugin-state contract remain separate.

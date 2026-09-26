@@ -211,7 +211,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
   // W5b-2: bounded React suffix plans, synchronous facade compatibility and table ARIA. Exact: 1688.
-  'packages/web-ui/src': 1688,
+  // W5c-1 moves the pure cost policy and complete native React disclosure into web-ui. Exact: 1743.
+  'packages/web-ui/src': 1743,
   'packages/web-units/src': 3172,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
@@ -1957,7 +1958,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-25 UI refactor: shared controls and React region rendering in the settings perimeter.
   // Re-measured with countLines(): 13300, exact, no spare.
   // W5b-2 removes the imperative Markdown implementation/adapter leaf; explicit node state. Exact: 13415.
-  'packages/web/src': 13415,
+  // W5c-1 removes Web CostLeaf and re-exports shared cost policy; context panel stays imperative. Exact: 13346.
+  'packages/web/src': 13346,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

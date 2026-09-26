@@ -18,10 +18,8 @@ import { createConversationMessageActions, createConversationToolCard } from '@a
 import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { toolIcon } from './tool-icon.js'
-import { createCostDetails } from './usage.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
-type CostNode = Extract<UINode, { kind: 'cost' }>
 type SlotNode = Extract<UINode, { kind: 'slot' }>
 const noSessionSubscription = () => () => undefined
 
@@ -71,21 +69,6 @@ function ToolLeaf({ node }: { node: ToolNode }) {
   }, [])
   useLayoutEffect(() => card.current?.update(node), [node])
   return <div ref={element} data-agnes-tool-card="" />
-}
-
-function CostLeaf({ node }: { node: CostNode }) {
-  const element = useRef<HTMLDivElement>(null)
-  const update = useRef<ReturnType<typeof createCostDetails>>()
-  useLayoutEffect(() => {
-    const host = element.current
-    if (!host) return
-    update.current = createCostDetails(host)
-    return () => {
-      update.current = undefined
-    }
-  }, [])
-  useLayoutEffect(() => update.current?.(node), [node])
-  return <div ref={element} data-agnes-cost-details="" />
 }
 
 function SlotLeaf({
@@ -224,7 +207,6 @@ export function WebConversationMessages({
       />
     ),
     renderTool: (node) => <ToolLeaf node={node} />,
-    renderCost: (node) => <CostLeaf node={node} />,
     renderSlot: (node) => <SlotLeaf key={node.id} node={node} registry={registry} claim={claim} />,
     renderNode: (node, native) =>
       registry ? <DshNodeLeaf key={node.id} node={node} native={native} registry={registry} /> : native,

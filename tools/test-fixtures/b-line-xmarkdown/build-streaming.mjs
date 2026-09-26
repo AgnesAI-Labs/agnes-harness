@@ -26,6 +26,7 @@ const original = await readFile(resolve(assets, 'index.html'), 'utf8')
 const importMap = original.match(/<script type="importmap">[\s\S]*?<\/script>/)?.[0]
 if (!importMap) throw new Error('Packaged import map missing')
 const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>W5b-2 streaming / animation probe</title>
+<link rel="icon" href="/brand-mark.png" type="image/png">
 <meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__"><meta id="agnes-config" data-ws="__AGNES_WS_URL__">
 <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/antd.css">
 ${importMap}<script type="module" src="/app.js"></script></head>

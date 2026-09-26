@@ -9,6 +9,7 @@ import { act, createElement, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebConversationMessages } from '../src/conversation-message-adapter.js'
+import { costDetails, costSummary } from '../src/usage.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -164,7 +165,7 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     offAgain()
   })
 
-  it('uses the original tool card, cost detail and Markdown leaves, with DSH toolview claim and fallback', async () => {
+  it('uses the original tool card, shared React cost detail and Markdown leaves, with DSH toolview claim and fallback', async () => {
     const assistant: UINode = {
       kind: 'assistant',
       id: 'assistant',
@@ -216,4 +217,55 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     expect(item('tool')?.textContent).toContain('Permission denied')
     expect(item('tool')?.querySelector('[data-agnes-tool-card]')).toBe(toolElement)
   })
+})
+
+it('uses the complete shared cost contract through the real adapter without an imperative cost leaf', async () => {
+  const cost: Extract<UINode, { kind: 'cost' }> = {
+    kind: 'cost',
+    id: 'cost',
+    seq: 2,
+    source: 'estimated',
+    purpose: 'compaction',
+    tokens: { input: 1200, output: 10, cacheRead: 3, cacheWrite: 0, reasoning: 0 },
+    billing: { usdMicros: 200, source: 'estimated', subscription: false },
+    credits: 0.5,
+    timing: { ttftMs: 0, durationMs: 1000 },
+    model: 'model',
+  }
+  const store = createConversationProjectionStore({ sessionId: 'session', nodes: [cost] })
+  await mount(store)
+  const article = item('cost')
+  const details = article?.querySelector('details')
+  const summary = article?.querySelector('summary')
+  if (!details || !summary) throw new Error('missing cost disclosure')
+  details.open = true
+  summary.focus()
+  const gateway = {
+    ...cost,
+    source: 'gateway' as const,
+    model: '<img src=x> **literal**',
+    interrupted: true,
+    billing: { usdMicros: 0, source: 'gateway' as const, subscription: true },
+    credits: 0,
+  }
+  for (const next of [gateway, { ...gateway }]) {
+    await update(store, [user, next])
+    expect(item('cost')).toBe(article)
+    expect(article?.querySelector('details')).toBe(details)
+    expect(article?.querySelector('summary')).toBe(summary)
+    expect(details.open).toBe(true)
+    expect(document.activeElement).toBe(summary)
+    expect(summary.textContent).toBe(costSummary(next))
+    const rows = Array.from(article?.querySelectorAll('dt') ?? []).map((term) => [
+      term.textContent,
+      term.nextElementSibling?.textContent,
+    ])
+    expect(rows).toEqual(costDetails(next))
+    expect(article?.querySelector('img, strong, [data-agnes-cost-details]')).toBeNull()
+    expect(
+      Array.from(host.querySelectorAll('[data-node-id]')).map((el) => el.getAttribute('data-node-id')),
+    ).toEqual(['user', 'cost'])
+  }
+  await update(store, [user])
+  expect(details.isConnected).toBe(false)
 })

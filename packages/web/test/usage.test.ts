@@ -117,3 +117,34 @@ it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用�
   expect(container.hidden).toBe(true)
   expect(details.open).toBe(false)
 })
+
+it('preserves zero and missing values and separate dollar/credit provenance in pure cost formatting', () => {
+  const zero = {
+    ...call,
+    source: 'estimated' as const,
+    credits: 0,
+    billing: { usdMicros: 0, source: 'gateway' as const, subscription: true },
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+    timing: { ttftMs: 0, durationMs: 0 },
+    interrupted: true,
+  }
+  expect(costSummary(zero)).toBe('输入 0 · 输出 0 · $0.00（网关记录） · 已中断')
+  expect(costDetails(zero)).toContainEqual(['额度', '0 credits · 估算'])
+  expect(costDetails(zero)).toContainEqual(['美元费用', '$0.00 · 网关记录'])
+  expect(costDetails(zero)).toContainEqual(['推理 Token（输出的子集）', '0'])
+  expect(costDetails(zero)).toContainEqual(['首次输出等待', '0 ms'])
+  expect(costDetails(zero)).toContainEqual(['模型请求耗时', '0 ms'])
+  const missing = { kind: 'cost', id: 'missing', seq: 1, source: 'gateway' } as const
+  expect(costSummary(missing)).toBe('费用未提供')
+  expect(costDetails(missing)).toEqual([
+    ['记录范围', '单次费用记录'],
+    ['Token 明细', '未提供'],
+    ['额度', '未提供'],
+  ])
+})
+
+it('treats unknown and object-prototype purpose names as the generic single-call scope', () => {
+  for (const purpose of ['unknown', '__proto__', 'constructor', 'toString']) {
+    expect(costDetails({ ...call, purpose })[0]).toEqual(['记录范围', '单次费用记录'])
+  }
+})

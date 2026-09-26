@@ -32,6 +32,7 @@ const evaluate = async (fn, argument) => {
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text)
   return result.result?.value
 }
+console.log(JSON.stringify({ browser: await send('Browser.getVersion') }))
 await send('Page.enable'); await send('Runtime.enable'); await send('Log.enable'); await send('Network.enable'); await send('Page.bringToFront'); await send('Emulation.setFocusEmulationEnabled', { enabled: true })
 try {
   for (const page of ['/', '/admin/plugins', '/admin/resources']) {
@@ -46,6 +47,49 @@ try {
     events = []
     await send('Page.navigate', { url: origin + page })
     await evaluate(async () => { for (let i = 0; i < 80; i++) { if (window.__aghStreamingProbe) return true; await new Promise((resolve) => setTimeout(resolve, 25)) } throw new Error('Probe startup timeout') })
+    const cost = await evaluate(async () => {
+      const api = window.__aghStreamingProbe
+      const expect = (value, message) => { if (!value) throw new Error(message) }
+      const call = { kind: 'cost', id: 'cost', seq: 2, source: 'estimated', purpose: 'inference', model: 'model',
+        tokens: { input: 1234, output: 50, cacheRead: 600, cacheWrite: 0, reasoning: 20 }, credits: 0.000206,
+        billing: { usdMicros: 125, source: 'estimated', subscription: false }, timing: { ttftMs: 0, durationMs: 2400 } }
+      await api.cost(call)
+      const article = () => document.querySelector('#transcript [data-node-id="cost"]')
+      const details = article().querySelector('details')
+      const summary = details.querySelector('summary')
+      const inputRow = article().querySelector('dt')
+      const rows = host => [...host.querySelectorAll('dt')].map(term => [term.textContent, term.nextElementSibling.textContent])
+      expect(summary.textContent === '输入 1.2K · 输出 50 · $0.000125（估算）', 'compact cost summary')
+      expect(rows(article()).length === 11 && rows(article()).some(([key, value]) => key === '推理 Token（输出的子集）' && value === '20'), 'complete detail values')
+      expect(JSON.stringify(rows(article())) === JSON.stringify(rows(document.querySelector('#legacy-transcript [data-node-id="cost"]'))), 'legacy and React complete cost parity')
+      summary.click(); summary.focus()
+      expect(details.open && document.activeElement === summary, 'native cost opens and takes focus')
+      const gateway = { ...call, source: 'gateway', credits: 0, interrupted: true,
+        model: '<img src=x onerror=alert(1)> **literal** [link](javascript:alert(1))',
+        billing: { usdMicros: 0, source: 'gateway', subscription: true }, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+      for (const next of [gateway, { ...gateway }]) {
+        await api.cost(next, true)
+        expect(article().querySelector('details') === details && details.querySelector('summary') === summary && article().querySelector('dt') === inputRow, 'cost nodes stay identical')
+        expect(details.open && document.activeElement === summary, 'cost expansion and real focus retained')
+        expect(summary.textContent === '输入 0 · 输出 0 · $0.00（网关记录） · 已中断', 'zero gateway values and interrupted state')
+        expect(rows(article()).some(([key, value]) => key === '模型' && value === gateway.model), 'literal model')
+        expect(!article().querySelector('img, a, strong, svg, script'), 'cost never parses HTML/Markdown')
+        expect(JSON.stringify(rows(article())) === JSON.stringify(rows(document.querySelector('#legacy-transcript [data-node-id="cost"]'))), 'replacement parity')
+        expect([...document.querySelectorAll('#transcript [data-node-id]')].map(el => el.dataset.nodeId).join(',') === 'cost-user,cost', 'cost order and no duplicate')
+      }
+      await api.cost({ kind: 'cost', id: 'cost', seq: 2, source: 'estimated' })
+      expect(summary.textContent === '费用未提供' && rows(article()).length === 3 && details.open && document.activeElement === summary, 'missing fields remove stale rows and keep interaction')
+      await api.cost({ kind: 'cost', id: 'cost', seq: 2, source: 'estimated', credits: 0, purpose: '__proto__' })
+      expect(rows(article())[0][1] === '单次费用记录', 'unknown prototype purpose is text scope')
+      expect(summary.textContent === '0 credits（估算）' && !article().textContent.includes('$'), 'credit-only zero never invents dollars')
+      const styles = getComputedStyle(details)
+      expect(styles.display !== 'none' && getComputedStyle(summary).cursor === 'pointer', 'shared cost styles present')
+      await api.render('cost retired', '', false)
+      expect(!details.isConnected, 'removed cost subtree retired')
+      await api.reset()
+      return { parity: true, completeRows: 11, identityFocusExpansion: true, missingZeroInterrupted: true, literalModel: true }
+    })
+    console.log(JSON.stringify({ page, cost }))
     const animation = await evaluate(async () => {
       const api = window.__aghStreamingProbe
       const expect = (value, message) => { if (!value) throw new Error(message) }

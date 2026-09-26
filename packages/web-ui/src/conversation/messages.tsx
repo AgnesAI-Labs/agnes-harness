@@ -1,6 +1,7 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import { useThread } from '@assistant-ui/react'
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ConversationCost } from './cost.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
 
@@ -150,36 +151,6 @@ function ToolMessage({ node }: { node: ToolNode }) {
   )
 }
 
-function CostMessage({ node }: { node: CostNode }) {
-  const source = (value: CostNode['source']) => (value === 'estimated' ? '估算' : '网关记录')
-  const credits = (value: number) => value.toFixed(8).replace(/\.?0+$/, '')
-  const amount = node.billing
-    ? `$${(node.billing.usdMicros / 1e6).toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00')}（${source(node.billing.source)}）`
-    : node.credits === undefined
-      ? '费用未提供'
-      : `${credits(node.credits)} credits（${source(node.source)}）`
-  const summary = [
-    ...(node.tokens ? [`输入 ${node.tokens.input}`, `输出 ${node.tokens.output}`] : []),
-    amount,
-    ...(node.interrupted ? ['已中断'] : []),
-  ].join(' · ')
-  return (
-    <details className="usage-disclosure call-usage">
-      <summary aria-label="查看本次调用用量明细">{summary}</summary>
-      <dl className="usage-grid">
-        <dt>Token 明细</dt>
-        <dd>{node.tokens ? `输入 ${node.tokens.input}，输出 ${node.tokens.output}` : '未提供'}</dd>
-        <dt>额度</dt>
-        <dd>
-          {node.credits === undefined
-            ? '未提供'
-            : `${credits(node.credits)} credits · ${source(node.source)}`}
-        </dd>
-      </dl>
-    </details>
-  )
-}
-
 function markdownState(node: UINode, turnStatus?: UITurn['status']): ConversationMarkdownState {
   return {
     nodeId: node.id,
@@ -224,7 +195,7 @@ function nativeContent(
         </>
       )
     case 'cost':
-      return props.renderCost ? props.renderCost(node) : <CostMessage node={node} />
+      return props.renderCost ? props.renderCost(node) : <ConversationCost node={node} />
     case 'artifact':
       return (
         <>

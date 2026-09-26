@@ -57,6 +57,12 @@ document.body.append(legacyHost, staticHost)
 const legacy = createTimelineRenderer({ transcript: legacyHost, newContentButton: document.createElement('button') })
 const preview = createMarkdownRenderer(staticHost, 'static preview')
 const api = {
+  async cost(node, prepend = false) {
+    const nodes = [...(prepend ? [user('cost-user', 1)] : []), node]
+    mounted.render(nodes)
+    legacy.render(nodes)
+    await settle()
+  },
   legacyRender(text, streaming = true) { legacy.render([assistant('legacy-a', 1, 'legacy-effect', text, '', streaming)]) },
   staticRender(text) { preview.update(text) },
   async render(text, thinking = '', streaming = true, status = 'running', final = false) {
