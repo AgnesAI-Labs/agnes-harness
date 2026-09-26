@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { APPROVAL_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
+// A render through the approval handle commits in a few milliseconds, but a loaded runner has
+// taken longer than the fixed 20 ms these checks used to sleep. Wait for the rendered state instead.
+const committed = { timeout: 5_000 }
+
 describe('rendered approval region', () => {
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
 
@@ -36,16 +40,13 @@ describe('rendered approval region', () => {
     })
     await vi.waitFor(() => {
       expect(approval?.hidden).toBe(false)
+      expect(
+        approval?.querySelector('[data-slot="ui:approval"] [data-agnes-region-unit="approval"]'),
+      ).toBeTruthy()
       expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
-      expect(approval?.querySelectorAll('.approval-actions button')).toHaveLength(2)
-    })
-
-    expect(
-      approval?.querySelector('[data-slot="ui:approval"] [data-agnes-region-unit="approval"]'),
-    ).toBeTruthy()
-    expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
-    expect(approval?.querySelector('pre')?.textContent).toBe('{"path":"README.md"}')
-    expect(approval?.querySelectorAll<HTMLButtonElement>('.approval-actions button')).toHaveLength(2)
+      expect(approval?.querySelector('pre')?.textContent).toBe('{"path":"README.md"}')
+      expect(approval?.querySelectorAll<HTMLButtonElement>('.approval-actions button')).toHaveLength(2)
+    }, committed)
 
     const reject = approval?.querySelector<HTMLButtonElement>('.approval-actions button:nth-child(2)')
     reject?.focus()
@@ -64,9 +65,9 @@ describe('rendered approval region', () => {
       const disabledReject = approval?.querySelector<HTMLButtonElement>(
         '.approval-actions button:nth-child(2)',
       )
-      expect(disabledReject?.disabled).toBe(true)
       expect(document.activeElement).not.toBe(disabledReject)
-    })
+      expect(disabledReject?.disabled).toBe(true)
+    }, committed)
     handle?.render({
       key: 'live:tool-1',
       title: '需要你的确认',
@@ -79,12 +80,14 @@ describe('rendered approval region', () => {
       disabled: false,
     })
     await vi.waitFor(() => {
-      expect(document.activeElement).toBe(
-        approval?.querySelector<HTMLButtonElement>('.approval-actions button:nth-child(2)'),
+      const restoredReject = approval?.querySelector<HTMLButtonElement>(
+        '.approval-actions button:nth-child(2)',
       )
-    })
+      expect(restoredReject?.disabled).toBe(false)
+      expect(document.activeElement).toBe(restoredReject)
+    }, committed)
     handle?.render(undefined)
-    await vi.waitFor(() => expect(approval?.hidden).toBe(true))
+    await vi.waitFor(() => expect(approval?.hidden).toBe(true), committed)
     expect(selected).toEqual([])
   })
 
@@ -100,9 +103,10 @@ describe('rendered approval region', () => {
       actions: [{ id: 'allow', label: '允许', onSelect: () => selected.push('allow') }],
       disabled: false,
     })
-    await vi.waitFor(() => {
-      expect(document.querySelector('#approval .approval-actions button')).toBeTruthy()
-    })
+    await vi.waitFor(
+      () => expect(document.querySelector('#approval .approval-actions button')).toBeTruthy(),
+      committed,
+    )
 
     const allow = document.querySelector<HTMLButtonElement>('#approval .approval-actions button')
     expect(allow?.type).toBe('button')
@@ -125,7 +129,7 @@ describe('rendered approval region', () => {
       actions: [],
       disabled: false,
     })
-    await vi.waitFor(() => expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认'))
+    await vi.waitFor(() => expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认'), committed)
     const remove = runtime.registry.register(
       {
         name: APPROVAL_SLOT as string,
@@ -138,8 +142,7 @@ describe('rendered approval region', () => {
     await vi.waitFor(() => {
       expect(approval?.querySelector('#shadow-approval')?.textContent).toBe('替换审批')
       expect(approval?.querySelector('#approval-content')).toBeNull()
-    })
-
+    }, committed)
     expect(document.querySelector('[data-slot="ui:conversation"] #transcript')).toBeTruthy()
     expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
 
@@ -149,6 +152,6 @@ describe('rendered approval region', () => {
       expect(approval?.querySelector('#approval-content')).toBeTruthy()
       expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
       expect(approval?.querySelector('p')?.textContent).toBe('恢复当前审批')
-    })
+    }, committed)
   })
 })

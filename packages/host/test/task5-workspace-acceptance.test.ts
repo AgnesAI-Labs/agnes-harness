@@ -140,7 +140,24 @@ describe('Task 5 production workspace acceptance', () => {
       expect(await readAttempt(dataDir, 'startup-child')).toMatchObject({
         creationPhase: 'cancelled',
         cancelledFact: { reason: 'open_failed' },
+        state: 'failed',
       })
+      // The recovered child no longer holds its parent's only fan-out slot.
+      const storage = createSqliteStorage({
+        file: join(dataDir, 'sessions.db'),
+        tablesDir: join(dataDir, 'tables'),
+      })
+      try {
+        const next = await storage.createDelegatedChild({
+          ...childAttempt('startup-parent', 'startup-next', 'startup'),
+          creationId: 'creation:startup-next',
+          workspaceId: 'workspace:startup-next',
+          maxFanOut: 1,
+        })
+        expect(next.status).toBe('created')
+      } finally {
+        await storage.close()
+      }
 
       await seedCreatingAttempt(dataDir, 'close-parent', 'close-child', 'close')
       await host.close()
@@ -148,6 +165,7 @@ describe('Task 5 production workspace acceptance', () => {
       expect(await readAttempt(dataDir, 'close-child')).toMatchObject({
         creationPhase: 'cancelled',
         cancelledFact: { reason: 'open_failed' },
+        state: 'failed',
       })
     } finally {
       if (!closed) await host.close()

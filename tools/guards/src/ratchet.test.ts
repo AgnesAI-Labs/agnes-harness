@@ -362,7 +362,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
   // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
-  'packages/web/src/app': 1783,
+  // Daemon-restart recovery: the page probes its own bootstrap before reloading and keeps a visible
+  // manual retry after the automatic window. Measured 1811, exact, no spare (+28).
+  // Reload only into a new daemon address, recover after a failed first connection, resume on
+  // tab show, and a notice consistent with the recovery status. Measured 1824, exact (+13).
+  'packages/web/src/app': 1824,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-17: composer permission listbox. Measured 203, exact.
   'packages/web/src/permission-picker': 203,
@@ -390,7 +394,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 731,
+  // Per-node roots unmount after the current commit instead of inside it: measured 730, exact.
+  // Load earlier: the position restore after a prepend is instant, and a landed page re-reads the
+  // sentinel's visibility. Measured 736, exact, no spare (+6).
+  // Re-arm the sentinel only after a page that landed, so a failing load cannot retry by itself.
+  // Measured 735, exact (-1).
+  'packages/web/src/timeline': 735,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -890,7 +899,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // A tool result and its settlement commit together through the same chain. Measured 25007, exact,
   // no spare (-6).
   // Trajectory inspection adds the optional tool result sequence. Combined source: 25008, exact.
-  'packages/core/src': 25008,
+  // Delegated children open with the sandbox their workspace reservation carries. Measured 25010,
+  // exact, no spare (+2).
+  // A spawned child's run goes through a Host admission port. Measured 25020, exact, no spare (+10).
+  // Cancelling a child's creation also settles its execution state, in the same write. Measured
+  // 25024, exact, no spare (+4).
+  // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
+  // no spare (+2).
+  'packages/core/src': 25026,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1115,7 +1131,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // SINGLE-EXTENSION-PATH staged handoff: Skills/MCP rows, four row-owned services and Web
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
-  'packages/host/src/assemble': 4192,
+  // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
+  'packages/host/src/assemble': 4193,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1964,7 +1981,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
   // TRACE-INSPECTION-20260925: trace detail callback wiring; measured 13269, exact.
-  'packages/web/src': 13269,
+  // Per-node roots in the timeline unmount after the current commit: measured 13268, exact.
+  // Daemon-restart recovery: probe-before-reload controller and its page wiring. Measured 13344, exact (+76).
+  // Load earlier: instant restore after a prepend and a sentinel re-read. Measured 13350, exact (+6).
+  // Reload only into a new daemon address, failed first connection, resume and probe hardening.
+  // Measured 13382, exact (+32).
+  // Load earlier re-arms only after a landed page. Measured 13381, exact (-1).
+  'packages/web/src': 13381,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2420,7 +2443,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // (-52). Measured on this tree: 38030, exact, no spare.
   // Durable WAL checkpoints on darwin: the ledger, table-store and GC ledger-lock connections set
   // checkpoint_fullfsync through one small helper. Measured 38043, exact, no spare (+13).
-  'packages/host/src': 38043,
+  // Delegated child reservations carry the workspace-fitted sandbox under the same guard as a root
+  // session. Measured 38075, exact, no spare (+32).
+  // A spawned child's run is admitted as its own turn, queued behind an activation when started by a
+  // live invocation. Measured 38081, exact, no spare (+6).
+  // Cancelling a child's creation also settles its execution state in the same SQLite statement.
+  // Measured 38084, exact, no spare (+3).
+  'packages/host/src': 38084,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2582,7 +2611,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // FOLD-CACHE-REMOVAL: same change as packages/host/src. Measured on this tree: 5003, exact, no spare (-52).
   // Durable WAL checkpoints on darwin: the helper plus its two storage call sites. Measured 5014,
   // exact, no spare (+11).
-  'packages/host/src/adapters': 5014,
+  // Cancelling a child's creation also settles its execution state in the same statement. Measured
+  // 5017, exact, no spare (+3).
+  'packages/host/src/adapters': 5017,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
