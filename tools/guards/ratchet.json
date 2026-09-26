@@ -44,7 +44,7 @@
   "packages/runtime-python/src": 400,
   "packages/base/extensions/tools-core": 800,
   "packages/base/extensions/subagent": 800,
-  "packages/base/extensions/skills": 1008,
+  "packages/base/extensions/skills": 1022,
   "packages/base/extensions/hooks-runner": 955,
   "packages/base/src/mcp": 872,
   "packages/base/extensions/computer-use": 1786,

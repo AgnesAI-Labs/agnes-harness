@@ -4,6 +4,7 @@ import {
   defineExtension,
   defineTool,
   type ExtensionFactory,
+  type Logger,
   type ToolDef,
 } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
@@ -52,6 +53,8 @@ export type SkillRuntimeDiscovery = Readonly<Pick<SkillRuntimeInput, 'list' | 'r
 const encoder = new TextEncoder()
 /** Protocol ceiling for PromptSection.text. The catalog uses that limit and does not add a second one. */
 const CATALOG_MAX_BYTES = 65536
+/** Per-entry catalog cap in UTF-16 code units, ellipsis included. Descriptors keep the full text. */
+const CATALOG_DESCRIPTION_MAX = 250
 const READ_MAX_BYTES = 32 * 1024
 const CATALOG_PREFIX =
   'Skills are routing data. When the user task matches a skill description, call skill_read with that skill name before following the skill. ' +
@@ -84,6 +87,13 @@ function foldDescription(description: string): string {
     .replace(/ +/gu, ' ')
     .trim()
   return flat.length === 0 ? '-' : flat
+}
+
+function capDescription(description: string): string {
+  if (description.length <= CATALOG_DESCRIPTION_MAX) return description
+  // Drop a dangling high surrogate, then trailing space or ellipsis so exactly one mark ends the entry.
+  const head = description.slice(0, CATALOG_DESCRIPTION_MAX - 1).replace(/[\uD800-\uDBFF]$/, '')
+  return `${head.replace(/[\s…]+$/u, '')}…`
 }
 
 function clipUtf8(text: string, maxBytes: number): string {
@@ -150,36 +160,38 @@ function renderCatalog(rows: readonly CatalogRow[], descriptionBytes: number | u
   return { text: CATALOG_PREFIX + lines.join('') + note + CATALOG_SUFFIX, included: lines.length }
 }
 
+type CatalogRender = Readonly<{ text: string; included: number; sharedBytes?: number }>
+
 function fits(rows: readonly CatalogRow[], descriptionBytes: number): boolean {
   return renderCatalog(rows, descriptionBytes).included === rows.length
 }
 
-function catalogText(rows: readonly CatalogRow[]): string {
-  if (rows.length === 0) return ''
+function catalogText(rows: readonly CatalogRow[]): CatalogRender {
+  if (rows.length === 0) return { text: '', included: 0 }
   const full = renderCatalog(rows, undefined)
-  if (full.included === rows.length) return full.text
+  if (full.included === rows.length) return full
   let low = 0
   let high = 0
   for (const row of rows) high = Math.max(high, utf8Bytes(row.description))
-  if (!fits(rows, 0)) return renderCatalog(rows, 0).text
+  if (!fits(rows, 0)) return { ...renderCatalog(rows, 0), sharedBytes: 0 }
   while (low < high) {
     const mid = Math.ceil((low + high) / 2)
     if (fits(rows, mid)) low = mid
     else high = mid - 1
   }
-  return renderCatalog(rows, low).text
+  return { ...renderCatalog(rows, low), sharedBytes: low }
 }
 
 let catalogCache: { hash: string; text: string } | undefined
 
-function cachedCatalog(skills: readonly SkillRuntimeActual[]): string {
+function cachedCatalog(skills: readonly SkillRuntimeActual[], log?: Logger): string {
   const rows: CatalogRow[] = []
   const identity: string[] = []
   for (const skill of [...skills].sort((a, b) => a.name.localeCompare(b.name, 'en-US'))) {
     const row = {
       name: skill.name,
       resourceId: skill.resourceId,
-      description: foldDescription(skill.description ?? ''),
+      description: capDescription(foldDescription(skill.description ?? '')),
     }
     if (unsafeRow(row)) continue
     rows.push(row)
@@ -187,8 +199,15 @@ function cachedCatalog(skills: readonly SkillRuntimeActual[]): string {
   }
   const hash = createHash('sha256').update(identity.join('\n')).digest('hex')
   if (catalogCache?.hash === hash) return catalogCache.text
-  const text = catalogText(rows)
+  const { text, included, sharedBytes } = catalogText(rows)
   catalogCache = { hash, text }
+  // Counts only: names stay out of the audit stream, and a cache hit never logs again.
+  if (sharedBytes !== undefined)
+    log?.warn('skill catalog exceeded its budget', {
+      ready: skills.length,
+      listed: included,
+      descriptionBytes: sharedBytes,
+    })
   return text
 }
 
@@ -211,9 +230,9 @@ function inWorkspace<T>(
  * source from the extension identity, so this return does not replace persona or other hooks.
  * additionalContext stays the shared 8192-byte channel and is not used here.
  */
-function context(runtime: SkillRuntimeInput): SkillContextReturn {
+function context(runtime: SkillRuntimeInput, log?: Logger): SkillContextReturn {
   try {
-    const text = cachedCatalog(active(runtime))
+    const text = cachedCatalog(active(runtime), log)
     if (!text) return {}
     return { sections: [{ id: 'skills', order: 160, content: text }] }
   } catch {
@@ -357,7 +376,7 @@ export function skillsExtension(init: SeamInitContext): ExtensionFactory {
           throw Object.assign(new Error('E_WORKSPACE_REQUIRED: Skill context has no session'), {
             code: 'E_WORKSPACE_REQUIRED',
           })
-        return inWorkspace(runtime, hookContext.session.key, async () => context(runtime))
+        return inWorkspace(runtime, hookContext.session.key, async () => context(runtime, hookContext.log))
       }),
     ]
     return () => {
