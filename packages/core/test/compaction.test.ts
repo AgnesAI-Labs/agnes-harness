@@ -110,6 +110,47 @@ describe('production compaction phase', () => {
     expect(await log.scan({ type: 'x/core/compaction-end', limit: 5 })).toHaveLength(0)
   })
 
+  it.each(['different summary model', 'nonzero summary range'] as const)(
+    'blocks a cold %s before its first summary request',
+    async (caseName) => {
+      const { session, provider, log } = await history()
+      if (caseName === 'nonzero summary range') {
+        provider.models = () => [model('answer-model', 'primary', 10_000)]
+        session.preset.model.id.compaction = 'answer-model'
+        session.compaction = new CompactionRunner({
+          plan: async (payload) => {
+            const surface = payload.getSurface()
+            const start = surface[2]
+            const end = surface.at(-2)
+            if (!start || !end) throw new Error('missing nonzero summary range')
+            return { ...plan(payload), summarizeRange: [start.seq, end.seq] as [number, number] }
+          },
+          onCompact: async () => undefined,
+        })
+      } else {
+        session.compaction = runner()
+      }
+      let contextCalls = 0
+      session.hooks = {
+        ...session.hooks,
+        context: async () => {
+          contextCalls++
+          throw new HookBlockedError('cold denied')
+        },
+      }
+      const headersBefore = await log.scan({ type: 'request/header', limit: 20 })
+      await session.requestCompaction({ actor, admissionId: 'cold-block-alt' })
+      expect(await session.run({ until: 'turn-end', signal: signal() })).toMatchObject({
+        reason: 'blocked',
+        error: { code: 'HOOK_BLOCKED', message: 'cold denied' },
+      })
+      expect(contextCalls).toBe(1)
+      expect(provider.requests).toHaveLength(2)
+      expect(await log.scan({ type: 'request/header', limit: 20 })).toHaveLength(headersBefore.length)
+      expect(await log.scan({ type: 'x/core/compaction-end', limit: 5 })).toHaveLength(0)
+    },
+  )
+
   it('keeps ordinary cold context exceptions on the error path', async () => {
     const { session, provider } = await history()
     provider.models = () => [model('answer-model', 'primary', 10_000)]
@@ -122,6 +163,34 @@ describe('production compaction phase', () => {
       },
     }
     await session.requestCompaction({ actor, admissionId: 'cold-error' })
+    expect(await session.run({ until: 'turn-end', signal: signal() })).toMatchObject({
+      reason: 'error',
+      error: { code: 'E_STEP_FAILED', message: 'ordinary context failure' },
+    })
+    expect(provider.requests).toHaveLength(2)
+  })
+
+  it('keeps ordinary context exceptions on the error path for a narrow cold summary', async () => {
+    const { session, provider } = await history()
+    provider.models = () => [model('answer-model', 'primary', 10_000)]
+    session.preset.model.id.compaction = 'answer-model'
+    session.compaction = new CompactionRunner({
+      plan: async (payload) => {
+        const surface = payload.getSurface()
+        const start = surface[2]
+        const kept = surface.at(-1)
+        if (!start || !kept) throw new Error('missing nonzero summary range')
+        return { ...plan(payload), summarizeRange: [start.seq, start.seq], keepFromSeq: kept.seq }
+      },
+      onCompact: async () => undefined,
+    })
+    session.hooks = {
+      ...session.hooks,
+      context: async () => {
+        throw new Error('ordinary context failure')
+      },
+    }
+    await session.requestCompaction({ actor, admissionId: 'cold-error-narrow' })
     expect(await session.run({ until: 'turn-end', signal: signal() })).toMatchObject({
       reason: 'error',
       error: { code: 'E_STEP_FAILED', message: 'ordinary context failure' },
@@ -241,14 +310,16 @@ describe('production compaction phase', () => {
     expect(reservations[0]).toBeGreaterThanOrEqual(BigInt((bound as number) + 77) * 1_000_000n)
   })
 
-  it('keeps a nonzero-start custom range narrow even on the primary model', async () => {
+  it('keeps a nonzero-start custom range narrow after checking cold context', async () => {
     const { session, provider } = await history()
     provider.models = () => [model('answer-model', 'primary', 10_000)]
     session.preset.model.id.compaction = 'answer-model'
+    let contextCalls = 0
     session.hooks = {
       ...session.hooks,
-      context: async () => {
-        throw new Error('narrow summary must not reassemble the primary prefix')
+      context: async (sections) => {
+        contextCalls++
+        return { sections, additionalContext: '' }
       },
     }
     session.compaction = new CompactionRunner({
@@ -269,6 +340,7 @@ describe('production compaction phase', () => {
     })
     await session.requestCompaction({ actor, admissionId: 'nonzero-range' })
     expect(await session.runCompaction()).toEqual({ phase: 'checkpoint' })
+    expect(contextCalls).toBe(1)
     const summary = provider.requests[2]
     expect(summary?.tools).toEqual([])
     expect(summary?.system).toContain('narrow only')

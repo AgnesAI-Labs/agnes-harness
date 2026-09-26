@@ -15,104 +15,109 @@ const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const apis: readonly WireApi[] = ['anthropic-messages', 'openai-completions', 'openai-responses']
 
 describe('context hook wire prefix', () => {
-  it('blocks a cold compaction when context-first UserPromptSubmit exits 2', async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), 'agnes-cold-hook-block-'))
-    writeFileSync(
-      join(dataDir, 'hooks.json'),
-      JSON.stringify({
-        hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: './gate.sh' }] }] },
-      }),
-    )
-    let blocked = false
-    const exec = vi.fn(async () => ({
-      code: blocked ? 2 : 0,
-      stdout: '',
-      stderr: blocked ? 'cold denied' : '',
-      truncated: false,
-    }))
-    const options = {
-      dataDir,
-      packageDirs: { '@agnes/base': baseDir },
-      packages: { '@agnes/code': { operations: codeOperations } },
-      disableSessionTitle: true,
-      seams: {
-        sandbox: {
-          exec,
-          fsPolicy: () => testFsPolicy(realpathSync.native(dataDir)),
-          enforcement: () => ({ level: 'full' as const, scope: ['process' as const] }),
-        },
-      },
-    }
-    const firstProvider = fakeProvider([textTurn('old one'), textTurn('old two')], '2')
-    try {
-      const first = await createTestHost({ ...options, provider: firstProvider })
-      try {
-        const session = await first.host.createSession({ cwd: dataDir, key: 'cold-hook-block' })
-        for (const prompt of ['one', 'two']) {
-          await session.enqueue('next-turn', {
-            content: [{ type: 'text', text: prompt }],
-            actor: session.d.actor,
-            kind: 'prompt',
-          })
-          const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
-          if (outcome.reason !== 'completed') throw new Error(JSON.stringify(outcome))
-        }
-      } finally {
-        await first.host.close()
-      }
-      expect(exec).toHaveBeenCalledTimes(2)
-      const coldProvider = fakeProvider([textTurn('must not be sent')], '2')
-      const second = await createTestHost({ ...options, provider: coldProvider })
-      try {
-        const reopened = await second.host.createSession({ cwd: dataDir, key: 'cold-hook-block' })
-        reopened.compaction = new CompactionRunner({
-          plan: async (payload) => {
-            const surface = payload.getSurface()
-            const first = surface[0]
-            const end = surface.at(-2)
-            const kept = surface.at(-1)
-            if (!first || !end || !kept) throw new Error('missing compactable history')
-            return {
-              keepFromSeq: kept.seq,
-              summarizeRange: [first.seq, end.seq],
-              prompts: { system: 'Summarize safely.', history: 'Summarize history.' },
-              maxTokens: 96,
-              details: { readFiles: [], modifiedFiles: [] },
-            }
+  it.each(['wide', 'nonzero', 'other-model'] as const)(
+    'blocks a cold %s compaction when context-first UserPromptSubmit exits 2',
+    async (range) => {
+      const dataDir = mkdtempSync(join(tmpdir(), 'agnes-cold-hook-block-'))
+      writeFileSync(
+        join(dataDir, 'hooks.json'),
+        JSON.stringify({
+          hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: './gate.sh' }] }] },
+        }),
+      )
+      let blocked = false
+      const exec = vi.fn(async () => ({
+        code: blocked ? 2 : 0,
+        stdout: '',
+        stderr: blocked ? 'cold denied' : '',
+        truncated: false,
+      }))
+      const options = {
+        dataDir,
+        packageDirs: { '@agnes/base': baseDir },
+        packages: { '@agnes/code': { operations: codeOperations } },
+        disableSessionTitle: true,
+        seams: {
+          sandbox: {
+            exec,
+            fsPolicy: () => testFsPolicy(realpathSync.native(dataDir)),
+            enforcement: () => ({ level: 'full' as const, scope: ['process' as const] }),
           },
-          onCompact: async () => undefined,
-        })
-        blocked = true
-        await reopened.requestCompaction({ actor: reopened.d.actor, admissionId: 'cold-hook-block' })
-        expect(await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject(
-          {
+        },
+      }
+      const firstProvider = fakeProvider([textTurn('old one'), textTurn('old two')], '2')
+      try {
+        const first = await createTestHost({ ...options, provider: firstProvider })
+        try {
+          const session = await first.host.createSession({ cwd: dataDir, key: 'cold-hook-block' })
+          for (const prompt of ['one', 'two']) {
+            await session.enqueue('next-turn', {
+              content: [{ type: 'text', text: prompt }],
+              actor: session.d.actor,
+              kind: 'prompt',
+            })
+            const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+            if (outcome.reason !== 'completed') throw new Error(JSON.stringify(outcome))
+          }
+        } finally {
+          await first.host.close()
+        }
+        expect(exec).toHaveBeenCalledTimes(2)
+        const coldProvider = fakeProvider([textTurn('must not be sent')], '2')
+        const second = await createTestHost({ ...options, provider: coldProvider })
+        try {
+          const reopened = await second.host.createSession({ cwd: dataDir, key: 'cold-hook-block' })
+          if (range === 'other-model') reopened.preset.model.id.compaction = 'summary-model'
+          reopened.compaction = new CompactionRunner({
+            plan: async (payload) => {
+              const surface = payload.getSurface()
+              const first = surface[0]
+              const start = range === 'nonzero' ? surface[2] : first
+              const end = surface.at(-2)
+              const kept = surface.at(-1)
+              if (!start || !end || !kept) throw new Error('missing compactable history')
+              return {
+                keepFromSeq: kept.seq,
+                summarizeRange: [start.seq, end.seq],
+                prompts: { system: 'Summarize safely.', history: 'Summarize history.' },
+                maxTokens: 96,
+                details: { readFiles: [], modifiedFiles: [] },
+              }
+            },
+            onCompact: async () => undefined,
+          })
+          blocked = true
+          await reopened.requestCompaction({ actor: reopened.d.actor, admissionId: 'cold-hook-block' })
+          expect(
+            await reopened.run({ until: 'turn-end', signal: new AbortController().signal }),
+          ).toMatchObject({
             reason: 'blocked',
             error: { code: 'HOOK_BLOCKED', message: 'cold denied' },
-          },
-        )
-        expect(exec).toHaveBeenCalledTimes(3)
-        expect(coldProvider.requests).toHaveLength(0)
-        expect(await reopened.d.log.scan({ type: 'x/core/compaction-end', limit: 5 })).toHaveLength(0)
-        expect(reopened.surface().some((node) => node.kind === 'summary')).toBe(false)
+          })
+          expect(exec).toHaveBeenCalledTimes(3)
+          expect(coldProvider.requests).toHaveLength(0)
+          expect(await reopened.d.log.scan({ type: 'x/core/compaction-end', limit: 5 })).toHaveLength(0)
+          expect(reopened.surface().some((node) => node.kind === 'summary')).toBe(false)
 
-        blocked = false
-        await reopened.enqueue('next-turn', {
-          content: [{ type: 'text', text: 'Continue after block.' }],
-          actor: reopened.d.actor,
-          kind: 'prompt',
-        })
-        expect((await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-          'completed',
-        )
-        expect(exec).toHaveBeenCalledTimes(4)
-        expect(coldProvider.requests).toHaveLength(1)
+          blocked = false
+          await reopened.enqueue('next-turn', {
+            content: [{ type: 'text', text: 'Continue after block.' }],
+            actor: reopened.d.actor,
+            kind: 'prompt',
+          })
+          expect(
+            (await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).reason,
+          ).toBe('completed')
+          expect(exec).toHaveBeenCalledTimes(4)
+          expect(coldProvider.requests).toHaveLength(1)
+        } finally {
+          await second.host.close()
+        }
       } finally {
-        await second.host.close()
+        rmSync(dataDir, { recursive: true, force: true })
       }
-    } finally {
-      rmSync(dataDir, { recursive: true, force: true })
-    }
-  })
+    },
+  )
 
   it.each(apis)('%s runs context once in a three-step turn and keeps changes in a tail note', async (api) => {
     const dataDir = mkdtempSync(join(tmpdir(), 'agnes-wire-context-'))
