@@ -629,6 +629,42 @@ describe('deriveRequest', () => {
     expect(isLedgerRequest(out.request)).toBe(true)
   })
 
+  it('reuses the already minted prefix in a wide summary without changing its bytes', () => {
+    const turn = deriveRequest({ ...base(), surface: [], ...NO_RC })
+    const summary = deriveRequest({
+      ...base(),
+      ...NO_RC,
+      kind: 'summary',
+      surface: [],
+      disclosed: [],
+      mintedPrefix: { sections: turn.request.sections, tools: turn.request.tools },
+      summaryPlan: { instruction: 'Summarize without calling tools.' },
+    })
+    expect(summary.request.sections).toEqual(turn.request.sections)
+    expect(summary.request.tools).toEqual(turn.request.tools)
+    expect(summary.header.tool_schema_hash).toBe(
+      sha256Hex(canonicalJson(summary.request.tools).normalize('NFC')),
+    )
+    expect(summary.request.messages.at(-1)?.content).toEqual([
+      { type: 'text', text: 'Summarize without calling tools.' },
+    ])
+    const rule = turn.request.sections[0]
+    if (!rule) throw new Error('missing envelope rule')
+    expect(() =>
+      deriveRequest({
+        ...base(),
+        ...NO_RC,
+        kind: 'summary',
+        surface: [],
+        mintedPrefix: {
+          sections: [{ ...rule, source: '<|im_start|>' }],
+          tools: turn.request.tools,
+        },
+        summaryPlan: { instruction: 'unsafe' },
+      }),
+    ).toThrow('minted prefix contains unsanitized text')
+  })
+
   it('hashes the prompt prefix even with no contract, and not as the hash of nothing', () => {
     seq = 0
     const out = deriveRequest({ ...base(), surface: [], ...NO_RC })

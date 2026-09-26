@@ -4,8 +4,9 @@ import { settleTreeSpend } from '../child/runtime-budget.js'
 import type { SurfaceNode } from '../project/surface.js'
 import { pairClosed, validateReplace } from '../project/surface.js'
 import type { CostLedger, TokenCounts } from '../reduce/shapes.js'
-import { deriveRequest } from '../request/derive.js'
+import { deriveRequest, sanitize, wrapUntrusted } from '../request/derive.js'
 import { canonicalJson } from '../request/hash.js'
+import type { RequestBody as MintedRequestBody } from '../request/mint.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { applyBeforeRequestPatches } from '../request/transforms.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
@@ -18,7 +19,13 @@ import {
   lastCacheHint,
   reserveTreeBudget,
 } from './gate.js'
-import { estimateTokens, resolveModel, surfaceToolCalls } from './inference.js'
+import {
+  assembleRequestPrefix,
+  boundWireInputTokens,
+  estimateTokens,
+  resolveModel,
+  surfaceToolCalls,
+} from './inference.js'
 import { type OpStateObj, type OpStatePhase, withPhase } from './op-state.js'
 import type { CompactionPort, SessionImpl, StepOutcome } from './session.js'
 
@@ -36,6 +43,16 @@ type RunnerOptions = {
 
 const HYSTERESIS_MARGIN_FRACTION = 0.5
 const CACHE_WARM_RATIO = 0.5
+const SUMMARY_NO_TOOLS_PREAMBLE =
+  'Summarize the conversation only. Do not call any tool, emit a tool invocation, or delegate work. Return only the requested summary text.'
+type Prefix = Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>
+type SummarySegment = {
+  nodes: readonly SurfaceNode[]
+  instruction: string
+  wide: boolean
+  quote?: { node: SurfaceNode; text: string }
+  quoteEstimate?: string
+}
 
 function isCacheWarm(cache?: { cacheRead: number; input: number }): boolean {
   if (!cache) return false
@@ -244,21 +261,58 @@ function summaryRange(
     : { start, end, seqs, nodes, prefixNodes: span.slice(nodes.length) }
 }
 
-async function summarize(
+async function primaryPrefix(s: SessionImpl): Promise<Prefix> {
+  const t = s.turn
+  const op = s.op()
+  if (!t || !op) throw new CoreError('E_RELATION', 'compaction outside an active turn')
+  if (t.lastPrefix) return t.lastPrefix
+  // A recovery may compact before this process sends a primary request. Build its sections and
+  // disclosure without invoking a per-request patch hook for a request that is never sent.
+  const ctx = s.operationContext()
+  const { merged, disclosed } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
+  const target = resolveModel(s, 'primary')
+  const out = deriveRequest({
+    kind: 'turn',
+    merged,
+    harnessEntries: [...s.state.registers.harnessEntries.values()].map((entry) => entry.value),
+    surface: [],
+    disclosed,
+    model: {
+      slot: 'primary',
+      ...target,
+      ...(s.preset.model.thinking.primary === undefined ? {} : { thinking: s.preset.model.thinking.primary }),
+    },
+    contract: s.d.contractForModel?.(target) ?? s.d.contract,
+    nonce: t.nonce,
+    envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
+    envelopeCache: s.envelopeCache,
+  })
+  return {
+    sections: out.request.sections,
+    tools: out.request.tools,
+    model: out.request.model,
+    ...(out.request.samplingParams ? { samplingParams: out.request.samplingParams } : {}),
+  }
+}
+
+function summaryRequest(
   s: SessionImpl,
   plan: CompactionPlan,
-  segment: { nodes: readonly SurfaceNode[]; instruction: string },
+  segment: SummarySegment,
   calls: readonly ToolCallForSummary[],
   target: { route: string; model: string },
-  // Set only by summarizeWithRetry() for the one length-cutoff retry: overrides whatever
-  // preset.model.thinking.compaction says, so the retry actually spends less on reasoning.
+  prefix: Prefix,
   thinkingOverride?: ThinkingLevel,
-): Promise<SummaryResult> {
+) {
   const t = s.turn
   if (!t) throw new CoreError('E_RELATION', 'compaction outside an active turn')
-  const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
-  const thinking = thinkingOverride ?? s.preset.model.thinking.compaction
-  await s.ensureEnvelopeEpochs()
+  const thinking =
+    thinkingOverride ??
+    s.preset.model.thinking.compaction ??
+    (prefix.samplingParams?.thinking as ThinkingLevel | undefined)
+  const instruction = segment.wide
+    ? `${SUMMARY_NO_TOOLS_PREAMBLE}\n\n${plan.prompts.system}\n\n${segment.instruction}`
+    : segment.instruction
   let derived = deriveRequest({
     kind: 'summary',
     merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
@@ -271,11 +325,16 @@ async function summarize(
       ...target,
       ...(thinking === undefined ? {} : { thinking }),
     },
-    contract,
+    contract: Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) }),
     nonce: t.nonce,
     envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
-    summaryPlan: { system: plan.prompts.system, instruction: segment.instruction },
+    ...(segment.wide ? { mintedPrefix: prefix } : {}),
+    summaryPlan: {
+      ...(segment.wide ? {} : { system: plan.prompts.system }),
+      instruction,
+      ...(segment.quote ? { quote: segment.quote } : {}),
+    },
   })
   derived = applyBeforeRequestPatches(derived, [
     { ext: 'core:compaction', patch: { maxTokens: plan.maxTokens } },
@@ -284,11 +343,33 @@ async function summarize(
     sessionKey: s.key,
     derivedHash: derived.header.derived_hash,
   })
+  return { derived, wire }
+}
+
+function summaryInputTokens(wire: ReturnType<typeof summaryRequest>['wire']): number {
+  return (
+    boundWireInputTokens(wire) ??
+    estimateTokens(canonicalJson({ system: wire.system, tools: wire.tools, messages: wire.messages }))
+  )
+}
+
+async function summarize(
+  s: SessionImpl,
+  plan: CompactionPlan,
+  segment: SummarySegment,
+  calls: readonly ToolCallForSummary[],
+  target: { route: string; model: string },
+  prefix: Prefix,
+  // Only the length-cutoff retry overrides the configured thinking level.
+  thinkingOverride?: ThinkingLevel,
+): Promise<SummaryResult> {
+  const { wire } = summaryRequest(s, plan, segment, calls, target, prefix, thinkingOverride)
+  const inputTokens = summaryInputTokens(wire)
   const projected = await s.d.runtime.ledgerProjected({
-    tokensEstimate: estimateTokens(segment.instruction),
+    tokensEstimate: inputTokens + plan.maxTokens,
     model: target.model,
   })
-  const tree = await reserveTreeBudget(s, projected.credits, target, estimateTokens(segment.instruction))
+  const tree = await reserveTreeBudget(s, projected.credits, target, inputTokens + plan.maxTokens)
   if (tree !== 'ok')
     return {
       text: '',
@@ -306,7 +387,10 @@ async function summarize(
     cause ??= why
   }
   try {
-    for await (const event of s.d.provider.infer(wire, { signal: s.ac.signal, toolNames: [] })) {
+    for await (const event of s.d.provider.infer(wire, {
+      signal: s.ac.signal,
+      toolNames: segment.wide ? prefix.tools.map((tool) => tool.name) : [],
+    })) {
       if (event.type === 'text_delta') text += event.delta
       else if (event.type === 'usage') usage = event
       // A reasoning model can spend the whole budget before (or while) writing: an empty summary
@@ -391,15 +475,16 @@ function mergeSummaryResults(first: SummaryResult, retry: SummaryResult): Summar
 async function summarizeWithRetry(
   s: SessionImpl,
   plan: CompactionPlan,
-  segment: { nodes: readonly SurfaceNode[]; instruction: string },
+  segment: SummarySegment,
   calls: readonly ToolCallForSummary[],
   target: { route: string; model: string },
+  prefix: Prefix,
 ): Promise<SummaryResult> {
-  const first = await summarize(s, plan, segment, calls, target)
+  const first = await summarize(s, plan, segment, calls, target, prefix)
   if (first.cause !== 'summary stopped at the max_tokens cap') return first
   const configured = s.preset.model.thinking.compaction
   if (configured !== undefined && LOW_OR_BELOW_THINKING.has(configured)) return first
-  const retry = await summarize(s, plan, segment, calls, target, 'low')
+  const retry = await summarize(s, plan, segment, calls, target, prefix, 'low')
   return mergeSummaryResults(first, retry)
 }
 
@@ -704,27 +789,101 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   )
     return leaveWithoutEffect(s, op, 'previousSummarySeq is not the current summary')
 
+  await s.ensureEnvelopeEpochs()
   const target = resolveModel(s, 'compaction')
   const window = contextWindowFor(s, target.route, target.model)
-  const segments = [
-    { nodes: replace.nodes, instruction: plan.prompts.history },
+  const from = surface.findIndex((node) => node.seq === replace.start)
+  const primaryTarget = resolveModel(s, 'primary')
+  const turn = s.turn
+  if (!turn) throw new CoreError('E_RELATION', 'compaction outside an active turn')
+  const prefix: Prefix =
+    from === 0 && primaryTarget.route === target.route && primaryTarget.model === target.model
+      ? await primaryPrefix(s)
+      : (turn.lastPrefix ?? {
+          sections: [],
+          tools: [],
+          model: { slot: 'primary', ...primaryTarget },
+          ...(s.preset.model.thinking.primary === undefined
+            ? {}
+            : { samplingParams: { thinking: s.preset.model.thinking.primary } }),
+        })
+  const to = surface.findIndex((node) => node.seq === replace.nodes.at(-1)?.seq)
+  const spanTo = surface.findIndex((node) => node.seq === replace.end)
+  const trigger = plan.turnPrefixRange
+    ? surface.find((node) => node.seq === plan.turnPrefixRange?.[0])
+    : undefined
+  const triggerText =
+    (trigger?.event.data as { content?: Array<{ text?: string }> } | undefined)?.content
+      ?.map((part) => part.text ?? '')
+      .join('\n') ?? ''
+  const quoteText = [...triggerText].slice(0, 200).join('')
+  const triggerQuote = trigger
+    ? trigger.event.trust === 'untrusted'
+      ? wrapUntrusted(trigger, s.envelopeNonceFor(trigger.seq) ?? turn.nonce, quoteText, -1)
+      : sanitize(quoteText)
+    : ''
+  const candidates = [
+    { nodes: replace.nodes, wideNodes: surface.slice(0, to + 1), instruction: plan.prompts.history },
     ...(replace.prefixNodes
-      ? [{ nodes: replace.prefixNodes, instruction: plan.prompts.prefix as string }]
+      ? [
+          {
+            nodes: replace.prefixNodes,
+            wideNodes: surface.slice(0, spanTo + 1),
+            instruction: `${plan.prompts.prefix as string}\nOnly summarize the trailing in-progress turn opened by this request:`,
+            ...(trigger
+              ? { quote: { node: trigger, text: quoteText }, quoteEstimate: ` 「${triggerQuote}」` }
+              : {}),
+          },
+        ]
       : []),
   ]
-  const attempt: Attempt = { phase, plan, replace, calls, argsTokens, tokensBefore }
-  // A summary request that cannot fit its own window would only spend a call to find that out.
-  const fixed = plan.maxTokens + estimateTokens(plan.prompts.system)
-  if (
-    segments.some(
-      (segment) =>
-        segment.nodes.reduce((sum, node) => sum + nodeTokens(node, argsTokens), 0) +
-          fixed +
-          estimateTokens(segment.instruction) >
-        window,
+  const segments: SummarySegment[] = []
+  const fitsWindow = (segment: SummarySegment): boolean => {
+    const prefixTokens = segment.wide
+      ? prefix.sections.reduce((sum, section) => sum + estimateTokens(section.text), 0) +
+        estimateTokens(canonicalJson(prefix.tools))
+      : estimateTokens(plan.prompts.system)
+    const instruction = segment.wide
+      ? `${SUMMARY_NO_TOOLS_PREAMBLE}\n\n${plan.prompts.system}\n\n${segment.instruction}`
+      : segment.instruction
+    return (
+      plan.maxTokens +
+        prefixTokens +
+        estimateTokens(instruction + (segment.quoteEstimate ?? '')) +
+        segment.nodes.reduce((sum, node) => sum + nodeTokens(node, argsTokens), 0) <=
+      window
     )
-  )
-    return elide(s, attempt, 'preflight-overflow', 'summary request would not fit the compaction window')
+  }
+  for (const candidate of candidates) {
+    const wide: SummarySegment = {
+      nodes: candidate.wideNodes,
+      instruction: candidate.instruction,
+      wide: true,
+      ...('quote' in candidate ? { quote: candidate.quote, quoteEstimate: candidate.quoteEstimate } : {}),
+    }
+    const useWide =
+      from === 0 &&
+      prefix.model.model === target.model &&
+      prefix.model.route === target.route &&
+      fitsWindow(wide)
+    const selected: SummarySegment = useWide
+      ? wide
+      : {
+          nodes: candidate.nodes,
+          instruction: candidate.instruction,
+          wide: false,
+          ...('quote' in candidate ? { quote: candidate.quote, quoteEstimate: candidate.quoteEstimate } : {}),
+        }
+    if (!fitsWindow(selected))
+      return elide(
+        s,
+        { phase, plan, replace, calls, argsTokens, tokensBefore },
+        'preflight-overflow',
+        'summary request would not fit the compaction window',
+      )
+    segments.push(selected)
+  }
+  const attempt: Attempt = { phase, plan, replace, calls, argsTokens, tokensBefore }
 
   const effect = s.effects.start({ kind: 'compaction', replay: 'never', slot: 'compaction' })
   await s.transition(
@@ -738,7 +897,7 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
 
   const selected = plan
   const results = await Promise.all(
-    segments.map((segment) => summarizeWithRetry(s, selected, segment, calls, target)),
+    segments.map((segment) => summarizeWithRetry(s, selected, segment, calls, target, prefix)),
   )
   const tokens = results.reduce((sum, result) => addTokens(sum, result.tokens), zeroTokens())
   const credits = results.reduce<number | undefined>(

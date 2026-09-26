@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { discloseTools } from '../src/step/inference.js'
+import { boundWireInputTokens, discloseTools, resolveModel } from '../src/step/inference.js'
 import { withPhase } from '../src/step/op-state.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { fakeProvider, type Script, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -60,6 +60,7 @@ async function history(summaryScript: Script = textTurn('SUMMARY')) {
   const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), summaryScript, textTurn('final')])
   provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
   const opened = await openSession({ provider })
+  opened.session.preset.model.id.compaction = 'summary-model'
   opened.session.preset.compaction.reserveTokens = 80
   for (const prompt of ['one {{HISTORY}}', 'two']) {
     await opened.session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
@@ -88,6 +89,219 @@ function runner(onCompact: (p: HookPayloadMap['compact']) => Promise<void> = asy
 }
 
 describe('production compaction phase', () => {
+  it('uses the primary route and model for an unconfigured compaction slot', async () => {
+    const { session } = await history()
+    delete session.preset.model.id.compaction
+    session.preset.model.route.primary = 'primary-route'
+    session.preset.model.id.primary = 'primary-id'
+    expect(resolveModel(session, 'compaction')).toEqual({ route: 'primary-route', model: 'primary-id' })
+    session.preset.model.route.compaction = 'summary-route'
+    session.preset.model.id.compaction = 'summary-id'
+    expect(resolveModel(session, 'compaction')).toEqual({ route: 'summary-route', model: 'summary-id' })
+  })
+
+  it('replays the primary system, tools and history before a wide summary instruction', async () => {
+    const { session, provider } = await history()
+    provider.models = () => [model('answer-model', 'primary', 10_000)]
+    session.preset.model.id.compaction = 'answer-model'
+    session.compaction = runner()
+    const previous = provider.requests[1]
+    if (!previous) throw new Error('missing primary request')
+    await session.requestCompaction({ actor, admissionId: 'wide-summary' })
+    expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const summary = provider.requests[2]
+    if (!summary) throw new Error('missing summary request')
+    expect(summary.kind).toBe('summary')
+    expect(summary.model).toBe(previous.model)
+    expect(summary.system).toBe(previous.system)
+    expect(summary.tools).toEqual(previous.tools)
+    expect(summary.messages.slice(0, previous.messages.length)).toEqual(previous.messages)
+    expect((summary.messages.at(-1)?.content[0] as { text?: string } | undefined)?.text).toContain(
+      'Do not call any tool',
+    )
+  })
+
+  it('rebuilds a cold summary history from ledger envelope epochs after session reopen', async () => {
+    const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), textTurn('SUMMARY')])
+    provider.models = () => [model('answer-model', 'primary', 10_000)]
+    const storage = new MemoryStorage()
+    const first = await openSession({ provider, storage, key: 'cold-summary', writerRunId: 'r1' })
+    try {
+      for (const [prompt, trust] of [
+        ['historical untrusted marker', 'untrusted'],
+        ['follow up', undefined],
+      ] as const) {
+        await first.session.enqueue('next-turn', {
+          content: [{ type: 'text', text: prompt }],
+          actor,
+          ...(trust ? { trust } : {}),
+        })
+        expect((await first.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+      }
+      const previous = provider.requests[1]
+      if (!previous) throw new Error('missing pre-reopen request')
+      const previousId = /<untrusted id=\\?"([^"\\]+)/u.exec(JSON.stringify(previous.messages))?.[1]
+      expect(previousId).toBeTruthy()
+      await first.session.close()
+      const reopened = await openSession({
+        provider,
+        storage,
+        key: 'cold-summary',
+        writerRunId: 'r2',
+      })
+      try {
+        expect(reopened.session.envelopeCache.size).toBe(0)
+        reopened.session.compaction = runner()
+        await reopened.session.requestCompaction({ actor, admissionId: 'cold-summary' })
+        expect((await reopened.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+        const summary = provider.requests[2]
+        if (!summary) throw new Error('missing cold summary request')
+        const summaryId = /<untrusted id=\\?"([^"\\]+)/u.exec(JSON.stringify(summary.messages))?.[1]
+        expect(summaryId).toBe(previousId)
+        expect(summary.messages.slice(0, previous.messages.length)).toEqual(previous.messages)
+      } finally {
+        await reopened.session.close()
+      }
+    } finally {
+      await first.session.close()
+    }
+  })
+
+  it('reserves tree budget against the complete wide wire input, not its short instruction', async () => {
+    const { session, storage, provider } = await history()
+    provider.models = () => [
+      {
+        ...model('answer-model', 'primary', 100_000),
+        cost: { input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ]
+    session.preset.model.id.compaction = 'answer-model'
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'long historical body '.repeat(400) }],
+      actor,
+    })
+    expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const reservations: bigint[] = []
+    const reserve = storage.reserve.bind(storage)
+    storage.reserve = async (request) => {
+      reservations.push(request.qMicro)
+      return reserve(request)
+    }
+    session.preset.treeBudgetCredits = 1_000_000
+    session.compaction = runner()
+    await session.requestCompaction({ actor, admissionId: 'complete-wire-budget' })
+    expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const summary = provider.requests.find((request) => request.kind === 'summary')
+    if (!summary) throw new Error('missing wide summary request')
+    expect(summary.tools).toEqual(provider.requests[2]?.tools)
+    const bound = boundWireInputTokens(summary)
+    expect(bound).not.toBeNull()
+    expect(bound).toBeGreaterThan(4_000)
+    expect(reservations).toHaveLength(1)
+    expect(reservations[0]).toBeGreaterThanOrEqual(BigInt((bound as number) + 77) * 1_000_000n)
+  })
+
+  it('keeps a nonzero-start custom range narrow even on the primary model', async () => {
+    const { session, provider } = await history()
+    provider.models = () => [model('answer-model', 'primary', 10_000)]
+    session.preset.model.id.compaction = 'answer-model'
+    session.hooks = {
+      ...session.hooks,
+      context: async () => {
+        throw new Error('narrow summary must not reassemble the primary prefix')
+      },
+    }
+    session.compaction = new CompactionRunner({
+      plan: async (payload) => {
+        const nodes = payload.getSurface()
+        const start = nodes[2]
+        const kept = nodes.at(-1)
+        if (!start || !kept) throw new Error('missing custom range')
+        return {
+          keepFromSeq: kept.seq,
+          summarizeRange: [start.seq, start.seq],
+          prompts: { system: 'narrow only', history: 'summarize this range' },
+          maxTokens: 77,
+          details: { readFiles: [], modifiedFiles: [] },
+        }
+      },
+      onCompact: async () => undefined,
+    })
+    await session.requestCompaction({ actor, admissionId: 'nonzero-range' })
+    expect(await session.runCompaction()).toEqual({ phase: 'checkpoint' })
+    const summary = provider.requests[2]
+    expect(summary?.tools).toEqual([])
+    expect(summary?.system).toContain('narrow only')
+    expect(summary?.messages[0]?.content[0]).toEqual({ type: 'text', text: 'two' })
+  })
+
+  it('falls back to a narrow summary when the primary prefix would exceed its window', async () => {
+    const { session, provider } = await history()
+    provider.models = () => [model('answer-model', 'primary', 1000)]
+    session.preset.model.id.compaction = 'answer-model'
+    session.compaction = runner()
+    await session.requestCompaction({ actor, admissionId: 'narrow-window' })
+    const turn = session.turn
+    if (!turn) throw new Error('missing compaction turn')
+    const previous = provider.requests[1]
+    if (!previous) throw new Error('missing primary request')
+    turn.lastPrefix = {
+      sections: [
+        {
+          id: 'core:untrusted-envelope',
+          order: 0,
+          source: 'core',
+          text: previous.system.split('\n\n')[0] ?? '',
+        },
+        { id: 'large', order: 1, source: 'core', text: 'large section '.repeat(1000) },
+      ],
+      tools: [],
+      model: { slot: 'primary', route: 'default', model: 'answer-model' },
+    }
+    expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    expect(provider.requests[2]?.tools).toEqual([])
+    expect(provider.requests[2]?.system).toContain('summarize safely')
+    expect(provider.requests[2]?.system).not.toContain('large section')
+  })
+
+  it('inherits primary thinking unless the compaction level is explicit', async () => {
+    for (const level of [undefined, 'low'] as const) {
+      const { session, provider } = await history()
+      session.preset.model.thinking.primary = 'high'
+      if (level) session.preset.model.thinking.compaction = level
+      session.compaction = runner()
+      await session.requestCompaction({ actor, admissionId: `thinking-${level ?? 'inherit'}` })
+      expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+      expect(provider.requests[2]?.sampling?.thinking).toBe(level ?? 'high')
+    }
+  })
+
+  it('decodes wide summaries against disclosed tool names and rejects a tool call', async () => {
+    const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), toolTurn('read', { path: 'x' })])
+    provider.models = () => [model('answer-model', 'primary', 10_000)]
+    const seenNames: string[][] = []
+    const infer = provider.infer.bind(provider)
+    provider.infer = (request, options) => {
+      seenNames.push([...(options.toolNames ?? [])])
+      return infer(request, options)
+    }
+    const registry = new ToolRegistry()
+    registry.add(readTool(), { source: 'agnes/base', trust: 'builtin' })
+    const { session, log } = await openSession({ provider, registry })
+    for (const prompt of ['one', 'two']) {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
+      expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    }
+    session.compaction = runner()
+    await session.requestCompaction({ actor, admissionId: 'tool-rejection' })
+    await session.run({ until: 'turn-end', signal: signal() })
+    expect(provider.requests[2]?.tools.map((tool) => tool.name)).toContain('read')
+    expect(seenNames[2]).toContain('read')
+    expect((await log.scan({ type: 'x/core/compaction-failed', limit: 5 }))[0]?.data).toMatchObject({
+      reason: expect.stringMatching(/tool/),
+    })
+  })
+
   it('reserves against the resolved compaction target rather than the primary model', async () => {
     const { session, provider } = await history()
     provider.models = () => [
@@ -370,6 +584,7 @@ describe('production compaction phase', () => {
     ])
     provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
     const { session, log } = await openSession({ provider })
+    session.preset.model.id.compaction = 'summary-model'
     session.preset.compaction.reserveTokens = 80
     for (const prompt of ['one', 'two']) {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
@@ -406,7 +621,9 @@ describe('production compaction phase', () => {
     expect(prefixMessages[0]?.content[0]).toEqual({ type: 'text', text: 'two' })
     // The prefix segment reuses the same envelope cache as the main segment: 'old-two' is the same
     // node already rendered (and cached) by the main summary request above.
-    expect(prefixMessages.at(-1)?.content[0]).toEqual({ type: 'text', text: 'summarize the prefix range' })
+    expect((prefixMessages.at(-1)?.content[0] as { text?: string } | undefined)?.text).toContain(
+      'Only summarize the trailing in-progress turn opened by this request: 「two」',
+    )
     const replacement = (await log.scan({ fromSeq: 1, limit: 500 })).find((row) => row.surfaceOp)
     if (!replacement || typeof replacement.surfaceOp !== 'object')
       throw new Error('missing split-turn replacement')
@@ -437,6 +654,7 @@ describe('production compaction phase', () => {
     const registry = new ToolRegistry()
     registry.add(readTool(), { source: 'agnes/base', trust: 'builtin' })
     const { session, log } = await openSession({ provider, registry })
+    session.preset.model.id.compaction = 'summary-model'
     session.preset.compaction.reserveTokens = 80
     for (const prompt of ['one', 'two']) {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
@@ -483,6 +701,7 @@ describe('production compaction phase', () => {
     ])
     provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
     const { session, log } = await openSession({ provider })
+    session.preset.model.id.compaction = 'summary-model'
     session.preset.compaction.reserveTokens = 80
     for (const prompt of ['one', 'two']) {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
@@ -611,14 +830,16 @@ describe('production compaction phase', () => {
         prefix: [number, number]
         keep: number
       },
+      firstScripts: Script[] = [textTurn('first answer')],
     ) {
-      const provider = fakeProvider([textTurn('first answer'), ...turnScripts])
+      const provider = fakeProvider([...firstScripts, ...turnScripts])
       const registry = new ToolRegistry()
       registry.add(readTool(), { source: 'agnes/base', trust: 'builtin' })
       const opened = await openSession({ provider, registry })
       const { session } = opened
       await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hello' }], actor })
       await session.run({ until: 'turn-end', signal: signal() })
+      const beforeSecond = provider.calls
       session.compaction = new CompactionRunner({
         plan: async (payload) => {
           const nodes = payload.getSurface()
@@ -636,7 +857,8 @@ describe('production compaction phase', () => {
         onCompact: async () => undefined,
       })
       await session.enqueue('next-turn', { content: [{ type: 'text', text: 'read files' }], actor })
-      while (provider.calls < 1 + batches || session.op()?.phase.kind !== 'checkpoint') await session.step()
+      while (provider.calls < beforeSecond + batches || session.op()?.phase.kind !== 'checkpoint')
+        await session.step()
       const op = session.op()
       if (op?.phase.kind !== 'checkpoint') throw new Error('expected a checkpoint')
       await session.transition(
@@ -662,6 +884,23 @@ describe('production compaction phase', () => {
         () => ({ main: [0, 1], prefix: [2, 4], keep: 5 }),
       )
       expect(summaryRequests).toBe(2)
+      const prefixSummary = provider.requests.find(
+        (request) =>
+          request.kind === 'summary' &&
+          JSON.stringify(request.messages.at(-1)).includes('summarize the prefix'),
+      )
+      if (!prefixSummary) throw new Error('missing prefix summary request')
+      expect(prefixSummary.tools).not.toHaveLength(0)
+      const callIds = new Set(
+        prefixSummary.messages.flatMap((message) =>
+          message.role === 'assistant' ? (message.toolCalls ?? []).map((call) => call.toolUseId) : [],
+        ),
+      )
+      const resultIds = prefixSummary.messages.flatMap((message) =>
+        message.role === 'tool_result' ? [message.toolUseId] : [],
+      )
+      expect(resultIds.length).toBeGreaterThan(0)
+      for (const id of resultIds) expect(callIds.has(id)).toBe(true)
       expect(session.surface().map((node) => node.kind)).toEqual(['summary', 'assistant', 'tool_result'])
       expect(await log.scan({ type: 'x/core/compaction-failed', limit: 5 })).toEqual([])
       expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
@@ -673,6 +912,41 @@ describe('production compaction phase', () => {
           ?.messages.slice(0, 3)
           .map((m) => m.role),
       ).toEqual(['assistant', 'user', 'assistant'])
+    })
+
+    it('pairs a tool result from the earlier history added only by the wide prefix', async () => {
+      const { provider, summaryRequests } = await compactMidTurn(
+        [
+          toolTurn('read', { path: 'later' }),
+          toolTurn('read', { path: 'kept' }),
+          textTurn('MAIN'),
+          textTurn('PREFIX'),
+          textTurn('done'),
+        ],
+        2,
+        // [u1, a2, r3, a4, u5, a6, r7, a8, r9]: the early result is outside the
+        // prefix segment [u5..r7] but must appear in its wide history [u1..r7].
+        () => ({ main: [0, 3], prefix: [4, 6], keep: 7 }),
+        [toolTurn('read', { path: 'early' }), textTurn('first answer')],
+      )
+      expect(summaryRequests).toBe(2)
+      const prefixSummary = provider.requests.find(
+        (request) =>
+          request.kind === 'summary' &&
+          JSON.stringify(request.messages.at(-1)).includes('summarize the prefix'),
+      )
+      if (!prefixSummary) throw new Error('missing prefix summary request')
+      expect(prefixSummary.tools).not.toHaveLength(0)
+      const earlyResult = prefixSummary.messages.find(
+        (message) => message.role === 'tool_result' && JSON.stringify(message.content).includes('early'),
+      )
+      const earlyCall = prefixSummary.messages
+        .flatMap((message) => (message.role === 'assistant' ? (message.toolCalls ?? []) : []))
+        .find((call) => JSON.stringify(call.args).includes('early'))
+      expect(earlyResult?.role).toBe('tool_result')
+      expect(earlyCall?.name).toBe('read')
+      if (earlyResult?.role !== 'tool_result') throw new Error('missing early result')
+      expect(earlyResult.toolUseId).toBe(earlyCall?.toolUseId)
     })
 
     it('refuses a prefix that splits a parallel batch without opening an effect', async () => {
@@ -1018,6 +1292,7 @@ describe('routing a summary that is unavailable', () => {
     const { storage, commits } = countingStorage()
     const seams = fakeSeams()
     const opened = await openSession({ provider, registry, storage, seams })
+    opened.session.preset.model.id.compaction = 'summary-model'
     opened.session.preset.telemetry.invariants = 'strict'
     await opened.session.enqueue('next-turn', {
       content: [{ type: 'text', text: 'read three files' }],

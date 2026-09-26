@@ -86,6 +86,7 @@ import type { PromptSection } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
+import type { RequestBody as MintedRequestBody } from '../request/mint.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from '../runtime/current.js'
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
@@ -430,6 +431,8 @@ export type QuietGate = {
 export type TurnMemory = {
   snapshot: RegistrySnapshot
   nonce: string
+  /** Prefix of the most recent primary request after all request hooks have run. */
+  lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>
   lastHeader: RequestHeaderData | null
   lastHeaderSeq: Seq | null
   ordinal: number
