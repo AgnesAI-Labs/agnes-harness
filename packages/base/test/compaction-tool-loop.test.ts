@@ -29,6 +29,7 @@ const SKILL = 'LOOP SKILL BODY'
 type Setup = {
   window: number
   compactionWindow?: number
+  separateCompactionModel?: boolean
   reserve: number
   keep: number
   resultChars: number
@@ -65,9 +66,9 @@ async function open(o: Setup) {
     { source: 'agnes/base', trust: 'builtin' },
   )
   const preset = presetDefaults()
+  if (o.separateCompactionModel || o.compactionWindow) preset.model.id.compaction = 'compaction-model'
   preset.compaction.reserveTokens = o.reserve
   preset.compaction.keepRecentTokens = o.keep
-  if (o.compactionWindow) preset.model.id.compaction = 'compaction-model'
   preset.budget.maxSteps = 200
   preset.telemetry.invariants = 'strict'
   const opened = await openSession({
@@ -75,9 +76,7 @@ async function open(o: Setup) {
     registry,
     preset,
     runtimePromptPreloader: ({ prompt }) =>
-      prompt.includes('LOOP-SKILL')
-        ? { section: { id: 'skill:loop', order: 500, text: SKILL, source: 'host' }, suppressTools: [] }
-        : undefined,
+      prompt.includes('LOOP-SKILL') ? { key: 'skill:loop@r1', note: SKILL } : undefined,
   })
   opened.session.compaction = new CompactionRunner({
     plan: async (payload, config) => buildCompactionPlan(payload, config),
@@ -169,16 +168,18 @@ describe('compaction inside long tool loops', () => {
     expect(m.replaces).toBe(1)
     expect(m.quotes).toBe(0)
     expect(m.failed).toBe(0)
-    expect(m.summaryRequests).toBe(1)
+    // The persistent Skill note shifts the segment boundary; one replacement now summarizes two spans.
+    expect(m.summaryRequests).toBe(2)
     expect(m.peakMainInput).toBeLessThan(128_000)
     expect(m.coldStarts).toBe(1)
-    const summaryRequest = provider.requests.find((req) => req.kind === 'summary')
-    const instruction = summaryRequest?.messages.at(-1)?.content[0] as { text?: string } | undefined
-    expect(instruction?.text).toContain(IN_PROGRESS_NOTE)
+    const instructions = provider.requests
+      .filter((req) => req.kind === 'summary')
+      .map((req) => (req.messages.at(-1)?.content[0] as { text?: string } | undefined)?.text)
+    expect(instructions.some((instruction) => instruction?.includes('(turn continues below)'))).toBe(true)
     const after = mainRequestsAfterFirstSummary(provider)
     expect(after.length).toBeGreaterThan(0)
     expect(after[0]?.input).toBeLessThanOrEqual(45_000)
-    for (const { req } of after) expect(req.system).toContain(SKILL)
+    for (const { req } of after) expect(JSON.stringify(req.messages)).toContain(SKILL)
   }, 60_000)
 
   it('compacts again each time a tool loop in a 32K window crosses the threshold', async () => {
@@ -327,7 +328,10 @@ describe('compaction inside long tool loops', () => {
   }, 60_000)
 
   it('elides an overflow without a request when the summary cannot fit the compaction window', async () => {
-    const { session, log, provider } = await open(overflowSetup(12_000))
+    const { session, log, provider } = await open({
+      ...overflowSetup(4_000),
+      separateCompactionModel: true,
+    })
     const reasons = [await turn(session, 'read every file')]
     const m = await measure('overflow-elided', log, provider, reasons)
     expect(reasons).toEqual(['completed'])

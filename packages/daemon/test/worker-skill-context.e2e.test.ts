@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { ecosystem as baseEcosystem } from '@agnes/base'
+import { canonicalJson, sha256hex } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { bootstrapWorkerResources, scanSkills } from '@agnes/resource-control-worker'
 import { afterEach, expect, it } from 'vitest'
@@ -11,17 +12,31 @@ import { workspaceBinding } from './workspace-authority.js'
 
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 const roots: string[] = []
-// This test Host has a narrower profile than the user-facing Web process, whose observed generic
-// schema starts f6befbfe. Within this fixed production assembly the generic request remains stable;
-// an explicitly loaded Skill must produce the distinct, discovery-tool-free schema below.
-// 2026-09-15: v1 same-instance subagent tools (fork/spawn/collect/cancel) join the disclosed
-// surface. Preload still suppresses tool_search and skill_read. Hashes re-measured on the
-// current assembly; previous pins a27a12ea / 513280f4 predate those four tools.
-// 2026-09-22: both the legacy explicit-cwd and shared-worker paths produce these hashes;
-// complete tool-name assertions below remain unchanged across the merged dependency/schema update.
-// 2026-09-24: skill_read accepts names from catalog/search; both tool descriptions match ready discovery.
-const TEST_DISCOVERY_TOOL_SCHEMA_HASH = '28972080581de40668c05ff0d995607dcf8900e2f3ba4cd5141addd4cb70fc1b'
-const ACTIVE_SKILL_TOOL_SCHEMA_HASH = 'e0933a9d30aaaee8ad6429f45523d5702e84fff99fbd17aeb11d02f3d390a4ba'
+// Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
+// discovery and read tools remain available for the loaded and generic turns alike.
+const expectedToolNames = [
+  'compact',
+  'edit',
+  'find',
+  'grep',
+  'ls',
+  'read',
+  'shell',
+  'skill_read',
+  'skill_read_file',
+  'subagent_cancel',
+  'subagent_collect',
+  'subagent_fork',
+  'subagent_spawn',
+  'todo',
+  'tool_describe',
+  'tool_search',
+  'web_fetch',
+  'write',
+]
+
+const skillNoteCount = (messages: unknown): number =>
+  JSON.stringify(messages).split('[skill loaded]').length - 1
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -90,32 +105,18 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
     models: [fakeModel({ route: 'gw', id: 'm1' })],
     scripts: [
       (request) => {
-        expect(request.system).toContain(candidate.resourceId)
-        expect(request.system).toContain('Synthetic test instructions only.')
-        expect(request.system).toContain('Host has already loaded it for this turn')
-        expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeUndefined()
-        expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeUndefined()
+        expect(request.system).not.toContain(candidate.resourceId)
+        expect(request.system).not.toContain('Synthetic test instructions only.')
+        expect(JSON.stringify(request.messages)).toContain(candidate.resourceId)
+        expect(JSON.stringify(request.messages)).toContain('Synthetic test instructions only.')
+        expect(JSON.stringify(request.messages)).toContain('Host has already loaded it.')
+        expect(skillNoteCount(request.messages)).toBe(1)
+        expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeDefined()
+        expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeDefined()
         expect(request.tools.find((tool) => tool.name === 'find')).toBeDefined()
         expect(request.tools.find((tool) => tool.name === 'grep')).toBeDefined()
         expect(request.tools.find((tool) => tool.name === 'ls')).toBeDefined()
-        expect(request.tools.map((tool) => tool.name).sort()).toEqual([
-          'compact',
-          'edit',
-          'find',
-          'grep',
-          'ls',
-          'read',
-          'shell',
-          'skill_read_file',
-          'subagent_cancel',
-          'subagent_collect',
-          'subagent_fork',
-          'subagent_spawn',
-          'todo',
-          'tool_describe',
-          'web_fetch',
-          'write',
-        ])
+        expect(request.tools.map((tool) => tool.name).sort()).toEqual(expectedToolNames)
         return [
           { type: 'text_delta', delta: 'Read the synthetic Skill.' },
           { type: 'done', reason: 'stop' },
@@ -125,26 +126,8 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
         expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeDefined()
         expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeDefined()
         expect(request.system).not.toContain('Synthetic test instructions only.')
-        expect(request.tools.map((tool) => tool.name).sort()).toEqual([
-          'compact',
-          'edit',
-          'find',
-          'grep',
-          'ls',
-          'read',
-          'shell',
-          'skill_read',
-          'skill_read_file',
-          'subagent_cancel',
-          'subagent_collect',
-          'subagent_fork',
-          'subagent_spawn',
-          'todo',
-          'tool_describe',
-          'tool_search',
-          'web_fetch',
-          'write',
-        ])
+        expect(request.tools.map((tool) => tool.name).sort()).toEqual(expectedToolNames)
+        expect(skillNoteCount(request.messages)).toBe(1)
         expect(request.system).toContain('<available_skills>')
         expect(request.system).toContain('chinese-teacher')
         expect(request.system).not.toContain(candidate.resourceId)
@@ -164,6 +147,7 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
       },
       (request) => {
         expect(JSON.stringify(request.messages)).toContain('Synthetic test instructions only.')
+        expect(skillNoteCount(request.messages)).toBe(1)
         return [
           { type: 'text_delta', delta: 'The Skill instructions are ready.' },
           { type: 'done', reason: 'stop' },
@@ -172,22 +156,25 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
       (request) => {
         expect(request.system).not.toContain('Synthetic test instructions only.')
         expect(request.system).not.toContain(candidate.resourceId)
+        expect(skillNoteCount(request.messages)).toBe(1)
         return [
           { type: 'text_delta', delta: 'Skill is disabled.' },
           { type: 'done', reason: 'stop' },
         ]
       },
       (request) => {
-        expect(request.system).toContain('Host has already loaded it for this turn')
-        expect(request.system).toContain('Synthetic test instructions only.')
+        expect(request.system).not.toContain('Synthetic test instructions only.')
+        expect(JSON.stringify(request.messages)).toContain('Synthetic test instructions only.')
+        expect(skillNoteCount(request.messages)).toBe(1)
         return [
           { type: 'text_delta', delta: 'Skill is enabled again.' },
           { type: 'done', reason: 'stop' },
         ]
       },
       (request) => {
-        expect(request.system).toContain('Updated synthetic instructions.')
-        expect(request.system).not.toContain('Synthetic test instructions only.')
+        expect(request.system).not.toContain('Updated synthetic instructions.')
+        expect(JSON.stringify(request.messages)).toContain('Updated synthetic instructions.')
+        expect(skillNoteCount(request.messages)).toBe(2)
         return [
           { type: 'text_delta', delta: 'The edited Skill is visible.' },
           { type: 'done', reason: 'stop' },
@@ -257,9 +244,12 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
     const headers = (await session.scan({ fromSeq: 1, toSeq: session.lastSeq })).filter(
       (row) => row.type === 'request/header',
     )
-    expect(headers.map((row) => (row.data as { tool_schema_hash?: string }).tool_schema_hash)).toEqual([
-      ACTIVE_SKILL_TOOL_SCHEMA_HASH,
-    ])
+    const firstToolSchemaHash = (headers[0]?.data as { tool_schema_hash?: string } | undefined)
+      ?.tool_schema_hash
+    expect(firstToolSchemaHash).toMatch(/^[a-f0-9]{64}$/u)
+    const firstRequest = provider.calls[0]
+    if (!firstRequest) throw new Error('provider received no first request')
+    expect(firstToolSchemaHash).toBe(sha256hex(canonicalJson(firstRequest.tools).normalize('NFC')))
     expect(contextSawPreloadedBody).toBe(false)
     expect(mcpReceivedSkillResources).toBe(false)
     expect(mcpDiscoveryHasRead).toBe(false)
@@ -277,9 +267,7 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
     )
     const lastHeader = genericHeaders.at(-1)
     if (!lastHeader) throw new Error('expected at least one request/header row')
-    expect((lastHeader.data as { tool_schema_hash?: string }).tool_schema_hash).toBe(
-      TEST_DISCOVERY_TOOL_SCHEMA_HASH,
-    )
+    expect((lastHeader.data as { tool_schema_hash?: string }).tool_schema_hash).toBe(firstToolSchemaHash)
     const saved = await readFile(snapshot, 'utf8')
     for (const enabled of [false, true]) {
       const next = JSON.parse(saved)
