@@ -2093,7 +2093,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // note. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: original catalog/name activation plus corrected row accounting;
   // removed catalog-dependent search helper. Measured 1008, exact; see clean-rewrite execution record.
-  'packages/base/extensions/skills': 1008,
+  // Skill description bounds: a per-entry catalog description cap and a count-only log when the
+  // catalog budget shortens or drops entries. Measured 1022, exact.
+  'packages/base/extensions/skills': 1022,
   // T6.3 injects the Host-owned HTTP executor. CORDIS-C1b Task 6 adds workspace snapshot loading,
   // synchronous registration and descendant-drained command execution; exact measured total.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line, the AGH_DIR import for the
@@ -2684,7 +2686,8 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   ['computer-use', 1786],
   // 2026-09-23 user-approved: dsh-compatible Skill discovery. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
-  ['skills', 1008],
+  // Skill description bounds: per-entry catalog cap and budget log. Measured 1022.
+  ['skills', 1022],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {
