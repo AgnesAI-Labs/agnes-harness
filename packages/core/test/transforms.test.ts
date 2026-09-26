@@ -39,6 +39,7 @@ const make = () =>
     contract: { contract_id: 'agnes-model-contract@0', parser_version: '1' },
     nonce: 'a'.repeat(32),
     envelopeCache: createEnvelopeCache(),
+    envelopeNonceFor: () => undefined,
   })
 const bytes = (text: string) => new TextEncoder().encode(text).length
 
