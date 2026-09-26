@@ -92,8 +92,6 @@ def run(args):
         hr = create_console(Coord(240, 40), input_read, output_write, 0, c.byref(console))
         if hr < 0:
             raise OSError(f"CreatePseudoConsole failed: HRESULT {hr & 0xffffffff:08x}")
-        reader = threading.Thread(target=capture, args=(output_read,), daemon=True)
-        reader.start()
         size = c.c_size_t()
         initialize(None, 1, 0, c.byref(size))
         storage = c.create_string_buffer(size.value)
@@ -109,6 +107,8 @@ def run(args):
         check(create(args.command[0], command, None, None, False, 0x00080000,
                      None, None, c.byref(startup), c.byref(info)))
         handles.extend([info.process, info.thread])
+        reader = threading.Thread(target=capture, args=(output_read,), daemon=True)
+        reader.start()
         for handle in [input_read, output_write]:
             close(handle)
             handles.remove(handle)
