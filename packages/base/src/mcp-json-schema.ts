@@ -1,3 +1,4 @@
+import { TOOL_PARAMETERS_MAX_BYTES } from '@agnes/extension-api'
 import { inspectJsonData } from '@agnes/protocol'
 import { Kind, type TSchema, Type, TypeRegistry } from '@sinclair/typebox'
 import { Ajv2020 } from 'ajv/dist/2020.js'
@@ -19,7 +20,7 @@ TypeRegistry.Set(MCP_SCHEMA_KIND, (schema, value) => {
 })
 
 export function remoteInputSchema(value: unknown): TSchema {
-  const inspected = inspectJsonData(value, 256 * 1024)
+  const inspected = inspectJsonData(value, TOOL_PARAMETERS_MAX_BYTES)
   if (
     !inspected.ok ||
     typeof inspected.value !== 'object' ||

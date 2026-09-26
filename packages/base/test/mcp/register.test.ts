@@ -765,7 +765,7 @@ describe('registerRemoteToolsStrict', () => {
   it('enforces an allow policy before registration and strict catalog health checks', async () => {
     const conn = connection()
     const cfg = { ...stdio, allowedTools: ['list_prs'] }
-    await expect(inspectRemoteCatalog(conn, cfg)).resolves.toHaveLength(1)
+    expect((await inspectRemoteCatalog(conn, cfg)).tools).toHaveLength(1)
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, cfg)
     expect(state.tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}list_prs`])

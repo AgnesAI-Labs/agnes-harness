@@ -15,12 +15,14 @@ const walk = (d: string) => {
 }
 walk(src)
 
-// Value imports are limited to the four tool-contract helpers and the extension event-name builder.
+// Value imports are limited to the tool-contract helpers and the extension event-name builder.
 // Hook registration reuses that builder for source attribution instead of copying its identifier gate.
+// The registry reads the description bound from the contract so its post-sanitize check cannot drift.
 // Everything else remains type-only; new runtime dependencies require an explicit boundary decision.
 const EXT_VALUE_ALLOWED = new Set([
   'TOOL_NAME_PATTERN',
   'TOOL_META_KEYS',
+  'TOOL_DESCRIPTION_MAX_LENGTH',
   'checkToolMeta',
   'checkToolDef',
   'resolveToolCallPolicy',

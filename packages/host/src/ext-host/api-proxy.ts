@@ -19,6 +19,7 @@ import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
 import { adaptProjection } from './projections.js'
 import { capabilityToolContext } from './tool-context-capabilities.js'
+import { invalidToolMessage } from './tool-def-message.js'
 
 type Options = {
   manifest: ExtensionManifest
@@ -127,8 +128,11 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
       } catch {
         throw new ExtensionError('E_TOOLDEF_META', 'invalid tool definition', { extId: m.id })
       }
-      if (!checkToolDef(def, { prefix: caps.tools.prefix }).ok)
-        throw new ExtensionError('E_TOOLDEF_META', 'invalid tool definition', { extId: m.id })
+      const checked = checkToolDef(def, { prefix: caps.tools.prefix })
+      if (!checked.ok)
+        throw new ExtensionError('E_TOOLDEF_META', invalidToolMessage(def.name, checked.problems), {
+          extId: m.id,
+        })
       if (caps.tools.names && !caps.tools.names.includes(def.name)) refuse('tool name not declared')
       if (!lease.allows('toolPrefix', def.name)) refuse('tool outside lease scope')
       const name = def.name

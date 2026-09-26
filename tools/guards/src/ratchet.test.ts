@@ -909,7 +909,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 25024, exact, no spare (+4).
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
-  'packages/core/src': 25026,
+  // The tool registry also bounds a description after sanitization. Measured 25029, exact, no spare
+  // (+3).
+  'packages/core/src': 25029,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1322,7 +1324,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-23 third-party-transform-directive-hooks: PluginExtensionAPI.registerHook (type-only,
   // no runtime export) and its doc-comment update. +1 counted line; re-measured: 935, exact cap.
   // PLUGIN-HELPER: measured 936 -> 937; approved feature scope, no spare allocation.
-  'packages/extension-api/src': 937, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // checkToolDef bounds description length and parameter schema size and depth, with the three limits
+  // exported. Measured 978, exact, no spare (+41).
+  'packages/extension-api/src': 978, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2107,7 +2111,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // switches to the shared helper. Re-measured with countLines(): 843, +12 net, exact cap, no spare.
   // Single-resident-worker P2: MCP rows report live status (catalog-info.ts, register.ts's onRemoteCatalog). Re-measured: 858, exact.
   // Single-resident-worker P2: catalogInfoOf now also returns the sorted tool list, reused by both a row's ready status and resourceMcpTools pagination. Re-measured: 872, exact.
-  'packages/base/src/mcp': 872,
+  // MCP catalog validation skips each tool the model cannot be shown and reports it in the catalog
+  // info instead of failing the server. Measured 932, exact, no spare (+60).
+  'packages/base/src/mcp': 932,
   // 2026-09-12: I7 Base Tasks 34/35 introduce the privacy extension. Its first slice measures 214
   // counted lines; the universal fixed extension ceiling remains 800 rather than growing Base.
   'packages/base/extensions/privacy': 800,
@@ -2453,7 +2459,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // live invocation. Measured 38081, exact, no spare (+6).
   // Cancelling a child's creation also settles its execution state in the same SQLite statement.
   // Measured 38084, exact, no spare (+3).
-  'packages/host/src': 38084,
+  // Tool-definition refusals name the tool and each problem. Measured 38096, exact, no spare (+12).
+  'packages/host/src': 38096,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
