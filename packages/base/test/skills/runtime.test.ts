@@ -271,6 +271,220 @@ describe('skill runtime extension', () => {
     ).resolves.toMatchObject({ isError: true, structured: { code: 'UNTRUSTED_REVISION' } })
   })
 
+  it('pages a long Skill through UTF-8 boundaries and binds continuation to the read content', async () => {
+    const name = `${'界'.repeat(127)}"`
+    const resourceId = `skill/workspace/workspace-agnes/${'a'.repeat(64)}`
+    let body = `${'😀界\n'.repeat(19_320)}${'x'.repeat(40_000)}`
+    let revision = 'b'.repeat(64)
+    const put = vi.fn()
+    const { tools } = install({
+      skillResources: {
+        list: () => [
+          {
+            resourceId,
+            name,
+            revision,
+            sourceIdentity: { scope: 'workspace', rootKey: 'workspace-agnes', sourceId: 'a'.repeat(64) },
+            actual: 'ready' as const,
+          },
+        ],
+        read: () => ({ ok: true as const, content: body, revision }),
+        runInWorkspace,
+      },
+    } as unknown as Parameters<typeof skillsExtension>[0])
+    const read = tools.find((tool) => tool.name === 'skill_read')
+    const call = async (args: Record<string, unknown>) =>
+      read?.execute(args as never, { session: { key: 's' }, artifacts: { put } } as never) as Promise<{
+        content: Array<{ type: string; text?: string }>
+        structured: { offset: number; totalBytes: number; nextOffset?: number; code?: string }
+        isError?: boolean
+      }>
+    const first = await call({ name })
+    expect(first.content).toHaveLength(1)
+    expect(first.structured.nextOffset).toBeGreaterThan(0)
+    expect(first.content[0]?.text).toMatch(/^resourceId: .+\nrevision: .+\ndirectory: -\n\n/u)
+    expect(first.content[0]?.text).toContain(`"name":${JSON.stringify(name)}`)
+    expect(put).not.toHaveBeenCalled()
+
+    const nextCall = JSON.parse(first.content[0]?.text?.match(/call skill_read with (\{.*\})\]$/u)?.[1] ?? '')
+    revision = 'c'.repeat(64)
+    await expect(call(nextCall)).resolves.toMatchObject({ isError: true, structured: { code: 'CHANGED' } })
+    revision = 'b'.repeat(64)
+    body += 'changed'
+    await expect(call(nextCall)).resolves.toMatchObject({ isError: true, structured: { code: 'CHANGED' } })
+    body = body.slice(0, -7)
+    await expect(call({ name, offset: 1 })).resolves.toMatchObject({
+      isError: true,
+      structured: { code: 'INVALID_ARGUMENT' },
+    })
+    await expect(call({ name, offset: 2, pageKey: nextCall.pageKey })).resolves.toMatchObject({
+      isError: true,
+      structured: { code: 'INVALID_OFFSET' },
+    })
+    await expect(call({ name, offset: 0, pageKey: '0'.repeat(64) })).resolves.toMatchObject({
+      isError: true,
+      structured: { code: 'CHANGED' },
+    })
+    await expect(
+      call({ name, offset: new TextEncoder().encode(body).byteLength, pageKey: nextCall.pageKey }),
+    ).resolves.toMatchObject({ isError: true, structured: { code: 'INVALID_OFFSET' } })
+
+    const source = new TextEncoder().encode(body)
+    const decoder = new TextDecoder('utf-8', { fatal: true })
+    let args: Record<string, unknown> = { name }
+    let offset = 0
+    let pages = 0
+    while (true) {
+      const page = await call(args)
+      expect(page.isError).not.toBe(true)
+      expect(new TextEncoder().encode(page.content[0]?.text ?? '').byteLength).toBeLessThanOrEqual(32768)
+      expect(page.structured).toMatchObject({ offset, totalBytes: source.byteLength })
+      const end = page.structured.nextOffset ?? source.byteLength
+      const visible = (page.content[0]?.text ?? '')
+        .split('\n\n')
+        .slice(1)
+        .join('\n\n')
+        .replace(/\n\[Skill text continues:.*\]$/u, '')
+      expect(visible).toBe(decoder.decode(source.subarray(offset, end)))
+      pages++
+      if (end === source.byteLength) break
+      args = JSON.parse(page.content[0]?.text?.match(/call skill_read with (\{.*\})\]$/u)?.[1] ?? '')
+      offset = end
+    }
+    expect(pages).toBeGreaterThan(2)
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  it('invalidates a continuation when the selected resource or directory changes', async () => {
+    const ids = ['a', 'c'].map((letter) => `skill/workspace/workspace-agnes/${letter.repeat(64)}`)
+    const revision = 'b'.repeat(64)
+    let selected = 0
+    let directory = 'references/one.md'
+    const body = 'x'.repeat(100_000)
+    const { tools } = install({
+      skillResources: {
+        list: () => [
+          {
+            resourceId: ids[selected],
+            name: 'review',
+            revision,
+            sourceIdentity: {
+              scope: 'workspace',
+              rootKey: 'workspace-agnes',
+              sourceId: ['a', 'c'][selected]?.repeat(64),
+            },
+            actual: 'ready' as const,
+          },
+        ],
+        read: () => ({ ok: true as const, revision, content: `${body}\nDirectory: ${directory}` }),
+        runInWorkspace,
+      },
+    } as unknown as Parameters<typeof skillsExtension>[0])
+    const read = tools.find((tool) => tool.name === 'skill_read')
+    const call = async (args: Record<string, unknown>) =>
+      read?.execute(
+        args as never,
+        { session: { key: 's' }, artifacts: { put: vi.fn() } } as never,
+      ) as Promise<{
+        content: Array<{ text?: string }>
+        structured: { code?: string }
+        isError?: boolean
+      }>
+    const first = await call({ name: 'review' })
+    const nextCall = JSON.parse(first.content[0]?.text?.match(/call skill_read with (\{.*\})\]$/u)?.[1] ?? '')
+    selected = 1
+    await expect(call(nextCall)).resolves.toMatchObject({ isError: true, structured: { code: 'CHANGED' } })
+    selected = 0
+    directory = 'references/two.md'
+    await expect(call(nextCall)).resolves.toMatchObject({ isError: true, structured: { code: 'CHANGED' } })
+  })
+
+  it('keeps short Skill output byte-for-byte at the 32 KiB boundary', async () => {
+    const resourceId = `skill/workspace/workspace-agnes/${'a'.repeat(64)}`
+    const revision = 'b'.repeat(64)
+    const header = `resourceId: ${resourceId}\nrevision: ${revision}\ndirectory: -\n\n`
+    const body = 'x'.repeat(32768 - new TextEncoder().encode(header).byteLength)
+    const { tools } = install({
+      skillResources: {
+        list: () => [
+          {
+            resourceId,
+            name: 'review',
+            revision,
+            sourceIdentity: { scope: 'workspace', rootKey: 'workspace-agnes', sourceId: 'a'.repeat(64) },
+            actual: 'ready' as const,
+          },
+        ],
+        read: () => ({ ok: true as const, content: body, revision }),
+        runInWorkspace,
+      },
+    } as unknown as Parameters<typeof skillsExtension>[0])
+    const read = tools.find((tool) => tool.name === 'skill_read')
+    const result = await read?.execute(
+      { name: 'review' } as never,
+      { session: { key: 's' }, artifacts: { put: vi.fn() } } as never,
+    )
+    expect(result?.content).toEqual([{ type: 'text', text: header + body }])
+    const visible = result?.content[0]
+    expect(new TextEncoder().encode(visible?.type === 'text' ? visible.text : '').byteLength).toBe(32768)
+    expect(result?.structured).not.toHaveProperty('nextOffset')
+  })
+
+  it('pages long text attachments while binary attachments remain resource references', async () => {
+    const resourceId = `skill/workspace/workspace-agnes/${'a'.repeat(64)}`
+    const revision = 'b'.repeat(64)
+    const body = `${'界😀\n'.repeat(15_000)}${'x'.repeat(20_000)}`
+    const put = vi.fn(async () => 'artifact://image')
+    const { tools } = install({
+      skillResources: {
+        list: () => [],
+        read: () => ({ ok: false as const, code: 'NOT_FOUND' as const }),
+        readFile: (_id: string, _revision: string, relativePath: string) =>
+          relativePath === 'image.png'
+            ? {
+                ok: true as const,
+                bytes: new Uint8Array([1, 2, 3]),
+                mime: 'image/png',
+                binary: true as const,
+              }
+            : { ok: true as const, content: body, mime: 'text/markdown' },
+        runInWorkspace,
+      },
+    } as unknown as Parameters<typeof skillsExtension>[0])
+    const file = tools.find((tool) => tool.name === 'skill_read_file')
+    const call = async (relativePath: string, offset = 0) =>
+      file?.execute(
+        { resourceId, expectedRevision: revision, relativePath, offset } as never,
+        { session: { key: 's' }, artifacts: { put } } as never,
+      ) as Promise<{
+        content: Array<{ type: string; text?: string }>
+        structured: { offset: number; totalBytes: number; nextOffset?: number; code?: string }
+        isError?: boolean
+      }>
+    let offset = 0
+    let collected = ''
+    let pages = 0
+    while (true) {
+      const page = await call('guide.md', offset)
+      expect(new TextEncoder().encode(page.content[0]?.text ?? '').byteLength).toBeLessThanOrEqual(32768)
+      collected += (page.content[0]?.text ?? '').replace(/\n\[Skill file continues:.*\]$/u, '')
+      pages++
+      if (page.structured.nextOffset === undefined) break
+      offset = page.structured.nextOffset
+    }
+    expect(pages).toBeGreaterThan(2)
+    expect(collected).toBe(body)
+    expect(put).not.toHaveBeenCalled()
+    await expect(call('guide.md', 1)).resolves.toMatchObject({
+      isError: true,
+      structured: { code: 'INVALID_OFFSET' },
+    })
+    await expect(call('image.png')).resolves.toMatchObject({
+      content: [{ type: 'ref', ref: 'artifact://image' }],
+    })
+    expect(put).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps every ready skill in the catalog and stays within the protocol section limit', async () => {
     const { hooks } = install({
       skillResources: {

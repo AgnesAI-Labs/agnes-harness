@@ -10,6 +10,7 @@ import {
 import { Type } from '@sinclair/typebox'
 import type { SeamInitContext } from '../../../src/seam-init.js'
 import { isSkillRelativePath } from './assets.js'
+import { pageText } from './page.js'
 
 type SkillContextReturn = { sections?: Array<{ id: string; order: number; content: string }> }
 
@@ -251,6 +252,9 @@ function fileTool(runtime: SkillRuntimeInput): ToolDef {
         resourceId: Type.String({ minLength: 1, maxLength: 256 }),
         expectedRevision: Type.String({ minLength: 64, maxLength: 64, pattern: '^[a-f0-9]{64}$' }),
         relativePath: Type.String({ minLength: 1, maxLength: 512 }),
+        offset: Type.Optional(
+          Type.Integer({ minimum: 0, description: 'UTF-8 byte offset from the previous part.' }),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -286,16 +290,33 @@ function fileTool(runtime: SkillRuntimeInput): ToolDef {
           }
         }
         const text = 'content' in result ? result.content : ''
-        const payload = encoder.encode(text)
-        if (payload.byteLength <= READ_MAX_BYTES)
+        const offset = args.offset ?? 0
+        const page = pageText(
+          text,
+          offset,
+          READ_MAX_BYTES,
+          (end, total) =>
+            `\n[Skill file continues: bytes ${offset}-${end} of ${total} shown. To read the next part call skill_read_file with the same resourceId, expectedRevision and relativePath and "offset":${end}]`,
+        )
+        if (!page)
           return {
-            content: [{ type: 'text', text }],
-            structured: { resourceId: args.resourceId, relativePath: args.relativePath },
+            content: [{ type: 'text', text: 'Skill file is unavailable: INVALID_OFFSET' }],
+            isError: true,
+            structured: {
+              resourceId: args.resourceId,
+              relativePath: args.relativePath,
+              code: 'INVALID_OFFSET',
+            },
           }
-        const ref = await ctx.artifacts.put(payload, { mime: result.mime, name: args.relativePath })
         return {
-          content: [{ type: 'ref', ref, mime: result.mime }],
-          structured: { resourceId: args.resourceId, relativePath: args.relativePath, artifact: true },
+          content: [{ type: 'text', text: page.text }],
+          structured: {
+            resourceId: args.resourceId,
+            relativePath: args.relativePath,
+            offset,
+            totalBytes: page.totalBytes,
+            ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+          },
         }
       })
     },
@@ -308,7 +329,8 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
     description:
       'Read the full instructions for an enabled, trusted Skill using its exact name from available_skills or tool_search. ' +
       'Call this when the user names a Skill or the current task matches that Skill description, before acting on it. ' +
-      'Do not use filesystem tools to discover Skills. Use tool_search to find ready Skills by name or description.',
+      'Do not use filesystem tools to discover Skills. Use tool_search to find ready Skills by name or description. ' +
+      'Long Skills are returned in parts; follow the continuation line at the end of a part.',
     parameters: Type.Object(
       {
         name: Type.String({
@@ -316,6 +338,15 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
           maxLength: 128,
           description: 'Exact skill name from available_skills or tool_search.',
         }),
+        offset: Type.Optional(
+          Type.Integer({ minimum: 0, description: 'UTF-8 byte offset from the previous part.' }),
+        ),
+        pageKey: Type.Optional(
+          Type.String({
+            pattern: '^[a-f0-9]{64}$',
+            description: 'Page key from the previous part; required after offset zero.',
+          }),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -337,23 +368,51 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
             isError: true,
             structured: { name: args.name, code: result.code },
           }
-        const text = presentSkillInstructions(skill.resourceId, result, skill.revision)
-        const header = text.slice(0, text.indexOf('\n\n') + 2)
-        if (utf8Bytes(text) <= READ_MAX_BYTES)
+        const offset = args.offset ?? 0
+        if (offset > 0 && !args.pageKey)
           return {
-            content: [{ type: 'text', text }],
-            structured: { name: args.name, resourceId: skill.resourceId },
+            content: [{ type: 'text', text: 'Skill is unavailable: INVALID_ARGUMENT' }],
+            isError: true,
+            structured: { name: args.name, code: 'INVALID_ARGUMENT' },
           }
-        const ref = await ctx.artifacts.put(encoder.encode(result.content), {
-          mime: 'text/markdown',
-          name: 'skill.md',
-        })
+        const pageKey = createHash('sha256')
+          .update(skill.resourceId)
+          .update('\0')
+          .update(result.revision ?? skill.revision)
+          .update('\0')
+          .update(result.content)
+          .digest('hex')
+        if (args.pageKey !== undefined && args.pageKey !== pageKey)
+          return {
+            content: [
+              { type: 'text', text: 'Skill is unavailable: CHANGED; restart at offset 0 without pageKey' },
+            ],
+            isError: true,
+            structured: { name: args.name, code: 'CHANGED' },
+          }
+        const header = presentSkillInstructions(skill.resourceId, { ...result, content: '' }, skill.revision)
+        const page = pageText(
+          result.content,
+          offset,
+          READ_MAX_BYTES - utf8Bytes(header),
+          (end, total) =>
+            `\n[Skill text continues: bytes ${offset}-${end} of ${total} shown. To read the next part call skill_read with ${JSON.stringify({ name: args.name, offset: end, pageKey })}]`,
+        )
+        if (!page)
+          return {
+            content: [{ type: 'text', text: 'Skill is unavailable: INVALID_OFFSET' }],
+            isError: true,
+            structured: { name: args.name, code: 'INVALID_OFFSET' },
+          }
         return {
-          content: [
-            { type: 'text', text: header },
-            { type: 'ref', ref, mime: 'text/markdown' },
-          ],
-          structured: { name: args.name, resourceId: skill.resourceId, artifact: true },
+          content: [{ type: 'text', text: header + page.text }],
+          structured: {
+            name: args.name,
+            resourceId: skill.resourceId,
+            offset,
+            totalBytes: page.totalBytes,
+            ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+          },
         }
       })
     },
