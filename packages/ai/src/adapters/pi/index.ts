@@ -313,6 +313,7 @@ export class PiAdapter extends WireAdapter {
       signal: opts.signal,
       ...(credential !== undefined ? { apiKey: credential } : {}),
       sessionId: req.sessionKey,
+      cacheRetention: 'short',
       // Nine of the ten apis send to `model.baseUrl` and read nothing else for a destination.
       // `azure-openai-responses` resolves its endpoint as `azureBaseUrl`, then AZURE_OPENAI_BASE_URL,
       // then AZURE_OPENAI_RESOURCE_NAME, and only then `model.baseUrl` — so the declared endpoint was
