@@ -297,4 +297,25 @@ describe('ToolRegistry', () => {
     renamed.add(def('bb'), { source: 's', trust: 'builtin' })
     expect(renamed.snapshot(1).hash).not.toBe(one.snapshot(1).hash)
   })
+
+  it('refuses a description that only exceeds the limit once sanitized, so a registered tool always fits the wire', () => {
+    const r = new ToolRegistry()
+    const description = '<|x|>'.repeat(800)
+    expect(description.length).toBe(4000)
+    let caught: unknown
+    try {
+      r.add({ ...def('grown'), description }, { source: 's', trust: 'trusted' })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(CoreError)
+    expect((caught as CoreError).code).toBe('E_TOOLDEF_META')
+    expect((caught as CoreError).detail).toMatchObject({
+      name: 'grown',
+      problems: ['description: exceeds 4096 after sanitization'],
+    })
+    expect(r.resolve('grown')).toBeUndefined()
+    r.add({ ...def('fits'), description: 'd'.repeat(4096) }, { source: 's', trust: 'trusted' })
+    expect(r.resolve('fits')).toBeDefined()
+  })
 })

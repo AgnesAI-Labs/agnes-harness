@@ -15,6 +15,7 @@ import { inspectJsonData } from '@agnes/protocol'
 import type { Lease } from './lease.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
+import { invalidToolMessage } from './tool-def-message.js'
 
 /** Hook events whose kernel table entry is observe-only; a plugin row may listen to these and nothing else. */
 export const OBSERVE_HOOK_EVENTS: readonly HookEvent[] = Object.freeze(
@@ -134,8 +135,11 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): PluginExtensi
       } catch {
         throw new ExtensionError('E_TOOLDEF_META', 'invalid tool definition', { extId: source })
       }
-      if (!checkToolDef(copy, { prefix: '' }).ok)
-        throw new ExtensionError('E_TOOLDEF_META', 'invalid tool definition', { extId: source })
+      const checked = checkToolDef(copy, { prefix: '' })
+      if (!checked.ok)
+        throw new ExtensionError('E_TOOLDEF_META', invalidToolMessage(copy.name, checked.problems), {
+          extId: source,
+        })
       if (input.reservedTool(copy.name)) refuse('tool name is reserved for a builtin extension')
       if (!lease.allows('toolPrefix', copy.name)) refuse('tool outside lease scope')
       const execute = copy.execute.bind(copy)
