@@ -54,9 +54,9 @@ jobs:
         include:
           - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=4', shard: '' }
           - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', shard: '' }
-          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3 --exclude=packages/cli/test/acp-concurrency.test.ts', shard: '1/3' }
-          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3 --exclude=packages/cli/test/acp-concurrency.test.ts', shard: '2/3' }
-          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3 --exclude=packages/cli/test/acp-concurrency.test.ts', shard: '3/3' }
+          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts', shard: '1/3' }
+          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts', shard: '2/3' }
+          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts', shard: '3/3' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -88,6 +88,11 @@ jobs:
       - name: Windows ACP cold-start concurrency
         if: runner.os == 'Windows' && matrix.shard == '1/3'
         run: pnpm exec vitest run packages/cli/test/acp-concurrency.test.ts --maxWorkers=1
+      # The source CLI fixture cold-loads the test Host; keep its 20-second initialization
+      # deadline meaningful by running it without other Vitest files on this Windows runner.
+      - name: Windows ephemeral CLI lifecycle
+        if: runner.os == 'Windows' && matrix.shard == '3/3'
+        run: pnpm exec vitest run packages/cli/test/dbh-m06-ephemeral-leak.test.ts --maxWorkers=1
       # Keep boot/session creation in the functional gate above. The isolated run reports wall-clock
       # time in the job summary even if another test fails; a stable performance runner can opt into
       # the 300 ms assertion. Do not restart this test after a cancelled or skipped suite.
