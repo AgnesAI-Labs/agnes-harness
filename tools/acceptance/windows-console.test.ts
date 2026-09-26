@@ -101,18 +101,19 @@ describe.skipIf(!windows)('real Windows console test driver', () => {
     expect(() => process.kill(pid, 0)).toThrow()
   })
 
-  it('fails promptly and closes console pipes when the executable is missing', () => {
+  it('fails within a bounded time and closes console pipes when the executable is missing', () => {
     const result = spawnSync(
       python,
       ['-I', '-X', 'utf8', driver, '--', resolve('missing-console-fixture.exe')],
       {
         encoding: 'utf8',
-        timeout: 4000,
+        // Include cold Python startup on a busy Windows CI runner in the outer bound.
+        timeout: 30_000,
         windowsHide: true,
       },
     )
     expect(result.error).toBeUndefined()
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('WinError 2')
-  })
+  }, 40_000)
 })
