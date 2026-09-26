@@ -6,6 +6,8 @@
     "packages/web/src/model-picker.ts",
     "packages/web/src/oauth-controls.ts",
     "packages/web/src/permission-picker.ts",
-    "packages/web/src/settings.ts"
+    "packages/web/src/settings.ts",
+    "packages/web-ui/src/settings-computer-use.tsx",
+    "packages/web/src/computer-use-pane.tsx"
   ]
 }

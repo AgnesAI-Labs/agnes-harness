@@ -57,7 +57,7 @@ import {
   type TranscriptDependencies,
   type TranscriptHandle,
 } from '@agnes/web-units'
-import { createElement, useLayoutEffect, useRef } from 'react'
+import { createElement, type ReactNode, useLayoutEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
@@ -343,6 +343,7 @@ function SidebarDshFrame({
 }
 
 export interface SettingsRegionOptions {
+  computerUse?: ReactNode
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
 }
@@ -407,7 +408,7 @@ export function mountSettingsPaneRegion(
         owner: SETTINGS_UNIT_OWNER[pane],
         priority: 0,
       },
-      () => createElement(SettingsPaneBuiltin, { pane }),
+      () => createElement(SettingsPaneBuiltin, { pane, computerUse: options.computerUse }),
     )
     removeBuiltin.set(pane, remove)
     flushSync(() => {

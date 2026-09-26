@@ -1,5 +1,13 @@
 import { mountSettingsSelectOptions, SettingsAccountDialog, SettingsModelPane } from '@agnes/web-ui'
-import { createElement, forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef } from 'react'
+import {
+  createElement,
+  forwardRef,
+  type ReactNode,
+  useCallback,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+} from 'react'
 
 export type SettingsPane = 'model' | 'plugin' | 'resources' | 'archived' | 'computer-use' | 'appearance'
 export type SettingsResourceTab = 'skills' | 'mcp'
@@ -156,8 +164,10 @@ function SettingsBuiltinImpl(
   ref: React.ForwardedRef<SettingsRegionHandle>,
 ) {
   const host = useRef<HTMLDivElement>(null)
+  const activePane = useRef<SettingsPane>('model')
   const form = useCallback(() => host.current?.querySelector<HTMLFormElement>('#config-form') ?? null, [])
   const open = useCallback((pane: SettingsPane): void => {
+    activePane.current = pane
     const root = host.current
     if (!root) return
     for (const id of Object.values(PANE_IDS))
@@ -189,6 +199,17 @@ function SettingsBuiltinImpl(
     if (!root) return
     open('model')
     const listeners: Array<() => void> = []
+    // The shell owns visibility. A replacement Computer Use row starts hidden, so restore
+    // the current navigation choice when that row returns without another navigation click.
+    let computerUsePane = root.querySelector('#computer-use-settings-pane')
+    const observer = new MutationObserver(() => {
+      const next = root.querySelector('#computer-use-settings-pane')
+      if (next === computerUsePane) return
+      computerUsePane = next
+      open(activePane.current)
+    })
+    observer.observe(root, { childList: true, subtree: true })
+    listeners.push(() => observer.disconnect())
     const bind = (id: string, change: SettingsPaneChange) => {
       const button = root.querySelector<HTMLButtonElement>(`#${id}`)
       if (!button) return
@@ -261,7 +282,22 @@ export function renderSettingsMarkup(container: HTMLElement): () => void {
 export const SettingsBuiltin = forwardRef(SettingsBuiltinImpl)
 
 /** One independently mounted settings contribution. Its lifetime is owned by the corresponding row. */
-export function SettingsPaneBuiltin({ pane }: { pane: SettingsPane }): ReturnType<typeof createElement> {
+export function SettingsPaneBuiltin({
+  pane,
+  computerUse,
+}: {
+  pane: SettingsPane
+  computerUse?: ReactNode
+}): ReturnType<typeof createElement> {
+  if (pane === 'computer-use' && computerUse)
+    return createElement(
+      'div',
+      {
+        'data-agnes-region-owner': 'builtin',
+        'data-agnes-region-unit': 'settings-computer-use',
+      },
+      computerUse,
+    )
   if (pane === 'model')
     return createElement(
       'div',

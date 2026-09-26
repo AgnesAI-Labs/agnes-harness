@@ -213,9 +213,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // W5b-2: bounded React suffix plans, synchronous facade compatibility and table ARIA. Exact: 1688.
   // W5c-1 moves the pure cost policy and complete native React disclosure into web-ui. Exact: 1743.
   // W5c-2: native React context panel and owned dismiss lifecycle; exact measured total.
-  'packages/web-ui/src': 1819,
+  // W6a-2: four-section React Computer Use display/declared export; exact measured total.
+  'packages/web-ui/src': 1981,
   // W5c-2: optional component injection and compatible factory cleanup; exact measured total.
-  'packages/web-units/src': 3191,
+  // W6a-2: injected Computer Use pane and shell-owned replacement visibility; exact measured total.
+  'packages/web-units/src': 3225,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -367,7 +369,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines() on the merged tree: 1767, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
-  'packages/web/src/app': 1776,
+  // W6a-2: React pane coordinator setup and injection; exact measured total.
+  'packages/web/src/app': 1777,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -1963,7 +1966,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // W5c-1 removes Web CostLeaf and re-exports shared cost policy; context panel stays imperative. Exact: 13346.
   // W5c-2: context factory becomes a synchronous compatibility root; exact measured total.
   // Computer Use: DOM-free snapshots/coordination and subscribed legacy pane; measured exact total.
-  'packages/web/src': 13511,
+  // W6a-2: React-owned pane binding, retirement and read-only operation recovery; exact measured total.
+  'packages/web/src': 13594,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

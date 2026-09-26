@@ -1381,3 +1381,59 @@ describe('incremental opening', () => {
     await vi.waitFor(() => expect(approval.textContent).toContain('正在查找'))
   })
 })
+
+it('renders Computer Use in the application and retires its late operation reply on pagehide', async () => {
+  installPublicFixture()
+  history.replaceState(null, '', '/#test-launcher-token')
+  let finish!: (value: unknown) => void
+  const pending = new Promise<unknown>((resolvePromise) => {
+    finish = resolvePromise
+  })
+  const call = vi.fn(async (method: string) => {
+    if (method.endsWith('operation.start')) return pending
+    if (method.endsWith('operation.status')) return { status: 'not-found' }
+    if (method.endsWith('permissions.status')) return { status: 'granted' }
+    return {
+      status: 'ready',
+      driver: { platform: 'darwin', version: 'fixture' },
+      runtime: { state: 'idle', startAttempted: false },
+    }
+  })
+  sdk.createClient.mockReturnValue({
+    call,
+    initialize: vi.fn(async () => undefined),
+    on: vi.fn(),
+    close: vi.fn(async () => undefined),
+    apis: vi.fn(async () => ({ profile: { models: [] } })),
+    config: {
+      get: vi.fn(async () => ({ configured: true })),
+      providers: vi.fn(async () => ({ providers: [] })),
+    },
+    workspace: { list: vi.fn(async () => ({ items: [] })) },
+    session: { list: vi.fn(async () => ({ items: [] })) },
+  })
+  await import('../src/app.js')
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
+  )
+  document.querySelector<HTMLButtonElement>('#computer-use-management')?.click()
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLElement>('#computer-use-settings-pane')?.hidden).toBe(false),
+  )
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
+  )
+  document.querySelector<HTMLButtonElement>('#computer-use-update')?.click()
+  await vi.waitFor(() =>
+    expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.start', { kind: 'update' }),
+  )
+  window.dispatchEvent(new Event('pagehide'))
+  const pane = document.getElementById('computer-use-settings-pane')
+  const before = pane?.innerHTML
+  const requests = call.mock.calls.length
+  finish({ status: 'found', operationId: 'retired', kind: 'update', state: 'running', phase: 'installing' })
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 20))
+  expect(pane?.innerHTML).toBe(before)
+  expect(call.mock.calls).toHaveLength(requests)
+  expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
+})
