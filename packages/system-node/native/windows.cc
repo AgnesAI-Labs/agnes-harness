@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "private-dacl-policy.h"
 
 class Handle {
  public:
@@ -163,6 +164,12 @@ static napi_value renameWriteThrough(napi_env env, napi_callback_info info) {
   napi_value result; napi_get_undefined(env, &result); return result;
 }
 
+static PrivatePrincipal privatePrincipal(PSID sid, PSID user) {
+  if (EqualSid(sid, user)) return PrivatePrincipal::CurrentUser;
+  if (IsWellKnownSid(sid, WinLocalSystemSid)) return PrivatePrincipal::LocalSystem;
+  if (IsWellKnownSid(sid, WinBuiltinAdministratorsSid)) return PrivatePrincipal::Administrators;
+  return PrivatePrincipal::Other;
+}
 static bool checkPrivateDacl(napi_env env, HANDLE file, bool& valid, bool requireProtected = true) {
   BY_HANDLE_FILE_INFORMATION attributes;
   if (!GetFileInformationByHandle(file, &attributes)) {
@@ -181,19 +188,21 @@ static bool checkPrivateDacl(napi_env env, HANDLE file, bool& valid, bool requir
   if (!GetSecurityDescriptorControl(raw, &control, &revision)) {
     failure(env, "GetSecurityDescriptorControl", GetLastError()); return false;
   }
-  valid = owner && EqualSid(owner, user) && dacl && (!requireProtected || (control & SE_DACL_PROTECTED)) &&
-               !(attributes.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+  valid = owner && privateOwnerTrusted(privatePrincipal(owner, user)) && dacl &&
+          (!requireProtected || (control & SE_DACL_PROTECTED)) &&
+          !(attributes.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
   if (valid) {
     for (DWORD i = 0; i < dacl->AceCount; i++) {
       void* rawAce = nullptr;
       if (!GetAce(dacl, i, &rawAce)) { failure(env, "GetAce", GetLastError()); return false; }
       auto* header = static_cast<ACE_HEADER*>(rawAce);
-      if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
-      if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) { valid = false; break; }
-      auto* ace = static_cast<ACCESS_ALLOWED_ACE*>(rawAce);
-      PSID sid = &ace->SidStart;
-      if (ace->Mask && !EqualSid(sid, user) && !IsWellKnownSid(sid, WinLocalSystemSid) &&
-          !IsWellKnownSid(sid, WinBuiltinAdministratorsSid)) { valid = false; break; }
+      PrivateAce entry{PrivateAceKind::Unsupported, 0, PrivatePrincipal::Other};
+      if (header->AceType == ACCESS_DENIED_ACE_TYPE) entry.kind = PrivateAceKind::Denied;
+      if (header->AceType == ACCESS_ALLOWED_ACE_TYPE) {
+        auto* ace = static_cast<ACCESS_ALLOWED_ACE*>(rawAce);
+        entry = {PrivateAceKind::Allowed, ace->Mask, privatePrincipal(&ace->SidStart, user)};
+      }
+      if (!privateAceTrusted(entry)) { valid = false; break; }
     }
   }
   return true;
@@ -261,11 +270,24 @@ static napi_value protectPrivateDirectory(napi_env env, napi_callback_info info)
                                 nullptr, nullptr, &dacl, nullptr, &raw);
   if (status != ERROR_SUCCESS) return failure(env, "GetSecurityInfo", status);
   Local descriptor(raw);
-  // Exclusive directory access prevents SetSecurityInfo from propagating ACEs to children.
-  status = SetSecurityInfo(directory.value, SE_FILE_OBJECT,
-                          DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                          nullptr, nullptr, dacl, nullptr);
-  if (status != ERROR_SUCCESS) return failure(env, "SetSecurityInfo", status);
+  // SetSecurityInfo propagates a container's inheritable entries into every existing child,
+  // whatever the handle's sharing mode, so it would rewrite the children's ACLs. Set the
+  // descriptor on this handle alone instead, which never propagates. A protected ACL no longer
+  // inherits, so the entries this directory inherited are kept as its own explicit entries.
+  if (!dacl) return failure(env, "Private directory validation", ERROR_ACCESS_DENIED);
+  for (DWORD i = 0; i < dacl->AceCount; i++) {
+    void* rawAce = nullptr;
+    if (!GetAce(dacl, i, &rawAce)) return failure(env, "GetAce", GetLastError());
+    auto* header = static_cast<ACE_HEADER*>(rawAce);
+    header->AceFlags = static_cast<BYTE>(header->AceFlags & ~INHERITED_ACE);
+  }
+  SECURITY_DESCRIPTOR frozen;
+  if (!InitializeSecurityDescriptor(&frozen, SECURITY_DESCRIPTOR_REVISION) ||
+      !SetSecurityDescriptorDacl(&frozen, TRUE, dacl, FALSE) ||
+      !SetSecurityDescriptorControl(&frozen, SE_DACL_PROTECTED, SE_DACL_PROTECTED))
+    return failure(env, "Private directory descriptor", GetLastError());
+  if (!SetKernelObjectSecurity(directory.value, DACL_SECURITY_INFORMATION, &frozen))
+    return failure(env, "SetKernelObjectSecurity", GetLastError());
   if (!checkPrivateDacl(env, directory.value, valid)) return nullptr;
   if (!valid) return failure(env, "Private directory validation", ERROR_ACCESS_DENIED);
   napi_value result; napi_get_undefined(env, &result); return result;

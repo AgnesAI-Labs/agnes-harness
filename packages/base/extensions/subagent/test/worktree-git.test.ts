@@ -13,7 +13,7 @@ describe('gitWorktrees against a real repository', () => {
   })
 
   it('keeps a dirty worktree and removes a clean merged one', async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-wt-')))
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-wt-')))
     dirs.push(root)
     execFileSync('git', ['init', '-b', 'main'], { cwd: root })
     execFileSync('git', ['config', 'user.email', 'wt@example.test'], { cwd: root })
@@ -68,7 +68,7 @@ describe('gitWorktrees against a real repository', () => {
   })
 
   it('finishes from a persisted entry after the creating manager is gone', async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-wt-')))
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-wt-')))
     dirs.push(root)
     execFileSync('git', ['init', '-b', 'main'], { cwd: root })
     execFileSync('git', ['config', 'user.email', 'wt@example.test'], { cwd: root })
@@ -136,7 +136,7 @@ describe('gitWorktrees against a real repository', () => {
   })
 
   it('does not remove a worktree still used by another child', async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-wt-')))
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-wt-')))
     dirs.push(root)
     execFileSync('git', ['init', '-b', 'main'], { cwd: root })
     execFileSync('git', ['config', 'user.email', 'wt@example.test'], { cwd: root })
@@ -186,7 +186,7 @@ describe('gitWorktrees against a real repository', () => {
   })
 
   it('keeps an unmerged branch after removing the tree and retries only branch delete', async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-wt-')))
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-wt-')))
     dirs.push(root)
     execFileSync('git', ['init', '-b', 'main'], { cwd: root })
     execFileSync('git', ['config', 'user.email', 'wt@example.test'], { cwd: root })

@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const fixture = fileURLToPath(new URL('./fixtures/dbh-m06-slow-acp-cli.ts', import.meta.url))
+// On Windows child.kill('SIGINT') delivers no signal the child can handle: Node terminates it at once.
+const posixSignals = process.platform !== 'win32'
 
 async function runPrint(signalFirst: boolean) {
   const root = mkdtempSync(join(tmpdir(), 'dbh-m03-sub-'))
@@ -72,11 +74,15 @@ describe('DBH M-03 subprocess: real SIGINT before piped stdin reaches EOF', () =
     expect({ code: r.code, modelCalled: r.modelCalled }, r.stderr).toEqual({ code: 0, modelCalled: true })
   }, 60_000)
 
-  it('SIGINT first: no prompt reaches the model, exit 130', async () => {
-    const r = await runPrint(true)
-    expect(
-      { code: r.code, signal: r.signal, modelCalled: r.modelCalled },
-      `stdout=${JSON.stringify(r.stdout)} stderr=${JSON.stringify(r.stderr.slice(-300))}`,
-    ).toEqual({ code: 130, signal: null, modelCalled: false })
-  }, 60_000)
+  it.runIf(posixSignals)(
+    'SIGINT first: no prompt reaches the model, exit 130',
+    async () => {
+      const r = await runPrint(true)
+      expect(
+        { code: r.code, signal: r.signal, modelCalled: r.modelCalled },
+        `stdout=${JSON.stringify(r.stdout)} stderr=${JSON.stringify(r.stderr.slice(-300))}`,
+      ).toEqual({ code: 130, signal: null, modelCalled: false })
+    },
+    60_000,
+  )
 })

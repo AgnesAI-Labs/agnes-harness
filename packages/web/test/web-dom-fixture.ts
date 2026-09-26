@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { vi } from 'vitest'
 import {
   type AgnesClient,
   type ClientModulesRuntime,
@@ -76,9 +77,17 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     settingsPaneContainer: document.getElementById('config') ?? undefined,
   })
 
-  // React roots that are not flushed by a region mount (notably the panel outlet) commit on the next
-  // microtask. Waiting here makes every consumer observe one complete rendered sample.
-  await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 0))
+  // React roots that are not flushed by a region mount (the panel outlet, and the empty state the
+  // conversation mounts as a child) commit on a later scheduler task, which a loaded runner can
+  // reach well after one timer tick. The empty-state heading is the visible output of those roots,
+  // so waiting for it makes every consumer observe one complete rendered sample.
+  await vi.waitFor(
+    () => {
+      if (!document.querySelector('[data-slot="ui:empty-state"] #empty-state-title'))
+        throw new Error('the empty-state region has not committed yet')
+    },
+    { timeout: 5_000 },
+  )
   return runtime
 }
 

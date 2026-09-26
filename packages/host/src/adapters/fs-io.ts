@@ -16,4 +16,11 @@ export type FsIo = Readonly<{
   mkdir(abs: string): Promise<void>
   readdir(abs: string): Promise<readonly { name: string; kind: FsIoKind }[]>
   rm(abs: string, opts: { recursive: boolean }): Promise<void>
+  /**
+   * The volume's own spelling of an existing path that contains no link. Present only where one
+   * directory entry answers to more than one name - Windows, where every entry may also carry an
+   * 8.3 short name - so the fence decides on a single spelling of each entry. Absent means the
+   * spelling the walk reached is already the only one.
+   */
+  finalPath?(abs: string): Promise<string>
 }>

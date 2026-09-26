@@ -36,7 +36,7 @@ describe('dbh M-16: sessions list|show --cwd uses the same canonical workspace a
     const alias = join(base, 'alias')
     mkdirSync(dir)
     symlinkSync(dir, alias, process.platform === 'win32' ? 'junction' : 'dir')
-    const canonical = realpathSync(dir)
+    const canonical = realpathSync.native(dir)
     const { host } = await createTestHost({ dataDir: base, script: [] })
     const endpoint = createLocalEndpoint(host, { pollMs: 5 })
     const client = createClient({ transport: { kind: 'inproc', endpoint }, journal: memoryJournal() })

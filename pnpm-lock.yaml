@@ -48,8 +48,8 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       '@earendil-works/pi-ai':
-        specifier: 0.87.0
-        version: 0.87.0(@modelcontextprotocol/sdk@1.25.2(hono@4.13.7)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)
+        specifier: 0.87.1
+        version: 0.87.1(@modelcontextprotocol/sdk@1.25.2(hono@4.13.7)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)
     devDependencies:
       '@sinclair/typebox':
         specifier: 0.34.33
@@ -1017,13 +1017,13 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@earendil-works/pi-ai@0.87.0':
-    resolution: {integrity: sha512-lbRm+EMY6Jx3l+HLpbqbm9Yrhkc5u7EffLk2id+zJQEoBuR5I+tijGiZU8zlnuuCclmQOgH0PVjL9PLbeqJ9MQ==}
+  '@earendil-works/pi-ai@0.87.1':
+    resolution: {integrity: sha512-X/3PfQBnnoeVdO9Cv8zHghUMglzlgNZYGNzoPnbRoGnHl3Rw3TlA2UKSUB7BRHUOxMryHXYa8dnjWZlbRheDZA==}
     engines: {node: '>=22.19.0'}
     hasBin: true
 
-  '@earendil-works/pi-telemetry@0.87.0':
-    resolution: {integrity: sha512-IEUMnV6mgHyOMfAxa4CKXoBKKfHM8KxNjbXWM4Bps/iLJcFMf8hQsEZ+95VnVTc7C0cU77Rmdxt773C35jb5AA==}
+  '@earendil-works/pi-telemetry@0.87.1':
+    resolution: {integrity: sha512-MC6TRQH5lgMXpcN+Vku2WMI2T8BsiUPzMQHGo81uqFZD3/9O79WWJAysEDGuzduP6R4tvtgwMLwmqIxynM10JQ==}
     engines: {node: '>=22.19.0'}
 
   '@emotion/hash@0.8.0':
@@ -3622,11 +3622,11 @@ snapshots:
   '@biomejs/cli-win32-x64@2.5.12':
     optional: true
 
-  '@earendil-works/pi-ai@0.87.0(@modelcontextprotocol/sdk@1.25.2(hono@4.13.7)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)':
+  '@earendil-works/pi-ai@0.87.1(@modelcontextprotocol/sdk@1.25.2(hono@4.13.7)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)':
     dependencies:
       '@anthropic-ai/sdk': 0.124.0(zod@4.5.4)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
-      '@earendil-works/pi-telemetry': 0.87.0
+      '@earendil-works/pi-telemetry': 0.87.1
       '@google/genai': 2.21.0(@modelcontextprotocol/sdk@1.25.2(hono@4.13.7)(zod@4.5.4))
       '@smithy/node-http-handler': 4.12.1
       http-proxy-agent: 9.1.0
@@ -3643,7 +3643,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-telemetry@0.87.0': {}
+  '@earendil-works/pi-telemetry@0.87.1': {}
 
   '@emotion/hash@0.8.0': {}
 

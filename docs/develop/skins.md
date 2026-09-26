@@ -180,6 +180,7 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-bg-selected
 --agnes-bg-hover
 --agnes-bg-scrim
+--agnes-bg-lightbox
 --agnes-surface-glass-soft
 --agnes-surface-glass-hover
 --agnes-input-surface

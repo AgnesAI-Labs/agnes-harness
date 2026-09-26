@@ -381,7 +381,9 @@ describe('skill discovery', () => {
     expect(scan.skipped).toBeUndefined()
     // A single file has no directory of its own; naming its parent would expose the whole root.
     expect(scan.candidates.find((item) => item.name === 'solo')?.directory).toBeUndefined()
-    expect(scan.candidates.find((item) => item.name === 'review')?.directory).toBe('/work/.agh/skills/review')
+    expect(scan.candidates.find((item) => item.name === 'review')?.directory).toBe(
+      join('/work/.agh/skills/review'),
+    )
   })
 
   it('reads .agents and .claude project Skills after .agh, keeps .agh ids, and lets the earlier one win', async () => {

@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -100,5 +100,20 @@ describe('RefStore', () => {
     })
     expect(refs.get('route', 'same-node')).toBeUndefined()
     refs.close()
+  })
+
+  it('flushes WAL checkpoints with F_FULLFSYNC on darwin only, never each commit', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-refs-sync-'))
+    const refs = new RefStore(join(dir, 'refs.sqlite'))
+    try {
+      const db = (refs as unknown as { db: DatabaseSync }).db
+      const pragma = (name: string) => Object.values(db.prepare(`PRAGMA ${name}`).get() ?? {})[0]
+      expect(pragma('journal_mode')).toBe('wal')
+      expect(pragma('checkpoint_fullfsync')).toBe(process.platform === 'darwin' ? 1 : 0)
+      expect(pragma('fullfsync')).toBe(0)
+    } finally {
+      refs.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -384,14 +384,23 @@ describe('resume', () => {
     await original.session.runInference()
     await original.session.runToolsPhase()
     const rows = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq, limit: 10_000 })
-    const responded = original.opWrites().find((write) => {
-      const data = write.data as {
-        phase?: { kind?: string; batch?: { calls?: Array<{ status?: string }> } }
-      } | null
-      return data?.phase?.kind === 'tools' && data.phase.batch?.calls?.[0]?.status === 'responded'
-    })
-    const respondedAt = rows.findIndex((row) => row.seq === responded?.seq)
+    // The result now commits with its settlement, so no run stores `responded` on its own; this is the
+    // store a build that did would leave: the ledger up to the result, and the call's cell moved from
+    // dispatched to responded at the result's seq.
+    const respondedAt = rows.findIndex((row) => row.type === 'tool/result')
     expect(respondedAt).toBeGreaterThan(0)
+    const resultSeq = rows[respondedAt]?.seq ?? 0
+    const opCells = original.opCellsBefore(resultSeq).map((cell) => {
+      const data = cell.data as { phase: { batch: { calls: Array<Record<string, unknown>> } } }
+      const calls = data.phase.batch.calls
+      expect(calls[0]).toMatchObject({ status: 'dispatched', dispatchAttempt: 1 })
+      const responded = calls.map((call) => ({ ...call, status: 'responded', dispatchPhase: 'responded' }))
+      return {
+        ...cell,
+        seq: resultSeq,
+        data: { ...data, phase: { ...data.phase, batch: { ...data.phase.batch, calls: responded } } },
+      }
+    })
 
     let redispatches = 0
     const reopenedRegistry = new ToolRegistry()
@@ -405,9 +414,7 @@ describe('resume', () => {
     const reopened = await openSession({
       provider: fakeProvider([]),
       registry: reopenedRegistry,
-      storage: MemoryStorage.fromEvents('k', rows.slice(0, respondedAt + 1), {
-        opCells: original.opCellsBefore((responded?.seq ?? 0) + 1),
-      }),
+      storage: MemoryStorage.fromEvents('k', rows.slice(0, respondedAt + 1), { opCells }),
       key: 'k',
       writerRunId: 'responded-reopen',
     })

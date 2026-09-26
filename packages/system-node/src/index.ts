@@ -444,7 +444,7 @@ export function windowsAppendPrivateFileSync(path: string, bytes: Buffer, flush 
   native().appendPrivateFile(target, bytes, flush)
 }
 
-/** Freeze an already-private, current-user, single-link file DACL without changing grants or bytes. */
+/** Freeze an already-private, trusted-owner, single-link file DACL without changing grants or bytes. */
 export function windowsProtectPrivateFileSync(path: string): void {
   const target = filePath(path)
   if (!windows) throw Object.assign(new Error('Windows file protection is unavailable'), { code: 'ENOSYS' })

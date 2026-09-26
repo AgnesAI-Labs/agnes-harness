@@ -10,7 +10,10 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { buildConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { startProductionSupervisor } from '../src/supervisor/supervisor.js'
 
-const sourceAssemblyRequestTimeoutMs = DEFAULT_LIMITS.workerStartupMs * 3
+// The Worker assembles the production package graph from TypeScript source before it says hello,
+// which takes about 30 s on a loaded hosted runner; widen its startup window beyond that.
+const sourceWorkerStartupMs = 90_000
+const sourceAssemblyRequestTimeoutMs = sourceWorkerStartupMs * 2
 const integrationTimeoutMs = sourceAssemblyRequestTimeoutMs + DEFAULT_LIMITS.shutdownGraceMs + 10_000
 const processIdentity = async (pid: number) =>
   pid === process.pid
@@ -114,6 +117,7 @@ it(
     })
     const localWeb = { addr: '127.0.0.1:0', origin: 'http://127.0.0.1:4180' }
     config.localWeb = localWeb
+    config.limits = { ...config.limits, workerStartupMs: sourceWorkerStartupMs }
     await mkdir(join(data, 'daemon'), { recursive: true, mode: 0o700 })
     const profileFile = join(data, 'daemon/profile.json')
     await writeFile(profileFile, JSON.stringify(profile))

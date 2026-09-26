@@ -19,7 +19,7 @@ import {
   SHELL_SENTINEL,
   sandboxWorkspaceProbe,
 } from '@agnes/base'
-import type { SandboxSeam } from '@agnes/core'
+import { type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import {
   type ExtensionAPI,
@@ -290,7 +290,7 @@ async function assembleWithSandbox(opts: {
       sessionKey,
       workspaceId: 'a'.repeat(64),
       revision: 1,
-      canonicalRoot: realpathSync(workspace),
+      canonicalRoot: realpathSync.native(workspace),
     },
     sessionKey,
   )
@@ -434,11 +434,11 @@ describe('the bound policy is enforced by the real host FsOps on real directorie
       // trip its cycle guard on a coincidence, not a real cycle. Resolving the target first keeps
       // this a single-hop symlink - exactly what the assertion below is pinning - without depending
       // on where the OS happens to put its temp directory.
-      symlinkSync(realpathSync(real), link)
+      symlinkSync(realpathSync.native(real), link)
       const f = await assembleWithSandbox({ workspace: link })
       try {
         // The seam asked the host resolver, not the lexical spelling it was handed.
-        expect(f.seam.fsPolicy().workspaceRoot).toBe(realpathSync(real))
+        expect(f.seam.fsPolicy().workspaceRoot).toBe(realpathSync.native(real))
         expect(f.seam.fsPolicy().workspaceRoot).not.toBe(link)
       } finally {
         await f.a.rollback.unwind()
@@ -788,18 +788,9 @@ describe
               ],
             },
           })
-          mkdirSync(join(f.workspace, '.agh'))
-          writeFileSync(join(f.workspace, '.agh', 'hooks.json'), bytes)
+          const configDigest = `sha256-${createHash('sha256').update(bytes).digest('hex')}`
           const capability = trustedHookCommands(
-            {
-              trustedUnconfined: [
-                {
-                  source: 'workspace',
-                  configDigest: `sha256-${createHash('sha256').update(bytes).digest('hex')}`,
-                  workspaceRoot: f.workspace,
-                },
-              ],
-            },
+            { trustedUnconfined: [{ source: 'workspace', configDigest, workspaceRoot: f.workspace }] },
             f.workspace,
             f.a.adapters.platform.fs(),
           )
@@ -818,38 +809,55 @@ describe
               sandbox: f.seam,
               ...(trusted && capability ? { trustedHookCommands: capability } : {}),
             })
-          await expect(factory(false)(api)).rejects.toThrow(/explicit trusted permission/)
-          expect(handlers.size).toBe(0)
-          expect(existsSync(marker)).toBe(false)
-          const dispose = await factory(true)(api)
-          try {
-            expect(f.a.adapters.powerShell?.version).toMatch(shellRequest === '5.1' ? /^5\.1\./ : /^7\./)
-            const handler = handlers.get('tool_call')
-            if (!handler) throw new Error('missing tool_call registration')
-            const controller = new AbortController()
-            const context: HookContext = {
-              session: {
-                key: '会话中文🙂',
-                lane: 'main',
-                workspaceRoot: f.workspace,
-                turn: 2,
-                step: 3,
-              },
-              projections: unavailableProjections,
-              replayed: false,
-              signal: controller.signal,
-              lease: { expiresAt: '2099-01-01T00:00:00.000Z', scope: {}, budget: { remaining: 10 } },
-              log: f.init.log,
-              platform: {
-                shell: 'posix',
-                fs: { caseSensitive: true, pathSep: '/' },
-                terminal: { color: false },
-              },
-            }
-            const pending = handler(
+          const controller = new AbortController()
+          // What the Host hands each invocation: the workspace hook file it read, and the sandbox
+          // bound to that workspace. Permission is decided against exactly this snapshot.
+          const context = {
+            session: {
+              key: '会话中文🙂',
+              lane: 'main',
+              workspaceRoot: f.workspace,
+              turn: 2,
+              step: 3,
+            },
+            projections: unavailableProjections,
+            replayed: false,
+            signal: controller.signal,
+            lease: { expiresAt: '2099-01-01T00:00:00.000Z', scope: {}, budget: { remaining: 10 } },
+            log: f.init.log,
+            platform: {
+              shell: 'posix',
+              fs: { caseSensitive: true, pathSep: '/' },
+              terminal: { color: false },
+            },
+            workspaceHooks: {
+              workspaceDigest: configDigest,
+              policyRevision: 'test',
+              hooks: Object.entries(JSON.parse(bytes).hooks).flatMap(([event, groups]) =>
+                (groups as Array<Record<string, unknown>>).map((group) => ({ event, ...group })),
+              ),
+            },
+            [WORKSPACE_HOOK_SANDBOX]: f.seam,
+          } as unknown as HookContext
+          const call = () =>
+            handlers.get('tool_call')?.(
               { name: 'shell', args: { command: '中文 空格 "quotes"' } } as never,
               context,
             )
+          // Without the deployment's grant the Hook loads but refuses to run the command unconfined.
+          const untrusted = await factory(false)(api)
+          try {
+            await expect(call()).rejects.toThrow(/explicit trusted permission/)
+            expect(existsSync(marker)).toBe(false)
+          } finally {
+            if (typeof untrusted === 'function') await untrusted()
+          }
+          expect(handlers.size).toBe(0)
+          const dispose = await factory(true)(api)
+          try {
+            expect(f.a.adapters.powerShell?.version).toMatch(shellRequest === '5.1' ? /^5\.1\./ : /^7\./)
+            if (!handlers.get('tool_call')) throw new Error('missing tool_call registration')
+            const pending = call()
             if (exitCode === 2)
               await expect(pending).resolves.toMatchObject({ allow: false, reason: '中文拒绝' })
             else if (exitCode === 0) await expect(pending).resolves.toEqual({ allow: true })
@@ -891,38 +899,86 @@ describe
 
 // The embedded manifest follows the release assembly route: no captured API and no manual grant
 // injection. Profile resolution, extension selection/registration and session hook dispatch are real.
+// The hooks-runner row always loads; whether a command may run unconfined is decided on each
+// invocation, against the configuration snapshot that invocation actually read.
 describe
   .runIf(process.platform === 'win32')
   .each(['5.1', ...(process.env.AGNES_TEST_PWSH ? [process.env.AGNES_TEST_PWSH] : [])])(
   'Host-managed trusted Hook with PowerShell %s',
   (shellRequest) => {
+    /** Opens a bound session on the fixture's workspace and asks its hooks about one shell call. */
+    const toolCallVerdict = async (f: Fixture) => {
+      const session = await createSession(
+        f.profile,
+        f.a,
+        { key: f.binding.sessionKey, binding: f.binding },
+        undefined,
+        {
+          runtime: f.runtime,
+          lifecycle: f.table.lifecycle(f.binding.sessionKey),
+          children: f.table,
+          invocation: f.table.invocation(f.binding.sessionKey),
+        },
+      )
+      try {
+        return await session.hooks.toolCall({
+          toolUseId: 'real-hook-1',
+          name: 'shell',
+          args: { command: '中文 "quotes"' },
+          meta: {
+            isReadOnly: false,
+            isDestructive: false,
+            isConcurrencySafe: false,
+            isOpenWorld: true,
+            replay: 'never',
+            costHint: undefined,
+            deferLoading: false,
+            requiresApproval: 'always',
+          },
+          actor: session.d.actor,
+          taint: false,
+          resolvedPolicy: {
+            isReadOnly: false,
+            isDestructive: false,
+            replay: 'never',
+            requiresApproval: 'always',
+            approvalScopes: [],
+            policyVersion: 'static-v1',
+          },
+          executionDomain: 'workspace',
+          definitionFingerprint: 'a'.repeat(64),
+          policyHash: 'b'.repeat(64),
+        })
+      } finally {
+        await session.close()
+      }
+    }
+    const refused = { allow: false, reason: 'hook execution failed' }
+
     it('keeps required isolation stronger than a valid deployment grant', async () => {
+      // No process backend exists, so a required sandbox refuses the workspace runtime before any
+      // session, and so any Hook, can exist; the grant does not change that.
       await expect(
         assembleWithSandbox({
           shellRequest,
           hooksDeployment: 'workspace',
           sandboxPreset: { required: true, on_unavailable: 'allow' },
         }),
-      ).rejects.toMatchObject({
-        code: 'E_SEAM_INIT',
-        message: expect.stringContaining('required-unavailable'),
-      })
+      ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
     })
     it('does not let a valid grant override the default unconfined-execution denial', async () => {
       const f = await assembleWithSandbox({ shellRequest, hooksDeployment: 'workspace' })
       try {
-        expect(f.a.extHost.status().find((entry) => entry.id === 'agnes/hooks-runner')).toMatchObject({
-          loaded: false,
-        })
-        expect(f.a.kernel.hooks.snapshot().entries('tool_call')).toHaveLength(0)
-        expect(existsSync(join(f.workspace, 'assembly-hook.json'))).toBe(false)
+        const marker = join(f.workspace, 'assembly-hook.json')
+        expect(await toolCallVerdict(f)).toEqual(refused)
+        expect(existsSync(marker)).toBe(false)
       } finally {
         await f.a.rollback.unwind()
       }
     })
 
     it.each(['workspace', 'data', 'no-grant', 'wrong-digest', 'wrong-source', 'wrong-root'] as const)(
-      'loads or refuses the %s deployment through the real Host',
+      'runs or refuses the %s deployment through the real Host',
       async (hooksDeployment) => {
         const f = await assembleWithSandbox({
           shellRequest,
@@ -930,53 +986,27 @@ describe
           sandboxPreset: { on_unavailable: 'allow' },
         })
         try {
-          const status = f.a.extHost.status().find((entry) => entry.id === 'agnes/hooks-runner')
+          const status = f.a.extensionStatus().find((entry) => entry.id === 'agnes/hooks-runner')
           const allowed = hooksDeployment === 'workspace' || hooksDeployment === 'data'
-          expect(status).toMatchObject({ loaded: allowed })
-          expect(f.a.kernel.hooks.snapshot().entries('tool_call')).toHaveLength(allowed ? 1 : 0)
+          expect(status).toMatchObject({ loaded: true })
+          expect(f.a.kernel.hooks.snapshot().entries('tool_call')).toHaveLength(1)
           const marker = join(f.workspace, 'assembly-hook.json')
           expect(existsSync(marker)).toBe(false)
-          if (!allowed) return
-          const session = await createSession(f.profile, f.a, { cwd: f.workspace })
-          try {
-            const verdict = await session.hooks.toolCall({
-              toolUseId: 'real-hook-1',
-              name: 'shell',
-              args: { command: '中文 "quotes"' },
-              meta: {
-                isReadOnly: false,
-                isDestructive: false,
-                isConcurrencySafe: false,
-                isOpenWorld: true,
-                replay: 'never',
-                costHint: undefined,
-                deferLoading: false,
-                requiresApproval: 'always',
-              },
-              actor: session.d.actor,
-              taint: false,
-              resolvedPolicy: {
-                isReadOnly: false,
-                isDestructive: false,
-                replay: 'never',
-                requiresApproval: 'always',
-                approvalScopes: [],
-                policyVersion: 'static-v1',
-              },
-              executionDomain: 'workspace',
-              definitionFingerprint: 'a'.repeat(64),
-              policyHash: 'b'.repeat(64),
-            })
-            expect(verdict).toEqual({ allow: false, reason: '装载链拒绝' })
-            expect(JSON.parse(readFileSync(marker, 'utf8'))).toMatchObject({
-              hook_event_name: 'PreToolUse',
-              toolUseId: 'real-hook-1',
-              cwd: f.workspace,
-              args: { command: '中文 "quotes"' },
-            })
-          } finally {
-            await session.close()
+          const verdict = await toolCallVerdict(f)
+          if (!allowed) {
+            expect(verdict).toEqual(refused)
+            expect(existsSync(marker)).toBe(false)
+            return
           }
+          expect(verdict).toEqual({ allow: false, reason: '装载链拒绝' })
+          const input = JSON.parse(readFileSync(marker, 'utf8')) as { cwd: string }
+          expect(input).toMatchObject({
+            hook_event_name: 'PreToolUse',
+            toolUseId: 'real-hook-1',
+            args: { command: '中文 "quotes"' },
+          })
+          // The session names its workspace by the canonical root, which on Windows expands 8.3 names.
+          expect(realpathSync.native(input.cwd)).toBe(realpathSync.native(f.workspace))
         } finally {
           await f.a.rollback.unwind()
         }
