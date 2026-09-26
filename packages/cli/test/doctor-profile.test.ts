@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CAPABILITY_IDS, type ConfigurationService, createConfigurationService } from '@agnes/host'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { doctorBinary } from '../src/commands/doctor-local.js'
@@ -9,7 +11,11 @@ import { doctorPlatform, doctorProfile, resolveDoctorProfile } from '../src/comm
 import { TEST_LOCK } from './boot-host.js'
 
 const setup = () => {
-  const home = mkdtempSync(join(tmpdir(), 'agnes-profile-doctor-'))
+  const home =
+    process.platform === 'win32'
+      ? join(tmpdir(), `agnes-profile-doctor-${randomUUID()}`)
+      : mkdtempSync(join(tmpdir(), 'agnes-profile-doctor-'))
+  if (process.platform === 'win32') createPrivateDirectorySync(home)
   return { home, cwd: home, env: {}, agnesVersion: '0', log: () => {}, lock: TEST_LOCK }
 }
 describe('profile and platform doctor', () => {

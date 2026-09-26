@@ -21,6 +21,11 @@ describe('rendered conversation region', () => {
   it('renders the outer component boundary with all existing child region mounts', async () => {
     runtime = await mountRenderedIndex()
     const conversation = document.querySelector('#conversation-shell')
+    await vi.waitFor(
+      () =>
+        expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy(),
+      committed,
+    )
     expect(conversation?.querySelector('[data-slot="ui:conversation"]')).toBeTruthy()
     expect(conversation?.querySelector('[data-slot="ui:transcript"] #transcript-content')).toBeTruthy()
     expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy()

@@ -164,7 +164,7 @@ describe.each(FIXTURES)('FsIo contract through the fence: %s', { timeout: 30_000
     expect((await fs.stat('inside-link')).kind).toBe('symlink')
     expect((await fs.stat('real')).kind).toBe('dir')
     expect(dec(await fs.read('inside-link/x'))).toBe('ok')
-  })
+  }, 15_000)
 
   it('answers rm for the parent as well as the leaf', async () => {
     const f = fixture()
@@ -189,7 +189,7 @@ describe.each(FIXTURES)('FsIo contract through the fence: %s', { timeout: 30_000
     await expect(fs.stat('out-link')).rejects.toThrow(/E_FS_DENIED/)
     await expect(fs.read('dir-link/secret')).rejects.toThrow(/E_FS_DENIED/)
     await expect(fs.write('dir-link/new', enc('x'))).rejects.toThrow(/E_FS_DENIED/)
-  })
+  }, 15_000)
 
   it('resolves a dangling link to its target and writes there when the target is inside', async () => {
     const f = fixture()

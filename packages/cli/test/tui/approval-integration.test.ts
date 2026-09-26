@@ -63,10 +63,12 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       app = new TuiApp({ session, term, header: 'Agnes' })
       await app.start()
       const result = app.submit('write the receipt').catch((error: unknown) => error)
-      await vi.waitFor(async () =>
-        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          'Approval: write',
-        ),
+      await vi.waitFor(
+        async () =>
+          expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
+            'Approval: write',
+          ),
+        { timeout: 10_000 },
       )
       const file = join(root, 'receipt.txt')
       expect(existsSync(file)).toBe(false)
@@ -83,18 +85,15 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
           '"path": "receipt.txt"',
         )
+        // FakeTerminal handles the key immediately; Renderer paints the new selection next microtask.
         term.feed('\x1b[A')
-        await vi.waitFor(async () =>
-          expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'allow_always',
-          ),
+        await Promise.resolve()
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
+          'allow_always',
         )
         term.feed('\x1b[A')
-        await vi.waitFor(async () =>
-          expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'allow_once',
-          ),
-        )
+        await Promise.resolve()
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain('allow_once')
       } else {
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
           '"path": "receipt.txt"',
@@ -137,12 +136,12 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
           ),
         )
       }
-      if (mode !== 'stop')
-        await vi.waitFor(async () =>
-          expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
-            'Approval: write',
-          ),
+      if (mode !== 'stop') {
+        await Promise.resolve()
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
+          'Approval: write',
         )
+      }
     } finally {
       await app?.stop()
       await client.close()

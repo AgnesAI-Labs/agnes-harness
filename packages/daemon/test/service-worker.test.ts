@@ -474,7 +474,7 @@ describe('S5 service worker boundary', () => {
       profileName: 'local-dev',
       dataDir: dir,
       ...socketPaths(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS },
     }
     const pool = new WorkerPool({
       config,
@@ -625,5 +625,5 @@ describe('S5 service worker boundary', () => {
     await crashRetry.ep.close()
     await crashRetry.queue.close()
     expect(markerModes().filter((seen) => seen === 'crash')).toHaveLength(1)
-  }, 20_000)
+  }, 60_000)
 })

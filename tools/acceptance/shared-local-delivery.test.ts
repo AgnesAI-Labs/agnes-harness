@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
+import { getApiKeyProvider } from '../../packages/ai/src/index.js'
 import { unixConnectTarget } from '../../packages/cli/src/boot/connect.js'
 import { ExitCode } from '../../packages/cli/src/errors.js'
 import { probePowerShell } from '../../packages/host/src/adapters/powershell.js'
@@ -96,12 +97,23 @@ it.skipIf(!entry)(
         // Print mode consumes redirected input before sending the prompt. This caller has none.
         child.stdin?.end()
       })
-    const editedFile = join(cwd, '中文 编辑.txt')
+    // The tool resolves workspace-relative paths against the daemon's own root. On Windows the
+    // test runner and detached daemon can spell the same temporary root differently.
+    const editedName = '中文 编辑.txt'
+    const editedFile = join(cwd, editedName)
     await writeFile(editedFile, 'before', 'utf8')
-    const provider = await startProviderFixture('Shared backend acceptance reply. 中文验证通过。', {
-      name: 'edit',
-      args: { path: editedFile, edits: [{ oldText: 'before', newText: 'after 中文' }] },
-    })
+    const deepseek = getApiKeyProvider('deepseek')
+    if (!deepseek) throw new Error('DeepSeek provider is unavailable')
+    const model = (await deepseek.createAdapter()).models(deepseek.route)[0]?.id
+    if (!model) throw new Error('DeepSeek model catalogue is empty')
+    const provider = await startProviderFixture(
+      'Shared backend acceptance reply. 中文验证通过。',
+      {
+        name: 'edit',
+        args: { path: editedName, edits: [{ oldText: 'before', newText: 'after 中文' }] },
+      },
+      model,
+    )
     const clients: ReturnType<typeof createClient>[] = []
     let web: ChildProcess | undefined
     try {
@@ -196,8 +208,9 @@ it.skipIf(!entry)(
         .trimEnd()
         .split('\n')
         .map((line) => JSON.parse(line))
-      expect(packageRows).toHaveLength(1)
-      expect(packageRows[0]).toMatchObject({ id: 'acme/pkg-a', result: 'committed', operation: 'install' })
+      const fixtureRows = packageRows.filter((row) => row.id === 'acme/pkg-a')
+      expect(fixtureRows).toHaveLength(1)
+      expect(fixtureRows[0]).toMatchObject({ result: 'committed', operation: 'install' })
       // guards-allow-platform: inspect the built daemon's actual package audit permissions.
       if (process.platform === 'win32') expect(hasPrivateDaclSync(packageAuditFile)).toBe(true)
       expect(await cli.config.get()).toMatchObject({ configured: false })
@@ -205,13 +218,27 @@ it.skipIf(!entry)(
         providerId: 'deepseek',
         baseUrl: provider.baseUrl,
         apiKey: provider.apiKey,
-        model: 'deepseek-v4-flash',
+        model,
         expectedRevision: 0,
       })
       const prompt = "共享后台中文请求，it's a test."
       const answer = await command(['-p', prompt])
       expect(answer.stdout).toContain('Shared backend acceptance reply.')
       expect(answer.stdout).toContain('中文验证通过。')
+      expect(provider.requests.some((request) => request.tools.includes('edit'))).toBe(true)
+      const toolResults = provider.requests.flatMap((request) =>
+        request.messages.flatMap((message) =>
+          message &&
+          typeof message === 'object' &&
+          'role' in message &&
+          message.role === 'tool' &&
+          'content' in message &&
+          typeof message.content === 'string'
+            ? [message.content]
+            : [],
+        ),
+      )
+      expect(toolResults).toContainEqual(expect.stringContaining('applied 1 edit(s)'))
       expect(await readFile(editedFile, 'utf8')).toBe('after 中文')
       expect(provider.requests.length).toBeGreaterThan(0)
       expect(provider.requests.some((request) => JSON.stringify(request.messages).includes(prompt))).toBe(

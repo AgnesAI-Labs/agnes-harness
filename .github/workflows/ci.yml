@@ -45,15 +45,20 @@ jobs:
       - name: verify working tree is clean
         run: git diff --exit-code
   check:
-    name: check (${{ matrix.os }})
+    name: check (${{ matrix.label }})
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=4', shard: '' }
+          - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', shard: '' }
+          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts --exclude=packages/daemon/test/skill-install-requests.test.ts', shard: '1/3' }
+          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts --exclude=packages/daemon/test/skill-install-requests.test.ts', shard: '2/3' }
+          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3 --exclude=packages/cli/test/acp-concurrency.test.ts --exclude=packages/cli/test/dbh-m06-ephemeral-leak.test.ts --exclude=packages/daemon/test/skill-install-requests.test.ts', shard: '3/3' }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       # Keep the same committed LF bytes on every platform, including Windows.
       - name: preserve repository line endings
@@ -72,16 +77,42 @@ jobs:
       - run: pnpm --filter @agnes/host build:native
       - run: pnpm --filter @agnes/system-node build:native
       # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
+      # Split Windows files across three runners while keeping two workers per runner.
       # The root Vitest gate discovers and runs the complete Protocol fixture tree through the same
       # conformance core as the package CLI, so a newly added fixture cannot bypass CI.
       - name: test (includes Protocol conformance)
-        run: pnpm exec vitest run --maxWorkers=4
+        id: suite
+        run: pnpm exec vitest run ${{ matrix.testArgs }}
+      # The ACP cold-start bound measures eight concurrent CLI processes. Run it without other
+      # Vitest files competing for this runner's cores, while retaining its original assertion.
+      - name: Windows ACP cold-start concurrency
+        if: runner.os == 'Windows' && matrix.shard == '1/3'
+        run: pnpm exec vitest run packages/cli/test/acp-concurrency.test.ts --maxWorkers=1
+      # The source CLI fixture cold-loads the test Host; keep its 20-second initialization
+      # deadline meaningful by running it without other Vitest files on this Windows runner.
+      - name: Windows ephemeral CLI lifecycle
+        if: runner.os == 'Windows' && matrix.shard == '3/3'
+        run: pnpm exec vitest run packages/cli/test/dbh-m06-ephemeral-leak.test.ts --maxWorkers=1
+      # The Skill install flow polls for completion with a three-second bound; run this
+      # disk-backed integration file without other Vitest files competing on Windows.
+      - name: Windows Skill install requests
+        if: runner.os == 'Windows' && matrix.shard == '2/3'
+        run: pnpm exec vitest run packages/daemon/test/skill-install-requests.test.ts --maxWorkers=1
+      # Keep boot/session creation in the functional gate above. The isolated run reports wall-clock
+      # time in the job summary even if another test fails; a stable performance runner can opt into
+      # the 300 ms assertion. Do not restart this test after a cancelled or skipped suite.
+      - name: startup budget (shared-runner diagnostic)
+        if: ${{ !cancelled() && steps.suite.outcome != 'skipped' && (runner.os != 'Windows' || matrix.shard == '1/3') }}
+        env: { AGH_BOOT_BUDGET_REPORT: '1' }
+        run: pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1
       - name: build local acceptance package on each platform
+        if: ${{ runner.os != 'Windows' || matrix.shard == '1/3' }}
         run: pnpm --filter @agnes/cli build:local
       - name: verify packaged directory publication capability
+        if: ${{ runner.os != 'Windows' || matrix.shard == '1/3' }}
         run: node packages/system-node/scripts/check-directory-publication.mjs packages/cli/dist/local/node_modules/@agnes/system-node/dist/native/agnes-system.node
       - name: verify local delivery with Windows PowerShell 5.1
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.shard == '1/3'
         shell: powershell
         env:
           AGNES_LOCAL_CLI: ${{ github.workspace }}/packages/cli/dist/local/agnes.mjs
@@ -90,7 +121,7 @@ jobs:
           if (-not $env:AGNES_ACCEPTANCE_POWERSHELL) { throw 'Cannot identify the acceptance PowerShell process' }
           pnpm exec vitest run tools/acceptance/shared-local-delivery.test.ts
       - name: verify local delivery with PowerShell 7
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.shard == '1/3'
         shell: pwsh
         env:
           AGNES_LOCAL_CLI: ${{ github.workspace }}/packages/cli/dist/local/agnes.mjs
@@ -101,6 +132,14 @@ jobs:
       # Installation and builds must not rewrite committed source or the lockfile.
       - name: verify working tree is clean
         run: git diff --exit-code
+  windows-check-result:
+    # Preserve the existing required check name; this job needs every platform test shard.
+    name: check (windows-latest)
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "All platform test shards passed."
   runtime-package:
     name: runtime package (${{ matrix.os }})
     needs: changes
@@ -182,7 +221,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, static, check, runtime-package, sea]
+    needs: [changes, static, check, windows-check-result, runtime-package, sea]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
