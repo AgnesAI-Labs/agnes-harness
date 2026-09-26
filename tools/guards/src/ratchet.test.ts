@@ -214,7 +214,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // W5c-1 moves the pure cost policy and complete native React disclosure into web-ui. Exact: 1743.
   // W5c-2: native React context panel and owned dismiss lifecycle; exact measured total.
   // W6a-2: four-section React Computer Use display/declared export; exact measured total.
-  'packages/web-ui/src': 1981,
+  // W6b-1: reusable React preview and shared detached HTML/URL policy; exact countLines, no spare.
+  'packages/web-ui/src': 2152,
   // W5c-2: optional component injection and compatible factory cleanup; exact measured total.
   // W6a-2: injected Computer Use pane and shell-owned replacement visibility; exact measured total.
   'packages/web-units/src': 3225,
@@ -1967,7 +1968,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // W5c-2: context factory becomes a synchronous compatibility root; exact measured total.
   // Computer Use: DOM-free snapshots/coordination and subscribed legacy pane; measured exact total.
   // W6a-2: React-owned pane binding, retirement and read-only operation recovery; exact measured total.
-  'packages/web/src': 13594,
+  // W6b-1: re-export shared preview policy; independent synchronous facade retained, exact total.
+  'packages/web/src': 13514,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

@@ -8,6 +8,7 @@
     "packages/web/src/permission-picker.ts",
     "packages/web/src/settings.ts",
     "packages/web-ui/src/settings-computer-use.tsx",
-    "packages/web/src/computer-use-pane.tsx"
+    "packages/web/src/computer-use-pane.tsx",
+    "packages/web-ui/src/conversation/document-preview.tsx"
   ]
 }
