@@ -920,7 +920,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Task 14 live creditsPerUsd getter so the next pricing invocation reads the publisher snapshot.
   // Re-measured with countLines(): 3719, exact cap, no spare.
   // 2026-09-22 pi-ai 0.87.0: transcript normalization and two JSON boundary type imports; exact +3.
-  'packages/ai/src': 3834,
+  // Explicit short cache retention at the adapter boundary. Measured 3835, exact.
+  'packages/ai/src': 3835,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger

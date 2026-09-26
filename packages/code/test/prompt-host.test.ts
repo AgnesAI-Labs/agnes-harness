@@ -64,11 +64,8 @@ const BASE_PACKAGE_DIR = fileURLToPath(new URL('../../base/', import.meta.url))
 const CODE_PACKAGE_DIR = fileURLToPath(new URL('../', import.meta.url))
 
 // Drives one real turn through a freshly assembled host and hands back the one request its
-// FakeProvider recorded. The session key is pinned explicitly rather than left to derive from cwd
-// (host/src/session.ts's sessionKey() hashes cwd into it), because EnvironmentFacts.sessionKey
-// renders straight into the persona-adjacent environment section: two hosts built from two
-// different scratch directories would otherwise disagree on that one line for a reason that has
-// nothing to do with the model or tool axis the two callers below are actually isolating.
+// FakeProvider recorded. Pin the session key so the two-host fixture isolates its model axis;
+// session identity now appears in the tail runtime-context message, not the system prefix.
 async function runFixtureTurn(o: { dataDir: string; modelId: string }): Promise<RequestBody> {
   const provider = fakeProvider([textTurn('done')], HOST_PARSER_VERSION)
   const { host } = await createTestHost({
