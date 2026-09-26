@@ -87,7 +87,11 @@ import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/de
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
-import type { CurrentRuntimeLookup, RuntimePromptPreloader } from '../runtime/current.js'
+import type {
+  CurrentRuntimeLookup,
+  RuntimePromptPreload,
+  RuntimePromptPreloader,
+} from '../runtime/current.js'
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
@@ -432,6 +436,8 @@ export type TurnMemory = {
   snapshot: RegistrySnapshot
   /** Context-hook output is frozen for identical assembly inputs within this turn. */
   prefix?: { key: string; sections: PromptSection[]; additionalContext: string }
+  /** A null result means this turn already tried the Host-owned Skill preloader. */
+  preload?: RuntimePromptPreload | null
   nonce: string
   /** Prefix of the most recent primary request after all request hooks have run. */
   lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>

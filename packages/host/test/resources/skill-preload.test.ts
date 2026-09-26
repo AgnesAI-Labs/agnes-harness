@@ -60,12 +60,12 @@ describe('Skill prompt preloader', () => {
       () => current,
       () => invocation(),
     )
-    const prompt = { sessionKey: 's', prompt: 'Use review' }
+    const prompt = { sessionKey: 's', prompt: 'Use $review' }
     const pending = preload(prompt)
     current = undefined
     await expect(pending).resolves.toBeUndefined()
     current = runtime()
-    const loaded = (await preload(prompt))?.section.text ?? ''
+    const loaded = (await preload(prompt))?.note ?? ''
     expect(loaded).toContain(
       `resourceId: ${resourceId}\nrevision: ${'a'.repeat(64)}\ndirectory: -\n\n${body}`,
     )
@@ -100,20 +100,39 @@ describe('Skill prompt preloader', () => {
       resolver,
     )({
       sessionKey: 's',
-      prompt: 'Use review',
+      prompt: 'Use $review',
     })
-    expect(preload?.section.text).toContain(body)
+    expect(preload?.note).toContain(body)
     expect(scopes).toEqual(['/workspace/a:s', '/workspace/a:s'])
     expect(scoped.list()).toEqual([])
   })
-  it('matches normalized complete names but rejects partial names', () => {
-    expect(explicitlyMentionsSkill('Use the REVIEW Skill.', 'review')).toBe(true)
-    expect(explicitlyMentionsSkill('Use reviewer instructions.', 'review')).toBe(false)
-    expect(explicitlyMentionsSkill('Use review-tool.', 'review')).toBe(false)
-    expect(explicitlyMentionsSkill('Use review.notes.', 'review')).toBe(false)
-    expect(explicitlyMentionsSkill('用stock-analysis这个skill查询', 'stock-analysis')).toBe(true)
-    expect(explicitlyMentionsSkill('用stock-analysis-2这个skill查询', 'stock-analysis')).toBe(false)
-    expect(explicitlyMentionsSkill('用mystock-analysis这个skill查询', 'stock-analysis')).toBe(false)
+  it('requires a case-sensitive $name or a named Skill suffix', () => {
+    for (const prompt of [
+      '$review',
+      'review 技能',
+      'review技能',
+      '`review` skill',
+      '"review" skill',
+      'Use the REVIEW Skill.',
+    ])
+      expect(explicitlyMentionsSkill(prompt, 'review'), prompt).toBe(true)
+    for (const prompt of [
+      'please review this',
+      '$Review',
+      '/review',
+      'reviewer 技能',
+      '$reviewer',
+      '$review.notes',
+    ])
+      expect(explicitlyMentionsSkill(prompt, 'review')).toBe(false)
+    expect(explicitlyMentionsSkill('$PATH', 'path')).toBe(false)
+    expect(explicitlyMentionsSkill('$文学', '文')).toBe(false)
+    expect(explicitlyMentionsSkill('语文技能', '文')).toBe(false)
+    expect(explicitlyMentionsSkill('用文技能', '文')).toBe(true)
+    expect(explicitlyMentionsSkill('用stock-analysis技能查询', 'stock-analysis')).toBe(true)
+    expect(explicitlyMentionsSkill('用stock-analysis-2技能查询', 'stock-analysis')).toBe(false)
+    expect(explicitlyMentionsSkill('用mystock-analysis技能查询', 'stock-analysis')).toBe(false)
+    expect(explicitlyMentionsSkill('请使用「语文老师」技能。', '语文老师')).toBe(true)
     expect(explicitlyMentionsSkill('请使用语文老师技能。', '语文老师')).toBe(true)
     expect(explicitlyMentionsSkill('请使用语文老师技能。', '语文老')).toBe(false)
   })
@@ -123,14 +142,9 @@ describe('Skill prompt preloader', () => {
     const preloader = createSkillPromptPreloader(runtime({}, read), () => invocation())
     const loaded = await preloader({ sessionKey: 'session-1', prompt: 'Use the review Skill.' })
     expect(loaded).toMatchObject({
-      suppressTools: ['tool_search', 'skill_read'],
-      section: {
-        id: `skill-preload:${resourceId}`,
-        source: 'runtime:skill-preload',
-        text: expect.stringContaining(body),
-      },
+      key: `${resourceId}@${'a'.repeat(64)}`,
+      note: expect.stringContaining(body),
     })
-    expect(loaded?.suppressTools).not.toEqual(expect.arrayContaining(['find', 'grep', 'ls']))
     expect(read).toHaveBeenCalledWith(resourceId, { sessionKey: 'session-1' })
   })
 
@@ -139,8 +153,8 @@ describe('Skill prompt preloader', () => {
     const preloader = createSkillPromptPreloader(runtime({ name: 'stock-analysis' }, read), () =>
       invocation(),
     )
-    const loaded = await preloader({ sessionKey: 'session-1', prompt: '用stock-analysis这个skill查询' })
-    expect(loaded?.section.text).toContain(body)
+    const loaded = await preloader({ sessionKey: 'session-1', prompt: '用stock-analysis技能查询' })
+    expect(loaded?.note).toContain(body)
     expect(read).toHaveBeenCalledWith(resourceId, { sessionKey: 'session-1' })
   })
 

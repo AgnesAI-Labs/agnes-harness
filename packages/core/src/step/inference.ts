@@ -227,8 +227,8 @@ const OUTPUT_PROGRESS_MS = 5_000
 
 /**
  * Only Core reads the accepted prompt body. Extensions receive the deliberately reduced SurfaceNode view.
- * Read from the ledger row, not the surface: compaction may mask the trigger mid-turn, and the turn's
- * preloaded section and suppressed tools must not change when it does.
+ * Read from the ledger row, not the surface: compaction may mask the trigger mid-turn, but the
+ * turn's Host-selected Skill preload remains memoized and its note may be restored.
  */
 async function currentPromptText(s: SessionImpl, triggerSeq: number): Promise<string> {
   const [row] = await s.d.log.scan({
@@ -273,7 +273,12 @@ export async function assembleRequestPrefix(
   s: SessionImpl,
   ctx: OpContext,
   triggerSeq: number,
-): Promise<{ merged: Merged; disclosed: DeriveInput['disclosed']; additionalContext: string }> {
+): Promise<{
+  merged: Merged
+  disclosed: DeriveInput['disclosed']
+  additionalContext: string
+  preloaded: RuntimePromptPreload | null
+}> {
   const t = s.turn
   if (!t) throw new CoreError('E_RELATION', 'request prefix outside an active turn')
   const contribs: Contribution[] = [
@@ -284,12 +289,12 @@ export async function assembleRequestPrefix(
   ]
   const merged = mergeContributions(contribs, t.snapshot)
   for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)
+  if (t.preload === undefined) t.preload = (await preloadRuntimeSection(s, triggerSeq)) ?? null
+  const preloaded = t.preload
   const permitted = new Set(ctx.disclosed)
-  const preloaded = await preloadRuntimeSection(s, triggerSeq)
-  const suppressed = new Set(preloaded?.suppressTools ?? [])
-  merged.tools = merged.tools.filter((name) => permitted.has(name) && !suppressed.has(name))
-  // Freeze context-hook output for identical assembly inputs within this turn. Host-private Skill
-  // content is appended afterwards, so context hooks cannot observe current-prompt matching.
+  merged.tools = merged.tools.filter((name) => permitted.has(name))
+  // Freeze context-hook output for identical assembly inputs within this turn. Current-prompt
+  // matching and the selected Skill body remain Host-private until their note lands.
   const prefixKey = canonicalJson([
     ctx.model.route,
     ctx.model.model,
@@ -303,7 +308,7 @@ export async function assembleRequestPrefix(
       ? structuredClone({ sections: t.prefix.sections, additionalContext: t.prefix.additionalContext })
       : await s.hooks.context(merged.sections)
   if (t.prefix?.key !== prefixKey) t.prefix = { key: prefixKey, ...structuredClone(hookContext) }
-  merged.sections = preloaded ? [...hookContext.sections, preloaded.section] : hookContext.sections
+  merged.sections = hookContext.sections
   if (
     !s.computerUseAllowed({ route: ctx.model.route, model: ctx.model.model }) &&
     t.snapshot.byName.has('computer_use')
@@ -318,7 +323,7 @@ export async function assembleRequestPrefix(
     const def = t.snapshot.byName.get(name)
     return def ? [def] : []
   })
-  return { merged, disclosed, additionalContext: hookContext.additionalContext }
+  return { merged, disclosed, additionalContext: hookContext.additionalContext, preloaded }
 }
 
 /**
@@ -494,7 +499,11 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   // list it reads off `ctx` are already resolved, so an Operation here sees exactly what is about to
   // go out rather than having to recompute either one itself.
   await runSlot(s, 'before-inference', ctx)
-  const { merged, disclosed, additionalContext } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
+  const { merged, disclosed, additionalContext, preloaded } = await assembleRequestPrefix(
+    s,
+    ctx,
+    op.meta.triggerSeq,
+  )
   const surface = s.surface()
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
@@ -622,7 +631,18 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     nonce: t.nonce,
     envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
-    notes: [{ prefix: '[hook context]\n', text: additionalContext, dedup: { kind: 'latest' } }],
+    notes: [
+      { prefix: '[hook context]\n', text: additionalContext, dedup: { kind: 'latest' } },
+      ...(preloaded
+        ? [
+            {
+              prefix: '[skill loaded]\n',
+              text: `${preloaded.key}\n${preloaded.note}`,
+              dedup: { kind: 'present' as const, key: preloaded.key },
+            },
+          ]
+        : []),
+    ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
   })

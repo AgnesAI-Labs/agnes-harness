@@ -235,7 +235,7 @@ describe('workspace resource consumers', () => {
     await expect(
       preload({ sessionKey: 'session-b', prompt: 'Use the review Skill.' }),
     ).resolves.toMatchObject({
-      section: { text: expect.stringContaining('loaded:session-b') },
+      note: expect.stringContaining('loaded:session-b'),
     })
     expect(eventsA).not.toContain('workspace')
     expect(eventsB).not.toContain('workspace')

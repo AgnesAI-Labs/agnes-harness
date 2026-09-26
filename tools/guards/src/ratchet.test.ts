@@ -910,9 +910,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
   // Context notes, per-turn prefix memo, and typed cold-block signal on the compaction-prefix base.
-  // Cold compaction settles the typed prompt denial before issuing a summary request.
-  // Re-measured 25399, exact; no spare.
-  'packages/core/src': 25399,
+  // Host-selected Skill preload notes and cold-compaction prompt denial are both present.
+  // Re-measured 25423, exact; no spare.
+  'packages/core/src': 25423,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2463,8 +2463,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // live invocation. Measured 38081, exact, no spare (+6).
   // Cancelling a child's creation also settles its execution state in the same SQLite statement.
   // Measured 38084, exact, no spare (+3).
-  // Tool-definition refusals and title nonce query. Measured 38097, exact, no spare.
-  'packages/host/src': 38097,
+  // Tool-definition refusals and title nonce query. Host Skill preload notes add 2 counted lines.
+  // Migration measured 38099, exact, no spare.
+  'packages/host/src': 38099,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

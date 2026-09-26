@@ -1,12 +1,11 @@
 import type { ResourceRegistry } from '../registry/resources.js'
 import type { ToolRegistry } from '../registry/tools.js'
-import type { PromptSection } from '../request/contribute.js'
 import type { HookPort } from '../step/session.js'
 
-/** A Host-owned current-turn section plus tools that must not be offered for that same request. */
+/** A Host-owned, trusted Skill body selected from the current workspace generation. */
 export type RuntimePromptPreload = Readonly<{
-  section: PromptSection
-  suppressTools: readonly string[]
+  note: string
+  key: string
 }>
 
 export type RuntimePromptPreloader = (input: {
