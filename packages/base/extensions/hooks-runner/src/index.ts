@@ -239,10 +239,18 @@ export function preparedHooksRunnerExtension(
         entry = { turn, hooks: new Map() }
         promptRuns.set(sessionKey, entry)
       }
-      const existing = entry.hooks.get(key)
+      // A session can visit multiple workspace/policy contexts in one turn. Never reuse a
+      // command verdict from a different fitted sandbox or workspace policy.
+      const scopedKey = JSON.stringify([
+        hctx.session.lane,
+        hctx.session.workspaceRoot,
+        hctx.workspaceHooks?.policyRevision,
+        key,
+      ])
+      const existing = entry.hooks.get(scopedKey)
       if (existing) return existing
       const pending = run()
-      entry.hooks.set(key, pending)
+      entry.hooks.set(scopedKey, pending)
       return pending
     }
     const dynamicEvents = new Set<HookEvent>()

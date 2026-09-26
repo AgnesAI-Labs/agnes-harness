@@ -45,7 +45,7 @@
   "packages/base/extensions/tools-core": 800,
   "packages/base/extensions/subagent": 800,
   "packages/base/extensions/skills": 1008,
-  "packages/base/extensions/hooks-runner": 1001,
+  "packages/base/extensions/hooks-runner": 1007,
   "packages/base/src/mcp": 932,
   "packages/base/extensions/computer-use": 1786,
   "packages/base/extensions/privacy": 800,

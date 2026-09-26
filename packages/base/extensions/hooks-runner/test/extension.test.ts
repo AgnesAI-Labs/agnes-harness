@@ -175,6 +175,50 @@ describe('hooksRunnerExtension', () => {
     expect(exec).toHaveBeenCalledTimes(4)
   })
 
+  it('does not reuse a prompt verdict across workspaces or policy revisions in one turn', async () => {
+    const exec = vi.fn(async (_argv, options: { cwd?: string }) => ({
+      code: 0,
+      stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: options.cwd } }),
+      stderr: '',
+      truncated: false,
+    }))
+    const state = fakeApi()
+    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
+    ])(state.api)
+    const before = state.handlers.get('before_step')
+    if (!before) throw new Error('before_step handler missing')
+    const payload: HookPayloadMap['before_step'] = {
+      turn: 7,
+      step: 1,
+      depth: 0,
+      budget: { cap: 10, remaining: 10 },
+    }
+    const first = {
+      ...context,
+      session: { ...context.session, turn: 7, step: 1, workspaceRoot: '/workspace/one' },
+      workspaceHooks: { workspaceDigest: 'same-config', policyRevision: 'policy-1', hooks: [] },
+    } as HookContext
+    const second = {
+      ...first,
+      session: { ...first.session, workspaceRoot: '/workspace/two' },
+    }
+    const revised = {
+      ...second,
+      workspaceHooks: { workspaceDigest: 'same-config', policyRevision: 'policy-2', hooks: [] },
+    }
+    await before(payload, first)
+    await before(payload, second)
+    await before(payload, revised)
+    await before(payload, revised)
+    expect(exec).toHaveBeenCalledTimes(3)
+    expect(exec.mock.calls.map(([, options]) => options.cwd)).toEqual([
+      '/workspace/one',
+      '/workspace/two',
+      '/workspace/two',
+    ])
+  })
+
   it('preserves UserPromptSubmit blocking at before_step', async () => {
     const exec = vi.fn(async () => ({ code: 2, stdout: '', stderr: 'denied', truncated: false }))
     const state = fakeApi()
