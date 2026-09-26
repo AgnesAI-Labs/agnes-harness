@@ -567,7 +567,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility
   // glue, not a second scope path or general profile-error bypass. Measured total: 214.
   'packages/daemon/src/supervisor/scope': 214,
-  'packages/daemon/src/supervisor/discovery': 430,
+  // 2026-09-26: bounded EBUSY retry preserves Windows discovery validation during concurrent boot.
+  // Measured 436, exact.
+  'packages/daemon/src/supervisor/discovery': 436,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/web/src/serve': 188,
   // 2026-09-12 unified App Server: shared configuration, authenticated RPC, session metadata
@@ -1749,7 +1751,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // WIN-SHORT-NAMES: the Skill watcher hands fs.watch the native (long) spelling on Windows, since
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
-  'packages/daemon/src': 26495,
+  // Windows discovery retry adds six counted lines; measured 26501, exact.
+  'packages/daemon/src': 26501,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
