@@ -160,3 +160,22 @@ contract for legacy callers; its existing DOM cost wrapper and composer context 
 compatible. The Web React adapter uses the default shared cost component. No new dependencies,
 CSS assets or listeners are required. Context-panel migration is W5c-2; the default timeline
 host and the unresolved S2 plugin-state contract remain separate.
+
+## W5c-2 composer context usage
+
+The same streaming probe/checker now mounts the production `mountComposerRegion` with synthetic
+`UsageView` values. It checks initial hiding, the packaged ring/popover styles, actual context
+fields, connection last-sync text, node/expanded/focus preservation, inside/outside clicks,
+over-window visual caps, clear/new-session zero/missing fields and listener cleanup after disposal.
+The three routes also rerun the existing Markdown selection/copy/480ms/recovery and cost checks.
+
+`ConversationUsage({usage, connected})` and its props are exported from `@agnes/web-ui/assistant-ui`.
+The host owns section visibility. The component owns native disclosure rows and its removable
+outside-click listener. Production `ComposerDependencies.UsagePanel` injects it directly into the
+composer React root. Existing custom `createUsagePanel` factories remain supported; an optional
+updater `dispose()` is invoked on replacement/unmount. Web's `createUsagePanel` remains synchronous
+for independent imperative callers and now returns an idempotent `dispose()`. Do not invoke that
+compatibility root from React effects; use component injection there. This introduces no new asset,
+dependency or CSP allowance. Cumulative session billing/credits/tokens and model identities stay
+hidden. `usage.ts` still has legacy cost DOM, so it is not a pure React file; other admin-frame
+consumers, default timeline rollout, S2 and broader M2 acceptance remain separate.

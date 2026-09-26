@@ -47,6 +47,50 @@ try {
     events = []
     await send('Page.navigate', { url: origin + page })
     await evaluate(async () => { for (let i = 0; i < 80; i++) { if (window.__aghStreamingProbe) return true; await new Promise((resolve) => setTimeout(resolve, 25)) } throw new Error('Probe startup timeout') })
+    const contextUsage = await evaluate(async () => {
+      const api = window.__aghStreamingProbe
+      const expect = (value, message) => { if (!value) throw new Error(message) }
+      const host = () => document.querySelector('#session-usage')
+      const rows = () => [...host().querySelectorAll('dt')].map(term => [term.textContent, term.nextElementSibling.textContent])
+      expect(host().hidden, 'composer has no usage initially')
+      const usage = { totals: { input: 9999, output: 500, cacheRead: 6000, cacheWrite: 0, reasoning: 20 },
+        cost: { usdMicros: 125, source: 'estimated', subscription: false }, credits: { amount: 0.000206, source: 'gateway', complete: true },
+        context: { tokens: 1500, window: 128000, autoCompact: true, source: 'estimated' },
+        model: { route: 'private-route', id: '<img src=x> **model**', thinking: 'high', maxTokens: 8192 } }
+      await api.usage(usage)
+      const details = host().querySelector('details'), summary = details.querySelector('summary'), first = details.querySelector('dt')
+      expect(!host().hidden && summary.textContent === '上下文约 1.5K / 128.0K · 1.2%', 'context visible with truthful summary')
+      summary.click(); summary.focus()
+      expect(details.open && document.activeElement === summary, 'native context disclosure focus')
+      const popover = details.querySelector('.usage-popover'), ring = details.querySelector('.usage-ring')
+      expect(getComputedStyle(popover).position === 'absolute' && getComputedStyle(ring).backgroundImage.includes('conic-gradient'), 'actual packaged panel and ring CSS')
+      const box = popover.getBoundingClientRect()
+      expect(box.width > 200 && box.width < 400 && box.left >= 0 && box.right <= innerWidth, 'panel fits viewport')
+      expect(JSON.stringify(rows()) === JSON.stringify([['上下文占用', '1,500 Token'], ['模型窗口', '128,000 Token'], ['最大输出上限', '8,192 Token'], ['自动整理上下文', '已启用']]), 'only actual protocol rows')
+      for (const forbidden of ['9,999', '0.000206', '$', 'private-route', '<img', '缓存命中', '累计']) expect(!host().textContent.includes(forbidden), 'context excludes ' + forbidden)
+      expect(!details.querySelector('img,a,script'), 'no parsed model data')
+      for (const connected of [false, false, true]) {
+        await api.usage({ ...usage, context: { ...usage.context, tokens: 100000 } }, connected)
+        expect(host().querySelector('details') === details && details.querySelector('summary') === summary && details.querySelector('dt') === first, 'context nodes retained')
+        expect(details.open && document.activeElement === summary, 'context expansion/focus retained')
+        expect(host().textContent.includes('上次同步') === !connected && details.dataset.pressure === 'medium', 'context connection/pressure update')
+      }
+      popover.click(); expect(details.open, 'inside click stays open')
+      document.body.click(); expect(!details.open, 'outside click closes')
+      details.open = true
+      await api.usage({ ...usage, context: { ...usage.context, tokens: 256000 } })
+      expect(details.querySelector('.usage-context-value').textContent === '200.0%' && ring.style.getPropertyValue('--usage-pct') === '100%' && details.querySelector('.usage-bar > span').style.width === '100%', 'truthful over-window ratio with capped visuals')
+      await api.clearUsageSession()
+      expect(host().hidden && !details.open && rows().length === 0 && summary.textContent === '' && ring.style.getPropertyValue('--usage-pct') === '0%', 'session clear resets context')
+      await api.usage({ ...usage, context: { ...usage.context, tokens: 0, autoCompact: false }, model: { route: 'local', id: 'other', thinking: 'off' } })
+      expect(!host().hidden && !details.open && rows().length === 3 && !host().textContent.includes('8,192') && host().textContent.includes('未启用'), 'next session zero/missing output')
+      await api.retireComposer()
+      expect(!details.isConnected && !document.querySelector('#session-usage'), 'composer unmounted')
+      details.open = true; document.body.click(); expect(details.open, 'retired context listener cleaned')
+      await api.reset()
+      return { initialHidden: true, protocolRows: true, ringCSS: true, viewport: true, identityFocusExpansion: true, connection: true, outsideDismiss: true, clearNextSession: true, cleanup: true }
+    })
+    console.log(JSON.stringify({ page, contextUsage }))
     const cost = await evaluate(async () => {
       const api = window.__aghStreamingProbe
       const expect = (value, message) => { if (!value) throw new Error(message) }

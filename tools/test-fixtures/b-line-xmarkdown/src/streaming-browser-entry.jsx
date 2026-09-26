@@ -3,7 +3,7 @@ import { SlotRegistry } from '@agnes/web-client'
 import { createLiveProjection } from '../../../../packages/web/src/live-projection.ts'
 import { createTimelineRenderer } from '../../../../packages/web/src/timeline.ts'
 import { createMarkdownRenderer } from '../../../../packages/web/src/markdown.ts'
-import { mountTranscriptRegion } from '../../../../packages/web/src/region-slots.ts'
+import { mountComposerRegion, mountTranscriptRegion } from '../../../../packages/web/src/region-slots.ts'
 
 // Only transport/server data are synthetic. Projection, adapters, stores, region and vendors are real.
 const ctx = new Context()
@@ -56,7 +56,27 @@ staticHost.id = 'static-preview'
 document.body.append(legacyHost, staticHost)
 const legacy = createTimelineRenderer({ transcript: legacyHost, newContentButton: document.createElement('button') })
 const preview = createMarkdownRenderer(staticHost, 'static preview')
+const composerHost = document.createElement('section')
+composerHost.id = 'composer-probe'
+Object.assign(composerHost.style, { position: 'fixed', bottom: '16px', right: '16px', width: '700px', zIndex: '30' })
+document.body.append(composerHost)
+const composer = mountComposerRegion(registry, composerHost, {
+  onCancel() {}, onDraftChange() {}, onError(error) { errors.push(String(error)) },
+  onModelSelect: async () => false, onPermissionSelect: async () => false,
+  onSubmit() {}, onWorkspace() {},
+})
+const composerView = {
+  cancel: { disabled: true, hidden: true, label: '停止' }, connected: true, configured: true, hasSession: true,
+  hint: { kind: 'shortcut', text: 'Enter 发送' }, input: { disabled: false, placeholder: 'task' }, loading: false,
+  model: { accessibleName: 'model', disabled: true, label: 'model', options: [], pending: false },
+  permission: { disabled: true, pending: false, selected: 'workspace' }, sending: false,
+  send: { disabled: true, label: '发送', mode: 'idle', title: '发送' }, stopping: false, usage: undefined,
+  workspace: { disabled: true, label: 'workspace', title: 'workspace' },
+}
 const api = {
+  async usage(value, connected = true) { composer.render({ ...composerView, usage: value, connected }); await settle() },
+  async clearUsageSession() { composer.render({ ...composerView }); registry.setSession('usage-other'); await settle() },
+  async retireComposer() { composer.dispose(); composerHost.remove(); await settle() },
   async cost(node, prepend = false) {
     const nodes = [...(prepend ? [user('cost-user', 1)] : []), node]
     mounted.render(nodes)
@@ -88,7 +108,7 @@ const api = {
   async next() { state.upto = 5; state.nodes.push(user('u2', 4), assistant('a2', 5, 'e2')); state.turns.push(turn('t2', 2)); await live.refresh(); await settle() },
   async replay() { await live.refresh(); await settle() },
   async switchSession() { await live.stop(); registry.setSession('other'); mounted.reset(); mounted.render([assistant('a1', 1, 'other', 'new session', '', false)]); await settle() },
-  async dispose() { await live.stop(); mounted.dispose(); await ctx.fiber.dispose(); legacy.dispose(); preview.dispose(); await settle() },
+  async dispose() { await live.stop(); composer.dispose(); mounted.dispose(); await ctx.fiber.dispose(); legacy.dispose(); preview.dispose(); await settle() },
   snapshot() { return { text: transcript.textContent, ids: [...transcript.querySelectorAll('[data-node-id]')].map((node) => node.dataset.nodeId), selected: document.getSelection()?.toString(), errors, violations, counters, previewListeners: previewListeners.size, connectionListeners: [...handlers.values()].reduce((n, set) => n + set.size, 0) } },
 }
 window.__aghStreamingProbe = api

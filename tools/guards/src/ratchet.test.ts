@@ -212,8 +212,10 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-slots/src': 605,
   // W5b-2: bounded React suffix plans, synchronous facade compatibility and table ARIA. Exact: 1688.
   // W5c-1 moves the pure cost policy and complete native React disclosure into web-ui. Exact: 1743.
-  'packages/web-ui/src': 1743,
-  'packages/web-units/src': 3172,
+  // W5c-2: native React context panel and owned dismiss lifecycle; exact measured total.
+  'packages/web-ui/src': 1819,
+  // W5c-2: optional component injection and compatible factory cleanup; exact measured total.
+  'packages/web-units/src': 3191,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -1959,7 +1961,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines(): 13300, exact, no spare.
   // W5b-2 removes the imperative Markdown implementation/adapter leaf; explicit node state. Exact: 13415.
   // W5c-1 removes Web CostLeaf and re-exports shared cost policy; context panel stays imperative. Exact: 13346.
-  'packages/web/src': 13346,
+  // W5c-2: context factory becomes a synchronous compatibility root; exact measured total.
+  'packages/web/src': 13292,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

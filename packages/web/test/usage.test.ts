@@ -1,10 +1,20 @@
 // @vitest-environment happy-dom
 import type { UINode, UsageView } from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
-import { costDetails, costSummary, createUsagePanel } from '../src/usage.js'
+import { costDetails, costSummary, createUsagePanel, type UsagePanelUpdater } from '../src/usage.js'
 
-afterEach(() => document.body.replaceChildren())
+const panels: UsagePanelUpdater[] = []
+function mountUsage(parent: HTMLElement) {
+  const panel = createUsagePanel(parent)
+  panels.push(panel)
+  return panel
+}
+afterEach(() => {
+  for (const panel of panels.splice(0)) panel.dispose()
+  vi.restoreAllMocks()
+  document.body.replaceChildren()
+})
 const call: Extract<UINode, { kind: 'cost' }> = {
   kind: 'cost',
   id: 'c1',
@@ -62,7 +72,7 @@ it('keeps a call disclosure open on replacement and renders model names as text'
 it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量分区', () => {
   const container = document.createElement('section')
   document.body.append(container)
-  const update = createUsagePanel(container)
+  const update = mountUsage(container)
   update(usage, true)
   expect(container.querySelector('.usage-ring')).not.toBeNull()
   // 头部一行：标题 + 百分比 + 数值（紧凑写法，照 DSH 的 "~285K / 1M"）。
@@ -91,7 +101,7 @@ it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量�
 it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用户要求隐藏）', () => {
   const container = document.createElement('section')
   document.body.append(container)
-  const update = createUsagePanel(container)
+  const update = mountUsage(container)
   update(usage, true)
   const details = container.querySelector('details')
   if (!details) throw new Error('missing details')
@@ -148,3 +158,35 @@ it('treats unknown and object-prototype purpose names as the generic single-call
     expect(costDetails({ ...call, purpose })[0]).toEqual(['记录范围', '单次费用记录'])
   }
 })
+
+it('hides before first data, owns dismiss cleanup and ignores retired compatibility updates', () => {
+  const container = document.createElement('section')
+  document.body.append(container)
+  const removed = vi.spyOn(document, 'removeEventListener')
+  const added = vi.spyOn(document, 'addEventListener')
+  const update = mountUsage(container)
+  expect(container.hidden).toBe(true)
+  update(usage, true)
+  const details = required(container.querySelector('details'))
+  details.open = true
+  required(container.querySelector<HTMLElement>('.usage-popover')).click()
+  expect(details.open).toBe(true)
+  document.body.click()
+  expect(details.open).toBe(false)
+  update.dispose()
+  update.dispose()
+  update(usage, false)
+  expect(container.hidden).toBe(true)
+  expect(container.childElementCount).toBe(0)
+  const click = added.mock.calls.find(([event]) => event === 'click')
+  expect(click).toBeDefined()
+  expect(removed.mock.calls.some(([event, callback]) => event === 'click' && callback === click?.[1])).toBe(
+    true,
+  )
+  vi.restoreAllMocks()
+})
+
+function required<T>(value: T | null): T {
+  if (value === null) throw new Error('missing fixture element')
+  return value
+}

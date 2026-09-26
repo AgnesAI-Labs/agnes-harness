@@ -20,6 +20,7 @@ import {
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
+import { ConversationUsage } from '@agnes/web-ui/assistant-ui'
 import {
   Approval,
   type ApprovalHandle,
@@ -88,6 +89,7 @@ const COMPOSER_DEPENDENCIES: ComposerDependencies = {
   createModelPicker,
   createPermissionPicker,
   createUsagePanel,
+  UsagePanel: ConversationUsage,
   isSubmitShortcut: isComposerSubmitShortcut,
   resize: resizeComposer,
 }

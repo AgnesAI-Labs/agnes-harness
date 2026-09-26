@@ -1,8 +1,9 @@
 /** @vitest-environment happy-dom */
 
 import type { UsageView } from '@agnes/protocol'
+import type { ComposerView } from '@agnes/web-units'
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -86,6 +87,101 @@ describe('rendered composer region', () => {
     expect(document.activeElement).toBe(prompt)
   })
 
+  it('preserves context interaction across connection updates, session clear, DSH replacement and disposal', async () => {
+    const added = vi.spyOn(document, 'addEventListener')
+    const removed = vi.spyOn(document, 'removeEventListener')
+    try {
+      runtime = await mountRenderedIndex()
+      const view: ComposerView = {
+        cancel: { disabled: true, hidden: true, label: '停止' },
+        connected: true,
+        configured: true,
+        hasSession: true,
+        hint: { kind: 'shortcut', text: 'Enter 发送，Shift+Enter 换行' },
+        input: { disabled: false, placeholder: '描述你想完成的事…' },
+        loading: false,
+        model: {
+          accessibleName: '当前会话模型：model-a',
+          disabled: false,
+          label: 'model-a',
+          options: [{ route: 'local', id: 'model-a', label: '本地模型' }],
+          pending: false,
+          selected: { route: 'local', id: 'model-a' },
+        },
+        permission: { disabled: false, pending: false, selected: 'workspace' },
+        sending: false,
+        send: { disabled: false, label: '发送', mode: 'idle', title: '发送（Enter）' },
+        stopping: false,
+        usage,
+        workspace: { disabled: false, label: 'agnes', title: '/workspace/agnes' },
+      }
+      const render = (next: Partial<ComposerView>) => runtime?.composer?.render({ ...view, ...next })
+      const host = () => required(document.querySelector<HTMLElement>('#session-usage'))
+      expect(host().hidden).toBe(true)
+      render({})
+      const details = required(host().querySelector('details'))
+      const summary = required(details.querySelector('summary'))
+      details.open = true
+      summary.focus()
+      render({ connected: false, sending: true })
+      render({ connected: false })
+      expect(host().querySelector('details')).toBe(details)
+      expect(details.open).toBe(true)
+      expect(document.activeElement).toBe(summary)
+      expect(host().textContent).toContain('上次同步')
+      required(host().querySelector<HTMLElement>('.usage-popover')).click()
+      expect(details.open).toBe(true)
+      document.body.click()
+      expect(details.open).toBe(false)
+      details.open = true
+      render({ usage: undefined })
+      runtime.registry.setSession('another-session')
+      expect(host().hidden).toBe(true)
+      expect(details.open).toBe(false)
+      expect(host().querySelectorAll('dt')).toHaveLength(0)
+      render({
+        usage: {
+          ...usage,
+          context: { ...usage.context, tokens: 0, autoCompact: false },
+          model: { route: 'local', id: 'next', thinking: 'off' },
+        },
+      })
+      expect(host().hidden).toBe(false)
+      expect(host().textContent).toContain('0 Token')
+      expect(host().textContent).not.toContain('1,024')
+      expect(details.open).toBe(false)
+      const removeShadow = runtime.registry.register(
+        { name: COMPOSER_SLOT as string, id: 'usage-shadow', owner: 'fixture', priority: -1 },
+        () => createElement('div', null, 'shadow'),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(details.isConnected).toBe(false)
+      details.open = true
+      document.body.click()
+      expect(details.open).toBe(true)
+      removeShadow()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(host().querySelector('details')).not.toBe(details)
+      expect(host().textContent).toContain('0 Token')
+      const restored = required(host().querySelector('details'))
+      expect(restored.open).toBe(false)
+      await runtime.dispose()
+      runtime = undefined
+      expect(restored.isConnected).toBe(false)
+      restored.open = true
+      document.body.click()
+      expect(restored.open).toBe(true)
+      const clicks = added.mock.calls.filter(([event]) => event === 'click')
+      expect(clicks.length).toBeGreaterThanOrEqual(2)
+      for (const [, listener] of clicks)
+        expect(
+          removed.mock.calls.some(([event, callback]) => event === 'click' && callback === listener),
+        ).toBe(true)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it('restores the component and current draft after a composer shadow unloads', async () => {
     runtime = await mountRenderedIndex()
     runtime.composer?.render({
@@ -164,3 +260,8 @@ describe('rendered composer region', () => {
     remove()
   })
 })
+
+function required<T>(value: T | null): T {
+  if (value === null) throw new Error('missing fixture element')
+  return value
+}
