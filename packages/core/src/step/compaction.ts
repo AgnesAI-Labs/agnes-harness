@@ -1,6 +1,7 @@
 import type { HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import type { Billing, InferenceEvent, ThinkingLevel } from '@agnes/protocol'
 import { settleTreeSpend } from '../child/runtime-budget.js'
+import { HookBlockedError } from '../hooks/block.js'
 import type { SurfaceNode } from '../project/surface.js'
 import { pairClosed, validateReplace } from '../project/surface.js'
 import type { CostLedger, TokenCounts } from '../reduce/shapes.js'
@@ -796,17 +797,25 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const primaryTarget = resolveModel(s, 'primary')
   const turn = s.turn
   if (!turn) throw new CoreError('E_RELATION', 'compaction outside an active turn')
-  const prefix: Prefix =
-    from === 0 && primaryTarget.route === target.route && primaryTarget.model === target.model
-      ? await primaryPrefix(s)
-      : (turn.lastPrefix ?? {
-          sections: [],
-          tools: [],
-          model: { slot: 'primary', ...primaryTarget },
-          ...(s.preset.model.thinking.primary === undefined
-            ? {}
-            : { samplingParams: { thinking: s.preset.model.thinking.primary } }),
-        })
+  let prefix: Prefix
+  if (from === 0 && primaryTarget.route === target.route && primaryTarget.model === target.model) {
+    try {
+      prefix = await primaryPrefix(s)
+    } catch (error) {
+      if (!(error instanceof HookBlockedError)) throw error
+      await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: error.reason } })
+      return { phase: 'terminal', reason: 'blocked' }
+    }
+  } else {
+    prefix = turn.lastPrefix ?? {
+      sections: [],
+      tools: [],
+      model: { slot: 'primary', ...primaryTarget },
+      ...(s.preset.model.thinking.primary === undefined
+        ? {}
+        : { samplingParams: { thinking: s.preset.model.thinking.primary } }),
+    }
+  }
   const to = surface.findIndex((node) => node.seq === replace.nodes.at(-1)?.seq)
   const spanTo = surface.findIndex((node) => node.seq === replace.end)
   const trigger = plan.turnPrefixRange

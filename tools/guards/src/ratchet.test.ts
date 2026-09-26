@@ -910,8 +910,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
   // Context notes, per-turn prefix memo, and typed cold-block signal on the compaction-prefix base.
-  // Migration measured 25390, exact; cold-block handling remains incomplete.
-  'packages/core/src': 25390,
+  // Cold compaction settles the typed prompt denial before issuing a summary request.
+  // Re-measured 25399, exact; no spare.
+  'packages/core/src': 25399,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2098,8 +2099,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // synchronous registration and descendant-drained command execution; exact measured total.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line, the AGH_DIR import for the
   // workspace `.agh/hooks.json` fallback path. Prompt-submit result memo adds 41 counted lines.
-  // Re-measured with this guard's countLines(): 996, exact cap.
-  'packages/base/extensions/hooks-runner': 996,
+  // Context-first exit 2 reuses the before_step prompt verdict. Re-measured 1001, exact cap.
+  'packages/base/extensions/hooks-runner': 1001,
   // MCP rows step 4 (design 2026-09-21-resource-rows-design.md §3.9, D122): agnes/mcp-client was
   // retired. Its shared MCP library (connect.ts, register.ts, index-table.ts, the McpServerConfig type)
   // moved here unchanged apart from import paths; the profile-preset reader (config.ts's
@@ -2680,8 +2681,8 @@ const extensionDirs = existsSync(extensionsDir)
 const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // CORDIS-C1b Task 6 adds invocation-scoped workspace hook snapshots and descendant draining.
   // 2026-09-21 AGH namespace rename, +1 approved by the user: the AGH_DIR import for the workspace
-  // `.agh/hooks.json` fallback path. Prompt-submit result memo adds 41 counted lines; measured 996.
-  ['hooks-runner', 996],
+  // `.agh/hooks.json` fallback path. Context-first prompt denial adds a typed signal; measured 1001.
+  ['hooks-runner', 1001],
   ['computer-use', 1786],
   // 2026-09-23 user-approved: dsh-compatible Skill discovery. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.

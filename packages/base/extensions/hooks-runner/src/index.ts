@@ -1,5 +1,6 @@
 import {
   HOOK_UNHANDLED,
+  HookBlockedError,
   type SandboxSeam,
   WORKSPACE_HOOK_SANDBOX,
   type WorkspaceHookSandbox,
@@ -376,6 +377,12 @@ export function preparedHooksRunnerExtension(
                 { event: group.event, field },
               )
             await flushWarnings()
+            if (event === 'context' && promptSubmit && raw.exitCode === 2) {
+              // A cold compaction may request context before the first before_step. Reuse the
+              // normal prompt verdict, but keep context's public return contract unchanged.
+              const verdict = translateReturn('before_step', raw)
+              throw new HookBlockedError(verdict.reason ?? 'hook blocked')
+            }
             const translated = translateReturn(event, raw, currentToolResult(event, payload, result))
             result = mergeReturn(event, result, translated)
             if (isDirectiveStop(event, result)) return result

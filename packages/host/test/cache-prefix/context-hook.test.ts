@@ -19,7 +19,9 @@ describe('context hook wire prefix', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'agnes-cold-hook-block-'))
     writeFileSync(
       join(dataDir, 'hooks.json'),
-      JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: './gate.sh' }] }] } }),
+      JSON.stringify({
+        hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: './gate.sh' }] }] },
+      }),
     )
     let blocked = false
     const exec = vi.fn(async () => ({
@@ -37,7 +39,7 @@ describe('context hook wire prefix', () => {
         sandbox: {
           exec,
           fsPolicy: () => testFsPolicy(realpathSync.native(dataDir)),
-          enforcement: () => ({ level: 'full' as const, scope: ['process'] }),
+          enforcement: () => ({ level: 'full' as const, scope: ['process' as const] }),
         },
       },
     }
@@ -82,10 +84,12 @@ describe('context hook wire prefix', () => {
         })
         blocked = true
         await reopened.requestCompaction({ actor: reopened.d.actor, admissionId: 'cold-hook-block' })
-        expect(await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
-          reason: 'blocked',
-          error: { code: 'HOOK_BLOCKED', message: 'cold denied' },
-        })
+        expect(await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject(
+          {
+            reason: 'blocked',
+            error: { code: 'HOOK_BLOCKED', message: 'cold denied' },
+          },
+        )
         expect(exec).toHaveBeenCalledTimes(3)
         expect(coldProvider.requests).toHaveLength(0)
         expect(await reopened.d.log.scan({ type: 'x/core/compaction-end', limit: 5 })).toHaveLength(0)
