@@ -9,6 +9,7 @@ import { MemoryStorage } from '../src/log/memory-storage.js'
 import { HookRegistry } from '../src/registry/hooks.js'
 import { ResourceRegistry } from '../src/registry/resources.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { CompactionRunner } from '../src/step/compaction.js'
 import { contextTokens } from '../src/step/gate.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
@@ -354,6 +355,46 @@ describe('Kernel default children', () => {
       expect(provider.requests.at(-1)).toMatchObject(expected)
       await child.close()
     }
+    await k.close()
+  })
+
+  it('inherits the parent compaction policy for fork and spawn children', async () => {
+    const k = base({ preset: childPreset })
+    const parent = await k.session('parent', { ...sessionOpts, preset: childPreset })
+    for (const kind of ['fork', 'spawn'] as const) {
+      const create = parent.d.children.createWithKind
+      if (!create) throw new Error('child factory has no kind selector')
+      const handle = await create.call(parent.d.children, kind, {
+        parent: parent.key,
+        cwd: '/w',
+        input: `${kind} task`,
+      })
+      const child = k.get(handle.key)
+      expect(child?.preset.compaction).toEqual(parent.preset.compaction)
+      await handle.close()
+    }
+    await k.close()
+  })
+
+  it('offers an enabled compact tool to a runnable child', async () => {
+    const provider = fakeProvider([textTurn('child done')])
+    const k = base({
+      provider,
+      preset: childPreset,
+      compaction: new CompactionRunner({
+        plan: async () => {
+          throw new Error('this test never requests compaction')
+        },
+        onCompact: async () => undefined,
+      }),
+    })
+    const compact = readTool() as ToolDef
+    k.tools.add({ ...compact, name: 'compact' }, { source: 'agnes/test', trust: 'builtin' })
+    const parent = await k.session('parent', { ...sessionOpts, preset: childPreset })
+    const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'task' })
+    await child.run('task')
+    expect(provider.requests[0]?.tools.some((tool) => tool.name === 'compact')).toBe(true)
+    await child.close()
     await k.close()
   })
 
