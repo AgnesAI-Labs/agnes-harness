@@ -56,6 +56,8 @@ Closing the browser, disconnecting the page, or stopping `serve` affects the cli
 
 ## Current interaction boundaries
 
+The built-in right-side document preview supports text, code, Markdown, filtered HTML, and images or PDFs delivered by the session resource service. A resource read failure displays a generic unavailable message; a reclaimed screenshot displays the retention-policy message. Replacing or closing the preview releases its acquired resource URLs and ignores late replies. Closing a preview does not cancel backend work. The workbench CSP permits local Blob URLs for images and frames; remote sources remain blocked, and PDF frames keep their sandbox. Other pages retain their existing CSP. Some browsers block their native PDF viewer inside a sandboxed frame; inline PDF preview is unavailable in those browsers.
+
 Tool results use constrained previews and detail views. They cannot render arbitrary HTML. Do not assume every artifact supports upload, download, or rename, or that every message supports editing and regeneration. The interface exposes actions supported by the current backend. See [verification](../maintainers/verification.md) for the scope of real browser testing.
 
 Implementation: [Web entry](../../packages/web/src/serve-entry.ts), [application](../../packages/web/src/app.ts), [server and origin checks](../../packages/web-server/src/server.ts), [session actions](../../packages/web/src/session-actions.ts).

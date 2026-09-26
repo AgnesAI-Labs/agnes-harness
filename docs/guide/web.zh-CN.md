@@ -46,6 +46,8 @@ Computer Use 显示驱动状态、系统权限、诊断与维护进度。切换�
 
 ## 当前交互边界
 
+内置右栏文档预览支持文本、代码、Markdown、经过过滤的 HTML，以及由会话资源服务提供的图片或 PDF。资源读取失败时显示通用的不可用提示；截图已被回收时显示保留策略清理提示。替换或关闭预览会释放其取得的资源 URL，并忽略迟到回复。关闭预览不会取消后台工作。工作台 CSP 允许图片和框架加载本地 Blob URL，仍拒绝远程来源，PDF 框架保留 sandbox。其他页面维持原有 CSP。部分浏览器不允许在 sandbox 框架中运行原生 PDF 查看器，这些浏览器无法显示内嵌 PDF 预览。
+
 工具结果以受约束预览/详情呈现，不是任意 HTML。不要推定每种产物都支持上传、下载、重命名，或每条消息都有编辑/重新生成；界面只暴露当前后端支持的动作。真实浏览器全链路的验证范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
 实现依据：[Web 入口](../../packages/web/src/serve-entry.ts)、[应用](../../packages/web/src/app.ts)、[服务与来源校验](../../packages/web-server/src/server.ts)、[会话操作](../../packages/web/src/session-actions.ts)。

@@ -1969,7 +1969,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Computer Use: DOM-free snapshots/coordination and subscribed legacy pane; measured exact total.
   // W6a-2: React-owned pane binding, retirement and read-only operation recovery; exact measured total.
   // W6b-1: re-export shared preview policy; independent synchronous facade retained, exact total.
-  'packages/web/src': 13514,
+  // W6b-2: same-tree document rendering and resource state/retirement; countLines exact, +18.
+  'packages/web/src': 13532,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

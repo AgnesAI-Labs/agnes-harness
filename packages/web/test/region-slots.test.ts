@@ -4,7 +4,7 @@ import { Context } from '@agnes/cordis'
 import type { UINode } from '@agnes/protocol'
 import { ClientResourceService, SessionService, SlotRegistry } from '@agnes/web-client'
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   APPROVAL_SLOT,
   CONVERSATION_SLOT,
@@ -614,6 +614,63 @@ describe('DSH rightbar region', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(rightbar.querySelector('#fixture-document-renderer')?.textContent).toBe('指南')
     remove()
+  })
+
+  it('retires Markdown on plugin replacement, returns, then loads a resource without nested roots', async () => {
+    const slots = await registry()
+    const host = document.createElement('aside')
+    document.body.append(host)
+    const session = new SessionService(contexts.at(-1) as Context, 'session-1')
+    const artifact = { sha256: 'f'.repeat(64), size: 2, mime: 'text/plain' }
+    const call = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      artifact,
+      acceptRanges: 'bytes',
+      contentLength: 2,
+      etag: `"${artifact.sha256}"`,
+      base64: 'SGk=',
+    }))
+    const resources = new ClientResourceService(contexts.at(-1) as Context, { call } as never, session)
+    const original = console.error.bind(console)
+    const errors = vi.spyOn(console, 'error').mockImplementation((...args) => original(...args))
+    try {
+      const markdown = mountRightbarRegion(slots, host, {
+        session,
+        document: { id: 'markdown', kind: 'markdown', content: '# Before replacement' },
+      })
+      mounts.push(markdown)
+      await vi.waitFor(() => expect(host.querySelector('h1')?.textContent).toBe('Before replacement'))
+      const remove = slots.register(
+        {
+          name: 'sidebar.right.tab.document',
+          key: 'markdown',
+          id: 'replacement',
+          owner: 'fixture',
+          priority: -1,
+        },
+        () => createElement('button', { type: 'button' }, 'Replacement'),
+      )
+      await vi.waitFor(() => expect(host.querySelector('button')?.textContent).toBe('Replacement'))
+      expect(host.querySelector('h1')).toBeNull()
+      remove()
+      await vi.waitFor(() => expect(host.querySelector('h1')?.textContent).toBe('Before replacement'))
+      markdown.dispose()
+      markdown.dispose()
+      const next = mountRightbarRegion(slots, host, {
+        session,
+        resources,
+        document: { id: 'next', kind: 'text', laneId: 'lane', artifact },
+      })
+      mounts.push(next)
+      await vi.waitFor(() => expect(host.querySelector('pre')?.textContent).toBe('Hi'))
+      expect(call.mock.calls).toHaveLength(1)
+      next.dispose()
+      expect(host.textContent).toBe('')
+      expect(errors.mock.calls.filter((args) => /flushSync|unmount a root/.test(String(args[0])))).toEqual([])
+    } finally {
+      errors.mockRestore()
+    }
   })
 
   it('loads an artifact-backed document through the session resource service', async () => {

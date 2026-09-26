@@ -1377,18 +1377,21 @@ main {
   min-width: 0;
   overflow: auto;
 }
-.rightbar-document-preview > img {
+.rightbar-document-preview > img,
+.rightbar-document-preview > [data-document-preview] > img {
   display: block;
   max-width: 100%;
   height: auto;
 }
-.rightbar-document-preview > iframe {
+.rightbar-document-preview > iframe,
+.rightbar-document-preview > [data-document-preview] > iframe {
   display: block;
   width: 100%;
   min-height: 24rem;
   border: 0;
 }
-.rightbar-document-preview > pre {
+.rightbar-document-preview > pre,
+.rightbar-document-preview > [data-document-preview] > pre {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
