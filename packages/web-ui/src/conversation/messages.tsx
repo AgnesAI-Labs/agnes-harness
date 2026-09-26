@@ -220,6 +220,16 @@ function nativeContent(node: UINode, props: ConversationMessagesProps, hideThink
   }
 }
 
+function isEmptyStreamingAssistant(node: UINode): boolean {
+  return (
+    node.kind === 'assistant' &&
+    node.streaming === true &&
+    !node.text.trim() &&
+    !node.thinking?.trim() &&
+    node.lostChars === undefined
+  )
+}
+
 function Message({
   node,
   props,
@@ -235,6 +245,7 @@ function Message({
       className={`timeline-node ${node.kind}`}
       data-node-id={node.id}
       data-node-kind={node.kind}
+      hidden={isEmptyStreamingAssistant(node)}
       {...(node.kind === 'assistant' ? { 'data-streaming': String(node.streaming === true) } : {})}
       {...(node.kind === 'tool'
         ? { 'data-status': node.status, 'aria-label': `工具 ${node.name}：${toolLabels[node.status]}` }
@@ -330,7 +341,10 @@ function Turn({
   const finalThinking = finalNode?.kind === 'assistant' ? finalNode.thinking?.trim() : undefined
   const processCount =
     others.filter(
-      (node) => node.id !== turn.finalAssistantId && !(node.kind === 'approval' && node.state === 'pending'),
+      (node) =>
+        node.id !== turn.finalAssistantId &&
+        !isEmptyStreamingAssistant(node) &&
+        !(node.kind === 'approval' && node.state === 'pending'),
     ).length + (finalThinking ? 1 : 0)
   const ordered = [...others].sort((a, b) => {
     const rank = (node: UINode) =>
@@ -399,7 +413,7 @@ function Turn({
               <div
                 key={node.id}
                 className={final ? 'turn-final' : attention ? 'turn-attention' : 'turn-process-body'}
-                hidden={!final && !attention && !processOpen}
+                hidden={isEmptyStreamingAssistant(node) || (!final && !attention && !processOpen)}
               >
                 <Message node={node} props={props} hideThinking={final} />
               </div>

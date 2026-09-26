@@ -18,6 +18,7 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
   registry.setSession('session-a')
   const transcript = document.createElement('section')
   transcript.id = 'transcript'
+  transcript.tabIndex = -1
   const button = document.createElement('button')
   document.body.append(transcript, button)
   const mount = mountTranscriptRegion(registry, transcript, {
@@ -27,7 +28,29 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
     ...(options.onFork ? { onFork: options.onFork } : {}),
   })
   mounts.push(mount)
-  return { registry, transcript, mount }
+  return { registry, transcript, button, mount }
+}
+
+function measureTranscript(transcript: HTMLElement) {
+  let top = 0
+  let viewportHeight = 100
+  const height = () => transcript.querySelectorAll('[data-node-id]').length * 100
+  Object.defineProperties(transcript, {
+    scrollHeight: { configurable: true, get: height },
+    clientHeight: { configurable: true, get: () => viewportHeight },
+    scrollTop: {
+      configurable: true,
+      get: () => Math.min(top, Math.max(0, height() - viewportHeight)),
+      set(value: number) {
+        top = Math.min(Math.max(0, value), Math.max(0, height() - viewportHeight))
+      },
+    },
+  })
+  return {
+    resize(value: number) {
+      viewportHeight = value
+    },
+  }
 }
 
 const user: UINode = {
@@ -36,6 +59,7 @@ const user: UINode = {
   seq: 1,
   content: [{ type: 'text', text: 'hello' }],
 }
+const say = (id: string, seq: number, text = id): UINode => ({ kind: 'assistant', id, seq, text })
 const slot = (value: number): UINode =>
   ({
     kind: 'slot',
@@ -475,5 +499,193 @@ describe('W4a opt-in transcript node host', () => {
     expect(transcript.querySelector('[data-turn-id="turn:new"] .turn-final')?.textContent).toContain(
       '唯一回答',
     )
+  })
+
+  it('follows the bottom until a reader scrolls away, then offers and clears new content', async () => {
+    const { transcript, button, mount } = await setup()
+    measureTranscript(transcript)
+    await act(async () => mount.render([say('a', 1), say('b', 2)]))
+    expect(transcript.scrollTop).toBe(100)
+    await act(async () => mount.render([say('a', 1), say('b', 2), say('c', 3)]))
+    expect(transcript.scrollTop).toBe(200)
+    transcript.scrollTop = 20
+    transcript.dispatchEvent(new Event('scroll'))
+    expect(button.hidden).toBe(false)
+    await act(async () => mount.render([say('a', 1), say('b', 2), say('c', 3), say('d', 4)]))
+    expect(transcript.scrollTop).toBe(20)
+    expect(button.hidden).toBe(false)
+    button.click()
+    expect(transcript.scrollTop).toBe(300)
+    expect(button.hidden).toBe(true)
+    expect(document.activeElement).toBe(transcript)
+    await act(async () => mount.render([say('a', 1), say('b', 2), say('c', 3), say('d', 4), say('e', 5)]))
+    expect(transcript.scrollTop).toBe(400)
+    transcript.scrollTop = 250
+    transcript.dispatchEvent(new Event('scroll'))
+    expect(button.hidden).toBe(false)
+    transcript.scrollTop = 400
+    transcript.dispatchEvent(new Event('scroll'))
+    expect(button.hidden).toBe(true)
+    await act(async () =>
+      mount.render([say('a', 1), say('b', 2), say('c', 3), say('d', 4), say('e', 5), say('f', 6)]),
+    )
+    expect(transcript.scrollTop).toBe(500)
+  })
+
+  it('keeps following after an external approval or panel changes the viewport', async () => {
+    const { transcript, mount } = await setup()
+    const measured = measureTranscript(transcript)
+    await act(async () => mount.render([say('a', 1), say('b', 2), say('c', 3)]))
+    expect(transcript.scrollTop).toBe(200)
+    measured.resize(50)
+    mount.pinToBottom()
+    expect(transcript.scrollTop).toBe(250)
+    await act(async () => mount.render([say('a', 1), say('b', 2), say('c', 3), say('d', 4)]))
+    expect(transcript.scrollTop).toBe(350)
+  })
+
+  it('loads one earlier page at a time and preserves the reader anchor across prepend and replay', async () => {
+    const { transcript, button, mount } = await setup()
+    measureTranscript(transcript)
+    let finishLoad: (() => void) | undefined
+    const loadEarlier = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLoad = resolve
+        }),
+    )
+    const tail = [say('c', 3), say('d', 4), say('e', 5)]
+    await act(async () => mount.render(tail, [], { hasEarlier: true, loadEarlier }))
+    const earlier = transcript.querySelector<HTMLElement>('.transcript-earlier')
+    const loadButton = earlier?.querySelector<HTMLButtonElement>('button')
+    expect(earlier?.hidden).toBe(false)
+    transcript.scrollTop = 20
+    transcript.dispatchEvent(new Event('scroll'))
+    loadButton?.click()
+    loadButton?.click()
+    await act(async () => mount.render(tail, [], { hasEarlier: true, loadEarlier }))
+    loadButton?.click()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    await act(async () => finishLoad?.())
+    const old = item(transcript, 'c')
+    const all = [say('a', 1), say('b', 2), ...tail]
+    await act(async () => mount.render(all, [], { hasEarlier: false }))
+    expect(earlier?.hidden).toBe(true)
+    expect(transcript.scrollTop).toBe(220)
+    expect(item(transcript, 'c')).toBe(old)
+    expect(
+      [...transcript.querySelectorAll('[data-node-id]')].map((node) => node.getAttribute('data-node-id')),
+    ).toEqual(['a', 'b', 'c', 'd', 'e'])
+    await act(async () => mount.render(all, [], { hasEarlier: false }))
+    expect(transcript.querySelectorAll('[data-node-id]')).toHaveLength(5)
+    expect(transcript.scrollTop).toBe(220)
+    expect(button.hidden).toBe(false)
+  })
+
+  it('keeps a new history request locked when a pre-reset request settles', async () => {
+    const { transcript, mount } = await setup()
+    let finishOld: (() => void) | undefined
+    let finishNew: (() => void) | undefined
+    const oldLoad = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishOld = resolve
+        }),
+    )
+    const newLoad = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishNew = resolve
+        }),
+    )
+    await act(async () => mount.render([say('old', 1)], [], { hasEarlier: true, loadEarlier: oldLoad }))
+    transcript.querySelector<HTMLButtonElement>('.transcript-earlier button')?.click()
+    expect(oldLoad).toHaveBeenCalledTimes(1)
+    await act(async () => mount.reset())
+    await act(async () => mount.render([say('new', 1)], [], { hasEarlier: true, loadEarlier: newLoad }))
+    const button = transcript.querySelector<HTMLButtonElement>('.transcript-earlier button')
+    button?.click()
+    expect(newLoad).toHaveBeenCalledTimes(1)
+    await act(async () => finishOld?.())
+    button?.click()
+    expect(newLoad).toHaveBeenCalledTimes(1)
+    await act(async () => finishNew?.())
+    button?.click()
+    expect(newLoad).toHaveBeenCalledTimes(2)
+    await act(async () => finishNew?.())
+  })
+
+  it('keeps a fire-and-forget history callback locked until another projection arrives', async () => {
+    const { transcript, mount } = await setup()
+    const loadEarlier = vi.fn(() => undefined)
+    const nodes = [say('c', 3)]
+    await act(async () => mount.render(nodes, [], { hasEarlier: true, loadEarlier }))
+    const button = transcript.querySelector<HTMLButtonElement>('.transcript-earlier button')
+    button?.click()
+    await act(async () => Promise.resolve())
+    button?.click()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    await act(async () => mount.render(nodes, [], { hasEarlier: true, loadEarlier }))
+    button?.click()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+  })
+
+  it('releases the history lock after a failed page and cleans the observer on unmount', async () => {
+    const observed: Array<{ disconnect: ReturnType<typeof vi.fn>; notify: () => void }> = []
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        disconnect = vi.fn()
+        notify: () => void
+        constructor(callback: IntersectionObserverCallback) {
+          this.notify = () => callback([{ isIntersecting: true } as IntersectionObserverEntry], this as never)
+          observed.push(this)
+        }
+        observe() {}
+      },
+    )
+    try {
+      const { transcript, button, mount } = await setup()
+      const loadEarlier = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('temporary history failure'))
+        .mockResolvedValueOnce(undefined)
+      await act(async () => mount.render([say('a', 1)], [], { hasEarlier: true, loadEarlier }))
+      observed.at(-1)?.notify()
+      await act(async () => Promise.resolve())
+      transcript.querySelector<HTMLButtonElement>('.transcript-earlier button')?.click()
+      expect(loadEarlier).toHaveBeenCalledTimes(2)
+      await act(async () => mount.dispose())
+      expect(observed.at(-1)?.disconnect).toHaveBeenCalledTimes(1)
+      const focus = vi.spyOn(transcript, 'focus')
+      button.click()
+      expect(focus).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('resets history, follow state and reused node IDs when the selected session changes', async () => {
+    const { registry, transcript, button, mount } = await setup()
+    measureTranscript(transcript)
+    await act(async () =>
+      mount.render([say('same', 1, 'old'), say('b', 2), say('c', 3)], [], {
+        hasEarlier: true,
+        loadEarlier: () => undefined,
+      }),
+    )
+    const previous = item(transcript, 'same')
+    transcript.scrollTop = 20
+    transcript.dispatchEvent(new Event('scroll'))
+    expect(button.hidden).toBe(false)
+    registry.setSession('session-b')
+    await act(async () => mount.reset())
+    await act(async () => mount.render([say('same', 1, 'new')], [], { hasEarlier: false }))
+    expect(item(transcript, 'same')).not.toBe(previous)
+    expect(item(transcript, 'same')?.textContent).toContain('new')
+    expect(transcript.querySelectorAll('[data-node-id]')).toHaveLength(1)
+    expect(transcript.querySelector<HTMLElement>('.transcript-earlier')?.hidden).toBe(true)
+    expect(transcript.scrollTop).toBe(0)
+    expect(button.hidden).toBe(true)
   })
 })

@@ -795,10 +795,10 @@ function renderApproval(): void {
   })
   if (stick) renderer.pinToBottom()
 }
-function transcriptMeta(): { hasEarlier: boolean; loadEarlier?: () => void } {
+function transcriptMeta(): { hasEarlier: boolean; loadEarlier?: () => Promise<unknown> } {
   const session = live
   if (!session?.hasEarlier()) return { hasEarlier: false }
-  return { hasEarlier: true, loadEarlier: () => void session.loadEarlier().catch(showError) }
+  return { hasEarlier: true, loadEarlier: () => session.loadEarlier().catch(showError) }
 }
 /** Loads earlier pages, `limit` at most, until the parked approval's node is loaded. */
 function searchApproval(limit?: number): void {

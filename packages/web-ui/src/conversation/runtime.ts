@@ -89,7 +89,9 @@ function displayText(node: Exclude<UINode, { kind: 'context' | 'context-sections
 function isConversationNode(node: UINode): node is Exclude<UINode, { kind: 'context' | 'context-sections' }> {
   if (node.kind === 'context' || node.kind === 'context-sections') return false
   if (node.kind === 'assistant')
-    return Boolean(node.text.trim() || node.thinking?.trim() || node.lostChars !== undefined)
+    return Boolean(
+      node.streaming || node.text.trim() || node.thinking?.trim() || node.lostChars !== undefined,
+    )
   return true
 }
 
