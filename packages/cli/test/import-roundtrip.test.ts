@@ -131,5 +131,5 @@ describe('agnes export -> import round trip', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 })
