@@ -115,6 +115,38 @@ it('keeps the wire system string byte-identical across a real model switch', asy
   // The other axis (installing a tool-contributing extension) is host/test/assemble/plugin-extension.test.ts.
 }, 30_000)
 
+it('shares the system prefix across two sessions in the same workspace', async () => {
+  const dataDir = scratch()
+  const provider = fakeProvider([textTurn('first'), textTurn('second')], HOST_PARSER_VERSION)
+  const { host } = await createTestHost({
+    dataDir,
+    provider,
+    disableSessionTitle: true,
+    packageDirs: { '@agnes/base': BASE_PACKAGE_DIR },
+    packages: { '@agnes/code': { operations } },
+  })
+  try {
+    for (const key of ['session-one', 'session-two']) {
+      const session = await host.createSession({ cwd: dataDir, key })
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'hello' }],
+        actor: session.d.actor,
+        kind: 'prompt',
+      })
+      await expect(
+        session.run({ until: 'turn-end', signal: new AbortController().signal }),
+      ).resolves.toMatchObject({ reason: 'completed' })
+    }
+    expect(provider.requests).toHaveLength(2)
+    const [first, second] = provider.requests
+    expect(first?.system).toBe(second?.system)
+    expect(runtimeContextText(first as RequestBody)).toContain('session-one')
+    expect(runtimeContextText(second as RequestBody)).toContain('session-two')
+  } finally {
+    await host.close()
+  }
+})
+
 it.each(['standard', 'hybrid', 'code'] as const)(
   'sends the real prompt operation SDK only in the %s tier',
   async (disclosure) => {

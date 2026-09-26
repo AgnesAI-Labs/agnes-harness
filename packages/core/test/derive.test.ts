@@ -229,6 +229,30 @@ describe('deriveRequest', () => {
     expect(third.request.messages).toHaveLength(2)
   })
 
+  it('appends a new tail snapshot when only the UTC date changes without rewriting prior bytes', () => {
+    seq = 0
+    const first = deriveRequest({
+      ...base(),
+      surface: [],
+      merged: { ...base().merged, runtimeContext: { date: '2026-09-09', cwd: '/w' } },
+    })
+    const event = first.runtimeContext.event
+    if (!event) throw new Error('the first date snapshot was not emitted')
+    const sent = ev(event.type, event.data, { origin: 'system' })
+    const second = deriveRequest({
+      ...base(),
+      surface: computeSurface([sent], {}),
+      merged: { ...base().merged, runtimeContext: { date: '2026-09-10', cwd: '/w' } },
+    })
+    expect(second.request.sections).toEqual(first.request.sections)
+    expect(second.runtimeContext.changed).toBe(true)
+    expect(
+      second.request.messages.slice(0, first.request.messages.length).map((message) => message.content),
+    ).toEqual(first.request.messages.map((message) => message.content))
+    expect(second.request.messages.at(-1)).toMatchObject({ role: 'user' })
+    expect(JSON.stringify(second.request.messages.at(-1))).toContain('2026-09-10')
+  })
+
   it('does not mistake a harness note riding the same message kind for the snapshot', () => {
     // The stop gate and the truncated-output path both send notes as `kind: 'runtime_context'`
     // user messages. A note is not a snapshot: it must neither satisfy the comparison on its own
