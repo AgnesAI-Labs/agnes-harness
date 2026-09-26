@@ -137,6 +137,9 @@ it('keeps one recovered answer and projects a later request through live project
   })
   try {
     await act(async () => live.start())
+    const placeholder = transcript.querySelector<HTMLElement>('[data-node-id="a1"]')
+    expect(placeholder?.hidden).toBe(true)
+    expect(transcript.querySelector<HTMLElement>('.turn-status')?.hidden).toBe(false)
     await act(async () => {
       for (const listener of previewListeners)
         listener({
@@ -149,15 +152,26 @@ it('keeps one recovered answer and projects a later request through live project
         })
     })
     const firstArticle = transcript.querySelector<HTMLElement>('[data-node-id="a1"]')
+    expect(firstArticle).toBe(placeholder)
     expect(firstArticle?.textContent).toContain('partial')
+    const selection = document.getSelection()
+    const retainedParagraph = firstArticle?.querySelector('.node-body p')
+    const retainedRange = document.createRange()
+    retainedRange.selectNodeContents(retainedParagraph?.firstChild ?? transcript)
+    selection?.removeAllRanges()
+    selection?.addRange(retainedRange)
     connection.connectionState = 'reconnecting'
     connection.emit('reconnecting')
     connection.connectionState = 'connected'
     connection.emit('reconnected')
     await vi.waitFor(() => expect(session.projectUIOpening).toHaveBeenCalledTimes(2))
-    await vi.waitFor(() => expect(firstArticle?.hidden).toBe(true))
+    expect(firstArticle?.hidden).toBe(false)
     expect(transcript.querySelector('[data-node-id="a1"]')).toBe(firstArticle)
-    expect(transcript.querySelector<HTMLElement>('.turn-status')?.hidden).toBe(false)
+    expect(firstArticle?.textContent).toContain('partial')
+    expect(firstArticle?.querySelector('.node-body p')).toBe(retainedParagraph)
+    expect(selection?.toString()).toBe('partial')
+    selection?.removeAllRanges()
+    document.dispatchEvent(new Event('selectionchange'))
     await act(async () => {
       for (const listener of previewListeners)
         listener({
@@ -166,14 +180,14 @@ it('keeps one recovered answer and projects a later request through live project
           effectId: 'e1',
           stream: 'text',
           offset: 0,
-          delta: 'partial continued',
+          delta: 'restarted output',
         })
     })
     expect(transcript.querySelector('[data-node-id="a1"]')).toBe(firstArticle)
     expect(firstArticle?.hidden).toBe(false)
-    expect(firstArticle?.textContent).toContain('partial continued')
+    expect(firstArticle?.textContent).toContain('restarted output')
+    expect(firstArticle?.textContent).not.toContain('partial')
     const paragraph = firstArticle?.querySelector('.node-body p')
-    const selection = document.getSelection()
     const range = document.createRange()
     range.selectNodeContents(paragraph?.firstChild ?? transcript)
     selection?.removeAllRanges()
@@ -185,37 +199,59 @@ it('keeps one recovered answer and projects a later request through live project
           lane: 'main',
           effectId: 'e1',
           stream: 'text',
-          offset: 'partial continued'.length,
+          offset: 'restarted output'.length,
           delta: ' done',
         })
     })
     expect(firstArticle?.querySelector('.node-body p')).toBe(paragraph)
-    expect(selection?.toString()).toBe('partial continued')
+    expect(selection?.toString()).toBe('restarted output')
     state.upto = 3
-    state.nodes[1] = assistant('a1', 2, 'e1', 'partial continued done', false)
+    state.nodes[1] = assistant('a1', 2, 'e1', 'restarted output done', false)
     state.turns[0] = turn('t1', ['u1', 'a1'], 'completed', 'a1')
     await act(async () => live.refresh())
     await vi.waitFor(() =>
       expect(transcript.querySelector('[data-turn-id="t1"]')?.getAttribute('data-status')).toBe('completed'),
     )
-    expect(seen.at(-1)).toEqual({ text: 'partial continued done', status: 'completed' })
+    expect(seen.at(-1)).toEqual({ text: 'restarted output done', status: 'completed' })
     expect(transcript.querySelector('[data-node-id="a1"]')).toBe(firstArticle)
-    expect(selection?.toString()).toBe('partial continued')
+    expect(selection?.toString()).toBe('restarted output')
     selection?.removeAllRanges()
     document.dispatchEvent(new Event('selectionchange'))
-    await vi.waitFor(() => expect(firstArticle?.textContent).toContain('partial continued done'))
+    await vi.waitFor(() => expect(firstArticle?.textContent).toContain('restarted output done'))
     state.upto = 5
-    state.nodes.push(user('u2', 4, 'second request'), assistant('a2', 5, 'e2', 'second answer', false))
-    state.turns.push(turn('t2', ['u2', 'a2'], 'completed', 'a2'))
+    state.nodes.push(user('u2', 4, 'second request'), assistant('a2', 5, 'e2', '', true))
+    state.turns.push(turn('t2', ['u2', 'a2'], 'running'))
     await act(async () => live.refresh())
-    await vi.waitFor(() =>
-      expect(transcript.querySelector('[data-node-id="a2"]')?.textContent).toContain('second answer'),
-    )
+    await vi.waitFor(() => expect(transcript.querySelector('[data-node-id="a2"]')).toBeTruthy())
+    await act(async () => {
+      for (const listener of previewListeners)
+        listener({
+          sessionId: 's',
+          lane: 'main',
+          effectId: 'e2',
+          stream: 'text',
+          offset: 0,
+          delta: 'second partial',
+        })
+    })
+    const secondArticle = transcript.querySelector('[data-node-id="a2"]')
+    expect(secondArticle?.textContent).toContain('second partial')
+    connection.connectionState = 'reconnecting'
+    connection.emit('reconnecting')
+    connection.connectionState = 'connected'
+    connection.emit('reconnected')
+    await vi.waitFor(() => expect(session.projectUIOpening).toHaveBeenCalledTimes(3))
+    expect(transcript.querySelector('[data-node-id="a2"]')).toBe(secondArticle)
+    expect(secondArticle?.textContent).toContain('second partial')
+    state.upto = 6
+    state.nodes[3] = assistant('a2', 5, 'e2', 'second answer', false)
+    state.turns[1] = turn('t2', ['u2', 'a2'], 'completed', 'a2')
+    await act(async () => live.refresh())
+    await vi.waitFor(() => expect(secondArticle?.textContent).toContain('second answer'))
     expect(
       [...transcript.querySelectorAll('[data-node-id]')].map((node) => node.getAttribute('data-node-id')),
     ).toEqual(['u1', 'a1', 'u2', 'a2'])
     expect(transcript.querySelectorAll('[data-node-id="a1"]')).toHaveLength(1)
-    const secondArticle = transcript.querySelector('[data-node-id="a2"]')
     const patchCount = session.projectUIPatch.mock.calls.length
     await act(async () => live.refresh())
     await vi.waitFor(() => expect(session.projectUIPatch.mock.calls.length).toBeGreaterThan(patchCount))

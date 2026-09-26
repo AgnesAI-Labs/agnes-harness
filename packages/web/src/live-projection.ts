@@ -47,7 +47,37 @@ export function createLiveProjection(
 ): LiveProjection {
   const merger = new PreviewMerger()
   let authoritative: UITimeline | undefined
+  let shown: UITimeline | undefined
   let window: UIProjectionWindow | undefined
+  const continuity = new Map<string, { text: string; thinking?: string }>()
+
+  // The SDK resets offset accounting after reconnect. Keep only the last displayed text while
+  // the new authoritative opening is empty; the first fresh preview or committed result replaces it.
+  const display = (value: UITimeline): UITimeline => {
+    const projected = merger.apply(value)
+    if (continuity.size === 0) {
+      shown = projected
+      return projected
+    }
+    let nodes: UITimeline['nodes'] | undefined
+    const retained = new Set<string>()
+    for (const [index, node] of projected.nodes.entries()) {
+      if (node.kind !== 'assistant' || !node.streaming || !node.effectId) continue
+      const previous = continuity.get(node.effectId)
+      if (!previous) continue
+      if (node.text || node.thinking) continue
+      retained.add(node.effectId)
+      nodes ??= [...projected.nodes]
+      nodes[index] = {
+        ...node,
+        text: previous.text,
+        ...(previous.thinking ? { thinking: previous.thinking } : {}),
+      }
+    }
+    for (const effectId of continuity.keys()) if (!retained.has(effectId)) continuity.delete(effectId)
+    shown = nodes ? { ...projected, nodes } : projected
+    return shown
+  }
 
   const sync = new UIProjectionSync(
     session,
@@ -55,14 +85,15 @@ export function createLiveProjection(
       timeline(value, at) {
         window = at
         authoritative = value
-        sink.timeline(merger.apply(value), at)
+        sink.timeline(display(value), at)
       },
       preview(p) {
         if (!merger.add(p) || !authoritative) return
+        continuity.delete(p.effectId)
         // Only a node already on screen repaints; one still on its way gets the text when it lands.
         if (!authoritative.nodes.some((node) => node.kind === 'assistant' && node.effectId === p.effectId))
           return
-        sink.stream(merger.apply(authoritative))
+        sink.stream(display(authoritative))
       },
       event: (event) => sink.event(event),
       error: (error) => sink.error(error),
@@ -77,12 +108,25 @@ export function createLiveProjection(
     },
   )
   // A new connection or worker generation may have ended any stream this client was following.
-  const offReconnected = connection.on('reconnected', () => merger.reset())
+  const offReconnected = connection.on('reconnected', () => {
+    continuity.clear()
+    for (const node of shown?.nodes ?? []) {
+      if (node.kind !== 'assistant' || !node.streaming || !node.effectId) continue
+      if (node.text || node.thinking)
+        continuity.set(node.effectId, {
+          text: node.text,
+          ...(node.thinking ? { thinking: node.thinking } : {}),
+        })
+    }
+    merger.reset()
+  })
 
   return {
     start: () => sync.start(),
     stop: () => {
       offReconnected()
+      continuity.clear()
+      shown = undefined
       return sync.stop()
     },
     refresh: () => sync.refresh(),

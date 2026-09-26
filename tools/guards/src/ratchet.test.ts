@@ -1954,8 +1954,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // 2026-09-25 UI refactor: shared controls and React region rendering in the settings perimeter.
   // Re-measured with countLines(): 13300, exact, no spare.
-  // W4c opt-in scroll/history behavior and promise-backed page loading. Exact count.
-  'packages/web/src': 13766,
+  // W4c scroll/history and user-selected stream continuity across reconnect. Exact count.
+  'packages/web/src': 13807,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
