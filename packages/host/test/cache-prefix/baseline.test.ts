@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
 import { operations as codeOperations } from '@agnes/code'
+import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
 import {
   createTestHost,
@@ -16,12 +17,23 @@ import {
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const apis: readonly WireApi[] = ['anthropic-messages', 'openai-completions', 'openai-responses']
 
+function writeWireCredential(dataDir: string): string {
+  const credentials = join(dataDir, 'credentials')
+  createPrivateDirectorySync(credentials)
+  createPrivateDirectorySync(join(credentials, 'test'))
+  const file = createPrivateFileSync(join(credentials, 'test', 'wire'))
+  try {
+    writeFileSync(file, 'synthetic-wire-capture')
+  } finally {
+    closeSync(file)
+  }
+  return credentials
+}
+
 describe('real provider wire prefix baseline', () => {
   it.each(apis)('%s keeps tools, system and prior messages on a normal append-only turn', async (api) => {
     const dataDir = mkdtempSync(join(tmpdir(), 'agnes-wire-prefix-'))
-    const credentials = join(dataDir, 'credentials')
-    mkdirSync(join(credentials, 'test'), { recursive: true, mode: 0o700 })
-    writeFileSync(join(credentials, 'test', 'wire'), 'synthetic-wire-capture', { mode: 0o600 })
+    const credentials = writeWireCredential(dataDir)
     const capture = await startWireCapture(() => ({ text: 'fixture reply' }))
     try {
       const baseUrl = capture.baseUrl(api)
@@ -72,9 +84,7 @@ describe('real provider wire prefix baseline', () => {
   it.each(apis)('%s fixture carries a tool call and its result in the next request', async (api) => {
     const dataDir = mkdtempSync(join(tmpdir(), 'agnes-wire-tool-'))
     writeFileSync(join(dataDir, 'probe.txt'), 'fixture file body')
-    const credentials = join(dataDir, 'credentials')
-    mkdirSync(join(credentials, 'test'), { recursive: true, mode: 0o700 })
-    writeFileSync(join(credentials, 'test', 'wire'), 'synthetic-wire-capture', { mode: 0o600 })
+    const credentials = writeWireCredential(dataDir)
     let requests = 0
     const capture = await startWireCapture(() => {
       requests++
