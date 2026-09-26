@@ -210,8 +210,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  // W4c retains empty streaming assistant identity across recovery. Exact count.
-  'packages/web-ui/src': 1065,
+  // W5a adds static XMarkdown and policy, including literal malformed-tag recovery. Exact: 1329.
+  'packages/web-ui/src': 1329,
   'packages/web-units/src': 3172,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
@@ -556,9 +556,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // directly: 187, exact.
   // 2026-09-17: local packaging copies the fixed-Hermes MIT NOTICE into the transactional output;
   // SEA reuses that exact directory. Measured build-local total: 203; exact cap.
-  // 2026-09-26: match Web's shared React/UI vendor graph and ship Ant Design, tokens and
-  // conversation styles in local CLI output. Measured with countLines(): 269, exact cap.
-  'packages/cli/tools/build-local': 269,
+  // W5a merges pinned XMarkdown CSS and ships its MIT license with the local Web assets.
+  // Measured with countLines(): 287, exact cap.
+  'packages/cli/tools/build-local': 287,
   // The PM5 bootstrap fallback retains the existing scoped owner/data-dir contract when a selected
   // Profile has not yet been materialized. The final recovery retry admits only an explicit
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility

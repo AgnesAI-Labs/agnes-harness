@@ -53,3 +53,15 @@ the report block.
 
 The complete evidence, component and asset proposal, limitations and continuation are in
 `docs/task-records/b-line-w5a-0-xmarkdown.md` in this checkout (task records are locally ignored).
+
+## W5a production vendor browser probe
+
+After `pnpm --filter @agnes/cli build:local`, run `node tools/test-fixtures/b-line-xmarkdown/build-production.mjs`.
+It copies that build's `web/` output into `/private/tmp/agh-w5a-production-browser`, replaces
+only the three HTML probe pages and `/app.js`, and keeps the production vendor, style and token
+assets. Serve the resulting root with `pnpm exec tsx packages/web/src/serve-entry.ts --ws
+ws://127.0.0.1:4199 --port 4198 --root /private/tmp/agh-w5a-production-browser`. Open `/`,
+`/admin/plugins` and `/admin/resources` in Chrome. The same import map and CSP serve a hook
+probe plus actual `ConversationMarkdown` static/body/thinking/theme/safety/copy controls.
+This is an opt-in boundary probe; the default CLI pages remain unmodified. Stop the server after
+inspection. The temporary output can be rebuilt or discarded.
