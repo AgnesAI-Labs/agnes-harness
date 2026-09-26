@@ -10,6 +10,55 @@ const actor: Actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs
 type CommandFrame = Parameters<typeof handleCommand>[1]
 
 describe('worker command dispatch against a real host+session', () => {
+  it('reads tool detail through the worker command boundary in bounded pages', async () => {
+    const t = await openTestHost()
+    try {
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      const appended = await session.append([
+        session.ev('turn/start', { turn: 1, trigger: 'prompt' }),
+        session.ev('step/start', { turn: 1, step: 1 }),
+        session.ev('tool/call', { toolUseId: 'detail', name: 'read', args: { path: 'full' }, ordinal: 0 }),
+        session.ev('tool/result', {
+          toolUseId: 'detail',
+          content: [{ type: 'text', text: 'full result'.repeat(200) }],
+          isError: false,
+          enforcement: { level: 'full', scope: [] },
+          authz: { decisionId: 'd' },
+        }),
+        session.ev('step/end', { turn: 1, step: 1 }),
+        session.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+      ])
+      const callSeq = appended.seqs[2] as number
+      const resultSeq = appended.seqs[3] as number
+      const pieces: Buffer[] = []
+      let offset = 0
+      for (;;) {
+        const reply = (await handleCommand(
+          session,
+          {
+            kind: 'command',
+            requestId: String(offset),
+            method: 'readToolDetail',
+            params: { callSeq, resultSeq, offset, maxBytes: 128 },
+          },
+          { host: t.host, aborts: new Map() },
+        )) as { ok: true; page: { data: string; nextOffset: number | null } }
+        expect(reply.ok).toBe(true)
+        pieces.push(Buffer.from(reply.page.data, 'base64'))
+        if (reply.page.nextOffset === null) break
+        offset = reply.page.nextOffset
+      }
+      const detail = JSON.parse(Buffer.concat(pieces).toString('utf8')) as {
+        call: { args: unknown }
+        result: { content: unknown }
+      }
+      expect(detail.call.args).toEqual({ path: 'full' })
+      expect(detail.result.content).toEqual([{ type: 'text', text: 'full result'.repeat(200) }])
+    } finally {
+      await t.close()
+    }
+  })
+
   it('maps enqueue/run/latest/scan and aborts a run by runId', async () => {
     const t = await openTestHost({ script: [say('hi')] })
     const session = await t.host.createSession({ cwd: t.dataDir })

@@ -92,7 +92,8 @@ describe.runIf(process.platform === 'win32')('Windows credential store', () => {
     writeFileSync(file, contents)
     await expect(store.read(ref)).rejects.toMatchObject({ reason: 'too-large' })
     await expect(store.putApiKey(ref, 'replacement')).rejects.toMatchObject({ reason: 'too-large' })
-    expect(readFileSync(file)).toEqual(contents)
+    // Buffer.equals: a deep toEqual walks the megabyte byte by byte and alone takes seconds here.
+    expect(readFileSync(file).equals(contents)).toBe(true)
   })
   it('refuses a broadly accessible existing root without changing its ACL or contents', async () => {
     mkdirSync(root)

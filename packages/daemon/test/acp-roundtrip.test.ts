@@ -466,6 +466,7 @@ describe('result validation', () => {
     await ep.close()
   })
 
+  // A real test Host: well under a second alone, 2 to 6 s on the Windows runner.
   it('session/load cannot claim an unseen id even when the caller supplies a cwd', async () => {
     const h = await openTestHost({ script: [say('hi')] })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
@@ -483,8 +484,9 @@ describe('result validation', () => {
     })
     await ep.close()
     await h.close()
-  })
+  }, 30_000)
 
+  // A real test Host: well under a second alone, 2 to 6 s on the Windows runner.
   it('rejects an unseen id with an empty cwd through the same fixed ownership denial', async () => {
     const h = await openTestHost({ script: [say('hi')] })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
@@ -501,7 +503,7 @@ describe('result validation', () => {
     })
     await ep.close()
     await h.close()
-  })
+  }, 30_000)
 })
 
 describe('outbound validation', () => {

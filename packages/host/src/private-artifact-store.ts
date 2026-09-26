@@ -16,9 +16,9 @@ import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
   createPrivateFileSync,
+  hasPrivateDaclSync,
   renameWriteThroughSync,
   windowsEnsurePrivateDirectorySync,
-  windowsOpenPrivateFileSync,
   windowsWritePrivateFile,
 } from '@agnes/system-node'
 import { createPlatform } from './adapters/platform.js'
@@ -93,12 +93,14 @@ export function ensurePosixPrivateDirectory(path: string): void {
 }
 
 function validatePrivateFile(path: string, label: string): void {
+  const stat = lstatSync(path)
   if (createPlatform().os === 'win32') {
-    const handle = windowsOpenPrivateFileSync(path)
-    closeSync(handle)
+    // Inspected without opening the file's data: a read handle that refuses to share writing cannot
+    // be opened while any SQLite connection, in this process or another, holds the database open.
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || !hasPrivateDaclSync(path))
+      throw new Error(`${label} is unsafe`)
     return
   }
-  const stat = lstatSync(path)
   if (
     !stat.isFile() ||
     stat.isSymbolicLink() ||

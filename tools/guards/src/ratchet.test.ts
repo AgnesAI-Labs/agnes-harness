@@ -1,5 +1,3 @@
-// 2026-09-25 CSP nonce wiring: measured after shared Antd root wrapper and all production root call sites;
-// packages/web-ui/src 450, packages/web/src 13303. Exact measured totals, no spare allocation.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
 // PLUGIN-HELPER merge with b/main@8f2e20e7: daemon 25955, Host 38018, measured combined source.
@@ -364,7 +362,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines() on the merged tree: 1767, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
-  'packages/web/src/app': 1776,
+  // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
+  // Daemon-restart recovery: the page probes its own bootstrap before reloading and keeps a visible
+  // manual retry after the automatic window. Measured 1811, exact, no spare (+28).
+  // Reload only into a new daemon address, recover after a failed first connection, resume on
+  // tab show, and a notice consistent with the recovery status. Measured 1824, exact (+13).
+  'packages/web/src/app': 1824,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -394,7 +397,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  // W4a explicitly disposes legacy slot roots on node removal and direct renderer disposal. Exact 735.
   'packages/web/src/timeline': 735,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
@@ -887,7 +889,24 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O5 review fix: the register map keeps the set of op lanes beside its cells, so the
   // per-append relation check and lease renewal stop copying the whole table. Measured +16 on its
   // own base; with the batch-scan fix above the combined tree measures 25229, exact, no spare.
-  'packages/core/src': 25229,
+  // FOLD-CACHE-REMOVAL: the fold cache goes - its codec and write policy, the storage field and
+  // reader, the per-append trial fold and the open-time restore; every open folds from seq 1.
+  // Measured 25019, exact, no spare (-210).
+  // FOLD-CACHE-REMOVAL follow-up: encodeLedgerState, used only by tests, moves to the testkit.
+  // Measured 24962, exact, no spare (-57).
+  // Multi-step phase transitions committed as one append; a tool call's approval, intent and first
+  // dispatch now commit together. Measured 25013, exact, no spare (+51).
+  // A tool result and its settlement commit together through the same chain. Measured 25007, exact,
+  // no spare (-6).
+  // Trajectory inspection adds the optional tool result sequence. Combined source: 25008, exact.
+  // Delegated children open with the sandbox their workspace reservation carries. Measured 25010,
+  // exact, no spare (+2).
+  // A spawned child's run goes through a Host admission port. Measured 25020, exact, no spare (+10).
+  // Cancelling a child's creation also settles its execution state, in the same write. Measured
+  // 25024, exact, no spare (+4).
+  // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
+  // no spare (+2).
+  'packages/core/src': 25026,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1112,7 +1131,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // SINGLE-EXTENSION-PATH staged handoff: Skills/MCP rows, four row-owned services and Web
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
-  'packages/host/src/assemble': 4192,
+  // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
+  'packages/host/src/assemble': 4193,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1186,7 +1206,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O5: op.state leaves the event types; validateOpState exported for the register cell (the
   // formatter splits the validate.js export list once it no longer fits a line). Measured 2194,
   // exact, no spare (+9).
-  'packages/protocol/src': 2194,
+  // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
+  'packages/protocol/src': 2201,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1368,7 +1389,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5074, exact, no spare (+119).
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
-  'packages/sdk/src': 5051,
+  // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
+  'packages/sdk/src': 5127,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1723,7 +1745,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // not INTERNAL: open-path mapping, approval reopen and the endpoint audit (+23). Re-measured on this tree:
   // 26440, exact, no spare.
-  'packages/daemon/src': 26440,
+  // WIN-SHORT-NAMES: the Skill watcher hands fs.watch the native (long) spelling on Windows, since
+  // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
+  // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
+  'packages/daemon/src': 26495,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -1954,10 +1979,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (13161) with the streaming-smoothness quick fixes (13313): the preview
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
-  // 2026-09-25 UI refactor: shared controls and React region rendering in the settings perimeter.
-  // Re-measured with countLines(): 13300, exact, no spare.
-  // W4c scroll/history and user-selected stream continuity across reconnect. Exact count.
-  'packages/web/src': 13807,
+  "packages/web/src": 13807,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2035,7 +2057,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20: biome format of runner/draw.ts wrapped long ACP option lines. Re-measured: 5131, exact.
   // 2026-09-23 terminal-client recovery: one supervised Runner at a time, teardown before rebuild.
   // Measured 5250 with countLines(); the guard still rejects any further growth.
-  'packages/channels/src': 5250,
+  // Durable WAL checkpoints on darwin: the outbound ref store sets checkpoint_fullfsync.
+  // Measured 5252, exact, no spare (+2).
+  'packages/channels/src': 5252,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
@@ -2402,7 +2426,22 @@ const INITIAL_CEILING: Record<string, number> = {
   // re-measured, exact, no spare.
   // SKILL-CATALOG-CLEAN-REWRITE merge: retained skill-preload header (+4), combined exact total.
   // Skill import and approved reinstall on the merged tree: measured 38038, no spare.
-  'packages/host/src': 38038,
+  // WIN-SHORT-NAMES: the local fence spells paths as the native resolver does on Windows, so 8.3
+  // short names and long names canonicalize alike; measured 38069, exact, no spare (+31).
+  // WIN-SQLITE-CLOSE: storage-sqlite closes a database it refused or failed to open (+13).
+  // Measured 38050, exact, no spare.
+  // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
+  // FOLD-CACHE-REMOVAL: SQLite no longer stores the fold cache; the old table is dropped on open.
+  // (-52). Measured on this tree: 38030, exact, no spare.
+  // Durable WAL checkpoints on darwin: the ledger, table-store and GC ledger-lock connections set
+  // checkpoint_fullfsync through one small helper. Measured 38043, exact, no spare (+13).
+  // Delegated child reservations carry the workspace-fitted sandbox under the same guard as a root
+  // session. Measured 38075, exact, no spare (+32).
+  // A spawned child's run is admitted as its own turn, queued behind an activation when started by a
+  // live invocation. Measured 38081, exact, no spare (+6).
+  // Cancelling a child's creation also settles its execution state in the same SQLite statement.
+  // Measured 38084, exact, no spare (+3).
+  'packages/host/src': 38084,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2557,7 +2596,16 @@ const INITIAL_CEILING: Record<string, number> = {
   // OPSTATE O1: same change as packages/host/src. Measured: 5068 (+7), exact.
   // UI-CACHE-INCREMENTAL C1 (rebased on 950fc6f3): measured 4995, exact, no spare (-73).
   // SKILL-GITHUB-RATE-LIMIT: measured 5010, no spare.
-  'packages/host/src/adapters': 5010,
+  // WIN-SHORT-NAMES: FsIo.finalPath, its local and session-workspace wiring, and one local realpath
+  // helper; measured 5042, exact, no spare (+32).
+  // WIN-SQLITE-CLOSE: same change as packages/host/src. Measured 5023 (+13), exact.
+  // Combined with the Windows path canonicalisation on this branch; re-measured exactly.
+  // FOLD-CACHE-REMOVAL: same change as packages/host/src. Measured on this tree: 5003, exact, no spare (-52).
+  // Durable WAL checkpoints on darwin: the helper plus its two storage call sites. Measured 5014,
+  // exact, no spare (+11).
+  // Cancelling a child's creation also settles its execution state in the same statement. Measured
+  // 5017, exact, no spare (+3).
+  'packages/host/src/adapters': 5017,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2572,7 +2620,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // rebased onto main after #6+#7 C4: merged tree re-measured with countLines(): 728, exact.
   // OPSTATE O1: same change. Measured: 735 (+7), exact.
   // UI-CACHE-INCREMENTAL C1 (rebased on 950fc6f3): measured 667, exact, no spare (-68).
-  'packages/host/src/adapters/storage-sqlite': 667,
+  // WIN-SQLITE-CLOSE: a refused or failed open closes its database file again, so Windows can
+  // delete it. Measured 680 (+13), exact, no spare.
+  // FOLD-CACHE-REMOVAL: fold cache statements, write, read and delete gone; the table is dropped on
+  // open. Measured on this tree: 632, exact, no spare (-48).
+  // Durable WAL checkpoints on darwin: the ledger and table-store connections call the checkpoint
+  // sync helper. Measured 635, exact, no spare (+3).
+  'packages/host/src/adapters/storage-sqlite': 635,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,

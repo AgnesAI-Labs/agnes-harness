@@ -43,6 +43,8 @@ function handle(message) {
       ...(mode === 'real-contract' ? {} : { capabilityVersion: '1' }),
     }
     if (mode === 'slow-init') setTimeout(() => result(message.id, initialized), 40)
+    // Logs the request and never answers it, so the startup deadline is sure to pass.
+    else if (mode === 'silent-init') return
     else result(message.id, initialized)
     return
   }

@@ -18,6 +18,7 @@ export type SessionMethod =
   | 'projectUIPatch'
   | 'projectUIOpening'
   | 'projectUIHistory'
+  | 'readToolDetail'
   | 'append'
   | 'setPreset'
   | 'setModel'

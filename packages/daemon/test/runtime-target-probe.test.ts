@@ -218,7 +218,8 @@ describe('runtime target probe launcher', () => {
     })
 
     const pending = probe(artifact())
-    await spawned
+    // A probe that fails before spawning rejects here instead of leaving the wait unresolved.
+    await Promise.race([spawned, pending])
     await vi.advanceTimersByTimeAsync(RUNTIME_TARGET_PROBE_TIMEOUT_MS)
 
     await expect(pending).rejects.toThrow('E_RUNTIME_PROBE_TIMEOUT')
@@ -269,7 +270,12 @@ describe('runtime target probe launcher', () => {
     })
 
     const observed = probe(artifact()).catch((error: unknown) => error)
-    await spawned
+    await Promise.race([
+      spawned,
+      observed.then((error) => {
+        throw error
+      }),
+    ])
     await vi.advanceTimersByTimeAsync(RUNTIME_TARGET_PROBE_TIMEOUT_MS)
     await vi.advanceTimersByTimeAsync(RUNTIME_TARGET_PROBE_REAP_TIMEOUT_MS)
 

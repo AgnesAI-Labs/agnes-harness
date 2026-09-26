@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkManifest } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
@@ -75,8 +76,9 @@ describe('DSH example package metadata', () => {
       if (!checked.ok) continue
 
       const assets = resolveClientAssets(root, checked.value)
-      expect(assets?.entryPath).toBe(`${root}/client/index.js`)
-      expect(assets?.stylePaths).toEqual([`${root}/client/index.css`])
+      // The resolved paths are the platform's own spelling, separators included.
+      expect(assets?.entryPath).toBe(resolve(root, 'client', 'index.js'))
+      expect(assets?.stylePaths).toEqual([resolve(root, 'client', 'index.css')])
     }
   })
 })

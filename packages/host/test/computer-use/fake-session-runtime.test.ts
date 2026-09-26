@@ -1240,7 +1240,10 @@ describe('typed Computer Use stdio fake runtime', () => {
   })
 
   it('reaps the child after startup timeout', async () => {
-    const { runtime, logFile } = harness('slow-init', 10)
+    // The child has to log the request before the deadline, since that record is the only place
+    // this test learns its pid. A 10 ms deadline could reap a child that had not even started on a
+    // loaded runner, so the child never answers and the deadline allows it time to start.
+    const { runtime, logFile } = harness('silent-init', 1_000)
     await expect(runtime.open(session('startup-timeout'), new AbortController().signal)).rejects.toThrow(
       'timed out',
     )

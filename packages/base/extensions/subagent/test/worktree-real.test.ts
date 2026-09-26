@@ -8,8 +8,10 @@ import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { gitWorktrees } from '../src/worktree.js'
 
 it('creates and removes real Git worktrees in a Unicode path while preserving dirty work', async () => {
-  const temporaryParent = realpathSync(tmpdir())
-  const temporary = realpathSync(mkdtempSync(join(temporaryParent, 'agnes-worktree-中文 ')))
+  // Native real paths: Git prints the repository root with 8.3 short names expanded on Windows,
+  // and the host hands tools a workspace cwd in that same spelling.
+  const temporaryParent = realpathSync.native(tmpdir())
+  const temporary = realpathSync.native(mkdtempSync(join(temporaryParent, 'agnes-worktree-中文 ')))
   if (dirname(temporary) !== temporaryParent) throw new Error('unexpected fixture cleanup path')
   const repository = join(temporary, 'repository')
   const source = execFileSync('git', ['rev-parse', '--show-toplevel'], {

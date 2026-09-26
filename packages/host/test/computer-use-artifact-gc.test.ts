@@ -80,6 +80,9 @@ function createEmptyLedger(dataDir: string): void {
 function ledgerRows(dataDir: string) {
   const database = new DatabaseSync(join(dataDir, 'sessions.db'))
   database.exec('PRAGMA journal_mode = WAL')
+  // A fixture writer: skipping the per-row fsync keeps thousands of single-row commits fast on
+  // Windows, where each flush costs milliseconds. Readers see the same rows either way.
+  database.exec('PRAGMA synchronous = OFF')
   for (const ddl of DDL) database.exec(ddl)
   const insert = database.prepare(
     "INSERT INTO events (session_key, seq, ts, id, type, actor, origin, trust, data) VALUES (?, ?, '2026-09-24T00:00:00.000Z', ?, 'user/message', '{}', 'user', 'trusted', ?)",

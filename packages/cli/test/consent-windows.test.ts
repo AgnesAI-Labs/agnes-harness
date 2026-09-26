@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -48,9 +49,15 @@ describe.runIf(process.platform === 'win32')('Windows consent files', () => {
   it('refuses an existing broad profile directory without rewriting its permissions', () => {
     const dir = join(root, 'profiles', 'local-dev')
     fs.mkdirSync(dir, { recursive: true })
+    // A new directory under the user's temporary directory inherits only the user, SYSTEM and
+    // Administrators, which the private-directory rule may adopt as it is. Grant Everyone read
+    // access so the directory is actually broad.
+    acl(dir, '/grant', '*S-1-1-0:R')
+    const before = acl(dir)
     expect(system.hasPrivateDaclSync(dir)).toBe(false)
     expect(() => consent('ANON')).toThrow()
     expect(system.hasPrivateDaclSync(dir)).toBe(false)
+    expect(acl(dir)).toEqual(before)
     expect(fs.readdirSync(dir)).toEqual([])
   })
   it('preserves old bytes when private creation is unavailable', () => {
@@ -64,3 +71,12 @@ describe.runIf(process.platform === 'win32')('Windows consent files', () => {
     expect(fs.readdirSync(dir)).toEqual(['consent.yaml'])
   })
 })
+
+function acl(path: string, ...args: string[]): Buffer {
+  const systemRoot = process.env.SystemRoot
+  if (!systemRoot) throw new Error('SystemRoot is required for the Windows ACL test')
+  return execFileSync(join(systemRoot, 'System32', 'icacls.exe'), [path, ...args], {
+    windowsHide: true,
+    stdio: 'pipe',
+  })
+}

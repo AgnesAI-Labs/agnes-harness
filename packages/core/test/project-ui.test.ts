@@ -614,8 +614,10 @@ it('tool cards follow planned, running and result states at the requested sequen
     await phase
   }
   await run(session)
+  const resultSeq = (await session.scan({ type: 'tool/result', toSeq: session.lastSeq }))[0]?.seq
   expect(kind((await session.projectUI()).nodes, 'tool')[0]).toMatchObject({
     status: 'completed',
+    resultSeq,
     argsPreview: '{"path":"a"}',
     resultPreview: 'file',
     enforcement: { level: 'full' },
@@ -625,6 +627,7 @@ it('tool cards follow planned, running and result states at the requested sequen
     maxBytes: 1024 * 1024,
   })
   expect(kind(stableHistory.nodes, 'tool')[0]?.status).toBe('planned')
+  expect(kind(stableHistory.nodes, 'tool')[0]?.resultSeq).toBeUndefined()
   expect(JSON.stringify(stableHistory.nodes)).not.toContain('"status":"completed"')
   expect(kind((await session.projectUI(planned)).nodes, 'tool')[0]?.status).toBe('planned')
 })

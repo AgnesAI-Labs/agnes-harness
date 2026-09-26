@@ -19,7 +19,7 @@ const directoryLink = process.platform === 'win32' ? 'junction' : 'dir' // guard
 // The fence reads a full FsPolicy now. Tests build one through the core testkit, rooted at the
 // canonical workspace spelling because that is what the enforcer compares after realpath.
 const bindingFor = (root: string, deny: string[] = ['.git'], caseSensitive = true): FsBinding => ({
-  policy: testFsPolicy(realpathSync(root), { deny }),
+  policy: testFsPolicy(realpathSync.native(root), { deny }),
   caseSensitive,
 })
 
@@ -73,7 +73,7 @@ describe('fs adapter', () => {
     const f = fs()
     await f.mkdir('nested/deep')
     expect((await f.stat('nested/deep')).kind).toBe('dir')
-    expect(await f.realpath('nested/deep')).toBe(join(realpathSync(root), 'nested', 'deep'))
+    expect(await f.realpath('nested/deep')).toBe(join(realpathSync.native(root), 'nested', 'deep'))
     await f.write('nested/deep/x', new Uint8Array([1]))
     await f.rm('nested', { recursive: true })
     await expect(f.stat('nested')).rejects.toThrow()
@@ -181,7 +181,7 @@ describe('fs adapter', () => {
   })
   it('re-canonicalizes when a previously missing parent becomes an outside symlink', async () => {
     const f = fs()
-    expect(await f.realpath('late/new')).toBe(join(realpathSync(root), 'late', 'new'))
+    expect(await f.realpath('late/new')).toBe(join(realpathSync.native(root), 'late', 'new'))
     mkdirSync(join(outside, 'late-target'))
     symlinkSync(join(outside, 'late-target'), join(root, 'late'), directoryLink)
     await expect(f.write('late/new', new Uint8Array([1]))).rejects.toThrow(/E_FS_DENIED/)
@@ -204,7 +204,7 @@ describe('fs adapter', () => {
     expect((await f.stat('.gitignore')).size).toBe(1)
   })
   it('does not confuse a sibling directory whose name extends the workspace root', async () => {
-    const sibling = `${realpathSync(root)}-evil`
+    const sibling = `${realpathSync.native(root)}-evil`
     mkdirSync(sibling)
     try {
       const f = fs()
@@ -292,17 +292,17 @@ describe('fs adapter, stat at the workspace root', () => {
 
   it('stats the workspace root by every spelling that names it', async () => {
     const f = createFs(() => bindingFor(root, []))
-    for (const p of ['.', './', root, realpathSync(root), join(root, 'sub', '..')]) {
+    for (const p of ['.', './', root, realpathSync.native(root), join(root, 'sub', '..')]) {
       const st = await f.stat(p)
       expect([p, st.kind]).toEqual([p, 'dir'])
     }
     expect((await f.list('.')).length).toBe(0)
-    expect(await f.realpath('.')).toBe(realpathSync(root))
+    expect(await f.realpath('.')).toBe(realpathSync.native(root))
   })
   it('still refuses the parent of the workspace root', async () => {
     const f = createFs(() => bindingFor(root, []))
     await expect(f.stat('..')).rejects.toThrow(/E_FS_DENIED/)
-    await expect(f.stat(dirname(realpathSync(root)))).rejects.toThrow(/E_FS_DENIED/)
+    await expect(f.stat(dirname(realpathSync.native(root)))).rejects.toThrow(/E_FS_DENIED/)
   })
   it('still reports a symlink as a symlink, which is why the parent is resolved at all', async () => {
     const f = createFs(() => bindingFor(root, []))

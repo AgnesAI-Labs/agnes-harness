@@ -3,11 +3,11 @@
 import assert from 'node:assert/strict'
 import { scanAll } from '../src/log/scan-pages.js'
 import type { CommitTx, StorageAdapter } from '../src/log/storage.js'
-import { encodeLedgerState } from '../src/project/cache.js'
 import { canonicalJson } from '../src/request/hash.js'
 import type { CoreError, Event, EventInput } from '../src/types.js'
 import { fakeProvider, textTurn } from '../test/helpers/fake-provider.js'
 import { actor, openSession } from '../test/helpers/open-session.js'
+import { encodeLedgerState } from './encode-ledger-state.js'
 
 type Make = () => StorageAdapter
 

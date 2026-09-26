@@ -90,6 +90,7 @@ describe('wireResourceSnapshotNotifications', () => {
         profileHash: 'sha256-profile',
       }),
       onExit: vi.fn(),
+      closeSession: vi.fn(async () => undefined),
       command: vi.fn(),
     })
     let releaseFirstAcquire: ((link: unknown) => void) | undefined
@@ -151,9 +152,9 @@ describe('wireResourceSnapshotNotifications', () => {
     // the commit. Without the epoch bump this resolves to 'old-generation' with a single acquire.
     expect(opened.session.writerRunId).toBe('new-generation')
     expect(pool.acquire).toHaveBeenCalledTimes(2)
-    expect(retire).toHaveBeenCalledWith(['opening-session'], 'resource-snapshot-reload')
+    expect(initial.closeSession).toHaveBeenCalledWith('resource-snapshot-reload')
     // And the narrowing Task 7 introduced still holds: no live session was retired for notify failure.
-    expect(retire.mock.calls.map((call) => call[1])).toEqual(['resource-snapshot-reload'])
+    expect(retire).not.toHaveBeenCalled()
   })
 
   it('only retires sessions whose lightweight notification actually failed to deliver', async () => {

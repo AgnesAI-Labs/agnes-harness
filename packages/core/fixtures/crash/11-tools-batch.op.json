@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 38,
+    "seq": 41,
     "data": {
       "meta": {
         "turn": 2,
@@ -30,7 +30,7 @@
               "name": "read",
               "argsSeq": 32,
               "replay": "safe",
-              "status": "dispatched",
+              "status": "completed",
               "resolvedPolicy": {
                 "isReadOnly": true,
                 "isDestructive": false,
@@ -44,9 +44,9 @@
               "policyHash": "2440d18ddde5694e1a0e604fdf1d3b640a264a87334416a7073bbce13e310b9a",
               "definitionFingerprint": "1dcc0de216bb73976c128ab2eac6bebde822afef6c0bf3528572169edbea17fd",
               "executionDomain": "workspace",
-              "effectId": "e-00000000000000000000000000000045",
+              "effectId": "e-00000000000000000000000000000044",
               "dispatchAttempt": 1,
-              "dispatchPhase": "may_have_sent"
+              "dispatchPhase": "responded"
             },
             {
               "ordinal": 1,

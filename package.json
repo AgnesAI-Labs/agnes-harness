@@ -13,7 +13,8 @@
     "gen:check": "pnpm -r --if-present run gen:check",
     "bench:cu-artifact-gc": "tsx tools/bench-cu-artifact-gc.ts",
     "bench:ledger-integrity": "tsx tools/bench-ledger-integrity.ts",
-    "bench:ledger-scan": "tsx tools/bench-ledger-scan.ts"
+    "bench:ledger-scan": "tsx tools/bench-ledger-scan.ts",
+    "bench:ledger-write": "tsx tools/bench-ledger-write.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",

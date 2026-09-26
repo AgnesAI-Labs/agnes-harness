@@ -336,8 +336,12 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         this.artifactQueues.delete(key)
         this.rejectArtifactProjectionWaiters(key)
         this.artifactProjectedThrough.delete(key)
+        // Frames this generation already sent for the key (its tail replay, typically) are still
+        // queued on the link. Wait for the close to drain them before reopening, with the replay
+        // buffer still absorbing them: projected after the entry is gone they would fail the key,
+        // and that failure would retire the replacement channel opened next.
+        await link.closeSession('resource-snapshot-reload').catch(() => undefined)
         this.artifactReplayBuffers.delete(key)
-        this.pool.retire([key], 'resource-snapshot-reload')
         return this.openFresh(key, o, sessionEpoch)
       }
       if (this.artifactAuthority) {
@@ -682,7 +686,9 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     if (this.resourceRetirements.get(key)?.entry === entry) this.resourceRetirements.delete(key)
     // Only a session somebody is still subscribed to is worth reopening eagerly.
     const watched = (): boolean => (this.listenerSets.get(key)?.size ?? 0) > 0
-    if (!entry.recover || !watched() || this.recovering.has(key)) return
+    // An entry that no longer holds the key leaves recovery to the one that does. Starting a
+    // recovery here would find the key taken, end at once, and still block the holder's own.
+    if (!entry.recover || !watched() || this.recovering.has(key) || this.entries.has(key)) return
     const recovery = (async () => {
       let delayMs = 50
       while (entry.recover && watched() && !this.entries.has(key)) {

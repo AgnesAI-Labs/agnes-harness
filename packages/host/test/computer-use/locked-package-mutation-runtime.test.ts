@@ -41,11 +41,12 @@ const engine = (activate = async (): Promise<HostLockedPackageActivationRecord> 
     confirmLkg: async () => record,
     rollback: async () => record,
   }) satisfies HostLockedPackageMutationEngine
+// The runtime binds the store to its native realpath, which on Windows expands 8.3 short names.
 const scoped = (root: string, session: string, operation: string): string =>
-  `lp-${createHash('sha256').update(realpathSync(root)).update('\0').update(session).update('\0').update(operation).digest('hex')}`
+  `lp-${createHash('sha256').update(realpathSync.native(root)).update('\0').update(session).update('\0').update(operation).digest('hex')}`
 const storeBinding = (root: string): string =>
   createHash('sha256')
-    .update(`agnes-locked-package-store\0${realpathSync(root)}`)
+    .update(`agnes-locked-package-store\0${realpathSync.native(root)}`)
     .digest('hex')
 
 afterEach(() => {

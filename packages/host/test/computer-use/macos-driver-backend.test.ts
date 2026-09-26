@@ -1,4 +1,4 @@
-import { unlinkSync, writeFileSync } from 'node:fs'
+import { renameSync, rmSync, writeFileSync } from 'node:fs'
 import { expect, it, vi } from 'vitest'
 import {
   createMacOSComputerUseBackendProvider,
@@ -538,10 +538,14 @@ it('rejects a permission grant result that is not attributed to the verified dri
 })
 
 it('rejects a permission result path replaced after the private file was created', async () => {
+  let displaced: string | undefined
   const run = vi.fn(async (_command: string, args: readonly string[]) => {
     const resultPath = args[args.indexOf('--result-file') + 1]
     if (!resultPath) throw new Error('missing result path')
-    unlinkSync(resultPath)
+    // Keep the original file alive while its path is replaced. Deleting it would let filesystems
+    // such as ext4 hand its inode number straight to the replacement.
+    displaced = `${resultPath}.displaced`
+    renameSync(resultPath, displaced)
     writeFileSync(
       resultPath,
       JSON.stringify({
@@ -558,17 +562,21 @@ it('rejects a permission result path replaced after the private file was created
     )
   })
 
-  await expect(
-    grantMacOSComputerUsePermissions({
-      driver: {
-        executablePath: '/private/driver/cua-driver',
-        version: '0.28.1',
-        bundleId: 'com.trycua.driver',
-        teamId: 'YCK386LBJ7',
-        authority: 'Developer ID Application: Cua AI, Inc. (YCK386LBJ7)',
-        appPath: '/private/driver/CuaDriver.app',
-      },
-      run,
-    }),
-  ).rejects.toThrow('result file is unsafe')
+  try {
+    await expect(
+      grantMacOSComputerUsePermissions({
+        driver: {
+          executablePath: '/private/driver/cua-driver',
+          version: '0.28.1',
+          bundleId: 'com.trycua.driver',
+          teamId: 'YCK386LBJ7',
+          authority: 'Developer ID Application: Cua AI, Inc. (YCK386LBJ7)',
+          appPath: '/private/driver/CuaDriver.app',
+        },
+        run,
+      }),
+    ).rejects.toThrow('result file is unsafe')
+  } finally {
+    if (displaced) rmSync(displaced, { force: true })
+  }
 })

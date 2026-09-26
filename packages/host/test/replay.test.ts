@@ -9,6 +9,7 @@ import { operations as codeOperations, presets as codePresets, PRESET_NAMES } fr
 import type { Operation, Verdict } from '@agnes/core'
 import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPlatform } from '../src/adapters/platform.js'
 import type { ProviderBuildOptions } from '../src/assemble/provider.js'
 import type { ResolvedProfile } from '../src/profile/types.js'
 import {
@@ -475,6 +476,14 @@ function midTurnSwitchProvider(
   })
 }
 
+/**
+ * Placeholders a case may use for facts that belong to the machine rather than to the case: the
+ * shell dialect the prompt names is the platform's own, so a case asserts it without restating it.
+ */
+const MACHINE_FACTS: Readonly<Record<string, string>> = { '{{shell}}': createPlatform().shell() }
+const withMachineFacts = (line: string): string =>
+  Object.entries(MACHINE_FACTS).reduce((text, [token, value]) => text.replaceAll(token, value), line)
+
 const fixtures: Fixture[] = fixtureDirs.flatMap((dir) =>
   readdirSync(dir)
     .filter((f) => f.endsWith('.jsonl'))
@@ -484,7 +493,7 @@ const fixtures: Fixture[] = fixtureDirs.flatMap((dir) =>
         .split('\n')
         .filter((l) => l.trim() !== '')
         .map((l) => {
-          const f = JSON.parse(l) as Fixture
+          const f = JSON.parse(withMachineFacts(l)) as Fixture
           return f.contract ? { ...f, contract: { ...f.contract, dir: resolve(dir, f.contract.dir) } } : f
         }),
     ),

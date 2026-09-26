@@ -15,6 +15,7 @@ import { scanComputerUseArtifactCandidates } from '../src/artifact-gc-candidate-
 import { computerUseMarkerPath } from '../src/computer-use-marker.js'
 import {
   createPrivateArtifactStore,
+  openPrivateArtifactDatabase,
   withComputerUseArtifactMutation,
   writeComputerUseTombstoneLocked,
 } from '../src/private-artifact-store.js'
@@ -110,6 +111,26 @@ describe.skipIf(!privateArtifactDeleteAvailable())('private artifact store', () 
       expect(() => after.exec('BEGIN IMMEDIATE; COMMIT')).not.toThrow()
     } finally {
       after.close()
+    }
+  })
+
+  it('validates and opens a private database that another connection already holds open', async () => {
+    // Another Host process, or this one's reference index, may hold the same file open for writing;
+    // the privacy check must not need a handle that conflicts with it.
+    const dataDir = resolve(await mkdtemp(join(tmpdir(), 'agnes-private-cas-')))
+    temporary.push(dataDir)
+    const first = openPrivateArtifactDatabase(dataDir, 'shared.db', 'shared test database')
+    try {
+      first.exec('CREATE TABLE t (v INTEGER); BEGIN IMMEDIATE; INSERT INTO t VALUES (1)')
+      const second = openPrivateArtifactDatabase(dataDir, 'shared.db', 'shared test database')
+      try {
+        expect(() => second.exec('BEGIN IMMEDIATE')).toThrow(/locked/)
+      } finally {
+        second.close()
+      }
+      first.exec('COMMIT')
+    } finally {
+      first.close()
     }
   })
 

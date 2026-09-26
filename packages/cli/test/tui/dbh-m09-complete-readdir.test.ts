@@ -134,11 +134,14 @@ it('[M-09b] Tab completion of @token in a missing cwd does not throw out of the 
 // (no process.cwd mock). Observed at process level: exit code and whether the alternate screen was
 // left (`\x1b[?1049l`) before the process ended.
 const ROOT = resolve(import.meta.dirname, '../../../..')
+// The child's imports need file URLs: a bare Windows path is not an ESM specifier, and its
+// backslashes would be read as escapes inside the generated string literal.
+const source = (path: string): string => JSON.stringify(pathToFileURL(join(ROOT, path)).href)
 const CHILD = `
 import { EventEmitter } from 'node:events'
-import { createClient } from '${ROOT}/packages/sdk/src/index.node.ts'
-import { TuiApp, NodeTerminal } from '${ROOT}/packages/cli-tui/src/index.ts'
-import { FakeEndpoint } from '${ROOT}/packages/cli/test/fake-endpoint.ts'
+import { createClient } from ${source('packages/sdk/src/index.node.ts')}
+import { TuiApp, NodeTerminal } from ${source('packages/cli-tui/src/index.ts')}
+import { FakeEndpoint } from ${source('packages/cli/test/fake-endpoint.ts')}
 const out = []
 const stdout = Object.assign(new EventEmitter(), { columns: 80, rows: 24, write: (s) => { out.push(s); return true } })
 const stdin = Object.assign(new EventEmitter(), { setRawMode() {}, resume() {}, pause() {}, setEncoding() {} })

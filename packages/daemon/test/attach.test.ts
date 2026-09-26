@@ -273,6 +273,7 @@ describe('_agnes/v1/session.attach', () => {
     await h.close()
   })
 
+  // Three real turns: about 0.1 s alone, past the 5 s default on the Windows runner.
   it('cuts the subscription when the consumer does not drain, and stops delivering after the notice', async () => {
     const h = await openTestHost({ script: Array.from({ length: 8 }, () => say('x'.repeat(200))) })
     const ep = h.endpoint({
@@ -314,8 +315,9 @@ describe('_agnes/v1/session.attach', () => {
       validateMethod('_agnes/v1/daemon.notice', 'params', (notices[0] as { params: unknown }).params).ok,
     ).toBe(true)
     await h.close()
-  })
+  }, 30_000)
 
+  // A real turn: about 0.1 s alone, past the 5 s default on the Windows runner.
   it('attach consumers see request/header rows and plain ACP clients see none', async () => {
     // What is exercised here is one successful turn: the header reaches the raw stream and no
     // session/update mentions it, because toSessionUpdate maps request/header to null. The reason
@@ -345,7 +347,7 @@ describe('_agnes/v1/session.attach', () => {
       seen.some((n) => n.method === 'session/update' && JSON.stringify(n).includes('request/header')),
     ).toBe(false)
     await h.close()
-  })
+  }, 30_000)
 })
 
 describe('AttachedFeed replay ordering', () => {

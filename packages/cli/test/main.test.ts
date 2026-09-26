@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { resolveDaemonScope } from '@agnes/daemon'
-import { defaultProcessIdentity } from '@agnes/host'
+import {
+  type ComputerUseDriverArchitecture,
+  type ComputerUseDriverPlatform,
+  defaultProcessIdentity,
+  evaluateFixedComputerUsePlatformAdmission,
+} from '@agnes/host'
 import { appendRowAsOlderBuild, createTestHost } from '@agnes/host/testkit'
 import { ResourceOperationFailure } from '@agnes/resource-control-cli'
 import { JsonRpcError, TransportClosed } from '@agnes/sdk'
@@ -23,6 +28,15 @@ import {
 import type { LocalBootDeps } from '../src/boot/local.js'
 import { bootLocal } from '../src/boot/local.js'
 import { say, stalledProvider, TEST_LOCK, testDeps } from './boot-host.js'
+
+// The lazy runtime reports first-use preparation only where the pinned driver is admitted for this
+// platform; everywhere else (Linux today) it reports the platform as unsupported instead.
+const runtimeBlocker = evaluateFixedComputerUsePlatformAdmission(
+  process.platform as ComputerUseDriverPlatform,
+  process.arch as ComputerUseDriverArchitecture,
+).allowed
+  ? 'driver-not-prepared'
+  : 'platform-unsupported'
 
 const tmp: string[] = []
 afterEach(() => {
@@ -236,7 +250,7 @@ describe('main', () => {
               status: 'blocked',
               admission: { state: 'blocked', reason: 'runtime-unavailable' },
               runtime: { state: 'not-started', startAttempted: false },
-              blockers: ['driver-not-prepared'],
+              blockers: [runtimeBlocker],
               lockedPackageMutations,
             },
       )
@@ -431,10 +445,11 @@ describe('main', () => {
     h.io.signals = signals
     const running = main([], h.io, h.boot)
     try {
-      await vi.waitFor(() => expect(raw).toBe(true))
+      // Booting the test Host takes over a second on the Windows runner.
+      await vi.waitFor(() => expect(raw).toBe(true), { timeout: 10_000 })
       input.write('keyboard from main')
       input.write('\r')
-      await vi.waitFor(() => expect(h.out()).toContain('main says hi'))
+      await vi.waitFor(() => expect(h.out()).toContain('main says hi'), { timeout: 10_000 })
       // Wait for the persisted terminal turn to reach the projected idle state before quitting.
       await new Promise((resolve) => setTimeout(resolve, 100))
       input.write('\x04')
@@ -460,7 +475,8 @@ describe('main', () => {
     const signals = new EventEmitter()
     h.io.signals = signals
     const running = main([], h.io, h.boot)
-    await vi.waitFor(() => expect(raw).toBe(true))
+    // Booting the test Host takes over a second on the Windows runner.
+    await vi.waitFor(() => expect(raw).toBe(true), { timeout: 10_000 })
     signals.emit('SIGTERM')
     expect(await running, h.err()).toBe(143)
     expect(raw).toBe(false)

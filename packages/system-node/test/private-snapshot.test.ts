@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import {
   closeSync,
   linkSync,
@@ -137,6 +138,15 @@ it.skipIf(process.platform !== 'win32')(
   async () => {
     const directory = join(root, 'broad')
     mkdirSync(directory)
+    // A new directory under the user's temporary directory inherits only the user, SYSTEM and
+    // Administrators, which the private-directory rule may adopt as it is. Grant Everyone read
+    // access so the directory is actually broad.
+    const systemRoot = process.env.SystemRoot
+    if (!systemRoot) throw new Error('SystemRoot is required for the Windows ACL test')
+    execFileSync(join(systemRoot, 'System32', 'icacls.exe'), [directory, '/grant', '*S-1-1-0:R'], {
+      windowsHide: true,
+      stdio: 'pipe',
+    })
     expect(hasPrivateDaclSync(directory)).toBe(false)
     await expect(
       windowsWritePrivateFile(join(directory, 'snapshot.json'), Buffer.from('secret')),

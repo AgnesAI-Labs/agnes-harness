@@ -153,10 +153,11 @@ describe('testkit', () => {
       /no builtin template missing-template/,
     )
   })
+  // One Host assembly per step: about 0.1 s alone, past the 5 s default on the Windows runner.
   it('crash injection at every step rolls back', async () => {
     const r = await crashAtEveryStep((crashAt) => createTestHost({ dataDir: tmp(), crashAt }))
     expect(r).toEqual(Object.fromEntries(ASSEMBLY_STEPS.map((s) => [s, 'rolled-back'])))
-  })
+  }, 30_000)
   // The classifier must tell a rollback from an unrelated failure, or the crash matrix reports a
   // green row for a run that never reached the step it was injecting into.
   it('reports an unrelated failure as wrong-error, not as rolled-back or leaked', async () => {

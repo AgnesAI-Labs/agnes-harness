@@ -375,8 +375,9 @@ export async function runWorker(
   const skillContribution = bootResources ? createSkillCordisService(bootResources.runtime.skills) : undefined
   // Explicit profile packages can supply presets at assembly time. Admit only active immutable
   // pins matching that profile's exact integrity; the Host still rejects any missing snapshot.
+  // Like `computerUse` above, a profile file that lists no packages means there are none.
   const bootPackages = new Map(
-    profile.packages
+    (profile.packages ?? [])
       .filter((pkg) => pkg.enabled && pkg.trust !== 'builtin')
       .map((pkg) => [pkg.id, pkg.integrity]),
   )

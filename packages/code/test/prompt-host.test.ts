@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,8 +25,10 @@ function runtimeContextText(request: RequestBody): string {
     .map((c) => ('text' in c ? c.text : ''))
     .join('\n')
 }
+// The host reports the workspace in its canonical spelling, which on Windows expands an 8.3 short
+// name such as the one a runner's temporary directory is reached through.
 function scratch() {
-  const dir = mkdtempSync(join(tmpdir(), 'agnes-prompt-host-'))
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-prompt-host-')))
   dirs.push(dir)
   return dir
 }

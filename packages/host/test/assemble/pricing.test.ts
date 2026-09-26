@@ -70,7 +70,7 @@ function modules(): Record<string, PackageModule> {
           n === 'sandbox'
             ? async (ctx: { profile: { workspaceRoot: string } }) => ({
                 ...seams.sandbox,
-                fsPolicy: () => testFsPolicy(realpathSync(ctx.profile.workspaceRoot)),
+                fsPolicy: () => testFsPolicy(realpathSync.native(ctx.profile.workspaceRoot)),
               })
             : async () => seams[n],
         ]),

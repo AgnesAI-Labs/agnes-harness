@@ -15,6 +15,7 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
+// Two esbuild bundles plus a child process: about 3s alone, over 15s on a loaded hosted runner.
 it('builds one self-contained runner and a matching immutable manifest', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-runner-build-'))
   directories.push(root)
@@ -41,4 +42,4 @@ it('builds one self-contained runner and a matching immutable manifest', async (
     protocol: 1,
     kind: 'hello',
   })
-}, 15_000)
+}, 60_000)

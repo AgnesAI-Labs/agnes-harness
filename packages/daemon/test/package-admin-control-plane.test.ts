@@ -231,7 +231,11 @@ beforeEach(() => {
   })
 })
 
-afterEach(() => rmSync(temporaryRoot, { recursive: true, force: true }))
+// A completed operation refreshes the client-module snapshots in the background after its terminal
+// state is visible, and the service offers nothing to await that refresh by. A test that returns on
+// the terminal state can therefore race a snapshot write into this tree; retry the removal (as
+// node:fs does for ENOTEMPTY) rather than fail on it.
+afterEach(() => rmSync(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }))
 
 it.each(['before', 'after'])(
   'does not acknowledge a %s-rename failure and resumes the same operation on retry',

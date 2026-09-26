@@ -30,7 +30,7 @@
     },
     {
       "name": "@earendil-works/pi-ai",
-      "version": "0.87.0",
+      "version": "0.87.1",
       "license": "MIT",
       "source": "https://github.com/earendil-works/pi/tree/main/packages/ai",
       "purpose": "Provider adapters, model catalog and streaming AI protocol support.",

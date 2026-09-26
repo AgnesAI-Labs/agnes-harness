@@ -164,4 +164,41 @@ describe('durable child creation attempts', () => {
     expect(cancelled[0]).toMatchObject({ attemptId: 'attempt:1', reason: 'open_failed' })
     expect(await storage.lookupByKey(second.childKey)).toMatchObject({ creationPhase: 'creating' })
   })
+
+  it('settles a cancelled creation out of the active set in the same write', async () => {
+    const { storage, input } = await fixture()
+    await storage.createDelegatedChild({ ...input, maxFanOut: 1 })
+    await recoverCreatingChildAttempts(storage, { staleBefore: 100, now: 200 })
+    expect(await storage.lookupByKey(input.childKey)).toMatchObject({
+      creationPhase: 'cancelled',
+      state: 'failed',
+      stateRevision: 2,
+    })
+    const next = await storage.createDelegatedChild({
+      ...input,
+      childKey: 'parent/next',
+      creationId: 'creation:next',
+      attemptId: 'attempt:next',
+      workspaceId: 'workspace:next',
+      maxFanOut: 1,
+    })
+    expect(next.status).toBe('created')
+
+    await storage.createDelegatedChild({
+      ...input,
+      childKey: 'parent/closed',
+      creationId: 'creation:closed',
+      attemptId: 'attempt:closed',
+      workspaceId: 'workspace:closed',
+    })
+    await storage.cancelCreatingChild({
+      childKey: 'parent/closed',
+      creationId: 'creation:closed',
+      attemptId: 'attempt:closed',
+      expectedRevision: 1,
+      reason: 'workspace_closed',
+      cancelledAt: 300,
+    })
+    expect(await storage.lookupByKey('parent/closed')).toMatchObject({ state: 'cancelled' })
+  })
 })

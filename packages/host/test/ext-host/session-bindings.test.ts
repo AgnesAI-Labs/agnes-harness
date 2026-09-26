@@ -17,7 +17,7 @@ function kernel(hooksFactory: NonNullable<Parameters<typeof Kernel.create>[0]['h
     contract: { contract_id: null, parser_version: '1' },
     preset: presetDefaults(),
     fsOps: createFs(() => ({
-      policy: testFsPolicy(realpathSync(process.cwd())),
+      policy: testFsPolicy(realpathSync.native(process.cwd())),
       caseSensitive: true,
     })),
     netFetch: async () => new Response(''),

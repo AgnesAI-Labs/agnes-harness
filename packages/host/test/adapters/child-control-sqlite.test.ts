@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSqliteStorage, DDL, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
 describe('sqlite child control', () => {
@@ -333,9 +333,16 @@ describe('sqlite child control', () => {
     future.prepare('INSERT INTO child_control_meta (id, version) VALUES (1, ?)').run(5)
     future.close()
 
-    expect(() => createSqliteStorage({ file, tablesDir: join(dir, 'tables-future') })).toThrow(
-      /newer than runtime 4/,
-    )
+    // The refused file is closed again: Windows cannot delete a directory holding an open database.
+    const closes = vi.spyOn(DatabaseSync.prototype, 'close')
+    try {
+      expect(() => createSqliteStorage({ file, tablesDir: join(dir, 'tables-future') })).toThrow(
+        /newer than runtime 4/,
+      )
+      expect(closes).toHaveBeenCalledOnce()
+    } finally {
+      closes.mockRestore()
+    }
   })
 
   it('persists exact creation-attempt CAS facts across reopen and fences a stale attempt', async () => {

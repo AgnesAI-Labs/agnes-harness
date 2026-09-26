@@ -91,7 +91,7 @@ describe('HostedSessions forwards streamed text as preview frames', () => {
 describe('a worker shutting down mid-stream keeps what was streamed', () => {
   it('records the text once, so the next process shows it and bills it', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'agnes-hosted-cut-'))
-    const root = realpathSync(dataDir)
+    const root = realpathSync.native(dataDir)
     const inner = new ScriptedProvider({
       scripts: [
         [

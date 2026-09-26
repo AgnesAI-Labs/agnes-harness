@@ -80,7 +80,9 @@ export function classifyToolRecovery(input: ToolRecoveryInput): ToolRecoveryDeci
   if (call.status === 'dispatch_pending') {
     // The same effect may cross the dispatch boundary at most one more time. A caller unable to
     // preserve the effect identity and attempt number must fail closed instead of translating this
-    // into an ordinary fresh replay.
+    // into an ordinary fresh replay. The budget holds across a process crash, where every committed
+    // transaction survives. Commits are not flushed to disk one by one, so a power loss can drop the
+    // commit that moved the call to attempt two (or its intent) and allow another crossing.
     return call.executionDomain === 'host-computer-use' &&
       call.dispatchPhase === 'not_sent' &&
       call.dispatchAttempt === 1

@@ -3,7 +3,8 @@
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
-import { createElement, useEffect } from 'react'
+import { createElement, useEffect, useLayoutEffect } from 'react'
+import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
 
@@ -24,38 +25,6 @@ function renderer() {
 }
 
 describe('timeline reader semantics', () => {
-  it('releases a claimed DSH node when the renderer is disposed directly', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SlotRegistry)
-    const registry = (ctx as unknown as { slots: SlotRegistry }).slots
-    registry.declare('conversation.chat.node', { kind: 'keyed', scope: 'session' })
-    registry.setSession('session-a')
-    const lifecycle: string[] = []
-    function Card() {
-      useEffect(() => {
-        lifecycle.push('mount')
-        return () => {
-          lifecycle.push('unmount')
-        }
-      }, [])
-      return createElement('div', null, 'card')
-    }
-    const off = registry.register({ name: 'conversation.chat.node', key: 'assistant', id: 'card' }, Card)
-    const transcript = document.createElement('div')
-    document.body.append(transcript)
-    const timeline = createTimelineRenderer({
-      transcript,
-      newContentButton: document.createElement('button'),
-      registry,
-    })
-    timeline.render([{ kind: 'assistant', id: 'a', seq: 1, text: 'answer' }])
-    await vi.waitFor(() => expect(lifecycle).toContain('mount'))
-    timeline.dispose?.()
-    expect(lifecycle).toEqual(['mount', 'unmount'])
-    off()
-    await ctx.fiber.dispose()
-  })
-
   it('projects a keyed DSH chat renderer for one node kind and restores native fallback on removal', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry)
@@ -77,16 +46,17 @@ describe('timeline reader semantics', () => {
     const node: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: '原生回答' }
 
     timeline.render([node])
-    await vi.waitFor(() =>
-      expect(transcript.querySelector('#custom-chat-node')?.textContent).toBe('扩展 assistant 节点'),
-    )
-    expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(true)
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#custom-chat-node')?.textContent).toBe('扩展 assistant 节点')
+      expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(true)
+    })
 
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#custom-chat-node')).toBeNull()
-    expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
-    expect(transcript.textContent).toContain('原生回答')
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#custom-chat-node')).toBeNull()
+      expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
+      expect(transcript.textContent).toContain('原生回答')
+    })
 
     const tool: UINode = {
       kind: 'tool',
@@ -101,11 +71,12 @@ describe('timeline reader semantics', () => {
       slots: [],
     }
     timeline.render([node, tool])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#custom-tool-view')?.textContent).toBe('扩展 bash 工具视图')
-    expect(transcript.querySelector<HTMLElement>('[data-agnes-dsh-slot="tool.call.toolview"]')?.hidden).toBe(
-      false,
-    )
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#custom-tool-view')?.textContent).toBe('扩展 bash 工具视图')
+      expect(
+        transcript.querySelector<HTMLElement>('[data-agnes-dsh-slot="tool.call.toolview"]')?.hidden,
+      ).toBe(false)
+    })
 
     removeTool()
 
@@ -117,15 +88,16 @@ describe('timeline reader semantics', () => {
       summary: '未知工具仍使用原生展示',
     }
     timeline.render([node, unknownTool])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(transcript.querySelector('#custom-tool-view')).toBeNull()
-    expect(
-      transcript.querySelector<HTMLElement>('[data-node-id="tool-unknown"] [data-agnes-timeline-native]')
-        ?.hidden,
-    ).toBe(false)
-    expect(transcript.querySelector('[data-node-id="tool-unknown"]')?.textContent).toContain(
-      '未知工具仍使用原生展示',
-    )
+    await vi.waitFor(() => {
+      expect(transcript.querySelector('#custom-tool-view')).toBeNull()
+      expect(
+        transcript.querySelector<HTMLElement>('[data-node-id="tool-unknown"] [data-agnes-timeline-native]')
+          ?.hidden,
+      ).toBe(false)
+      expect(transcript.querySelector('[data-node-id="tool-unknown"]')?.textContent).toContain(
+        '未知工具仍使用原生展示',
+      )
+    })
 
     const unknownMessage = {
       kind: 'unknown-message',
@@ -133,16 +105,73 @@ describe('timeline reader semantics', () => {
       seq: 3,
     } as unknown as UINode
     timeline.render([unknownMessage])
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(
-      transcript.querySelector<HTMLElement>('[data-node-id="message-unknown"] [data-agnes-timeline-native]')
-        ?.hidden,
-    ).toBe(false)
-    expect(transcript.querySelector('[data-node-id="message-unknown"]')?.textContent).toContain(
-      '暂不支持的内容',
-    )
+    await vi.waitFor(() => {
+      expect(
+        transcript.querySelector<HTMLElement>('[data-node-id="message-unknown"] [data-agnes-timeline-native]')
+          ?.hidden,
+      ).toBe(false)
+      expect(transcript.querySelector('[data-node-id="message-unknown"]')?.textContent).toContain(
+        '暂不支持的内容',
+      )
+    })
 
     timeline.reset()
+    await ctx.fiber.dispose()
+  })
+
+  it('lets a reset inside another React commit finish before it unmounts the per-node roots', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry)
+    const registry = (ctx as unknown as { slots: SlotRegistry }).slots
+    registry.declare('conversation.chat.node', { kind: 'keyed', scope: 'session' })
+    registry.setSession('session-a')
+    let mounted = 0
+    function ClaimedNode() {
+      useEffect(() => {
+        mounted++
+        return () => {
+          mounted--
+        }
+      }, [])
+      return createElement('div', { id: 'claimed-node' }, 'claimed')
+    }
+    const remove = registry.register(
+      { name: 'conversation.chat.node', key: 'assistant', id: 'claimed-assistant' },
+      ClaimedNode,
+    )
+    const transcript = document.createElement('div')
+    const newContentButton = document.createElement('button')
+    document.body.append(transcript, newContentButton)
+    const timeline = createTimelineRenderer({ transcript, newContentButton, registry })
+    timeline.render([{ kind: 'assistant', id: 'assistant-1', seq: 1, text: 'answer' }])
+    await vi.waitFor(() => expect(mounted).toBe(1))
+
+    // A transcript that is torn down on a session switch resets its timeline from a layout cleanup,
+    // which React runs inside the commit that removes it.
+    let ownerMounted = false
+    function Owner() {
+      useLayoutEffect(() => {
+        ownerMounted = true
+        return () => timeline.reset()
+      }, [])
+      return null
+    }
+    const owner = createRoot(document.body.appendChild(document.createElement('div')))
+    owner.render(createElement(Owner))
+    await vi.waitFor(() => expect(ownerMounted).toBe(true))
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      owner.unmount()
+      expect(errors.mock.calls.map((call) => String(call[0]))).not.toContainEqual(
+        expect.stringContaining('synchronously unmount a root'),
+      )
+    } finally {
+      errors.mockRestore()
+    }
+    expect(transcript.querySelector('#claimed-node')).toBeNull()
+    await vi.waitFor(() => expect(mounted).toBe(0))
+
+    remove()
     await ctx.fiber.dispose()
   })
 
@@ -860,6 +889,135 @@ describe('loading earlier records', () => {
     timeline.render([node])
     timeline.render([node])
     expect(reads).toBe(afterFirst)
+  })
+
+  it('restores the reader position after a prepend without a smooth-scroll animation', () => {
+    const { scrollContainer, timeline } = scrolling()
+    // The document skin enables smooth scrolling on the transcript.
+    scrollContainer.style.scrollBehavior = 'smooth'
+    let top = 0
+    const writes: { top: number; behavior: string }[] = []
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        writes.push({ top: value, behavior: scrollContainer.style.scrollBehavior })
+        top = value
+      },
+    })
+    timeline.render([say('c', 7), say('d', 8), say('e', 9)], [], { hasEarlier: true, loadEarlier: vi.fn() })
+    top = 20
+    scrollContainer.dispatchEvent(new Event('scroll'))
+    writes.length = 0
+    timeline.render([say('a', 5), say('b', 6), say('c', 7), say('d', 8), say('e', 9)], [], {
+      hasEarlier: false,
+    })
+    expect(writes).toEqual([{ top: 220, behavior: 'auto' }])
+    expect(scrollContainer.style.scrollBehavior).toBe('smooth')
+  })
+
+  /** Mirrors the browser contract: a notification after observe(), then only on a visibility change. */
+  function fakeIntersection() {
+    const state = { visible: true }
+    const observers: FakeObserver[] = []
+    class FakeObserver {
+      readonly targets = new Map<Element, boolean | undefined>()
+      constructor(readonly callback: IntersectionObserverCallback) {
+        observers.push(this)
+      }
+      observe(target: Element) {
+        this.targets.set(target, undefined)
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target)
+      }
+      disconnect() {
+        this.targets.clear()
+      }
+      frame() {
+        for (const [target, last] of this.targets) {
+          const now = state.visible && !(target as HTMLElement).hidden
+          if (now === last) continue
+          this.targets.set(target, now)
+          this.callback(
+            [{ target, isIntersecting: now } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+      }
+    }
+    vi.stubGlobal('IntersectionObserver', FakeObserver)
+    const frame = () => {
+      for (const observer of observers) observer.frame()
+    }
+    return { state, frame }
+  }
+
+  it('asks for the next page when the sentinel is still on screen after a prepend', () => {
+    const { state, frame } = fakeIntersection()
+    const { timeline } = scrolling()
+    const loadEarlier = vi.fn()
+    timeline.render([say('e', 9), say('f', 10)], [], { hasEarlier: true, loadEarlier })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // The in-flight request is not repeated while the page is still loading.
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // The page lands, the sentinel never left the screen: the next page is requested anyway.
+    timeline.render([say('c', 7), say('d', 8), say('e', 9), say('f', 10)], [], {
+      hasEarlier: true,
+      loadEarlier,
+    })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+    // Once the restored position hides the sentinel, a landed page asks for nothing more.
+    state.visible = false
+    timeline.render([say('a', 5), say('b', 6), say('c', 7), say('d', 8), say('e', 9), say('f', 10)], [], {
+      hasEarlier: true,
+      loadEarlier,
+    })
+    frame()
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry by itself when loading a page fails and the same window comes back', () => {
+    const { frame } = fakeIntersection()
+    const { scrollContainer, timeline } = scrolling()
+    const loadEarlier = vi.fn()
+    const tail = () => [say('e', 9), say('f', 10)]
+    timeline.render(tail(), [], { hasEarlier: true, loadEarlier })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // A failed load reopens the session: the same window is rendered again, several times.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      timeline.render(tail(), [], { hasEarlier: true, loadEarlier })
+      frame()
+    }
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // The row stays for the reader to ask again by hand.
+    const earlier = scrollContainer.querySelector<HTMLElement>('.transcript-earlier')
+    expect(earlier?.hidden).toBe(false)
+    earlier?.querySelector('button')?.click()
+    expect(loadEarlier).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the button, without re-arming, when a page brings no new conversation entries', () => {
+    const { frame } = fakeIntersection()
+    const { timeline } = scrolling()
+    const loadEarlier = vi.fn()
+    timeline.render([say('e', 9)], [], { hasEarlier: true, loadEarlier })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
+    // The page held only records the transcript does not show: nothing was prepended.
+    timeline.render([{ kind: 'assistant', id: 'x', seq: 8, text: ' ' }, say('e', 9)], [], {
+      hasEarlier: true,
+      loadEarlier,
+    })
+    frame()
+    expect(loadEarlier).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { chmod, mkdtemp, readdir, rm, unlink, writeFile } from 'node:fs/promises'
@@ -77,6 +78,17 @@ describe('Computer Use artifact GC candidate scanner', () => {
       join(metadataDirectory, `${sha256}.json`),
       `${JSON.stringify({ schemaVersion: 1, sha256, size: 1, createdAtMs: 0 }, null, 2)}\n`,
     )
+    if (process.platform === 'win32') {
+      // A plain directory under the user's temporary folder inherits an owner-only DACL on Windows,
+      // so it is private there; grant Everyone read to make the tree genuinely broad.
+      const systemRoot = process.env.SystemRoot
+      if (!systemRoot) throw new Error('SystemRoot missing')
+      execFileSync(
+        join(systemRoot, 'System32', 'icacls.exe'),
+        [join(dataDir, 'artifacts', 'computer-use-meta'), '/grant', '*S-1-1-0:R'],
+        { windowsHide: true },
+      )
+    }
     await expect(scanComputerUseArtifactCandidates(dataDir)).rejects.toThrow(/private|denied|access/i)
   })
 

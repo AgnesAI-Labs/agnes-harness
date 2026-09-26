@@ -223,7 +223,9 @@ describe('real stdio subprocess', () => {
     // Node terminates a Windows child at SIGTERM even if the child registered a handler.
     ['kill', process.platform === 'win32' ? 'SIGTERM' : 'SIGKILL'],
   ])('closes a %s child at the necessary ladder rung', async (mode, signal) => {
-    const { c, closes } = connect(mode, { cmd: [], shutdownGraceMs: 40 })
+    // The eof child exits on its own once stdin ends, which can take longer than 40 ms on a loaded
+    // Windows runner; a longer grace keeps the next rung from overtaking that exit.
+    const { c, closes } = connect(mode, { cmd: [], shutdownGraceMs: mode === 'eof' ? 1_000 : 40 })
     await c.connect()
     await c.request('echo', {}) // The child installed its signal handlers before closing starts.
     await c.close()

@@ -24,6 +24,11 @@ vi.mock('./surface-mounts.js', async (importActual) => {
   }
 })
 
+// A local daemon listens on a named pipe on Windows and a Unix socket elsewhere; the SDK refuses to
+// open a non-pipe path on Windows, so an unreachable backend has to use the platform's own form.
+const unreachableSocket =
+  process.platform === 'win32' ? '\\\\.\\pipe\\agnes-does-not-exist' : '/tmp/agnes-does-not-exist.sock'
+
 const resources = {
   mode: 'package' as const,
   root: '/tmp/local-runtime',
@@ -148,7 +153,7 @@ describe('Web command launch contract', () => {
         scope: { profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         // No listener here: the launcher's private connection cannot be established.
-        socketPath: '/tmp/agnes-does-not-exist.sock',
+        socketPath: unreachableSocket,
         web: {
           url: 'ws://127.0.0.1:52000',
           origin: 'http://127.0.0.1:4181',
@@ -183,7 +188,7 @@ describe('Web command launch contract', () => {
         scope: { profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         // No listener here: the launcher's private connection cannot be established.
-        socketPath: '/tmp/agnes-does-not-exist.sock',
+        socketPath: unreachableSocket,
         web: {
           url: 'ws://127.0.0.1:52000',
           origin: 'http://127.0.0.1:4181',
@@ -216,7 +221,7 @@ describe('Web command launch contract', () => {
       ({
         scope: { profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
-        socketPath: '/tmp/agnes-does-not-exist.sock',
+        socketPath: unreachableSocket,
         web: {
           url: 'ws://127.0.0.1:52000',
           origin: 'http://127.0.0.1:4181',

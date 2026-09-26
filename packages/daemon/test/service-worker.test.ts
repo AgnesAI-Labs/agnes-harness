@@ -342,7 +342,7 @@ describe('S5 service worker boundary', () => {
         sessionKey: 'session-1',
         workspaceId: 'a'.repeat(64),
         revision: 1,
-        canonicalRoot: realpathSync(dir),
+        canonicalRoot: realpathSync.native(dir),
       },
     })
     await expect(
@@ -507,7 +507,7 @@ describe('S5 service worker boundary', () => {
             sessionKey: sessionId,
             workspaceId: 'b'.repeat(64),
             revision: 1,
-            canonicalRoot: realpathSync(dir),
+            canonicalRoot: realpathSync.native(dir),
           },
           ...(openedOnce ? { resume: true } : {}),
         })

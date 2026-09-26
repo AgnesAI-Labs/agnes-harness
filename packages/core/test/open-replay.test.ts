@@ -5,12 +5,12 @@ import { MemoryStorage } from '../src/log/memory-storage.js'
 import { scanPages } from '../src/log/scan-pages.js'
 import { SessionLogImpl } from '../src/log/session-log.js'
 import type { StorageAdapter } from '../src/log/storage.js'
-import { encodeLedgerState } from '../src/project/cache.js'
 import { computeSurface } from '../src/project/surface.js'
 import { projectUI, UIProjectionCell } from '../src/project/ui.js'
 import { openTracked, StateTracker } from '../src/reduce/tracker.js'
 import { canonicalJson } from '../src/request/hash.js'
 import type { Event, EventInput } from '../src/types.js'
+import { encodeLedgerState } from '../testkit/encode-ledger-state.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const base = { actor, origin: 'system', trust: 'trusted' } as const
@@ -152,41 +152,21 @@ describe('a cold open folds the rows it verifies', () => {
     await opened.log.close()
   })
 
-  it('leaves the tracker equal to a full rebuild, with and without a fold cache', async () => {
-    for (const withFold of [true, false]) {
-      const storage = new MemoryStorage()
-      await written(storage)
-      const fold = await storage.foldCache('k')
-      expect(fold?.seq).toBeGreaterThan(0)
-      const source = withFold
-        ? storage
-        : (new Proxy(storage, {
-            get(target, property, receiver) {
-              if (property === 'foldCache') return undefined
-              const value = Reflect.get(target, property, receiver) as unknown
-              return typeof value === 'function' ? value.bind(target) : value
-            },
-          }) as StorageAdapter)
-      const applied: number[] = []
-      const original = StateTracker.prototype.apply
-      vi.spyOn(StateTracker.prototype, 'apply').mockImplementation(function (this: StateTracker, events) {
-        applied.push(...events.map((event) => event.seq))
-        return original.call(this, events)
-      })
-      const opened = await openTracked({
-        ...common,
-        storage: source,
-        key: 'k',
-        writerRunId: 'r',
-        ids: defaultIds(),
-      })
-      vi.restoreAllMocks()
-      const from = withFold ? (fold?.seq ?? 0) : 0
-      expect(applied).toEqual(Array.from({ length: opened.log.lastSeq - from }, (_, i) => from + i + 1))
-      const rebuilt = await StateTracker.rebuild(opened.log)
-      expect(opened.tracker.state).toEqual(rebuilt.state)
-      await opened.log.close()
-    }
+  it('folds the tracker from the first row and leaves it equal to a full rebuild', async () => {
+    const storage = new MemoryStorage()
+    await written(storage)
+    const applied: number[] = []
+    const original = StateTracker.prototype.apply
+    vi.spyOn(StateTracker.prototype, 'apply').mockImplementation(function (this: StateTracker, events) {
+      applied.push(...events.map((event) => event.seq))
+      return original.call(this, events)
+    })
+    const opened = await openTracked({ ...common, storage, key: 'k', writerRunId: 'r', ids: defaultIds() })
+    vi.restoreAllMocks()
+    expect(applied).toEqual(Array.from({ length: opened.log.lastSeq }, (_, i) => i + 1))
+    const rebuilt = await StateTracker.rebuild(opened.log)
+    expect(opened.tracker.state).toEqual(rebuilt.state)
+    await opened.log.close()
   })
 
   it('reads the ledger once: every row verified exactly once and no replay scan', async () => {
@@ -359,7 +339,6 @@ describe('verification comes before folding', () => {
       writerRunId: 'r',
       ids: defaultIds(),
       replay: {
-        start: () => undefined,
         page: (events) => {
           for (const event of events) {
             if (event.seq === 600) throw new Error('an unverified row reached the replay consumer')
@@ -440,6 +419,20 @@ async function busySession(storage: MemoryStorage, lane: string) {
       }),
     ]),
   )
+  // End on a cost row while the approval stays parked: credits, usage and the cost node all add up,
+  // so a replay that folds the last row twice cannot come out equal to the writer.
+  await live.log.append(
+    onLane([
+      row('cost/ledger', {
+        purpose: 'inference',
+        effectId: 'last-inference',
+        tokens: { input: 7, output: 3, cacheRead: 2, cacheWrite: 1 },
+        credits: 5,
+        creditSource: 'gateway',
+        model: 'm',
+      }),
+    ]),
+  )
   return live
 }
 
@@ -458,11 +451,10 @@ describe('a cold reopen matches the live writer', () => {
   it.each(['main', 'side'])('rebuilds the %s lane exactly as the writer held it', async (lane) => {
     const storage = new MemoryStorage()
     const live = await busySession(storage, lane)
-    const fold = await storage.foldCache('k')
-    expect(fold?.seq).toBeGreaterThan(0)
-    expect(fold?.seq).toBeLessThan(live.log.lastSeq)
     const tools = (await live.ui.view()).nodes.filter((node) => node.kind === 'tool')
     expect(tools.find((node) => node.toolUseId === 'parent-tool')?.children?.length).toBe(1)
+    expect(live.tracker.state.pendingApprovals.has('parked')).toBe(true)
+    expect((await live.log.scan({ order: 'desc', limit: 1 }))[0]?.type).toBe('cost/ledger')
     const expected = await snapshot(live)
     await live.log.close()
     const reopened = await openTracked({

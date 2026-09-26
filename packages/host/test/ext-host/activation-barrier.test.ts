@@ -216,6 +216,31 @@ it('does not let detached work retain an expired turn across a closed gate', asy
   await activation
 })
 
+it('queues work started by a live invocation behind an activation, and refuses it otherwise', async () => {
+  const barrier = createExtensionActivationBarrier()
+  const switchStarted = deferred()
+  const order: string[] = []
+  let queued: Promise<unknown> | undefined
+  const tool = barrier.admit('tool')
+  const running = tool.run(async () => {
+    await switchStarted.promise
+    queued = barrier
+      .enqueue('turn')
+      .start()
+      .then((turn) => turn.run(() => order.push('child turn')))
+  })
+  const activation = barrier.quiesce('pkg.queued-child-turn', async () => {
+    order.push('switch')
+  })
+  expect(() => barrier.enqueue('turn')).toThrow(ActivationInProgressError)
+  switchStarted.resolve()
+  await running
+  await activation
+  await queued
+  expect(order).toEqual(['switch', 'child turn'])
+  expect(barrier.snapshot()).toMatchObject({ active: { turn: 0, tool: 0, service: 0 } })
+})
+
 it('reopens queued and immediate admission when switching fails', async () => {
   const barrier = createExtensionActivationBarrier()
   const queued = barrier.enqueue('service')

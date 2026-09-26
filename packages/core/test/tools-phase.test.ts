@@ -305,12 +305,10 @@ describe('tools phase', () => {
     expect(await session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
     const types = (await log.scan({ fromSeq: 1, limit: 100 })).map((e) => e.type)
     const i = types.indexOf('tool/call')
-    // A transition with no row of its own leaves an op-mark (approved, then dispatched); the others
-    // carry the counter as a cell beside their rows.
+    // Approved and dispatched commit with the intent, so neither leaves an op-mark of its own; every
+    // commit carries the counter as a cell beside its rows.
     expect(types.slice(i + 3)).toEqual([
-      'x/core/op-mark',
       'effect/intent',
-      'x/core/op-mark',
       'tool/result',
       'effect/settled',
       'verifier/signal',

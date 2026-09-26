@@ -548,6 +548,8 @@ describe('createMcpRowRuntime row shape and failure handling', () => {
       expect(runtime.tools('alpha', 'r2')).toBeUndefined()
     })
 
+    // Mounting 250 tools takes about 1.4s alone (linear, about 5ms per tool) and exceeded the 5s
+    // default on a loaded hosted runner.
     it('pages a large catalog by 100, sorted by name, with a cursor that reaches every tool exactly once', async () => {
       const host = await testHost()
       const runtime = createMcpRowRuntime({ host, opener: manyToolsOpener(250) })
@@ -568,7 +570,7 @@ describe('createMcpRowRuntime row shape and failure handling', () => {
       expect(seen).toHaveLength(250)
       expect(new Set(seen).size).toBe(250)
       expect(seen).toEqual([...seen].sort())
-    })
+    }, 30_000)
 
     it('rejects a cursor that is not a valid offset into this catalog', async () => {
       const host = await testHost()

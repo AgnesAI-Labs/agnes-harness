@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 31,
+    "seq": 5,
     "data": {
       "meta": {
         "turn": 1,
@@ -16,8 +16,8 @@
       "control": {
         "status": "running"
       },
-      "step": 1,
-      "latestAssistantSeq": 13,
+      "step": 0,
+      "latestAssistantSeq": null,
       "taint": false,
       "phase": {
         "kind": "checkpoint",

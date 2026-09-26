@@ -29,6 +29,11 @@ async function acquire(
 }
 
 const fakeWorker = fileURLToPath(new URL('./fake-worker.ts', import.meta.url))
+
+// A tsx-started fake worker says hello in under a second alone, but on a loaded macOS runner it has
+// taken more than ten. The hello deadline only guards these tests against a hang, so they use the
+// daemon's own default (30 s), and each test allows 60 s to leave room for it.
+const REAL_WORKER_STARTUP_MS = DEFAULT_LIMITS.workerStartupMs
 const exitingWorker = fileURLToPath(new URL('./fixtures/exiting-worker.mjs', import.meta.url))
 
 const workerSocket = (dir: string): string =>
@@ -442,7 +447,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
     }
     const notices: string[] = []
     const exited: string[] = []
@@ -491,7 +496,7 @@ describe('WorkerPool', () => {
 
     await pool.closeAll(1000)
     await server.close()
-  }, 20_000)
+  }, 60_000)
 
   it('never quarantines the shared worker, however many times it crashes', () => {
     const pool = new WorkerPool({
@@ -519,7 +524,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
     }
     const pool = new WorkerPool({
       config,
@@ -553,7 +558,7 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 
   it('exposes only Host-owning links to package activation while a resource lifecycle worker is live', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-activation-links-'))
@@ -565,7 +570,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
     }
     const previousProbe = process.env.AGNES_RESOURCE_PROBE_FILE
     process.env.AGNES_RESOURCE_PROBE_FILE = probeFile
@@ -607,7 +612,7 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 
   it('fail-stops returned links synchronously before child exit is observed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-fail-stop-'))
@@ -618,7 +623,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
     }
     const pool = new WorkerPool({
       config,
@@ -645,7 +650,7 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 
   it('rejects a worker whose link dies inside startup initialization', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-initializer-exit-'))
@@ -656,7 +661,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
     }
     const pool = new WorkerPool({
       config,
@@ -682,7 +687,7 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 
   it('does not start a replacement generation before prior exit recovery completes', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-generation-fence-'))
@@ -693,7 +698,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
     }
     const pool = new WorkerPool({
       config,
@@ -743,7 +748,55 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
+
+  // On Linux a worker that exits with the start gate still unread resets its pipe, and the error
+  // surfaces on the supervisor's end after the gate was written.
+  it('treats an error on the written start gate as nothing the supervisor has to handle', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-gate-reset-'))
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
+    const config: DaemonConfig = {
+      profileName: 'p',
+      dataDir: dir,
+      socketPath: join(dir, 'a.sock'),
+      workersSocketPath: workerSocket(dir),
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
+    }
+    const { spawn } = await import('node:child_process')
+    const children: ChildProcess[] = []
+    const pool = new WorkerPool({
+      config,
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile,
+      execPath: process.execPath,
+      workerEntry: fakeWorker,
+      execArgv: ['--import', 'tsx'],
+      clock: () => 0,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      notices: { emit() {} },
+      spawn: ((...args: Parameters<typeof spawn>) => {
+        const child = spawn(...args)
+        children.push(child)
+        return child
+      }) as typeof spawn,
+    })
+    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
+    try {
+      const link = await acquire(pool, 'agnes:t:a:x:dm:gate-reset')
+      const gate = children[0]?.stdio[3]
+      expect(gate).toBeDefined()
+      const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET', syscall: 'read' })
+      expect(() => gate?.emit('error', reset)).not.toThrow()
+      expect(link.alive).toBe(true)
+    } finally {
+      await pool.closeAll(1_000).catch(() => undefined)
+      pool.killAll()
+      await server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
 
   it('does not finish pool shutdown before worker exit recovery settles', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shutdown-recovery-'))
@@ -754,7 +807,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
     }
     const pool = new WorkerPool({
       config,
@@ -799,7 +852,7 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 
   it('does not treat a dead link as a fully exited plugin generation', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-delayed-exit-'))
@@ -810,7 +863,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
     }
     const pool = new WorkerPool({
       config,
@@ -839,7 +892,7 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 
   it('refreshes the idle watermark when a late worker reply arrives', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-activity-'))
@@ -851,7 +904,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000, workerIdleEvictMs: 100 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS, workerIdleEvictMs: 100 },
     }
     const notices: string[] = []
     const pool = new WorkerPool({
@@ -891,7 +944,7 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 
   // Reverse-verification (not optional per the task brief): prove the 5-minute rolling window
   // actually ages crashes out, not just that three crashes in a row trips the breaker. Drives
@@ -907,7 +960,7 @@ describe('WorkerPool', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000, workerIdleEvictMs: 100 },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS, workerIdleEvictMs: 100 },
     }
     const pool = new WorkerPool({
       config,
@@ -936,7 +989,7 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 
   it('does not quarantine two crashes a window apart, and quarantines exactly on the third qualifying one', () => {
     let now = 0
@@ -1082,7 +1135,11 @@ describe('WorkerPool when a start from the desired target fails', () => {
       dataDir: dir,
       socketPath: join(dir, 'a.sock'),
       workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: 2500 },
+      // The same window bounds hello and boot_ready. A tsx-started fake worker can take more than
+      // 2.5s to say hello on a loaded hosted runner, which then fails before the boot phase under
+      // test. These cases wait for boot_ready to time out, up to three times, so the window stays
+      // at 10s rather than the daemon default the other real-worker tests use.
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
     }
     const store = new CompositeTargetStore(sqliteTables().table('composite'), 'default')
     setup(store)
@@ -1121,7 +1178,7 @@ describe('WorkerPool when a start from the desired target fails', () => {
       expect(notices).not.toContain('worker_crashed')
       expect(pool.isQuarantined('@shared')).toBe(false)
     })
-  }, 40_000)
+  }, 90_000)
 
   it('records the failure when the worker process dies while it is starting from the target', async () => {
     process.env.AGNES_FAKE_BOOT = 'exit'
@@ -1138,7 +1195,7 @@ describe('WorkerPool when a start from the desired target fails', () => {
       process.env.AGNES_FAKE_BOOT = undefined
       Reflect.deleteProperty(process.env, 'AGNES_FAKE_BOOT')
     }
-  }, 40_000)
+  }, 90_000)
 
   it('fails the start as soon as the worker says it cannot apply the target, and records that target', async () => {
     process.env.AGNES_FAKE_BOOT = 'fail'

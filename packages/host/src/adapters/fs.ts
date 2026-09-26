@@ -57,9 +57,17 @@ const windowDecoder = new TextDecoder('utf-8', { ignoreBOM: true })
  * policy was compiled resolves to where it points now, not where it pointed then. L0 makes no
  * RESOLVE_BENEATH promise about a hostile process racing the check - that is what the L1 OS
  * backend is for.
+ *
+ * Where the io reports final paths, the link-free prefix the walk reached is respelled by it, so a
+ * short-name alias of a directory decides exactly as its long name does, and a root pinned in one
+ * spelling still contains a path asked for in the other.
  */
 async function canonicalize(io: FsIo, abs: string, requested: string = abs): Promise<string> {
   const seen = new Set<string>()
+  const settle = async (prefix: string, rest: readonly string[]): Promise<string> => {
+    const real = io.finalPath ? await io.finalPath(prefix) : prefix
+    return rest.length === 0 ? real : resolve(real, ...rest)
+  }
   const walk = async (candidate: string): Promise<string> => {
     const normalized = resolve(candidate)
     const volumeRoot = parse(normalized).root
@@ -71,7 +79,7 @@ async function canonicalize(io: FsIo, abs: string, requested: string = abs): Pro
       // The io answers undefined for both ENOENT and ENOTDIR: the policy then decides on the
       // deepest real prefix plus the unresolved remainder.
       const stat = await io.lstat(next)
-      if (stat === undefined) return resolve(current, ...parts.slice(index))
+      if (stat === undefined) return settle(current, parts.slice(index))
       if (stat.kind !== 'symlink') {
         current = next
         continue
@@ -82,7 +90,7 @@ async function canonicalize(io: FsIo, abs: string, requested: string = abs): Pro
       const targetPath = isAbsolute(target) ? target : resolve(dirname(next), target)
       return walk(resolve(targetPath, ...parts.slice(index + 1)))
     }
-    return current
+    return settle(current, [])
   }
   return walk(abs)
 }
@@ -141,7 +149,14 @@ export function createFs(
       if (decideFsPath(policy, real, { caseSensitive }).reason !== 'no-match') throw err
       const inside = (outer: string, inner: string): boolean =>
         decideFsPath(overlay(outer), inner, { caseSensitive }).effect === 'allow'
-      const open = readRoots().some((root) => !inside(root, policy.workspaceRoot) && inside(root, real))
+      // Each root is canonicalized the way the path was, so both are compared in one spelling; a
+      // root that cannot be canonicalized opens nothing.
+      const roots = await Promise.all(
+        readRoots().map((root) => canonicalize(io, resolve(root)).catch(() => undefined)),
+      )
+      const open = roots.some(
+        (root) => root !== undefined && !inside(root, policy.workspaceRoot) && inside(root, real),
+      )
       if (!open) throw err
       return { real, abs }
     }

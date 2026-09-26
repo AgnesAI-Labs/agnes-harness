@@ -18,6 +18,7 @@ export const THEME_TOKEN_NAMES = Object.freeze([
   "--agnes-bg-selected",
   "--agnes-bg-hover",
   "--agnes-bg-scrim",
+  "--agnes-bg-lightbox",
   "--agnes-surface-glass-soft",
   "--agnes-surface-glass-hover",
   "--agnes-input-surface",

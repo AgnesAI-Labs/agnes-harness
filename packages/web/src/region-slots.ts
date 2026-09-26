@@ -52,6 +52,7 @@ import {
   type TopbarHandle,
   Trace,
   type TraceHandle,
+  type TracePanelOptions,
   Transcript,
   type TranscriptDependencies,
   type TranscriptHandle,
@@ -617,12 +618,7 @@ export function mountComposerRegion(
   }
 }
 
-export interface TraceRegionOptions {
-  toggle: HTMLButtonElement
-  chatToggle?: HTMLButtonElement
-  conversation?: HTMLElement
-  store?: Pick<Storage, 'getItem' | 'setItem'>
-}
+export type TraceRegionOptions = Omit<TracePanelOptions, 'root'>
 
 export interface TraceRegionMount extends EmptyStateRegionMount, TraceHandle {}
 

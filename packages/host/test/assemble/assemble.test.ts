@@ -102,7 +102,7 @@ function baseModule(over: Partial<PackageModule> = {}): PackageModule {
         n === 'sandbox'
           ? async (ctx: { profile: { workspaceRoot: string } }) => ({
               ...seams.sandbox,
-              fsPolicy: () => testFsPolicy(realpathSync(ctx.profile.workspaceRoot)),
+              fsPolicy: () => testFsPolicy(realpathSync.native(ctx.profile.workspaceRoot)),
             })
           : async () => seams[n],
       ]),
@@ -436,12 +436,12 @@ describe('assemble', () => {
           sessionKey: 'session-a',
           workspaceId: 'a'.repeat(64),
           revision: 1,
-          canonicalRoot: realpathSync(d.workspaceRoot),
+          canonicalRoot: realpathSync.native(d.workspaceRoot),
         },
         'session-a',
       )
       const runtime = await table.open(binding, () => assembled.openWorkspaceRuntime(binding))
-      expect(runtime.root).toBe(realpathSync(d.workspaceRoot))
+      expect(runtime.root).toBe(realpathSync.native(d.workspaceRoot))
       expect(runtime.seam?.fsPolicy()).toBe(runtime.policy)
       expect(runtime.sandboxBackend).toEqual({ confine: expect.any(Function) })
     } finally {
@@ -1168,9 +1168,9 @@ describe('assemble', () => {
     // This fixture uses the local filesystem as its fake remote volume. Keep the advertised
     // remote spelling aligned with that volume's canonical root (not macOS's /var alias), so the
     // remote symlink walk and policy describe the same workspace.
-    d.dataDir = realpathSync(d.dataDir)
-    d.homeDir = realpathSync(d.homeDir ?? d.dataDir)
-    d.workspaceRoot = realpathSync(d.workspaceRoot)
+    d.dataDir = realpathSync.native(d.dataDir)
+    d.homeDir = realpathSync.native(d.homeDir ?? d.dataDir)
+    d.workspaceRoot = realpathSync.native(d.workspaceRoot)
     const order: string[] = []
     const uploaded: string[] = []
     let opened = true

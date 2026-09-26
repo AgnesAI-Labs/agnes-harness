@@ -116,6 +116,8 @@ export function createSessionWorkspaceAdapterFactory(
         return handle
       }
 
+      // The native resolver: on Windows it is what the local io's finalPath uses, so a root the
+      // fence canonicalized and a root the daemon resolved are compared in the same spelling.
       let currentRoot: string
       try {
         currentRoot = await fsp.realpath(binding.canonicalRoot)
@@ -126,6 +128,7 @@ export function createSessionWorkspaceAdapterFactory(
       if (!samePath(currentRoot, binding.canonicalRoot, semantics))
         throw fault('local workspace root identity changed')
       let closed = false
+      const finalPath = localFsIo.finalPath
       const handle: WorkspaceRuntimeHandle = Object.freeze({
         kind: 'local',
         root: currentRoot,
@@ -184,6 +187,15 @@ export function createSessionWorkspaceAdapterFactory(
               })
             return localFsIo.rm(...args)
           },
+          ...(finalPath && {
+            finalPath: (abs: string) => {
+              if (closed)
+                throw Object.assign(new Error('E_WORKSPACE_CLOSED: workspace handle closed'), {
+                  code: 'E_WORKSPACE_CLOSED',
+                })
+              return finalPath(abs)
+            },
+          }),
         }),
         semantics,
       })

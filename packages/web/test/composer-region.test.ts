@@ -2,7 +2,7 @@
 
 import type { UsageView } from '@agnes/protocol'
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -13,6 +13,10 @@ const usage: UsageView = {
   context: { tokens: 128, window: 8192, autoCompact: true, source: 'estimated' },
   model: { route: 'local', id: 'model-a', thinking: 'off', maxTokens: 1024 },
 }
+
+// A slot contribution renders in well under half a second, but under a loaded runner an
+// occasional commit takes longer than vi.waitFor's default one second.
+const slotRender = { timeout: 5_000 }
 
 describe('rendered composer region', () => {
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
@@ -115,16 +119,18 @@ describe('rendered composer region', () => {
       { name: COMPOSER_SLOT as string, id: 'fixture-composer-shadow', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'shadow-composer' }, '替换输入区'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(document.querySelector('#shadow-composer')?.textContent).toBe('替换输入区')
-    expect(document.querySelector('#composer')).toBeNull()
-    expect(document.querySelector('#prompt')).toBeNull()
+    await vi.waitFor(() => {
+      expect(document.querySelector('#shadow-composer')?.textContent).toBe('替换输入区')
+      expect(document.querySelector('#composer')).toBeNull()
+      expect(document.querySelector('#prompt')).toBeNull()
+    }, slotRender)
 
     remove()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(document.querySelector('#composer')).toBeTruthy()
-    expect(document.querySelector<HTMLTextAreaElement>('#prompt')?.value).toBe('保留草稿')
-    expect(document.querySelector('#session-usage')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(document.querySelector('#composer')).toBeTruthy()
+      expect(document.querySelector<HTMLTextAreaElement>('#prompt')?.value).toBe('保留草稿')
+      expect(document.querySelector('#session-usage')).toBeTruthy()
+    }, slotRender)
   })
 
   it('places session input DSH contributions alongside the native composer controls', async () => {
@@ -137,13 +143,18 @@ describe('rendered composer region', () => {
       { name: 'conversation.input.overlay', id: 'fixture-input-overlay', owner: 'fixture' },
       () => createElement('span', { id: 'fixture-input-overlay-content' }, '输入层扩展'),
     )
-    runtime.registry.setSession('session-1')
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(document.querySelector('#fixture-input-left-content')?.closest('.composer-controls')).toBeTruthy()
-    expect(document.querySelector('#fixture-input-overlay-content')?.closest('#composer')).toBeTruthy()
-    expect(document.querySelector('#composer-workspace')).toBeTruthy()
-    expect(document.querySelector('#send')).toBeTruthy()
+    // The page's session service is the source the registry is bound to. Setting the registry
+    // directly races that binding: a region root that commits later binds the service and resets
+    // the registry to the service's (empty) session, which hides every session-scoped entry.
+    runtime.session.setSession('session-1')
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector('#fixture-input-left-content')?.closest('.composer-controls'),
+      ).toBeTruthy()
+      expect(document.querySelector('#fixture-input-overlay-content')?.closest('#composer')).toBeTruthy()
+      expect(document.querySelector('#composer-workspace')).toBeTruthy()
+      expect(document.querySelector('#send')).toBeTruthy()
+    }, slotRender)
     removeLeft()
     removeOverlay()
   })
@@ -155,12 +166,12 @@ describe('rendered composer region', () => {
       { name: 'conversation.composer.dock', id: 'fixture-composer-dock', owner: 'fixture' },
       () => createElement('span', { id: 'fixture-composer-dock-content' }, '扩展 dock'),
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(
-      document.querySelector('#fixture-composer-dock-content')?.closest('[data-agnes-composer-dock]'),
-    ).toBeTruthy()
-    expect(document.querySelector('#send')).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector('#fixture-composer-dock-content')?.closest('[data-agnes-composer-dock]'),
+      ).toBeTruthy()
+      expect(document.querySelector('#send')).toBeTruthy()
+    }, slotRender)
     remove()
   })
 })

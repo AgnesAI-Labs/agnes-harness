@@ -27,7 +27,6 @@ import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '..
 import {
   type CommitReceipt,
   type CommitTx,
-  type FoldCacheRecord,
   type IntegrityMetadata,
   type IntegrityRow,
   type IntegrityScanQuery,
@@ -55,7 +54,6 @@ type Book = {
   // exactOptionalPropertyTypes setting does not allow for a merely optional property.
   lease?: { runId: string; until: number; ttlMs: number } | undefined
   parent?: { key: SessionKey; boundarySeq: Seq }
-  foldCache?: FoldCacheRecord
   /** Program-counter cells written as cells, by lane. A child never sees its parent's. */
   opCells?: Map<string, RegisterRow>
 }
@@ -253,9 +251,6 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     let seq = this.lastSeq(b)
     const seqs: Seq[] = []
     const stamped = tx.events.map((e) => ({ ...e, seq: ++seq }))
-    if (tx.foldCache && tx.foldCache.seq !== seq)
-      throw new CoreError('E_STORAGE_FAULT', 'fold cache cursor does not match commit')
-    const nextFoldCache = tx.foldCache ? structuredClone(tx.foldCache) : undefined
     if (
       tx.integrity &&
       (tx.integrity.length !== stamped.length ||
@@ -272,7 +267,6 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       const { seq: entrySeq, ...metadata } = entry
       b.integrity.set(entrySeq, metadata)
     }
-    if (nextFoldCache) b.foldCache = nextFoldCache
     if (tx.opState) {
       this.setOpCell(b, {
         register: 'op.state',
@@ -332,11 +326,6 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
 
   async registers(key: SessionKey): Promise<RegisterRow[]> {
     return this.registerView(this.book(key)).values()
-  }
-
-  async foldCache(key: SessionKey): Promise<FoldCacheRecord | undefined> {
-    const record = this.book(key).foldCache
-    return record ? structuredClone(record) : undefined
   }
 
   async createChild(parentKey: SessionKey, boundarySeq: Seq, childKey: SessionKey): Promise<void> {
@@ -491,6 +480,10 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     row.creationPhase = 'cancelled'
     row.creationRevision = fact.revision
     row.cancelledFact = fact
+    if (row.state === 'creating') {
+      row.state = input.reason === 'open_failed' ? 'failed' : 'cancelled'
+      row.stateRevision += 1
+    }
     return fact
   }
 

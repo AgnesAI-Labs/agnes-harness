@@ -413,8 +413,9 @@ export class WorkerPool {
           // real child process's exit indefinitely; closing this end after the write lets it exit
           // immediately). One write is this gate's whole contract, so there is nothing else to send.
           const gate = spawnedChild.stdio[3] as Writable | null | undefined
-          gate?.write('start\n')
-          gate?.end()
+          // A worker that exits before reading the gate resets the pipe on Linux (ECONNRESET). Its
+          // exit is handled on its own; unheard, the stream error would crash the daemon.
+          gate?.on('error', () => undefined).end('start\n')
           slot.link = link
           link.onExit(() => {
             if (slot.link === link) slot.link = undefined

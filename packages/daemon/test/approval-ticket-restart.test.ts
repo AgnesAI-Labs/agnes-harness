@@ -44,7 +44,7 @@ function parkedApproval(ticket: string) {
 describe('approval ticket restart lookup', () => {
   it('indexes a real parked event and lets SDK decide it after the daemon endpoint restarts', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-ticket-restart-'))
-    const canonicalRoot = realpathSync(root)
+    const canonicalRoot = realpathSync.native(root)
     const indexFile = join(root, 'approval-index.sqlite')
     const ticket = '0123456789abcdef0123456789abcdef'
     const approval = parkedApproval(ticket)

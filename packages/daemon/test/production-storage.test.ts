@@ -35,6 +35,12 @@ import {
   startProductionSupervisor,
 } from '../src/supervisor/supervisor.js'
 
+// These workers assemble the production package graph from TypeScript source before they say
+// hello. That cold transpile takes a few seconds alone but about 30 s on a loaded hosted runner, so
+// the startup window, every wait that has to cover a worker start, and the tests that start one
+// (150 s) allow well beyond it.
+const SOURCE_WORKER_STARTUP_MS = 90_000
+
 function profile(dataDir: string): ResolvedProfile {
   const body = {
     name: 'local-dev',
@@ -283,7 +289,7 @@ describe('production supervisor storage', () => {
           // This test separates the resolved Agnes home from profile.dataDir. Production workers
           // receive config.home as AGH_HOME, so point it at the root that owns user-agnes/skills.
           home: join(home, '.agh'),
-          limits: { ...DEFAULT_LIMITS, workerStartupMs: 20_000, jobsTickMs: 60_000 },
+          limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS, jobsTickMs: 60_000 },
         },
         profile: resourceProfile,
         profileDir: join(dir, 'profiles', 'local-dev'),
@@ -303,7 +309,8 @@ describe('production supervisor storage', () => {
       const wait = async (operationId: string): Promise<Record<string, unknown>> => {
         // The daemon's Skill watcher also refreshes after these file edits, and refreshes of one
         // profile run one at a time, so an explicit refresh can queue behind a watcher refresh.
-        for (let attempt = 0; attempt < 1_500; attempt++) {
+        const deadline = performance.now() + SOURCE_WORKER_STARTUP_MS + 30_000
+        while (performance.now() < deadline) {
           const operation = (await call('_agnes/v1/resources.operation.get', {
             profile: 'local-dev',
             operationId,
@@ -406,7 +413,7 @@ describe('production supervisor storage', () => {
         if (value !== undefined) process.env[name] = value
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 150_000)
 
   it('manages a stdio MCP before default local-dev has a provider route', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-providerless-resource-'))
@@ -440,7 +447,7 @@ describe('production supervisor storage', () => {
       supervisor = await startProductionSupervisor({
         config: {
           ...config(dir),
-          limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000, jobsTickMs: 60_000 },
+          limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS, jobsTickMs: 60_000 },
         },
         profile,
         profileDir: join(dir, 'profiles', 'local-dev'),
@@ -459,7 +466,7 @@ describe('production supervisor storage', () => {
       const wait = async (operationId: string): Promise<Record<string, unknown>> => {
         let lastState: unknown
         // A real resource worker may use the configured 10-second startup budget.
-        const deadline = performance.now() + 10_000
+        const deadline = performance.now() + SOURCE_WORKER_STARTUP_MS + 10_000
         while (performance.now() < deadline) {
           const operation = (await call('_agnes/v1/resources.operation.get', {
             profile: 'local-dev',
@@ -535,7 +542,7 @@ describe('production supervisor storage', () => {
       else process.env.PATH = previousPath
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 150_000)
 
   it('projects a killed stdio MCP generation without degrading an unrelated active server', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-mcp-health-'))
@@ -569,7 +576,7 @@ describe('production supervisor storage', () => {
       supervisor = await startProductionSupervisor({
         config: {
           ...config(dir),
-          limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000, jobsTickMs: 60_000 },
+          limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS, jobsTickMs: 60_000 },
         },
         profile: resourceProfile,
         profileDir: join(dir, 'profiles', 'local-dev'),
@@ -586,7 +593,8 @@ describe('production supervisor storage', () => {
       const call = (method: string, params: unknown): Promise<unknown> =>
         connection.call(id++, method, params)
       const wait = async (operationId: string): Promise<Record<string, unknown>> => {
-        for (let attempt = 0; attempt < 500; attempt++) {
+        const deadline = performance.now() + SOURCE_WORKER_STARTUP_MS + 10_000
+        while (performance.now() < deadline) {
           const operation = (await call('_agnes/v1/resources.operation.get', {
             profile: 'local-dev',
             operationId,
@@ -701,7 +709,7 @@ describe('production supervisor storage', () => {
       else process.env.AGNES_MCP_STDIO_ALLOWLIST = previousAllowlist
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 150_000)
 
   it('resolves SecretRef only inside the resource worker and preserves the active MCP on a missing ref', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-resource-secret-'))
@@ -741,7 +749,7 @@ describe('production supervisor storage', () => {
       const startOptions = {
         config: {
           ...config(dir),
-          limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000, jobsTickMs: 60_000 },
+          limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS, jobsTickMs: 60_000 },
         },
         profile: resourceProfile,
         profileDir: join(dir, 'profiles', 'local-dev'),
@@ -762,7 +770,7 @@ describe('production supervisor storage', () => {
         connection.call(id++, method, params)
       const wait = async (operationId: string): Promise<Record<string, unknown>> => {
         // Match the real worker startup budget instead of assuming a two-second cold start.
-        const deadline = performance.now() + 10_000
+        const deadline = performance.now() + SOURCE_WORKER_STARTUP_MS + 10_000
         let lastState: unknown
         while (performance.now() < deadline) {
           const operation = (await call('_agnes/v1/resources.operation.get', {
@@ -957,7 +965,7 @@ describe('production supervisor storage', () => {
       else process.env.AGNES_SECRET_AUDIT_TOKEN = previousToken
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 90_000)
+  }, 150_000)
 
   it('closes the supervisor before storage exactly once on normal or signal-driven shutdown', async () => {
     const events: string[] = []

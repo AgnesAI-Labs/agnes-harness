@@ -1,4 +1,5 @@
 import type { Actor, EventEnvelope } from '@agnes/protocol'
+import type { ToolDetailRead, ToolDetailReadResult } from '@agnes/worker-runtime'
 import type { PreviewSnapshotEntry } from '../registry.js'
 import type { WorkspaceBindingEnvelope } from '../storage/workspaces.js'
 import type { WorkerSessionChannel } from './worker-link.js'
@@ -134,6 +135,10 @@ export class RemoteSession {
 
   scan(q: unknown): Promise<unknown[]> {
     return this.link.command('scan', q as Record<string, unknown>) as Promise<unknown[]>
+  }
+
+  readToolDetailPage(input: ToolDetailRead): Promise<ToolDetailReadResult> {
+    return this.link.command('readToolDetail', input) as Promise<ToolDetailReadResult>
   }
 
   /**

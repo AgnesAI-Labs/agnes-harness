@@ -25,6 +25,7 @@ import {
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
+  type SessionReadToolDetailParams,
   type ThinkingLevel,
   UI_HISTORY_DEFAULT_LIMIT,
   UI_HISTORY_MAX_LIMIT,
@@ -41,6 +42,12 @@ import {
   type UITimelinePatch,
   type UITurn,
 } from '@agnes/protocol'
+import {
+  readToolDetailPage,
+  TOOL_DETAIL_PAGE_BYTES,
+  type ToolDetailRead,
+  type ToolDetailReadResult,
+} from '@agnes/worker-runtime'
 import type { TicketPort } from '../../storage/lister.js'
 import type { WorkspaceBindingEnvelope } from '../../storage/workspaces.js'
 import { AttachedFeed, type Limits } from '../attached.js'
@@ -415,6 +422,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.projectUIPatch',
       'session.projectUIOpening',
       'session.projectUIHistory',
+      'session.readToolDetail',
       'session.list',
       'session.rename',
       'session.archive',
@@ -956,6 +964,38 @@ export function registerAgnes(
       nodes = nodes.slice(1)
       startIndex += 1
     }
+  })
+  ep.register('_agnes/v1/session.readToolDetail', async (params, c) => {
+    const p = params as SessionReadToolDetailParams
+    requireOwner('session.readToolDetail', p.sessionId, c)
+    const offset = p.offset ?? 0
+    const maxBytes = p.maxBytes ?? TOOL_DETAIL_PAGE_BYTES
+    if (
+      !Number.isSafeInteger(p.callSeq) ||
+      p.callSeq < 1 ||
+      (p.resultSeq !== undefined && (!Number.isSafeInteger(p.resultSeq) || p.resultSeq <= p.callSeq)) ||
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(maxBytes) ||
+      maxBytes < 1 ||
+      maxBytes > TOOL_DETAIL_PAGE_BYTES
+    )
+      throw rpcError('INVALID_PARAMS', { reason: 'invalid tool detail bounds' })
+    const entry = cx.registry.require(p.sessionId)
+    const input: ToolDetailRead = {
+      callSeq: p.callSeq,
+      ...(p.resultSeq === undefined ? {} : { resultSeq: p.resultSeq }),
+      offset,
+      maxBytes,
+    }
+    const session = entry.session as typeof entry.session & {
+      readToolDetailPage?: (input: ToolDetailRead) => Promise<ToolDetailReadResult>
+    }
+    const outcome = session.readToolDetailPage
+      ? await session.readToolDetailPage(input)
+      : await readToolDetailPage(session, input)
+    if (!outcome.ok) throw rpcError('INVALID_PARAMS', { reason: outcome.reason })
+    return { sessionId: p.sessionId, ...outcome.page }
   })
   ep.register('_agnes/v1/session.projectUIPatch', async (params, c): Promise<UIProjectionUpdate> => {
     const p = params as SessionProjectUIPatchParams

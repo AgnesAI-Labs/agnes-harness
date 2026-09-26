@@ -172,7 +172,7 @@ describe('the model reaches tools-search through the row it is supplied by', () 
       dataDir,
       packageDirs,
       script: [
-        callTool('ls', { path: realpathSync(dataDir) }),
+        callTool('ls', { path: realpathSync.native(dataDir) }),
         say('first'),
         callTool('ls', {}),
         say('second'),

@@ -131,6 +131,15 @@ type OperationCommon = {
   }
 }
 
+/**
+ * One phase edge of a chain committed as a single append. `nextSeq` is the seq this step's first row
+ * will be committed at, or the next step's first row when this step has none.
+ */
+export type ChainStep = {
+  events: EventInput[]
+  next: (cur: OpStateObj | null, nextSeq: Seq) => OpStateObj | null
+}
+
 export type OperationEffectResult = { effects?: EventInput[]; note?: string }
 
 /** An ordinary additive operation; failures are diagnosed and the remaining slot stays runnable. */
@@ -732,24 +741,63 @@ export class SessionImpl {
     opts: { refineCaller?: boolean } = {},
   ): Promise<Seq[]> {
     const expected = this.opSeq()
+    const step = { events, next: typeof next === 'function' ? next : () => next }
+    // No extra promise hop: the caller resumes on the same tick it always has.
+    return this.commitChain([step], typeof next === 'function' ? undefined : expected, opts, (seqs) => seqs)
+  }
+
+  /**
+   * Several phase edges committed as one append: each step's `next` is computed under the lock from
+   * the value the step before it produced, the rows of every step are committed together, and only
+   * the last step's value is written to the cell. The values in between exist only inside the lock,
+   * so a caller may chain steps only when nothing outside the process happens between them. Checked
+   * like the function form of `transition`. Returns the seqs of each step's own rows; the op-mark a
+   * chain with no rows at all writes belongs to its last step.
+   */
+  transitionChain(steps: ChainStep[], opts: { refineCaller?: boolean } = {}): Promise<Seq[][]> {
+    return this.commitChain(steps, undefined, opts, (seqs) => {
+      let at = 0
+      return steps.map((step, index) => {
+        const from = at
+        at += step.events.length
+        return index === steps.length - 1 ? seqs.slice(from) : seqs.slice(from, at)
+      })
+    })
+  }
+
+  /** `expected` is the cell seq read before the queue; undefined reads it inside the lock. */
+  private commitChain<T>(
+    steps: ChainStep[],
+    expected: Seq | null | undefined,
+    opts: { refineCaller?: boolean },
+    receipt: (seqs: Seq[]) => T,
+  ): Promise<T> {
+    if (steps.length === 0) throw new CoreError('E_RELATION', 'a transition chain needs at least one step')
     return this.locked(async () => {
-      const seq = typeof next === 'function' ? this.opSeq() : expected
-      const cur = this.op()
-      const computed = typeof next === 'function' ? next(cur, (this.lastSeq + 1) as Seq) : next
+      const seq = expected === undefined ? this.opSeq() : expected
+      const first = this.op()
       // Taint is carried onto the counter here rather than at each phase edge: it is derived from
       // the fold, and only the lock holder knows which rows have been folded into it. It cannot
       // leak into a turn that has not opened yet, because `laneTaint` reads false while the lane
-      // has no open turn — and acceptInput's `turn/start` is still unwritten at this point.
-      const state = computed && this.laneTaint() ? { ...computed, taint: true } : computed
-      // The counter is a register cell committed with the batch. A transition with no row of its own
+      // has no open turn — and acceptInput's `turn/start` is still unwritten at this point. Nothing
+      // is folded between the steps of a chain, so every step reads the same answer.
+      const taint = this.laneTaint()
+      let state = first
+      const rows: EventInput[] = []
+      for (const step of steps) {
+        const computed = step.next(state, (this.lastSeq + 1 + rows.length) as Seq)
+        state = computed && taint ? { ...computed, taint: true } : computed
+        rows.push(...step.events)
+      }
+      // The counter is a register cell committed with the batch. A commit with no row of its own
       // still writes one, so the head, the cell's seq and the CAS all move on together.
-      const rows = events.length > 0 ? events : [opMark(cur, state, this.lane, this.d.actor)]
+      if (rows.length === 0) rows.push(opMark(first, state, this.lane, this.d.actor))
       const r = await this.d.log.append(rows, {
         expectedRegisterSeq: { register: 'op.state', key: this.lane, seq },
         opState: { lane: this.lane, data: state },
         ...opts,
       })
-      return r.seqs
+      return receipt(r.seqs)
     })
   }
 

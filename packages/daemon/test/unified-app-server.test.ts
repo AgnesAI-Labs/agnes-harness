@@ -7,7 +7,7 @@ import { createConfigurationService, createPlatform, resolveProfile } from '@agn
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { createPrivateDirectorySync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
-import { buildConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { buildConfig } from '../src/config.js'
 import { startProductionSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
 
@@ -48,9 +48,12 @@ afterEach(async () => {
     expect(exit, `Worker ${exit.pid} must exit cleanly`).toMatchObject({ code: 0, signal: null })
 })
 
-// One shared Worker serves every live session; daemon restart starts its replacement.
-// Keep the per-Worker product deadline; allow both generations plus fixture/RPC cleanup.
-const integrationTimeoutMs = DEFAULT_LIMITS.workerStartupMs * 2 + 10_000
+// One shared Worker serves every live session; daemon restart starts its replacement. Each one
+// assembles the production package graph from TypeScript source before it says hello, which takes
+// about 30 s on a loaded hosted runner, so widen the startup window (and the SDK request budget
+// that can wait on it) beyond that, and allow both generations plus fixture/RPC cleanup.
+const sourceWorkerStartupMs = 90_000
+const integrationTimeoutMs = sourceWorkerStartupMs * 2 + 10_000
 it(
   'Web saves one profile, CLI executes it, both retain history after daemon restart',
   async () => {
@@ -116,6 +119,7 @@ it(
         ipc: windows ? 'pipe' : 'unix',
       })
       config.localWeb = { addr: '127.0.0.1:0', origin: 'http://127.0.0.1:4180' }
+      config.limits = { ...config.limits, workerStartupMs: sourceWorkerStartupMs }
       if (windows) windowsEnsurePrivateDirectorySync(join(data, 'daemon'))
       else await mkdir(join(data, 'daemon'), { recursive: true, mode: 0o700 })
       const profileFile = join(data, 'daemon/profile.json')
@@ -142,6 +146,7 @@ it(
       const web = createClient({
         journal: memoryJournal('web-setup'),
         auth: { kind: 'local' },
+        timeouts: { request: sourceWorkerStartupMs },
         transportFactories: {
           ws: (option) =>
             wsTransport({ ...option, url: ws.url, headers: { Origin: 'http://127.0.0.1:4180' } }),
@@ -151,6 +156,7 @@ it(
       const cli = createClient({
         journal: memoryJournal('cli-shared'),
         auth: { kind: 'local' },
+        timeouts: { request: sourceWorkerStartupMs },
         transport: localSdkTransport(daemon.socketPath),
       })
       clients.push(web, cli)
@@ -280,6 +286,7 @@ it(
       const restored = createClient({
         journal: memoryJournal(),
         auth: { kind: 'local' },
+        timeouts: { request: sourceWorkerStartupMs },
         transport: localSdkTransport(daemon.socketPath),
       })
       clients.push(restored)

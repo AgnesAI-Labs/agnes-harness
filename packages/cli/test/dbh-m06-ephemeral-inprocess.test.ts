@@ -40,8 +40,10 @@ function unresponsiveProvider(
 async function scenario(kind: 'print-honours-abort' | 'acp-inflight-prompt') {
   const root = mkdtempSync(join(tmpdir(), 'dbh-m06-inproc-'))
   const dataDir = join(root, 'data')
-  const savedTmp = process.env.TMPDIR
-  process.env.TMPDIR = root
+  // os.tmpdir() reads TMPDIR on POSIX and TEMP, then TMP, on Windows.
+  const tmpKeys = ['TMPDIR', 'TEMP', 'TMP'] as const
+  const savedTmp = tmpKeys.map((key) => [key, process.env[key]] as const)
+  for (const key of tmpKeys) process.env[key] = root
   const ephemeral = (): string[] => readdirSync(root).filter((e) => e.startsWith('agnes-ephemeral-'))
   let release: () => void = () => undefined
   const released = new Promise<void>((resolve) => {
@@ -131,8 +133,10 @@ async function scenario(kind: 'print-honours-abort' | 'acp-inflight-prompt') {
     release()
     acpIn.end()
     await run.catch(() => undefined)
-    if (savedTmp === undefined) delete process.env.TMPDIR
-    else process.env.TMPDIR = savedTmp
+    for (const [key, value] of savedTmp) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
     rmSync(root, { recursive: true, force: true })
   }
 }

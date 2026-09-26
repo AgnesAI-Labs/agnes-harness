@@ -20,6 +20,8 @@ type LegacyRef = {
   updated_at: number
 }
 
+const darwin = process.platform === 'darwin' // guards-allow-platform: F_FULLFSYNC is darwin-only.
+
 /** Durable outbound progress, scoped by both chat route and actual daemon session identity. */
 export class RefStore {
   private readonly db: DatabaseSync
@@ -30,6 +32,9 @@ export class RefStore {
     this.clock = options.clock ?? Date.now
     this.db = new DatabaseSync(path)
     this.db.exec('PRAGMA journal_mode = WAL')
+    // WAL survives a power loss uncorrupted only if checkpoints reach the medium; on darwin that
+    // takes F_FULLFSYNC.
+    if (darwin) this.db.exec('PRAGMA checkpoint_fullfsync = ON')
     this.migrate()
   }
 

@@ -17,7 +17,10 @@ const endpoints: LocalEndpoint[] = []
 afterEach(async () => {
   vi.unstubAllEnvs()
   for (const ep of endpoints.splice(0)) await ep.close()
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  // Accepted MCP effects keep driving in the background and may still be writing a worker
+  // snapshot while the directory is removed; retry the removal instead of failing on ENOTEMPTY.
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
 })
 const definition = {
   serverId: 'fixture',

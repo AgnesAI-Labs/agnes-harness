@@ -70,7 +70,7 @@ describe('the Host binds compiled sandbox policy to each session workspace', () 
     try {
       const session = await host.createSession({ cwd: dataDir })
       await inWorkspace(session, async (view) => {
-        expect(view.root).toBe(realpathSync(dataDir))
+        expect(view.root).toBe(realpathSync.native(dataDir))
         expect(view.hookSandbox().enforcement()).toEqual({
           level: 'full',
           scope: ['file', 'network', 'process'],

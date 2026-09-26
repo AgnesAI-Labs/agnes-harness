@@ -4,9 +4,6 @@ import { describe, expect, it } from 'vitest'
 import { defaultIds } from '../src/ids.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { SessionLogImpl } from '../src/log/session-log.js'
-import type { FoldCacheRecord } from '../src/log/storage.js'
-import { decodeFoldCache, encodeFoldCache } from '../src/project/cache.js'
-import { foldEvents } from '../src/reduce/reducer.js'
 import { openTracked } from '../src/reduce/tracker.js'
 import type { Event } from '../src/types.js'
 import { noTimers } from './helpers/open-session.js'
@@ -14,7 +11,7 @@ import { noTimers } from './helpers/open-session.js'
 /**
  * A ledger written before streamed text left the ledger holds `assistant/chunk` rows. That type no
  * longer exists, so such a ledger must fail to open rather than be folded around a row nobody
- * understands - whether or not a fold cache would let the tracker skip past it.
+ * understands.
  */
 
 const fixture = fileURLToPath(new URL('../fixtures/crash/04-checkpoint-may_finish.jsonl', import.meta.url))
@@ -50,22 +47,6 @@ describe('a ledger with the removed assistant/chunk type', () => {
     await expect(open(MemoryStorage.fromEvents('k', oldLedger()))).rejects.toThrow('E_UNKNOWN_EVENT')
   })
 
-  it('fails to open even with a fold cache written past the chunk row', async () => {
-    const rows = oldLedger()
-    const storage = MemoryStorage.fromEvents('k', rows)
-    // The state an older build cached, stamped with the old cache version.
-    const state = foldEvents(rows.filter((row) => row.type !== 'assistant/chunk'))
-    const current = encodeFoldCache('k', state, {
-      lastSeq: state.lastSeq,
-      legacyThroughSeq: state.lastSeq,
-      headDigest: null,
-    })
-    const old = { ...current, version: 1 } as unknown as typeof current
-    ;(storage as unknown as { book(key: string): { foldCache?: unknown } }).book('k').foldCache = old
-    expect(() => decodeFoldCache('k', old, state.lastSeq)).toThrow('fold cache envelope is invalid')
-    await expect(open(storage)).rejects.toThrow('E_UNKNOWN_EVENT')
-  })
-
   it('opens the same ledger once the row is one this build writes', async () => {
     const cells = JSON.parse(readFileSync(fixture.replace(/\.jsonl$/, '.op.json'), 'utf8'))
     await expect(open(MemoryStorage.fromEvents('k', readLedger(), { opCells: cells }))).resolves.toBeDefined()
@@ -81,8 +62,7 @@ function readLedger(): Event[] {
 
 /**
  * A ledger written before the program counter left the rows holds `op.state` rows. That type no
- * longer exists either, so the same holds: the ledger does not open, and no fold cache written by
- * that build lets a replay step over the row.
+ * longer exists either, so the same holds: the ledger does not open, and the replay reads every row.
  */
 const opFixture = fileURLToPath(new URL('../fixtures/crash/05-checkpoint-need_assistant', import.meta.url))
 
@@ -98,21 +78,6 @@ function opLedger(): Event[] {
   return rows
 }
 
-/** A fold cache at the head of `rows`, stamped with `version`. */
-function foldAt(rows: Event[], version: number): FoldCacheRecord {
-  const state = foldEvents(rows.filter((row) => row.type !== 'op.state'))
-  const record = encodeFoldCache(
-    'k',
-    { ...state, lastSeq: rows.length },
-    {
-      lastSeq: rows.length,
-      legacyThroughSeq: rows.length,
-      headDigest: null,
-    },
-  )
-  return { ...record, version } as unknown as FoldCacheRecord
-}
-
 describe('a ledger with the removed op.state row type', () => {
   it('fails to open, and hands the lease straight back', async () => {
     const storage = MemoryStorage.fromEvents('k', opLedger())
@@ -121,29 +86,22 @@ describe('a ledger with the removed op.state row type', () => {
     await expect(open(storage, 'r2')).rejects.toThrow('E_UNKNOWN_EVENT')
   })
 
-  it('refuses the fold cache that build wrote, so the replay starts from the first row', async () => {
+  it("replays that build's ledger from the first row, the removed row included", async () => {
     const rows = opLedger()
     const storage = MemoryStorage.fromEvents('k', rows)
-    const book = (storage as unknown as { book(key: string): { foldCache?: unknown } }).book('k')
-    const starts: unknown[] = []
-    const openLog = (writerRunId: string) =>
-      SessionLogImpl.open({
-        storage,
-        key: 'k',
-        writerRunId,
-        ttlMs: 60_000,
-        ids: defaultIds(clock),
-        clock,
-        timers: noTimers,
-        replay: { start: (fold) => starts.push(fold), page: () => undefined },
-      })
-    book.foldCache = foldAt(rows, 2)
-    await (await openLog('old')).close()
-    // The current version is accepted, which is what makes the refusal above the version's doing.
-    book.foldCache = foldAt(rows, 3)
-    await (await openLog('current')).close()
-    expect(starts[0]).toBeUndefined()
-    expect(starts[1]).toMatchObject({ seq: rows.length })
+    const seen: number[] = []
+    const log = await SessionLogImpl.open({
+      storage,
+      key: 'k',
+      writerRunId: 'probe',
+      ttlMs: 60_000,
+      ids: defaultIds(clock),
+      clock,
+      timers: noTimers,
+      replay: { page: (events) => seen.push(...events.map((event) => event.seq)) },
+    })
+    await log.close()
+    expect(seen).toEqual(rows.map((row) => row.seq))
     await expect(open(storage)).rejects.toThrow('E_UNKNOWN_EVENT')
   })
 })

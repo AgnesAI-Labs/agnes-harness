@@ -142,7 +142,8 @@ describe('createHost', () => {
       return original(...args)
     })
     const opening = host.createSession({ cwd: dataDir })
-    await started
+    // An opening that fails before reaching the kernel rejects here instead of hanging the test.
+    await Promise.race([started, opening])
     const closing = host.close()
     release()
     await expect(opening).rejects.toMatchObject({ code: 'E_HOST_CLOSED' })
@@ -152,7 +153,7 @@ describe('createHost', () => {
   it('a forced close returns on time without tearing resources from a live session', async () => {
     const dataDir = tmp()
     let seamClosed = 0
-    const { host, audit } = await createTestHost({
+    const { host, audit, releaseHungSessions } = await createTestHost({
       dataDir,
       closeTimeoutMs: 50,
       hangSessionClose: true,
@@ -169,6 +170,11 @@ describe('createHost', () => {
     expect(seamClosed).toBe(0)
     expect(audit.events.some((event) => event.kind === 'host.closed')).toBe(false)
     expect(audit.events.some((e) => e.kind === 'session.close_failed')).toBe(false)
+    // Once the session settles the deferred teardown runs, which also releases the data directory
+    // (Windows cannot remove files that are still open).
+    releaseHungSessions?.()
+    await vi.waitFor(() => expect(audit.events.some((event) => event.kind === 'host.closed')).toBe(true))
+    expect(seamClosed).toBe(1)
   })
   it('a clean close reports it was not forced and lists no failed teardown', async () => {
     const dataDir = tmp()

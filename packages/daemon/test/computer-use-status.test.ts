@@ -1,5 +1,19 @@
+import {
+  type ComputerUseDriverArchitecture,
+  type ComputerUseDriverPlatform,
+  evaluateFixedComputerUsePlatformAdmission,
+} from '@agnes/host'
 import { describe, expect, it } from 'vitest'
 import { openTestHost } from './host.js'
+
+// The lazy runtime reports first-use preparation only where the pinned driver is admitted for this
+// platform; everywhere else (Linux today) it reports the platform as unsupported instead.
+const runtimeBlocker = evaluateFixedComputerUsePlatformAdmission(
+  process.platform as ComputerUseDriverPlatform,
+  process.arch as ComputerUseDriverArchitecture,
+).allowed
+  ? 'driver-not-prepared'
+  : 'platform-unsupported'
 
 const request = (id: number) => ({
   jsonrpc: '2.0' as const,
@@ -50,7 +64,7 @@ describe('computer-use status RPC', () => {
           status: 'blocked',
           admission: { state: 'blocked', reason: 'runtime-unavailable' },
           runtime: { state: 'not-started', startAttempted: false },
-          blockers: ['driver-not-prepared'],
+          blockers: [runtimeBlocker],
           lockedPackageMutations: {
             activationReady: false,
             recoveryReady: false,

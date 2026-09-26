@@ -72,7 +72,7 @@ describe('bootLocal', () => {
 
   it('restores an explicitly registered session workspace after a fresh local boot', async () => {
     const dir = home()
-    const canonicalDir = realpathSync(dir)
+    const canonicalDir = realpathSync.native(dir)
     const sessionKey = 'agnes:local:local-dev:cli:workspace:durable-authority'
     const opened: Array<Parameters<Host['createSession']>[0]> = []
     const baseCreateHost = testDeps(dir).createHostImpl
@@ -148,16 +148,17 @@ describe('bootLocal', () => {
   // The real jiti loader + real packageDirs resolution this now exercises (see the comment on the
   // next real-path test) is genuine disk I/O and TypeScript transpilation - comfortably under the
   // 5000ms default in isolation, but the full repo suite runs 350+ files as concurrent workers, and
-  // under that contention this test has been observed to exceed the default. Hosted macOS runners
-  // can also exceed 15s while four isolated workers transpile the package graph, so allow 30s for
-  // this real-path integration boundary without changing the timeout of injected unit paths.
+  // under that contention this test has been observed to exceed the default. It takes about 6s alone
+  // on a developer machine and has reached 31s on a hosted Ubuntu runner while four isolated workers
+  // transpile the package graph, so allow 60s for this real-path integration boundary without
+  // changing the timeout of injected unit paths.
   it('a host refusal carries its code exactly once', async () => {
     const dir = home()
     writeScratchProfile(dir)
     const { createHostImpl: _drop, ...deps } = testDeps(dir)
     const e = await bootLocal(parseArgs(['-p', 'x']), deps).catch((x: unknown) => x)
     expect((e as Error).message.match(/E_PRESET_UNRESOLVED/g)).toHaveLength(1)
-  }, 30_000)
+  }, 60_000)
 
   it('a BootError from reading the profile inputs is not wrapped a second time', async () => {
     const dir = home()
@@ -198,7 +199,7 @@ describe('bootLocal', () => {
     expect((err as Error).message).toContain('E_PRESET_UNRESOLVED')
     expect((err as Error).message).toContain('provider.routes')
     expect((err as Error).message).not.toContain('createHost needs a package loader')
-  }, 30_000)
+  }, 60_000)
 
   it('an injected loader replaces the whole default wiring, the lockfile read included', async () => {
     const dir = home()

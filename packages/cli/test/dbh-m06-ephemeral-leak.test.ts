@@ -12,6 +12,9 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const fixture = fileURLToPath(new URL('./fixtures/dbh-m06-slow-acp-cli.ts', import.meta.url))
+// On Windows child.kill('SIGINT') delivers no signal the child can handle: Node terminates it at once,
+// so the signal ladder these cases exercise is only reachable on POSIX.
+const posixSignals = process.platform !== 'win32'
 
 type Wire = {
   id?: number
@@ -122,71 +125,83 @@ describe('DBH M-06: --ephemeral home after a signalled exit', () => {
     }
   }, 60_000)
 
-  it('SIGINT during boot (home already created, ladder not yet installed) leaves no ephemeral home', async () => {
-    const runs = 5
-    const observed: Array<Exit & { leaked: number }> = []
-    for (let i = 0; i < runs; i++) {
-      const c = spawnAcp(1)
+  it.runIf(posixSignals)(
+    'SIGINT during boot (home already created, ladder not yet installed) leaves no ephemeral home',
+    async () => {
+      const runs = 5
+      const observed: Array<Exit & { leaked: number }> = []
+      for (let i = 0; i < runs; i++) {
+        const c = spawnAcp(1)
+        try {
+          await c.until(() => c.ephemeral().length > 0, 20_000, 'agnes-ephemeral-* to appear')
+          c.child.kill('SIGINT')
+          const exit = await c.waitExit(15_000)
+          observed.push({ ...exit, leaked: c.ephemeral().length })
+        } finally {
+          await c.dispose()
+        }
+      }
+      const summary = observed.map((o) => `code=${o.code} signal=${o.signal} leaked=${o.leaked}`).join(' | ')
+      expect(observed.filter((o) => o.leaked > 0).length, summary).toBe(0)
+    },
+    120_000,
+  )
+
+  it.runIf(posixSignals)(
+    'two SIGINTs after initialize leave no ephemeral home',
+    async () => {
+      const runs = 3
+      const observed: Array<Exit & { leaked: number }> = []
+      for (let i = 0; i < runs; i++) {
+        const c = spawnAcp(1)
+        try {
+          await c.handshake()
+          c.child.kill('SIGINT')
+          c.child.kill('SIGINT')
+          const exit = await c.waitExit(15_000)
+          observed.push({ ...exit, leaked: c.ephemeral().length })
+        } finally {
+          await c.dispose()
+        }
+      }
+      const summary = observed.map((o) => `code=${o.code} signal=${o.signal} leaked=${o.leaked}`).join(' | ')
+      expect(observed.filter((o) => o.leaked > 0).length, summary).toBe(0)
+    },
+    120_000,
+  )
+
+  it.runIf(posixSignals)(
+    'one SIGINT during a slow in-flight prompt: the grace hard-exit leaves no ephemeral home',
+    async () => {
+      const c = spawnAcp(60_000)
       try {
-        await c.until(() => c.ephemeral().length > 0, 20_000, 'agnes-ephemeral-* to appear')
+        const sessionId = await c.handshake()
+        c.send({
+          id: 3,
+          method: 'session/prompt',
+          params: { sessionId, prompt: [{ type: 'text', text: 'hi' }] },
+        })
+        await c.until(() => c.stderr().includes('dbh: turn started'), 20_000, 'turn start')
+        const t0 = performance.now()
         c.child.kill('SIGINT')
-        const exit = await c.waitExit(15_000)
-        observed.push({ ...exit, leaked: c.ephemeral().length })
+        const exit = await c.waitExit(20_000)
+        const afterSignalMs = performance.now() - t0
+        expect(
+          { exitedBeforeSigkill: exit.signal !== 'SIGKILL', leaked: c.ephemeral() },
+          `code=${exit.code} signal=${exit.signal} afterSignalMs=${afterSignalMs.toFixed(0)} stderr=${c.stderr().slice(-400)}`,
+        ).toEqual({ exitedBeforeSigkill: true, leaked: [] })
       } finally {
         await c.dispose()
       }
-    }
-    const summary = observed.map((o) => `code=${o.code} signal=${o.signal} leaked=${o.leaked}`).join(' | ')
-    expect(observed.filter((o) => o.leaked > 0).length, summary).toBe(0)
-  }, 120_000)
-
-  it('two SIGINTs after initialize leave no ephemeral home', async () => {
-    const runs = 3
-    const observed: Array<Exit & { leaked: number }> = []
-    for (let i = 0; i < runs; i++) {
-      const c = spawnAcp(1)
-      try {
-        await c.handshake()
-        c.child.kill('SIGINT')
-        c.child.kill('SIGINT')
-        const exit = await c.waitExit(15_000)
-        observed.push({ ...exit, leaked: c.ephemeral().length })
-      } finally {
-        await c.dispose()
-      }
-    }
-    const summary = observed.map((o) => `code=${o.code} signal=${o.signal} leaked=${o.leaked}`).join(' | ')
-    expect(observed.filter((o) => o.leaked > 0).length, summary).toBe(0)
-  }, 120_000)
-
-  it('one SIGINT during a slow in-flight prompt: the grace hard-exit leaves no ephemeral home', async () => {
-    const c = spawnAcp(60_000)
-    try {
-      const sessionId = await c.handshake()
-      c.send({
-        id: 3,
-        method: 'session/prompt',
-        params: { sessionId, prompt: [{ type: 'text', text: 'hi' }] },
-      })
-      await c.until(() => c.stderr().includes('dbh: turn started'), 20_000, 'turn start')
-      const t0 = performance.now()
-      c.child.kill('SIGINT')
-      const exit = await c.waitExit(20_000)
-      const afterSignalMs = performance.now() - t0
-      expect(
-        { exitedBeforeSigkill: exit.signal !== 'SIGKILL', leaked: c.ephemeral() },
-        `code=${exit.code} signal=${exit.signal} afterSignalMs=${afterSignalMs.toFixed(0)} stderr=${c.stderr().slice(-400)}`,
-      ).toEqual({ exitedBeforeSigkill: true, leaked: [] })
-    } finally {
-      await c.dispose()
-    }
-  }, 60_000)
+    },
+    60_000,
+  )
 })
 
 // Both hard-exit rungs leave through hardExit (exit code now, process.exit 100 ms later) without waiting
 // for the first signal's shutdown. With a host whose close never settles that shutdown never finishes,
 // so main's finally -- the only place the home was removed -- has not run when the process ends.
-describe('DBH M-06: --ephemeral home after a hard exit that outruns shutdown', () => {
+describe.runIf(posixSignals)('DBH M-06: --ephemeral home after a hard exit that outruns shutdown', () => {
   async function hardExitRun(signals: number) {
     const c = spawnAcp(60_000, { DBH_HANG_CLOSE: '1' })
     try {
@@ -221,7 +236,7 @@ describe('DBH M-06: --ephemeral home after a hard exit that outruns shutdown', (
   }, 60_000)
 })
 
-describe('DBH M-06: the ephemeral guard stays out of the ladder', () => {
+describe.runIf(posixSignals)('DBH M-06: the ephemeral guard stays out of the ladder', () => {
   it('[preserve] one SIGINT during a print turn still cancels it gracefully and reports the reason', async () => {
     const c = spawnAcp(60_000, {}, ['-p', 'x'])
     try {

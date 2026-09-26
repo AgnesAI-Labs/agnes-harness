@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { checkRelations } from '../src/log/relations.js'
-import { encodeLedgerState } from '../src/project/cache.js'
 import { ChunkedMap } from '../src/reduce/chunked-map.js'
 import { foldEvents, initialState, reduce } from '../src/reduce/reducer.js'
 import { effectTree, type LedgerState } from '../src/reduce/state.js'
 import { canonicalJson } from '../src/request/hash.js'
 import type { Event } from '../src/types.js'
+import { encodeLedgerState } from '../testkit/encode-ledger-state.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 let seq = 0

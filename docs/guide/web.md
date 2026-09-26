@@ -38,6 +38,12 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 5. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
 6. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
 
+### Inspect the trajectory
+
+Switch from Chat to Trajectory to review a session by turn and step. Select a record for its status, duration, error, and available token usage. The timeline offers four order and duration modes: drag to filter, scroll to zoom, right-drag to pan, and press Escape to clear the range.
+
+Fold turns or tool calls, search the records, or load earlier history as needed. Tool arguments and results in **Projected content** are previews; choose **Full input** or **Full output** to read the recorded detail on demand. **Timing** shows recorded time fields. Missing timing, usage, or history is labeled rather than estimated.
+
 <a id="日常管理"></a>
 
 ## Everyday management
