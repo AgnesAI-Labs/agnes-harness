@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import {
-  cpSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -14,6 +13,7 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import { bundledPluginSourceRoot } from './bundled-plugin-source.js'
+import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { checkCancelled } from './ports.js'
 import { claimFetch, readyStage } from './staging.js'
@@ -382,13 +382,10 @@ function copyLocal(from: string, into: string, signal?: AbortSignal): string {
   // Validate before copying and again afterwards. The second pass is what catches a source swapped
   // to a link during the copy rather than trusting a preflight snapshot.
   const before = hashDirectory(from, { ...(signal ? { signal } : {}) })
-  cpSync(from, into, {
-    recursive: true,
-    filter: (path) => {
-      checkCancelled(signal)
-      const rel = relative(from, path).split(sep).join('/')
-      return rel === '' || !excluded(rel, DEFAULT_EXCLUDES)
-    },
+  copyPackageTreeSync(from, into, (path) => {
+    checkCancelled(signal)
+    const rel = relative(from, path).split(sep).join('/')
+    return rel === '' || !excluded(rel, DEFAULT_EXCLUDES)
   })
   const sourceAfter = hashDirectory(from, { ...(signal ? { signal } : {}) })
   const copied = hashDirectory(into, { ...(signal ? { signal } : {}) })

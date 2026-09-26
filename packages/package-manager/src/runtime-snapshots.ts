@@ -1,14 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import {
-  cpSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   type PackageBlocker,
@@ -16,6 +7,7 @@ import {
   validatePackageAdminData,
 } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
+import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import {
   canonical,
@@ -698,7 +690,7 @@ export function pinRuntimeSnapshotStore(
     integrityFailure('runtime-path-collision')
   writeJournal(s, journal)
   s.runtimeCheckpoint?.('runtime-prepared')
-  cpSync(selected.directory, stage, { recursive: true })
+  copyPackageTreeSync(selected.directory, stage)
   verifyPackageDirectory(
     selected.record.packageId,
     recordEntry(selected.record),

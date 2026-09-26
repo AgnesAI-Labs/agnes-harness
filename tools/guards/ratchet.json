@@ -87,7 +87,7 @@
   "packages/host/src/configuration-lock": 39,
   "packages/daemon/src/supervisor/configuration": 45,
   "packages/daemon/src/supervisor/profile-bindings": 124,
-  "packages/package-manager/src": 5787,
+  "packages/package-manager/src": 5796,
   "packages/package-manager/src/catalog": 211,
   "packages/cli/src/boot/backend": 538,
   "packages/cli/src/boot/default": 56,
