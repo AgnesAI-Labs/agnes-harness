@@ -230,6 +230,34 @@ describe('deriveRequest', () => {
     expect(third.request.messages).toHaveLength(2)
   })
 
+  it('keeps hook notes in the tail and explicitly clears nonempty context', () => {
+    seq = 0
+    const input = {
+      ...base(),
+      ...NO_RC,
+      notes: [{ prefix: '[hook context]\n', text: 'A', dedup: { kind: 'latest' as const } }],
+    }
+    const first = deriveRequest({ ...input, surface: [] })
+    expect(textAt(first, 0)).toBe('[hook context]\nA')
+    expect(first.notes).toHaveLength(1)
+    const sent = ev('user/message', first.notes[0]?.data, { origin: 'system' })
+    const visible = computeSurface([sent], {})
+    const repeated = deriveRequest({ ...input, surface: visible })
+    expect(repeated.notes).toHaveLength(0)
+    const note = input.notes[0]
+    if (!note) throw new Error('missing hook note fixture')
+    const cleared = deriveRequest({ ...input, notes: [{ ...note, text: '' }], surface: visible })
+    expect(textAt(cleared, 1)).toBe('[hook context]\n(none)')
+    const empty = ev('user/message', cleared.notes[0]?.data, { origin: 'system' })
+    expect(
+      deriveRequest({
+        ...input,
+        notes: [{ ...note, text: '' }],
+        surface: computeSurface([sent, empty], {}),
+      }).notes,
+    ).toHaveLength(0)
+  })
+
   it('does not mistake a harness note riding the same message kind for the snapshot', () => {
     // The stop gate and the truncated-output path both send notes as `kind: 'runtime_context'`
     // user messages. A note is not a snapshot: it must neither satisfy the comparison on its own

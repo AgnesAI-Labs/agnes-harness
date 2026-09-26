@@ -109,6 +109,113 @@ const toolCall = (name: string): HookPayloadMap['tool_call'] => ({
 })
 
 describe('hooksRunnerExtension', () => {
+  it('uses the current turn when context runs without a preceding before_step', async () => {
+    let runs = 0
+    const exec = vi.fn(async () => ({
+      code: 0,
+      stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: `turn-${++runs}` } }),
+      stderr: '',
+      truncated: false,
+    }))
+    const state = fakeApi()
+    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
+    ])(state.api)
+    const contextual = state.handlers.get('context')
+    if (!contextual) throw new Error('context handler missing')
+    const payload: HookPayloadMap['context'] = {
+      sections: [],
+      surfaceDigest: { nodes: 0, tokensEstimate: 0 },
+      getSurface: () => [],
+    }
+    expect(await contextual(payload, { ...context, session: { ...context.session, turn: 7 } })).toEqual({
+      additionalContext: 'turn-1',
+    })
+    expect(await contextual(payload, { ...context, session: { ...context.session, turn: 8 } })).toEqual({
+      additionalContext: 'turn-2',
+    })
+    expect(exec).toHaveBeenCalledTimes(2)
+  })
+
+  it('runs a UserPromptSubmit command once per turn while sharing its result with context', async () => {
+    const exec = vi.fn(async () => ({
+      code: 0,
+      stdout: '{"hookSpecificOutput":{"additionalContext":"remember this"}}',
+      stderr: '',
+      truncated: false,
+    }))
+    const state = fakeApi()
+    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
+    ])(state.api)
+    const before = state.handlers.get('before_step')
+    const contextual = state.handlers.get('context')
+    if (!before || !contextual) throw new Error('UserPromptSubmit handlers missing')
+    const contextPayload: HookPayloadMap['context'] = {
+      sections: [],
+      surfaceDigest: { nodes: 0, tokensEstimate: 0 },
+      getSurface: () => [],
+    }
+    for (const step of [1, 2, 3]) {
+      const hctx = { ...context, session: { ...context.session, turn: 7, step } }
+      expect(await before({ turn: 7, step, depth: 0, budget: { cap: 10, remaining: 10 } }, hctx)).toEqual({})
+      expect(await contextual(contextPayload, hctx)).toEqual({ additionalContext: 'remember this' })
+    }
+    expect(exec).toHaveBeenCalledTimes(1)
+    const next = { ...context, session: { ...context.session, turn: 8, step: 1 } }
+    await before({ turn: 8, step: 1, depth: 0, budget: { cap: 10, remaining: 10 } }, next)
+    expect(exec).toHaveBeenCalledTimes(2)
+    const another = { ...next, session: { ...next.session, key: 'session-2' } }
+    await before({ turn: 8, step: 1, depth: 0, budget: { cap: 10, remaining: 10 } }, another)
+    expect(exec).toHaveBeenCalledTimes(3)
+    const shutdown = state.handlers.get('shutdown')
+    if (!shutdown) throw new Error('shutdown handler missing')
+    await shutdown({ reason: 'close' }, next)
+    await before({ turn: 8, step: 1, depth: 0, budget: { cap: 10, remaining: 10 } }, next)
+    expect(exec).toHaveBeenCalledTimes(4)
+  })
+
+  it('preserves UserPromptSubmit blocking at before_step', async () => {
+    const exec = vi.fn(async () => ({ code: 2, stdout: '', stderr: 'denied', truncated: false }))
+    const state = fakeApi()
+    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'block' }] },
+    ])(state.api)
+    const before = state.handlers.get('before_step')
+    if (!before) throw new Error('before_step handler missing')
+    expect(
+      await before(
+        { turn: 7, step: 1, depth: 0, budget: { cap: 10, remaining: 10 } },
+        { ...context, session: { ...context.session, turn: 7, step: 1 } },
+      ),
+    ).toEqual({ block: true, reason: 'denied' })
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves a context-first UserPromptSubmit block for cold compaction', async () => {
+    const exec = vi.fn(async () => ({ code: 2, stdout: '', stderr: 'cold denied', truncated: false }))
+    const state = fakeApi()
+    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'block' }] },
+    ])(state.api)
+    const contextual = state.handlers.get('context')
+    const before = state.handlers.get('before_step')
+    if (!contextual || !before) throw new Error('UserPromptSubmit handlers missing')
+    await expect(
+      contextual(
+        { sections: [], surfaceDigest: { nodes: 0, tokensEstimate: 0 }, getSurface: () => [] },
+        { ...context, session: { ...context.session, turn: 7, step: 0 } },
+      ),
+    ).rejects.toMatchObject({ name: 'HookBlockedError', reason: 'cold denied' })
+    expect(
+      await before(
+        { turn: 7, step: 1, depth: 0, budget: { cap: 10, remaining: 10 } },
+        { ...context, session: { ...context.session, turn: 7, step: 1 } },
+      ),
+    ).toEqual({ block: true, reason: 'cold denied' })
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
   it('loads both fenced configs, matches tools, uses the sandbox seam, and warns once', async () => {
     const init = fakeSeamInit({
       files: {

@@ -531,14 +531,8 @@ describe('skill runtime extension', () => {
     expect(applied.sections.find((section) => section.id === 'skills')?.text).toContain('review\t')
     expect(applied.sections.find((section) => section.id === 'skills')?.text).not.toContain(resourceId)
     expect(applied.sections.find((section) => section.id === 'skills')?.order).toBe(160)
-    expect(applied.sections.some((section) => section.text.includes(other.additionalContext))).toBe(true)
-    expect(applied.sections.find((section) => section.id === 'additional-context')?.text ?? '').not.toContain(
-      '<available_skills>',
-    )
-    expect(
-      new TextEncoder().encode(
-        applied.sections.find((section) => section.id === 'additional-context')?.text ?? '',
-      ).byteLength,
-    ).toBeLessThanOrEqual(8192)
+    expect(applied.additionalContext).toContain(other.additionalContext)
+    expect(applied.additionalContext).not.toContain('<available_skills>')
+    expect(new TextEncoder().encode(applied.additionalContext).byteLength).toBeLessThanOrEqual(8192)
   })
 })

@@ -1,6 +1,7 @@
 import type { HookPayloadMap } from '@agnes/extension-api'
 import type { ModelRecord, ThinkingLevel } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import { HookBlockedError } from '../src/hooks/block.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { CompactionRunner } from '../src/step/compaction.js'
@@ -89,6 +90,45 @@ function runner(onCompact: (p: HookPayloadMap['compact']) => Promise<void> = asy
 }
 
 describe('production compaction phase', () => {
+  it('settles an internal context-first block before sending a cold summary', async () => {
+    const { session, provider, log } = await history()
+    provider.models = () => [model('answer-model', 'primary', 10_000)]
+    session.preset.model.id.compaction = 'answer-model'
+    session.compaction = runner()
+    session.hooks = {
+      ...session.hooks,
+      context: async () => {
+        throw new HookBlockedError('cold denied')
+      },
+    }
+    await session.requestCompaction({ actor, admissionId: 'cold-block' })
+    expect(await session.run({ until: 'turn-end', signal: signal() })).toMatchObject({
+      reason: 'blocked',
+      error: { code: 'HOOK_BLOCKED', message: 'cold denied' },
+    })
+    expect(provider.requests).toHaveLength(2)
+    expect(await log.scan({ type: 'x/core/compaction-end', limit: 5 })).toHaveLength(0)
+  })
+
+  it('keeps ordinary cold context exceptions on the error path', async () => {
+    const { session, provider } = await history()
+    provider.models = () => [model('answer-model', 'primary', 10_000)]
+    session.preset.model.id.compaction = 'answer-model'
+    session.compaction = runner()
+    session.hooks = {
+      ...session.hooks,
+      context: async () => {
+        throw new Error('ordinary context failure')
+      },
+    }
+    await session.requestCompaction({ actor, admissionId: 'cold-error' })
+    expect(await session.run({ until: 'turn-end', signal: signal() })).toMatchObject({
+      reason: 'error',
+      error: { code: 'E_STEP_FAILED', message: 'ordinary context failure' },
+    })
+    expect(provider.requests).toHaveLength(2)
+  })
+
   it('uses the primary route and model for an unconfigured compaction slot', async () => {
     const { session } = await history()
     delete session.preset.model.id.compaction

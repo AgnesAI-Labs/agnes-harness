@@ -163,7 +163,7 @@ async function runPrompt(input: {
 
 function expectAssembled(request: RequestBody, opts: { catalog?: boolean; preload?: boolean }) {
   expect(request.system).toContain(BASE_SENTINEL)
-  expect(request.system).toContain(OTHER_EXT_SENTINEL)
+  expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
   expect(JSON.stringify(request.messages)).toContain(USER_MESSAGE)
   if (opts.catalog) {
     expect(request.system).toContain('review\t')
@@ -217,7 +217,7 @@ describe('skill context hook assembly', () => {
       scripts: [
         (request) => {
           expect(request.system).toContain(BASE_SENTINEL)
-          expect(request.system).toContain(OTHER_EXT_SENTINEL)
+          expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
           expect(request.system).toContain(resourceId)
           expect(request.system).toContain(SKILL_BODY)
           expect(request.system).toContain('Host has already loaded it for this turn')
@@ -274,7 +274,7 @@ describe('skill context hook assembly', () => {
       prompt: `Please help. ${USER_MESSAGE}`,
       inspect: (request) => {
         expect(request.system).toContain(BASE_SENTINEL)
-        expect(request.system).toContain(OTHER_EXT_SENTINEL)
+        expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
         expect(JSON.stringify(request.messages)).toContain(USER_MESSAGE)
         return say('ok')
       },
@@ -285,6 +285,6 @@ describe('skill context hook assembly', () => {
     const catalogEnd = request.system.indexOf('</available_skills>')
     const catalog = request.system.slice(catalogStart, catalogEnd)
     expect(catalog).not.toContain(OTHER_EXT_SENTINEL)
-    expect(request.system).toContain(OTHER_EXT_SENTINEL)
+    expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
   })
 })

@@ -63,6 +63,7 @@ export type {
 export type { SeamFailure } from './effects/wrap.js'
 export { SeamRuntime, withTimeout } from './effects/wrap.js'
 export { type DispatchContext, HOOK_UNHANDLED, HookEngine, WORKSPACE_HOOK_SANDBOX } from './hooks/engine.js'
+export { HookBlockedError } from './hooks/block.js'
 export { type SessionHookInputs, SessionHookPort } from './hooks/port.js'
 export { defaultIds } from './ids.js'
 export { CORE_CHECKS } from './invariants/core-checks.js'

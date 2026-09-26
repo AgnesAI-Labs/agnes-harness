@@ -859,9 +859,7 @@ describe('turn hook registration snapshots', () => {
     registry.on(
       'context',
       (p) => {
-        expect(p.sections.find((section) => section.id === 'additional-context')?.content).toBe(
-          'x'.repeat(8190),
-        )
+        expect(p.sections.find((section) => section.id === 'additional-context')).toBeUndefined()
         return { additionalContext: 'YYYYY' }
       },
       source,
@@ -891,7 +889,10 @@ describe('turn hook registration snapshots', () => {
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',
     )
-    expect(provider.requests[0]?.system).toContain(`${'x'.repeat(8190)}\nY`)
+    expect(provider.requests[0]?.system).not.toContain(`${'x'.repeat(8190)}\nY`)
+    expect(provider.requests[0]?.messages.at(-1)?.content).toEqual([
+      { type: 'text', text: `[hook context]\n${'x'.repeat(8190)}\nY` },
+    ])
     expect(provider.requests[0]?.system).not.toContain('YY')
     const overflows = await session.scan({ type: 'x/core/hook-context-overflow', toSeq: session.lastSeq })
     expect(overflows.map((row) => row.data)).toEqual([{ ext: source.source, bytes: 5 }])
