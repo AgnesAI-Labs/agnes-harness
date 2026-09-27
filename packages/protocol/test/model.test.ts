@@ -98,7 +98,16 @@ describe('model.json', () => {
       $defs: Record<string, unknown>
     }
     const names = Object.keys(m.$defs)
-    expect(names).toHaveLength(24)
+    // 24 shipped definitions plus the five decision-model definitions.
+    expect(names).toHaveLength(29)
+    for (const decision of [
+      'DecisionModelRecord',
+      'DecisionQuestion',
+      'DecisionWireRequest',
+      'DecisionWireAnswer',
+      'DecisionWireResult',
+    ])
+      expect(names, decision).toContain(decision)
     for (const shipped of [
       'JsonValue',
       'ContentBlock',
