@@ -19,7 +19,13 @@ it('ships private conversation styles in the existing three-page style asset', a
   ])
   expect(built.startsWith(base)).toBe(true)
   expect(built).toContain(conversation.trim())
+  expect(built).toContain('.x-markdown')
+  expect(built).toContain('.x-markdown-light')
+  expect(built).toContain('.x-markdown-dark')
+  expect(built).toContain('.conversation-markdown')
+  expect(built).toContain('--text-color: var(--agnes-text-primary)')
   expect(files).not.toContain('messages.css')
+  expect(files).not.toContain('assistant-ui.css')
 
   for (const page of ['index', 'admin', 'resources']) {
     const html = await readFile(resolve(web, `dist/web/${page}.html`), 'utf8')
@@ -30,6 +36,8 @@ it('ships private conversation styles in the existing three-page style asset', a
 
 it('resolves assistant-ui from the shared vendor instead of bundling a second app copy', async () => {
   const output = resolve(web, 'dist/web')
+  const license = await readFile(resolve(output, 'THIRD-PARTY-NOTICES/x-markdown.txt'), 'utf8')
+  expect(license).toContain('Copyright (c) 2015-present Ant UED')
   const app = await readFile(resolve(output, 'app.js'), 'utf8')
   expect(/from\s+["']@agnes\/web-ui\/assistant-ui["']/.test(app)).toBe(true)
 
@@ -45,6 +53,8 @@ it('resolves assistant-ui from the shared vendor instead of bundling a second ap
     sources: string[]
   }
   expect(vendor.sources.some((source) => source.includes('node_modules/@assistant-ui/react/'))).toBe(true)
+  expect(vendor.sources.some((source) => source.includes('@ant-design/x-markdown/'))).toBe(true)
+  expect(vendor.sources.some((source) => source.includes('html-react-parser/'))).toBe(true)
   expect(
     vendor.sources.some(
       (source) => source.includes('node_modules/react/') || source.includes('node_modules/react-dom/'),

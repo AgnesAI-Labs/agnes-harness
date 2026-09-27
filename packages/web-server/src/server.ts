@@ -602,9 +602,14 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         if (occurrences !== 1) throw new Error('Web document is missing its CSP nonce marker')
         body = Buffer.from(html.replace(marker, documentNonce))
       }
+      // Only the workbench consumes local image/PDF resource URLs; other pages keep the base policy.
+      const documentCsp =
+        file === 'index.html'
+          ? `${contentSecurityPolicy}; img-src 'self' blob:; frame-src 'self' blob:`
+          : contentSecurityPolicy
       const responseCsp = documentNonce
-        ? contentSecurityPolicy.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)
-        : contentSecurityPolicy
+        ? documentCsp.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)
+        : documentCsp
       const headers = {
         'Content-Type': `${MIME[extname(file)] ?? 'application/octet-stream'}; charset=utf-8`,
         'Cache-Control': 'no-store',

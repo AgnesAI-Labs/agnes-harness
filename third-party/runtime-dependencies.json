@@ -2,6 +2,15 @@
   "scope": "External dependencies directly used by product runtime or optional integration paths.",
   "packages": [
     {
+      "name": "@ant-design/x-markdown",
+      "version": "2.9.0",
+      "license": "MIT",
+      "source": "https://github.com/ant-design/x/tree/main/packages/x-markdown",
+      "purpose": "Static React rendering of assistant body and thinking Markdown in the shared Web UI layer.",
+      "rationale": "Pins the React 18 compatible implementation verified in the W5a-0 fixture while keeping Agnes URL, HTML, image and copy rules in an auditable adapter.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
       "name": "@assistant-ui/react",
       "version": "0.11.27",
       "license": "MIT",

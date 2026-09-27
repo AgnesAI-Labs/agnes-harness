@@ -16,6 +16,9 @@ following material retains its original notices and license terms:
   provenance, changes, and the full license text.
 - Bundled Skill Helper in packages/package-manager/bundled-plugins/skill-helper:
   Copyright (c) 2026 2812348473. MIT License. See its local LICENSE.
+- XMarkdown in the generated Web UI vendor and stylesheet:
+  Copyright (c) 2015-present Ant UED. MIT License. The build copies its
+  license to web/THIRD-PARTY-NOTICES/x-markdown.txt.
 - The ACP schema in packages/protocol/schema/acp is derived from the Agent
   Client Protocol project under Apache License 2.0. See UPSTREAM.md for the
   exact source revision and scope.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile } from 'node:fs/promises'
+import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -218,6 +218,9 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     },
     ...vendorOptions,
     external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
+    banner: {
+      js: "import * as __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+    },
   })
   // 首帧主题必须早于第一次绘制，所以这一份单独打成 IIFE 并以阻塞式 <script> 引入。
   // ESM 一律 defer，会先闪一帧浅色。CSP 是 script-src 'self' 无 unsafe-inline，内联脚本不可用。
@@ -247,6 +250,21 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   ])
   const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
   await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)
+  const markdownCss = join(webOut, 'vendor', 'assistant-ui.css')
+  const [core, light, dark, overrides] = await Promise.all([
+    readFile(markdownCss, 'utf8'),
+    readFile(require.resolve('@ant-design/x-markdown/themes/light.css', { paths: [webUi] }), 'utf8'),
+    readFile(require.resolve('@ant-design/x-markdown/themes/dark.css', { paths: [webUi] }), 'utf8'),
+    readFile(join(webUi, 'src', 'conversation', 'markdown.css'), 'utf8'),
+  ])
+  await appendFile(join(webOut, 'style.css'), `\n${core}\n${light}\n${dark}\n${overrides}`)
+  await rm(markdownCss)
+  const markdownPackage = require.resolve('@ant-design/x-markdown/package.json', { paths: [webUi] })
+  await mkdir(join(webOut, 'THIRD-PARTY-NOTICES'), { recursive: true })
+  await copyFile(
+    join(dirname(markdownPackage), 'LICENSE'),
+    join(webOut, 'THIRD-PARTY-NOTICES', 'x-markdown.txt'),
+  )
 }
 
 async function buildLocal(out: string, nativeOutput?: string): Promise<void> {

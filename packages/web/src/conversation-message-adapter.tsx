@@ -9,16 +9,17 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
-import { ConversationMessages, type ConversationMessagesProps } from '@agnes/web-ui/assistant-ui'
+import {
+  ConversationMarkdown,
+  ConversationMessages,
+  type ConversationMessagesProps,
+} from '@agnes/web-ui/assistant-ui'
 import { createConversationMessageActions, createConversationToolCard } from '@agnes/web-units'
 import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
-import { createMarkdownRenderer } from './markdown.js'
 import { toolIcon } from './tool-icon.js'
-import { createCostDetails } from './usage.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
-type CostNode = Extract<UINode, { kind: 'cost' }>
 type SlotNode = Extract<UINode, { kind: 'slot' }>
 const noSessionSubscription = () => () => undefined
 
@@ -54,22 +55,6 @@ function TurnActions({
   return <div ref={host} data-agnes-turn-actions="" />
 }
 
-function MarkdownLeaf({ text }: { text: string }) {
-  const element = useRef<HTMLDivElement>(null)
-  const renderer = useRef<ReturnType<typeof createMarkdownRenderer>>()
-  useLayoutEffect(() => {
-    const host = element.current
-    if (!host) return
-    renderer.current = createMarkdownRenderer(host, '')
-    return () => {
-      renderer.current?.dispose()
-      renderer.current = undefined
-    }
-  }, [])
-  useLayoutEffect(() => renderer.current?.update(text), [text])
-  return <div ref={element} data-agnes-markdown-leaf="" />
-}
-
 function ToolLeaf({ node }: { node: ToolNode }) {
   const element = useRef<HTMLDivElement>(null)
   const card = useRef<ReturnType<typeof createConversationToolCard>>()
@@ -84,21 +69,6 @@ function ToolLeaf({ node }: { node: ToolNode }) {
   }, [])
   useLayoutEffect(() => card.current?.update(node), [node])
   return <div ref={element} data-agnes-tool-card="" />
-}
-
-function CostLeaf({ node }: { node: CostNode }) {
-  const element = useRef<HTMLDivElement>(null)
-  const update = useRef<ReturnType<typeof createCostDetails>>()
-  useLayoutEffect(() => {
-    const host = element.current
-    if (!host) return
-    update.current = createCostDetails(host)
-    return () => {
-      update.current = undefined
-    }
-  }, [])
-  useLayoutEffect(() => update.current?.(node), [node])
-  return <div ref={element} data-agnes-cost-details="" />
 }
 
 function SlotLeaf({
@@ -209,6 +179,8 @@ export function WebConversationMessages({
   turns?: readonly UITurn[]
   visibleNodeIds?: readonly string[]
   onFork?: (turn: UITurn) => Promise<void>
+  /** Compatibility selector; both values now use the same React-owned Markdown. */
+  markdownRenderer?: 'legacy' | 'xmarkdown'
 }) {
   const sessionScope = useSyncExternalStore(
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
@@ -226,9 +198,15 @@ export function WebConversationMessages({
         {...(onFork ? { onFork } : {})}
       />
     ),
-    renderMarkdown: (text) => <MarkdownLeaf text={text} />,
+    renderMarkdown: (text, part, state) => (
+      <ConversationMarkdown
+        key={`${state?.nodeId ?? ''}:${part}`}
+        source={text}
+        part={part}
+        streaming={state?.streaming ?? false}
+      />
+    ),
     renderTool: (node) => <ToolLeaf node={node} />,
-    renderCost: (node) => <CostLeaf node={node} />,
     renderSlot: (node) => <SlotLeaf key={node.id} node={node} registry={registry} claim={claim} />,
     renderNode: (node, native) =>
       registry ? <DshNodeLeaf key={node.id} node={node} native={native} registry={registry} /> : native,

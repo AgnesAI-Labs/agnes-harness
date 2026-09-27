@@ -9,9 +9,21 @@ const require = createRequire(import.meta.url)
 const antdCss = require.resolve('antd/dist/antd.css', { paths: [join(root, '..', 'web-ui')] })
 const tokensCss = join(root, '..', 'web-ui', 'src', 'tokens.css')
 const conversationCss = join(root, '..', 'web-ui', 'src', 'conversation', 'messages.css')
+const markdownOverridesCss = join(root, '..', 'web-ui', 'src', 'conversation', 'markdown.css')
+const markdownLightCss = require.resolve('@ant-design/x-markdown/themes/light.css', {
+  paths: [join(root, '..', 'web-ui')],
+})
+const markdownDarkCss = require.resolve('@ant-design/x-markdown/themes/dark.css', {
+  paths: [join(root, '..', 'web-ui')],
+})
+const markdownLicense = join(
+  dirname(require.resolve('@ant-design/x-markdown/package.json', { paths: [join(root, '..', 'web-ui')] })),
+  'LICENSE',
+)
 const out = join(root, 'dist', 'web')
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
+await mkdir(join(out, 'THIRD-PARTY-NOTICES'), { recursive: true })
 // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的
 // 同一份实例；app.js 打包时保持这些说明符为外部导入。
 const platformExternals = [
@@ -78,6 +90,11 @@ await build({
   },
   ...vendorOptions,
   external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
+  // html-react-parser's ESM wrapper enters CJS and calls require('react'). Bind exactly that
+  // call to the import-map singleton in every generated vendor chunk; reject other requires.
+  banner: {
+    js: "import * as __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+  },
 })
 // 首帧主题必须用阻塞式 <script> 在 <head> 里跑完，早于第一次绘制。
 // ESM 一律 defer，会闪一帧浅色，所以这一份单独打成 IIFE。
@@ -99,3 +116,19 @@ await Promise.all(
 // Conversation rules share the existing style.css URL on all three pages. The local CLI build
 // must apply the same composition when copying Web assets into its own static root.
 await appendFile(join(out, 'style.css'), `\n${await readFile(conversationCss, 'utf8')}`)
+// esbuild emits this CSS companion because XMarkdown imports its core stylesheet. All pages
+// already load /style.css, so merge core + published themes + Agnes overrides there.
+const generatedMarkdownCss = join(out, 'vendor', 'assistant-ui.css')
+const [core, light, dark, overrides] = await Promise.all([
+  readFile(generatedMarkdownCss, 'utf8'),
+  readFile(markdownLightCss, 'utf8'),
+  readFile(markdownDarkCss, 'utf8'),
+  readFile(markdownOverridesCss, 'utf8'),
+])
+await appendFile(
+  join(out, 'style.css'),
+  `\n${core.replace(/\/\*# sourceMappingURL=.*?\*\//g, '')}\n${light}\n${dark}\n${overrides}`,
+)
+await rm(generatedMarkdownCss)
+await rm(`${generatedMarkdownCss}.map`, { force: true })
+await cp(markdownLicense, join(out, 'THIRD-PARTY-NOTICES', 'x-markdown.txt'))

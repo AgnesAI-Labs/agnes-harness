@@ -1,5 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
 import {
+  type ComponentType,
   createElement,
   type FormEvent,
   type ForwardedRef,
@@ -45,7 +46,11 @@ export interface ComposerDependencies {
     onError(error: unknown): void
     onSelect(mode: PermissionMode): Promise<boolean>
   }): PermissionPicker
-  createUsagePanel(parent: HTMLElement): (usage: UsageView | undefined, connected: boolean) => void
+  createUsagePanel(parent: HTMLElement): ((usage: UsageView | undefined, connected: boolean) => void) & {
+    dispose?(): void
+  }
+  /** Component injection keeps production usage in the composer root; factories remain compatible. */
+  UsagePanel?: ComponentType<{ usage: UsageView | undefined; connected: boolean }>
   isSubmitShortcut(event: {
     key: string
     shiftKey: boolean
@@ -195,21 +200,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       onError,
       onSelect: onPermissionSelect,
     })
-    renderUsage.current = dependencies.createUsagePanel(usage.current)
+    if (!dependencies.UsagePanel) renderUsage.current = dependencies.createUsagePanel(usage.current)
     return () => {
       modelPicker.current?.destroy()
       permissionPicker.current?.destroy()
       modelPicker.current = undefined
       permissionPicker.current = undefined
+      renderUsage.current?.dispose?.()
       renderUsage.current = undefined
     }
   }, [dependencies, onError, onModelSelect, onPermissionSelect])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the preceding effect replaces handles when these inputs change.
   useLayoutEffect(() => {
     modelPicker.current?.render(view.model)
     permissionPicker.current?.render(view.permission)
     renderUsage.current?.(view.usage, view.connected)
-  }, [view])
+  }, [view, dependencies, onError, onModelSelect, onPermissionSelect])
 
   return createElement(
     'form',
@@ -359,7 +366,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ),
         ),
       ),
-      createElement('section', { ref: usage, id: 'session-usage', 'aria-label': '上下文用量', hidden: true }),
+      createElement(
+        'section',
+        {
+          ref: usage,
+          id: 'session-usage',
+          'aria-label': '上下文用量',
+          hidden: dependencies.UsagePanel ? !view.usage : true,
+        },
+        dependencies.UsagePanel
+          ? createElement(dependencies.UsagePanel, {
+              usage: view.usage,
+              connected: view.connected,
+            })
+          : undefined,
+      ),
       createElement(
         'button',
         {

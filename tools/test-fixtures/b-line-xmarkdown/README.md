@@ -53,3 +53,132 @@ the report block.
 
 The complete evidence, component and asset proposal, limitations and continuation are in
 `docs/task-records/b-line-w5a-0-xmarkdown.md` in this checkout (task records are locally ignored).
+
+## W5a production vendor browser probe
+
+After `pnpm --filter @agnes/cli build:local`, run `node tools/test-fixtures/b-line-xmarkdown/build-production.mjs`.
+It copies that build's `web/` output into `/private/tmp/agh-w5a-production-browser`, replaces
+only the three HTML probe pages and `/app.js`, and keeps the production vendor, style and token
+assets. Serve the resulting root with `pnpm exec tsx packages/web/src/serve-entry.ts --ws
+ws://127.0.0.1:4199 --port 4198 --root /private/tmp/agh-w5a-production-browser`. Open `/`,
+`/admin/plugins` and `/admin/resources` in Chrome. The same import map and CSP serve a hook
+probe plus actual `ConversationMarkdown` static/body/thinking/theme/safety/copy controls.
+This is an opt-in boundary probe; the default CLI pages remain unmodified. Stop the server after
+inspection. The temporary output can be rebuilt or discarded.
+
+## W5b-1 streaming and real-region browser acceptance
+
+Build the complete local CLI first, then run `node tools/test-fixtures/b-line-xmarkdown/build-streaming.mjs`.
+It keeps the packaged shared vendors, themes, tokens, licenses and original import map, while
+building the actual `mountTranscriptRegion` / `TimelineNodeHost` / message adapter and live
+projection into an opt-in probe. Its static root is `/private/tmp/agh-w5b1-streaming-browser`.
+Only the Session transport/server facts and clipboard writer are synthetic; the renderers,
+projection transformations, stores, DOM, selection, focus and project HTTP/CSP server are real.
+
+```sh
+pnpm --filter @agnes/cli build:local
+node tools/test-fixtures/b-line-xmarkdown/build-streaming.mjs
+pnpm exec tsx packages/web/src/serve-entry.ts --ws ws://127.0.0.1:4199 --port 4196 --root /private/tmp/agh-w5b1-streaming-browser
+```
+
+Open the three routes in Chrome to use the manual controls, or start a separate headless Chrome
+with a disposable profile and DevTools port 9231, then run
+`node tools/test-fixtures/b-line-xmarkdown/check-streaming-browser.mjs`. The checker brings its
+page to the front and enables CDP focus emulation: an inactive page can change activeElement
+without emitting native focusout, so that setup is required to test blur. Override the probe
+origin/debug endpoint with `AGNES_XMD_STREAM_ORIGIN` / `AGNES_XMD_STREAM_DEBUG` if necessary.
+The manual API opens the process disclosure when a test reuses a completed turn; normal
+production requests use new turn IDs. The checker asserts that focus actually enters a visible
+control before updating it.
+
+Acceptance covers incomplete/closed/terminal syntax, late references and unchanged code-control
+identity, selected body and thinking, focused copy and its displayed content/feedback, delayed
+thinking handover/removal and process folding, cancellation/failure, two reconnects, fresh
+preview versus final-result replacement, a later request, replay/order/dedup, session reset,
+listener/unmount cleanup and all three routes' import-map/CSP/Chrome errors. It performs no
+model call or physical network interruption and does not prove backend exactly-once execution.
+No animation is enabled in this checkpoint. Stop the probe server and its Chrome process after
+inspection; generated roots/profiles are disposable. The original/default Web pages are unchanged.
+
+## W5b-2 suffix animation and synchronous facade acceptance
+
+The current streaming checker also verifies real CSS animation objects: 480ms duration,
+only appended text, retained fragment/node identity and start time, completed range retirement,
+selection and copy-focus backlog painted immediately, actual background-tab visibility and
+native reduced-motion emulation. It exercises the unchanged legacy timeline host through the
+new `markdown.ts` facade, static document-preview updates and accessible/aligned tables.
+Table geometry checks cover 720px and 280px hosts in both Markdown themes: rows fill the
+bordered region, short tables fit, and wide unbreakable content scrolls only in the focusable
+outer region. The same layout is checked in message body, thinking and the static facade.
+All attached Markdown text/fragments belong to React; detached parsed-output plans are committed
+only with the rendered tree. Limits are 65536 text characters, 4096 visited nodes, 32 active
+ranges and 128 intersections, with surrogate-pair checks. The production Markdown component
+never invokes the old DOM renderer or `web-admin-frame` reveal helper.
+
+For the full CLI boundary instead of the source Web server, use:
+
+```sh
+pnpm --filter @agnes/cli build:local
+node tools/test-fixtures/b-line-xmarkdown/build-streaming.mjs --cli
+AGH_HOME=/private/tmp/agh-w5b2-cli-home AGNES_PROFILE=local-dev node /private/tmp/agh-w5b2-cli/agnes.mjs serve --port 4196
+```
+
+`--cli` copies the entire same-round CLI distribution into `/private/tmp/agh-w5b2-cli`, then
+replaces only its probe HTML pages/app. Its executable, daemon, native dependencies, import map,
+shared React/vendor/CSS and licenses come from that build; the original distribution remains
+available for normal use. Start the isolated Chrome/debug endpoint as above and run the same
+`check-streaming-browser.mjs`. The checker temporarily disables focus emulation during the
+background-tab test (focus emulation otherwise forces the page visible), then restores it for
+native blur checks. Stop the CLI serve process and Chrome after acceptance, and stop only the
+probe's isolated daemon with:
+
+```sh
+AGH_HOME=/private/tmp/agh-w5b2-cli-home AGNES_PROFILE=local-dev node /private/tmp/agh-w5b2-cli/agnes.mjs daemon stop
+node tools/test-fixtures/b-line-xmarkdown/check-streaming-browser.mjs --closed
+```
+
+The facade remains synchronous for create/update/dispose and interaction release. It injects
+`syntax="immediate"`: the pinned library's normal stream cache is passive-effect driven and
+cannot provide the old synchronous DOM read contract. React message consumers retain normal
+stream caching; both paths use XMarkdown and the same safe React components/reveal planner.
+The default timeline host is unchanged. Session facts and clipboard writes in the probe remain
+synthetic, so these checks do not prove real model execution or physical network recovery.
+
+## W5c-1 single-call cost contract
+
+The streaming probe/checker also exercises cost nodes before the Markdown checks. Rebuild the
+complete CLI and run `node tools/test-fixtures/b-line-xmarkdown/build-streaming.mjs --cli`, then
+serve its isolated web root and run the existing Chrome checker as described above. The probe
+uses actual `mountTranscriptRegion(..., {nodeHost: 'react'})` and the legacy timeline with the
+same synthetic protocol cost nodes. It verifies complete scope/model/token/cache/reasoning/
+billing/credit/timing details, compact summary, estimate-to-gateway replacement, zero and
+missing values, interrupted state, literal HTML/Markdown model names, unknown-purpose fallback,
+replay/order/removal, stable disclosure/summary/row identity and real focus/expanded state.
+The probe pages declare the production brand icon, avoiding Chrome's implicit favicon request.
+
+`ConversationCost({node})`, `CostNode`, `costSummary` and `costDetails` are exported from the
+existing `@agnes/web-ui/assistant-ui` entry. The component uses ordinary React text children,
+keyed detail rows and a native uncontrolled disclosure. `usage.ts` re-exports the pure formatter
+contract for legacy callers; its existing DOM cost wrapper and composer context panel remain
+compatible. The Web React adapter uses the default shared cost component. No new dependencies,
+CSS assets or listeners are required. Context-panel migration is W5c-2; the default timeline
+host and the unresolved S2 plugin-state contract remain separate.
+
+## W5c-2 composer context usage
+
+The same streaming probe/checker now mounts the production `mountComposerRegion` with synthetic
+`UsageView` values. It checks initial hiding, the packaged ring/popover styles, actual context
+fields, connection last-sync text, node/expanded/focus preservation, inside/outside clicks,
+over-window visual caps, clear/new-session zero/missing fields and listener cleanup after disposal.
+The three routes also rerun the existing Markdown selection/copy/480ms/recovery and cost checks.
+
+`ConversationUsage({usage, connected})` and its props are exported from `@agnes/web-ui/assistant-ui`.
+The host owns section visibility. The component owns native disclosure rows and its removable
+outside-click listener. Production `ComposerDependencies.UsagePanel` injects it directly into the
+composer React root. Existing custom `createUsagePanel` factories remain supported; an optional
+updater `dispose()` is invoked on replacement/unmount. Web's `createUsagePanel` remains synchronous
+for independent imperative callers and now returns an idempotent `dispose()`. Do not invoke that
+compatibility root from React effects; use component injection there. This introduces no new asset,
+dependency or CSP allowance. Cumulative session billing/credits/tokens and model identities stay
+hidden. `usage.ts` still has legacy cost DOM, so it is not a pure React file; other admin-frame
+consumers, default timeline rollout, S2 and broader M2 acceptance remain separate.

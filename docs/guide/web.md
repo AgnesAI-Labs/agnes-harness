@@ -50,6 +50,8 @@ Fold turns or tool calls, search the records, or load earlier history as needed.
 
 Settings manages model accounts, plugins, Skills/MCP, appearance, and Computer Use. Available actions depend on backend capabilities and permissions. Installed plugins still require trust and enablement; see [plugin management](packages.md). Reopen history from the sidebar, or use the archive view for archived tasks. Archiving does not delete session history.
 
+Computer Use shows driver status, system permissions, diagnostics, and maintenance progress. Switching settings pages keeps progress monitoring active. When the pane is replaced or reloaded, it reads the latest operation without resubmitting it. Removing the pane stops local monitoring; use Cancel explicitly to request backend cancellation and wait for confirmation. A connection error or a long wait does not confirm completion or cancellation.
+
 To add MCP, describe the integration in chat and supply a service address or connection details, then inspect it in settings. New services must be trusted and enabled in sequence; see [MCP integration](mcp.md). Use the SecretRef configuration flow for credentials.
 
 The URL's `session` parameter selects the session. After a refresh or brief disconnection, the SDK reloads the projection from the backend without automatically resending business requests. If reconnection fails, inspect `daemon status`. After a daemon restart, open the normal URL printed by the current `serve` process. Local mode does not need to restore a startup token from sessionStorage.
@@ -59,6 +61,8 @@ Closing the browser, disconnecting the page, or stopping `serve` affects the cli
 <a id="当前交互边界"></a>
 
 ## Current interaction boundaries
+
+The built-in right-side document preview supports text, code, Markdown, filtered HTML, and images or PDFs delivered by the session resource service. A resource read failure displays a generic unavailable message; a reclaimed screenshot displays the retention-policy message. Replacing or closing the preview releases its acquired resource URLs and ignores late replies. Closing a preview does not cancel backend work. The workbench CSP permits local Blob URLs for images and frames; remote sources remain blocked, and PDF frames keep their sandbox. Other pages retain their existing CSP. Some browsers block their native PDF viewer inside a sandboxed frame; inline PDF preview is unavailable in those browsers.
 
 Tool results use constrained previews and detail views. They cannot render arbitrary HTML. Do not assume every artifact supports upload, download, or rename, or that every message supports editing and regeneration. The interface exposes actions supported by the current backend. See [verification](../maintainers/verification.md) for the scope of real browser testing.
 
