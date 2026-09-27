@@ -169,7 +169,7 @@ describe('replaying switches of mismatched kinds on open', () => {
     }
   }, 60_000)
 
-  // D14: the skip diagnostic is written at most once per row per process. A live session cannot be
+  // The skip diagnostic is written at most once per row per process. A live session cannot be
   // reopened at all (see above), so the only way the same process opens the same session key twice
   // is close then reopen - which builds a brand new HostSession object (core's Kernel evicts the
   // closed one from its live table). The dedup therefore has to survive that, not merely last as
