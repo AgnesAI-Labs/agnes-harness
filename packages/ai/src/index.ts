@@ -6,6 +6,8 @@ export type {
   WireEvent,
 } from './adapter.js'
 export { CredentialedAdapter, DecisionAdapter, DecisionAdapterError, WireAdapter } from './adapter.js'
+export type { JevAdapterOptions } from './adapters/jev/index.js'
+export { JevDecisionAdapter } from './adapters/jev/index.js'
 export type { ImagesImpl } from './adapters/media/index.js'
 export { IMAGE_ROUTE, MediaAdapter, VIDEO_ROUTE } from './adapters/media/index.js'
 export type { VideoClient, VideoStatus } from './adapters/media/video-job.js'
@@ -24,6 +26,7 @@ export {
   ApiKeyProviderError,
   createApiKeyProviderAdapters,
   getApiKeyProvider,
+  TYPESAFE_CREDENTIAL_REF,
 } from './adapters/pi/api-key-providers.js'
 export type {
   CodexCredential,

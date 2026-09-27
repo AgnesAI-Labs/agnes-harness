@@ -346,6 +346,14 @@ export const API_KEY_CREDENTIAL_REFS: ReadonlySet<string> = new Set(
 )
 
 /**
+ * The credential reference for TypeSafe's direct decision endpoint. It is spelled like every other
+ * API-key reference but it is not a chat provider, so it is deliberately absent from the registry
+ * above: no chat configuration surface offers it, no chat route binds it, and it is not one of the
+ * references a first-run client may leave unbound.
+ */
+export const TYPESAFE_CREDENTIAL_REF = 'secret://typesafe/default' as const
+
+/**
  * Creates the complete, fixed API-key route table once at startup.  This never reads a credential
  * and therefore cannot block a first launch; an unconfigured route returns AUTH from PiAdapter
  * before network I/O when the user actually selects it.
