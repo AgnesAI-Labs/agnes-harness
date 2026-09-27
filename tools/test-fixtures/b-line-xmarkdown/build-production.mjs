@@ -25,5 +25,7 @@ const html = `<!doctype html>
 <script type="importmap">{"imports":{"react":"/vendor/react.js","react/jsx-runtime":"/vendor/react-jsx-runtime.js","react-dom":"/vendor/react-dom.js","react-dom/client":"/vendor/react-dom-client.js","@agnes/web-ui/assistant-ui":"/vendor/assistant-ui.js"}}</script>
 <script type="module" src="/app.js"></script></head>
 <body><main id="probe-root"></main><pre id="report"></pre></body></html>`
-await Promise.all(['index.html', 'admin.html', 'resources.html'].map((page) => writeFile(resolve(out, page), html)))
+await Promise.all(
+  ['index.html', 'admin.html', 'resources.html'].map((page) => writeFile(resolve(out, page), html)),
+)
 console.log(out)
