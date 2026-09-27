@@ -1,6 +1,7 @@
 import type { Provider } from '@agnes/protocol'
 import type { ChildHandle, ChildrenFactory, ChildStatus } from '../effects/tool-context.js'
 import type { Kernel } from '../kernel.js'
+import { DECISION_SLOT, isDecisionModel } from '../model-kind.js'
 import { sha256Hex } from '../request/hash.js'
 import type { SessionImpl } from '../step/session.js'
 import { CoreError } from '../types.js'
@@ -91,6 +92,11 @@ export class KernelChildren implements ChildrenFactory {
       throw new CoreError('E_CHILD_LIMIT', 'child session key exceeds protocol limit')
     const boundarySeq =
       opts.forkAt ?? (kind === 'fork' ? parent.op()?.meta.triggerSeq : undefined) ?? parent.lastSeq
+    if (opts.model !== undefined && this.selectsDecisionModel(parent, opts.model))
+      throw new CoreError('E_MODEL_UNKNOWN', 'a child session cannot run on a decision model', {
+        model: opts.model,
+        reason: 'slot-kind',
+      })
     const modelTarget = opts.model === undefined ? undefined : this.resolveModel(parent, opts.model)
     if (opts.model !== undefined && modelTarget === undefined)
       throw new CoreError('E_MODEL_UNKNOWN', `default child factory cannot resolve model ${opts.model}`, {
@@ -635,6 +641,30 @@ export class KernelChildren implements ChildrenFactory {
       .subagentStart?.({ childKey: record.childKey, kind, budget: opts.budget ?? null })
       .catch(() => undefined)
     return handle
+  }
+
+  /**
+   * The selector is model-controlled, so it is checked by kind before it is resolved: the decision
+   * slot, the decision model the preset pins, and any decision record a provider lists are refused.
+   */
+  private selectsDecisionModel(parent: SessionImpl, selector: string): boolean {
+    if (selector === DECISION_SLOT) return true
+    const route = parent.preset.model.route[DECISION_SLOT]
+    const pinned = parent.preset.model.id[DECISION_SLOT]
+    if (pinned !== undefined && (selector === pinned || selector === `${route}/${pinned}`)) return true
+    let models: ReturnType<Provider['models']>
+    try {
+      models = parent.d.provider.models()
+    } catch {
+      return false
+    }
+    const slash = selector.indexOf('/')
+    return models.some(
+      (m) =>
+        isDecisionModel(m) &&
+        (m.id === selector ||
+          (slash > 0 && m.route === selector.slice(0, slash) && m.id === selector.slice(slash + 1))),
+    )
   }
 
   private resolveModel(parent: SessionImpl, selector: string): { route: string; model: string } | undefined {

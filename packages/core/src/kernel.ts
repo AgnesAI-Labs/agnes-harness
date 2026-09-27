@@ -16,6 +16,7 @@ import { InvariantRegistry } from './invariants/registry.js'
 import { forkPaths } from './log/fork-seed.js'
 import type { Timers } from './log/session-log.js'
 import type { StorageAdapter } from './log/storage.js'
+import { DECISION_SLOT } from './model-kind.js'
 import { ProjectionRegistry } from './project/named.js'
 import { openTracked } from './reduce/tracker.js'
 import { HookRegistry } from './registry/hooks.js'
@@ -73,6 +74,7 @@ export const CORE_DIAG_NAMES = [
   'contribute-conflict',
   'context-breakdown',
   'request-media-window',
+  'model-switch-skipped',
 ] as const
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
@@ -387,9 +389,11 @@ export class Kernel {
         resolvedProfileHash: so.resolvedProfileHash,
         writerRunId: so.writerRunId,
         lane,
+        // The decision slot is read from the preset by the decision service and is never a chat
+        // selection; pinning it as a model-switch row would have the child's replay restore it as one.
         modelSelections: Object.entries(preset.model.id).flatMap(([slot, model]) => {
           const route = preset.model.route[slot]
-          return model && route ? [{ slot, route, model }] : []
+          return model && route && slot !== DECISION_SLOT ? [{ slot, route, model }] : []
         }),
         ...(so.delegation ? { delegation: so.delegation } : {}),
       })

@@ -1,6 +1,7 @@
 import type { ToolResult } from '@agnes/extension-api'
 import { type JsonValue, type ThinkingLevel, validateAgainst } from '@agnes/protocol'
 import { type NestedToolLease, NestedToolSchedulingError } from '../effects/scheduler.js'
+import { DECISION_SLOT, isDecisionModel } from '../model-kind.js'
 import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
@@ -393,8 +394,8 @@ export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> 
 /**
  * Switches one model slot's resolved route/model id in place; `resolveModel` (inference.ts) and
  * `contextWindowFor` (gate.ts) read `s.preset.model` fresh every call, so the next request sees it.
- * Only checks catalogue membership — profile/policy checks (minimal-rl freezes, safety ceilings)
- * are host's layer, expected to validate a `setModel` request before routing it here.
+ * Checks slot kind and catalogue membership — profile/policy checks (minimal-rl freezes, safety
+ * ceilings) are host's layer, expected to validate a `setModel` request before routing it here.
  */
 export async function setModel(
   s: SessionImpl,
@@ -403,8 +404,17 @@ export async function setModel(
   return s.locked(async () => {
     const modelUnknown = (message: string, x?: Record<string, unknown>) =>
       new CoreError('E_MODEL_UNKNOWN', message, { slot: sel.slot, route: sel.route, model: sel.model, ...x })
+    // Slot kind before catalogue membership. The decision slot is resolved from the preset by the
+    // decision service and is never switched here; a decision model is never a chat model, whether a
+    // provider lists it or the preset pins it on the decision slot.
+    const pinnedDecision =
+      s.preset.model.route[DECISION_SLOT] === sel.route && s.preset.model.id[DECISION_SLOT] === sel.model
+    if (sel.slot === DECISION_SLOT || pinnedDecision)
+      throw modelUnknown('the slot and the model are of different kinds', { reason: 'slot-kind' })
     const known = s.d.provider.models().find((m) => m.route === sel.route && m.id === sel.model)
     if (!known) throw modelUnknown(`${sel.route}/${sel.model} is not in the provider's sealed catalogue`)
+    if (isDecisionModel(known))
+      throw modelUnknown('the slot and the model are of different kinds', { reason: 'slot-kind' })
     if (sel.thinking !== undefined) {
       assertThinking(sel.thinking)
       if (!known.reasoning || (known.thinkingLevelMap && !(sel.thinking in known.thinkingLevelMap)))
