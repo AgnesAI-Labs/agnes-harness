@@ -84,7 +84,9 @@ export function mcpServerExtension(cfg: McpServerConfig, deps: McpServerExtensio
         sync: (connection, reportCatalog) =>
           registerRemoteToolsStrict(agnes, connection, cfg, {
             onCatalog: (rows) => deps.catalogHub.upsert(cfg.id, rows, claimant),
-            ...(reportCatalog ? { onRemoteCatalog: (remote) => reportCatalog(catalogInfoOf(remote)) } : {}),
+            ...(reportCatalog
+              ? { onRemoteCatalog: (remote, skipped) => reportCatalog(catalogInfoOf(remote, skipped)) }
+              : {}),
             ownsConnection: false,
           }),
         sleep: abortableSleep,

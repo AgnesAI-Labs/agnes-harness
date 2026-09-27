@@ -81,6 +81,7 @@ it('propagates actual SDK changes through deriveRequest prompt hash without chan
       model: { slot: 'primary', route: 'default', model: 'm1' },
       contract: { contract_id: null, parser_version: '1' },
       nonce: '0123456789abcdef0123456789abcdef',
+      envelopeNonceFor: () => undefined,
       envelopeCache: createEnvelopeCache(),
     })
   }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +10,7 @@ import {
   scopedPackageProfileDirectory,
 } from '@agnes/daemon/packages'
 import type { NodeClient } from '@agnes/sdk'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { main } from '../src/bin.js'
@@ -70,7 +72,11 @@ afterEach(() => {
   for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 const scratch = (): string => {
-  const d = mkdtempSync(join(tmpdir(), 'dbh-m14-'))
+  const d =
+    process.platform === 'win32'
+      ? join(tmpdir(), `dbh-m14-${randomUUID()}`)
+      : mkdtempSync(join(tmpdir(), 'dbh-m14-'))
+  if (process.platform === 'win32') createPrivateDirectorySync(d)
   tmp.push(d)
   return d
 }

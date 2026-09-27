@@ -71,7 +71,7 @@ async function identity() {
 }
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'agnes-runtime-snapshot-'))
+  root = mkdtempSync(join(tmpdir(), 'agnes-中文 runtime-snapshot-'))
   profile = join(root, 'profiles', 'local-dev')
   sourceDir = join(root, 'source')
   mkdirSync(profile, { recursive: true })

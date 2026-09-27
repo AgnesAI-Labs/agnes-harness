@@ -251,6 +251,7 @@ describe('HookEngine typed invocation', () => {
     const collected: Array<{ ext: string; result: ContextResult }> = []
     let sections = applyContextResults([], []).sections
     let surfaceReads = 0
+    let additionalContext = ''
     const surface = [{ seq: 1, type: 'user/message' as const, pinned: true }]
     e.on(
       'context',
@@ -288,14 +289,17 @@ describe('HookEngine typed invocation', () => {
       {
         accept: (value, source) => {
           collected.push({ ext: source, result: contextReturnToWire(value) })
-          sections = applyContextResults([], collected).sections
+          const applied = applyContextResults([], collected)
+          sections = applied.sections
+          additionalContext = applied.additionalContext
         },
       },
     )
     expect(result.kind).toBe('ok')
     expect(surfaceReads).toBe(1)
     expect(surface[0]?.pinned).toBe(true)
-    expect(sections.map((s) => s.text)).toEqual(['first', 'note'])
+    expect(sections.map((s) => s.text)).toEqual(['first'])
+    expect(additionalContext).toBe('note')
   })
 
   it('puts replay state in HookContext without extending the payload', async () => {

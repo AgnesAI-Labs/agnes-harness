@@ -17,7 +17,7 @@ const read = (f: string): string => readFileSync(f, 'utf8')
 // This existing function normalizes Skill names and user prose, never filesystem paths.
 // Only its exact reviewed body is exempt; other calls in the same file remain forbidden.
 const skillNormalizer = String.raw`function normalized(value: string): string {
-  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('en-US')
+  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ')
 }`
 const pathGuardInput = (file: string, text: string): string => {
   const source = text.replaceAll('\r\n', '\n')

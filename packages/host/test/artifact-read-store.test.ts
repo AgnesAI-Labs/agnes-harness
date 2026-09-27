@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createPrivateDirectorySync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ARTIFACT_RECLAIMED_FAILURE,
@@ -37,7 +38,14 @@ afterEach(async () => {
 })
 
 async function fixture(text = 'production artifact bytes') {
-  const dataDir = await mkdtemp(join(tmpdir(), 'agnes-artifact-read-store-'))
+  const dataDir =
+    process.platform === 'win32'
+      ? join(tmpdir(), `agnes-artifact-read-store-${randomUUID()}`)
+      : await mkdtemp(join(tmpdir(), 'agnes-artifact-read-store-'))
+  if (process.platform === 'win32') {
+    createPrivateDirectorySync(dataDir)
+    windowsEnsurePrivateDirectorySync(join(dataDir, 'artifacts'))
+  }
   roots.push(dataDir)
   const bytes = new TextEncoder().encode(text)
   const sha256 = createHash('sha256').update(bytes).digest('hex')

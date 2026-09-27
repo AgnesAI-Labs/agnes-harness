@@ -81,6 +81,44 @@ describe('worker-private Skill LKG', () => {
 })
 
 describe('scanSkills threads a separately resolved Agnes home to the one Agnes-owned user root', () => {
+  it.each([
+    { field: 'description', value: 'd'.repeat(1025) },
+    { field: 'name', value: 'n'.repeat(129) },
+  ])('does not restore an LKG candidate whose $field is out of bounds', async ({ field, value }) => {
+    const root = await mkdtemp(join(tmpdir(), 'agnes-worker-skill-lkg-bounds-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    const lkg = join(root, 'private-lkg')
+    const skillDir = join(workspace, '.agh', 'skills', 'review')
+    await mkdir(skillDir, { recursive: true })
+    await writeFile(join(skillDir, 'SKILL.md'), '---\nname: review\ndescription: Review a change\n---\nbody')
+    const originalHome = process.env.HOME
+    process.env.HOME = join(root, 'home')
+    try {
+      await scanSkills(workspace, undefined, lkg)
+      const storedPath = join(lkg, `workspace-agnes.${workspaceSkillKey(workspace)}.json`)
+      const stored = JSON.parse(await readFile(storedPath, 'utf8')) as {
+        candidates: Record<string, unknown>[]
+      }
+      const first = stored.candidates[0]
+      if (!first) throw new Error('LKG candidate missing')
+      first[field] = value
+      await writeFile(storedPath, JSON.stringify(stored))
+
+      await rm(join(workspace, '.agh', 'skills'), { recursive: true, force: true })
+      await writeFile(join(workspace, '.agh', 'skills'), 'not a directory')
+      const restarted = await scanSkills(workspace, undefined, lkg)
+      expect(restarted.failedRoots).toContain('workspace-agnes')
+      expect(restarted.roots.find((entry) => entry.rootKey === 'workspace-agnes')).toBeUndefined()
+      expect(restarted.rootStatuses.find((entry) => entry.rootKey === 'workspace-agnes')?.state).toBe(
+        'unavailable',
+      )
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME
+      else process.env.HOME = originalHome
+    }
+  })
+
   it('finds a Skill under agnesHomeDir/skills even when osHomeDir points elsewhere entirely', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agnes-worker-skill-agnes-home-'))
     roots.push(root)

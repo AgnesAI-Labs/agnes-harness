@@ -1,11 +1,15 @@
+import { sanitize } from '@agnes/core'
 import {
   checkToolDef,
   type Disposer,
   defineTool,
   type ExtensionAPI,
+  TOOL_DESCRIPTION_MAX_LENGTH,
+  TOOL_PARAMETERS_MAX_BYTES,
   type ToolDef,
   type ToolResult,
 } from '@agnes/extension-api'
+import { inspectJsonData, type McpStatus, validateResourceControlData } from '@agnes/protocol'
 import { decodeSafeImages, type SafeImage, type SafeImageLimits } from '@agnes/protocol-validation'
 import {
   CALL_OUTPUT_LIMIT_BYTES,
@@ -24,6 +28,12 @@ export type McpRemoteTool = {
 }
 type RemoteContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 export type RemoteToolIndexRow = { name: string; description: string; schema: string }
+/** A remote tool left out of registration, and why; `name` only when it is a usable remote name. */
+export type McpSkippedTool = NonNullable<McpStatus['skippedTools']>[number]
+export type McpCheckedCatalog = Readonly<{
+  tools: readonly McpRemoteTool[]
+  skipped: readonly McpSkippedTool[]
+}>
 
 /**
  * All limits are mandatory when media is enabled. P0 has not frozen production values, so an
@@ -329,12 +339,55 @@ function remoteDefinition(
   })
 }
 
-/** Strictly validates a catalog already obtained during Host candidate health checks. */
+/**
+ * Why one remote tool cannot be shown to a model, or undefined when it can. An admitted tool passes
+ * the checks Core's registry and the protocol `McpTool` shape apply, so registering it cannot fail.
+ */
+function mcpToolProblem(
+  conn: McpConnection,
+  cfg: McpServerConfig,
+  tool: McpRemoteTool,
+): McpSkippedTool['code'] | undefined {
+  if (typeof tool?.name !== 'string' || !tool.name || typeof tool.description !== 'string') return 'malformed'
+  if (tool.name.length > 128) return 'invalid-name'
+  try {
+    localName(cfg.id, tool.name)
+  } catch {
+    return 'invalid-name'
+  }
+  const inspected = inspectJsonData(tool.inputSchema, TOOL_PARAMETERS_MAX_BYTES)
+  if (!inspected.ok) return inspected.reason.startsWith('size ') ? 'schema-too-large' : 'invalid-schema'
+  let definition: ToolDef
+  try {
+    definition = remoteDefinition(conn, cfg, tool)
+  } catch {
+    return 'invalid-schema'
+  }
+  const checked = checkToolDef(definition, { prefix: 'mcp_' })
+  const problems = checked.ok ? [] : checked.problems
+  if (problems.some((p) => p.startsWith('parameters: serialized size'))) return 'schema-too-large'
+  if (problems.some((p) => p.startsWith('parameters:'))) return 'invalid-schema'
+  if (
+    tool.description.length > TOOL_DESCRIPTION_MAX_LENGTH ||
+    problems.some((p) => p.startsWith('description:')) ||
+    sanitize(definition.description).length > TOOL_DESCRIPTION_MAX_LENGTH
+  )
+    return 'description-too-long'
+  if (problems.length) return 'malformed'
+  const shape = { name: tool.name, description: tool.description, inputSchema: tool.inputSchema }
+  return validateResourceControlData('McpTool', shape).ok ? undefined : 'invalid-schema'
+}
+
+/**
+ * Splits a catalog already obtained during Host candidate health checks into the tools a model can be
+ * shown and the ones skipped with a reason. Only catalog-level faults throw: a connection id that
+ * does not match, too many tools, or two admitted tools sharing a local name.
+ */
 export function validateRemoteCatalog(
   conn: McpConnection,
   cfg: McpServerConfig,
   remote: readonly McpRemoteTool[],
-): readonly McpRemoteTool[] {
+): McpCheckedCatalog {
   if (conn.id !== cfg.id) throw new Error(`connection id ${conn.id} does not match config id ${cfg.id}`)
   if (remote.length > MAX_MCP_CATALOG_TOOLS) throw new Error('MCP tool catalog exceeds Host limit')
   const allowed = cfg.allowedTools === undefined ? undefined : new Set(cfg.allowedTools)
@@ -343,16 +396,21 @@ export function validateRemoteCatalog(
       ? remote
       : remote.filter((tool) => typeof tool?.name === 'string' && allowed.has(tool.name))
   const names = new Set<string>()
+  const tools: McpRemoteTool[] = []
+  const skipped: McpSkippedTool[] = []
   for (const tool of accepted) {
-    if (typeof tool?.name !== 'string' || !tool.name || typeof tool.description !== 'string')
-      throw new Error('malformed remote tool catalog')
-    const definition = remoteDefinition(conn, cfg, tool)
-    if (names.has(definition.name)) throw new Error(`remote tool name collision: ${definition.name}`)
-    names.add(definition.name)
-    const checked = checkToolDef(definition, { prefix: 'mcp_' })
-    if (!checked.ok) throw new Error(`invalid remote tool: ${checked.problems.join('; ')}`)
+    const code = mcpToolProblem(conn, cfg, tool)
+    if (code) {
+      const name: unknown = tool?.name
+      skipped.push(typeof name === 'string' && name && name.length <= 128 ? { code, name } : { code })
+      continue
+    }
+    const local = localName(cfg.id, tool.name)
+    if (names.has(local)) throw new Error(`remote tool name collision: ${local}`)
+    names.add(local)
+    tools.push(tool)
   }
-  return Object.freeze([...accepted])
+  return Object.freeze({ tools: Object.freeze(tools), skipped: Object.freeze(skipped) })
 }
 
 /**
@@ -363,7 +421,7 @@ export async function inspectRemoteCatalog(
   conn: McpConnection,
   cfg: McpServerConfig,
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
-): Promise<readonly McpRemoteTool[]> {
+): Promise<McpCheckedCatalog> {
   const remote = await conn.listTools(options)
   if (!Array.isArray(remote)) throw new Error('tool catalog is not an array')
   return validateRemoteCatalog(conn, cfg, remote)
@@ -379,10 +437,11 @@ export async function registerRemoteToolsStrict(
   cfg: McpServerConfig,
   opts: {
     onCatalog?: (rows: RemoteToolIndexRow[]) => void
-    /** The accepted (`allowedTools`-filtered) remote catalog, unconditionally - unlike `onCatalog`,
-     *  never gated by `cfg.defer`. Lets a caller compute status/health info independent of whether
-     *  this server's tools are eagerly disclosed or deferred to `tool_search`. */
-    onRemoteCatalog?: (remote: readonly McpRemoteTool[]) => void
+    /** The admitted (`allowedTools`-filtered) remote catalog and the tools skipped from it,
+     *  unconditionally - unlike `onCatalog`, never gated by `cfg.defer`. Lets a caller compute
+     *  status/health info independent of whether this server's tools are eagerly disclosed or
+     *  deferred to `tool_search`. */
+    onRemoteCatalog?: (remote: readonly McpRemoteTool[], skipped: readonly McpSkippedTool[]) => void
     claimedNames?: Set<string>
     catalog?: readonly McpRemoteTool[]
     /**
@@ -397,11 +456,11 @@ export async function registerRemoteToolsStrict(
 ): Promise<Disposer> {
   const disposers: Disposer[] = []
   try {
-    const remote =
+    const { tools: remote, skipped } =
       opts.catalog === undefined
         ? await inspectRemoteCatalog(conn, cfg)
         : validateRemoteCatalog(conn, cfg, opts.catalog)
-    opts.onRemoteCatalog?.(remote)
+    opts.onRemoteCatalog?.(remote, skipped)
     const mediaLimits = resolveMediaLimits(opts.mediaLimits)
     const definitions = remote.map((tool) => remoteDefinition(conn, cfg, tool, mediaLimits))
     const duplicate = definitions.find((definition) => opts.claimedNames?.has(definition.name))

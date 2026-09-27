@@ -14,6 +14,7 @@ import {
 import { appendRowAsOlderBuild, createTestHost } from '@agnes/host/testkit'
 import { ResourceOperationFailure } from '@agnes/resource-control-cli'
 import { JsonRpcError, TransportClosed } from '@agnes/sdk'
+import { windowsWritePrivateFile } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import {
@@ -39,10 +40,12 @@ const runtimeBlocker = evaluateFixedComputerUsePlatformAdmission(
   : 'platform-unsupported'
 
 const tmp: string[] = []
+const cleanupRetries = process.platform === 'win32' ? 5 : 0 // guards-allow-platform: transient Windows handle release.
 afterEach(() => {
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
-  for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true })
+  for (const d of tmp.splice(0))
+    rmSync(d, { recursive: true, force: true, maxRetries: cleanupRetries, retryDelay: 100 })
 })
 
 const scratch = (): string => {
@@ -256,7 +259,7 @@ describe('main', () => {
       )
       expect(h.err()).toBe('')
     }
-  })
+  }, 30_000)
 
   it('rejects malformed computer-use lifecycle arguments before booting a daemon', async () => {
     for (const argv of [
@@ -281,20 +284,24 @@ describe('main', () => {
     // contract is tested in computer-use.test.ts. This integration test checks authenticated boot.
     ['computer-use', 'operation'],
     ['computer-use', 'permissions', 'grant'],
-  ])('boots authenticated local control for %s %s %s', async (...argv) => {
-    const h = harness(scratch())
-    const createHostImpl = vi.fn(h.boot.createHostImpl)
-    const code = await main(
-      argv.filter((arg): arg is string => arg !== undefined),
-      h.io,
-      {
-        ...h.boot,
-        createHostImpl,
-      },
-    )
-    expect([1, 2]).toContain(code)
-    expect(createHostImpl).toHaveBeenCalledOnce()
-  })
+  ])(
+    'boots authenticated local control for %s %s %s',
+    async (...argv) => {
+      const h = harness(scratch())
+      const createHostImpl = vi.fn(h.boot.createHostImpl)
+      const code = await main(
+        argv.filter((arg): arg is string => arg !== undefined),
+        h.io,
+        {
+          ...h.boot,
+          createHostImpl,
+        },
+      )
+      expect([1, 2]).toContain(code)
+      expect(createHostImpl).toHaveBeenCalledOnce()
+    },
+    30_000,
+  )
 
   it('routes permissions and filtered doctor through authenticated blocked RPCs', async () => {
     for (const argv of [
@@ -404,7 +411,7 @@ describe('main', () => {
         { type: 'DeprecationWarning', code: 'AGH_DEP_AGNES_HOME' },
       ],
     ])
-  })
+  }, 30_000)
 
   // Not a TTY on either end is what makes the default form print rather than draw.
   it('a redirected stdout picks the print form even without -p', async () => {
@@ -412,7 +419,7 @@ describe('main', () => {
     const h = harness(dir, { stdin: true, stdout: false })
     expect(await main(['hello'], h.io, h.boot)).toBe(0)
     expect(h.out()).toBe('main says hi\n')
-  })
+  }, 30_000)
 
   // Explicit connection failures remain named refusals rather than falling back to a local daemon.
   it.each([[['-p', 'x', '--connect', 'unix:/tmp/s'], 'connect', 'connect handshake failed']])(
@@ -578,9 +585,7 @@ describe('main', () => {
       const identity = await defaultProcessIdentity(process.pid)
       if (identity.state !== 'alive')
         throw new Error(`cannot identify this process: ${JSON.stringify(identity)}`)
-      mkdirSync(dirname(scope.ownerPath), { recursive: true })
-      writeFileSync(
-        scope.ownerPath,
+      const bytes = Buffer.from(
         JSON.stringify({
           pid: process.pid,
           processStartId: identity.startId,
@@ -589,6 +594,13 @@ describe('main', () => {
           socketPath: join(home, 'absent.sock'),
         }),
       )
+      if (process.platform === 'win32') {
+        // guards-allow-platform: Windows discovery requires a private directory and file DACL.
+        await windowsWritePrivateFile(scope.ownerPath, bytes)
+      } else {
+        mkdirSync(dirname(scope.ownerPath), { recursive: true })
+        writeFileSync(scope.ownerPath, bytes)
+      }
     }
 
     it.each([

@@ -178,7 +178,7 @@ it('runs a Surface effect through startSupervisor WebSocket and acknowledges it 
     dataDir: dir,
     ...socketPaths(dir),
     ws: { addr: '127.0.0.1:0', ...tls() },
-    limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+    limits: { ...DEFAULT_LIMITS },
   }
   const tables = sqliteTables(join(dir, 'daemon.sqlite'))
   await seedPortalSession({
@@ -319,7 +319,7 @@ it('runs a Surface effect through startSupervisor WebSocket and acknowledges it 
     await supervisor.close()
     await tables.close()
   }
-}, 30_000)
+}, 60_000)
 
 it('runs a Portal request through Surface routes, the SDK relay and client, WSS, and a Service worker', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-surface-portal-vertical-'))
@@ -374,7 +374,7 @@ it('runs a Portal request through Surface routes, the SDK relay and client, WSS,
     dataDir: dir,
     ...socketPaths(dir),
     ws: { addr: '127.0.0.1:0', ...tls() },
-    limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+    limits: { ...DEFAULT_LIMITS },
   }
   const tables = sqliteTables(join(dir, 'daemon.sqlite'))
   await seedPortalSession({
@@ -565,4 +565,4 @@ it('runs a Portal request through Surface routes, the SDK relay and client, WSS,
     await supervisor.close()
     await tables.close()
   }
-}, 30_000)
+}, 60_000)

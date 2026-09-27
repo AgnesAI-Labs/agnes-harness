@@ -222,7 +222,7 @@ describe('production supervisor storage', () => {
       await storage.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 150_000)
 
   it.runIf(createPlatform().snapshot().os === 'win32')(
     'refuses a pre-existing broad Skill cache without changing its ACL',

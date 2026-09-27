@@ -80,7 +80,7 @@ export async function probePowerShell(path: string): Promise<PowerShellDescripto
         '-EncodedCommand',
         Buffer.from(probeScript, 'utf16le').toString('base64'),
       ],
-      { encoding: 'utf8', timeout: 5_000, maxBuffer: 16_384, windowsHide: true },
+      { encoding: 'utf8', timeout: 10_000, maxBuffer: 16_384, windowsHide: true },
     )
     return checked(JSON.parse(stdout.replace(/^\uFEFF/, '').trim()))
   } catch {

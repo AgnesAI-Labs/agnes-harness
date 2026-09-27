@@ -9,6 +9,7 @@ import { MemoryStorage } from '../src/log/memory-storage.js'
 import { HookRegistry } from '../src/registry/hooks.js'
 import { ResourceRegistry } from '../src/registry/resources.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { CompactionRunner } from '../src/step/compaction.js'
 import { contextTokens } from '../src/step/gate.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
@@ -354,6 +355,46 @@ describe('Kernel default children', () => {
       expect(provider.requests.at(-1)).toMatchObject(expected)
       await child.close()
     }
+    await k.close()
+  })
+
+  it('inherits the parent compaction policy for fork and spawn children', async () => {
+    const k = base({ preset: childPreset })
+    const parent = await k.session('parent', { ...sessionOpts, preset: childPreset })
+    for (const kind of ['fork', 'spawn'] as const) {
+      const create = parent.d.children.createWithKind
+      if (!create) throw new Error('child factory has no kind selector')
+      const handle = await create.call(parent.d.children, kind, {
+        parent: parent.key,
+        cwd: '/w',
+        input: `${kind} task`,
+      })
+      const child = k.get(handle.key)
+      expect(child?.preset.compaction).toEqual(parent.preset.compaction)
+      await handle.close()
+    }
+    await k.close()
+  })
+
+  it('offers an enabled compact tool to a runnable child', async () => {
+    const provider = fakeProvider([textTurn('child done')])
+    const k = base({
+      provider,
+      preset: childPreset,
+      compaction: new CompactionRunner({
+        plan: async () => {
+          throw new Error('this test never requests compaction')
+        },
+        onCompact: async () => undefined,
+      }),
+    })
+    const compact = readTool() as ToolDef
+    k.tools.add({ ...compact, name: 'compact' }, { source: 'agnes/test', trust: 'builtin' })
+    const parent = await k.session('parent', { ...sessionOpts, preset: childPreset })
+    const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'task' })
+    await child.run('task')
+    expect(provider.requests[0]?.tools.some((tool) => tool.name === 'compact')).toBe(true)
+    await child.close()
     await k.close()
   })
 
@@ -859,9 +900,7 @@ describe('turn hook registration snapshots', () => {
     registry.on(
       'context',
       (p) => {
-        expect(p.sections.find((section) => section.id === 'additional-context')?.content).toBe(
-          'x'.repeat(8190),
-        )
+        expect(p.sections.find((section) => section.id === 'additional-context')).toBeUndefined()
         return { additionalContext: 'YYYYY' }
       },
       source,
@@ -891,7 +930,10 @@ describe('turn hook registration snapshots', () => {
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',
     )
-    expect(provider.requests[0]?.system).toContain(`${'x'.repeat(8190)}\nY`)
+    expect(provider.requests[0]?.system).not.toContain(`${'x'.repeat(8190)}\nY`)
+    expect(provider.requests[0]?.messages.at(-1)?.content).toEqual([
+      { type: 'text', text: `[hook context]\n${'x'.repeat(8190)}\nY` },
+    ])
     expect(provider.requests[0]?.system).not.toContain('YY')
     const overflows = await session.scan({ type: 'x/core/hook-context-overflow', toSeq: session.lastSeq })
     expect(overflows.map((row) => row.data)).toEqual([{ ext: source.source, bytes: 5 }])

@@ -151,6 +151,7 @@ export async function startSessionTitle(
       model: { slot: 'primary', ...target },
       contract,
       nonce: randomBytes(16).toString('hex'),
+      envelopeNonceFor: () => undefined,
       envelopeCache: createEnvelopeCache(),
       summaryPlan: {
         system:

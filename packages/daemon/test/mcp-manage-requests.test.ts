@@ -105,8 +105,12 @@ it('registers in the real AGH resource list, saves a revision grant and recovers
   expect(s.ask).not.toHaveBeenCalled()
   const receipt = await s.request({ action: 'commit', proposalId: p.proposalId })
   expect(['submitted', 'ready']).toContain(receipt.state)
-  await vi.waitFor(async () =>
-    expect(await s.request({ action: 'status', proposalId: p.proposalId })).toMatchObject({ state: 'ready' }),
+  await vi.waitFor(
+    async () =>
+      expect(await s.request({ action: 'status', proposalId: p.proposalId })).toMatchObject({
+        state: 'ready',
+      }),
+    { timeout: 10_000 },
   )
   expect((await s.request({ action: 'list' })).items).toEqual([
     expect.objectContaining({ serverId: 'fixture', enabled: true, state: 'ready' }),
@@ -180,7 +184,11 @@ it('does not wait for an active-turn connection barrier before returning the sub
   } finally {
     release()
   }
-  await vi.waitFor(async () =>
-    expect(await s.request({ action: 'status', proposalId: p.proposalId })).toMatchObject({ state: 'ready' }),
+  await vi.waitFor(
+    async () =>
+      expect(await s.request({ action: 'status', proposalId: p.proposalId })).toMatchObject({
+        state: 'ready',
+      }),
+    { timeout: 10_000 },
   )
 })

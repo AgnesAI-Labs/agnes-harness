@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { validateResourceControlData } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { createSkillCandidateRegistry, RUNTIME_SKILL_PRIORITY, type SkillCandidate } from '../src/skills.js'
+import {
+  createSkillCandidateRegistry,
+  MAX_SHADOWED,
+  RUNTIME_SKILL_PRIORITY,
+  type SkillCandidate,
+} from '../src/skills.js'
+import { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH } from '../src/skills-cordis.js'
 
 const barrier = {
   quiesce: async <T>(_id: string, publish: (permit: unknown) => Promise<T>) => publish({}),
@@ -55,32 +62,59 @@ async function publishDisk(registry: Registry, skills: readonly SkillCandidate[]
 }
 
 describe('runtime skill contributions', () => {
-  it('reports a long skill description within the worker bootstrap protocol limit', async () => {
+  it('carries a full 1024-unit description in the descriptor', async () => {
     const registry = createSkillCandidateRegistry({ barrier })
     const body = '# verbose skill\nKeep the full instructions.'
-    const skill = { ...disk('user-agnes', 'verbose-skill', body), description: '😀'.repeat(600) }
+    const description = '😀'.repeat(512)
+    const skill = { ...disk('user-agnes', 'verbose-skill', body), description }
     await publishDisk(registry, [skill])
 
     const descriptor = registry.snapshot().list()[0]
     expect(descriptor).toBeDefined()
     expect(validateResourceControlData('SkillDescriptor', descriptor).ok).toBe(true)
-    expect(descriptor?.description).toHaveLength(512)
-    expect(descriptor?.description).toBe('😀'.repeat(256))
-    const boundary = {
-      ...runtimeSkill('surrogate-boundary'),
-      description: `${'a'.repeat(511)}😀${'b'.repeat(100)}`,
-    }
-    registry.registerRuntime(boundary)
-    const boundaryDescriptor = registry
+    expect(descriptor?.description).toHaveLength(1024)
+    expect(descriptor?.description).toBe(description)
+    const runtime = { ...runtimeSkill('long-runtime'), description: `${'a'.repeat(1023)}b` }
+    registry.registerRuntime(runtime)
+    const runtimeDescriptor = registry
       .snapshot()
       .list()
-      .find((item) => item.resourceId === boundary.resourceId)
-    expect(validateResourceControlData('SkillDescriptor', boundaryDescriptor).ok).toBe(true)
-    expect(boundaryDescriptor?.description).toBe('a'.repeat(511))
+      .find((item) => item.resourceId === runtime.resourceId)
+    expect(validateResourceControlData('SkillDescriptor', runtimeDescriptor).ok).toBe(true)
+    expect(runtimeDescriptor?.description).toBe(runtime.description)
     expect(registry.snapshot().read(skill.resourceId, { sessionKey: 's' })).toMatchObject({
       ok: true,
       content: body,
     })
+  })
+
+  it('rejects a name or description outside the protocol bounds on every write path', () => {
+    const registry = createSkillCandidateRegistry({ barrier })
+    const skill = disk('user-agnes', 'bounded', 'body')
+    const sourceId = hex('package:bounded')
+    const packaged: SkillCandidate = {
+      ...skill,
+      resourceId: `skill/package/package/${sourceId}`,
+      sourceIdentity: { scope: 'package', rootKey: 'package', sourceId },
+      priority: 50,
+    }
+    const invalid = [
+      { description: 'a'.repeat(1025) },
+      { description: '' },
+      { name: 'n'.repeat(129) },
+      { name: '' },
+    ]
+    for (const override of invalid) {
+      expect(() => registry.replaceRoot('user-agnes', [{ ...skill, ...override }])).toThrow(TypeError)
+      expect(() => registry.replacePackage([{ ...packaged, ...override }])).toThrow(TypeError)
+      expect(() => registry.registerRuntime({ ...runtimeSkill('bounded'), ...override })).toThrow(TypeError)
+    }
+    expect(() =>
+      registry.replaceRoot('user-agnes', [
+        { ...skill, name: 'n'.repeat(128), description: 'a'.repeat(1024) },
+      ]),
+    ).not.toThrow()
+    expect(() => registry.replacePackage([{ ...packaged, description: '😀'.repeat(512) }])).not.toThrow()
   })
 
   it('lets a workspace skill beat runtime and runtime beat a user skill at priority 450', async () => {
@@ -383,5 +417,22 @@ describe('Skill base directory', () => {
     })
     await registry.activate('closed', async () => undefined)
     expect(registry.snapshot().readRoots?.()).toEqual([])
+  })
+})
+
+describe('skill bounds agree with the protocol schema', () => {
+  const defs = JSON.parse(
+    readFileSync(new URL('../../protocol/schema/resource-control.json', import.meta.url), 'utf8'),
+  ).$defs
+
+  it('uses the protocol name and description limits for runtime registration', () => {
+    expect(defs.SkillDescriptor.properties.description.maxLength).toBe(1024)
+    expect(MAX_DESCRIPTION_LENGTH).toBe(defs.SkillDescriptor.properties.description.maxLength)
+    expect(defs.SkillDescriptor.properties.name.maxLength).toBe(128)
+    expect(MAX_NAME_LENGTH).toBe(defs.SkillDescriptor.properties.name.maxLength)
+  })
+
+  it('caps the shadowed list at the protocol limit', () => {
+    expect(MAX_SHADOWED).toBe(defs.SkillResolution.properties.shadowed.maxItems)
   })
 })

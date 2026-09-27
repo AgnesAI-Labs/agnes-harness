@@ -36,6 +36,8 @@ import type { TrajectoryResolver } from '../src/trajectory-network.js'
 import { attachTestSeamPlugins } from './cordis-seams.js'
 
 export { attachTestSeamPlugins } from './cordis-seams.js'
+export type { CapturedRequest, WireApi, WireReply } from './wire-capture.js'
+export { expectExtends, renderedParts, sharedPrefix, startWireCapture } from './wire-capture.js'
 export { ASSEMBLY_STEPS, type AssemblyStep }
 
 const ROUTE: RouteDecl = {

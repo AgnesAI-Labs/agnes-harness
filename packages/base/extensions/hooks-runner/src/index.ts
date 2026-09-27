@@ -1,5 +1,6 @@
 import {
   HOOK_UNHANDLED,
+  HookBlockedError,
   type SandboxSeam,
   WORKSPACE_HOOK_SANDBOX,
   type WorkspaceHookSandbox,
@@ -34,6 +35,7 @@ type ConfigIdentity = Readonly<{ source: 'data' | 'workspace'; configDigest: str
 type BoundGroup = CcHookGroup & {
   matcherTest?: (name: string) => boolean
   configuration: ConfigIdentity | undefined
+  cacheId: string
 }
 
 export type HooksRunnerExtensionDeps = {
@@ -191,7 +193,7 @@ export function preparedHooksRunnerExtension(
       groups: readonly Readonly<{ group: CcHookGroup; configuration?: ConfigIdentity }>[],
     ): Map<HookEvent, BoundGroup[]> => {
       const result = new Map<HookEvent, BoundGroup[]>()
-      for (const { group, configuration } of groups) {
+      for (const [index, { group, configuration }] of groups.entries()) {
         const mapped = mapEvent(deps.map, group.event)
         if ('unsupported' in mapped) {
           warnOnce(`event:${group.event}`, `hooks.json event ${group.event} is unsupported`, {
@@ -210,7 +212,12 @@ export function preparedHooksRunnerExtension(
         }
         for (const event of mapped.to) {
           const list = result.get(event) ?? []
-          list.push({ ...group, configuration, ...(matcherTest === undefined ? {} : { matcherTest }) })
+          list.push({
+            ...group,
+            configuration,
+            cacheId: JSON.stringify([index, configuration, group]),
+            ...(matcherTest === undefined ? {} : { matcherTest }),
+          })
           result.set(event, list)
         }
       }
@@ -219,6 +226,33 @@ export function preparedHooksRunnerExtension(
     // Registration APIs are factory-phase only. Binding is deliberately synchronous so no await
     // can move registerHook calls outside that window; durable warning events flush in handlers.
     let bindings = bindGroups(prepared)
+    const promptRuns = new Map<string, { turn: number; hooks: Map<string, Promise<HookProcessResult>> }>()
+    const cachedPromptRun = (
+      hctx: HookContext,
+      turn: number,
+      key: string,
+      run: () => Promise<HookProcessResult>,
+    ): Promise<HookProcessResult> => {
+      const sessionKey = hctx.session.key
+      let entry = promptRuns.get(sessionKey)
+      if (!entry || entry.turn !== turn) {
+        entry = { turn, hooks: new Map() }
+        promptRuns.set(sessionKey, entry)
+      }
+      // A session can visit multiple workspace/policy contexts in one turn. Never reuse a
+      // command verdict from a different fitted sandbox or workspace policy.
+      const scopedKey = JSON.stringify([
+        hctx.session.lane,
+        hctx.session.workspaceRoot,
+        hctx.workspaceHooks?.policyRevision,
+        key,
+      ])
+      const existing = entry.hooks.get(scopedKey)
+      if (existing) return existing
+      const pending = run()
+      entry.hooks.set(scopedKey, pending)
+      return pending
+    }
     const dynamicEvents = new Set<HookEvent>()
     if (deps.workspaceSnapshots || loadConfigured)
       for (const event of Object.keys(deps.map.events)) {
@@ -271,6 +305,7 @@ export function preparedHooksRunnerExtension(
       <E extends HookEvent>(event: E): HookHandler<E> =>
       async (payload: HookPayloadMap[E], hctx: HookContext): Promise<HookReturnMap[E]> => {
         await flushWarnings()
+        if (event === 'shutdown') promptRuns.delete(hctx.session.key)
         const payloadRecord = payload as unknown as Record<string, unknown>
         let result = defaultReturn(event, payload)
         const workspaceHooks = hctx.workspaceHooks
@@ -295,6 +330,9 @@ export function preparedHooksRunnerExtension(
         const eventGroups = [...(bindings.get(event) ?? []), ...(workspaceBindings.get(event) ?? [])]
         if (event === 'before_compact' && eventGroups.length === 0) return HOOK_UNHANDLED as never
         for (const group of eventGroups) {
+          const promptSubmit =
+            group.event === 'UserPromptSubmit' && (event === 'before_step' || event === 'context')
+          if (promptSubmit && event === 'before_step' && payloadRecord.step !== 1) continue
           if (
             MATCHED.has(event) &&
             group.matcherTest !== undefined &&
@@ -315,13 +353,13 @@ export function preparedHooksRunnerExtension(
             AGNES_PRINCIPAL: principal(payloadRecord),
             AGNES_PLUGIN_ROOT: init.profile.dataDir,
           }
-          for (const hook of group.hooks) {
+          for (const [index, hook] of group.hooks.entries()) {
             if (hook.type === 'command') requireCommandPermission(group, commandSandbox)
             const timeoutMs = Math.min(HOOK_TABLE[event].timeoutMs, (hook.timeout ?? 60) * 1000)
-            const raw =
+            const run = () =>
               hook.type === 'http'
-                ? await rh(http, { url: hook.url, timeoutMs, allowHosts, signal: hctx.signal }, body)
-                : await runSubprocess(
+                ? rh(http, { url: hook.url, timeoutMs, allowHosts, signal: hctx.signal }, body)
+                : runSubprocess(
                     // Authorization still uses the policy-bound seam, never a raw spawn port.
                     (commandSandbox as WorkspaceHookSandbox).exec.bind(commandSandbox),
                     {
@@ -333,6 +371,13 @@ export function preparedHooksRunnerExtension(
                     },
                     body,
                   )
+            const turn =
+              event === 'before_step'
+                ? Number(payloadRecord.turn)
+                : (hctx.session.turn ?? promptRuns.get(hctx.session.key)?.turn ?? 0)
+            const raw = await (promptSubmit
+              ? cachedPromptRun(hctx, turn, `${group.cacheId}:${index}`, run)
+              : run())
             for (const field of warnedFields(deps.map, group, raw))
               warnOnce(
                 `field:${group.event}:${field}`,
@@ -340,6 +385,12 @@ export function preparedHooksRunnerExtension(
                 { event: group.event, field },
               )
             await flushWarnings()
+            if (event === 'context' && promptSubmit && raw.exitCode === 2) {
+              // A cold compaction may request context before the first before_step. Reuse the
+              // normal prompt verdict, but keep context's public return contract unchanged.
+              const verdict = translateReturn('before_step', raw)
+              throw new HookBlockedError(verdict.reason ?? 'hook blocked')
+            }
             const translated = translateReturn(event, raw, currentToolResult(event, payload, result))
             result = mergeReturn(event, result, translated)
             if (isDirectiveStop(event, result)) return result
@@ -357,7 +408,12 @@ export function preparedHooksRunnerExtension(
           await flushWarnings()
         }),
       )
-    if (bindings.has('shutdown') || dynamicEvents.has('shutdown'))
+    if (
+      bindings.has('shutdown') ||
+      dynamicEvents.has('shutdown') ||
+      bindings.has('before_step') ||
+      bindings.has('context')
+    )
       disposers.push(agnes.registerHook('shutdown', handler('shutdown')))
     if (bindings.has('before_step') || dynamicEvents.has('before_step'))
       disposers.push(agnes.registerHook('before_step', handler('before_step')))

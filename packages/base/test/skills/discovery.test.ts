@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 import { TextEncoder } from 'node:util'
 import { describe, expect, it } from 'vitest'
@@ -16,6 +17,7 @@ import {
   skillRoots,
   workspaceSkillKey,
 } from '../../extensions/skills/src/discover.js'
+import { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH } from '../../extensions/skills/src/frontmatter.js'
 
 const bytes = new TextEncoder()
 const workspaceRoot = (path: string, workspace = '/work'): SkillRoot => ({
@@ -419,5 +421,17 @@ describe('skill discovery', () => {
       skillResourceIdAt(root, '.claude/skills/claude-only'),
     )
     expect(located).toEqual({ dirPath: join('/work', '.claude', 'skills'), name: 'claude-only', kind: 'dir' })
+  })
+})
+
+describe('frontmatter bounds agree with the protocol schema', () => {
+  it('admits exactly the name and description lengths a SkillDescriptor carries', () => {
+    const descriptor = JSON.parse(
+      readFileSync(new URL('../../../protocol/schema/resource-control.json', import.meta.url), 'utf8'),
+    ).$defs.SkillDescriptor.properties
+    expect(descriptor.description.maxLength).toBe(1024)
+    expect(MAX_DESCRIPTION_LENGTH).toBe(descriptor.description.maxLength)
+    expect(descriptor.name.maxLength).toBe(128)
+    expect(MAX_NAME_LENGTH).toBe(descriptor.name.maxLength)
   })
 })

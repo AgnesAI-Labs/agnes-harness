@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { type ExtensionManifest, satisfiesApiRange } from '@agnes/extension-api'
 import { type PackagePreview, validatePackageAdminData } from '@agnes/protocol'
 import type { PackageAuditSink } from './audit.js'
+import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { canonical } from './integrity.js'
@@ -891,7 +892,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             throw new PackageError('E_LOCK_MISMATCH', 'previous package tree differs')
           const stage = stageFor(profileDir)
           try {
-            cpSync(retained, stage, { recursive: true })
+            copyPackageTreeSync(retained, stage)
             readyStage(stage)
             const next = {
               ...structuredClone(current.previous),

@@ -85,7 +85,13 @@ import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/too
 import type { PromptSection } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
-import type { CurrentRuntimeLookup, RuntimePromptPreloader } from '../runtime/current.js'
+import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
+import type { RequestBody as MintedRequestBody } from '../request/mint.js'
+import type {
+  CurrentRuntimeLookup,
+  RuntimePromptPreload,
+  RuntimePromptPreloader,
+} from '../runtime/current.js'
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
@@ -259,7 +265,7 @@ export type HookPort = {
     proposedReason: string
     verifier?: VerifierVerdict
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
-  context(sections: PromptSection[]): Promise<PromptSection[]>
+  context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
   beforeStep(p: { turn: number; step: number; depth: number }): Promise<{ block?: boolean; reason?: string }>
   toolResult?(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']>
@@ -277,7 +283,7 @@ export type BeforeCompactHookSelection =
 export const noopHooks: HookPort = {
   toolCall: async () => ({ allow: true }),
   turnStopping: async () => ({ action: 'stop' }),
-  context: async (s) => s,
+  context: async (s) => ({ sections: s, additionalContext: '' }),
   beforeRequest: async (o) => o,
   beforeStep: async () => ({}),
 }
@@ -428,7 +434,13 @@ export type QuietGate = {
 /** What one turn holds in memory. It is lost on a kill; everything durable is on the ledger. */
 export type TurnMemory = {
   snapshot: RegistrySnapshot
+  /** Context-hook output is frozen for identical assembly inputs within this turn. */
+  prefix?: { key: string; sections: PromptSection[]; additionalContext: string }
+  /** A null result means this turn already tried the Host-owned Skill preloader. */
+  preload?: RuntimePromptPreload | null
   nonce: string
+  /** Prefix of the most recent primary request after all request hooks have run. */
+  lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>
   lastHeader: RequestHeaderData | null
   lastHeaderSeq: Seq | null
   ordinal: number
@@ -497,16 +509,37 @@ export class SessionImpl {
    */
   readonly sessionAllows = new Set<string>()
   readonly preview = new PreviewHub()
-  /**
-   * Wrapped-untrusted-envelope memoization, shared by every derivation this session makes for its
-   * whole process lifetime — not scoped to a turn, because the guarantee it exists for (a node's
-   * envelope id never changes once minted) has to survive the turn that minted it. Empty again
-   * after a process restart: a cold rebuild has no record of which turn originally wrapped a given
-   * node, so the first post-restart derivation re-wraps history once under whichever nonce that
-   * resume's first turn mints. That is a bounded, one-time cost, not the steady-state failure mode
-   * this fixes — see the spec's B1 for the failure mode itself.
-   */
+  /** Wrapping memo is optional; the durable header epochs determine historical envelope ids. */
   readonly envelopeCache: EnvelopeCache = createEnvelopeCache()
+  readonly envelopeEpochs: EnvelopeEpochs = []
+  private envelopeEpochsReady: Promise<void> | undefined
+  async ensureEnvelopeEpochs(): Promise<void> {
+    if (!this.envelopeEpochsReady) {
+      this.envelopeEpochsReady = (async () => {
+        if (this.lastSeq < 1) return
+        for await (const page of scanPages((query) => this.d.log.scan(query), {
+          fromSeq: 1,
+          toSeq: this.lastSeq,
+          type: 'request/header',
+          lane: this.lane,
+        })) {
+          for (const row of page) {
+            const nonce = (row.data as { envelopeNonce?: unknown }).envelopeNonce
+            if (typeof nonce !== 'string')
+              throw new CoreError('E_RELATION', 'request header lacks envelope nonce')
+            recordHeader(this.envelopeEpochs, row.seq, nonce)
+          }
+        }
+      })()
+    }
+    await this.envelopeEpochsReady
+  }
+  envelopeNonceFor(nodeSeq: number): string | undefined {
+    return nonceFor(this.envelopeEpochs, nodeSeq)
+  }
+  recordEnvelopeHeader(headerSeq: number, nonce: string): void {
+    recordHeader(this.envelopeEpochs, headerSeq, nonce)
+  }
   private grantsRestored = false
   private async restoreGrants(): Promise<void> {
     if (this.grantsRestored) return

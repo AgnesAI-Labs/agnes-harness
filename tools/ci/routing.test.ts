@@ -126,6 +126,7 @@ function results(docsOnly: boolean): Record<string, { result: string; outputs?: 
     changes: { result: 'success', outputs: { 'docs-only': String(docsOnly) } },
     static: { result: 'success' },
     check: { result: docsOnly ? 'skipped' : 'success' },
+    'windows-check-result': { result: docsOnly ? 'skipped' : 'success' },
     'runtime-package': { result: docsOnly ? 'skipped' : 'success' },
     sea: { result: docsOnly ? 'skipped' : 'success' },
   }
@@ -136,7 +137,7 @@ describe('CI result', () => {
     expect(() => verifyResults(results(docsOnly))).not.toThrow()
   })
 
-  it.each(['changes', 'static', 'check', 'runtime-package', 'sea'])(
+  it.each(['changes', 'static', 'check', 'windows-check-result', 'runtime-package', 'sea'])(
     'fails closed for a failed, cancelled, skipped or missing code job: %s',
     (job) => {
       for (const state of ['failure', 'cancelled', 'skipped', undefined]) {

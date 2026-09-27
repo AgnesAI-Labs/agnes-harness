@@ -163,7 +163,7 @@ async function runPrompt(input: {
 
 function expectAssembled(request: RequestBody, opts: { catalog?: boolean; preload?: boolean }) {
   expect(request.system).toContain(BASE_SENTINEL)
-  expect(request.system).toContain(OTHER_EXT_SENTINEL)
+  expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
   expect(JSON.stringify(request.messages)).toContain(USER_MESSAGE)
   if (opts.catalog) {
     expect(request.system).toContain('review\t')
@@ -175,13 +175,12 @@ function expectAssembled(request: RequestBody, opts: { catalog?: boolean; preloa
     expect(request.system).not.toContain('<available_skills>')
   }
   if (opts.preload) {
-    expect(request.system).toContain(SKILL_BODY)
-    expect(request.system).toContain('Host has already loaded it for this turn')
-    expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeUndefined()
-    expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeUndefined()
+    expect(JSON.stringify(request.messages)).toContain(SKILL_BODY)
+    expect(JSON.stringify(request.messages)).toContain('Host has already loaded it')
+    expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeDefined()
+    expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeDefined()
   } else {
     expect(request.system).not.toContain(SKILL_BODY)
-    expect(request.system).not.toContain('Host has already loaded it for this turn')
   }
 }
 
@@ -212,24 +211,36 @@ describe('skill context hook assembly', () => {
 
   it('keeps base prompt when an explicitly named Skill is preloaded and does not hide later generic discovery', async () => {
     const dataDir = scratch()
+    let firstRequest: RequestBody | undefined
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],
       scripts: [
         (request) => {
+          firstRequest = request
           expect(request.system).toContain(BASE_SENTINEL)
-          expect(request.system).toContain(OTHER_EXT_SENTINEL)
-          expect(request.system).toContain(resourceId)
-          expect(request.system).toContain(SKILL_BODY)
-          expect(request.system).toContain('Host has already loaded it for this turn')
-          expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeUndefined()
-          expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeUndefined()
+          expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
+          expect(JSON.stringify(request.messages)).toContain(resourceId)
+          expect(JSON.stringify(request.messages)).toContain(SKILL_BODY)
+          expect(JSON.stringify(request.messages)).toContain('Host has already loaded it')
+          expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeDefined()
+          expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeDefined()
           expect(JSON.stringify(request.messages)).toContain('Use the review Skill.')
           return say('loaded')
         },
         (request) => {
           expectAssembled(request, { catalog: true, preload: false })
           expect(request.system).toContain('review\t')
+          expect(request.system).toBe(firstRequest?.system)
+          expect(request.tools).toEqual(firstRequest?.tools)
+          expect(request.messages.slice(0, firstRequest?.messages.length)).toEqual(firstRequest?.messages)
+          expect(JSON.stringify(request.messages).split('[skill loaded]')).toHaveLength(2)
           return say('discovered')
+        },
+        (request) => {
+          expect(request.system).toBe(firstRequest?.system)
+          expect(request.tools).toEqual(firstRequest?.tools)
+          expect(JSON.stringify(request.messages).split('[skill loaded]')).toHaveLength(2)
+          return say('reused')
         },
       ],
       onExhausted: 'error',
@@ -260,7 +271,15 @@ describe('skill context hook assembly', () => {
       await expect(
         session.run({ until: 'turn-end', signal: new AbortController().signal }),
       ).resolves.toMatchObject({ reason: 'completed' })
-      expect(provider.calls).toHaveLength(2)
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Use $review again.' }],
+        actor: session.d.actor,
+        kind: 'prompt',
+      })
+      await expect(
+        session.run({ until: 'turn-end', signal: new AbortController().signal }),
+      ).resolves.toMatchObject({ reason: 'completed' })
+      expect(provider.calls).toHaveLength(3)
     } finally {
       await host.close()
     }
@@ -274,7 +293,7 @@ describe('skill context hook assembly', () => {
       prompt: `Please help. ${USER_MESSAGE}`,
       inspect: (request) => {
         expect(request.system).toContain(BASE_SENTINEL)
-        expect(request.system).toContain(OTHER_EXT_SENTINEL)
+        expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
         expect(JSON.stringify(request.messages)).toContain(USER_MESSAGE)
         return say('ok')
       },
@@ -285,6 +304,6 @@ describe('skill context hook assembly', () => {
     const catalogEnd = request.system.indexOf('</available_skills>')
     const catalog = request.system.slice(catalogStart, catalogEnd)
     expect(catalog).not.toContain(OTHER_EXT_SENTINEL)
-    expect(request.system).toContain(OTHER_EXT_SENTINEL)
+    expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
   })
 })

@@ -152,14 +152,21 @@ async function identity(
 
 async function readJsonFile(path: string, maxBytes: number, mode: number): Promise<unknown | undefined> {
   if (windows) {
-    try {
-      windowsProtectPrivateDirectorySync(dirname(path))
-      return JSON.parse(
-        new TextDecoder('utf-8', { fatal: true }).decode(windowsReadPrivateFileSync(path, maxBytes)),
-      ) as unknown
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-      throw new DaemonDiscoveryError('daemon discovery file is unavailable or invalid')
+    for (let attempt = 0; ; attempt++) {
+      try {
+        windowsProtectPrivateDirectorySync(dirname(path))
+        return JSON.parse(
+          new TextDecoder('utf-8', { fatal: true }).decode(windowsReadPrivateFileSync(path, maxBytes)),
+        ) as unknown
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EBUSY' && attempt < 40) {
+          // Concurrent launchers can briefly hold an exclusive Windows directory validation handle.
+          await new Promise((done) => setTimeout(done, 25))
+          continue
+        }
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+        throw new DaemonDiscoveryError('daemon discovery file is unavailable or invalid')
+      }
     }
   }
   let handle: Awaited<ReturnType<typeof open>>

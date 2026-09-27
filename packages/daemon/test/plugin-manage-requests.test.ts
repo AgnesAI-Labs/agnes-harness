@@ -14,7 +14,8 @@ const roots: string[] = []
 const endpoints: LocalEndpoint[] = []
 afterEach(async () => {
   for (const ep of endpoints.splice(0)) await ep.close()
-  for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
+  for (const dir of roots.splice(0))
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 const source = `export const main = { inject: ['extension'], apply(ctx) {} }`
 const files = [

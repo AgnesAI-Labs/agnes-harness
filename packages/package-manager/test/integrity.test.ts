@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { fetchSource, hashDirectory, parseSource } from '../src/index.js'
 
@@ -10,9 +10,9 @@ vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
   return {
     ...fs,
-    cpSync: (...args: Parameters<typeof fs.cpSync>) => {
-      fs.cpSync(...args)
-      if (race.replace) fs.writeFileSync(join(String(args[0]), 'index.js'), 'changed after copy')
+    copyFileSync: (...args: Parameters<typeof fs.copyFileSync>) => {
+      fs.copyFileSync(...args)
+      if (race.replace) fs.writeFileSync(join(dirname(String(args[0])), 'index.js'), 'changed after copy')
     },
   }
 })

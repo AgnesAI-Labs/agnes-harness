@@ -196,7 +196,7 @@ describe('isolated hooks-runner spike', () => {
     })
     const runner = await connectIsolatedHooksRunner(state.child, state.bootstrap, capability)
     running.push({ ...state, runner })
-    expect(runner.events).toEqual(['session_start', 'before_step', 'context', 'subagent_start'])
+    expect(runner.events).toEqual(['session_start', 'shutdown', 'before_step', 'context', 'subagent_start'])
 
     const context = { session, lease, replayed: false, platform, signal: new AbortController().signal }
     await expect(

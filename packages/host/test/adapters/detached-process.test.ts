@@ -60,6 +60,6 @@ it('releases the watcher without stopping the independent child', async () => {
   try {
     await expect.poll(() => readFile(join(root, 'done'), 'utf8'), { timeout: 5000 }).toBe('alive')
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })

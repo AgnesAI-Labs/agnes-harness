@@ -16,7 +16,7 @@ export async function withConfigurationLock<T>(
     for (;;) {
       options.signal?.throwIfAborted()
       try {
-        db.exec('BEGIN IMMEDIATE')
+        db.exec('BEGIN EXCLUSIVE')
         break
       } catch (error) {
         const code = (error as { errcode?: number }).errcode
