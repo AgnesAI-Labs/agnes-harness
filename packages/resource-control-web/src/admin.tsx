@@ -18,6 +18,7 @@ import {
   ResourceRoots,
   ResourceRow,
   renderRegion,
+  resourceDesiredEnabled,
   type SelectPicker,
   SkillDetailContent,
   unmountRegion,
@@ -66,24 +67,6 @@ const errorOf = (error: unknown): ResourceAdminError =>
         code: 'RESOURCE_ADMIN_UNAVAILABLE',
         message: '资源管理后台暂时不可用，请稍后重试。',
       }
-function safeStatus(value: string): string {
-  return (
-    (
-      {
-        ready: '已就绪',
-        disabled: '已停用',
-        unavailable: '不可用',
-        degraded: '异常',
-        preparing: '准备中',
-        connecting: '连接中',
-        enabled: '已启用',
-        untrusted: '未信任',
-        trusted: '已信任',
-        rejected: '已拒绝',
-      } as Record<string, string>
-    )[value] ?? value
-  )
-}
 function showError(error: unknown): void {
   const value = errorOf(error)
   notice.textContent = value.message
@@ -94,7 +77,7 @@ async function confirmEffect(summary: string): Promise<boolean> {
   confirmController ??= createConfirmController()
   return confirmController.ask({
     title: '确认操作',
-    description: `${summary}\n\n确认后将提交到本地后台；后台会按当前 revision、信任和策略再次校验。`,
+    description: `${summary}\n\n确认后将提交到本地后台，并按当前版本和策略完成安全校验。`,
   })
 }
 
@@ -307,7 +290,7 @@ class ResourceAdminPage {
     })()
     await this.#loadMorePromise
   }
-  async track(receipt: { operationId: string }): Promise<void> {
+  async track(receipt: { operationId: string }): Promise<boolean> {
     const api = this.api()
     this.#activeOperation = receipt.operationId
     notice.textContent = '操作已提交，正在等待后台确认…'
@@ -324,13 +307,15 @@ class ResourceAdminPage {
             : (op.lastSafeError?.message ?? '操作未完成，请查看安全状态。')
         notice.dataset.kind = op.state === 'succeeded' ? 'success' : 'error'
         await this.reload(true)
-        return
+        if (this.#loadState === 'error') return false
+        return op.state === 'succeeded'
       }
       await new Promise((resolve) => setTimeout(resolve, 500))
     }
     this.#activeOperation = undefined
     notice.textContent = '操作仍在后台运行；可稍后刷新状态。'
     notice.dataset.kind = 'warning'
+    return false
   }
 
   render(): void {
@@ -361,7 +346,7 @@ class ResourceAdminPage {
         emptyDescription={
           this.#tab === 'skills'
             ? SKILL_EMPTY_DESCRIPTION
-            : '添加一个 MCP 服务后，可以在这里查看连接、信任和启用状态。'
+            : '添加一个 MCP 服务后，可以在这里查看连接和启用状态。'
         }
         emptyHints={this.#tab === 'skills' ? SKILL_LOCATION_HINTS : undefined}
         switchDisabled={!this.writable() || this.#activeOperation !== undefined}
@@ -459,20 +444,40 @@ class ResourceAdminPage {
 
   async toggleDesired(item: Item, next: boolean): Promise<void> {
     const kind = item.kind === 'skill' ? 'Skill' : 'MCP'
-    const summary = `请求${next ? '启用' : '停用'} ${kind}「${this.#itemName(item)}」\n期望状态：${item.desired} → ${next ? 'enabled' : 'disabled'}\n版本：${item.revision.slice(0, 12)}…`
+    const summary = `请求${next ? '启用' : '停用'} ${kind}「${this.#itemName(item)}」\n版本：${item.revision.slice(0, 12)}…`
     if (!(await confirmEffect(summary))) return
     try {
-      const receipt =
-        item.kind === 'skill'
-          ? await this.api().skillDesired(item.resourceId, item.revision, next ? 'enabled' : 'disabled')
-          : next
-            ? await this.api().mcpEnable(item.serverId, item.revision)
-            : await this.api().mcpDisable(item.serverId, item.revision)
-      await this.track(receipt)
+      await this.#setDesired(item, next)
     } catch (error) {
       showError(error)
       this.render()
     }
+  }
+
+  async #setDesired(item: Item, next: boolean): Promise<void> {
+    if (next && item.trust !== 'trusted') {
+      const trusted = await this.track(
+        item.kind === 'skill'
+          ? await this.api().skillTrust(item.resourceId, item.revision, 'trusted')
+          : await this.api().mcpTrust(item.serverId, item.revision, 'trusted'),
+      )
+      if (!trusted) return
+      const current = this.#items.find((candidate) => candidate.resourceId === item.resourceId)
+      if (!current || current.revision !== item.revision || current.trust !== 'trusted') {
+        notice.textContent = '资源版本已经变化，请确认最新内容后再次启用。'
+        notice.dataset.kind = 'warning'
+        this.render()
+        return
+      }
+      item = current
+    }
+    await this.track(
+      item.kind === 'skill'
+        ? await this.api().skillDesired(item.resourceId, item.revision, next ? 'enabled' : 'disabled')
+        : next
+          ? await this.api().mcpEnable(item.serverId, item.revision)
+          : await this.api().mcpDisable(item.serverId, item.revision),
+    )
   }
 
   /** 动作规格统一走壳的确认链：确认框 → 提交 → track 轮询。 */
@@ -485,7 +490,7 @@ class ResourceAdminPage {
       const add = (
         label: string,
         summary: string,
-        run: () => Promise<{ operationId: string }>,
+        run: () => Promise<{ operationId: string } | undefined>,
         extra?: Partial<ResourceDetailAction>,
       ): void => {
         specs.push({
@@ -496,21 +501,13 @@ class ResourceAdminPage {
           ...extra,
         })
       }
-      add('信任', `信任 Skill「${skill.name}」\n版本：${skill.revision.slice(0, 12)}…`, () =>
-        this.api().skillTrust(skill.resourceId, skill.revision, 'trusted'),
-      )
-      add('拒绝', `拒绝 Skill「${skill.name}」\n版本：${skill.revision.slice(0, 12)}…`, () =>
-        this.api().skillTrust(skill.resourceId, skill.revision, 'rejected'),
-      )
       add(
-        skill.desired === 'enabled' ? '停用' : '启用',
-        `${skill.desired === 'enabled' ? '停用' : '启用'} Skill「${skill.name}」\n期望状态：${skill.desired} → ${skill.desired === 'enabled' ? 'disabled' : 'enabled'}\n版本：${skill.revision.slice(0, 12)}…`,
-        () =>
-          this.api().skillDesired(
-            skill.resourceId,
-            skill.revision,
-            skill.desired === 'enabled' ? 'disabled' : 'enabled',
-          ),
+        resourceDesiredEnabled(skill) ? '停用' : '启用',
+        `${resourceDesiredEnabled(skill) ? '停用' : '启用'} Skill「${skill.name}」\n版本：${skill.revision.slice(0, 12)}…`,
+        async () => {
+          await this.#setDesired(skill, !resourceDesiredEnabled(skill))
+          return undefined
+        },
       )
       if (skill.sourceIdentity.scope === 'workspace' || skill.sourceIdentity.scope === 'user') {
         add(
@@ -529,27 +526,21 @@ class ResourceAdminPage {
     const add = (
       label: string,
       summary: string,
-      run: () => Promise<{ operationId: string }>,
+      run: () => Promise<{ operationId: string } | undefined>,
       extra?: Partial<ResourceDetailAction>,
     ): void => {
-      specs.push({ label, summary, run, disabled: !this.writable(), ...extra })
+      specs.push({ label, summary, run, disabled, ...extra })
     }
     add('测试连接', `测试 MCP「${server.displayName}」\n${revision}\n测试不会启用服务或调用工具。`, () =>
       this.api().mcpTest(server.serverId, server.revision),
     )
-    add('信任', `信任 MCP「${server.displayName}」\n${revision}`, () =>
-      this.api().mcpTrust(server.serverId, server.revision, 'trusted'),
-    )
-    add('拒绝', `拒绝 MCP「${server.displayName}」\n${revision}`, () =>
-      this.api().mcpTrust(server.serverId, server.revision, 'rejected'),
-    )
     add(
-      server.desired === 'enabled' ? '停用' : '启用',
-      `${server.desired === 'enabled' ? '停用' : '启用'} MCP「${server.displayName}」\n期望状态：${server.desired} → ${server.desired === 'enabled' ? 'disabled' : 'enabled'}\n${revision}`,
-      () =>
-        server.desired === 'enabled'
-          ? this.api().mcpDisable(server.serverId, server.revision)
-          : this.api().mcpEnable(server.serverId, server.revision),
+      resourceDesiredEnabled(server) ? '停用' : '启用',
+      `${resourceDesiredEnabled(server) ? '停用' : '启用'} MCP「${server.displayName}」\n${revision}`,
+      async () => {
+        await this.#setDesired(server, !resourceDesiredEnabled(server))
+        return undefined
+      },
     )
     add('重连', `重连 MCP「${server.displayName}」\n${revision}\n失败会保留已生效的旧连接。`, () =>
       this.api().mcpReconnect(server.serverId, server.revision),
@@ -565,9 +556,12 @@ class ResourceAdminPage {
 
   async #runAction(action: ResourceDetailAction): Promise<void> {
     try {
-      if (await confirmEffect(action.summary)) await this.track(await action.run())
+      if (await confirmEffect(action.summary)) {
+        const receipt = await action.run()
+        if (receipt) await this.track(receipt)
+      }
     } catch (error) {
-      // 旧 button() helper 的错误路径：动作失败（如信任被拒）必须落到页面通知，不能静默。
+      // 旧 button() helper 的错误路径：动作失败必须落到页面通知，不能静默。
       showError(error)
       this.render()
     }
@@ -582,7 +576,7 @@ class ResourceAdminPage {
           skill.priority +
           ' → ' +
           next +
-          '。不会改变信任或启用状态。',
+          '。不会改变启用状态。',
       )
     )
       await this.track(await this.api().skillPriority(skill.resourceId, skill.revision, skill.priority, next))
@@ -861,8 +855,8 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       const definition = definitionFromForm()
       const creating = !editing
       const summary = editing
-        ? `更新 MCP「${editing.displayName}」\n版本：${editing.revision.slice(0, 12)}…\n更新会让现有信任重新接受审核。`
-        : `创建 MCP「${definition.displayName}」\n它将以未信任、停用状态保存，需测试并明确启用。`
+        ? `更新 MCP「${editing.displayName}」\n版本：${editing.revision.slice(0, 12)}…\n更新后需要重新启用。`
+        : `创建 MCP「${definition.displayName}」\n它将以停用状态保存，可在检查后直接启用。`
       if (!(await confirmEffect(summary))) return
       const receipt = editing
         ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
@@ -870,10 +864,9 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       dialog.close()
       editing = undefined
       await page.track(receipt)
-      // track() already reported success generically; a new server additionally needs trust and
-      // enable before it can be used, so spell out the concrete next step in the same notice.
+      // track() already reported success generically; a new server still needs an explicit enable.
       if (creating && notice.dataset.kind === 'success')
-        notice.textContent = `MCP「${definition.displayName}」已创建，但尚未可用：请在详情中依次点击「信任」和「启用」后才能使用。`
+        notice.textContent = `MCP「${definition.displayName}」已创建，但尚未可用：请检查配置后点击「启用」。`
     })().catch((cause) => {
       if (dialog.open) error.textContent = errorOf(cause).message
       else showError(cause)

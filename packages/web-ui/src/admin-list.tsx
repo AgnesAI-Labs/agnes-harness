@@ -1,7 +1,7 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageSource } from '@agnes/protocol'
 import type { JSX } from 'react'
-import { contributionText, type RuntimeStateView, runtimeStateLabel, sourceLabel } from './admin-text.js'
-import { StateLights, StateSwitch, type StateTone } from './ui/state-lights.js'
+import { contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
+import { StateLights, StateSwitch } from './ui/state-lights.js'
 
 export type AdminTab = 'installed' | 'discover'
 
@@ -118,76 +118,15 @@ export function OrphanPins({
   )
 }
 
-/** 四颗状态灯（信任 / 期望 / 实际 / 浏览器 UI）；目录页只有一颗兼容灯。 */
-function RowStates({
-  tab,
-  item,
-  runtime,
-}: {
-  tab: AdminTab
-  item: PackageInstalledDescriptor | PackageCatalogDescriptor
-  runtime: RuntimeStateView | undefined
-}): JSX.Element {
-  if (tab === 'installed') {
-    const installed = item as PackageInstalledDescriptor
-    const actualTone: Record<PackageInstalledDescriptor['actual'], StateTone> = {
-      'not-running': 'off',
-      starting: 'warn',
-      running: 'ok',
-      failed: 'bad',
-      'restart-required': 'warn',
-      unavailable: 'bad',
-    }
-    const runtimeTone: Record<RuntimeStateView['phase'], StateTone> = {
-      idle: 'off',
-      loading: 'warn',
-      active: 'ok',
-      stopping: 'warn',
-      failed: 'bad',
-    }
-    const actualLabels: Record<PackageInstalledDescriptor['actual'], string> = {
-      'not-running': '未运行',
-      starting: '正在启动',
-      running: '运行中',
-      failed: '运行失败',
-      'restart-required': '需要重启',
-      unavailable: '不可用',
-    }
-    return (
-      <StateLights
-        states={[
-          {
-            label: '信任',
-            value: installed.trusted ? '已信任' : '未信任',
-            tone: installed.trusted ? 'ok' : 'warn',
-          },
-          {
-            label: '期望',
-            value: installed.desired === 'enabled' ? '启用' : '停用',
-            tone: installed.desired === 'enabled' ? 'ok' : 'off',
-          },
-          {
-            label: '实际',
-            value: actualLabels[installed.actual],
-            tone: actualTone[installed.actual],
-          },
-          {
-            label: '浏览器 UI',
-            value: runtimeStateLabel(runtime),
-            tone: runtime ? runtimeTone[runtime.phase] : 'off',
-          },
-        ]}
-      />
-    )
-  }
-  const catalog = item as PackageCatalogDescriptor
+/** 目录页保留兼容性提示；已安装页不再显示内部状态灯。 */
+function CatalogCompatibility({ item }: { item: PackageCatalogDescriptor }): JSX.Element {
   return (
     <StateLights
       states={[
         {
           label: '兼容',
-          value: catalog.compatibility === 'unsupported' ? '不支持' : '兼容',
-          tone: catalog.compatibility === 'unsupported' ? 'bad' : 'ok',
+          value: item.compatibility === 'unsupported' ? '不支持' : '兼容',
+          tone: item.compatibility === 'unsupported' ? 'bad' : 'ok',
         },
       ]}
     />
@@ -224,8 +163,7 @@ function RowControl({
   )
   if (tab === 'installed') {
     const installed = item as PackageInstalledDescriptor
-    if (!installed.trusted) return actionButton('plugin-row-trust')
-    const enabled = installed.desired === 'enabled'
+    const enabled = installed.actual === 'running'
     if (runtime?.phase === 'failed') {
       return (
         <div className="plugin-row-actions">
@@ -311,50 +249,62 @@ export function PluginList({
       {tab === 'installed' && !inventoryAuthoritative && (
         <p className="plugin-inventory-status">以下为上次读取的状态，当前后台尚未确认。</p>
       )}
-      {rows.map((item) => (
-        <article
-          key={item.id}
-          className="plugin-row"
-          data-plugin-id={item.id}
-          // 目录页第三列是动作按钮、已装页是 Switch，两者宽度不同，用 data-tab 分轨道。
-          data-tab={tab}
-          tabIndex={0}
-          role="button"
-          aria-label={`查看 ${item.id} 的详情`}
-          onClick={(event) => {
-            // 行内 Switch / 动作按钮自己处理点击；置灰控件在部分浏览器里不发 click，
-            // 事件会落到行上，所以这里再挡一次，避免「拨开关顺带打开详情」。
-            if (event.target instanceof Element && event.target.closest('.switch, button, a')) return
-            onOpen(item)
-          }}
-          onKeyDown={(event) => {
-            // 行内控件的按键会冒泡到行：焦点在 Switch 上按空格是拨开关，不是打开详情。
-            if (event.target !== event.currentTarget) return
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
+      {rows.map((item) => {
+        const runtime = runtimeOf(item.id)
+        const failureReason =
+          tab === 'installed'
+            ? (runtime?.error?.message ??
+              ((item as PackageInstalledDescriptor).actual === 'running'
+                ? undefined
+                : (item as PackageInstalledDescriptor).actualReason))
+            : undefined
+        return (
+          <article
+            key={item.id}
+            className="plugin-row"
+            data-plugin-id={item.id}
+            data-tab={tab}
+            tabIndex={0}
+            role="button"
+            aria-label={`查看 ${item.id} 的详情`}
+            onClick={(event) => {
+              // 行内 Switch / 动作按钮自己处理点击；置灰控件在部分浏览器里不发 click，
+              // 事件会落到行上，所以这里再挡一次，避免「拨开关顺带打开详情」。
+              if (event.target instanceof Element && event.target.closest('.switch, button, a')) return
               onOpen(item)
-            }
-          }}
-        >
-          <div className="plugin-row-content">
-            <h2>{item.id}</h2>
-            <p>{contributionText(item)}</p>
-            <p className="plugin-source">
-              {item.version} · {sourceLabel(item.source as PackageSource)}
-            </p>
-            {tab === 'installed' && <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} />}
-          </div>
-          <RowStates tab={tab} item={item} runtime={runtimeOf(item.id)} />
-          <RowControl
-            tab={tab}
-            item={item}
-            runtime={runtimeOf(item.id)}
-            primaryAction={primaryActionOf(item)}
-            switchDisabled={tab === 'installed' ? switchDisabledOf(item as PackageInstalledDescriptor) : true}
-            onToggleDesired={onToggleDesired}
-          />
-        </article>
-      ))}
+            }}
+            onKeyDown={(event) => {
+              // 行内控件的按键会冒泡到行：焦点在 Switch 上按空格是拨开关，不是打开详情。
+              if (event.target !== event.currentTarget) return
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onOpen(item)
+              }
+            }}
+          >
+            <div className="plugin-row-content">
+              <h2>{item.id}</h2>
+              <p>{contributionText(item)}</p>
+              <p className="plugin-source">
+                {item.version} · {sourceLabel(item.source as PackageSource)}
+              </p>
+              {tab === 'installed' && <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} />}
+              {failureReason && <p className="resource-safe-error">{failureReason}</p>}
+            </div>
+            {tab === 'discover' && <CatalogCompatibility item={item as PackageCatalogDescriptor} />}
+            <RowControl
+              tab={tab}
+              item={item}
+              runtime={runtime}
+              primaryAction={primaryActionOf(item)}
+              switchDisabled={
+                tab === 'installed' ? switchDisabledOf(item as PackageInstalledDescriptor) : true
+              }
+              onToggleDesired={onToggleDesired}
+            />
+          </article>
+        )
+      })}
       {tab === 'discover' && nextCursor && (
         <button type="button" className="secondary-button plugin-more" onClick={onLoadMore}>
           加载更多目录条目

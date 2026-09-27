@@ -49,7 +49,7 @@ export type StateSwitchProps = Readonly<{
 
 /**
  * Switch 开关。用 `role="switch"` 而不是 checkbox：它在列表行里是一个动作，不是一个表单取值。
- * 开关只表达「意图」（期望状态），真实生效结果由本地后台回报，所以调用方必须先确认再提交。
+ * `checked` 由调用方按用户可感知的实际结果计算；点击只发出下一步请求，不提前改视觉状态。
  * 不采用 antd Switch：行内动作语义、title、stopPropagation 与 `.switch` 皮肤契约都要保真。
  */
 export function StateSwitch({ label, checked, disabled, onToggle }: StateSwitchProps): JSX.Element {

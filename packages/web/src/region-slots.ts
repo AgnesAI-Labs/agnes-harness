@@ -1346,7 +1346,7 @@ export function mountTranscriptRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: {
-    /** Explicit W4a node-host probe; the default production path stays on the legacy renderer. */
+    /** Select the React host; callers that omit it retain the legacy renderer. */
     nodeHost?: 'react'
     /** XMarkdown is available only with the explicit React host probe. */
     markdownRenderer?: 'legacy' | 'xmarkdown'

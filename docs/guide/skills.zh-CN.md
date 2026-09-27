@@ -21,7 +21,7 @@ description: 只读整理项目说明中的不一致之处
 只提出修改建议，不写文件，不安装依赖。
 ```
 
-在 Web 为该项目创建会话，然后进入 Skills 管理，刷新对应工作区，核对来源、内容修订与信任状态。命令行可以查看和管理：
+在 Web 为该项目创建会话，然后进入 Skills 管理，刷新对应工作区，核对来源和内容修订，再点击“启用”。Web 会先完成版本审核，不再单独显示信任动作。开关跟随你的启用请求：请求过启用它就保持打开，即使 Skill 没能加载起来，失败原因显示在同一行；关掉开关就是撤回请求。命令行仍可查看和管理底层状态：
 
 ```sh
 node packages/cli/dist/local/agnes.mjs resources list --kind skill
@@ -58,9 +58,9 @@ node packages/cli/dist/local/agnes.mjs resources enable SKILL_RESOURCE_ID --expe
 ## 调整同名候选优先级
 
 1. 在 Web 设置 → Skills，选对应工作区并打开 Skill 详情，查看来源、当前 winner、被覆盖候选和有效优先级。
-2. 在“同名覆盖优先级”输入 **50–500 的整数**，点击“保存优先级”并确认。它只改变该 resourceId 在当前 profile 中的持久覆盖，不改文件内容、不授予信任或启用。
-3. 等待操作完成，重新查看 winner 与 actual。若新 winner 尚未信任或启用，分别审核并处理；不要只看优先级保存成功。
-4. “恢复默认优先级”清除该项覆盖，恢复上表的来源默认值。已有内容 revision 相同也可能有并行优先级修改，因此保存还校验 `expectedPriority`；冲突时刷新，不盲重试。
+2. 在“同名覆盖优先级”输入 **50–500 的整数**，点击“保存优先级”并确认。它只改变该 resourceId 在当前 profile 中的持久覆盖，不改文件内容，也不会启用 Skill。
+3. 等待操作完成，重新查看 winner 与 actual。若新 winner 尚未启用，审核后再启用；不要只看优先级保存成功。
+4. 当前 Web 页面不提供“恢复默认优先级”。需要执行这一管理操作时，通过 Node 客户端传入 `priority: null`。已有内容 revision 相同也可能有并行优先级修改，因此保存还校验 `expectedPriority`；冲突时刷新，不盲重试。
 
 例如 `AGH_HOME/skills` 的用户候选默认 400、工作区候选默认 500。要使用用户项，可把工作区项降到 350；不要靠双方同为 500 来猜谁会胜出。删除高优先级项后，剩余同名候选可能接替，但不会继承已删项的信任或启用状态。活动轮次持有不可变快照，控制面成功不证明进行中的轮次已经切换；在操作结束后检查下一轮/新会话的实际状态。
 
@@ -84,7 +84,7 @@ node packages/cli/dist/local/agnes.mjs resources enable SKILL_RESOURCE_ID --expe
 - 两者需要服务端授予的 admin authority 与 `resources.skills.write`；JSON 参数不能授予权限。浏览器管理页通过受约束的同源 BFF 调用，不把管理 SDK 给插件。
 - 使用当前实例返回的身份、revision、priority，保存 commandId 和 operation receipt；相同已受理请求使用相同 commandId 查询/重放，删除失败后的新重试则显式发起新操作。用 `client.resources.operation.get({ profile, operationId })` 或 shell `resources operation OPERATION_ID` 查询结果。
 
-合同依据：[资源 Schema](../../packages/protocol/schema/resource-control.json)、[方法与权限](../../packages/resource-control-contracts/src/resource-control.ts)、[Node 客户端](../../packages/resource-control-client-node/src/resource-control.ts)、[持久控制与删除标记](../../packages/resource-control-store/src/skills.ts)、[Web 操作](../../packages/resource-control-web/src/admin.ts)、[Worker 接线](../../packages/resource-control-worker/src/runtime-bootstrap.ts)。原生删除由[Worker 删除实现](../../packages/resource-control-worker/src/skill-remove.ts)调用 system-node 完成。源码链接对应所在文档版本；运行旧产物时应核对相应版本的合同。
+合同依据：[资源 Schema](../../packages/protocol/schema/resource-control.json)、[方法与权限](../../packages/resource-control-contracts/src/resource-control.ts)、[Node 客户端](../../packages/resource-control-client-node/src/resource-control.ts)、[持久控制与删除标记](../../packages/resource-control-store/src/skills.ts)、[Web 操作](../../packages/resource-control-web/src/admin.tsx)、[Worker 接线](../../packages/resource-control-worker/src/runtime-bootstrap.ts)。原生删除由[Worker 删除实现](../../packages/resource-control-worker/src/skill-remove.ts)调用 system-node 完成。源码链接对应所在文档版本；运行旧产物时应核对相应版本的合同。
 
 ## Cordis 运行时贡献
 

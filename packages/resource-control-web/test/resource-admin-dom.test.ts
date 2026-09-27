@@ -1,10 +1,11 @@
 /** @vitest-environment happy-dom */
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import type { McpServerDescriptor } from '@agnes/protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const revision = 'a'.repeat(64)
-const server = {
+const server: McpServerDescriptor = {
   kind: 'mcp',
   resourceId: 'mcp:fixture',
   serverId: 'fixture',
@@ -24,7 +25,7 @@ const server = {
   },
 }
 let skillsFixture: unknown[] = []
-let current: typeof server
+let current: McpServerDescriptor
 let operationState: 'succeeded' | 'failed'
 let refused: boolean
 let offline: boolean
@@ -151,7 +152,24 @@ beforeEach(async () => {
           { error: { code: 'RESOURCE_TRUST_REQUIRED', message: '请先信任当前版本。' } },
           { status: 403 },
         )
-      if (path === 'mcp/trust') current = { ...current, trust: String(body.trust) }
+      if (path === 'skills/trust')
+        skillsFixture = skillsFixture.map((item) =>
+          (item as { resourceId?: string }).resourceId === body.resourceId
+            ? { ...(item as Record<string, unknown>), trust: body.trust }
+            : item,
+        )
+      if (path === 'skills/desired')
+        skillsFixture = skillsFixture.map((item) =>
+          (item as { resourceId?: string }).resourceId === body.resourceId
+            ? {
+                ...(item as Record<string, unknown>),
+                desired: body.state,
+                actual: body.state === 'enabled' ? 'ready' : 'disabled',
+              }
+            : item,
+        )
+      if (path === 'mcp/trust')
+        current = { ...current, trust: String(body.trust) as McpServerDescriptor['trust'] }
       if (path === 'mcp/enable') current = { ...current, desired: 'enabled', actual: 'ready' }
       if (path === 'mcp/disable') current = { ...current, desired: 'disabled', actual: 'disabled' }
       return Response.json({ operationId: 'op' })
@@ -320,7 +338,7 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   expect(submitted('mcp/create')).toHaveLength(0)
 })
 
-it('tells the user a newly created MCP server still needs trust and enable', async () => {
+it('tells the user a newly created MCP server can be enabled directly', async () => {
   byId('mcp-create').click()
   change('mcp-id', 'created')
   change('mcp-name', 'Created MCP')
@@ -328,8 +346,8 @@ it('tells the user a newly created MCP server still needs trust and enable', asy
   await submitMcpForm()
   await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
   await vi.waitFor(() => expect(byId('resource-notice').textContent).toContain('已创建，但尚未可用'))
-  expect(byId('resource-notice').textContent).toContain('信任')
   expect(byId('resource-notice').textContent).toContain('启用')
+  expect(byId('resource-notice').textContent).not.toContain('信任')
   expect(byId('resource-notice').dataset.kind).toBe('success')
 })
 
@@ -390,11 +408,55 @@ it('toggles the row Switch without opening that row in the detail modal', async 
   expect(toggle).not.toBeNull()
   toggle?.click()
   byId<HTMLButtonElement>('admin-confirm-action').click()
+  await vi.waitFor(() => expect(submitted('mcp/trust')).toHaveLength(1))
   await vi.waitFor(() => expect(submitted('mcp/enable')).toHaveLength(1))
+  expect(submitted('mcp/trust')[0]?.body).toMatchObject({
+    serverId: 'fixture',
+    expectedRevision: revision,
+    trust: 'trusted',
+  })
+  expect(submitted('mcp/enable')[0]?.body).toMatchObject({
+    serverId: 'fixture',
+    expectedRevision: revision,
+  })
   // 操作完成后会重载列表；此刻也不能因为"没人选中"就替用户弹出一个详情。
   await vi.waitFor(() => expect(submitted('mcp/list').length).toBeGreaterThan(1))
   await settle()
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(false)
+})
+
+it('keeps the row Switch on the requested state so a failed MCP can still be stood down', async () => {
+  current = {
+    ...current,
+    trust: 'trusted',
+    desired: 'enabled',
+    actual: 'unavailable',
+    lastSafeError: {
+      code: 'MCP_CONNECT_FAILED',
+      message: 'stdio executable is not allowed by profile policy',
+    },
+  }
+  await resourceMount.sync({ tab: 'mcp' }, { refresh: true })
+
+  const row = byId('resource-list').querySelector<HTMLElement>('.resource-row')
+  const toggle = row?.querySelector<HTMLButtonElement>('.switch')
+  // 开关跟的是期望状态：用户请求过启用，它就开着。没跑起来这件事由行内失败原因表达，
+  // 不能靠把开关拨回关闭来表达——后端只按 desired 判定能否移除，拨回关闭会让资源再也停不掉。
+  expect(toggle?.getAttribute('aria-checked')).toBe('true')
+  expect(row?.querySelector('.state-light')).toBeNull()
+  expect(row?.textContent).toContain('MCP_CONNECT_FAILED')
+  expect(row?.textContent).toContain('stdio executable is not allowed by profile policy')
+  row?.click()
+  expect(byId<HTMLDialogElement>('resource-detail').open).toBe(true)
+  expect(byId('resource-detail').textContent).not.toContain('期望状态')
+  expect(byId('resource-detail').textContent).not.toContain('实际状态')
+
+  toggle?.click()
+  byId<HTMLButtonElement>('admin-confirm-action').click()
+
+  // 关掉期望状态是移除这条 MCP 的前置条件，所以这里必须是 disable，不能再重发 enable。
+  await vi.waitFor(() => expect(submitted('mcp/disable')).toHaveLength(1))
+  expect(submitted('mcp/enable')).toHaveLength(0)
 })
 
 it('keeps Space on the row Switch from being read as "open detail"', async () => {
@@ -422,22 +484,20 @@ it('returns focus to the row it was opened from when the detail modal closes', a
   expect(document.activeElement).toBe(restored)
 })
 
-it('binds trust, reject, enable and disable actions to the displayed revision', async () => {
-  for (const [label, path, trust] of [
-    ['信任', 'mcp/trust', 'trusted'],
-    ['拒绝', 'mcp/trust', 'rejected'],
-    ['启用', 'mcp/enable', undefined],
-    ['停用', 'mcp/disable', undefined],
-  ] as const) {
-    action(label)
-    await settle()
-    expect(submitted(path).at(-1)?.body).toMatchObject({
-      serverId: 'fixture',
-      expectedRevision: revision,
-      ...(trust ? { trust } : {}),
-    })
-  }
-  expect(byId('resource-detail').textContent).toContain('已拒绝')
+it('hides trust controls and binds enable and disable to the displayed revision', async () => {
+  expect(byId('resource-detail').textContent).not.toContain('信任')
+  expect(
+    [...document.querySelectorAll('#resource-detail button')].map((button) => button.textContent),
+  ).not.toContain('拒绝')
+  action('启用')
+  await vi.waitFor(() => expect(submitted('mcp/trust')).toHaveLength(1))
+  await vi.waitFor(() => expect(submitted('mcp/enable')).toHaveLength(1))
+  action('停用')
+  await settle()
+  expect(submitted('mcp/disable').at(-1)?.body).toMatchObject({
+    serverId: 'fixture',
+    expectedRevision: revision,
+  })
   action('启用', { confirm: false })
   await settle()
   expect(submitted('mcp/enable')).toHaveLength(1)
@@ -456,6 +516,7 @@ it('shows rejected commands and disconnected status safely; Skills remains reach
   refused = true
   action('启用')
   await vi.waitFor(() => expect(byId('resource-notice').textContent).toBe('请先信任当前版本。'))
+  expect(submitted('mcp/enable')).toHaveLength(0)
   expect(submitted('operations/get')).toHaveLength(0)
   action('查看连接状态')
   await vi.waitFor(() =>
@@ -473,8 +534,8 @@ it('shows rejected commands and disconnected status safely; Skills remains reach
 })
 
 it('keeps successful control-plane notice without claiming every session switched', async () => {
-  action('信任')
-  await vi.waitFor(() => expect(submitted('mcp/list')).toHaveLength(2))
+  action('启用')
+  await vi.waitFor(() => expect(submitted('mcp/list').length).toBeGreaterThan(2))
   await settle()
   expect(byId('resource-notice').dataset.kind).toBe('success')
   expect(byId('resource-notice').textContent).toContain('刷新成功不等于所有会话已经切换')
@@ -482,7 +543,7 @@ it('keeps successful control-plane notice without claiming every session switche
 
 it('surfaces catalog reload failure instead of retaining a success notice', async () => {
   failReload = true
-  action('信任')
+  action('启用')
   await vi.waitFor(() => expect(byId('resource-notice').textContent).toContain('资源管理后台暂时不可用'))
   expect(byId('resource-notice').dataset.kind).toBe('error')
   expect(document.body.textContent).not.toContain('private catalog detail')
@@ -607,5 +668,42 @@ it('offers permanent skill deletion and validates priority without submitting in
   expect(submitted('skills/remove')[0]?.body).toMatchObject({
     resourceId: 'skill/user/user-agnes/example',
     expectedRevision: revision,
+  })
+})
+
+it('enables an untrusted Skill without exposing a separate trust action', async () => {
+  skillsFixture = [
+    {
+      kind: 'skill',
+      resourceId: 'skill/user/user-agnes/example',
+      name: 'Example skill',
+      revision,
+      sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: revision },
+      priority: 400,
+      resolution: { winner: true, shadowed: [] },
+      trust: 'untrusted',
+      desired: 'disabled',
+      actual: 'disabled',
+      stale: false,
+    },
+  ]
+  await resourceMount.sync({ tab: 'skills' }, { refresh: true })
+  byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
+  await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Example skill'))
+  expect(byId('resource-detail').textContent).not.toContain('信任')
+
+  action('启用')
+
+  await vi.waitFor(() => expect(submitted('skills/trust')).toHaveLength(1))
+  await vi.waitFor(() => expect(submitted('skills/desired')).toHaveLength(1))
+  expect(submitted('skills/trust')[0]?.body).toMatchObject({
+    resourceId: 'skill/user/user-agnes/example',
+    expectedRevision: revision,
+    trust: 'trusted',
+  })
+  expect(submitted('skills/desired')[0]?.body).toMatchObject({
+    resourceId: 'skill/user/user-agnes/example',
+    expectedRevision: revision,
+    state: 'enabled',
   })
 })

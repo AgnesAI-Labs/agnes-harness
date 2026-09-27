@@ -571,6 +571,13 @@ importers:
       '@agnes/web-ui':
         specifier: workspace:*
         version: link:../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+    devDependencies:
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
 
   packages/resource-control-worker:
     dependencies:

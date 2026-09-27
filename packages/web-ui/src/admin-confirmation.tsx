@@ -252,10 +252,16 @@ export function PreviewConfirmationFacts({ preview }: { preview: PackagePreview 
 }
 
 /** Renders the installed DTO that will be bound by a trust decision. */
-export function TrustConfirmationFacts({ item }: { item: PackageInstalledDescriptor }): JSX.Element {
+export function TrustConfirmationFacts({
+  item,
+  lead = '信任决定会绑定下列完整性摘要与能力摘要哈希；信任本身不会启用插件。',
+}: {
+  item: PackageInstalledDescriptor
+  lead?: string
+}): JSX.Element {
   return (
     <>
-      <p className="confirm-facts-lead">信任决定会绑定下列完整性摘要与能力摘要哈希；信任本身不会启用插件。</p>
+      <p className="confirm-facts-lead">{lead}</p>
       <FactsList
         items={[
           ['版本', item.version],

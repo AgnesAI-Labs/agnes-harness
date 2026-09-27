@@ -3,8 +3,11 @@
 import { Context } from '@agnes/cordis'
 import type { UINode } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
-import { createConversationProjectionStore, useConversationRuntime } from '@agnes/web-ui/assistant-ui'
-import { AssistantRuntimeProvider } from '@assistant-ui/react'
+import {
+  AssistantRuntimeProvider,
+  createConversationProjectionStore,
+  useConversationRuntime,
+} from '@agnes/web-ui/assistant-ui'
 import { act, createElement, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'

@@ -109,6 +109,7 @@ export async function startClientModules(options: {
   sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> } | undefined
   transcriptContainer?: HTMLElement | undefined
   transcript?: {
+    nodeHost?: 'react'
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
   }

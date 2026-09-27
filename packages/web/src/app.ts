@@ -267,7 +267,7 @@ const clientModules = await startClientModules({
         }),
     },
   },
-  transcript: { onFork: forkTurn },
+  transcript: { nodeHost: 'react', onFork: forkTurn },
   conversationContainer: conversation,
   topbarContainer: document.querySelector<HTMLElement>('header.topbar') ?? undefined,
   approvalContainer: document.getElementById('approval') ?? undefined,

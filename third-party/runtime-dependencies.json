@@ -38,6 +38,21 @@
       "consumers": ["packages/web-ui"]
     },
     {
+      "name": "react",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react",
+      "purpose": "UI runtime for the web workbench, resource administration and in-page client module host; bundled into /vendor/* shared-singleton chunks.",
+      "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
+      "consumers": [
+        "packages/resource-control-web",
+        "packages/web",
+        "packages/web-client",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
+    },
+    {
       "name": "@earendil-works/pi-ai",
       "version": "0.87.1",
       "license": "MIT",

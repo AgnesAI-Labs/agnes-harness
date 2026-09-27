@@ -163,12 +163,8 @@ it('renders all real local releases and carries a selected catalog source throug
       return Response.json({ operationId: 'install-local-example', profile: 'local-dev' })
     if (url.endsWith('/trust'))
       return Response.json({ operationId: 'trust-local-example', profile: 'local-dev' })
-    if (url.endsWith('/untrust')) {
-      expect(body.id).toBe(selected.id)
-      expect(body.expectedIntegrity).toBe(selected.integrity)
-      expect(body.capabilityHash).toBe(capabilityHash)
-      return Response.json({ operationId: 'untrust-local-example', profile: 'local-dev' })
-    }
+    if (url.endsWith('/enable'))
+      return Response.json({ operationId: 'enable-local-example', profile: 'local-dev' })
     if (url.endsWith('/operation/get')) {
       if (body.operationId === 'inspect-local-example')
         return Response.json(
@@ -192,18 +188,18 @@ it('renders all real local releases and carries a selected catalog source throug
           }),
         )
       }
-      if (body.operationId === 'untrust-local-example') {
-        const untrustedInstalled: PackageInstalledDescriptor = {
+      if (body.operationId === 'enable-local-example') {
+        const enabledInstalled: PackageInstalledDescriptor = {
           ...(installed[0] as PackageInstalledDescriptor),
-          trusted: false,
-          desired: 'installed-disabled',
-          actual: 'not-running',
+          trusted: true,
+          desired: 'enabled',
+          actual: 'running',
         }
-        installed = [untrustedInstalled]
+        installed = [enabledInstalled]
         return Response.json(
-          operation('untrust-local-example', 'untrust', {
+          operation('enable-local-example', 'enable', {
             packageId: selected.id,
-            installed: untrustedInstalled,
+            installed: enabledInstalled,
           }),
         )
       }
@@ -271,58 +267,35 @@ it('renders all real local releases and carries a selected catalog source throug
   const installedText = document.getElementById('plugin-list')?.textContent ?? ''
   expect(installedText).toContain('@agnes-examples/hot-tool')
   expect(installedText).toContain('1.1.0')
-  // 状态 chip 换成了红绿灯：列表行只留标签与值，完整语义（"标签：值"）挂在 title 上。
-  const lightTitles = [...document.querySelectorAll('#plugin-list .state-light')].map((light) =>
-    light.getAttribute('title'),
+  expect(document.querySelector('#plugin-list .state-light')).toBeNull()
+  expect(document.querySelector('#plugin-list button[role="switch"]')?.getAttribute('aria-checked')).toBe(
+    'false',
   )
-  expect(lightTitles).toContain('信任：未信任')
-  expect(lightTitles).toContain('期望：停用')
-  expect(lightTitles).toContain('实际：未运行')
-  expect(document.querySelector('.plugin-row-trust')?.textContent).toBe('信任')
+  expect(document.querySelector('.plugin-row-trust')).toBeNull()
   expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/install'))).toBe(true)
   expect(document.querySelector('.plugin-detail-close')?.textContent).toBe('关闭详情')
   document.querySelector<HTMLButtonElement>('.plugin-detail-close')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(false))
 
-  // 回归：未信任的已装插件在列表行直接给"信任"动作（此前只有永远置灰的 Switch，
-  // 新装插件在 Web UI 没有任何路径走到信任确认）。
-  const trust = [...document.querySelectorAll<HTMLButtonElement>('#plugin-list button')].find(
-    (candidate) => candidate.textContent === '信任',
-  )
-  expect(trust).toBeDefined()
-  trust?.click()
+  // 未信任状态属于后台安全边界。用户只请求启用，页面在同一次操作中先完成校验再启用。
+  const toggle = document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')
+  expect(toggle?.disabled).toBe(false)
+  toggle?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('信任'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
   )
   expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain(capabilityHash)
   document.getElementById('plugin-confirm-action')?.click()
-  await vi.waitFor(() => expect(installed[0]?.trusted).toBe(true))
-  // 信任不会自动启用，第三列仍显示停用状态的启用动作。
-  await vi.waitFor(() => expect(document.querySelector('#plugin-list button[role="switch"]')).not.toBeNull())
-  document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
-  await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('请求启用'),
-  )
-  expect(document.getElementById('plugin-confirm-description')?.textContent).toContain(
-    '请求启用只提交期望状态',
-  )
-  document.getElementById('plugin-confirm-cancel')?.click()
+  await vi.waitFor(() => expect(installed[0]?.desired).toBe('enabled'))
+  const effectCalls = fetcher.mock.calls
+    .map(([url]) => String(url))
+    .filter((url) => url.endsWith('/trust') || url.endsWith('/enable'))
+  expect(effectCalls.map((url) => url.split('/').at(-1))).toEqual(['trust', 'enable'])
 
-  // 撤信任不同于卸载：它以已安装摘要和能力摘要为 CAS 基线，恢复为未信任、停用状态。
+  // 普通 Web 详情不暴露撤销信任；停用仍然保留为用户动作。
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(true))
-  const untrust = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
-    (candidate) => candidate.textContent === '撤销信任并停用',
-  )
-  expect(untrust?.disabled).toBe(false)
-  untrust?.click()
-  await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('撤销信任'),
-  )
-  expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain('恢复与回滚候选')
-  document.getElementById('plugin-confirm-action')?.click()
-  await vi.waitFor(() => expect(installed[0]?.trusted).toBe(false))
-  expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/untrust'))).toBe(true)
+  expect(document.getElementById('plugin-detail')?.textContent).not.toContain('撤销信任')
 })
 
 it('links a live Surface mount without treating the link as qualified actual', async () => {
@@ -380,10 +353,8 @@ it('links a live Surface mount without treating the link as qualified actual', a
   await mountAdmin()
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   const row = document.querySelector<HTMLElement>('.plugin-row')
-  const stateTitles = [...document.querySelectorAll('#plugin-list .state-light')].map((light) =>
-    light.getAttribute('title'),
-  )
-  expect(stateTitles).toContain('实际：未运行')
+  expect(row?.querySelector('.state-light')).toBeNull()
+  expect(row?.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('false')
   const listLink = row?.querySelector<HTMLAnchorElement>('.plugin-surface-link')
   expect(listLink?.getAttribute('href')).toBe('/demo')
   expect(listLink?.textContent).toBe('打开页面 · /demo')
@@ -394,8 +365,154 @@ it('links a live Surface mount without treating the link as qualified actual', a
     '#plugin-detail .plugin-surface-link[href="/demo"]',
   )
   expect(detailLinks).toHaveLength(1)
-  expect(document.getElementById('plugin-detail')?.textContent).toContain('未运行')
+  expect(document.getElementById('plugin-detail')?.textContent).not.toContain('实际状态')
 })
+
+it('does not enable a plugin when its hidden approval step fails', async () => {
+  document.documentElement.innerHTML = html
+    .replace('<link rel="stylesheet" href="/style.css" />', '')
+    .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+  history.replaceState(null, '', '/admin/plugins#approval-failure-token')
+  const installed: PackageInstalledDescriptor = {
+    id: 'acme/approval-failure',
+    version: '1.0.0',
+    source: { type: 'file', ref: 'file:./approval-failure' },
+    integrity: `sha256-${'8'.repeat(64)}`,
+    trusted: false,
+    desired: 'installed-disabled',
+    actual: 'not-running',
+    cleanupPending: false,
+    rollbackTarget: null,
+    contributions: [],
+    blockers: [],
+    capabilityHash,
+  }
+  let enableCalls = 0
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const url = String(input)
+    const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
+    if (url.endsWith('/session')) return Response.json({ authenticated: true })
+    if (url.endsWith('/context'))
+      return Response.json({
+        profile: 'local-dev',
+        clientId: 'approval-failure-test',
+        permissions: ['packages.read', 'packages.trust', 'packages.activate'],
+        readOnly: false,
+        authScope: 'auth.approval-failure-test',
+        features: Object.values(ADMIN_FEATURES),
+      })
+    if (url.endsWith('/list')) return Response.json({ packages: [installed] })
+    if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
+    if (url.endsWith('/surfaces')) return Response.json({ surfaces: [] })
+    if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [] })
+    if (url.endsWith('/trust')) return Response.json({ operationId: 'trust-failed', profile: 'local-dev' })
+    if (url.endsWith('/enable')) {
+      enableCalls += 1
+      return Response.json({ operationId: 'unexpected-enable', profile: 'local-dev' })
+    }
+    if (url.endsWith('/operation/get')) {
+      expect(body.operationId).toBe('trust-failed')
+      return Response.json(
+        operation('trust-failed', 'trust', {
+          packageId: installed.id,
+          state: 'failed',
+          error: { code: 'E_PACKAGE_TRUST', safeMessage: '当前版本未通过安全校验。', blockers: [] },
+        }),
+      )
+    }
+    return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
+  })
+  vi.stubGlobal('fetch', fetcher)
+
+  await mountAdmin()
+  await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
+  document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
+  await vi.waitFor(() =>
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
+  )
+  document.getElementById('plugin-confirm-action')?.click()
+
+  await vi.waitFor(() =>
+    expect(document.getElementById('admin-notice')?.textContent).toContain('当前版本未通过安全校验'),
+  )
+  expect(enableCalls).toBe(0)
+})
+
+it.each(['failed', 'unavailable'] as const)(
+  'does not retry enable for a %s plugin without a verified runtime baseline',
+  async (actual) => {
+    document.documentElement.innerHTML = html
+      .replace('<link rel="stylesheet" href="/style.css" />', '')
+      .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+    history.replaceState(null, '', '/admin/plugins#actual-switch-token')
+    const installed: PackageInstalledDescriptor = {
+      id: 'acme/unavailable-plugin',
+      version: '1.0.0',
+      source: { type: 'file', ref: 'file:./unavailable-plugin' },
+      integrity: `sha256-${'9'.repeat(64)}`,
+      trusted: true,
+      desired: 'enabled',
+      actual,
+      actualReason:
+        actual === 'unavailable' ? '运行依赖不可用，请检查配置后重试。' : '插件运行失败，实际状态尚未确认。',
+      cleanupPending: false,
+      rollbackTarget: null,
+      contributions: [],
+      blockers: [],
+      capabilityHash,
+    }
+    let enableCalls = 0
+    let disableCalls = 0
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/session')) return Response.json({ authenticated: true })
+      if (url.endsWith('/context'))
+        return Response.json({
+          profile: 'local-dev',
+          clientId: 'actual-switch-test',
+          permissions: ['packages.read', 'packages.activate'],
+          readOnly: false,
+          authScope: 'auth.actual-switch-test',
+          features: Object.values(ADMIN_FEATURES),
+        })
+      if (url.endsWith('/list')) return Response.json({ packages: [installed] })
+      if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
+      if (url.endsWith('/surfaces')) return Response.json({ surfaces: [] })
+      if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [] })
+      if (url.endsWith('/enable')) {
+        enableCalls += 1
+        return Response.json({ operationId: 'enable-retry', profile: 'local-dev' })
+      }
+      if (url.endsWith('/operation/get'))
+        return Response.json(
+          operation('enable-retry', 'enable', {
+            packageId: installed.id,
+            installed,
+          }),
+        )
+      if (url.endsWith('/disable')) {
+        disableCalls += 1
+        return Response.json({ operationId: 'unexpected-disable', profile: 'local-dev' })
+      }
+      return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const mounted = await mountAdmin()
+    await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
+    const row = document.querySelector<HTMLElement>('.plugin-row')
+    const toggle = row?.querySelector<HTMLButtonElement>('.switch')
+    expect(toggle?.getAttribute('aria-checked')).toBe('false')
+    expect(row?.querySelector('.state-light')).toBeNull()
+    expect(row?.textContent).toContain(installed.actualReason)
+    toggle?.click()
+    expect(document.getElementById('admin-notice')?.textContent).toContain('实际运行摘要尚未确认')
+    expect(document.getElementById('plugin-confirm-title')).toBeNull()
+    expect(enableCalls).toBe(0)
+    expect(disableCalls).toBe(0)
+    mounted.dispose()
+  },
+)
 
 it('keeps backend actual and browser UI runtime failure visible as separate states', async () => {
   document.documentElement.innerHTML = html
@@ -466,11 +583,11 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
 
   await mountAdmin({ runtime: runtimeSource })
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
-  expect(
-    [...document.querySelectorAll('#plugin-list .state-light')].map((light) => light.getAttribute('title')),
-  ).toContain('浏览器 UI：加载失败，可重试')
-  expect(document.getElementById('plugin-list')?.textContent).toContain('运行中')
-  expect(document.querySelector('#plugin-list button[role="switch"]')).not.toBeNull()
+  expect(document.querySelector('#plugin-list .state-light')).toBeNull()
+  expect(document.getElementById('plugin-list')?.textContent).toContain('插件 UI 入口加载失败，可重试')
+  expect(document.querySelector('#plugin-list button[role="switch"]')?.getAttribute('aria-checked')).toBe(
+    'true',
+  )
   const retry = [...document.querySelectorAll<HTMLButtonElement>('#plugin-list button')].find(
     (candidate) => candidate.textContent === '重试 UI',
   )
@@ -480,7 +597,9 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
 
   runtime = { packageId: installed.id, revision: 'r1', phase: 'active' }
   for (const listener of listeners) listener(runtime)
-  await vi.waitFor(() => expect(document.getElementById('plugin-list')?.textContent).toContain('已加载'))
+  await vi.waitFor(() =>
+    expect(document.getElementById('plugin-list')?.textContent).not.toContain('插件 UI 入口加载失败，可重试'),
+  )
 })
 
 it('does not confirm enable while the browser runtime is still running the old revision', async () => {
@@ -559,7 +678,7 @@ it('does not confirm enable while the browser runtime is still running the old r
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('请求启用'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -657,7 +776,7 @@ it('allows a checked enable for an inactive client-only package while backend ac
   expect(enable?.disabled).toBe(false)
   enable?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('请求启用'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
   )
 
   runtimeState = { packageId: installed.id, revision: installedIntegrity, phase: 'loading' }
@@ -698,7 +817,7 @@ it('allows a checked enable for an inactive client-only package while backend ac
   await page.reload()
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('请求启用'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -1096,7 +1215,7 @@ it('aggregates skipped-no-longer-orphaned counts across successful batches into 
   )
 })
 
-it('shows qualified tree desired vs actual and does not treat diagnostics as actual', async () => {
+it('shows a plain pending tree status and hides aligned internal digests', async () => {
   document.documentElement.innerHTML = html
     .replace('<link rel="stylesheet" href="/style.css" />', '')
     .replace('<script type="module" src="/admin-standalone.js"></script>', '')
@@ -1138,18 +1257,16 @@ it('shows qualified tree desired vs actual and does not treat diagnostics as act
   vi.stubGlobal('fetch', fetcher)
   const mounted = await mountAdmin()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('实际待资格化'),
+    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('插件资源正在更新'),
   )
   const first = document.getElementById('plugin-tree-status')?.textContent ?? ''
-  expect(first).toContain(`期望 ${digest}`)
-  expect(first).toContain('诊断阶段 health')
+  expect(first).not.toContain(digest)
+  expect(first).not.toContain('health')
   expect(first).not.toContain('实际已对齐')
   actual = true
   await mounted.reload()
-  await vi.waitFor(() =>
-    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('实际已对齐'),
-  )
-  expect(document.getElementById('plugin-tree-status')?.textContent).not.toContain('诊断阶段')
+  await vi.waitFor(() => expect(document.getElementById('plugin-tree-status')?.hidden).toBe(true))
+  expect(document.getElementById('plugin-tree-status')?.textContent).toBe('')
   expect(reloads).toEqual([])
   Object.defineProperty(location, 'reload', { configurable: true, value: originalReload })
 })
@@ -1199,14 +1316,13 @@ it('recovers a dropped tree_changed notice by polling tree/list without a page r
   vi.stubGlobal('fetch', fetcher)
   await mountAdmin()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('实际待资格化'),
+    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('插件资源正在更新'),
   )
-  expect(document.getElementById('plugin-tree-status')?.textContent).toContain('诊断阶段 health')
-  await vi.waitFor(
-    () => expect(document.getElementById('plugin-tree-status')?.textContent).toContain('实际已对齐'),
-    { timeout: 4_000 },
-  )
-  expect(document.getElementById('plugin-tree-status')?.textContent).not.toContain('诊断阶段')
+  expect(document.getElementById('plugin-tree-status')?.textContent).not.toContain(digest)
+  expect(document.getElementById('plugin-tree-status')?.textContent).not.toContain('health')
+  await vi.waitFor(() => expect(document.getElementById('plugin-tree-status')?.hidden).toBe(true), {
+    timeout: 4_000,
+  })
   expect(treeCalls).toBeGreaterThan(1)
   expect(reloads).toEqual([])
   Object.defineProperty(location, 'reload', { configurable: true, value: originalReload })
