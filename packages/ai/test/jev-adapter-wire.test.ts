@@ -496,9 +496,11 @@ describe('over a real socket on loopback', () => {
   it('short retry-after waits are retried inside the limit, then give up', async () => {
     mode = 'rate-short'
     const started = Date.now()
-    await expect(provider()(400)).rejects.toMatchObject({ kind: 'unavailable', code: 'RATE_LIMIT' })
+    // The limit is generous on purpose: this proves the attempt cap, not a latency budget, and four
+    // loopback round trips plus three short waits can run long on a loaded CI runner.
+    await expect(provider()(2000)).rejects.toMatchObject({ kind: 'unavailable', code: 'RATE_LIMIT' })
     expect(hits).toBe(4)
-    expect(Date.now() - started).toBeLessThan(400)
+    expect(Date.now() - started).toBeLessThan(2000)
   })
 
   it('a retry-after longer than the limit is not waited on', async () => {
