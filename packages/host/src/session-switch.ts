@@ -23,19 +23,6 @@ export function validatePresetSwitch(profile: ResolvedProfile, a: Assembled, nam
   return resolved
 }
 
-/**
- * `sel.route` must satisfy both: it is one of the routes this deployment declared in its resolved
- * profile, and the sealed provider publishes that exact route/model pair.  The initial preset only
- * materializes one target per slot; treating that bootstrap table as the whole runtime allow-list
- * made every other pre-registered API-key provider impossible to select.  The profile route list is
- * the deployment's stable allow-list; the sealed registry remains the source of truth for model ids.
- *
- * Checking only the second would let `setModel` reach a route the provider object carries - a
- * test/fallback route, say - that this deployment never allowed. Checking only the first would
- * accept a route the profile allowed, paired with a model id that route never actually registered.
- * Both conditions have to hold together.
- *
- */
 /** What the profile says the target is: a decision model, a chat model, or nothing it declares. */
 function declaredModelKind(
   profile: ResolvedProfile,
@@ -52,6 +39,19 @@ function mixesKinds(profile: ResolvedProfile, slot: string, route: string, model
   return slot === DECISION_SLOT || declaredModelKind(profile, route, model) === 'decision'
 }
 
+/**
+ * `sel.route` must satisfy both: it is one of the routes this deployment declared in its resolved
+ * profile, and the sealed provider publishes that exact route/model pair.  The initial preset only
+ * materializes one target per slot; treating that bootstrap table as the whole runtime allow-list
+ * made every other pre-registered API-key provider impossible to select.  The profile route list is
+ * the deployment's stable allow-list; the sealed registry remains the source of truth for model ids.
+ *
+ * Checking only the second would let `setModel` reach a route the provider object carries - a
+ * test/fallback route, say - that this deployment never allowed. Checking only the first would
+ * accept a route the profile allowed, paired with a model id that route never actually registered.
+ * Both conditions have to hold together.
+ *
+ */
 export function validateModelSwitch(
   profile: ResolvedProfile,
   a: Assembled,
@@ -140,7 +140,8 @@ export async function replaySwitchesOnOpen(
     const to = rec.to
     // Such a row can only come from a ledger written before the kind gate existed. Opening history
     // must not fail on it, so it is skipped, the slot keeps the preset's value, and the skip is said
-    // once per row and process.
+    // at most once per row per process - keyed by session key, not by session object, because a
+    // close then reopen of the same session key builds a new session object and must not repeat it.
     if (mixesKinds(profile, slot, to.route, to.model)) {
       await reportSkippedSwitch(session, rec.seq, {
         slot,
@@ -204,17 +205,22 @@ function applyModelInMemory(session: HostSession, slot: string, to: ModelTo): vo
   applyPresetInMemory(session, view)
 }
 
-const reportedSkips = new WeakMap<HostSession, Set<number>>()
+// Keyed by session key (a string), not the session object: closing and reopening the same session
+// key builds a new `HostSession` instance (core evicts the closed one from its live table), and a
+// map keyed by that instance would forget every row the moment the session closed. Keying by the
+// durable session key is what makes "once per row per process" hold across a close/reopen cycle
+// within the same process, not just within one still-live session object.
+const reportedSkips = new Map<string, Set<number>>()
 
 async function reportSkippedSwitch(
   session: HostSession,
   seq: number,
   data: { slot: string; route: string; model: string; reason: 'slot-kind' },
 ): Promise<void> {
-  let seen = reportedSkips.get(session)
+  let seen = reportedSkips.get(session.key)
   if (!seen) {
     seen = new Set()
-    reportedSkips.set(session, seen)
+    reportedSkips.set(session.key, seen)
   }
   if (seen.has(seq)) return
   seen.add(seq)

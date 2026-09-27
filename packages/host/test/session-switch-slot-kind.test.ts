@@ -168,4 +168,41 @@ describe('replaying switches of mismatched kinds on open', () => {
       await second.host.close()
     }
   }, 60_000)
+
+  // D14: the skip diagnostic is written at most once per row per process. A live session cannot be
+  // reopened at all (see above), so the only way the same process opens the same session key twice
+  // is close then reopen - which builds a brand new HostSession object (core's Kernel evicts the
+  // closed one from its live table). The dedup therefore has to survive that, not merely last as
+  // long as one session object does.
+  it('does not write a second copy of the skip diagnostic when the same session is closed and reopened', async () => {
+    const dataDir = scratch()
+    const t = await createTestHost(options(dataDir))
+    try {
+      const s1 = await t.host.createSession({ cwd: dataDir })
+      // A row a ledger written before the kind gate existed could carry.
+      await s1.d.log.append([
+        s1.ev(
+          'x/core/model-switch',
+          { slot: 'primary', from: { route: 'gw', model: 'm1' }, to: { route: 'jev', model: 'jev-1.13.0' } },
+          { ignorable: true },
+        ),
+      ])
+      const key = s1.key
+      await s1.close()
+
+      const reopened1 = await t.host.createSession({ cwd: dataDir, key })
+      const afterFirstReopen = await reopened1.scan({ type: 'x/core/model-switch-skipped', limit: 10 })
+      expect(afterFirstReopen).toHaveLength(1)
+      await reopened1.close()
+
+      const reopened2 = await t.host.createSession({ cwd: dataDir, key })
+      const afterSecondReopen = await reopened2.scan({ type: 'x/core/model-switch-skipped', limit: 10 })
+      // Same row, same process, second open: no second diagnostic - the total stays at the first
+      // open's count rather than growing to 2.
+      expect(afterSecondReopen).toHaveLength(1)
+      await reopened2.close()
+    } finally {
+      await t.host.close()
+    }
+  }, 30_000)
 })

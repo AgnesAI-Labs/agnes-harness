@@ -84,11 +84,11 @@ describe('materializeRoutes with a decision key', () => {
   })
 })
 
-// Design 3.10, S14.4 step 0: decision routing reads preset.model.route.decision / RouteTable.decision
-// directly. It never borrows core's resolveModel(slot) default-route fallback, so a deployment that
-// configured no decision route anywhere gets no decision key at all - never a silent 'default' route
-// - and a decide call against a route the sealed decision registry never served fails as unavailable,
-// never resolving to a chat model instead.
+// Decision routing reads preset.model.route.decision / RouteTable.decision directly and never
+// borrows the chat default-route fallback, so a deployment that configured no decision route
+// anywhere gets no decision key at all - never a silent 'default' route - and a decide call against
+// a route the sealed decision registry never served fails as unavailable, never resolving to a chat
+// model instead.
 describe('a decision key absent from every configuration never falls back to a default route', () => {
   it('materializeRoutes/pinPresetRoutes carry no decision key when neither profile nor preset name one', () => {
     const p = preset({ primary: 'gw' })
