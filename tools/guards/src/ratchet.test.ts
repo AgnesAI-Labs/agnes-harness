@@ -912,7 +912,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Context notes, per-turn prefix memo, and typed cold-block signal on the compaction-prefix base.
   // Host-selected Skill preload notes and cold-compaction prompt denial are both present.
   // Child compaction inheritance removes one line. Re-measured 25422, exact; no spare.
-  'packages/core/src': 25422,
+  // Decision models refused by slot kind in setModel, child model selectors and fork selections.
+  // Measured 25461, exact, no spare (+39).
+  'packages/core/src': 25461,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -924,7 +926,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines(): 3719, exact cap, no spare.
   // 2026-09-22 pi-ai 0.87.0: transcript normalization and two JSON boundary type imports; exact +3.
   // Explicit short cache retention at the adapter boundary. Measured 3835, exact.
-  'packages/ai/src': 3835,
+  // Decision models kept apart from chat models: a shared credentialed adapter base, a separate
+  // decision adapter kind and registry, the Jev adapter and the facade's decide. Measured 4429,
+  // exact, no spare (+594).
+  'packages/ai/src': 4429,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1139,7 +1144,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
-  'packages/host/src/assemble': 4193,
+  // Decision routes materialized, pinned and verified by kind, and handed to the decision adapter.
+  // Measured 4266, exact, no spare (+73).
+  'packages/host/src/assemble': 4266,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1214,7 +1221,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // formatter splits the validate.js export list once it no longer fits a line). Measured 2194,
   // exact, no spare (+9).
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
-  'packages/protocol/src': 2201,
+  // Decision slot, route slot name, decision failure types and the provider's optional decide entry.
+  // Measured 2215, exact, no spare (+14).
+  'packages/protocol/src': 2215,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1758,7 +1767,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
-  'packages/daemon/src': 26501,
+  // apis.list leaves decision models out of the chat model list. Measured 26510, exact, no spare (+9).
+  'packages/daemon/src': 26510,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2467,7 +2477,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Tool-definition refusals and title nonce query. Host Skill preload notes add 2 counted lines.
   // Migration measured 38099, exact, no spare.
-  'packages/host/src': 38099,
+  // Decision routes by kind, the model-switch slot-kind gate and skipped-replay diagnostics.
+  // Measured 38217, exact, no spare (+118).
+  'packages/host/src': 38217,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
