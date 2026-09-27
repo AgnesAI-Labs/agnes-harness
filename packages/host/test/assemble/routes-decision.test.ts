@@ -100,6 +100,49 @@ describe('materializeRoutes with a decision key', () => {
   })
 })
 
+// `default` is the chat sentinel. Shipped presets spell every chat key as `route: default`, so the
+// sentinel has to land on a chat route whatever order the operator listed the routes in, and the
+// decision key never takes it at all.
+describe('the default sentinel resolves by kind', () => {
+  const shipped = {
+    primary: 'default',
+    escalation: 'default',
+    fast: 'default',
+    compaction: 'default',
+    verifier: 'default',
+  }
+
+  it('resolves chat keys to the first chat route when a decision route is listed first', () => {
+    const table = materializeRoutes(preset(shipped), profile([JEV, GW]))
+    for (const slot of Object.keys(shipped))
+      expect(table[slot as keyof typeof table]).toEqual({ route: 'gw', model: 'm' })
+    expect(table.decision).toBeUndefined()
+  })
+
+  it('still resolves the decision key when it names the decision route explicitly', () => {
+    const table = materializeRoutes(preset({ primary: 'default', decision: 'jev' }), profile([JEV, GW]))
+    expect(table.primary).toEqual({ route: 'gw', model: 'm' })
+    expect(table.decision).toEqual({ route: 'jev', model: 'jev-1.13.0' })
+  })
+
+  it.each([
+    ['listed first', [JEV, GW]],
+    ['listed after a chat route', [GW, JEV]],
+  ])('refuses the default sentinel on the decision key with the decision route %s', (_name, routes) => {
+    const r = refusal(() =>
+      materializeRoutes(preset({ primary: 'gw', decision: 'default' }), profile(routes)),
+    )
+    expect(r.code).toBe('E_PRESET_UNRESOLVED')
+    expect(r.detail.reason).toBe('slot-kind')
+  })
+
+  it('refuses a chat default when every declared route is a decision route', () => {
+    const r = refusal(() => materializeRoutes(preset({ primary: 'default' }), profile([JEV])))
+    expect(r.code).toBe('E_PRESET_UNRESOLVED')
+    expect(r.detail.reason).toBe('slot-kind')
+  })
+})
+
 // Decision routing reads preset.model.route.decision / RouteTable.decision directly and never
 // borrows the chat default-route fallback, so a deployment that configured no decision route
 // anywhere gets no decision key at all - never a silent 'default' route - and a decide call against

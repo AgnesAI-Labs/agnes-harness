@@ -1,3 +1,4 @@
+import { JevDecisionAdapter } from '@agnes/ai'
 import type { PresetView } from '@agnes/core'
 import type {
   DecisionModelRecord,
@@ -29,6 +30,28 @@ export function isDecisionModel(m: ModelRecord | DecisionModelRecord): m is Deci
 // in `detail.reason`, which is what a test and a log filter match on.
 function bad(reason: string, why: string, detail: Record<string, unknown> = {}): never {
   throw new HostError('E_PRESET_UNRESOLVED', `${reason}: ${why}`, { detail: { reason, ...detail } })
+}
+
+// A route serves decisions when its wire api is a decision api or its catalogue offers a decision
+// record; buildProvider refuses the mixed cases, so either signal alone names the route's kind here.
+function isDecisionRoute(decl: RouteDecl): boolean {
+  return JevDecisionAdapter.APIS.has(decl.api) || (decl.models ?? []).some(isDecisionModel)
+}
+
+// `default` is the chat sentinel only. For a chat key it names the first declared route that serves
+// chat, so a decision route listed first cannot capture the shipped presets' `route: default`. The
+// decision key never borrows it: decision routing is always named explicitly and never falls back.
+function resolveSentinel(declared: RouteDecl[], slot: string, preset: string): RouteDecl {
+  if (slot === DECISION_SLOT)
+    bad('slot-kind', 'the decision key never resolves the default route; name a decision route', {
+      slot,
+      route: SENTINEL,
+      preset,
+    })
+  const chat = declared.find((r) => !isDecisionRoute(r))
+  if (!chat)
+    bad('slot-kind', 'the profile declares no chat route for default', { slot, route: SENTINEL, preset })
+  return chat
 }
 
 function pickModel(decl: RouteDecl, slot: string, preset: string): string {
@@ -64,7 +87,7 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
       bad('pin-without-route', `model.id.${slot} pins a slot with no route`, { slot, preset: named })
   for (const [slot, name] of Object.entries(preset.model.route)) {
     if (!SLOTS.has(slot)) bad('unknown-slot', `${slot} is not a protocol SlotName`, { slot, preset: named })
-    const decl = name === SENTINEL ? declared[0] : byName.get(name)
+    const decl = name === SENTINEL ? resolveSentinel(declared, slot, named) : byName.get(name)
     if (!decl)
       bad('unknown-route', `the profile declares no route ${name}`, { slot, route: name, preset: named })
     // A route answers for one kind. The decision key takes decision records only and every chat
@@ -88,8 +111,7 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
     // wire. A pin is honoured, but only against a catalogue that offers it. A route that declares no
     // catalogue here is one the registry fills in, and verifyRoutes checks it after the seal.
     const pinned = preset.model.id[slot]
-    const models = decl.models ?? []
-    if (pinned !== undefined && models.length > 0 && !models.some((m) => m.id === pinned))
+    if (pinned !== undefined && declaredModels.length > 0 && !declaredModels.some((m) => m.id === pinned))
       bad('model-undeclared', `route ${decl.route} does not declare model ${pinned}`, { slot, model: pinned })
     const pinnedRecord = pinned === undefined ? undefined : declaredModels.find((m) => m.id === pinned)
     if (pinnedRecord && isDecisionModel(pinnedRecord) !== wantDecision)
