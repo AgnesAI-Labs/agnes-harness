@@ -568,9 +568,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@agnes/web-admin-frame':
+      '@agnes/web-ui':
         specifier: workspace:*
-        version: link:../web-admin-frame
+        version: link:../web-ui
 
   packages/resource-control-worker:
     dependencies:
