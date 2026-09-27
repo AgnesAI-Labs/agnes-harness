@@ -14,7 +14,7 @@ import {
 // Provider is protocol-owned and reaches this file through core's re-export.
 import type { Provider } from '@agnes/core'
 import type { Logger } from '@agnes/extension-api'
-import type { RouteTable } from '@agnes/protocol'
+import type { ModelRecord, RouteTable } from '@agnes/protocol'
 import { subscriptionCredentials } from '../adapters/codex-credentials.js'
 import { createCredentialStore, isSubscriptionCredential } from '../adapters/credential-store.js'
 import { HostError } from '../errors.js'
@@ -128,7 +128,7 @@ export async function buildProvider(
       })
   const manualRoutes: ManualRoute[] = (profile.provider.routes ?? []).map((r) => ({
     ...r,
-    models: r.models ?? [],
+    models: (r.models ?? []).filter((m): m is ModelRecord => !('kind' in m)),
   }))
   // The first-run client has to be able to choose any reviewed API-key provider before it owns a
   // key for one.  Those routes are therefore fitted once, at Host assembly, and their credentials

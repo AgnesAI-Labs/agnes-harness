@@ -1,6 +1,9 @@
 import type {
   AiErrorCode,
   CountResult,
+  DecisionModelRecord,
+  DecisionWireRequest,
+  DecisionWireResult,
   InferenceEvent,
   ModelRecord,
   RequestBody,
@@ -35,6 +38,18 @@ export const SLOT_NAMES = [
   'video',
 ] as const satisfies readonly SlotName[]
 
+// The decision slot is deliberately not a member of SlotName. Every chat-slot consumer - the CLI
+// `--model <slot>=` flag, the TUI `/model`, RequestBody.slot, the inference entry - is typed on
+// SlotName and so excludes it without a filter of its own. Only the route table names it.
+export type DecisionSlot = 'decision'
+export type RouteSlotName = SlotName | DecisionSlot
+
+// What `Provider.decide` rejects with. It is a structural shape so the caller can read it without
+// importing the implementing package: `kind` is the whole contract, `code` says which failure it
+// was, `route` which decision route was being called when there was one.
+export type DecisionFailureKind = 'invalid' | 'timeout' | 'unavailable'
+export type DecisionFailure = Readonly<{ kind: DecisionFailureKind; code: AiErrorCode; route?: string }>
+
 // The model-layer seam: exactly one implementation is fitted per assembled session, and the kernel
 // calls it every step. It lives here rather than beside its implementation because both sides of the
 // seam — the caller that fits it and the package that implements it — must agree on one declaration,
@@ -55,4 +70,17 @@ export interface Provider {
   ): AsyncIterable<InferenceEvent>
   models(): ModelRecord[]
   count?(req: RequestBody, opts: { signal: AbortSignal }): Promise<CountResult>
+  /**
+   * Present only when the assembly fitted a decision adapter. Resolves `req.route`/`req.model`
+   * against the decision catalogue - the caller fills them from the session's current preset on
+   * every call, as it does for a chat request - calls the adapter within `req.timeoutMs`, and
+   * returns priced answers that have passed an envelope check only; the answers themselves are the
+   * caller's to validate. Failures reject with a DecisionFailure-shaped error.
+   */
+  decide?(req: DecisionWireRequest, opts: { signal: AbortSignal }): Promise<DecisionWireResult>
+  /**
+   * The decision catalogue, present together with `decide`. `models()` stays chat-only, so a caller
+   * that needs a decision model's context window or price for a pre-check reads it here.
+   */
+  decisionModels?(): DecisionModelRecord[]
 }

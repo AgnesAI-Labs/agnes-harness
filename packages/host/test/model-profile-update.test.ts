@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
+import type { ModelRecord } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
 
@@ -12,7 +13,10 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
     disableSessionTitle: true,
     provider: (profile) =>
       new ScriptedProvider({
-        models: profile.provider.routes?.flatMap((r) => r.models ?? []) ?? [],
+        models:
+          profile.provider.routes?.flatMap((r) =>
+            (r.models ?? []).filter((m): m is ModelRecord => !('kind' in m)),
+          ) ?? [],
         scripts: [],
       }),
   })

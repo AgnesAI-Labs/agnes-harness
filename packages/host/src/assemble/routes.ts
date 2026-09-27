@@ -18,7 +18,7 @@ function bad(reason: string, why: string, detail: Record<string, unknown> = {}):
 
 function pickModel(decl: RouteDecl, slot: string, preset: string): string {
   const models = decl.models ?? []
-  const m = models.find((x) => x.slot === slot) ?? models[0]
+  const m = models.find((x) => 'slot' in x && x.slot === slot) ?? models[0]
   if (!m) bad('no-models', `route ${decl.route} declares no models`, { slot, route: decl.route, preset })
   return m.id
 }

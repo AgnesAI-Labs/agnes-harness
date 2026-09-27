@@ -25,7 +25,7 @@ import {
   type RuntimeConvergenceReport,
   type RuntimeTarget,
 } from '@agnes/plugin-runtime/host'
-import type { ComputerUseDoctorParams, RouteTable } from '@agnes/protocol'
+import type { ComputerUseDoctorParams, ModelRecord, RouteTable } from '@agnes/protocol'
 import { privateArtifactDeleteAvailable } from '@agnes/system-node'
 import type { AdapterBundle } from './adapters/index.js'
 import {
@@ -1577,7 +1577,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         })
       : unresolvedProviderAssembly()
     const contractForModel = bindModelContracts(
-      provider.registry?.models() ?? (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+      provider.registry?.models() ??
+        (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).filter((m): m is ModelRecord => !('kind' in m)),
+        ),
       contractStore,
     )
     // createProvider sealed the registry on its way out, so both of these are readable now and

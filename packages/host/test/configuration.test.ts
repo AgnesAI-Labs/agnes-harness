@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getApiKeyProvider } from '@agnes/ai'
+import type { ModelRecord } from '@agnes/protocol'
 import * as systemNode from '@agnes/system-node'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -336,7 +337,9 @@ it('a declared thinkingEfforts: false forces off reasoning even for a catalogue 
 
   const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
   const overlay = await reloaded.profileInput()
-  const resolved = overlay.provider?.routes?.[0]?.models?.find((m) => m.id === model)
+  const resolved = overlay.provider?.routes?.[0]?.models?.find(
+    (m): m is ModelRecord => m.id === model && !('kind' in m),
+  )
   expect(resolved?.reasoning).toBe(false)
   expect(Object.hasOwn(resolved ?? {}, 'thinkingLevelMap')).toBe(false)
 })

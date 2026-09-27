@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
-import { type EventEnvelope, SESSION_TITLE_EVENT } from '@agnes/protocol'
+import { type EventEnvelope, type ModelRecord, SESSION_TITLE_EVENT } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { createLocalEndpoint } from '../src/local/index.js'
 import { MemorySessionWorkspaces, SessionWorkspaceIndex, StorageLister } from '../src/storage/lister.js'
@@ -74,7 +74,9 @@ it('uses the same generator through the real local endpoint and worker command d
     dataDir: root,
     provider: (profile) =>
       new ScriptedProvider({
-        models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+        models: (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).filter((m): m is ModelRecord => !('kind' in m)),
+        ),
         scripts: [
           (req) => [
             { type: 'text_delta', delta: req.kind === 'summary' ? '入口标题验证' : '完成回答' },

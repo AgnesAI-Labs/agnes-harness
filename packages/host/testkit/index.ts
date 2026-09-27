@@ -80,9 +80,9 @@ const BASE_PRESET: PresetDoc = {
 function scriptedModels(profile: ResolvedProfile): ModelRecord[] {
   const listed: ModelRecord[] = []
   for (const route of profile.provider.routes ?? []) {
-    if (route.models) listed.push(...route.models)
+    if (route.models) listed.push(...route.models.filter((m): m is ModelRecord => !('kind' in m)))
   }
-  return listed.length > 0 ? listed : (ROUTE.models ?? [])
+  return listed.length > 0 ? listed : (ROUTE.models ?? []).filter((m): m is ModelRecord => !('kind' in m))
 }
 const STANDARD_PRESET: PresetDoc = {
   name: 'standard',

@@ -71,7 +71,7 @@ import { AMBIENT_CREDENTIAL_APIS, streamOverApi } from './wire.js'
  *    fixed.
  */
 /** A route this package was told about, endpoint and catalogue together, rather than discovered. */
-export type ManualRoute = RouteDecl & {
+export type ManualRoute = Omit<RouteDecl, 'models'> & {
   models: ModelRecord[]
   /**
    * Says that this route is served without any credential. It has to be stated, because the default

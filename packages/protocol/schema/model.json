@@ -200,6 +200,21 @@
         "slot": { "$ref": "#/$defs/SlotName" }
       }
     },
+    "DecisionModelRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "api", "route", "baseUrl", "kind", "contextWindow", "cost"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 256 },
+        "name": { "type": "string", "maxLength": 256 },
+        "api": { "type": "string", "maxLength": 64 },
+        "route": { "type": "string", "maxLength": 128 },
+        "baseUrl": { "type": "string", "maxLength": 2048 },
+        "kind": { "const": "decision" },
+        "contextWindow": { "type": "integer", "minimum": 1 },
+        "cost": { "$ref": "#/$defs/ModelCost" }
+      }
+    },
     "ContractStamp": {
       "type": "object",
       "additionalProperties": false,
@@ -397,7 +412,10 @@
         "credentialRef": { "type": "string", "pattern": "^secret://[A-Za-z0-9_./-]+$" },
         "compat": { "$ref": "#/$defs/JsonValue" },
         "displayName": { "type": "string", "maxLength": 128 },
-        "models": { "type": "array", "items": { "$ref": "#/$defs/ModelRecord" } }
+        "models": {
+          "type": "array",
+          "items": { "oneOf": [{ "$ref": "#/$defs/ModelRecord" }, { "$ref": "#/$defs/DecisionModelRecord" }] }
+        }
       }
     },
     "RouteTarget": {
@@ -432,7 +450,134 @@
         "compaction": { "$ref": "#/$defs/RouteTarget" },
         "verifier": { "$ref": "#/$defs/RouteTarget" },
         "image": { "$ref": "#/$defs/RouteTarget" },
-        "video": { "$ref": "#/$defs/RouteTarget" }
+        "video": { "$ref": "#/$defs/RouteTarget" },
+        "decision": { "$ref": "#/$defs/RouteTarget" }
+      }
+    },
+    "DecisionQuestion": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instructions"],
+          "properties": {
+            "type": { "const": "noul" },
+            "instructions": { "$ref": "#/$defs/JsonValue" },
+            "criteria": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["true", "false"],
+              "properties": {
+                "true": { "$ref": "#/$defs/JsonValue" },
+                "false": { "$ref": "#/$defs/JsonValue" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instructions", "criteria"],
+          "properties": {
+            "type": { "const": "choice" },
+            "instructions": { "$ref": "#/$defs/JsonValue" },
+            "criteria": {
+              "type": "object",
+              "propertyNames": { "pattern": "^[A-Za-z0-9_.:/-]{1,64}$" },
+              "minProperties": 2,
+              "maxProperties": 255,
+              "additionalProperties": { "$ref": "#/$defs/JsonValue" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instructions", "criteria"],
+          "properties": {
+            "type": { "const": "score" },
+            "instructions": { "$ref": "#/$defs/JsonValue" },
+            "criteria": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 10,
+              "items": { "$ref": "#/$defs/JsonValue" }
+            }
+          }
+        }
+      ]
+    },
+    "DecisionWireRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "route", "model", "state", "questions", "timeoutMs"],
+      "properties": {
+        "slot": { "const": "decision" },
+        "route": { "type": "string", "maxLength": 128 },
+        "model": { "type": "string", "maxLength": 256 },
+        "state": { "$ref": "#/$defs/JsonValue" },
+        "questions": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "minProperties": 1,
+          "maxProperties": 16,
+          "additionalProperties": { "$ref": "#/$defs/DecisionQuestion" }
+        },
+        "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 2000 }
+      }
+    },
+    "DecisionWireAnswer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "noul"],
+          "properties": { "type": { "const": "noul" }, "noul": { "type": "number" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "choice", "probabilities", "confidence"],
+          "properties": {
+            "type": { "const": "choice" },
+            "choice": { "type": "string", "maxLength": 64 },
+            "probabilities": { "type": "object", "additionalProperties": { "type": "number" } },
+            "confidence": { "type": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "score", "legend", "probabilities", "confidence"],
+          "properties": {
+            "type": { "const": "score" },
+            "score": { "type": "number" },
+            "legend": { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } },
+            "probabilities": { "type": "object", "additionalProperties": { "type": "number" } },
+            "confidence": { "type": "number" }
+          }
+        }
+      ]
+    },
+    "DecisionWireResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["answers", "model", "route", "credits", "creditSource"],
+      "properties": {
+        "answers": { "type": "object", "additionalProperties": { "$ref": "#/$defs/DecisionWireAnswer" } },
+        "model": { "type": "string", "maxLength": 256 },
+        "route": { "type": "string", "maxLength": 128 },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "inputTokens": { "type": "integer", "minimum": 0 },
+            "outputTokens": { "type": "integer", "minimum": 0 },
+            "costUsd": { "type": "number", "minimum": 0 }
+          }
+        },
+        "credits": { "type": "number", "minimum": 0 },
+        "creditSource": { "enum": ["gateway", "estimated"] }
       }
     },
     "ProbeReport": {

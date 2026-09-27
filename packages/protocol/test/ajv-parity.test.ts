@@ -477,6 +477,11 @@ const MODEL_DEFS: Record<string, TSchema> = {
   RequestBody: ModelGen.RequestBody,
   ModelCost: ModelGen.ModelCost,
   ModelRecord: ModelGen.ModelRecord,
+  DecisionModelRecord: ModelGen.DecisionModelRecord,
+  DecisionQuestion: ModelGen.DecisionQuestion,
+  DecisionWireRequest: ModelGen.DecisionWireRequest,
+  DecisionWireAnswer: ModelGen.DecisionWireAnswer,
+  DecisionWireResult: ModelGen.DecisionWireResult,
   ContractStamp: ModelGen.ContractStamp,
   TokenCounts: ModelGen.TokenCounts,
   Timing: ModelGen.Timing,
@@ -3030,6 +3035,38 @@ const modelRecordOk = {
   thinkingReplay: 'native',
   contract_id: null,
 }
+const decisionModelOk = {
+  id: 'jev-1.13.0',
+  name: 'Jev 1.13.0',
+  api: 'typesafe-systemone',
+  route: 'jev',
+  baseUrl: 'https://api.typesafe.ai/v1',
+  kind: 'decision',
+  contextWindow: 64000,
+  cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+}
+const decisionRequestOk = {
+  slot: 'decision',
+  route: 'jev',
+  model: 'jev-1.13.0',
+  state: 's',
+  questions: { go: { type: 'noul', instructions: 'x' } },
+  timeoutMs: 1000,
+}
+const decisionAnswerOk = {
+  type: 'choice',
+  choice: 'infer',
+  probabilities: { infer: 0.9, stop: 0.1 },
+  confidence: 0.8,
+}
+const decisionResultOk = {
+  answers: { go: { type: 'noul', noul: 0.4 } },
+  model: 'jev-1.13.0',
+  route: 'jev',
+  usage: { inputTokens: 10, outputTokens: 1 },
+  credits: 0.00042,
+  creditSource: 'estimated',
+}
 const contractStampOk = {
   prompt_prefix_hash: null,
   tool_schema_hash: 'b'.repeat(64),
@@ -3171,6 +3208,63 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     ],
     note: 'hand-written; toolCallFormats is the anyOf of a const and a $ref, so a non-member is the negative that matters',
   },
+  DecisionModelRecord: {
+    valid: decisionModelOk,
+    invalid: [
+      { ...decisionModelOk, kind: undefined }, // missing required kind
+      { ...decisionModelOk, kind: 'chat' }, // const: decision only
+      { ...decisionModelOk, maxTokens: 1 }, // additionalProperties:false: no chat-only fields
+      { ...decisionModelOk, contextWindow: 0 }, // boundary: minimum:1
+      { ...decisionModelOk, id: rep(257) }, // boundary: maxLength:256
+    ],
+    note: 'hand-written; a decision record is closed, so a chat record cannot pass as one and the reverse',
+  },
+  DecisionQuestion: {
+    valid: { type: 'score', instructions: 'x', criteria: ['a', 'b'] },
+    invalid: [
+      { type: 'choice', instructions: 'x', criteria: { only: null } }, // boundary: minProperties:2
+      { type: 'choice', instructions: 'x', criteria: { 'a b': null, c: null } }, // propertyNames pattern
+      { type: 'score', instructions: 'x', criteria: Array(11).fill('l') }, // boundary: maxItems:10
+      { type: 'noul', instructions: 'x', criteria: { true: 'y' } }, // noul criteria needs both keys
+      { type: 'subset', instructions: 'x' }, // not one of the three primitives
+    ],
+    note: 'hand-written; the three branches are discriminated by type and each is closed',
+  },
+  DecisionWireRequest: {
+    valid: decisionRequestOk,
+    invalid: [
+      { ...decisionRequestOk, slot: 'primary' }, // const: decision only
+      { ...decisionRequestOk, timeoutMs: 99 }, // boundary: minimum:100
+      { ...decisionRequestOk, timeoutMs: 2001 }, // boundary: maximum:2000
+      { ...decisionRequestOk, questions: {} }, // boundary: minProperties:1
+      { ...decisionRequestOk, questions: { Go: { type: 'noul', instructions: 'x' } } }, // id pattern
+      { ...decisionRequestOk, model: undefined }, // missing required model
+      { ...decisionRequestOk, route: rep(129) }, // boundary: maxLength:128
+      { ...decisionRequestOk, fallbacks: [] }, // additionalProperties:false
+    ],
+    note: 'hand-written; route and model are filled per call from the current preset, like RequestBody',
+  },
+  DecisionWireAnswer: {
+    valid: decisionAnswerOk,
+    invalid: [
+      { type: 'noul', noul: 0.5, confidence: 0.9 }, // noul has no confidence
+      { ...decisionAnswerOk, probabilities: { infer: '0.9' } }, // probability values are numbers
+      { type: 'score', score: 1, probabilities: {}, confidence: 1 }, // missing required legend
+      { type: 'other' }, // not one of the three primitives
+    ],
+    note: 'hand-written; the valid shape only - the adapter passes vendor answers through unchecked',
+  },
+  DecisionWireResult: {
+    valid: decisionResultOk,
+    invalid: [
+      { ...decisionResultOk, creditSource: 'vendor' }, // enum
+      { ...decisionResultOk, credits: -1 }, // boundary: minimum:0
+      { ...decisionResultOk, route: undefined }, // missing required route
+      { ...decisionResultOk, usage: { inputTokens: -1 } }, // boundary: minimum:0
+      { ...decisionResultOk, model: rep(257) }, // boundary: maxLength:256
+    ],
+    note: 'hand-written; route, credits and creditSource are filled by the facade',
+  },
   ContractStamp: {
     valid: contractStampOk,
     invalid: [
@@ -3277,6 +3371,7 @@ const MODEL_SAMPLES: Record<string, Sample> = {
       { route: 'r', api: 'a', baseUrl: 'b', displayName: rep(129) }, // boundary: maxLength:128
       { route: 'r', api: 'a', baseUrl: 'b', credentialRef: 'env://AGNES_KEY' }, // pattern: secret:// only
       { route: 'r', api: 'a', baseUrl: 'b', apiKey: 'sk-x' }, // additionalProperties:false
+      { route: 'r', api: 'a', baseUrl: 'b', models: [{ ...decisionModelOk, maxTokens: 1 }] }, // a hybrid record matches neither branch
     ],
     note: 'hand-written; credentialRef is a reference, never a value, which the secret:// pattern enforces',
   },
@@ -3300,8 +3395,9 @@ const MODEL_SAMPLES: Record<string, Sample> = {
       { escalation: { route: 'r', model: 'm' } }, // every other slot is optional, but primary is not
       { primary: { route: 'r', model: 'm' }, planner: { route: 'r', model: 'm' } }, // additionalProperties:false
       { primary: { route: 'r' } }, // the target itself must be complete
+      { primary: { route: 'r', model: 'm' }, decision: { route: 'r' } }, // the decision target must be complete too
     ],
-    note: 'hand-written; primary is the one slot a table may not omit, and the key set is the seven slot names',
+    note: 'hand-written; primary is the one slot a table may not omit; the keys are the seven chat slots plus decision',
   },
   ProbeReport: {
     valid: probeReportOk,
@@ -4504,6 +4600,7 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
   ManagedPolicy: configSample('ManagedPolicy'),
   RouteDecl: MODEL_SAMPLES.RouteDecl as Sample,
   ModelRecord: MODEL_SAMPLES.ModelRecord as Sample,
+  DecisionModelRecord: MODEL_SAMPLES.DecisionModelRecord as Sample,
   ModelCost: MODEL_SAMPLES.ModelCost as Sample,
   DecodeRule: MODEL_SAMPLES.DecodeRule as Sample,
   SlotName: MODEL_SAMPLES.SlotName as Sample,
@@ -4613,6 +4710,7 @@ const ProfileDefs: Record<string, TSchema> = {
   JsonValue: ProfileGen.JsonValue,
   ModelCost: ProfileGen.ModelCost,
   ModelRecord: ProfileGen.ModelRecord,
+  DecisionModelRecord: ProfileGen.DecisionModelRecord,
   SlotName: ProfileGen.SlotName,
 }
 const LockfileDefs: Record<string, TSchema> = {

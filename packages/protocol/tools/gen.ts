@@ -244,7 +244,7 @@ const TARGETS: Array<{
     imports: [
       {
         from: 'schema/model.json',
-        defs: ['RouteDecl', 'ModelRecord', 'ModelCost', 'DecodeRule', 'SlotName'],
+        defs: ['RouteDecl', 'ModelRecord', 'DecisionModelRecord', 'ModelCost', 'DecodeRule', 'SlotName'],
       },
       { from: 'schema/session-v1.json', defs: ['JsonValue'] },
     ],

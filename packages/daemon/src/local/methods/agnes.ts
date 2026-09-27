@@ -1728,8 +1728,10 @@ export function registerAgnes(
           (route.models ?? []).map((model) => ({
             route: route.route,
             id: model.id,
-            ...(model.reasoning === undefined ? {} : { reasoning: model.reasoning }),
-            ...(model.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: model.thinkingLevelMap }),
+            ...('reasoning' in model ? { reasoning: model.reasoning } : {}),
+            ...('thinkingLevelMap' in model && model.thinkingLevelMap !== undefined
+              ? { thinkingLevelMap: model.thinkingLevelMap }
+              : {}),
           })),
         ),
       },

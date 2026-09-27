@@ -7,7 +7,7 @@ import { FakeAdapter, fakeModel, ScriptedProvider, stampFor } from '@agnes/ai/te
 import { presets as basePresets, seams as baseSeams } from '@agnes/base'
 import { operations as codeOperations, presets as codePresets, PRESET_NAMES } from '@agnes/code'
 import type { Operation, Verdict } from '@agnes/core'
-import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
+import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPlatform } from '../src/adapters/platform.js'
 import type { ProviderBuildOptions } from '../src/assemble/provider.js'
@@ -402,7 +402,9 @@ function wireProvider(
   const adapter = new FakeAdapter({
     id: 'wire',
     routes: declared,
-    models: Object.fromEntries(declared.map((r) => [r.route, r.models ?? []])),
+    models: Object.fromEntries(
+      declared.map((r) => [r.route, (r.models ?? []).filter((m): m is ModelRecord => !('kind' in m))]),
+    ),
     script: (req) => wireStep(f.script[Math.min(turn++, f.script.length - 1)] ?? {}, req, reasons),
   })
   return createProvider({

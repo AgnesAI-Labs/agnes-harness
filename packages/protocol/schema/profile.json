@@ -1037,6 +1037,9 @@
     "ModelRecord": {
       "$ref": "model.json#/$defs/ModelRecord"
     },
+    "DecisionModelRecord": {
+      "$ref": "model.json#/$defs/DecisionModelRecord"
+    },
     "SlotName": {
       "$ref": "model.json#/$defs/SlotName"
     },
