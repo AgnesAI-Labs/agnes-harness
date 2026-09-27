@@ -96,7 +96,7 @@ export class JevDecisionAdapter extends DecisionAdapter {
       if (this.#routes.has(decl.route))
         throw new AiSetupError('DUPLICATE_ROUTE', { route: decl.route, adapters: [this.id] })
       const models = (decl.models ?? []).map((m) => {
-        if (!isDecisionModelRecord(m) || m.route !== decl.route)
+        if (!isDecisionModelRecord(m) || m.route !== decl.route || m.api !== decl.api)
           throw new AiSetupError('ADAPTER_KIND', { route: decl.route, model: String(m.id) })
         return m
       })

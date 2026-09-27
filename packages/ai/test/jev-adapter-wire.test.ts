@@ -380,6 +380,12 @@ describe('construction', () => {
     const chat = { ...DIRECT.models?.[0], kind: undefined } as unknown as DecisionModelRecord
     expect(() => new JevDecisionAdapter({ routes: [{ ...DIRECT, models: [chat] }] })).toThrow(/ADAPTER_KIND/)
   })
+  it('refuses a record whose api differs from its route declaration', () => {
+    // The route picks the endpoint and the wire shape; a record claiming the other Jev api would be
+    // priced and listed as something the route never speaks.
+    const other = { ...DIRECT.models?.[0], api: 'openrouter-decisions' } as DecisionModelRecord
+    expect(() => new JevDecisionAdapter({ routes: [{ ...DIRECT, models: [other] }] })).toThrow(/ADAPTER_KIND/)
+  })
   it('declares each route with its credential reference', () => {
     const a = new JevDecisionAdapter({ routes: [DIRECT, RESOLD] })
     expect(a.routes()).toEqual(['jev', 'jev-openrouter'])
