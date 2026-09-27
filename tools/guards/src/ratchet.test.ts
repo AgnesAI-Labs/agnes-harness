@@ -1,3 +1,4 @@
+// UI-INTEGRATION-20260927: merged A/B/C lines (ui-refactor + ui-admin-pages); exact combined counts.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
 // PLUGIN-HELPER merge with b/main@8f2e20e7: daemon 25955, Host 38018, measured combined source.
@@ -208,8 +209,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  "packages/web-ui/src": 2610,
-  "packages/web-units/src": 4761,
+  'packages/web-ui/src': 4300,
+  'packages/web-units/src': 4814,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -362,7 +363,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines() on the merged tree: 1767, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
-  "packages/web/src/app": 1824,
+  'packages/web/src/app': 1825,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -379,7 +380,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/model-picker': 274,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
-  "packages/web/src/settings": 800,
+  'packages/web/src/settings': 800,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -392,7 +393,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  "packages/web/src/timeline": 741,
+  'packages/web/src/timeline': 745,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -903,7 +904,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 25024, exact, no spare (+4).
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
-  "packages/core/src": 25422,
+  'packages/core/src': 25422,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1980,7 +1981,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (13161) with the streaming-smoothness quick fixes (13313): the preview
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
-  "packages/web/src": 13922,
+  'packages/web/src': 13922,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2450,7 +2451,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // live invocation. Measured 38081, exact, no spare (+6).
   // Cancelling a child's creation also settles its execution state in the same SQLite statement.
   // Measured 38084, exact, no spare (+3).
-  "packages/host/src": 38099,
+  'packages/host/src': 38099,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
