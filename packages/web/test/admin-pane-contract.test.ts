@@ -102,7 +102,7 @@ it('the shared confirmation dialog exists in every host', () => {
 
 it('the Skill / MCP pane confirms through the shared dialog, not window.confirm', async () => {
   const source = readFileSync(
-    join(process.cwd(), 'packages', 'resource-control-web', 'src', 'admin.ts'),
+    join(process.cwd(), 'packages', 'resource-control-web', 'src', 'admin.tsx'),
     'utf8',
   )
   expect(source).not.toContain('window.confirm')
@@ -111,7 +111,7 @@ it('the Skill / MCP pane confirms through the shared dialog, not window.confirm'
 
 it('keeps embedded resource Tab ownership in the workbench host', () => {
   const source = readFileSync(
-    join(process.cwd(), 'packages', 'resource-control-web', 'src', 'admin.ts'),
+    join(process.cwd(), 'packages', 'resource-control-web', 'src', 'admin.tsx'),
     'utf8',
   )
   expect(source).toContain('embedded?: boolean')

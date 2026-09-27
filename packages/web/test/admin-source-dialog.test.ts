@@ -64,11 +64,19 @@ function openSourceDialog(): void {
   ;(document.getElementById('install-source') as HTMLButtonElement).click()
 }
 
+/** React 的 value tracker 会忽略「直接赋值」的字段变更：必须用原型原生 setter 写值再派发事件。 */
+function setNativeValue(element: HTMLInputElement | HTMLSelectElement, value: string): void {
+  const proto = element instanceof HTMLSelectElement ? HTMLSelectElement : HTMLInputElement
+  const setter = Object.getOwnPropertyDescriptor(proto.prototype, 'value')?.set
+  setter?.call(element, value)
+  element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }))
+}
+
 function submit(type: string, ref: string): void {
-  sourceType().value = type
-  sourceType().dispatchEvent(new Event('change', { bubbles: true }))
-  sourceRef().value = ref
-  ;(document.getElementById('source-form') as HTMLFormElement).requestSubmit()
+  setNativeValue(sourceType(), type)
+  setNativeValue(sourceRef(), ref)
+  // happy-dom 的 requestSubmit 触达不了 React 的委托 submit；提交走显式按钮回调。
+  document.querySelector<HTMLButtonElement>('#source-dialog .dialog-actions .primary-button')?.click()
 }
 
 afterEach(() => {
@@ -97,17 +105,15 @@ it('shows an example for the selected source type instead of the npm one', async
   openSourceDialog()
   const placeholder = () => sourceRef().placeholder
 
-  ;(document.getElementById('source-type-trigger') as HTMLButtonElement).click()
-  ;(document.getElementById('source-type-listbox-1') as HTMLElement).click()
+  // 组件层用原生 select（旧 select-picker 的触发器/listbox DOM 已随迁移移除）。
+  setNativeValue(sourceType(), 'file')
   expect(sourceType().value).toBe('file')
   expect(placeholder()).toMatch(/^file:\.\//)
 
-  sourceType().value = 'workspace'
-  sourceType().dispatchEvent(new Event('change', { bubbles: true }))
+  setNativeValue(sourceType(), 'workspace')
   expect(placeholder()).toMatch(/^workspace:extensions\//)
 
-  sourceType().value = 'npm'
-  sourceType().dispatchEvent(new Event('change', { bubbles: true }))
+  setNativeValue(sourceType(), 'npm')
   expect(placeholder()).toMatch(/^npm:/)
 })
 
