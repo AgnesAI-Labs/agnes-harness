@@ -208,9 +208,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  // W4c retains empty streaming assistant identity across recovery. Exact count.
-  'packages/web-ui/src': 1065,
-  'packages/web-units/src': 4761,
+  "packages/web-ui/src": 2152,
+  "packages/web-units/src": 4761,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -312,7 +311,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
   'packages/web/src/presentation': 116,
-  'packages/web/src/markdown': 446,
+  'packages/web/src/markdown': 48,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
   // machine is added to Web. SDK adds reconnect-start and pre-load permission registration.
@@ -363,12 +362,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines() on the merged tree: 1767, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
-  // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
-  // Daemon-restart recovery: the page probes its own bootstrap before reloading and keeps a visible
-  // manual retry after the automatic window. Measured 1811, exact, no spare (+28).
-  // Reload only into a new daemon address, recover after a failed first connection, resume on
-  // tab show, and a notice consistent with the recovery status. Measured 1824, exact (+13).
-  'packages/web/src/app': 1824,
+  "packages/web/src/app": 1824,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -398,7 +392,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  "packages/web/src/timeline": 739,
+  "packages/web/src/timeline": 741,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -559,9 +553,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // directly: 187, exact.
   // 2026-09-17: local packaging copies the fixed-Hermes MIT NOTICE into the transactional output;
   // SEA reuses that exact directory. Measured build-local total: 203; exact cap.
-  // 2026-09-26: match Web's shared React/UI vendor graph and ship Ant Design, tokens and
-  // conversation styles in local CLI output. Measured with countLines(): 269, exact cap.
-  'packages/cli/tools/build-local': 269,
+  // W5a merges pinned XMarkdown CSS and ships its MIT license with the local Web assets.
+  // Measured with countLines(): 287, exact cap.
+  'packages/cli/tools/build-local': 287,
   // The PM5 bootstrap fallback retains the existing scoped owner/data-dir contract when a selected
   // Profile has not yet been materialized. The final recovery retry admits only an explicit
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility

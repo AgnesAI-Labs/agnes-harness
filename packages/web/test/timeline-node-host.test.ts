@@ -6,6 +6,7 @@ import { SlotRegistry } from '@agnes/web-client'
 import { act, createElement, useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountTranscriptRegion } from '../src/region-slots.js'
+import { costDetails, costSummary } from '../src/usage.js'
 
 const contexts: Context[] = []
 const mounts: Array<ReturnType<typeof mountTranscriptRegion>> = []
@@ -688,4 +689,72 @@ describe('W4a opt-in transcript node host', () => {
     expect(transcript.scrollTop).toBe(0)
     expect(button.hidden).toBe(true)
   })
+})
+
+it('preserves complete React cost details, focus and order through the opt-in timeline and resets session state', async () => {
+  const { registry, transcript, mount } = await setup()
+  const cost: Extract<UINode, { kind: 'cost' }> = {
+    kind: 'cost',
+    id: 'cost',
+    seq: 3,
+    source: 'estimated',
+    purpose: 'inference',
+    tokens: { input: 1234, output: 20, cacheRead: 10, cacheWrite: 0, reasoning: 5 },
+    billing: { usdMicros: 125, source: 'estimated', subscription: false },
+    credits: 0.25,
+    model: 'model',
+    timing: { ttftMs: 0, durationMs: 2000 },
+  }
+  const running = turn({ nodeIds: ['user', 'assistant', 'cost'] })
+  await act(async () => mount.render([user, say('assistant', 2), cost], [running]))
+  const article = item(transcript, 'cost')
+  const details = article?.querySelector('details')
+  const summary = article?.querySelector('summary')
+  if (!details || !summary) throw new Error('missing cost disclosure')
+  details.open = true
+  summary.focus()
+  const final = {
+    ...cost,
+    source: 'gateway' as const,
+    interrupted: true,
+    model: '<svg onload=alert(1)> **literal**',
+    billing: { usdMicros: 0, source: 'gateway' as const, subscription: false },
+    credits: 0,
+  }
+  const completed = { ...running, status: 'completed' as const, finalAssistantId: 'assistant' }
+  for (const next of [final, { ...final }]) {
+    await act(async () => mount.render([user, say('assistant', 2, 'final answer'), next], [completed]))
+    expect(item(transcript, 'cost')).toBe(article)
+    expect(article?.querySelector('details')).toBe(details)
+    expect(article?.querySelector('summary')).toBe(summary)
+    expect(details.open).toBe(true)
+    expect(document.activeElement).toBe(summary)
+    expect(summary.textContent).toBe(costSummary(next))
+    expect(
+      Array.from(article?.querySelectorAll('dt') ?? []).map((term) => [
+        term.textContent,
+        term.nextElementSibling?.textContent,
+      ]),
+    ).toEqual(costDetails(next))
+    expect(article?.querySelector('svg, strong, img')).toBeNull()
+    expect(transcript.querySelectorAll('[data-node-id="cost"]')).toHaveLength(1)
+    expect(
+      Array.from(transcript.querySelectorAll('.turn-process-body [data-node-id]')).map((el) =>
+        el.getAttribute('data-node-id'),
+      ),
+    ).toEqual(['cost'])
+    expect(item(transcript, 'assistant')?.textContent).toContain('final answer')
+  }
+  await act(async () => mount.render([user, say('assistant', 2, 'final answer')], [completed]))
+  expect(details.isConnected).toBe(false)
+  await act(async () => {
+    registry.setSession('session-b')
+    mount.reset()
+    mount.render([cost])
+  })
+  const fresh = item(transcript, 'cost')?.querySelector('details')
+  expect(fresh).not.toBe(details)
+  expect(fresh?.open).toBe(false)
+  await act(async () => mount.dispose())
+  expect(fresh?.isConnected).toBe(false)
 })

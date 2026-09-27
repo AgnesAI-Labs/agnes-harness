@@ -207,6 +207,24 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
       expect(body).not.toContain('__AGNES_CSP_NONCE__')
       const policy = document.headers.get('content-security-policy') ?? ''
       expect(policy).toContain(`'nonce-${nonce}'`)
+      const directives = Object.fromEntries(
+        policy.split(';').map((part) => {
+          const [name, ...values] = part.trim().split(/\s+/)
+          return [name, values]
+        }),
+      )
+      if (new URL(document.url).pathname === '/') {
+        expect(directives['img-src']).toEqual(["'self'", 'blob:'])
+        expect(directives['frame-src']).toEqual(["'self'", 'blob:'])
+      } else {
+        expect(directives['img-src']).toBeUndefined()
+        expect(directives['frame-src']).toBeUndefined()
+        expect(policy).not.toContain('blob:')
+      }
+      expect(directives['default-src']).toEqual(["'self'"])
+      expect(directives['script-src']).toEqual(["'self'"])
+      expect(directives['style-src']).toEqual(["'self'", `'nonce-${nonce}'`])
+
       expect(policy).not.toContain("'unsafe-inline'")
       nonces.push(nonce as string)
     }

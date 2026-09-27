@@ -25,7 +25,7 @@ import type { RosterSource } from './client-modules/reconcile.js'
 import { bindSlotCardContext } from './client-modules/timeline-slot.js'
 import type { ComposerView } from './composer.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
-import { createComputerUseStatusController } from './computer-use.js'
+import { createComputerUsePaneController } from './computer-use-pane.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
   APPROVAL_SEARCH_PAGES,
@@ -193,6 +193,8 @@ const rosterSource: RosterSource = {
 // 时间线卡片的按包认领（WC9）：fill.extId 命中注册项归属包的名册 extIds 才认领。
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
+const computerUseStatus = createComputerUsePaneController(client)
+addEventListener('pagehide', () => computerUseStatus.dispose(), { once: true })
 const clientModules = await startClientModules({
   agnes: client,
   clientServiceCaller: async (module, sessionId, service, input) => {
@@ -295,6 +297,7 @@ const clientModules = await startClientModules({
   rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
   settingsPaneContainer: document.getElementById('config') ?? undefined,
   settings: {
+    computerUse: computerUseStatus.render(),
     onChange: ({ pane, tab }) => {
       if (pane === 'model') void settings.open()
       else if (pane === 'plugin') void openAdminPane('plugin')
@@ -1632,8 +1635,6 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
   }
 }
 
-const computerUseStatus = createComputerUseStatusController(client)
-addEventListener('pagehide', () => computerUseStatus.dispose(), { once: true })
 function handleComposerWorkspace(): void {
   run(async () => {
     if (!draftingNew) await beginNewDraft()

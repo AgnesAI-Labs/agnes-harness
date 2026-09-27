@@ -14,11 +14,16 @@ it('builds local web assets with the shared platform vendor modules', async () =
     const app = await readFile(join(output, 'app.js'), 'utf8')
     const html = await readFile(join(output, 'index.html'), 'utf8')
     const antdVendor = await readFile(join(output, 'vendor', 'antd.js'), 'utf8')
+    const markdownVendor = await readFile(join(output, 'vendor', 'assistant-ui.js'), 'utf8')
+    const markdownLicense = await readFile(join(output, 'THIRD-PARTY-NOTICES/x-markdown.txt'), 'utf8')
+    expect(markdownLicense).toContain('Copyright (c) 2015-present Ant UED')
     expect(app).toMatch(/from\s+["']react["']/)
     expect(app).toMatch(/from\s+["']antd["']/)
     expect(app).toMatch(/from\s+["']@agnes\/web-ui\/assistant-ui["']/)
     expect(html).toContain('"react": "/vendor/react.js"')
     expect(antdVendor.includes('Copyright (c) Meta Platforms, Inc. and affiliates.')).toBe(true)
+    expect(markdownVendor).toContain('x-markdown')
+    expect(markdownVendor).not.toContain('Dynamic require of "react" is not supported')
 
     for (const entry of [
       'react.js',
@@ -53,6 +58,10 @@ it('builds local web assets with the shared platform vendor modules', async () =
       'utf8',
     )
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain(conversationCss.trim())
+    expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.x-markdown')
+    expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.x-markdown-dark')
+    expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.conversation-markdown')
+    await expect(readFile(join(output, 'vendor/assistant-ui.css'), 'utf8')).rejects.toThrow()
   } finally {
     await rm(output, { recursive: true, force: true })
   }

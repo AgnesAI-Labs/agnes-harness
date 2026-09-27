@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.34.5",
-  "engines": { "node": ">=24.10" },
+  "engines": {
+    "node": ">=24.10"
+  },
   "scripts": {
     "test": "vitest run --maxWorkers=1",
     "build": "node build.mjs",

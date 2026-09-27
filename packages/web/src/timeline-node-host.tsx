@@ -32,11 +32,12 @@ export interface TimelineNodeHostProps {
   locale?: LocaleService
   resources?: ClientResourceService
   onFork?: (turn: UITurn) => Promise<void>
+  markdownRenderer?: 'legacy' | 'xmarkdown'
 }
 
 /** The opt-in transcript root is the sole owner of every node article and history control. */
 export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostProps>(function TimelineNodeHost(
-  { registry, claim, newContentButton, session, locale, resources, onFork },
+  { registry, claim, newContentButton, session, locale, resources, onFork, markdownRenderer },
   ref,
 ) {
   const content = useRef<HTMLDivElement>(null)
@@ -190,6 +191,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
         <AssistantRuntimeProvider runtime={runtime}>
           <WebConversationMessages
             registry={registry}
+            {...(markdownRenderer ? { markdownRenderer } : {})}
             {...(projection.turns ? { turns: projection.turns } : {})}
             visibleNodeIds={projection.nodes.map((node) => node.id)}
             {...(onFork ? { onFork } : {})}

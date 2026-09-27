@@ -9,6 +9,11 @@ export {
 } from './regions.js'
 export { SettingsAccountDialog } from './settings-account-dialog.js'
 export { SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
+export {
+  SettingsComputerUse,
+  type SettingsComputerUseActions,
+  type SettingsComputerUseView,
+} from './settings-computer-use.js'
 export { SettingsModelPane } from './settings-model-pane.js'
 export {
   mountSettingsSelectOptions,

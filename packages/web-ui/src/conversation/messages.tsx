@@ -1,6 +1,8 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import { useThread } from '@assistant-ui/react'
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ConversationCost } from './cost.js'
+import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
 
 type AssistantNode = Extract<UINode, { kind: 'assistant' }>
@@ -8,12 +10,18 @@ type ToolNode = Extract<UINode, { kind: 'tool' }>
 type CostNode = Extract<UINode, { kind: 'cost' }>
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
+export interface ConversationMarkdownState {
+  nodeId: string
+  streaming: boolean
+  turnStatus?: UITurn['status'] | undefined
+}
+
 export interface ConversationMessagesProps {
   turns?: readonly UITurn[]
   /** Optional snapshot gate when a host supplies turns and messages through separate subscriptions. */
   visibleNodeIds?: readonly string[]
   renderTurnActions?: (turn: UITurn, finalText: string, settled: boolean) => ReactNode
-  renderMarkdown?: (text: string, part: 'thinking' | 'body') => ReactNode
+  renderMarkdown?: (text: string, part: 'thinking' | 'body', state?: ConversationMarkdownState) => ReactNode
   renderTool?: (node: ToolNode) => ReactNode
   renderCost?: (node: CostNode) => ReactNode
   renderSlot?: (node: Extract<UINode, { kind: 'slot' }>) => ReactNode
@@ -61,21 +69,27 @@ function UserMessage({ node }: { node: Extract<UINode, { kind: 'user' }> }) {
 
 function AssistantMessage({
   node,
+  state,
   renderMarkdown,
   hideThinking = false,
+  thinkingHost,
 }: {
   node: AssistantNode
+  state: ConversationMarkdownState
   renderMarkdown?: ConversationMessagesProps['renderMarkdown']
   hideThinking?: boolean
+  thinkingHost?: RefObject<HTMLDivElement> | undefined
 }) {
-  const active = Boolean(node.thinking?.trim()) && node.streaming === true && node.text.trim() === ''
+  const active = Boolean(node.thinking?.trim()) && state.streaming && node.text.trim() === ''
   const wasActive = useRef(active)
   const initiallyActive = useRef(active)
   const disclosure = useRef<HTMLDetailsElement>(null)
+  const shownActive = useInteractionSnapshot(disclosure, active)
+  const shownThinking = useInteractionSnapshot(disclosure, Boolean(node.thinking?.trim()))
   useLayoutEffect(() => {
-    if (disclosure.current && wasActive.current !== active) disclosure.current.open = active
-    wasActive.current = active
-  }, [active])
+    if (disclosure.current && wasActive.current !== shownActive) disclosure.current.open = shownActive
+    wasActive.current = shownActive
+  }, [shownActive])
   useLayoutEffect(() => {
     if (disclosure.current) disclosure.current.open = initiallyActive.current
   }, [])
@@ -85,15 +99,15 @@ function AssistantMessage({
     <>
       <p className="node-label">Agnes</p>
       {!hideThinking && (
-        <details ref={disclosure} className="thinking" hidden={!node.thinking?.trim()}>
+        <details ref={disclosure} className="thinking" hidden={!shownThinking}>
           <summary>深度思考</summary>
-          <div className="thinking-content markdown">
-            {renderMarkdown ? renderMarkdown(node.thinking ?? '', 'thinking') : node.thinking}
+          <div ref={thinkingHost} className="thinking-content markdown">
+            {renderMarkdown ? renderMarkdown(node.thinking ?? '', 'thinking', state) : node.thinking}
           </div>
         </details>
       )}
       <div key="body" className="node-body markdown">
-        {renderMarkdown ? renderMarkdown(body, 'body') : body}
+        {renderMarkdown ? renderMarkdown(body, 'body', state) : body}
       </div>
     </>
   )
@@ -137,43 +151,36 @@ function ToolMessage({ node }: { node: ToolNode }) {
   )
 }
 
-function CostMessage({ node }: { node: CostNode }) {
-  const source = (value: CostNode['source']) => (value === 'estimated' ? '估算' : '网关记录')
-  const credits = (value: number) => value.toFixed(8).replace(/\.?0+$/, '')
-  const amount = node.billing
-    ? `$${(node.billing.usdMicros / 1e6).toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00')}（${source(node.billing.source)}）`
-    : node.credits === undefined
-      ? '费用未提供'
-      : `${credits(node.credits)} credits（${source(node.source)}）`
-  const summary = [
-    ...(node.tokens ? [`输入 ${node.tokens.input}`, `输出 ${node.tokens.output}`] : []),
-    amount,
-    ...(node.interrupted ? ['已中断'] : []),
-  ].join(' · ')
-  return (
-    <details className="usage-disclosure call-usage">
-      <summary aria-label="查看本次调用用量明细">{summary}</summary>
-      <dl className="usage-grid">
-        <dt>Token 明细</dt>
-        <dd>{node.tokens ? `输入 ${node.tokens.input}，输出 ${node.tokens.output}` : '未提供'}</dd>
-        <dt>额度</dt>
-        <dd>
-          {node.credits === undefined
-            ? '未提供'
-            : `${credits(node.credits)} credits · ${source(node.source)}`}
-        </dd>
-      </dl>
-    </details>
-  )
+function markdownState(node: UINode, turnStatus?: UITurn['status']): ConversationMarkdownState {
+  return {
+    nodeId: node.id,
+    streaming:
+      node.kind === 'assistant' &&
+      node.streaming === true &&
+      (turnStatus === undefined || turnStatus === 'running' || turnStatus === 'waiting'),
+    ...(turnStatus ? { turnStatus } : {}),
+  }
 }
 
-function nativeContent(node: UINode, props: ConversationMessagesProps, hideThinking = false): ReactNode {
+function nativeContent(
+  node: UINode,
+  props: ConversationMessagesProps,
+  hideThinking = false,
+  turnStatus?: UITurn['status'],
+  thinkingHost?: RefObject<HTMLDivElement>,
+): ReactNode {
   switch (node.kind) {
     case 'user':
       return <UserMessage node={node} />
     case 'assistant':
       return (
-        <AssistantMessage node={node} renderMarkdown={props.renderMarkdown} hideThinking={hideThinking} />
+        <AssistantMessage
+          node={node}
+          state={markdownState(node, turnStatus)}
+          renderMarkdown={props.renderMarkdown}
+          hideThinking={hideThinking}
+          thinkingHost={thinkingHost}
+        />
       )
     case 'tool':
       return props.renderTool ? props.renderTool(node) : <ToolMessage node={node} />
@@ -188,7 +195,7 @@ function nativeContent(node: UINode, props: ConversationMessagesProps, hideThink
         </>
       )
     case 'cost':
-      return props.renderCost ? props.renderCost(node) : <CostMessage node={node} />
+      return props.renderCost ? props.renderCost(node) : <ConversationCost node={node} />
     case 'artifact':
       return (
         <>
@@ -234,19 +241,25 @@ function Message({
   node,
   props,
   hideThinking = false,
+  turnStatus,
+  thinkingHost,
 }: {
   node: UINode
   props: ConversationMessagesProps
   hideThinking?: boolean
+  turnStatus?: UITurn['status'] | undefined
+  thinkingHost?: RefObject<HTMLDivElement> | undefined
 }) {
-  const native = nativeContent(node, props, hideThinking)
+  const native = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
   return (
     <article
       className={`timeline-node ${node.kind}`}
       data-node-id={node.id}
       data-node-kind={node.kind}
       hidden={isEmptyStreamingAssistant(node)}
-      {...(node.kind === 'assistant' ? { 'data-streaming': String(node.streaming === true) } : {})}
+      {...(node.kind === 'assistant'
+        ? { 'data-streaming': String(markdownState(node, turnStatus).streaming) }
+        : {})}
       {...(node.kind === 'tool'
         ? { 'data-status': node.status, 'aria-label': `工具 ${node.name}：${toolLabels[node.status]}` }
         : {})}
@@ -280,10 +293,15 @@ function Turn({
   props: ConversationMessagesProps
 }) {
   const details = useRef<HTMLDetailsElement>(null)
+  const thinkingHost = useRef<HTMLDivElement>(null)
+  // Final thinking changes parents. Delay that handover while its existing subtree is in use.
+  const thinkingFinalId = useInteractionSnapshot(thinkingHost, turn.finalAssistantId)
   const preference = useRef<boolean | undefined>(undefined)
   const wasActive = useRef<boolean | undefined>(undefined)
   const active = !turn.endedAt && (turn.status === 'running' || turn.status === 'waiting')
   const processActive = turn.status === 'running' || turn.status === 'waiting'
+  const response = useRef<HTMLDivElement>(null)
+  const shownProcessActive = useInteractionSnapshot(response, processActive)
   const [processOpen, setProcessOpen] = useState(processActive)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -294,12 +312,12 @@ function Turn({
     return () => clearInterval(clock)
   }, [active])
   useLayoutEffect(() => {
-    if (wasActive.current && !processActive) preference.current = false
-    wasActive.current = processActive
-    const open = preference.current ?? processActive
+    if (wasActive.current && !shownProcessActive) preference.current = false
+    wasActive.current = shownProcessActive
+    const open = preference.current ?? shownProcessActive
     if (details.current) details.current.open = open
     setProcessOpen(open)
-  }, [processActive])
+  }, [shownProcessActive])
 
   const members = turn.nodeIds.flatMap((id) => {
     const node = nodes.get(id)
@@ -364,7 +382,7 @@ function Turn({
           <Message key={node.id} node={node} props={props} />
         ))}
       </div>
-      <div className="turn-response">
+      <div ref={response} className="turn-response">
         <span className="process-identity">
           <span className="process-avatar">
             <span className="agnes-mark process-avatar-mark" aria-hidden="true" />
@@ -394,12 +412,18 @@ function Turn({
               </svg>
             </span>
           </summary>
-          {finalThinking && (
+          {finalThinking && thinkingFinalId === turn.finalAssistantId && (
             <div className="turn-process-body">
               <details className="thinking">
                 <summary>深度思考</summary>
                 <div className="thinking-content markdown">
-                  {props.renderMarkdown ? props.renderMarkdown(finalThinking, 'thinking') : finalThinking}
+                  {props.renderMarkdown
+                    ? props.renderMarkdown(finalThinking, 'thinking', {
+                        nodeId: finalNode?.id ?? '',
+                        streaming: finalNode ? markdownState(finalNode, turn.status).streaming : false,
+                        turnStatus: turn.status,
+                      })
+                    : finalThinking}
                 </div>
               </details>
             </div>
@@ -415,7 +439,15 @@ function Turn({
                 className={final ? 'turn-final' : attention ? 'turn-attention' : 'turn-process-body'}
                 hidden={isEmptyStreamingAssistant(node) || (!final && !attention && !processOpen)}
               >
-                <Message node={node} props={props} hideThinking={final} />
+                <Message
+                  node={node}
+                  props={props}
+                  hideThinking={final && thinkingFinalId === turn.finalAssistantId}
+                  turnStatus={turn.status}
+                  thinkingHost={
+                    node.id === (turn.finalAssistantId ?? latestStreaming?.id) ? thinkingHost : undefined
+                  }
+                />
               </div>
             )
           })}
@@ -469,7 +501,7 @@ export function ConversationMessages(props: ConversationMessagesProps) {
         const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
         const node = custom?.node
         return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
-          <Message key={message.id} node={node} props={props} />
+          <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
         ) : null
       })}
     </section>
