@@ -929,7 +929,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Decision models kept apart from chat models: a shared credentialed adapter base, a separate
   // decision adapter kind and registry, the Jev adapter and the facade's decide. Measured 4429,
   // exact, no spare (+594).
-  'packages/ai/src': 4429,
+  // A decision route may not reuse a chat route's name. Measured 4432, exact, no spare (+3).
+  'packages/ai/src': 4432,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1146,7 +1147,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
   // Decision routes materialized, pinned and verified by kind, and handed to the decision adapter.
   // Measured 4266, exact, no spare (+73).
-  'packages/host/src/assemble': 4266,
+  // The default sentinel resolves chat keys to the first chat route and is refused on the decision
+  // key. Measured 4281, exact, no spare (+15).
+  'packages/host/src/assemble': 4281,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2479,7 +2482,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Migration measured 38099, exact, no spare.
   // Decision routes by kind, the model-switch slot-kind gate and skipped-replay diagnostics.
   // Measured 38217, exact, no spare (+118).
-  'packages/host/src': 38217,
+  // The default sentinel resolves by kind in route materialization. Measured 38232, exact, no
+  // spare (+15).
+  'packages/host/src': 38232,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
