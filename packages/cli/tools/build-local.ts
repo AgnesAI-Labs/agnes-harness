@@ -162,8 +162,8 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   await build({
     entryPoints: {
       app: join(repoPackages, 'web', 'src', 'app.ts'),
-      admin: join(repoPackages, 'web', 'src', 'admin', 'plugins', 'admin.ts'),
-      resources: join(repoPackages, 'resource-control-web', 'src', 'admin.ts'),
+      admin: join(repoPackages, 'web', 'src', 'admin', 'plugins', 'admin.tsx'),
+      resources: join(repoPackages, 'resource-control-web', 'src', 'admin.tsx'),
       // 独立页（/admin/plugins、/admin/resources）的宿主入口；设置弹窗里嵌的是上面三个模块。
       'admin-standalone': join(repoPackages, 'web', 'src', 'admin', 'plugins', 'standalone.ts'),
       'resources-standalone': join(repoPackages, 'resource-control-web', 'src', 'standalone.ts'),
