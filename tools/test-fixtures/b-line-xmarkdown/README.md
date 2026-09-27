@@ -107,6 +107,9 @@ only appended text, retained fragment/node identity and start time, completed ra
 selection and copy-focus backlog painted immediately, actual background-tab visibility and
 native reduced-motion emulation. It exercises the unchanged legacy timeline host through the
 new `markdown.ts` facade, static document-preview updates and accessible/aligned tables.
+Table geometry checks cover 720px and 280px hosts in both Markdown themes: rows fill the
+bordered region, short tables fit, and wide unbreakable content scrolls only in the focusable
+outer region. The same layout is checked in message body, thinking and the static facade.
 All attached Markdown text/fragments belong to React; detached parsed-output plans are committed
 only with the rendered tree. Limits are 65536 text characters, 4096 visited nodes, 32 active
 ranges and 128 intersections, with surrogate-pair checks. The production Markdown component

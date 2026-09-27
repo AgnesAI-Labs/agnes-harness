@@ -419,6 +419,60 @@ try {
         !document.querySelector('#static-preview .message-reveal-fragment'),
         'document preview stays static',
       )
+      const staticHost = document.querySelector('#static-preview')
+      const weather =
+        '| 项目 | 数据 |\n| :--- | ---: |\n| **当前气温** | 21°C（体感24°C） |\n| **天气状况** | 小雨 |\n| **湿度** | 94% |\n| **风速** | 5 km/h（南风） |\n| **气压** | 1010 hPa |\n| **能见度** | 10 km |'
+      const checkTable = (root, label, wide = false) => {
+        const region = root.querySelector('.table-scroll')
+        const grid = region.querySelector('table')
+        const rect = grid.getBoundingClientRect()
+        const row = grid.querySelector('tr').getBoundingClientRect()
+        expect(Math.abs(rect.width - row.width) < 2, `${label}: rows fill table without empty area`)
+        expect(getComputedStyle(grid).display === 'table', `${label}: native table layout`)
+        expect(grid.scrollWidth <= grid.clientWidth + 1, `${label}: table has no inner scrollbar`)
+        expect(region.tabIndex === 0, `${label}: scroll region remains focusable`)
+        expect(grid.querySelector('th').scope === 'col', `${label}: column header semantics`)
+        expect(
+          getComputedStyle(grid.querySelector('td:last-child')).textAlign === 'right',
+          `${label}: cell alignment retained`,
+        )
+        expect(
+          region.getBoundingClientRect().width <= root.getBoundingClientRect().width + 1,
+          `${label}: scroll region stays inside host`,
+        )
+        if (wide) {
+          expect(region.scrollWidth > region.clientWidth, `${label}: wide table overflows region`)
+          region.scrollLeft = region.scrollWidth
+          expect(region.scrollLeft > 0, `${label}: region can scroll to final column`)
+        } else {
+          expect(region.scrollWidth <= region.clientWidth + 1, `${label}: short table fits host`)
+          expect(Math.abs(rect.width - region.clientWidth) < 2, `${label}: table fills bordered region`)
+          expect(grid.querySelectorAll('tbody tr').length === 6, `${label}: all weather rows retained`)
+          expect(
+            grid.querySelector('td:last-child').textContent === '21°C（体感24°C）',
+            `${label}: value retained`,
+          )
+        }
+      }
+      for (const theme of ['light', 'dark']) {
+        for (const width of [720, 280]) {
+          staticHost.style.width = `${width}px`
+          api.staticRender(weather)
+          const markdown = staticHost.querySelector('.conversation-markdown')
+          markdown.classList.remove('x-markdown-light', 'x-markdown-dark')
+          markdown.classList.add(`x-markdown-${theme}`)
+          checkTable(staticHost, `static ${theme} ${width}`)
+          api.staticRender(`| key | value |\n| :--- | ---: |\n| a | ${'wide'.repeat(100)} |`)
+          const wideMarkdown = staticHost.querySelector('.conversation-markdown')
+          wideMarkdown.classList.remove('x-markdown-light', 'x-markdown-dark')
+          wideMarkdown.classList.add(`x-markdown-${theme}`)
+          checkTable(staticHost, `wide ${theme} ${width}`, true)
+        }
+      }
+      staticHost.style.removeProperty('width')
+      await api.render(weather, weather)
+      checkTable(body(), 'message body')
+      checkTable(document.querySelector('.thinking-content'), 'message thinking')
       await api.render('```ts\ncopy code\n```')
       const copy = body().querySelector('.code-copy')
       copy.focus()

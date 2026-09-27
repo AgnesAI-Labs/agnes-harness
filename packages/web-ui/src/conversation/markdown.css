@@ -41,11 +41,17 @@
   outline-offset: 2px;
 }
 
-.conversation-markdown table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  border-radius: var(--radius-md);
+/* Match the pinned core selector's specificity: the focusable .table-scroll owns overflow
+   and the border; the table must use native column layout inside it. */
+.conversation-markdown.x-markdown:not(.x-md-disable-all):not(.x-md-disable-table) table:not(pre) {
+  display: table;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .conversation-markdown .code-block {
