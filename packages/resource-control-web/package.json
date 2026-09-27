@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./admin": "./src/admin.ts",
+    "./admin": "./src/admin.tsx",
     "./api": "./src/api.ts",
     "./standalone": "./src/standalone.ts",
     "./types": "./src/types.ts"
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
-    "@agnes/web-admin-frame": "workspace:*"
+    "@agnes/web-ui": "workspace:*"
   },
   "license": "Apache-2.0"
 }

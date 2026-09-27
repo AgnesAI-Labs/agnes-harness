@@ -1,4 +1,4 @@
-import { positionPopover } from '@agnes/web-admin-frame'
+import { positionPopover } from '@agnes/web-ui'
 import type { SessionAction } from './session-actions.js'
 
 /**
