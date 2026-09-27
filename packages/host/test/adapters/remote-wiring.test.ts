@@ -16,6 +16,8 @@ const rmFault = { active: false }
 // a handle on a transport whose `openAdapters` call never returned, so there is no bundle to read it
 // off; nothing else in this file consults it.
 const created: RemoteTransport[] = []
+// guards-allow-platform: the loopback spawns remote POSIX commands on this machine.
+const posixIt = process.platform === 'win32' ? it.skip : it
 
 // Inject failures through the test vendor factory while retaining real loopback operations.
 vi.mock('../../src/adapters/remote-transport.js', async (importOriginal) => {
@@ -166,7 +168,7 @@ describe('remote assembly wiring (RA17)', () => {
     }
   })
 
-  it('still closes the transport when the remote workspace fails to close', async () => {
+  posixIt('still closes the transport when the remote workspace fails to close', async () => {
     const { dataDir, workspaceRoot } = paths()
     const profile = await remoteSeamProfile(dir)
     const bundle = await openAdapters(profile, {
@@ -212,7 +214,8 @@ describe('remote assembly wiring (RA17)', () => {
   it('takes the remote workspace root as given instead of resolving it against this machine', async () => {
     const { dataDir, workspaceRoot } = paths()
     const link = join(dir, 'link')
-    symlinkSync(workspaceRoot, link)
+    // guards-allow-platform: a junction is the same directory alias on Windows without Developer Mode.
+    symlinkSync(workspaceRoot, link, process.platform === 'win32' ? 'junction' : 'dir')
     // The fixture's own premise: locally, `link` and `workspaceRoot` are two names for one
     // directory, and realpathSync prefers the second. A remote-absolute path that also happens to
     // exist on this machine is exactly the case where the old local canonicalization silently
@@ -234,7 +237,8 @@ describe('remote assembly wiring (RA17)', () => {
   it('still resolves the workspace root against the local disk for a local deployment', async () => {
     const { dataDir, workspaceRoot } = paths()
     const link = join(dir, 'link')
-    symlinkSync(workspaceRoot, link)
+    // guards-allow-platform: a junction is the same directory alias on Windows without Developer Mode.
+    symlinkSync(workspaceRoot, link, process.platform === 'win32' ? 'junction' : 'dir')
     const profile = await localProfile()
     const bundle = await openAdapters(profile, { dataDir, workspaceRoot: link })
     try {
@@ -244,7 +248,7 @@ describe('remote assembly wiring (RA17)', () => {
     }
   })
 
-  it('folds case for a remote volume it has not measured, so a deny cannot be spelled around', async () => {
+  posixIt('folds case for a remote volume so deny cannot be bypassed', async () => {
     const { dataDir, workspaceRoot } = paths()
     // The file the bootstrap fence hard-denies really exists, the way it does in any checkout; the
     // probe below asks for the same directory under a different spelling.

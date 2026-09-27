@@ -383,3 +383,48 @@ describe('mcpServerExtension', () => {
     dispose()
   })
 })
+
+describe('mcpServerExtension: name collisions among a partly skipped catalog', () => {
+  const catalogConnection = (tools: readonly unknown[]): McpConnection => ({
+    ...fakeConnection('gh'),
+    async listTools() {
+      return tools as Awaited<ReturnType<McpConnection['listTools']>>
+    },
+  })
+  const run = async (tools: readonly unknown[]) => {
+    const events: { state: string }[] = []
+    const state = fakeApi()
+    const dispose = mcpServerExtension(cfg, {
+      catalogHub: fakeCatalogHub(),
+      connect: vi.fn(async () => catalogConnection(tools)),
+      policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 1 },
+      onStatus: (event) => events.push(event),
+    })(state.api) as () => void
+    await vi.waitFor(() => expect(events.length).toBeGreaterThan(1))
+    dispose()
+    return { events, tools: state.tools }
+  }
+
+  it('fails the server when two admitted tools map to one local name', async () => {
+    const { events, tools } = await run([
+      { name: 'a-b', description: 'first', inputSchema: { type: 'object' } },
+      { name: 'a_b', description: 'second', inputSchema: { type: 'object' } },
+    ])
+    expect(events[1]).toMatchObject({ state: 'unavailable' })
+    expect(tools).toEqual([])
+  })
+
+  it('does not count a skipped tool as a collision with an admitted one', async () => {
+    const { events, tools } = await run([
+      { name: 'a-b', description: 'l'.repeat(5000), inputSchema: { type: 'object' } },
+      { name: 'a_b', description: 'second', inputSchema: { type: 'object' } },
+    ])
+    expect(events[1]).toMatchObject({
+      state: 'ready',
+      toolCount: 1,
+      skippedToolCount: 1,
+      skippedTools: [{ code: 'description-too-long', name: 'a-b' }],
+    })
+    expect(tools.map((tool) => tool.name)).toEqual([`${mcpLocalToolPrefix('gh')}a_b`])
+  })
+})

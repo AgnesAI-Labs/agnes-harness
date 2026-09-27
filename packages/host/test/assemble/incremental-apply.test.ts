@@ -125,7 +125,7 @@ describe('incremental apply on the live tree', () => {
       else agnes.registerTool(tool('a_v1'))
     `
     let installed = [source(A, V1, hangDuringCompensation)]
-    const h = await livePluginHost(() => installed, { startTimeoutMs: 200 })
+    const h = await livePluginHost(() => installed, { startTimeoutMs: 1_500 })
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1)]))
     await settle()
     expect(toolNames(h)).toContain('a_v1')

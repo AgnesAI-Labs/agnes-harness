@@ -231,6 +231,7 @@ function mint(
     contract: { contract_id: null, parser_version: '1' },
     nonce: NONCE,
     envelopeCache: createEnvelopeCache(),
+    envelopeNonceFor: () => undefined,
     ...(kind === 'summary' ? { summaryPlan: { system: 'S', instruction: 'summarize' } } : {}),
   })
   return toProviderRequest(derived.request, { sessionKey: 'k', derivedHash: derived.header.derived_hash })

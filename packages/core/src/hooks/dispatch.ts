@@ -2,6 +2,7 @@ import { HOOK_TABLE, type HookEvent } from '@agnes/protocol'
 import { withTimeout } from '../effects/wrap.js'
 import type { Timers } from '../log/session-log.js'
 import { presetDefaults } from '../step/preset.js'
+import { HookBlockedError } from './block.js'
 
 export type DispatchFailure = { event: HookEvent; source: string; message: string }
 export type DispatchEntry<T> = {
@@ -11,7 +12,7 @@ export type DispatchEntry<T> = {
 }
 export type DispatchOutcome<T> =
   | { kind: 'ok'; results: Array<{ source: string; value: T }> }
-  | { kind: 'rejected'; source: string; reason: string }
+  | { kind: 'rejected'; source: string; reason: string; blocked?: HookBlockedError }
 
 type Options = {
   eventsPerTurn?: number
@@ -63,7 +64,7 @@ export class HookDispatch {
     entry: DispatchEntry<T>,
     signal: AbortSignal,
     replayed: boolean,
-  ): Promise<{ ok: true; value: T } | { ok: false }> {
+  ): Promise<{ ok: true; value: T } | { ok: false; blocked?: HookBlockedError }> {
     const controller = new AbortController()
     const abort = () => controller.abort()
     signal.addEventListener('abort', abort, { once: true })
@@ -84,7 +85,11 @@ export class HookDispatch {
           this.options.timers,
         ),
       }
-    } catch {
+    } catch (error) {
+      // Only the bundled prompt adapter may turn a context-first denial into a normal blocked turn.
+      // Timeouts, other extensions, and every other context exception retain the fail-closed path.
+      if (event === 'context' && entry.source === 'agnes/hooks-runner' && error instanceof HookBlockedError)
+        return { ok: false, blocked: error }
       // Error text can contain extension credentials or input; record only trusted attribution.
       this.report('hook-failed', event, entry.source)
       return { ok: false }
@@ -137,7 +142,12 @@ export class HookDispatch {
       const outcome = await this.call(event, entry, signal, replayed)
       if (!outcome.ok) {
         if (spec.failPolicy === 'closed')
-          return { kind: 'rejected', source: entry.source, reason: 'hook execution failed' }
+          return {
+            kind: 'rejected',
+            source: entry.source,
+            reason: 'hook execution failed',
+            ...(outcome.blocked ? { blocked: outcome.blocked } : {}),
+          }
         continue
       }
       try {

@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest'
 import { createLoopbackTransport } from '../../src/adapters/remote-transport.js'
 import { openRemoteWorkspace } from '../../src/adapters/remote-workspace.js'
 
-describe('remote workspace lifecycle', () => {
+// guards-allow-platform: the loopback invokes remote POSIX mkdir/rm on this machine.
+const onPosix = process.platform === 'win32' ? describe.skip : describe
+onPosix('remote workspace lifecycle', () => {
   it('creates a directory carrying the session key and removes it on close', async () => {
     const base = mkdtempSync(join(tmpdir(), 'agnes-rw-'))
     const t = createLoopbackTransport({ root: base })

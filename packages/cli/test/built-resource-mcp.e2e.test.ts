@@ -217,6 +217,22 @@ describe('built CLI managed MCP lifecycle', () => {
       daemonPids.add(owner.pid)
       return owner.pid as number
     }
+    const statusAfterStop = async () => {
+      let result = await invoke(['mcp', 'status', 'pager'], workspace, env)
+      // Windows CI observed a transient discovery-read failure immediately after daemon stop.
+      // Retry only that error; keep every other CLI failure visible to the assertion.
+      for (let attempt = 0; windows && attempt < 2 && result.code !== 0; attempt++) {
+        if (
+          !result.output.includes(
+            'local daemon discovery read failed: daemon discovery file is unavailable or invalid',
+          )
+        )
+          break
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        result = await invoke(['mcp', 'status', 'pager'], workspace, env)
+      }
+      return result
+    }
     const cleanup = async () => {
       await recordDaemon().catch(() => undefined)
       const stopped = await invoke(['daemon', 'stop'], workspace, env)
@@ -288,7 +304,7 @@ describe('built CLI managed MCP lifecycle', () => {
       expect(added.output).not.toContain(home)
       expect(added.output).not.toMatch(/(?:Error:|\bat\s+file:)/)
 
-      const expectedRevision = await revision(home)
+      let expectedRevision = await revision(home)
       await recordDaemon()
       const trust = ['mcp', 'trust', 'pager', 'trusted', '--expected-revision', expectedRevision]
       const enable = ['mcp', 'enable', 'pager', '--expected-revision', expectedRevision]
@@ -468,19 +484,25 @@ describe('built CLI managed MCP lifecycle', () => {
         expect((await calls()).at(-1)?.parentPid).not.toBe(beforeRestart?.parentPid)
         const oldDaemon = await recordDaemon()
         await client.close()
-        expect((await invoke(['daemon', 'stop'], workspace, env)).code).toBe(0)
+        const firstStop = await invoke(['daemon', 'stop'], workspace, env)
+        expect(firstStop.code, firstStop.output).toBe(0)
         await expect.poll(() => processAlive(oldDaemon)).toBe(false)
-        expect((await invoke(['mcp', 'status', 'pager'], workspace, env)).code).toBe(0)
+        const firstStatusAfterStop = await statusAfterStop()
+        expect(firstStatusAfterStop.code, firstStatusAfterStop.output).toBe(0)
         client = await connect()
-        expect(await recordDaemon()).not.toBe(oldDaemon)
+        const restartedDaemon = await recordDaemon()
+        expect(restartedDaemon).not.toBe(oldDaemon)
         await chat('daemonRestart', 'ok', 'VERIFIED', recovered.id)
         await control('disable')
         const count = (await calls()).length
         await chat('disabled', 'ok', 'ABSENT', firstSession.id)
         expect(await calls()).toHaveLength(count)
         await client.close()
-        expect((await invoke(['daemon', 'stop'], workspace, env)).code).toBe(0)
-        expect((await invoke(['mcp', 'status', 'pager'], workspace, env)).code).toBe(0)
+        const secondStop = await invoke(['daemon', 'stop'], workspace, env)
+        expect(secondStop.code, secondStop.output).toBe(0)
+        await expect.poll(() => processAlive(restartedDaemon)).toBe(false)
+        const secondStatusAfterStop = await statusAfterStop()
+        expect(secondStatusAfterStop.code, secondStatusAfterStop.output).toBe(0)
         client = await connect()
         await recordDaemon()
         await chat('disabledRestart', 'ok', 'ABSENT')
@@ -508,6 +530,8 @@ describe('built CLI managed MCP lifecycle', () => {
         )
         expect(neverTrusted.code, neverTrusted.output).toBe(0)
         expect(neverTrusted.output).not.toContain(providerCredential)
+        // Recreating the server with a different executable changes its definition revision on Windows.
+        expectedRevision = await revision(home)
         const enableNeverTrusted = await invoke(
           ['mcp', 'enable', 'pager', '--expected-revision', expectedRevision],
           workspace,

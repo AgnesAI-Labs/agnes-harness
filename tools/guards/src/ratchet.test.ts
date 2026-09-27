@@ -305,7 +305,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines(): 5611, exact cap, no spare.
   // PLUGIN-HELPER: measured 5763 -> 5770; approved feature scope, no spare allocation.
   // Windows stale-lock reclamation added 17 counted lines; exact baseline total, no spare.
-  'packages/package-manager/src': 5787,
+  // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
+  'packages/package-manager/src': 5796,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -397,7 +398,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 739,
+  "packages/web/src/timeline": 739,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -566,7 +567,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility
   // glue, not a second scope path or general profile-error bypass. Measured total: 214.
   'packages/daemon/src/supervisor/scope': 214,
-  'packages/daemon/src/supervisor/discovery': 430,
+  // 2026-09-26: bounded EBUSY retry preserves Windows discovery validation during concurrent boot.
+  // Measured 436, exact.
+  'packages/daemon/src/supervisor/discovery': 436,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/web/src/serve': 188,
   // 2026-09-12 unified App Server: shared configuration, authenticated RPC, session metadata
@@ -906,7 +909,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 25024, exact, no spare (+4).
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
-  'packages/core/src': 25026,
+  "packages/core/src": 25422,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -917,7 +920,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Task 14 live creditsPerUsd getter so the next pricing invocation reads the publisher snapshot.
   // Re-measured with countLines(): 3719, exact cap, no spare.
   // 2026-09-22 pi-ai 0.87.0: transcript normalization and two JSON boundary type imports; exact +3.
-  'packages/ai/src': 3834,
+  // Explicit short cache retention at the adapter boundary. Measured 3835, exact.
+  'packages/ai/src': 3835,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1319,7 +1323,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-23 third-party-transform-directive-hooks: PluginExtensionAPI.registerHook (type-only,
   // no runtime export) and its doc-comment update. +1 counted line; re-measured: 935, exact cap.
   // PLUGIN-HELPER: measured 936 -> 937; approved feature scope, no spare allocation.
-  'packages/extension-api/src': 937, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // checkToolDef bounds description length and parameter schema size and depth, with the three limits
+  // exported. Measured 978, exact, no spare (+41).
+  'packages/extension-api/src': 978, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1748,7 +1754,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // WIN-SHORT-NAMES: the Skill watcher hands fs.watch the native (long) spelling on Windows, since
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
-  'packages/daemon/src': 26495,
+  // Windows discovery retry adds six counted lines; measured 26501, exact.
+  'packages/daemon/src': 26501,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2076,12 +2083,16 @@ const INITIAL_CEILING: Record<string, number> = {
   // note. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: original catalog/name activation plus corrected row accounting;
   // removed catalog-dependent search helper. Measured 1008, exact; see clean-rewrite execution record.
-  'packages/base/extensions/skills': 1008,
+  // Skill description bounds: a per-entry catalog description cap and a count-only log when the
+  // catalog budget shortens or drops entries. Paged Skill/text reads measure 1121, exact.
+  'packages/base/extensions/skills': 1121,
   // T6.3 injects the Host-owned HTTP executor. CORDIS-C1b Task 6 adds workspace snapshot loading,
   // synchronous registration and descendant-drained command execution; exact measured total.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line, the AGH_DIR import for the
-  // workspace `.agh/hooks.json` fallback path. Re-measured with this guard's countLines(): 955, exact cap.
-  'packages/base/extensions/hooks-runner': 955,
+  // workspace `.agh/hooks.json` fallback path. Prompt-submit result memo adds 41 counted lines.
+  // Context-first exit 2 reuses the before_step prompt verdict. A workspace/policy-scoped memo
+  // prevents cross-sandbox verdict reuse. Re-measured 1007, exact cap.
+  'packages/base/extensions/hooks-runner': 1007,
   // MCP rows step 4 (design 2026-09-21-resource-rows-design.md §3.9, D122): agnes/mcp-client was
   // retired. Its shared MCP library (connect.ts, register.ts, index-table.ts, the McpServerConfig type)
   // moved here unchanged apart from import paths; the profile-preset reader (config.ts's
@@ -2095,7 +2106,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // switches to the shared helper. Re-measured with countLines(): 843, +12 net, exact cap, no spare.
   // Single-resident-worker P2: MCP rows report live status (catalog-info.ts, register.ts's onRemoteCatalog). Re-measured: 858, exact.
   // Single-resident-worker P2: catalogInfoOf now also returns the sorted tool list, reused by both a row's ready status and resourceMcpTools pagination. Re-measured: 872, exact.
-  'packages/base/src/mcp': 872,
+  // MCP catalog validation skips each tool the model cannot be shown and reports it in the catalog
+  // info instead of failing the server. Measured 932, exact, no spare (+60).
+  'packages/base/src/mcp': 932,
   // 2026-09-12: I7 Base Tasks 34/35 introduce the privacy extension. Its first slice measures 214
   // counted lines; the universal fixed extension ceiling remains 800 rather than growing Base.
   'packages/base/extensions/privacy': 800,
@@ -2441,7 +2454,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // live invocation. Measured 38081, exact, no spare (+6).
   // Cancelling a child's creation also settles its execution state in the same SQLite statement.
   // Measured 38084, exact, no spare (+3).
-  'packages/host/src': 38084,
+  "packages/host/src": 38099,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2659,12 +2672,13 @@ const extensionDirs = existsSync(extensionsDir)
 const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // CORDIS-C1b Task 6 adds invocation-scoped workspace hook snapshots and descendant draining.
   // 2026-09-21 AGH namespace rename, +1 approved by the user: the AGH_DIR import for the workspace
-  // `.agh/hooks.json` fallback path. Measured 955.
-  ['hooks-runner', 955],
+  // `.agh/hooks.json` fallback path. Context-first prompt denial and scoped memo; measured 1007.
+  ['hooks-runner', 1007],
   ['computer-use', 1786],
   // 2026-09-23 user-approved: dsh-compatible Skill discovery. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
-  ['skills', 1008],
+  // Skill description bounds and paged reads. Measured 1121, exact.
+  ['skills', 1121],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {

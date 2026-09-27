@@ -2,10 +2,20 @@ import { ToolRegistry } from '@agnes/core'
 import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
 import { validateAgainst } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { type McpConnection, registerRemoteToolsStrict } from '../../src/mcp/register.js'
+import { type McpConnection, type McpSkippedTool, registerRemoteToolsStrict } from '../../src/mcp/register.js'
+import { remoteInputSchema } from '../../src/mcp-json-schema.js'
 
 async function registered(inputSchema: Record<string, unknown>): Promise<ToolDef> {
+  const { tool } = await attempted(inputSchema)
+  if (!tool) throw new Error('tool was not registered')
+  return tool
+}
+
+async function attempted(
+  inputSchema: Record<string, unknown>,
+): Promise<{ tool?: ToolDef; skipped: readonly McpSkippedTool[] }> {
   let captured: ToolDef | undefined
+  let skipped: readonly McpSkippedTool[] = []
   const conn: McpConnection = {
     id: 'schema',
     listTools: async () => [{ name: 'probe', description: 'schema probe', inputSchema }],
@@ -19,14 +29,22 @@ async function registered(inputSchema: Record<string, unknown>): Promise<ToolDef
       return () => undefined
     },
   } as unknown as ExtensionAPI
-  await registerRemoteToolsStrict(api, conn, {
-    id: 'schema',
-    transport: 'stdio',
-    cmd: ['fixture'],
-    defer: true,
-  })
-  if (!captured) throw new Error('tool was not registered')
-  return captured
+  await registerRemoteToolsStrict(
+    api,
+    conn,
+    {
+      id: 'schema',
+      transport: 'stdio',
+      cmd: ['fixture'],
+      defer: true,
+    },
+    {
+      onRemoteCatalog: (_remote, reported) => {
+        skipped = reported
+      },
+    },
+  )
+  return captured ? { tool: captured, skipped } : { skipped }
 }
 
 describe('MCP remote schema in the core argument validator', () => {
@@ -96,8 +114,8 @@ describe('MCP remote schema in the core argument validator', () => {
     { type: 'object', $async: true },
     { type: 'object', $ref: 'https://example.invalid/private-schema' },
     { type: 'object', properties: { x: { type: 'string', format: 'unknown-format' } } },
-  ])('rejects invalid or unsupported schema before registration: %j', async (schema) => {
-    await expect(registered(schema)).rejects.toThrow('invalid synchronous MCP JSON schema')
+  ])('skips a tool with an invalid or unsupported schema before registration: %j', async (schema) => {
+    await expect(attempted(schema)).resolves.toEqual({ skipped: [{ code: 'invalid-schema', name: 'probe' }] })
   })
 })
 
@@ -130,8 +148,8 @@ it('enforces schema-valued extra properties and does not insert schema defaults'
   expect(validateAgainst(tool.parameters, { extra: false }).ok).toBe(false)
 })
 
-it('does not expose remote schema content in compiler errors', async () => {
-  await expect(
-    registered({ type: 'object', $ref: 'https://private.invalid/synthetic-secret' }),
-  ).rejects.toThrow(/^invalid synchronous MCP JSON schema$/)
+it('does not expose remote schema content in compiler errors or skip reports', async () => {
+  const schema = { type: 'object', $ref: 'https://private.invalid/synthetic-secret' }
+  expect(() => remoteInputSchema(schema)).toThrow(/^invalid synchronous MCP JSON schema$/)
+  expect(JSON.stringify(await attempted(schema))).not.toContain('synthetic-secret')
 })

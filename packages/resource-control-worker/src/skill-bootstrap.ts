@@ -11,6 +11,7 @@ import {
   workspaceSkillKey,
 } from '@agnes/base'
 import { AGH_DIR, validateResourceControlData } from '@agnes/protocol'
+import { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH } from '@agnes/resource-control-runtime'
 import { readSkillCache, writeSkillCache } from './skill-lkg-storage.js'
 
 export { discoverSkillRoot, skillRoots } from '@agnes/base'
@@ -63,6 +64,8 @@ const isFilesystemSkillRoot = (root: string): root is FilesystemSkillRoot =>
   skillRootKeys.includes(root as FilesystemSkillRoot)
 const isDigest = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
+const isBoundedText = (value: unknown, max: number): value is string =>
+  typeof value === 'string' && value.length >= 1 && value.length <= max
 function validLkgCandidate(value: unknown, rootKey: FilesystemSkillRoot): value is SkillCandidate {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const candidate = value as Record<string, unknown>
@@ -71,8 +74,8 @@ function validLkgCandidate(value: unknown, rootKey: FilesystemSkillRoot): value 
   const source = identity as Record<string, unknown>
   return (
     typeof candidate.resourceId === 'string' &&
-    typeof candidate.name === 'string' &&
-    typeof candidate.description === 'string' &&
+    isBoundedText(candidate.name, MAX_NAME_LENGTH) &&
+    isBoundedText(candidate.description, MAX_DESCRIPTION_LENGTH) &&
     typeof candidate.body === 'string' &&
     typeof candidate.priority === 'number' &&
     isDigest(candidate.revision) &&

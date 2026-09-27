@@ -44,10 +44,6 @@ export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentF
     agnesVersion: ctx.session.d.agnesVersion ?? '0.0.0',
     platform: `${os.os}-${os.arch}`,
     shell: deps.adapters.shell?.description ?? platform.shell(),
-    // The session's clock, not the wall clock: a session replayed or driven by a fixed clock must
-    // report the date that session is running at, and the two disagree in exactly those cases.
-    date: new Date(ctx.session.d.clock()).toISOString().slice(0, 10),
-    sessionKey: ctx.session.key,
   }
 }
 
@@ -55,6 +51,9 @@ export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentF
 export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeSnapshotFacts {
   const platform = deps.adapters.platform
   return {
+    // Use the session clock so replay and a fixed-clock test retain their original UTC date.
+    date: new Date(ctx.session.d.clock()).toISOString().slice(0, 10),
+    sessionKey: ctx.session.key,
     model: ctx.model.model,
     route: ctx.model.route,
     slot: ctx.model.slot,
@@ -84,8 +83,8 @@ export function createPromptOperation(deps: PromptDeps): Operation {
     /**
      * Splits what this package tells the model into two channels, not one: text that stays the same
      * for the whole session goes into promptSections, and the facts that can differ from one request
-     * to the next in the same session — model, preset, disclosure, cwd, enforcement, and whether the
-     * tool list is complete — go into runtimeContext, which core renders as a tail message rather
+     * to the next request or another session — date, session key, model, preset, disclosure, cwd,
+     * enforcement, and whether the tool list is complete — go into runtimeContext, rendered as a tail message rather
      * than folding into system. Disclosure decides which sections apply, and the rule throughout is
      * that a section is contributed only where what it describes is actually present — a prompt
      * naming a tool the model was not offered is worse than a prompt that is short.

@@ -4,7 +4,6 @@ packages:
   - { id: "@agnes/ai", source: "builtin" }
   - { id: "@agnes/base", source: "builtin" }
   - { id: "@agnes/code", source: "builtin" }
-  - { id: "test/hello", source: "file:hello-ext" }
 seams:
   approval: "@agnes/base"
   checkpoint: "@agnes/base"
@@ -50,5 +49,5 @@ cacheDir: "~/.agh/cache"
 limits: { "jobs.tick_ms": 1000, "shutdown.grace_ms": 10000 }
 presets: { default: standard, allowed: [standard] }
 policy:
-  capabilityCeiling: [tools, hooks, slots, events, resources, network, tools.invoke, artifacts, subagent]
+  capabilityCeiling: [tools, hooks, slots, events, resources, network, network.publicRead, tools.invoke, artifacts, subagent]
   workspacePackages: require-project-trust

@@ -37,6 +37,14 @@ pnpm exec vitest run tools/guards/src --maxWorkers=1
 
 Run affected package tests from the repository root; `pnpm test` runs the full suite. A focused test command must actually execute matching tests. For a complete local runtime, follow the [installation guide](docs/guide/install.md).
 
+## Tests
+
+Keep the suite growing only where behavior grows.
+
+- Prefer extending an existing test over adding a new one. For a bug fix, add the failing case to the nearest existing test (a new row in a parameterized table, or a stronger assertion) so it fails before the fix and passes after it. Add a new test or test file only for behavior no existing test covers.
+- Test observable behavior at the module's contract: inputs, outputs, persisted state, emitted events and errors. Do not pin internal call counts, private helpers, incidental ordering or exact byte layouts unless that layout is itself the contract, such as a wire format, a prompt prefix or the ledger.
+- Delete tests together with the code they cover. When a change makes a test redundant because its assertions are covered elsewhere, remove or merge it in the same change and name the covering test in the commit message.
+
 ## Engineering boundaries
 
 - Keep session facts and authorization decisions in their owning backend modules; clients render and request operations through supported interfaces.

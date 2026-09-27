@@ -1,4 +1,5 @@
-import { checkToolDef, type ToolDef, type ToolMeta } from '@agnes/extension-api'
+import { checkToolDef, TOOL_DESCRIPTION_MAX_LENGTH, type ToolDef, type ToolMeta } from '@agnes/extension-api'
+import { sanitize } from '../request/derive.js'
 import { canonicalJson, sha256Hex } from '../request/hash.js'
 import { CoreError, type Disposer, type Seq } from '../types.js'
 import { OwnedRegistryTable } from './owner-batch.js'
@@ -66,11 +67,15 @@ export class ToolRegistry {
     // register in the kernel, and the two gates would drift apart one key at a time.
     const check = checkToolDef(candidateDefinition)
     const name = (candidateDefinition as { name?: unknown }).name
-    if (!check.ok)
-      throw new CoreError('E_TOOLDEF_META', `${String(name)}: ${check.problems.join('; ')}`, {
-        name,
-        problems: check.problems,
-      })
+    // Derivation sanitizes the description before it ships, and the markers it writes are longer than
+    // what they replace; bounding the sanitized text too keeps every registered tool inside the wire.
+    const problems = !check.ok
+      ? check.problems
+      : sanitize(candidateDefinition.description).length > TOOL_DESCRIPTION_MAX_LENGTH
+        ? [`description: exceeds ${TOOL_DESCRIPTION_MAX_LENGTH} after sanitization`]
+        : []
+    if (problems.length)
+      throw new CoreError('E_TOOLDEF_META', `${String(name)}: ${problems.join('; ')}`, { name, problems })
     const registeredDefinition: ToolDef = {
       ...candidateDefinition,
       meta: snapshotToolMeta(candidateDefinition.meta),

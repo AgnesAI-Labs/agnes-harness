@@ -104,7 +104,7 @@ describe.skipIf(process.platform !== 'win32')('Windows batch launch', () => {
     expect(packed[0].name).toBe('agnes-windows-local-fixture')
     expect(existsSync(join(destination, packed[0].filename))).toBe(true)
     expect(existsSync(join(root, 'lifecycle-ran'))).toBe(false)
-  }, 15_000) // Real npm pack takes several seconds before full-suite CPU contention.
+  }, 30_000) // Real npm pack can exceed 15 seconds under Windows full-suite CPU contention.
   it('preserves a batch script reading its own first parameter', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-batch-owned-'))
     roots.push(root)

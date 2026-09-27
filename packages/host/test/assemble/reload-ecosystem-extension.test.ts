@@ -215,7 +215,7 @@ describe('Host.reloadEcosystemExtension', () => {
       expect(host.extensions().find((s) => s.id === 'agnes/skills')).toMatchObject({ loaded: true })
       const before = await host.createSession({ key: 'skills-before', cwd: dataDir })
       const catalog = async (session: typeof before) =>
-        (await session.hooks.context([])).map((section) => section.text).join('\n')
+        (await session.hooks.context([])).sections.map((section) => section.text).join('\n')
       expect(await catalog(before)).toContain('skill-a')
       expect(await catalog(before)).not.toContain('skill-e')
 
@@ -277,7 +277,7 @@ describe('Host.reloadEcosystemExtension', () => {
     try {
       expect(host.extensions().find((s) => s.id === 'agnes/skills')).toMatchObject({ loaded: true })
       const catalog = async (key: string) =>
-        (await (await host.createSession({ key, cwd: dataDir })).hooks.context([]))
+        (await (await host.createSession({ key, cwd: dataDir })).hooks.context([])).sections
           .map((section) => section.text)
           .join('\n')
       expect(await catalog('embedded-before')).toContain('skill-a')
@@ -313,7 +313,7 @@ describe('Host.reloadEcosystemExtension', () => {
       })
       const before = await host.createSession({ key: 'skills-before', cwd: dataDir })
       const catalog = async (session: typeof before) =>
-        (await session.hooks.context([])).map((section) => section.text).join('\n')
+        (await session.hooks.context([])).sections.map((section) => section.text).join('\n')
       expect(await catalog(before)).toContain('skill-a')
       expect(await catalog(before)).not.toContain('skill-b')
 

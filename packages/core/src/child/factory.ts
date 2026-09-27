@@ -460,7 +460,6 @@ export class KernelChildren implements ChildrenFactory {
             },
           }
         : parent.preset),
-      compaction: { ...parent.preset.compaction, enabled: false },
     }
     const store = requireChildControl(parent.d.log.storage)
     const cwd = (await store.lookupByKey(record.childKey))?.cwd ?? record.cwd ?? opts.cwd

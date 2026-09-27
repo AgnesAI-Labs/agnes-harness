@@ -1,3 +1,5 @@
+import { inspectRemoteCatalog } from '@agnes/base'
+import { validateResourceControlData } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { createExtensionActivationBarrier } from '../../src/ext-host/activation-barrier.js'
 import type { McpConnection, McpManagedInput, McpServerConfig } from '../../src/resources/mcp.js'
@@ -51,8 +53,10 @@ function setup(
     stdioPolicy: { allowedExecutables: ['mcp-github'] },
     ...(httpPolicy ? { httpPolicy } : {}),
     connect,
-    inspectCatalog: async (conn, config) =>
-      (await conn.listTools()).filter((tool) => config.allowedTools?.includes(tool.name) ?? false),
+    inspectCatalog: async (conn, config) => ({
+      tools: (await conn.listTools()).filter((tool) => config.allowedTools?.includes(tool.name) ?? false),
+      skipped: [],
+    }),
     apply,
     now: () => new Date('2026-09-14T00:00:00.000Z'),
   })
@@ -71,7 +75,7 @@ describe('MCP resource manager', () => {
         credentials,
         stdioPolicy: { allowedExecutables: [executable] },
         connect,
-        inspectCatalog: async () => [],
+        inspectCatalog: async () => ({ tools: [], skipped: [] }),
         apply: async () => undefined,
       })
       const item = managed({ definition: definition({ transport: { kind: 'stdio', executable, args: [] } }) })
@@ -101,7 +105,7 @@ describe('MCP resource manager', () => {
         credentials: async () => 'credential-test-marker\0',
         stdioPolicy: { allowedExecutables: [] },
         connect,
-        inspectCatalog: async () => [],
+        inspectCatalog: async () => ({ tools: [], skipped: [] }),
         apply: async () => undefined,
       })
       const item = managed({
@@ -142,7 +146,7 @@ describe('MCP resource manager', () => {
       },
       stdioPolicy: { allowedExecutables: [] },
       connect,
-      inspectCatalog: async () => [],
+      inspectCatalog: async () => ({ tools: [], skipped: [] }),
       apply: async () => undefined,
     })
     const item = managed({
@@ -179,7 +183,7 @@ describe('MCP resource manager', () => {
       connect: async () => candidate,
       inspectCatalog: async () => {
         controller.abort()
-        return candidate.listTools()
+        return { tools: await candidate.listTools(), skipped: [] }
       },
       apply,
     })
@@ -245,6 +249,41 @@ describe('MCP resource manager', () => {
     expect(manager.snapshot().list()).toEqual([])
     expect(transient.callTool).not.toHaveBeenCalled()
     expect(transient.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts a tool the model can be shown and skips one whose description is too long, with Base inspection', async () => {
+    const candidate = () => ({
+      ...connection(),
+      listTools: vi.fn(async () => [
+        { name: 'medium', description: 'm'.repeat(2000), inputSchema: { type: 'object' } },
+        { name: 'long', description: 'l'.repeat(5000), inputSchema: { type: 'object' } },
+      ]),
+    })
+    const apply = vi.fn(async () => undefined)
+    const manager = createMcpResourceManager({
+      barrier: createExtensionActivationBarrier(),
+      profile: 'local',
+      credentials: vi.fn(async () => 'credential-test-marker'),
+      stdioPolicy: { allowedExecutables: ['mcp-github'] },
+      connect: async () => candidate(),
+      inspectCatalog: inspectRemoteCatalog,
+      apply,
+      now: () => new Date('2026-09-14T00:00:00.000Z'),
+    })
+    const item = managed({ definition: definition({ toolPolicy: { allow: ['medium', 'long'] } }) })
+    manager.stage(item)
+    const input = { profile: 'local', serverId: 'github', definition: item.definition }
+    const tested = await manager.test({ ...input, signal: new AbortController().signal })
+    expect(tested).toEqual({ toolCount: 1, catalogRevision: expect.stringMatching(/^[a-f0-9]{64}$/) })
+    const result = await manager.reconcile({ ...input, enabled: true, signal: new AbortController().signal })
+    expect(result.status).toMatchObject({
+      connectionState: 'ready',
+      toolCount: 1,
+      skippedToolCount: 1,
+      skippedTools: [{ code: 'description-too-long', name: 'long' }],
+    })
+    expect(validateResourceControlData('McpStatus', result.status).ok).toBe(true)
+    expect(manager.tools('github')?.items.map((tool) => tool.name)).toEqual(['medium'])
   })
 
   it('binds resolved stdio credentials at connect time, applies filtered health catalog atomically, and swaps connections once', async () => {
@@ -494,7 +533,7 @@ describe('MCP catalog and observed generation', () => {
       credentials: async () => 'credential-test-marker',
       stdioPolicy: { allowedExecutables: ['mcp-github', 'mcp-gitlab'] },
       connect: async () => connections.shift() as McpConnection,
-      inspectCatalog: async (conn) => conn.listTools(),
+      inspectCatalog: async (conn) => ({ tools: await conn.listTools(), skipped: [] }),
       apply,
     })
     const github = managed()
@@ -556,7 +595,7 @@ describe('MCP catalog and observed generation', () => {
       credentials: async () => 'credential-test-marker',
       stdioPolicy: { allowedExecutables: ['mcp-github'] },
       connect: async () => live,
-      inspectCatalog: async (conn) => conn.listTools(),
+      inspectCatalog: async (conn) => ({ tools: await conn.listTools(), skipped: [] }),
       apply,
     })
     const item = managed()
@@ -740,7 +779,7 @@ describe('MCP catalog and observed generation', () => {
       credentials: async () => 'credential-test-marker',
       stdioPolicy: { allowedExecutables: ['mcp-github'] },
       connect: async () => live,
-      inspectCatalog: async (conn) => conn.listTools(),
+      inspectCatalog: async (conn) => ({ tools: await conn.listTools(), skipped: [] }),
       apply: async () => {
         if (rejectRetirement) throw new Error('extension reload failed')
       },

@@ -8,6 +8,7 @@
     { "path": "../../tsconfig.config.json" },
     { "path": "../package-manager" },
     { "path": "../protocol" },
-    { "path": "../resource-control-store" }
+    { "path": "../resource-control-store" },
+    { "path": "../resource-control-runtime" }
   ]
 }

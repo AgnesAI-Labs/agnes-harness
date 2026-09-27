@@ -39,7 +39,7 @@ function truncate(text: string, room: number): string {
 export function applyContextResults(
   base: PromptSection[],
   results: Array<{ ext: string; result: ContextResult }>,
-): { sections: PromptSection[]; overflow: Array<{ ext: string; bytes: number }> } {
+): { sections: PromptSection[]; additionalContext: string; overflow: Array<{ ext: string; bytes: number }> } {
   // Keyed by id so a participant returning only its own section leaves every other
   // already-contributed section untouched, instead of replacing the whole set.
   const sections = new Map<string, PromptSection>(
@@ -78,14 +78,11 @@ export function applyContextResults(
       bytes += utf8(part).length + separator
     }
   }
-  if (parts.length)
-    sections.set('additional-context', {
-      id: 'additional-context',
-      order: 199,
-      text: parts.join('\n'),
-      source: 'hooks',
-    })
-  return { sections: [...sections.values()].sort((a, b) => a.order - b.order), overflow }
+  return {
+    sections: [...sections.values()].sort((a, b) => a.order - b.order),
+    additionalContext: parts.join('\n'),
+    overflow,
+  }
 }
 
 export function applyBeforeRequestPatches(
