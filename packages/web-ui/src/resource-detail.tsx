@@ -9,7 +9,7 @@ export type ResourceDetailAction = Readonly<{
   title?: string
   /** 动作摘要：由壳统一走确认框 → 提交 → 轮询的链路。 */
   summary: string
-  run(): Promise<{ operationId: string }>
+  run(): Promise<{ operationId: string } | undefined>
 }>
 
 function FragmentedFact({ label, value }: { label: string; value: string }): JSX.Element {
@@ -110,9 +110,6 @@ export function SkillDetailContent({
             ['来源', `${skill.sourceIdentity.scope} · ${skill.sourceIdentity.rootKey}`],
             ['优先级', String(skill.priority)],
             ['解析', skill.resolution.winner ? '当前 winner' : '非 winner'],
-            ['信任', skill.trust === 'trusted' ? '已信任' : skill.trust === 'rejected' ? '已拒绝' : '未信任'],
-            ['期望状态', skill.desired === 'enabled' ? '已启用' : '已停用'],
-            ['实际状态', skill.actual],
             ['版本', skill.revision],
             ['目录状态', skill.stale ? '使用最近一次安全目录（刷新失败）' : '最新目录'],
           ]}
@@ -239,18 +236,7 @@ export function McpDetailContent({
         onClose={onClose}
       />
       <div className="admin-detail-scroll">
-        <FactList
-          className="resource-facts"
-          items={[
-            [
-              '信任',
-              server.trust === 'trusted' ? '已信任' : server.trust === 'rejected' ? '已拒绝' : '未信任',
-            ],
-            ['期望状态', server.desired === 'enabled' ? '已启用' : '已停用'],
-            ['实际状态', server.actual],
-            ['来源', server.source],
-          ]}
-        />
+        <FactList className="resource-facts" items={[['来源', server.source]]} />
         {server.lastSafeError && (
           <p className="resource-safe-error">
             {`${server.lastSafeError.code}：${server.lastSafeError.message}`}

@@ -6,7 +6,7 @@
 
 已有 MCP 工具服务时，可以把它接入 AGH 的任务流程。本页带你添加服务、审核工具范围、建立连接，并在配置变化后检查实际状态。
 
-定义、信任、期望启用状态与实际连接状态分别管理。完成下面流程并看到工具目录后，再验证具体调用。
+控制面仍分别管理定义、安全审核、期望启用状态与实际连接状态。Web 中只需审核定义并点击一次“启用”，AGH 会先完成安全校验，再继续启用。看到工具目录后，再验证具体调用。
 
 **当前源码：** 会话中的 MCP 服务以逐服务器 Host 行运行；OAuth 绑定仍会在该会话路径被跳过，详见[运行方式与版本](#运行方式与版本)。已执行的版本化验证见[验证记录](../maintainers/verification.zh-CN.md)。
 
@@ -29,7 +29,7 @@ node packages/cli/dist/local/agnes.mjs mcp add docs-tools --name docs-tools --ht
 node packages/cli/dist/local/agnes.mjs mcp get docs-tools
 ```
 
-创建默认为 untrusted、disabled。记录输出的当前 revision，审核地址/进程、凭据引用与工具范围后，交互确认：
+创建后默认停用。Web 中审核地址/进程、凭据引用与工具范围后直接点击“启用”，无需单独处理信任状态。开关跟随你的启用请求：请求过启用它就保持打开，连接或策略检查失败也照样开着，错误码和原因显示在同一行。关掉开关就是撤回启用请求，也是移除该服务的前置条件。命令行仍显式暴露底层审核与启用步骤，因此需要记录当前 revision 并依次执行：
 
 ```sh
 node packages/cli/dist/local/agnes.mjs mcp trust docs-tools --expected-revision REVISION

@@ -40,7 +40,6 @@ export function installedState(
   item: PackageInstalledDescriptor,
   effectiveActual: PackageInstalledDescriptor['actual'] = item.actual,
 ): string {
-  const trust = item.trusted ? '已信任' : '未信任'
   const desired = item.desired === 'enabled' ? '期望启用' : '期望停用'
   const actual: Record<PackageInstalledDescriptor['actual'], string> = {
     'not-running': '未运行',
@@ -51,7 +50,7 @@ export function installedState(
     unavailable: '不可用',
   }
   const cleanup = item.cleanupPending ? ' · 旧资源待清理' : ''
-  return `${trust} · ${desired} · ${actual[effectiveActual]}${cleanup}`
+  return `${desired} · ${actual[effectiveActual]}${cleanup}`
 }
 
 export function actualIdentity(item: PackageInstalledDescriptor): string {
@@ -99,8 +98,8 @@ export function operationName(operation: PackageOperation['operation']): string 
   return {
     inspect: '预览',
     install: '安装',
-    trust: '信任',
-    untrust: '撤销信任',
+    trust: '启用前校验',
+    untrust: '安全状态更新',
     enable: '启用',
     disable: '停用',
     update: '更新',

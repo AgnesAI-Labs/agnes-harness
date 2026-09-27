@@ -9,14 +9,12 @@ import type {
   RuntimePinReleaseResult,
 } from '@agnes/protocol'
 import {
-  actualIdentity,
   blockerText,
   ConfirmDialogContent,
   contributionText,
   type DetailActionSpec,
   DetailContent,
   hasPermission,
-  installedState,
   integrityLabel,
   mountRegion,
   OrphanPins,
@@ -26,13 +24,10 @@ import {
   RollbackActivationFacts,
   type RuntimeStateView,
   renderRegion,
-  runtimeStateLabel,
-  runtimeStateMessage,
   SourceDialogContent,
   sourceLabel,
   TrustConfirmationFacts,
   terminal,
-  UntrustConfirmationFacts,
   UpdateActivationFacts,
   unmountRegion,
 } from '@agnes/web-ui'
@@ -205,6 +200,7 @@ class PluginAdminPage {
   #operationModes = new Map<string, PreviewMode>()
   #operationPackages = new Map<string, string>()
   #operationTimers = new Map<string, number>()
+  #operationCompletions = new Map<string, (operation: PackageOperation) => Promise<void>>()
   #submittingPackages = new Set<string>()
   #sourceMode: PreviewMode = 'install'
   #sourcePackageId: string | undefined
@@ -504,7 +500,7 @@ class PluginAdminPage {
       previewMode: undefined,
     }
     this.setNotice(
-      mode === 'install' ? '正在安装。完成后仍需单独信任和启用。' : '正在更新，实际运行状态将由后台确认。',
+      mode === 'install' ? '正在安装。完成后可检查内容并直接启用。' : '正在更新，实际运行状态将由后台确认。',
       'state',
     )
     this.render()
@@ -586,6 +582,8 @@ class PluginAdminPage {
 
   async operationUpdated(operation: PackageOperation): Promise<void> {
     if (!terminal(operation)) return
+    const completion = this.#operationCompletions.get(operation.operationId)
+    this.#operationCompletions.delete(operation.operationId)
     const previewMode = this.#operationModes.get(operation.operationId)
     const packageId = operation.packageId ?? this.#operationPackages.get(operation.operationId)
     this.forgetOperation(operation.operationId)
@@ -637,6 +635,13 @@ class PluginAdminPage {
         installed === undefined || hasClientContribution(installed),
       )
     }
+    if (operation.state === 'completed' && completion) {
+      try {
+        await completion(operation)
+      } catch (error) {
+        this.showError(error)
+      }
+    }
   }
 
   openPreview(preview: PackagePreview, mode: PreviewMode): void {
@@ -648,10 +653,10 @@ class PluginAdminPage {
       title: `${mode === 'install' ? '安装预览' : '更新预览'} · ${preview.id}`,
       description:
         mode === 'install'
-          ? '请先审阅下方后台返回的完整性、能力、依赖和阻断信息。安装后仍会保持未信任和停用状态。'
+          ? '请先审阅下方后台返回的完整性、能力、依赖和阻断信息。安装后会保持停用，检查后可直接启用。'
           : combined
-            ? '将原子执行更新、目标信任和安全激活，并绑定当前安装与运行摘要。'
-            : '将按兼容模式更新为停用且未信任状态；后台未声明组合热更新能力，或当前摘要条件不完整。',
+            ? '将原子执行更新与安全激活，并绑定当前安装与运行摘要。'
+            : '将按兼容模式更新为停用状态；后台未声明组合热更新能力，或当前摘要条件不完整。',
       label: mode === 'install' ? '确认安装' : combined ? '确认更新并激活' : '确认更新（保持停用）',
       facts: combined ? (
         <UpdateActivationFacts installed={installed!} preview={preview} />
@@ -791,11 +796,16 @@ class PluginAdminPage {
     this.render()
   }
 
-  track(operationId: string, metadata: Readonly<{ mode?: PreviewMode; packageId?: string }> = {}): void {
+  track(
+    operationId: string,
+    metadata: Readonly<{ mode?: PreviewMode; packageId?: string }> = {},
+    completion?: (operation: PackageOperation) => Promise<void>,
+  ): void {
     const context = this.#state.context
     if (!context) return
     if (metadata.mode) this.#operationModes.set(operationId, metadata.mode)
     if (metadata.packageId) this.#operationPackages.set(operationId, metadata.packageId)
+    if (completion) this.#operationCompletions.set(operationId, completion)
     this.#detailDismissed = false
     this.#state = {
       ...this.#state,
@@ -934,13 +944,12 @@ class PluginAdminPage {
     const noticeKind = error ? 'error' : connection === 'connected' ? this.#noticeState.kind : 'state'
     this.#notice.textContent = noticeMessage
     this.#notice.dataset.kind = noticeKind
-    let treeText = ''
-    if (tree?.desiredDigest) {
-      const actual = tree.actual ? '实际已对齐' : '实际待资格化'
-      const pending = tree.pending ? ' · 资源更新保持待定' : ''
-      const diagnostic = tree.failurePhase && !tree.actual ? ` · 诊断阶段 ${tree.failurePhase}` : ''
-      treeText = `期望 ${tree.desiredDigest} · ${actual}${pending}${diagnostic}`
-    }
+    const treeText =
+      tree?.desiredDigest && !tree.actual
+        ? tree.failurePhase && !tree.pending
+          ? '插件资源更新失败，请重试；若问题持续，请查看后台日志。'
+          : '插件资源正在更新，请稍候。'
+        : ''
     this.#treeStatus.textContent = treeText
     this.#treeStatus.hidden = !treeText
     this.#orphanPinsHost.hidden = this.#orphanPinList.length === 0 && !this.#orphanPinFetchError
@@ -974,7 +983,9 @@ class PluginAdminPage {
         runtimeOf={(packageId) => asRuntimeView(this.runtimeState(packageId))}
         primaryActionOf={(item) => this.primaryAction(item)}
         switchDisabledOf={(installed) =>
-          !installed.trusted || !this.canEffect('packages.activate') || this.packageBusy(installed.id)
+          !this.canEffect('packages.activate') ||
+          (!installed.trusted && (!this.can('packages.trust') || !installed.capabilityHash)) ||
+          this.packageBusy(installed.id)
         }
         onOpen={(item) => this.selectItem(item)}
         onToggleDesired={(item, next) => void (next ? this.confirmEnable(item) : this.confirmDisable(item))}
@@ -1050,11 +1061,10 @@ class PluginAdminPage {
         '本浏览器会话实际注册槽位',
         actualSlotList.length ? actualSlotList.join('、') : '当前没有已注册的浏览器槽位',
       ])
-      facts.push(['实际版本与摘要', actualIdentity(item)])
-      facts.push(['实际状态原因', item.actualReason ?? '后台未报告'])
       const runtime = this.runtimeState(item.id)
-      facts.push(['浏览器 UI 状态', runtimeStateMessage(runtime)])
-      if (runtime?.error) facts.push(['浏览器 UI 原因', runtime.error.message])
+      const failureReason =
+        runtime?.error?.message ?? (item.actual === 'running' ? undefined : item.actualReason)
+      if (failureReason) facts.push(['失败原因', failureReason])
       facts.push(['旧资源清理', item.cleanupPending ? '尚未完成，后台会继续重试' : '无待清理状态'])
       facts.push([
         '已核验回滚目标',
@@ -1069,11 +1079,7 @@ class PluginAdminPage {
         heading={item.id}
         intro=""
         version={`版本 ${item.version}`}
-        stateText={
-          'trusted' in item
-            ? installedState(item, this.effectiveActual(item))
-            : `兼容性：${item.compatibility}`
-        }
+        stateText={'trusted' in item ? undefined : `兼容性：${item.compatibility}`}
         facts={facts}
         blockerSections={[
           {
@@ -1156,18 +1162,10 @@ class PluginAdminPage {
         className: 'secondary-button',
         disabled: !rollbackReady,
         title: rollbackReady
-          ? '将绑定已核验目标并原子执行回滚、信任和激活。'
+          ? '将绑定已核验目标并原子执行回滚与安全激活。'
           : '后台未声明组合回滚能力，或缺少目标、运行摘要及必要权限。',
         onClick: () => this.confirmRollback(installed),
       })
-      if (installed.trusted) {
-        specs.push({
-          label: '撤销信任并停用',
-          className: 'danger-button',
-          disabled: !this.canEffect('packages.trust') || !installed.capabilityHash || busy,
-          onClick: () => this.confirmUntrust(installed),
-        })
-      }
       specs.push({
         label: '卸载插件',
         className: 'danger-button',
@@ -1206,10 +1204,6 @@ class PluginAdminPage {
 
   surfaceLinks(packageId: string): readonly AdminSurfaceLink[] {
     return this.#state.surfaceLinks.filter((surface) => surface.packageId === packageId)
-  }
-
-  effectiveActual(item: PackageInstalledDescriptor): PackageInstalledDescriptor['actual'] {
-    return item.actual
   }
 
   runtimeState(packageId: string): PluginRuntimeState | undefined {
@@ -1349,15 +1343,7 @@ class PluginAdminPage {
         },
       }
     }
-    if (!installed.trusted) {
-      return {
-        label: '信任',
-        disabled:
-          !this.canEffect('packages.trust') || !installed.capabilityHash || this.packageBusy(installed.id),
-        run: () => this.confirmTrust(installed),
-      }
-    }
-    return installed.desired === 'enabled'
+    return installed.actual === 'running'
       ? {
           label: '请求停用',
           disabled: !this.canEffect('packages.activate') || this.packageBusy(installed.id),
@@ -1371,6 +1357,7 @@ class PluginAdminPage {
               : '请求启用',
           disabled:
             !this.canEffect('packages.activate') ||
+            (!installed.trusted && (!this.can('packages.trust') || !installed.capabilityHash)) ||
             this.packageBusy(installed.id) ||
             (hasFeature(this.#state.context, ADMIN_FEATURES.runtimeIdentity) &&
               this.activeIntegrity(installed) === undefined),
@@ -1443,58 +1430,6 @@ class PluginAdminPage {
     await this.loadCatalog()
   }
 
-  confirmTrust(item: PackageInstalledDescriptor): Promise<void> {
-    const capabilityHash = item.capabilityHash
-    if (!capabilityHash) {
-      this.showError({
-        code: 'E_PACKAGE_TRUST',
-        message: '缺少已确认的能力摘要，不能信任此版本。',
-      })
-      return Promise.resolve()
-    }
-    this.configureConfirm({
-      title: `信任 ${item.id}`,
-      description: '请核对下方完整性摘要、能力摘要哈希及已报告的贡献与能力字段。信任不会启用插件。',
-      label: '确认信任',
-      facts: <TrustConfirmationFacts item={item} />,
-      run: async () => {
-        const api = this.effectApi('packages.trust')
-        if (!api) return
-        const receipt = await this.submitPackage(item.id, () =>
-          api.trust(item.id, item.integrity, capabilityHash),
-        )
-        this.track(receipt.operationId, { packageId: item.id })
-      },
-    })
-    return Promise.resolve()
-  }
-
-  confirmUntrust(item: PackageInstalledDescriptor): void {
-    const capabilityHash = item.capabilityHash
-    if (!capabilityHash) {
-      this.showError({
-        code: 'E_PACKAGE_TRUST',
-        message: '缺少已确认的能力摘要，不能安全撤销信任。',
-      })
-      return
-    }
-    this.configureConfirm({
-      title: `撤销信任 ${item.id}`,
-      description:
-        '撤销信任会停用插件、清除其恢复与回滚候选，并撤回浏览器与后端运行行；它不会删除已安装的文件。',
-      label: '确认撤销信任',
-      facts: <UntrustConfirmationFacts item={item} />,
-      run: async () => {
-        const api = this.effectApi('packages.trust')
-        if (!api) return
-        const receipt = await this.submitPackage(item.id, () =>
-          api.untrust(item.id, item.integrity, capabilityHash),
-        )
-        this.track(receipt.operationId, { packageId: item.id })
-      },
-    })
-  }
-
   confirmEnable(item: PackageInstalledDescriptor): Promise<void> {
     if (
       hasFeature(this.#state.context, ADMIN_FEATURES.runtimeIdentity) &&
@@ -1506,33 +1441,69 @@ class PluginAdminPage {
       })
       return Promise.resolve()
     }
+    const capabilityHash = item.capabilityHash
+    if (!item.trusted && !capabilityHash) {
+      this.showError({
+        code: 'E_PACKAGE_TRUST',
+        message: '缺少已确认的能力摘要，不能安全启用此版本。',
+      })
+      return Promise.resolve()
+    }
     this.configureConfirm({
-      title: `请求启用 ${item.id}`,
-      description: '请求启用只提交期望状态；后台和浏览器 UI 状态确认后才显示已运行。',
-      label: '请求启用',
+      title: `启用 ${item.id}`,
+      description: item.trusted
+        ? '确认后将请求启用；后台和浏览器 UI 状态确认后才显示已运行。'
+        : '确认后将校验当前版本及能力范围，通过后继续启用；校验失败时不会启用。',
+      label: '确认启用',
+      facts: !item.trusted ? (
+        <TrustConfirmationFacts
+          item={item}
+          lead="启用前会绑定下列完整性摘要与能力摘要哈希，并校验当前版本及能力范围。"
+        />
+      ) : undefined,
       run: async () => {
-        const api = this.effectApi('packages.activate')
-        if (!api) return
-        const activeIntegrity = this.activeIntegrity(item)
-        if (
-          hasFeature(this.#state.context, ADMIN_FEATURES.runtimeIdentity) &&
-          activeIntegrity === undefined
-        ) {
-          this.showError({
-            code: 'RUNTIME_IDENTITY_UNKNOWN',
-            message: '实际运行摘要尚未确认，不能安全启用。',
-          })
+        if (item.trusted) {
+          await this.#submitEnable(item)
           return
         }
+        const api = this.effectApi('packages.trust')
+        if (!api || !this.canEffect('packages.activate') || !capabilityHash) return
         const receipt = await this.submitPackage(item.id, () =>
-          activeIntegrity === undefined
-            ? api.enable(item.id)
-            : api.enableChecked(item.id, item.integrity, activeIntegrity),
+          api.trust(item.id, item.integrity, capabilityHash),
         )
-        this.track(receipt.operationId, { packageId: item.id })
+        this.track(receipt.operationId, { packageId: item.id }, async () => {
+          const current = this.#state.installed.find((candidate) => candidate.id === item.id)
+          if (!current || current.integrity !== item.integrity || current.capabilityHash !== capabilityHash) {
+            this.showError({
+              code: 'E_PACKAGE_STATE',
+              message: '插件版本或能力范围已经变化，请确认最新内容后再次启用。',
+            })
+            return
+          }
+          await this.#submitEnable(current)
+        })
       },
     })
     return Promise.resolve()
+  }
+
+  async #submitEnable(item: PackageInstalledDescriptor): Promise<void> {
+    const api = this.effectApi('packages.activate')
+    if (!api) return
+    const activeIntegrity = this.activeIntegrity(item)
+    if (hasFeature(this.#state.context, ADMIN_FEATURES.runtimeIdentity) && activeIntegrity === undefined) {
+      this.showError({
+        code: 'RUNTIME_IDENTITY_UNKNOWN',
+        message: '实际运行摘要尚未确认，不能安全启用。',
+      })
+      return
+    }
+    const receipt = await this.submitPackage(item.id, () =>
+      activeIntegrity === undefined
+        ? api.enable(item.id)
+        : api.enableChecked(item.id, item.integrity, activeIntegrity),
+    )
+    this.track(receipt.operationId, { packageId: item.id })
   }
 
   confirmDisable(item: PackageInstalledDescriptor): Promise<void> {
@@ -1570,7 +1541,7 @@ class PluginAdminPage {
     if (!target || activeIntegrity === undefined || !this.supportsCompositeActivation()) return
     this.configureConfirm({
       title: `回滚 ${item.id} 到 ${target.version}`,
-      description: '后台会重新核验目标摘要，并原子执行回滚、目标信任和安全激活。',
+      description: '后台会重新核验目标摘要，并原子执行回滚与安全激活。',
       label: '确认回滚并激活',
       facts: <RollbackActivationFacts installed={item} />,
       run: async () => {
@@ -1711,6 +1682,7 @@ class PluginAdminPage {
       if (timer >= 0) window.clearTimeout(timer)
     }
     this.#operationTimers.clear()
+    this.#operationCompletions.clear()
     unmountRegion(this.#orphanPinsHost)
     unmountRegion(this.#listHost)
     unmountRegion(this.#detail)

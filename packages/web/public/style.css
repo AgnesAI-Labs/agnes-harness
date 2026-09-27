@@ -4241,10 +4241,10 @@ body.admin-page {
 .resource-layout {
   min-height: 0;
 }
-/* 技能与 MCP 列表与插件页同构：标题 / 状态灯 / Switch 三段固定轨道，
-   同一列表内各行因此严格对齐（此前状态区是长度不一的文字 chip，列宽只能靠估）。 */
+/* 技能与 MCP 列表与插件页同构：标题 / Switch 两段固定轨道，
+   同一列表内各行因此严格对齐（状态灯移除后不再是三段，留着空轨道会把 Switch 挤离右边缘）。 */
 .resource-row {
-  grid-template-columns: minmax(0, 1fr) 8.5rem 2.375rem;
+  grid-template-columns: minmax(0, 1fr) 2.375rem;
 }
 .resource-empty {
   padding: 1.25rem 0.75rem;
@@ -4368,10 +4368,7 @@ body.admin-page {
 }
 .plugin-row {
   display: grid;
-  /* 列宽写死，不用 auto：每一行都是独立 grid，auto 轨道会按各自内容算宽，
-     于是不同行的状态列起点各不相同（MCP 列表此前就是这样错位的）。
-     第三列是 Switch（固定宽），不再是长度不一的文字按钮。 */
-  grid-template-columns: minmax(0, 1fr) 8.5rem 2.375rem;
+  grid-template-columns: minmax(0, 1fr) 2.375rem;
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.5rem;
@@ -4393,9 +4390,8 @@ body.admin-page {
 .plugin-row[data-tab="discover"] {
   grid-template-columns: minmax(0, 1fr) 8.5rem auto;
 }
-.plugin-row[data-tab="installed"]:has(.plugin-row-trust),
 .plugin-row[data-tab="installed"]:has(.plugin-row-retry) {
-  grid-template-columns: minmax(0, 1fr) 8.5rem auto;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 .plugin-row:hover,
 .plugin-row:focus-visible {
@@ -4450,6 +4446,11 @@ body.admin-page {
 }
 .plugin-row-content .plugin-source {
   color: var(--agnes-text-tertiary);
+}
+.plugin-row-content .resource-safe-error {
+  margin-top: 0.5rem;
+  color: var(--agnes-status-danger-text);
+  white-space: normal;
 }
 .plugin-surface-links {
   display: flex;
@@ -4610,9 +4611,6 @@ body.admin-page {
 }
 .plugin-row-actions .secondary-button {
   min-width: 5.75rem;
-}
-.plugin-row-trust {
-  min-width: 4.5rem;
 }
 .plugin-empty {
   display: grid;
@@ -4976,7 +4974,7 @@ body.admin-page {
     min-height: 2.75rem;
   }
   .plugin-row {
-    grid-template-columns: minmax(0, 1fr) 7rem 2.375rem;
+    grid-template-columns: minmax(0, 1fr) 2.375rem;
     gap: 0.5rem;
     padding: 0.75rem;
   }

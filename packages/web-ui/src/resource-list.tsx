@@ -1,6 +1,6 @@
 import type { SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
 import type { JSX } from 'react'
-import { StateLights, StateSwitch, type StateTone } from './ui/state-lights.js'
+import { StateSwitch } from './ui/state-lights.js'
 
 export type ResourceItem = SkillDescriptor | import('@agnes/protocol').McpServerDescriptor
 
@@ -93,32 +93,12 @@ export function ResourceListContent({
   )
 }
 
-/** 语义色档与现有 token 契约保持一致；颜色不进 JS。 */
-const safeStatus = (value: string): string =>
-  (
-    ({
-      ready: '已就绪',
-      disabled: '已停用',
-      unavailable: '不可用',
-      degraded: '异常',
-      preparing: '准备中',
-      connecting: '连接中',
-      enabled: '已启用',
-      untrusted: '未信任',
-      trusted: '已信任',
-      rejected: '已拒绝',
-    }) as Record<string, string>
-  )[value] ?? value
-
-const trustTone = (trust: string): StateTone =>
-  trust === 'trusted' ? 'ok' : trust === 'rejected' ? 'bad' : 'warn'
-const desiredTone = (desired: string): StateTone => (desired === 'enabled' ? 'ok' : 'off')
-function actualTone(actual: string): StateTone {
-  if (actual === 'ready' || actual === 'enabled') return 'ok'
-  if (actual === 'disabled') return 'off'
-  if (actual === 'preparing' || actual === 'connecting' || actual === 'degraded') return 'warn'
-  if (actual === 'unavailable' || actual === 'rejected' || actual === 'failed') return 'bad'
-  return 'unknown'
+/**
+ * 开关表达用户意图（期望状态），与后端的 `desired` 同义：后端按它决定要不要继续拉起资源，
+ * 也按它决定资源能不能被移除。实际有没有跑起来由行内的失败原因说明，不靠开关冒充。
+ */
+export function resourceDesiredEnabled(item: ResourceItem): boolean {
+  return item.desired === 'enabled'
 }
 
 export const ROOT_FAILURE_COPY: Record<NonNullable<SkillRootStatus['diagnostic']>['code'], string> = {
@@ -218,7 +198,7 @@ export function ResourceRow({
   onOpen(item: ResourceItem): void
   onToggleDesired(item: ResourceItem, next: boolean): void
 }): JSX.Element {
-  const enabled = item.desired === 'enabled'
+  const enabled = resourceDesiredEnabled(item)
   return (
     <article
       className="plugin-row resource-row"
@@ -264,26 +244,10 @@ export function ResourceRow({
             </p>
           </>
         )}
+        {item.lastSafeError && (
+          <p className="resource-safe-error">{`${item.lastSafeError.code}：${item.lastSafeError.message}`}</p>
+        )}
       </div>
-      <StateLights
-        states={[
-          {
-            label: '信任',
-            value: safeStatus(item.trust),
-            tone: trustTone(item.trust),
-          },
-          {
-            label: '期望',
-            value: safeStatus(item.desired),
-            tone: desiredTone(item.desired),
-          },
-          {
-            label: '实际',
-            value: safeStatus(item.actual),
-            tone: actualTone(item.actual),
-          },
-        ]}
-      />
       <StateSwitch
         label={enabled ? `请求停用 ${itemName}` : `请求启用 ${itemName}`}
         checked={enabled}

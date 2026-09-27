@@ -1,8 +1,11 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode, UITurn } from '@agnes/protocol'
-import { createConversationProjectionStore, useConversationRuntime } from '@agnes/web-ui/assistant-ui'
-import { AssistantRuntimeProvider } from '@assistant-ui/react'
+import {
+  AssistantRuntimeProvider,
+  createConversationProjectionStore,
+  useConversationRuntime,
+} from '@agnes/web-ui/assistant-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
