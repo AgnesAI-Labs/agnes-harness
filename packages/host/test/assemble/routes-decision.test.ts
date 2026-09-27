@@ -69,6 +69,22 @@ describe('materializeRoutes with a decision key', () => {
     expect(r.detail.reason).toBe('slot-kind')
   })
 
+  // A route that declares records of both kinds passes the per-route check for either key, so only
+  // the pinned record's own kind can catch a pin of the wrong kind on it.
+  it.each([
+    ['a chat pin on the decision key', { primary: 'gw', decision: 'mix' }, { decision: 'c' }],
+    ['a decision pin on a chat key', { primary: 'mix' }, { primary: 'jev-1.13.0' }],
+  ])('refuses %s on a route that declares both kinds as slot-kind', (_name, route, id) => {
+    const MIX: RouteDecl = {
+      ...JEV,
+      route: 'mix',
+      models: [{ ...jevModel, route: 'mix' }, fakeModel({ id: 'c', route: 'mix' })],
+    }
+    const r = refusal(() => materializeRoutes(preset(route, id), profile([GW, MIX])))
+    expect(r.code).toBe('E_PRESET_UNRESOLVED')
+    expect(r.detail.reason).toBe('slot-kind')
+  })
+
   it('refuses a decision pin the decision route does not declare', () => {
     const r = refusal(() =>
       materializeRoutes(preset({ primary: 'gw', decision: 'jev' }, { decision: 'm' }), profile([GW, JEV])),
@@ -228,5 +244,7 @@ describe('buildProvider splits the declared routes by kind', () => {
     )
     await expect(failure).rejects.toMatchObject({ kind: 'unavailable' })
     await expect(failure).rejects.not.toMatchObject({ route: 'gw' })
+    // The failure names the route that was asked for, so no route was borrowed to answer it.
+    await expect(failure).rejects.toMatchObject({ code: 'NO_ADAPTER', route: 'not-a-configured-route' })
   })
 })

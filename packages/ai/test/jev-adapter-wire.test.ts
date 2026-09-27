@@ -219,6 +219,8 @@ describe('answers', () => {
   ])('passes %s through unchanged', async (_name, answers) => {
     const r = await harness([reply(200, { ...SUCCESS, answers })]).decide()
     expect(r.answers).toEqual(answers)
+    // toEqual ignores key order, so the serialized form pins that nothing was reordered either.
+    expect(JSON.stringify(r.answers)).toBe(JSON.stringify(answers))
   })
 
   it('passes an overflowing number through as Infinity', async () => {

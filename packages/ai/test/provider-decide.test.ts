@@ -301,7 +301,11 @@ describe('slot kind in the facade', () => {
 
   it('decide is unavailable for a route no registry serves or a model the route does not offer', async () => {
     const unserved = decideOf(build(ok()))({ ...REQ, route: 'nowhere' }, { signal: signal() })
-    await expect(unserved).rejects.toMatchObject({ kind: 'unavailable', code: 'NO_ADAPTER' })
+    await expect(unserved).rejects.toMatchObject({
+      kind: 'unavailable',
+      code: 'NO_ADAPTER',
+      route: 'nowhere',
+    })
     await expect(unserved).rejects.not.toThrow(/slot-kind/)
     await expect(
       decideOf(build(ok()))({ ...REQ, model: 'jev-9' }, { signal: signal() }),
