@@ -449,7 +449,29 @@
         "catalogRevision": { "oneOf": [{ "$ref": "#/$defs/Revision" }, { "type": "null" }] },
         "toolCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
         "observedAt": { "type": "string", "format": "date-time" },
-        "lastSafeError": { "$ref": "#/$defs/SafeError" }
+        "lastSafeError": { "$ref": "#/$defs/SafeError" },
+        "skippedToolCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "skippedTools": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "enum": [
+                  "malformed",
+                  "invalid-name",
+                  "invalid-schema",
+                  "schema-too-large",
+                  "description-too-long"
+                ]
+              },
+              "name": { "type": "string", "minLength": 1, "maxLength": 128 }
+            }
+          }
+        }
       }
     },
     "McpInputSchema": {
@@ -472,7 +494,7 @@
       "required": ["name", "description", "inputSchema"],
       "properties": {
         "name": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "description": { "type": "string", "maxLength": 1024 },
+        "description": { "type": "string", "maxLength": 4096 },
         "inputSchema": { "$ref": "#/$defs/McpInputSchema" }
       }
     },

@@ -45,11 +45,13 @@ export type McpRuntimeInput = Readonly<{ list(): readonly McpRuntimeServer[] }>
 export type McpConnectOptions = Readonly<{ signal: AbortSignal; timeoutMs: number }>
 export type McpInspectOptions = Readonly<{ signal: AbortSignal; timeoutMs: number }>
 export type McpConnector = (config: McpServerConfig, options: McpConnectOptions) => Promise<McpConnection>
+/** A remote tool the inspector left out of the catalog, with the reason code status reports. */
+export type McpSkippedTool = NonNullable<McpStatus['skippedTools']>[number]
 export type McpCatalogInspector = (
   connection: McpConnection,
   config: McpServerConfig,
   options: McpInspectOptions,
-) => Promise<readonly McpRemoteTool[]>
+) => Promise<Readonly<{ tools: readonly McpRemoteTool[]; skipped: readonly McpSkippedTool[] }>>
 export type McpStdioPolicy = Readonly<{ allowedExecutables: readonly string[] }>
 /**
  * Deployment capability only. A persisted/request definition cannot widen either switch.
@@ -68,7 +70,7 @@ import type {
   SafeError,
   TrustState,
 } from '@agnes/protocol'
-import { inspectJsonData, jcs } from '@agnes/protocol'
+import { inspectJsonData, jcs, validateResourceControlData } from '@agnes/protocol'
 import type { ResourceActivationBarrier, ResourceActivationPermit } from './activation.js'
 
 export type McpManagedInput = Readonly<{
@@ -165,6 +167,7 @@ type Active = Readonly<{
   config: McpServerConfig
   connection: McpConnection
   remote: readonly McpRemoteTool[]
+  skipped: readonly McpSkippedTool[]
   tools: readonly McpTool[]
   catalogRevision: string
 }>
@@ -194,7 +197,7 @@ type Options = Readonly<{
   inspectTimeoutMs?: number
   /** Base connectMcp (packages/base/src/mcp/connect.ts), injected by composition. */
   connect: McpConnector
-  /** Base inspectRemoteCatalog, injected with the same strict rules as registration. */
+  /** Base inspectRemoteCatalog: admits or skips each tool by the same rules as registration. */
   inspectCatalog: McpCatalogInspector
   /** Publishes the manager's generation at the barrier. The manager never claims this is automatic. */
   apply: McpApply
@@ -421,31 +424,25 @@ export async function resolvedConfig(
   })
 }
 
+// The injected inspector admits only tools of the protocol `McpTool` shape and reports the rest as
+// skipped, so a tool outside that shape here is an inspector fault rather than a tool to skip.
 function protocolTool(tool: McpRemoteTool): McpTool {
   const inspected = inspectJsonData(tool.inputSchema, 256 * 1024)
-  const schema = inspected.ok ? inspected.value : undefined
-  if (
-    typeof schema !== 'object' ||
-    schema === null ||
-    Array.isArray(schema) ||
-    schema.type !== 'object' ||
-    (schema.properties !== undefined &&
-      (typeof schema.properties !== 'object' ||
-        schema.properties === null ||
-        Array.isArray(schema.properties))) ||
-    (schema.required !== undefined &&
-      (!Array.isArray(schema.required) || schema.required.some((name) => typeof name !== 'string'))) ||
-    (schema.description !== undefined &&
-      (typeof schema.description !== 'string' || schema.description.length > 2048))
-  )
-    throw new Error('tool schema is not a protocol parameters schema')
-  if (tool.name.length > 128 || tool.description.length > 1024)
-    throw new Error('tool metadata exceeds protocol limits')
-  return Object.freeze({
+  const candidate = {
     name: tool.name,
     description: tool.description,
-    inputSchema: schema as McpTool['inputSchema'],
-  })
+    inputSchema: inspected.ok ? inspected.value : undefined,
+  }
+  if (!validateResourceControlData('McpTool', candidate).ok)
+    throw new Error('MCP catalog inspector admitted a tool outside the protocol shape')
+  return Object.freeze(candidate as McpTool)
+}
+
+/** The status sample of skipped tools: sorted by name, capped at the protocol's 32. */
+function reportedSkipped(skipped: readonly McpSkippedTool[]): McpSkippedTool[] {
+  return [...skipped]
+    .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '') || a.code.localeCompare(b.code))
+    .slice(0, 32)
 }
 
 function catalogFor(
@@ -512,6 +509,9 @@ export function createMcpResourceManager(options: Options) {
       toolCount: entry?.tools.length ?? 0,
       observedAt: seen?.at ?? new Date(0).toISOString(),
       ...(seen?.error ? { lastSafeError: seen.error } : {}),
+      ...(entry?.skipped.length
+        ? { skippedToolCount: entry.skipped.length, skippedTools: reportedSkipped(entry.skipped) }
+        : {}),
     })
   }
   const reportStatus = (serverId: string): void => {
@@ -601,17 +601,18 @@ export function createMcpResourceManager(options: Options) {
     try {
       connection = await options.connect(config, { signal, timeoutMs: options.connectTimeoutMs ?? 10_000 })
       if (signal.aborted) throw new DOMException('operation aborted', 'AbortError')
-      const remote = await options.inspectCatalog(connection, config, {
+      const inspected = await options.inspectCatalog(connection, config, {
         signal,
         timeoutMs: options.inspectTimeoutMs ?? 10_000,
       })
       if (signal.aborted) throw new DOMException('operation aborted', 'AbortError')
-      const catalog = catalogFor(remote)
+      const catalog = catalogFor(inspected.tools)
       return Object.freeze({
         input,
         config,
         connection,
-        remote,
+        remote: inspected.tools,
+        skipped: inspected.skipped,
         tools: catalog.tools,
         catalogRevision: catalog.catalogRevision,
       })

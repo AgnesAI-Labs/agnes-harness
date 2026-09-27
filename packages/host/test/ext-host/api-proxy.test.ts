@@ -506,6 +506,15 @@ it('captures tool identity once and does not expose accessor errors', () => {
   expect(() => setup().api.registerTool(bad)).toThrow('E_TOOLDEF_META: invalid tool definition')
 })
 
+it('names the tool and each problem when a definition fails the shared check', () => {
+  const h = setup()
+  const tool = { ...fixtureTool('fx_one'), description: 'd'.repeat(4097) }
+  expect(() => h.api.registerTool(tool)).toThrow(
+    'E_TOOLDEF_META: invalid tool definition fx_one: description: must be at most 4096 UTF-16 code units',
+  )
+  expect(h.tools.resolve('fx_one')).toBeUndefined()
+})
+
 it('projects an API-registered slot through the real core registry and projectUI', async () => {
   const h = setup(),
     slots = new SlotRegistry()

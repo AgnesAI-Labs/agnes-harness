@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { connectMcp, type McpConnection, type McpServerOpener, mcpLocalToolPrefix } from '@agnes/base'
 import type { Host } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
-import type { McpServerDefinitionInput } from '@agnes/protocol'
+import { type McpServerDefinitionInput, validateResourceControlData } from '@agnes/protocol'
 import {
   createWorkerMcpServerOpener,
   syncManagedMcpExecutableAllowlist,
@@ -677,5 +677,88 @@ describe('createMcpRowRuntime against real MCP servers (real-machine collision v
     expect(tool(host, dotName)?.source.trust).toBe('builtin')
     expect(tool(host, underscoreName)?.source.trust).toBe('builtin')
     expect(tool(host, dotName)?.source.source).not.toBe(tool(host, underscoreName)?.source.source)
+  })
+})
+
+/** Offers `tools` verbatim, whatever their shape, the way an arbitrary third-party server might. */
+function catalogOpener(tools: readonly unknown[]): McpServerOpener {
+  return {
+    async connect(definition) {
+      const connection: McpConnection = {
+        id: definition.serverId,
+        async listTools() {
+          return tools as Awaited<ReturnType<McpConnection['listTools']>>
+        },
+        async callTool() {
+          return { content: [{ type: 'text' as const, text: 'ok' }] }
+        },
+        async close() {},
+        onClose: () => () => undefined,
+        onToolsChanged: () => () => undefined,
+      }
+      return connection
+    },
+  }
+}
+
+describe('a session MCP row whose catalog holds tools the model cannot be shown', () => {
+  it('skips each bad tool with a code, keeps the server ready, and reports only what it registered', async () => {
+    const host = await testHost()
+    const statuses: unknown[] = []
+    const runtime = createMcpRowRuntime({
+      host,
+      opener: catalogOpener([
+        { name: 'ok', description: 'fine', inputSchema: { type: 'object' } },
+        { name: 'medium', description: 'm'.repeat(2000), inputSchema: { type: 'object' } },
+        { name: 'long', description: 'l'.repeat(5000), inputSchema: { type: 'object' } },
+        { name: 'grown', description: '<|x|>'.repeat(800), inputSchema: { type: 'object' } },
+        { name: 'badschema', description: 'bad schema', inputSchema: { type: 'object', properties: [] } },
+        { name: 'numeric', description: 42, inputSchema: { type: 'object' } },
+      ]),
+      onStatus: (_serverId, status) => statuses.push(status),
+    })
+    const revision = 'a'.repeat(64)
+    const result = await runtime.apply([entry('alpha', revision)])
+    const status = result.statuses.get('alpha')
+    expect(status).toMatchObject({
+      connectionState: 'ready',
+      toolCount: 2,
+      skippedToolCount: 4,
+      skippedTools: [
+        { code: 'invalid-schema', name: 'badschema' },
+        { code: 'description-too-long', name: 'grown' },
+        { code: 'description-too-long', name: 'long' },
+        { code: 'malformed', name: 'numeric' },
+      ],
+    })
+    // The daemon's worker observation accepts a report only when every status passes this check.
+    expect(validateResourceControlData('McpStatus', status).ok).toBe(true)
+    for (const seen of statuses) expect(validateResourceControlData('McpStatus', seen).ok).toBe(true)
+    const registered = host.kernel.tools
+      .list()
+      .map((t) => t.name)
+      .filter((name) => name.startsWith(ALPHA_PREFIX))
+      .sort()
+    expect(registered).toEqual([`${ALPHA_PREFIX}medium`, `${ALPHA_PREFIX}ok`])
+    const page = runtime.tools('alpha', revision)
+    expect(page?.items.map((t) => t.name)).toEqual(['medium', 'ok'])
+    expect(page?.items).toHaveLength(status?.toolCount ?? -1)
+    expect(page?.catalogRevision).toBe(status?.catalogRevision)
+  })
+
+  it('reports a connection failure with an empty message as a valid status', async () => {
+    const host = await testHost()
+    const failing: McpServerOpener = {
+      connect: async () => {
+        throw ''
+      },
+    }
+    const result = await createMcpRowRuntime({ host, opener: failing }).apply([entry('alpha')])
+    const status = result.statuses.get('alpha')
+    expect(status).toMatchObject({
+      connectionState: 'unavailable',
+      lastSafeError: { code: 'MCP_CONNECT_FAILED', message: 'MCP connection failed' },
+    })
+    expect(validateResourceControlData('McpStatus', status).ok).toBe(true)
   })
 })

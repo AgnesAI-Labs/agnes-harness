@@ -1,4 +1,4 @@
-import type { McpConnection } from '../../../src/mcp/register.js'
+import type { McpConnection, McpSkippedTool } from '../../../src/mcp/register.js'
 
 /**
  * Connection supervisor: owns one MCP server's live connection generation, keeps its registered
@@ -44,6 +44,9 @@ export type ConnectionStatusEvent =
        *  serves back. Same shape as `@agnes/base`'s `McpCatalogTool`, spelled out here rather than
        *  imported so this file stays independent of the catalog-info helper. */
       tools: readonly Readonly<{ name: string; description: string; inputSchema: Record<string, unknown> }>[]
+      /** Remote tools the catalog left out, and a bounded sample of them with their reason codes. */
+      skippedToolCount?: number
+      skippedTools?: readonly McpSkippedTool[]
     }>
   | Readonly<{
       state: 'unavailable'
@@ -80,6 +83,8 @@ export type ConnectionSupervisorDeps = Readonly<{
           description: string
           inputSchema: Record<string, unknown>
         }>[]
+        skippedToolCount?: number
+        skippedTools?: readonly McpSkippedTool[]
       }>,
     ) => void,
   ): Promise<() => void | Promise<void>>
