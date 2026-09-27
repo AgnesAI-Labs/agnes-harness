@@ -1,10 +1,11 @@
 import { basename, dirname } from 'node:path'
-import type { ContractStore, ManualRoute, Registry } from '@agnes/ai'
+import type { ContractStore, DecisionRegistry, ManualRoute, Registry } from '@agnes/ai'
 import {
   API_KEY_CREDENTIAL_REFS,
   createApiKeyProviderAdapters,
   createProvider,
   getSubscriptionProvider,
+  JevDecisionAdapter,
   loadContractStore,
   NullContractStore,
   PARSER_VERSION,
@@ -14,11 +15,12 @@ import {
 // Provider is protocol-owned and reaches this file through core's re-export.
 import type { Provider } from '@agnes/core'
 import type { Logger } from '@agnes/extension-api'
-import type { ModelRecord, RouteTable } from '@agnes/protocol'
+import type { JsonValue, ModelRecord, RouteTable } from '@agnes/protocol'
 import { subscriptionCredentials } from '../adapters/codex-credentials.js'
 import { createCredentialStore, isSubscriptionCredential } from '../adapters/credential-store.js'
 import { HostError } from '../errors.js'
 import type { ResolvedProfile } from '../profile/types.js'
+import { isDecisionModel } from './routes.js'
 
 /**
  * The profile limit that says what one credit is worth. `limits` is the deployment's own numeric
@@ -83,7 +85,7 @@ export async function buildProvider(
     creditsSnapshot?: () => unknown
   },
 ): Promise<{
-  provider: Provider & { registry?: Registry }
+  provider: Provider & { registry?: Registry; decisionRegistry?: DecisionRegistry }
   contractStore: ContractStore
   /** Built-in API-key routes actually fitted during this assembly. */
   preconfiguredRoutes: readonly string[]
@@ -92,6 +94,26 @@ export async function buildProvider(
   // model seam. A profile is configuration; it is wrong in the same way against either provider.
   const creditsPerUsd = () => readCreditsPerUsd(profile, deps.creditsSnapshot?.())
   const initialCredits = creditsPerUsd()
+  // Each declared route answers for one kind, told apart by its api. A route that mixes a decision
+  // api with chat records, or the reverse, has no safe reading and is refused before anything is
+  // built. The route stays in `detail`: account routes trip the message leak check.
+  const declared = profile.provider.routes ?? []
+  for (const r of declared) {
+    const decisionApi = JevDecisionAdapter.APIS.has(r.api)
+    const models = r.models ?? []
+    const mismatched = decisionApi
+      ? models.length === 0 || models.some((m) => !isDecisionModel(m))
+      : models.some(isDecisionModel)
+    if (mismatched)
+      throw new HostError(
+        'E_PRESET_UNRESOLVED',
+        'route-kind-mismatch: a route mixes decision and chat declarations',
+        {
+          detail: { reason: 'route-kind-mismatch', route: r.route, api: r.api },
+        },
+      )
+  }
+  const decisionRoutes = declared.filter((r) => JevDecisionAdapter.APIS.has(r.api))
   // Both halves of the same wiring, resolved once and handed to whichever provider is built below.
   // Without `log` the warning ai raises when no rate is declared has no sink at all, and without
   // `pricing` the rate the deployment did declare never arrives - which leaves the ledger's credits
@@ -126,16 +148,15 @@ export async function buildProvider(
       throw new HostError('E_DEP_MISSING', `third-party wire adapter packages are v0.x: ${id}`, {
         detail: { reason: 'adapter-package', id },
       })
-  const manualRoutes: ManualRoute[] = (profile.provider.routes ?? []).map((r) => ({
-    ...r,
-    models: (r.models ?? []).filter((m): m is ModelRecord => !('kind' in m)),
-  }))
+  const manualRoutes: ManualRoute[] = declared
+    .filter((r) => !JevDecisionAdapter.APIS.has(r.api))
+    .map((r) => ({ ...r, models: (r.models ?? []).filter((m): m is ModelRecord => !isDecisionModel(m)) }))
   // The first-run client has to be able to choose any reviewed API-key provider before it owns a
   // key for one.  Those routes are therefore fitted once, at Host assembly, and their credentials
   // may remain unbound until selected.  A profile-owned route keeps precedence if it deliberately
   // uses one of the same names: do not replace a deployment's endpoint/catalogue with the bundled
   // provider merely because their route labels happen to agree.
-  const claimed = new Set(manualRoutes.map((route) => route.route))
+  const claimed = new Set(declared.map((route) => route.route))
   const oauthCandidates = manualRoutes.filter((route) => {
     const provider = route.credentialRef?.split('/')[2]
     return !!provider && !!getSubscriptionProvider(provider) && route.credentialRef?.includes('/account-')
@@ -209,6 +230,21 @@ export async function buildProvider(
       ...apiKeyAdapters,
       ...oauthAdapters,
     ],
+    ...(decisionRoutes.length > 0
+      ? {
+          decision: {
+            adapters: [
+              new JevDecisionAdapter({
+                routes: decisionRoutes,
+                // Logger.warn takes protocol's JsonValue rather than an open Record; the adapter's
+                // detail bags are always plain JSON, so the boundary cast is the only thing needed.
+                log: { warn: (message, detail) => built.log.warn(message, detail as JsonValue | undefined) },
+              }),
+            ],
+            routes: decisionRoutes,
+          },
+        }
+      : {}),
     routes,
     secrets: deps.secrets,
     clock: deps.clock,

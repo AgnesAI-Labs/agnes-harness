@@ -1588,7 +1588,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // and a catalogue refresh after this point cannot change what it names.
     let providerFingerprint: string | null = null
     if (provider.registry && routes) {
-      verifyRoutes(routes, provider.registry)
+      verifyRoutes(routes, provider.registry, provider.decisionRegistry)
       providerFingerprint = provider.registry.fingerprint()
     }
     const models = modelRuntime({ provider, contractForModel })
@@ -1615,7 +1615,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             ...factory,
           })
         : unresolvedProviderAssembly()
-      if (built.provider.registry && nextRoutes) verifyRoutes(nextRoutes, built.provider.registry)
+      if (built.provider.registry && nextRoutes)
+        verifyRoutes(nextRoutes, built.provider.registry, built.provider.decisionRegistry)
       const nextContracts = bindModelContracts(
         built.provider.registry?.models() ?? built.provider.models(),
         built.contractStore,

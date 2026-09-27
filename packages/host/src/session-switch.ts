@@ -1,5 +1,6 @@
+import { CoreError } from '@agnes/core'
 import type { ThinkingLevel } from '@agnes/protocol'
-import { materializeRoutes, pinPresetRoutes } from './assemble/routes.js'
+import { DECISION_SLOT, isDecisionModel, materializeRoutes, pinPresetRoutes } from './assemble/routes.js'
 import type { Assembled } from './assemble.js'
 import { HostError } from './errors.js'
 import type { HostSession } from './host.js'
@@ -35,11 +36,36 @@ export function validatePresetSwitch(profile: ResolvedProfile, a: Assembled, nam
  * Both conditions have to hold together.
  *
  */
+/** What the profile says the target is: a decision model, a chat model, or nothing it declares. */
+function declaredModelKind(
+  profile: ResolvedProfile,
+  route: string,
+  model: string,
+): 'decision' | 'chat' | undefined {
+  const record = profile.provider.routes?.find((r) => r.route === route)?.models?.find((m) => m.id === model)
+  if (record === undefined) return undefined
+  return isDecisionModel(record) ? 'decision' : 'chat'
+}
+
+/** A switch whose slot and target are of different kinds. The decision slot is never switched. */
+function mixesKinds(profile: ResolvedProfile, slot: string, route: string, model: string): boolean {
+  return slot === DECISION_SLOT || declaredModelKind(profile, route, model) === 'decision'
+}
+
 export function validateModelSwitch(
   profile: ResolvedProfile,
   a: Assembled,
   sel: { slot: string; route: string; model: string; thinking?: ThinkingLevel },
 ): void {
+  // Kind first. A decision model is never in the chat catalogue, so without this a decision model
+  // on a chat slot would be refused as merely unpublished and the real mistake would go unnamed.
+  if (mixesKinds(profile, sel.slot, sel.route, sel.model))
+    throw new CoreError('E_MODEL_UNKNOWN', 'the requested slot and model are of different kinds', {
+      reason: 'slot-kind',
+      slot: sel.slot,
+      route: sel.route,
+      model: sel.model,
+    })
   const declared =
     (profile.provider.routes ?? []).some((route) => route.route === sel.route) ||
     a.preconfiguredRoutes.includes(sel.route)
@@ -77,6 +103,11 @@ export function validateModelSwitch(
  * Wired into `createSession` alone, not repeated by daemon or sdk: resuming the last switch is part
  * of what "open this session" means, not a separate recovery command a caller has to remember to
  * issue.
+ *
+ * The replay itself validates nothing about the current model catalogue - an account removed since
+ * the row was written must still let history open. The one thing it does check is kind: a row whose
+ * slot and target disagree on kind can only be a leftover from before that gate existed, and it is
+ * skipped rather than applied.
  */
 type ModelTo = { route: string; model: string; thinking?: ThinkingLevel }
 
@@ -107,6 +138,18 @@ export async function replaySwitchesOnOpen(
   for (const [slot, rec] of latestPerSlot) {
     if (lastPresetSeq !== undefined && rec.seq <= lastPresetSeq) continue
     const to = rec.to
+    // Such a row can only come from a ledger written before the kind gate existed. Opening history
+    // must not fail on it, so it is skipped, the slot keeps the preset's value, and the skip is said
+    // once per row and process.
+    if (mixesKinds(profile, slot, to.route, to.model)) {
+      await reportSkippedSwitch(session, rec.seq, {
+        slot,
+        route: to.route,
+        model: to.model,
+        reason: 'slot-kind',
+      })
+      continue
+    }
     if (
       session.preset.model.route[slot] === to.route &&
       session.preset.model.id[slot] === to.model &&
@@ -159,4 +202,21 @@ function applyModelInMemory(session: HostSession, slot: string, to: ModelTo): vo
     },
   }
   applyPresetInMemory(session, view)
+}
+
+const reportedSkips = new WeakMap<HostSession, Set<number>>()
+
+async function reportSkippedSwitch(
+  session: HostSession,
+  seq: number,
+  data: { slot: string; route: string; model: string; reason: 'slot-kind' },
+): Promise<void> {
+  let seen = reportedSkips.get(session)
+  if (!seen) {
+    seen = new Set()
+    reportedSkips.set(session, seen)
+  }
+  if (seen.has(seq)) return
+  seen.add(seq)
+  await session.diag('model-switch-skipped', data)
 }

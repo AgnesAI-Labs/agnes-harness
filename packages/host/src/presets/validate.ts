@@ -3,6 +3,9 @@ import { DEPRECATED_ACTION } from '../command-policy.js'
 import { HostError } from '../errors.js'
 import type { PresetDoc } from './types.js'
 
+// The chat slots plus the decision key: a deployment pins its decision model the same way.
+const ROUTE_KEYS: readonly string[] = [...SLOT_NAMES, 'decision']
+
 const map = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
 const fail = (name: string, path: string): never => {
   throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name}: invalid ${path}`, {
@@ -39,7 +42,7 @@ export function validatedPresetViewInput(doc: PresetDoc): PresetDoc {
     if (id !== undefined) {
       if (!map(id)) fail(doc.name, 'model.id')
       for (const [slot, pin] of Object.entries(id as Record<string, unknown>))
-        if (!(SLOT_NAMES as readonly string[]).includes(slot) || typeof pin !== 'string' || pin.length > 256)
+        if (!ROUTE_KEYS.includes(slot) || typeof pin !== 'string' || pin.length > 256)
           fail(doc.name, `model.id.${slot}`)
     }
     const pins = map(id) ? id : {}

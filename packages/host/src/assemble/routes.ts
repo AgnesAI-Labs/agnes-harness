@@ -1,5 +1,12 @@
 import type { PresetView } from '@agnes/core'
-import type { ModelRecord, RouteTable, RouteTarget, SlotName } from '@agnes/protocol'
+import type {
+  DecisionModelRecord,
+  DecisionSlot,
+  ModelRecord,
+  RouteSlotName,
+  RouteTable,
+  RouteTarget,
+} from '@agnes/protocol'
 import { SLOT_NAMES } from '@agnes/protocol'
 import { HostError } from '../errors.js'
 import type { ResolvedProfile, RouteDecl } from '../profile/types.js'
@@ -8,7 +15,15 @@ import type { ResolvedProfile, RouteDecl } from '../profile/types.js'
 // is reserved as a route name (profile/templates.ts) so that "not configured" and "configured as
 // default" can never be the same string.
 const SENTINEL = 'default'
-const SLOTS = new Set<string>(SLOT_NAMES)
+
+export const DECISION_SLOT: DecisionSlot = 'decision'
+// The chat slots plus the decision key. The decision key is a route-table key, not a SlotName, and
+// it resolves only to decision models.
+const SLOTS = new Set<string>([...SLOT_NAMES, DECISION_SLOT])
+
+export function isDecisionModel(m: ModelRecord | DecisionModelRecord): m is DecisionModelRecord {
+  return 'kind' in m && m.kind === 'decision'
+}
 
 // Every refusal here names its reason twice on purpose: once in the message an operator reads, once
 // in `detail.reason`, which is what a test and a log filter match on.
@@ -17,8 +32,9 @@ function bad(reason: string, why: string, detail: Record<string, unknown> = {}):
 }
 
 function pickModel(decl: RouteDecl, slot: string, preset: string): string {
-  const models = decl.models ?? []
-  const m = models.find((x) => 'slot' in x && x.slot === slot) ?? models[0]
+  const wantDecision = slot === DECISION_SLOT
+  const models = (decl.models ?? []).filter((x) => isDecisionModel(x) === wantDecision)
+  const m = models.find((x) => !isDecisionModel(x) && x.slot === slot) ?? models[0]
   if (!m) bad('no-models', `route ${decl.route} declares no models`, { slot, route: decl.route, preset })
   return m.id
 }
@@ -39,7 +55,7 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
   const named = preset.name
   if (declared.length === 0) bad('no-routes', 'the profile declares no provider.routes', { preset: named })
   const byName = new Map(declared.map((r) => [r.route, r] as const))
-  const out: Partial<Record<SlotName, RouteTarget>> = {}
+  const out: Partial<Record<RouteSlotName, RouteTarget>> = {}
   // A pin with no route beside it is the sentinel leak from the other direction: core reads
   // `route[slot] ?? 'default'` and returns the pinned id under route `default`, so the request would
   // go to a route no adapter serves while the header named a model nobody asked for.
@@ -51,6 +67,23 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
     const decl = name === SENTINEL ? declared[0] : byName.get(name)
     if (!decl)
       bad('unknown-route', `the profile declares no route ${name}`, { slot, route: name, preset: named })
+    // A route answers for one kind. The decision key takes decision records only and every chat
+    // key chat records only; a route whose catalogue offers nothing of the kind asked for is a
+    // configuration mistake, not an empty catalogue.
+    const wantDecision = slot === DECISION_SLOT
+    const declaredModels = decl.models ?? []
+    if (declaredModels.length > 0 && !declaredModels.some((m) => isDecisionModel(m) === wantDecision))
+      bad('slot-kind', `route ${decl.route} declares no ${wantDecision ? 'decision' : 'chat'} model`, {
+        slot,
+        route: decl.route,
+        preset: named,
+      })
+    if (wantDecision && declaredModels.length === 0)
+      bad('slot-kind', `route ${decl.route} declares no decision model`, {
+        slot,
+        route: decl.route,
+        preset: named,
+      })
     // Ruling C-26: `preset.model.id` is validated by nothing and core hands a pin straight to the
     // wire. A pin is honoured, but only against a catalogue that offers it. A route that declares no
     // catalogue here is one the registry fills in, and verifyRoutes checks it after the seal.
@@ -58,7 +91,13 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
     const models = decl.models ?? []
     if (pinned !== undefined && models.length > 0 && !models.some((m) => m.id === pinned))
       bad('model-undeclared', `route ${decl.route} does not declare model ${pinned}`, { slot, model: pinned })
-    out[slot as SlotName] = { route: decl.route, model: pinned ?? pickModel(decl, slot, named) }
+    const pinnedRecord = pinned === undefined ? undefined : declaredModels.find((m) => m.id === pinned)
+    if (pinnedRecord && isDecisionModel(pinnedRecord) !== wantDecision)
+      bad('slot-kind', `model ${pinned} is not a ${wantDecision ? 'decision' : 'chat'} model`, {
+        slot,
+        model: pinned,
+      })
+    out[slot as RouteSlotName] = { route: decl.route, model: pinned ?? pickModel(decl, slot, named) }
   }
   const primary = out.primary
   if (!primary) bad('no-primary', 'the preset names no primary slot', { preset: named })
@@ -100,15 +139,23 @@ export function pinPresetRoutes(preset: PresetView, routes: RouteTable): PresetV
 export function verifyRoutes(
   routes: RouteTable,
   registry: { routes(): { route: string }[]; models(): ModelRecord[] },
+  decisions?: { routes(): { route: string }[]; models(): readonly DecisionModelRecord[] },
 ): void {
-  const known = new Set(registry.routes().map((r) => r.route))
   // Route and id together: a model id that exists on another route is not the model this slot
   // resolved to, and ai matches on the record's own `route` field for exactly that reason. The key
   // is JSON rather than a joined string so that no separator has to be assumed absent from either
   // half - a model id has no character class in the schema at all.
   const pair = (route: string, model: string): string => JSON.stringify([route, model])
-  const offered = new Set(registry.models().map((m) => pair(m.route, m.id)))
+  // Each key is checked against the registry of its own kind: a decision route that only the chat
+  // registry serves, or the reverse, is unserved for that key.
+  const chatKnown = new Set(registry.routes().map((r) => r.route))
+  const chatOffered = new Set(registry.models().map((m) => pair(m.route, m.id)))
+  const decisionKnown = new Set((decisions?.routes() ?? []).map((r) => r.route))
+  const decisionOffered = new Set((decisions?.models() ?? []).map((m) => pair(m.route, m.id)))
   for (const [slot, t] of Object.entries(routes) as Array<[string, RouteTarget]>) {
+    const decision = slot === DECISION_SLOT
+    const known = decision ? decisionKnown : chatKnown
+    const offered = decision ? decisionOffered : chatOffered
     if (!known.has(t.route))
       bad('route-unserved', `the sealed registry does not serve route ${t.route}`, { slot, route: t.route })
     if (!offered.has(pair(t.route, t.model)))
