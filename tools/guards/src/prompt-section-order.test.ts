@@ -11,8 +11,7 @@ const root = repoRoot()
  * packages/code/src/prompts/sections.ts's own validateSections()); the 'context' hook
  * (packages/base/extensions/*'s escape hatch, which validateSections never sees because it sets
  * its order through a hook payload, not through that table); and packages/core's own hardcoded
- * orders (the untrusted-envelope rule section, the harness prompt/memory sections, and the
- * additional-context section a 'context' hook result folds into — the 'core'-owned rows below).
+ * orders (the untrusted-envelope rule section and the harness prompt/memory sections).
  * This file is the one place the first two are checked against each other: base cannot import
  * code's module (no dependency edge runs that direction — packages/base/package.json names no
  * @agnes/code dependency, and packages/code's @agnes/base entry is a devDependency, never bundled
@@ -66,11 +65,7 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   // entries into the same sorted section list at these two fixed orders.
   { id: 'harness:prompt', order: 180, owner: 'core' },
   { id: 'harness:memory', order: 181, owner: 'core' },
-  // packages/core/src/request/transforms.ts's applyContextResults(), which is where a 'context'
-  // hook's `additionalContext` string (as opposed to its `sections` array, which is the mechanism
-  // the third test below actually scans for) lands. The skill catalog is a section at order 160,
-  // not a contributor to this shared 8192-byte string.
-  { id: 'additional-context', order: 199, owner: 'core' },
+  // A context hook's additionalContext travels as a tail note, not a section.
 ]
 
 // code's own PROMPT_SECTIONS literal always writes source right after order. A context hook's

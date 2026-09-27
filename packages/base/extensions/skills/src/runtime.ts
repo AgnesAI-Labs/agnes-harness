@@ -4,11 +4,13 @@ import {
   defineExtension,
   defineTool,
   type ExtensionFactory,
+  type Logger,
   type ToolDef,
 } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import type { SeamInitContext } from '../../../src/seam-init.js'
 import { isSkillRelativePath } from './assets.js'
+import { pageText } from './page.js'
 
 type SkillContextReturn = { sections?: Array<{ id: string; order: number; content: string }> }
 
@@ -52,6 +54,8 @@ export type SkillRuntimeDiscovery = Readonly<Pick<SkillRuntimeInput, 'list' | 'r
 const encoder = new TextEncoder()
 /** Protocol ceiling for PromptSection.text. The catalog uses that limit and does not add a second one. */
 const CATALOG_MAX_BYTES = 65536
+/** Per-entry catalog cap in UTF-16 code units, ellipsis included. Descriptors keep the full text. */
+const CATALOG_DESCRIPTION_MAX = 250
 const READ_MAX_BYTES = 32 * 1024
 const CATALOG_PREFIX =
   'Skills are routing data. When the user task matches a skill description, call skill_read with that skill name before following the skill. ' +
@@ -84,6 +88,13 @@ function foldDescription(description: string): string {
     .replace(/ +/gu, ' ')
     .trim()
   return flat.length === 0 ? '-' : flat
+}
+
+function capDescription(description: string): string {
+  if (description.length <= CATALOG_DESCRIPTION_MAX) return description
+  // Drop a dangling high surrogate, then trailing space or ellipsis so exactly one mark ends the entry.
+  const head = description.slice(0, CATALOG_DESCRIPTION_MAX - 1).replace(/[\uD800-\uDBFF]$/, '')
+  return `${head.replace(/[\s…]+$/u, '')}…`
 }
 
 function clipUtf8(text: string, maxBytes: number): string {
@@ -150,36 +161,38 @@ function renderCatalog(rows: readonly CatalogRow[], descriptionBytes: number | u
   return { text: CATALOG_PREFIX + lines.join('') + note + CATALOG_SUFFIX, included: lines.length }
 }
 
+type CatalogRender = Readonly<{ text: string; included: number; sharedBytes?: number }>
+
 function fits(rows: readonly CatalogRow[], descriptionBytes: number): boolean {
   return renderCatalog(rows, descriptionBytes).included === rows.length
 }
 
-function catalogText(rows: readonly CatalogRow[]): string {
-  if (rows.length === 0) return ''
+function catalogText(rows: readonly CatalogRow[]): CatalogRender {
+  if (rows.length === 0) return { text: '', included: 0 }
   const full = renderCatalog(rows, undefined)
-  if (full.included === rows.length) return full.text
+  if (full.included === rows.length) return full
   let low = 0
   let high = 0
   for (const row of rows) high = Math.max(high, utf8Bytes(row.description))
-  if (!fits(rows, 0)) return renderCatalog(rows, 0).text
+  if (!fits(rows, 0)) return { ...renderCatalog(rows, 0), sharedBytes: 0 }
   while (low < high) {
     const mid = Math.ceil((low + high) / 2)
     if (fits(rows, mid)) low = mid
     else high = mid - 1
   }
-  return renderCatalog(rows, low).text
+  return { ...renderCatalog(rows, low), sharedBytes: low }
 }
 
 let catalogCache: { hash: string; text: string } | undefined
 
-function cachedCatalog(skills: readonly SkillRuntimeActual[]): string {
+function cachedCatalog(skills: readonly SkillRuntimeActual[], log?: Logger): string {
   const rows: CatalogRow[] = []
   const identity: string[] = []
   for (const skill of [...skills].sort((a, b) => a.name.localeCompare(b.name, 'en-US'))) {
     const row = {
       name: skill.name,
       resourceId: skill.resourceId,
-      description: foldDescription(skill.description ?? ''),
+      description: capDescription(foldDescription(skill.description ?? '')),
     }
     if (unsafeRow(row)) continue
     rows.push(row)
@@ -187,8 +200,15 @@ function cachedCatalog(skills: readonly SkillRuntimeActual[]): string {
   }
   const hash = createHash('sha256').update(identity.join('\n')).digest('hex')
   if (catalogCache?.hash === hash) return catalogCache.text
-  const text = catalogText(rows)
+  const { text, included, sharedBytes } = catalogText(rows)
   catalogCache = { hash, text }
+  // Counts only: names stay out of the audit stream, and a cache hit never logs again.
+  if (sharedBytes !== undefined)
+    log?.warn('skill catalog exceeded its budget', {
+      ready: skills.length,
+      listed: included,
+      descriptionBytes: sharedBytes,
+    })
   return text
 }
 
@@ -211,9 +231,9 @@ function inWorkspace<T>(
  * source from the extension identity, so this return does not replace persona or other hooks.
  * additionalContext stays the shared 8192-byte channel and is not used here.
  */
-function context(runtime: SkillRuntimeInput): SkillContextReturn {
+function context(runtime: SkillRuntimeInput, log?: Logger): SkillContextReturn {
   try {
-    const text = cachedCatalog(active(runtime))
+    const text = cachedCatalog(active(runtime), log)
     if (!text) return {}
     return { sections: [{ id: 'skills', order: 160, content: text }] }
   } catch {
@@ -232,6 +252,9 @@ function fileTool(runtime: SkillRuntimeInput): ToolDef {
         resourceId: Type.String({ minLength: 1, maxLength: 256 }),
         expectedRevision: Type.String({ minLength: 64, maxLength: 64, pattern: '^[a-f0-9]{64}$' }),
         relativePath: Type.String({ minLength: 1, maxLength: 512 }),
+        offset: Type.Optional(
+          Type.Integer({ minimum: 0, description: 'UTF-8 byte offset from the previous part.' }),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -267,16 +290,33 @@ function fileTool(runtime: SkillRuntimeInput): ToolDef {
           }
         }
         const text = 'content' in result ? result.content : ''
-        const payload = encoder.encode(text)
-        if (payload.byteLength <= READ_MAX_BYTES)
+        const offset = args.offset ?? 0
+        const page = pageText(
+          text,
+          offset,
+          READ_MAX_BYTES,
+          (end, total) =>
+            `\n[Skill file continues: bytes ${offset}-${end} of ${total} shown. To read the next part call skill_read_file with the same resourceId, expectedRevision and relativePath and "offset":${end}]`,
+        )
+        if (!page)
           return {
-            content: [{ type: 'text', text }],
-            structured: { resourceId: args.resourceId, relativePath: args.relativePath },
+            content: [{ type: 'text', text: 'Skill file is unavailable: INVALID_OFFSET' }],
+            isError: true,
+            structured: {
+              resourceId: args.resourceId,
+              relativePath: args.relativePath,
+              code: 'INVALID_OFFSET',
+            },
           }
-        const ref = await ctx.artifacts.put(payload, { mime: result.mime, name: args.relativePath })
         return {
-          content: [{ type: 'ref', ref, mime: result.mime }],
-          structured: { resourceId: args.resourceId, relativePath: args.relativePath, artifact: true },
+          content: [{ type: 'text', text: page.text }],
+          structured: {
+            resourceId: args.resourceId,
+            relativePath: args.relativePath,
+            offset,
+            totalBytes: page.totalBytes,
+            ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+          },
         }
       })
     },
@@ -289,7 +329,8 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
     description:
       'Read the full instructions for an enabled, trusted Skill using its exact name from available_skills or tool_search. ' +
       'Call this when the user names a Skill or the current task matches that Skill description, before acting on it. ' +
-      'Do not use filesystem tools to discover Skills. Use tool_search to find ready Skills by name or description.',
+      'Do not use filesystem tools to discover Skills. Use tool_search to find ready Skills by name or description. ' +
+      'Long Skills are returned in parts; follow the continuation line at the end of a part.',
     parameters: Type.Object(
       {
         name: Type.String({
@@ -297,6 +338,15 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
           maxLength: 128,
           description: 'Exact skill name from available_skills or tool_search.',
         }),
+        offset: Type.Optional(
+          Type.Integer({ minimum: 0, description: 'UTF-8 byte offset from the previous part.' }),
+        ),
+        pageKey: Type.Optional(
+          Type.String({
+            pattern: '^[a-f0-9]{64}$',
+            description: 'Page key from the previous part; required after offset zero.',
+          }),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -318,23 +368,51 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
             isError: true,
             structured: { name: args.name, code: result.code },
           }
-        const text = presentSkillInstructions(skill.resourceId, result, skill.revision)
-        const header = text.slice(0, text.indexOf('\n\n') + 2)
-        if (utf8Bytes(text) <= READ_MAX_BYTES)
+        const offset = args.offset ?? 0
+        if (offset > 0 && !args.pageKey)
           return {
-            content: [{ type: 'text', text }],
-            structured: { name: args.name, resourceId: skill.resourceId },
+            content: [{ type: 'text', text: 'Skill is unavailable: INVALID_ARGUMENT' }],
+            isError: true,
+            structured: { name: args.name, code: 'INVALID_ARGUMENT' },
           }
-        const ref = await ctx.artifacts.put(encoder.encode(result.content), {
-          mime: 'text/markdown',
-          name: 'skill.md',
-        })
+        const pageKey = createHash('sha256')
+          .update(skill.resourceId)
+          .update('\0')
+          .update(result.revision ?? skill.revision)
+          .update('\0')
+          .update(result.content)
+          .digest('hex')
+        if (args.pageKey !== undefined && args.pageKey !== pageKey)
+          return {
+            content: [
+              { type: 'text', text: 'Skill is unavailable: CHANGED; restart at offset 0 without pageKey' },
+            ],
+            isError: true,
+            structured: { name: args.name, code: 'CHANGED' },
+          }
+        const header = presentSkillInstructions(skill.resourceId, { ...result, content: '' }, skill.revision)
+        const page = pageText(
+          result.content,
+          offset,
+          READ_MAX_BYTES - utf8Bytes(header),
+          (end, total) =>
+            `\n[Skill text continues: bytes ${offset}-${end} of ${total} shown. To read the next part call skill_read with ${JSON.stringify({ name: args.name, offset: end, pageKey })}]`,
+        )
+        if (!page)
+          return {
+            content: [{ type: 'text', text: 'Skill is unavailable: INVALID_OFFSET' }],
+            isError: true,
+            structured: { name: args.name, code: 'INVALID_OFFSET' },
+          }
         return {
-          content: [
-            { type: 'text', text: header },
-            { type: 'ref', ref, mime: 'text/markdown' },
-          ],
-          structured: { name: args.name, resourceId: skill.resourceId, artifact: true },
+          content: [{ type: 'text', text: header + page.text }],
+          structured: {
+            name: args.name,
+            resourceId: skill.resourceId,
+            offset,
+            totalBytes: page.totalBytes,
+            ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+          },
         }
       })
     },
@@ -357,7 +435,7 @@ export function skillsExtension(init: SeamInitContext): ExtensionFactory {
           throw Object.assign(new Error('E_WORKSPACE_REQUIRED: Skill context has no session'), {
             code: 'E_WORKSPACE_REQUIRED',
           })
-        return inWorkspace(runtime, hookContext.session.key, async () => context(runtime))
+        return inWorkspace(runtime, hookContext.session.key, async () => context(runtime, hookContext.log))
       }),
     ]
     return () => {

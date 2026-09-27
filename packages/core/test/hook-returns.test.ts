@@ -225,8 +225,7 @@ describe('dispatch to author validation to core18 context composition', () => {
     expect(result.kind).toBe('ok')
     expect(seen).toEqual(['first'])
     expect(applied.sections[0]?.source).toBe('agnes/one')
-    const extra = applied.sections.find((section) => section.id === 'additional-context')
-    expect(new TextEncoder().encode(extra?.text).length).toBe(8190)
+    expect(new TextEncoder().encode(applied.additionalContext).length).toBe(8190)
     expect(applied.overflow).toEqual([{ ext: 'agnes/one', bytes: 9000 }])
   })
 
