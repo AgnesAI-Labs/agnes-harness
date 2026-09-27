@@ -224,6 +224,34 @@ describe('createDiagnosticsDialog', () => {
     expect(t.step()).toBe('menu')
   })
 
+  it('retires an in-flight collection on disposal without repainting its detached dialog', async () => {
+    const t = setup()
+    const pending = deferred<CollectedDiagnostics>()
+    t.collect.mockReturnValue(pending.promise)
+    ui?.open()
+    t.button('分享诊断').click()
+    t.button('生成诊断包').click()
+    ui?.dispose()
+    expect(t.dialog.isConnected).toBe(false)
+    expect(t.collect.mock.calls[0]?.[2].aborted).toBe(true)
+    pending.resolve(collected())
+    await flush()
+    expect(t.dialog.querySelector('[data-ready-summary]')?.textContent).toBe('')
+    ui?.open()
+    expect(t.dialog.isConnected).toBe(false)
+  })
+
+  it('releases a ready ZIP on disposal so detached controls cannot save it', async () => {
+    const t = setup()
+    t.save.mockResolvedValue('saved')
+    await toReady(t)
+    ui?.dispose()
+    t.dialog.querySelector<HTMLButtonElement>('[data-action="save"]')?.click()
+    await flush()
+    expect(t.save).not.toHaveBeenCalled()
+    expect(t.dialog.querySelector('[data-ready-summary]')?.textContent).toBe('')
+  })
+
   it('releases the generated ZIP when the dialog closes', async () => {
     const t = setup()
     t.save.mockResolvedValue('saved')
