@@ -18,8 +18,10 @@ import {
   type CostLedger,
   type EventEnvelope,
   type ExtUiResponseParams,
+  type ModelRecord,
   type ParticipantListResult,
   type ParticipantParams,
+  type RouteDecl,
   rpcError,
   type SessionProjectUIHistoryParams,
   type SessionProjectUIOpeningParams,
@@ -542,6 +544,26 @@ export function mapCore(e: unknown): never {
   if (err.code && REJECT_CODES.has(err.code))
     throw rpcError('PRESET_SWITCH_REJECTED', { reason: err.message ?? 'rejected' })
   throw e
+}
+
+/**
+ * The profile's models as the chat pickers see them. A decision model is declared on the same route
+ * list but is never a chat choice: ApisListResult carries no kind, so it is left out here rather
+ * than shipped for every client to filter. Exported so the filter is reachable from a direct test.
+ */
+export function apisProfileModels(
+  routes: readonly RouteDecl[] | undefined,
+): Array<{ route: string; id: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string> }> {
+  return (routes ?? []).flatMap((route) =>
+    (route.models ?? [])
+      .filter((model): model is ModelRecord => !('kind' in model))
+      .map((model) => ({
+        route: route.route,
+        id: model.id,
+        ...(model.reasoning === undefined ? {} : { reasoning: model.reasoning }),
+        ...(model.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: model.thinkingLevelMap }),
+      })),
+  )
 }
 
 /** Exported so both branches of every predicate are reachable from a table-driven test. */
@@ -1724,16 +1746,7 @@ export function registerAgnes(
         name: pr.name,
         resolvedProfileHash: pr.hash ?? null,
         presets: pr.presets,
-        models: (pr.provider.routes ?? []).flatMap((route) =>
-          (route.models ?? []).map((model) => ({
-            route: route.route,
-            id: model.id,
-            ...('reasoning' in model ? { reasoning: model.reasoning } : {}),
-            ...('thinkingLevelMap' in model && model.thinkingLevelMap !== undefined
-              ? { thinkingLevelMap: model.thinkingLevelMap }
-              : {}),
-          })),
-        ),
+        models: apisProfileModels(pr.provider.routes),
       },
       // The verifier writes these during initialize. Missing values fail closed for a bare endpoint
       // that somehow bypassed registerAcp/authGate.

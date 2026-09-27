@@ -411,6 +411,34 @@ describe('web session selection', () => {
     expect(control('send').disabled).toBe(true)
   })
 
+  it('offers only what apis.list returns, so a decision route in the profile never reaches the picker', async () => {
+    installPublicFixture()
+    // What the daemon's apis.list returns for a profile declaring chat route `local` and decision
+    // route `jev`: the decision model is filtered server-side.
+    const models = [{ route: 'local', id: 'model-a' }]
+    const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models } })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await import('../src/app.js')
+    const control = (id: string) => document.getElementById(id) as HTMLButtonElement
+    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
+    control('model').click()
+    const listed = document.querySelector('[role="listbox"]')?.textContent ?? ''
+    expect(listed).toContain('model-a')
+    expect(listed).not.toContain('jev')
+  })
+
   it.each(['save-first', 'poll-first', 'poll-fails'])(
     'keeps saved model status accurate when %s',
     async (order) => {
