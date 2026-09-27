@@ -1,5 +1,5 @@
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
-import type { WireAdapter } from './adapter.js'
+import { DecisionAdapter, type WireAdapter } from './adapter.js'
 import { AiSetupError } from './errors.js'
 import { canonicalJson, sha256Hex } from './hash.js'
 
@@ -24,7 +24,7 @@ type Snapshot = { routes: RouteDecl[]; models: ModelRecord[]; fingerprint: strin
  * loudly rather than changing what the next reader sees while the fingerprint — computed from the
  * same reading — stays where it was.
  */
-function frozenCopy<T>(value: T): T {
+export function frozenCopy<T>(value: T): T {
   const copy = structuredClone(value)
   const freeze = (v: unknown): void => {
     if (v === null || typeof v !== 'object' || Object.isFrozen(v)) return
@@ -46,6 +46,10 @@ function frozenCopy<T>(value: T): T {
 export function buildRegistry(adapters: WireAdapter[]): Registry {
   const table = new Map<string, { adapter: WireAdapter; decl: RouteDecl }>()
   for (const adapter of adapters) {
+    // A decision adapter has its own registry. Letting one in here would put its models in every
+    // chat model list at once: the switch gate, the doctor, the contract binding and the pickers.
+    if (adapter instanceof DecisionAdapter)
+      throw new AiSetupError('ADAPTER_KIND', { adapter: adapter.id, expected: 'wire' })
     for (const decl of adapter.routes()) {
       const existing = table.get(decl.route)
       if (existing)
@@ -68,6 +72,12 @@ export function buildRegistry(adapters: WireAdapter[]): Registry {
     seal() {
       if (snapshot) return
       const entries = sorted().map((e) => ({ decl: e.decl, models: e.adapter.models(e.decl.route) }))
+      // A wire adapter whose catalogue carries a decision record is misconfigured, not partially
+      // usable: publishing the record would hand a decision model to every chat consumer.
+      for (const e of entries)
+        for (const m of e.models)
+          if ((m as { kind?: unknown }).kind === 'decision')
+            throw new AiSetupError('ADAPTER_KIND', { route: e.decl.route, model: m.id })
       snapshot = {
         routes: entries.map((e) => frozenCopy(e.decl)),
         models: entries.flatMap((e) => e.models.map((m) => frozenCopy(m))),

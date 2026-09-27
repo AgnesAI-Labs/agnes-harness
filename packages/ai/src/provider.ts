@@ -1,14 +1,34 @@
-import type { CountResult, InferenceEvent, Provider, RequestBody, RouteTable } from '@agnes/protocol'
-import type { WireAdapter } from './adapter.js'
+import type {
+  AiErrorCode,
+  CountResult,
+  DecisionFailureKind,
+  DecisionWireAnswer,
+  DecisionWireRequest,
+  DecisionWireResult,
+  InferenceEvent,
+  Provider,
+  RequestBody,
+  RouteDecl,
+  RouteTable,
+} from '@agnes/protocol'
+import { SLOT_NAMES } from '@agnes/protocol'
+import {
+  type DecisionAdapter,
+  type DecisionAdapterAnswer,
+  DecisionAdapterError,
+  type DecisionUsage,
+  type WireAdapter,
+} from './adapter.js'
 import type { ContractStore } from './contract-store.js'
 import { resolveCredentials } from './credentials.js'
+import { buildDecisionRegistry, type DecisionRegistry } from './decision-registry.js'
 import { createState, finish, step } from './decode/machine.js'
 import { PARSER_VERSION } from './decode/rules/index.js'
 import type { DecodeContext } from './decode/types.js'
 import { AiSetupError } from './errors.js'
 import { guardSequence } from './guard.js'
 import { buildRegistry, type Registry } from './registry.js'
-import { resolveSelection, SlotUnresolved } from './route.js'
+import { type ResolvedDecision, resolveDecisionSelection, resolveSelection, SlotUnresolved } from './route.js'
 import { buildStamp, renderPrefixedPrompt, type SentReport } from './stamp.js'
 import { estimateBilling, estimateCredits } from './usage.js'
 
@@ -29,6 +49,8 @@ export type InferenceDeps = {
    * behalf and says so; nothing else does.
    */
   creditsPerUsd: number
+  /** The decision routes, when any were fitted: inference refuses them by name. */
+  decisions?: DecisionRegistry
 }
 
 /**
@@ -49,6 +71,18 @@ export async function* runInference(
   req: RequestBody,
   opts: Parameters<Provider['infer']>[1],
 ): AsyncIterable<InferenceEvent> {
+  // A decision slot or a decision route never reaches a chat adapter. Neither would resolve against
+  // the chat registry anyway; naming the reason keeps the refusal from reading as a missing model.
+  if (!(SLOT_NAMES as readonly string[]).includes(req.slot) || deps.decisions?.lookup(req.route)) {
+    yield {
+      type: 'error',
+      reason: 'error',
+      code: 'NO_MODEL',
+      message: `slot=${req.slot} route=${req.route} (slot-kind)`,
+      retryable: false,
+    }
+    return
+  }
   let resolved: ReturnType<typeof resolveSelection>
   try {
     resolved = resolveSelection(deps.registry, req.slot, req.route, req.model)
@@ -226,6 +260,132 @@ export async function* runInference(
   }
 }
 
+// No route table here: the decision target travels in each request, filled by the caller from the
+// session's current preset, so switching presets switches the target with no facade state.
+export type DecisionDeps = {
+  registry: Registry
+  decisions: DecisionRegistry
+  creditsPerUsd: number
+}
+
+/**
+ * What provider.decide rejects with; its shape is protocol's DecisionFailure. (Not declared with
+ * `implements`: under exactOptionalPropertyTypes an optional parameter property reads as
+ * `string | undefined`, which the readonly optional `route` of that type does not accept.)
+ */
+export class DecisionError extends Error {
+  constructor(
+    readonly kind: DecisionFailureKind,
+    readonly code: AiErrorCode,
+    readonly route?: string,
+    note?: string,
+  ) {
+    super(`${code}: decision ${kind}${note ? ` (${note})` : ''}`)
+    this.name = 'DecisionError'
+  }
+}
+
+/**
+ * Once the time limit has fired, every failure is a timeout, whatever the adapter reported on its
+ * way out: an aborted fetch looks like a transport error from inside the adapter.
+ */
+export function decisionFailureKind(code: AiErrorCode, timedOut: boolean): DecisionFailureKind {
+  if (timedOut) return 'timeout'
+  if (code === 'FORMAT' || code === 'CONTRACT_MISMATCH') return 'invalid'
+  return 'unavailable'
+}
+
+const plainObject = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v)
+const tokenCount = (v: unknown): boolean => v === undefined || (Number.isSafeInteger(v) && (v as number) >= 0)
+
+/**
+ * One decision query. It resolves the route and model the request names against the decision
+ * catalogue (never a boot-time table: the caller fills both from the current preset), bounds the
+ * call by `req.timeoutMs` even against an adapter that ignores its signal, classifies failures,
+ * checks the envelope and prices the call. It does not judge the answers: extra fields, sums that miss one and the like pass
+ * through unchanged, because the caller's validator is the one check that fails closed on them.
+ */
+export async function runDecision(
+  deps: DecisionDeps,
+  req: DecisionWireRequest,
+  opts: { signal: AbortSignal },
+): Promise<DecisionWireResult> {
+  let target: ResolvedDecision
+  try {
+    target = resolveDecisionSelection(deps.registry, deps.decisions, req.route, req.model)
+  } catch (e) {
+    if (e instanceof SlotUnresolved) throw new DecisionError('unavailable', e.code, e.route, e.detail)
+    throw e
+  }
+  const hit = deps.decisions.lookup(target.route)
+  if (!hit) throw new DecisionError('unavailable', 'NO_ADAPTER', target.route)
+  const inner = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    inner.abort()
+  }, req.timeoutMs)
+  const forward = () => inner.abort()
+  if (opts.signal.aborted) inner.abort()
+  else opts.signal.addEventListener('abort', forward, { once: true })
+  const abandoned = new Promise<never>((_, reject) => {
+    const fail = () => reject(new DecisionAdapterError(timedOut ? 'TIMEOUT' : 'ABORTED'))
+    if (inner.signal.aborted) fail()
+    else inner.signal.addEventListener('abort', fail, { once: true })
+  })
+  abandoned.catch(() => undefined)
+  let raw: DecisionAdapterAnswer
+  try {
+    raw = await Promise.race([hit.adapter.decide(target.route, req, { signal: inner.signal }), abandoned])
+  } catch (e) {
+    const code: AiErrorCode = timedOut ? 'TIMEOUT' : e instanceof DecisionAdapterError ? e.code : 'TRANSPORT'
+    throw new DecisionError(decisionFailureKind(code, timedOut), code, target.route)
+  } finally {
+    clearTimeout(timer)
+    opts.signal.removeEventListener('abort', forward)
+    inner.abort()
+  }
+  // An adapter is typed, but a vendor body reached it untyped; nothing below trusts the type.
+  const envelope = raw as unknown as Record<string, unknown> | null | undefined
+  const reported = envelope?.usage
+  const answeredBy = envelope?.model
+  if (
+    !plainObject(envelope?.answers) ||
+    typeof answeredBy !== 'string' ||
+    answeredBy.length === 0 ||
+    answeredBy.length > 256 ||
+    !plainObject(reported) ||
+    !tokenCount(reported.inputTokens) ||
+    !tokenCount(reported.outputTokens)
+  )
+    throw new DecisionError('invalid', 'FORMAT', target.route)
+  const usage = reported as DecisionUsage
+  const tokens = {
+    input: usage.inputTokens ?? 0,
+    output: usage.outputTokens ?? 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+  }
+  const cost = usage.costUsd
+  const gateway = typeof cost === 'number' && Number.isFinite(cost) && cost >= 0
+  const credits = gateway
+    ? Math.max(0, Math.round((cost as number) * deps.creditsPerUsd * 1e6) / 1e6)
+    : estimateCredits(target.model, tokens, deps.creditsPerUsd)
+  return {
+    answers: envelope?.answers as Record<string, DecisionWireAnswer>,
+    model: answeredBy,
+    route: target.route,
+    usage: {
+      inputTokens: tokens.input,
+      outputTokens: tokens.output,
+      ...(gateway ? { costUsd: cost as number } : {}),
+    },
+    credits,
+    creditSource: gateway ? 'gateway' : 'estimated',
+  }
+}
+
 /**
  * Assembles the model seam once, at startup. Three things happen here and nowhere else: the route
  * table is resolved to adapters, every declared credential is fetched and handed to its adapter, and
@@ -237,6 +397,11 @@ export async function* runInference(
  */
 export function createProvider(opts: {
   adapters: WireAdapter[]
+  /**
+   * Decision adapters and the decision routes the profile declared. They go into a registry of
+   * their own; the chat registry refuses them.
+   */
+  decision?: { adapters: readonly DecisionAdapter[]; routes: readonly RouteDecl[] }
   routes: RouteTable
   contract: ContractStore
   secrets: (ref: string) => string
@@ -249,10 +414,15 @@ export function createProvider(opts: {
    * credential remains an assembly failure; an optional route fails closed with AUTH on request.
    */
   optionalCredentialRefs?: ReadonlySet<string>
-}): Provider & { registry: Registry } {
+}): Provider & { registry: Registry; decisionRegistry?: DecisionRegistry } {
   const registry = buildRegistry(opts.adapters)
+  const decisionAdapters = opts.decision?.adapters ?? []
+  const decisions =
+    opts.decision && (decisionAdapters.length > 0 || opts.decision.routes.length > 0)
+      ? buildDecisionRegistry(decisionAdapters, opts.decision.routes)
+      : undefined
   resolveCredentials(
-    opts.adapters,
+    [...opts.adapters, ...decisionAdapters],
     opts.secrets,
     opts.optionalCredentialRefs === undefined ? {} : { optionalRefs: opts.optionalCredentialRefs },
   )
@@ -270,12 +440,13 @@ export function createProvider(opts: {
     contract: opts.contract,
     clock: opts.clock,
     parserVersion: opts.parserVersion ?? PARSER_VERSION,
+    ...(decisions ? { decisions } : {}),
     get creditsPerUsd() {
       return opts.pricing?.creditsPerUsd ?? 1
     },
   }
   const anyCounts = opts.adapters.some((a) => typeof a.count === 'function')
-  const provider: Provider & { registry: Registry } = {
+  const provider: Provider & { registry: Registry; decisionRegistry?: DecisionRegistry } = {
     registry,
     // Guarded on the way out, not inside runInference: the guard is a property of what this facade
     // promises a caller, and tests that build the deps by hand still reach the unguarded stream.
@@ -298,6 +469,18 @@ export function createProvider(opts: {
       )
       return target.adapter.count(req.route, { ...req, system }, o)
     }
+  }
+  if (decisions) {
+    const decisionDeps: DecisionDeps = {
+      registry,
+      decisions,
+      get creditsPerUsd() {
+        return opts.pricing?.creditsPerUsd ?? 1
+      },
+    }
+    provider.decisionRegistry = decisions
+    provider.decide = (req, o) => runDecision(decisionDeps, req, o)
+    provider.decisionModels = () => decisions.models()
   }
   return provider
 }

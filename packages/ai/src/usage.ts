@@ -13,7 +13,11 @@ import type { Billing, ModelRecord, TokenCounts } from '@agnes/protocol'
  * that summing a session's rows does not accumulate binary-float dust. Clamped at zero because the
  * value goes into an event whose schema forbids a negative, and a catalogue is configuration.
  */
-export function estimateCredits(model: ModelRecord, t: TokenCounts, creditsPerUsd: number): number {
+export function estimateCredits(
+  model: Pick<ModelRecord, 'cost'>,
+  t: TokenCounts,
+  creditsPerUsd: number,
+): number {
   const usd =
     (t.input * model.cost.input +
       t.output * model.cost.output +

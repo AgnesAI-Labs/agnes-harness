@@ -1,5 +1,11 @@
-export type { AdapterStreamOptions, WireEvent } from './adapter.js'
-export { WireAdapter } from './adapter.js'
+export type {
+  AdapterStreamOptions,
+  CredentialDecl,
+  DecisionAdapterAnswer,
+  DecisionUsage,
+  WireEvent,
+} from './adapter.js'
+export { CredentialedAdapter, DecisionAdapter, DecisionAdapterError, WireAdapter } from './adapter.js'
 export type { ImagesImpl } from './adapters/media/index.js'
 export { IMAGE_ROUTE, MediaAdapter, VIDEO_ROUTE } from './adapters/media/index.js'
 export type { VideoClient, VideoStatus } from './adapters/media/video-job.js'
@@ -53,6 +59,8 @@ export { FileContractStore, loadContractStore } from './contract/store.js'
 export type { ContractManifest, ContractSyntax } from './contract/types.js'
 export type { ContractStore } from './contract-store.js'
 export { NullContractStore } from './contract-store.js'
+export type { DecisionRegistry } from './decision-registry.js'
+export { buildDecisionRegistry, isDecisionModelRecord } from './decision-registry.js'
 export type { DecodeFixture, FixtureChunk } from './decode/fixtures.js'
 export {
   DECODE_FIXTURE_FILES,
@@ -68,8 +76,8 @@ export { AiSetupError } from './errors.js'
 export type { EscalationSignals } from './escalation.js'
 export { Escalation } from './escalation.js'
 export { guardSequence, normalizeError, RETRYABLE, retryHint } from './guard.js'
-export type { InferenceDeps } from './provider.js'
-export { createProvider, runInference } from './provider.js'
+export type { DecisionDeps, InferenceDeps } from './provider.js'
+export { createProvider, DecisionError, decisionFailureKind, runDecision, runInference } from './provider.js'
 export type {
   ConformanceFixture,
   ConformanceReport,

@@ -5,6 +5,7 @@ export type AiSetupErrorCode =
   | 'NO_ADAPTER'
   | 'UNSEALED'
   | 'INVALID_BASE_URL'
+  | 'ADAPTER_KIND'
 
 /**
  * The only error this package throws. Assembly is the one phase where failing loudly is right —

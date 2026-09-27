@@ -1,5 +1,9 @@
 import type {
+  AiErrorCode,
   CountResult,
+  DecisionModelRecord,
+  DecisionWireAnswer,
+  DecisionWireRequest,
   InferenceEvent,
   ModelRecord,
   ProbeReport,
@@ -29,19 +33,18 @@ export type AdapterStreamOptions = {
   timeoutMs: { firstToken: number; total: number }
 }
 
+/** A route and the credential reference it declares, as credential resolution reads it. */
+export type CredentialDecl = Readonly<{ route: string; credentialRef?: string }>
+
 /**
- * One implementation per wire protocol. An adapter translates between that protocol and this
- * package's event union and does nothing else: recovering tool calls out of prose is the facade's
- * job, so the same recovery rules apply to every adapter rather than being reimplemented per vendor.
+ * The credential store every adapter kind shares. It exists so a decision adapter binds and reads
+ * its key through exactly the same door a wire adapter does: one resolution pass at assembly, one
+ * private field, nothing on the object that generic traversal can see.
  */
-export abstract class WireAdapter {
+export abstract class CredentialedAdapter {
   abstract readonly id: string
-  abstract routes(): RouteDecl[]
-  abstract models(route: string): ModelRecord[]
-  abstract stream(route: string, req: RequestBody, opts: AdapterStreamOptions): AsyncIterable<WireEvent>
-  count?(route: string, req: RequestBody, opts: { signal: AbortSignal }): Promise<CountResult>
-  refresh?(route: string, signal: AbortSignal): Promise<void>
-  probe?(route: string, signal: AbortSignal): Promise<ProbeReport>
+  /** Every route this adapter serves, with the credential reference each one declares. */
+  abstract credentialDecls(): readonly CredentialDecl[]
 
   // A real private field, not a TypeScript-private one, and what that does and does not buy:
   //
@@ -82,5 +85,63 @@ export abstract class WireAdapter {
   /** Reachable at runtime despite `protected` — see the note on the store above. */
   protected credentialFor(route: string): string | undefined {
     return this.#credentials.get(route)
+  }
+}
+
+/**
+ * One implementation per wire protocol. An adapter translates between that protocol and this
+ * package's event union and does nothing else: recovering tool calls out of prose is the facade's
+ * job, so the same recovery rules apply to every adapter rather than being reimplemented per vendor.
+ */
+export abstract class WireAdapter extends CredentialedAdapter {
+  abstract routes(): RouteDecl[]
+  abstract models(route: string): ModelRecord[]
+  abstract stream(route: string, req: RequestBody, opts: AdapterStreamOptions): AsyncIterable<WireEvent>
+  count?(route: string, req: RequestBody, opts: { signal: AbortSignal }): Promise<CountResult>
+  refresh?(route: string, signal: AbortSignal): Promise<void>
+  probe?(route: string, signal: AbortSignal): Promise<ProbeReport>
+
+  credentialDecls(): readonly CredentialDecl[] {
+    return this.routes()
+  }
+}
+
+export type DecisionUsage = { inputTokens?: number; outputTokens?: number; costUsd?: number }
+export type DecisionAdapterAnswer = {
+  answers: Record<string, DecisionWireAnswer>
+  model: string
+  usage?: DecisionUsage
+}
+
+/**
+ * One implementation per decision vendor. It turns the vendor-neutral questions into the vendor's
+ * request and the vendor's answers back into the wire shape, and nothing else: routing, the time
+ * limit, failure classes and pricing are the facade's, and judging the answers is the caller's.
+ *
+ * A decision adapter is registered apart from every wire adapter, so no chat model list, switch
+ * gate, doctor or picker can ever reach one of its models.
+ */
+export abstract class DecisionAdapter extends CredentialedAdapter {
+  abstract routes(): readonly string[]
+  abstract models(route: string): readonly DecisionModelRecord[]
+  abstract decide(
+    route: string,
+    req: DecisionWireRequest,
+    opts: { signal: AbortSignal },
+  ): Promise<DecisionAdapterAnswer>
+}
+
+/**
+ * What a decision adapter throws. The message is fixed per code, so no response body, request text
+ * or credential can reach a log through it.
+ */
+export class DecisionAdapterError extends Error {
+  constructor(
+    readonly code: AiErrorCode,
+    readonly status?: number,
+    readonly retryAfter?: string,
+  ) {
+    super(`decision adapter failed: ${code}${status === undefined ? '' : ` (status ${status})`}`)
+    this.name = 'DecisionAdapterError'
   }
 }

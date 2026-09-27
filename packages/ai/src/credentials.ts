@@ -1,4 +1,4 @@
-import type { WireAdapter } from './adapter.js'
+import type { CredentialedAdapter } from './adapter.js'
 import { AiSetupError } from './errors.js'
 
 /**
@@ -35,12 +35,12 @@ export type CredentialResolutionOptions = Readonly<{
 }>
 
 export function resolveCredentials(
-  adapters: WireAdapter[],
+  adapters: readonly CredentialedAdapter[],
   secrets: (ref: string) => string,
   options: CredentialResolutionOptions = {},
 ): void {
   for (const adapter of adapters) {
-    for (const decl of adapter.routes()) {
+    for (const decl of adapter.credentialDecls()) {
       if (!decl.credentialRef) continue
       const failure = new AiSetupError('SECRET_UNRESOLVED', {
         route: decl.route,

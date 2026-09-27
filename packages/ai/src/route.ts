@@ -1,4 +1,12 @@
-import type { ModelRecord, RouteTable, SlotName } from '@agnes/protocol'
+import type {
+  DecisionModelRecord,
+  DecisionSlot,
+  ModelRecord,
+  RouteSlotName,
+  RouteTable,
+  SlotName,
+} from '@agnes/protocol'
+import type { DecisionRegistry } from './decision-registry.js'
 import type { Registry } from './registry.js'
 
 /**
@@ -11,7 +19,7 @@ export class SlotUnresolved extends Error {
   readonly detail: string
   constructor(
     readonly code: 'NO_MODEL' | 'NO_ADAPTER',
-    readonly slot: SlotName,
+    readonly slot: RouteSlotName,
     readonly route?: string,
     readonly model?: string,
     /** Why, when the plain "not found" reading would be misleading. */
@@ -69,10 +77,67 @@ export function resolveSelection(
  * Fallbacks are resolved eagerly along with the head, so a table naming a model that does not exist
  * is a configuration mistake found on the first request rather than on the first failure.
  */
-export function resolveSlot(table: RouteTable, registry: Registry, slot: SlotName): Resolved {
+export type ResolvedDecision = { route: string; model: DecisionModelRecord }
+
+export function resolveSlot(table: RouteTable, registry: Registry, slot: SlotName): Resolved
+export function resolveSlot(
+  table: RouteTable,
+  registry: Registry,
+  slot: DecisionSlot,
+  decisions: DecisionRegistry | undefined,
+): ResolvedDecision
+export function resolveSlot(
+  table: RouteTable,
+  registry: Registry,
+  slot: RouteSlotName,
+  decisions?: DecisionRegistry,
+): Resolved | ResolvedDecision {
+  if (slot === 'decision') return resolveDecisionSlot(table, registry, decisions)
   const target = table[slot]
   if (!target) throw new SlotUnresolved('NO_MODEL', slot)
   const head = resolveSelection(registry, slot, target.route, target.model)
   const fallbacks = (target.fallbacks ?? []).map((f) => resolveSelection(registry, slot, f.route, f.model))
   return { ...head, fallbacks }
+}
+
+/**
+ * The decision key resolves against the decision registry and nothing else. A route the chat
+ * registry serves is named as a kind mismatch rather than a plain miss, because the fix is a
+ * different route, not a missing catalogue entry. Fallbacks are not used for decisions: a
+ * decision is one bounded query, and the caller already falls back on any failure.
+ */
+function resolveDecisionSlot(
+  table: RouteTable,
+  registry: Registry,
+  decisions: DecisionRegistry | undefined,
+): ResolvedDecision {
+  const target = table.decision
+  if (!target) throw new SlotUnresolved('NO_MODEL', 'decision')
+  return resolveDecisionSelection(registry, decisions, target.route, target.model)
+}
+
+/**
+ * An already selected decision route/model - what a decision request carries, filled by the
+ * caller from the session's current preset - against the decision registry, without defaults.
+ * The decision counterpart of resolveSelection, and what provider.decide resolves with.
+ */
+export function resolveDecisionSelection(
+  registry: Registry,
+  decisions: DecisionRegistry | undefined,
+  route: string,
+  modelId: string,
+): ResolvedDecision {
+  if (!decisions?.lookup(route)) {
+    const chat = registry.lookup(route) !== undefined
+    throw new SlotUnresolved(
+      'NO_ADAPTER',
+      'decision',
+      route,
+      undefined,
+      chat ? 'slot-kind: the route is served by a chat adapter' : undefined,
+    )
+  }
+  const model = decisions.models().find((m) => m.route === route && m.id === modelId)
+  if (!model) throw new SlotUnresolved('NO_MODEL', 'decision', route, modelId)
+  return { route, model }
 }
