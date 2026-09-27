@@ -209,7 +209,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  'packages/web-ui/src': 4300,
+  // W8a-1: React turn actions, usage, and feedback. Measured 4621, exact cap.
+  'packages/web-ui/src': 4621,
   // C-4 helper migration on UI integration: owned outside-click dismissal; measured 4814 + 12.
   'packages/web-units/src': 4826,
   'packages/base/extensions/tools-core': 800,
