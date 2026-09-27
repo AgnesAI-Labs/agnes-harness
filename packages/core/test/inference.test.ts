@@ -9,6 +9,7 @@ import { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '../src/orchestrator/request-me
 import { ToolRegistry } from '../src/registry/tools.js'
 import { headerEquals, type RequestHeaderData } from '../src/request/derive.js'
 import { canonicalJson, sha256Hex } from '../src/request/hash.js'
+import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import { surfaceToolCalls } from '../src/step/inference.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
@@ -40,6 +41,62 @@ const readRegistry = () => {
   r.add(readTool(), { source: 'agnes/tools-core', trust: 'builtin' })
   return r
 }
+
+it('reuses context hooks within a turn and moves changed context to a tail note', async () => {
+  const { session, provider } = await primed(
+    [toolTurn('read', { path: 'a' }), toolTurn('read', { path: 'b' }), textTurn('done'), textTurn('next')],
+    readRegistry(),
+  )
+  let calls = 0
+  let contextText = 'first'
+  session.hooks = {
+    ...session.hooks,
+    context: async (sections) => {
+      calls++
+      return { sections, additionalContext: contextText }
+    },
+  }
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(1)
+  expect(provider.requests).toHaveLength(3)
+  const first = provider.requests[0]
+  const second = provider.requests[1]
+  if (!first || !second) throw new Error('missing request')
+  expect(second.system).toBe(first.system)
+  expect(first.messages.at(-1)?.content).toEqual([{ type: 'text', text: '[hook context]\nfirst' }])
+  contextText = 'second'
+  await session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(2)
+  const next = provider.requests[3]
+  if (!next) throw new Error('missing next-turn request')
+  expect(next.system).toBe(first.system)
+  expect(next.messages.at(-1)?.content).toEqual([{ type: 'text', text: '[hook context]\nsecond' }])
+})
+
+it('recomputes the context hook when the primary model changes mid-turn', async () => {
+  const { session } = await primed([toolTurn('read', { path: 'a' }), textTurn('done')], readRegistry())
+  let calls = 0
+  session.hooks = {
+    ...session.hooks,
+    beforeStep: async ({ step }) => {
+      if (step === 2) session.preset.model.id.primary = 'another-model'
+      return {}
+    },
+    context: async (sections) => {
+      calls++
+      return { sections, additionalContext: 'same' }
+    },
+  }
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(2)
+})
 
 const mediaJpeg = Uint8Array.from([
   0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 8, 0, 8, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0, 0xff,
@@ -135,6 +192,21 @@ const imageModel: ModelRecord = {
 }
 
 describe('Inference segment', () => {
+  it('captures the post-hook primary prefix for later summary requests', async () => {
+    const registry = readRegistry()
+    const { session } = await primed([toolTurn('read', { path: 'x' })], registry)
+    session.hooks = {
+      ...session.hooks,
+      beforeRequest: async (out) =>
+        applyBeforeRequestPatches(out, [{ ext: 'test', patch: { samplingParams: { temperature: 0.2 } } }]),
+    }
+    await session.runInference()
+    const prefix = session.turn?.lastPrefix
+    expect(prefix?.samplingParams?.temperature).toBe(0.2)
+    expect(prefix?.sections[0]?.id).toBe('core:untrusted-envelope')
+    expect(prefix?.tools.map((tool) => tool.name)).toContain('read')
+  })
+
   it('preflights surface artifacts and sends native images only to an image-capable primary model', async () => {
     const provider = fakeProvider([toolTurn('computer_use', {}), textTurn('done')])
     Object.assign(provider, { models: () => [primaryModel(['text', 'image'])] })

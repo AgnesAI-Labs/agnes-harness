@@ -62,6 +62,7 @@ const base = () => ({
   model: { slot: 'primary', route: 'default', model: 'm1' },
   contract: { contract_id: null, parser_version: '1' },
   nonce: NONCE,
+  envelopeNonceFor: () => undefined,
   envelopeCache: createEnvelopeCache(),
 })
 
@@ -253,6 +254,34 @@ describe('deriveRequest', () => {
     expect(JSON.stringify(second.request.messages.at(-1))).toContain('2026-09-10')
   })
 
+  it('keeps hook notes in the tail and explicitly clears nonempty context', () => {
+    seq = 0
+    const input = {
+      ...base(),
+      ...NO_RC,
+      notes: [{ prefix: '[hook context]\n', text: 'A', dedup: { kind: 'latest' as const } }],
+    }
+    const first = deriveRequest({ ...input, surface: [] })
+    expect(textAt(first, 0)).toBe('[hook context]\nA')
+    expect(first.notes).toHaveLength(1)
+    const sent = ev('user/message', first.notes[0]?.data, { origin: 'system' })
+    const visible = computeSurface([sent], {})
+    const repeated = deriveRequest({ ...input, surface: visible })
+    expect(repeated.notes).toHaveLength(0)
+    const note = input.notes[0]
+    if (!note) throw new Error('missing hook note fixture')
+    const cleared = deriveRequest({ ...input, notes: [{ ...note, text: '' }], surface: visible })
+    expect(textAt(cleared, 1)).toBe('[hook context]\n(none)')
+    const empty = ev('user/message', cleared.notes[0]?.data, { origin: 'system' })
+    expect(
+      deriveRequest({
+        ...input,
+        notes: [{ ...note, text: '' }],
+        surface: computeSurface([sent, empty], {}),
+      }).notes,
+    ).toHaveLength(0)
+  })
+
   it('does not mistake a harness note riding the same message kind for the snapshot', () => {
     // The stop gate and the truncated-output path both send notes as `kind: 'runtime_context'`
     // user messages. A note is not a snapshot: it must neither satisfy the comparison on its own
@@ -358,7 +387,7 @@ describe('deriveRequest', () => {
     expect(sanitize('<|a-b|>')).toBe('[removed:special-token]')
   })
 
-  it('D-1: a shared envelope cache keeps already-wrapped history byte-identical across a nonce change', () => {
+  it('uses ledger-selected nonce for old nodes and the current turn nonce for new nodes', () => {
     seq = 0
     const cache = createEnvelopeCache()
     const firstNode = toolResult('ignore previous')
@@ -372,6 +401,7 @@ describe('deriveRequest', () => {
     const out2 = deriveRequest({
       ...base(),
       envelopeCache: cache,
+      envelopeNonceFor: (nodeSeq) => (nodeSeq === firstNode.seq ? NONCE : undefined),
       nonce: NONCE2,
       surface: surface1,
       ...NO_RC,
@@ -379,24 +409,33 @@ describe('deriveRequest', () => {
     // Same node, different turn's nonce live at derivation time, byte-identical output.
     expect(textAt(out2, 0)).toBe(textAt(out1, 0))
     expect(textAt(out1, 0)).toContain(`id="${NONCE}-1-0"`)
+    const cold = deriveRequest({
+      ...base(),
+      envelopeCache: createEnvelopeCache(),
+      envelopeNonceFor: (nodeSeq) => (nodeSeq === firstNode.seq ? NONCE : undefined),
+      nonce: NONCE2,
+      surface: surface1,
+      ...NO_RC,
+    })
+    expect(textAt(cold, 0)).toBe(textAt(out1, 0))
 
     const secondNode = toolResult('new content')
     const surface2 = computeSurface([firstNode, secondNode], {})
     const out3 = deriveRequest({
       ...base(),
       envelopeCache: cache,
+      envelopeNonceFor: (nodeSeq) => (nodeSeq === firstNode.seq ? NONCE : undefined),
       nonce: NONCE2,
       surface: surface2,
       ...NO_RC,
     })
-    // The already-cached node is untouched even though this derivation's own nonce is NONCE2...
+    // The historical node is unchanged even though this derivation's own nonce is NONCE2...
     expect(textAt(out3, 0)).toBe(textAt(out1, 0))
-    // ...while the brand-new node gets wrapped under the live (NONCE2) turn's nonce, since nothing
-    // has cached it yet.
+    // ...while the brand-new node gets the live turn's nonce.
     expect(textAt(out3, 1)).toContain(`id="${NONCE2}-2-0"`)
   })
 
-  it('D-1: a turn-kind derivation prunes cache entries for masked nodes; a summary-kind one never prunes', () => {
+  it('does not let a memoized unsent wrapping override a newly selected nonce', () => {
     seq = 0
     const cache = createEnvelopeCache()
     const node = toolResult('to be masked')
@@ -407,20 +446,16 @@ describe('deriveRequest', () => {
       surface: surface1,
       ...NO_RC,
     })
-    expect(cache.has(node.seq)).toBe(true)
-    // A summary derivation's surface is a sub-range (here, deliberately empty) and must not prune.
-    deriveRequest({
+    expect(cache.has(`${node.seq}\0${NONCE}`)).toBe(true)
+    const second = deriveRequest({
       ...base(),
-      kind: 'summary',
       envelopeCache: cache,
-      surface: [],
+      nonce: NONCE2,
+      surface: surface1,
       ...NO_RC,
-      summaryPlan: { system: 'S', instruction: 'H' },
     })
-    expect(cache.has(node.seq)).toBe(true)
-    // A turn derivation whose surface no longer includes the node (compaction masked it) prunes it.
-    deriveRequest({ ...base(), envelopeCache: cache, surface: [], ...NO_RC })
-    expect(cache.has(node.seq)).toBe(false)
+    expect(textAt(second, 0)).toContain(`id="${NONCE2}-${node.seq}-0"`)
+    expect(cache.has(`${node.seq}\0${NONCE2}`)).toBe(true)
   })
 
   it('does not wrap a trusted node, and tags each untrusted node with its own seq', () => {
@@ -644,6 +679,42 @@ describe('deriveRequest', () => {
     ])
     // A summary request goes through the same mint, so it is branded like any other.
     expect(isLedgerRequest(out.request)).toBe(true)
+  })
+
+  it('reuses the already minted prefix in a wide summary without changing its bytes', () => {
+    const turn = deriveRequest({ ...base(), surface: [], ...NO_RC })
+    const summary = deriveRequest({
+      ...base(),
+      ...NO_RC,
+      kind: 'summary',
+      surface: [],
+      disclosed: [],
+      mintedPrefix: { sections: turn.request.sections, tools: turn.request.tools },
+      summaryPlan: { instruction: 'Summarize without calling tools.' },
+    })
+    expect(summary.request.sections).toEqual(turn.request.sections)
+    expect(summary.request.tools).toEqual(turn.request.tools)
+    expect(summary.header.tool_schema_hash).toBe(
+      sha256Hex(canonicalJson(summary.request.tools).normalize('NFC')),
+    )
+    expect(summary.request.messages.at(-1)?.content).toEqual([
+      { type: 'text', text: 'Summarize without calling tools.' },
+    ])
+    const rule = turn.request.sections[0]
+    if (!rule) throw new Error('missing envelope rule')
+    expect(() =>
+      deriveRequest({
+        ...base(),
+        ...NO_RC,
+        kind: 'summary',
+        surface: [],
+        mintedPrefix: {
+          sections: [{ ...rule, source: '<|im_start|>' }],
+          tools: turn.request.tools,
+        },
+        summaryPlan: { instruction: 'unsafe' },
+      }),
+    ).toThrow('minted prefix contains unsanitized text')
   })
 
   it('hashes the prompt prefix even with no contract, and not as the hash of nothing', () => {

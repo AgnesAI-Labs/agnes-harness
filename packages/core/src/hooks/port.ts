@@ -152,12 +152,13 @@ export class SessionHookPort implements HookPort {
     return result.results.find((entry) => entry.value.action === 'continue')?.value ?? { action: 'stop' }
   }
 
-  async context(base: PromptSection[]): Promise<PromptSection[]> {
+  async context(base: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }> {
     const results: Array<{ ext: string; result: ContextResult }> = structuredClone(
       this.discovered.contributions,
     )
-    const initial = results.length ? applyContextResults(base, results) : { sections: base, overflow: [] }
+    const initial = applyContextResults(base, results)
     let sections = initial.sections
+    let additionalContext = initial.additionalContext
     let overflow = initial.overflow
     const outcome = await this.engine.dispatch(
       'context',
@@ -175,11 +176,15 @@ export class SessionHookPort implements HookPort {
           const applied = applyContextResults(base, next)
           results.push(entry)
           sections = applied.sections
+          additionalContext = applied.additionalContext
           overflow = applied.overflow
         },
       },
     )
-    if (outcome.kind === 'rejected') rejected()
+    if (outcome.kind === 'rejected') {
+      if (outcome.blocked) throw outcome.blocked
+      rejected()
+    }
     for (const item of overflow) {
       try {
         void Promise.resolve(this.inputs.contextOverflow(item)).catch(() => undefined)
@@ -187,7 +192,7 @@ export class SessionHookPort implements HookPort {
         /* diagnostic isolation */
       }
     }
-    return sections
+    return { sections, additionalContext }
   }
 
   async toolResult(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']> {

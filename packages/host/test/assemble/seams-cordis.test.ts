@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { type Context, FiberState } from '@agnes/cordis'
 import {
   buildRuntimeTarget,
@@ -9,9 +14,13 @@ import {
   normalizePluginExport,
   type PackageSnapshotVerifier,
 } from '@agnes/plugin-runtime/host'
+import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { assembleOrdinaryPluginTree } from '../../src/assemble/seams-cordis.js'
+import { createTestHost } from '../../testkit/index.js'
+
+const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))
 
 function builtinRow(config?: unknown) {
   return createPluginRow({
@@ -897,6 +906,96 @@ describe('ordinary Cordis tree base', () => {
       await assembled.close()
     }
     expect(skillResources.list()).toEqual([])
+  })
+
+  it('pages a Cordis-registered 100 KiB runtime Skill through the assembled Host', async () => {
+    const registry = createSkillCandidateRegistry({
+      barrier: { quiesce: async (_id, publish) => publish({}) },
+    })
+    const skillResources = registry.snapshot()
+    const row = builtinRow()
+    const body = `RUNTIME_START\n${'界😀\n'.repeat(12_800)}RUNTIME_END`
+    const entry = normalizePluginExport((ctx: Context) => {
+      ctx.skills.register({ name: 'from-tree', description: 'Synthetic runtime Skill', body })
+    })
+    const assembled = await assembleOrdinaryPluginTree(
+      {},
+      {
+        bootRows: [row],
+        builtinClaims: [{ row, entry }],
+        skillContribution: createSkillCordisService(registry),
+      },
+    )
+    const dataDir = mkdtempSync(join(tmpdir(), 'agnes-runtime-skill-pages-'))
+    let requests = 0
+    let pages = 0
+    const script = (request: RequestBody): InferenceEvent[] => {
+      requests++
+      expect(request.system).toContain('from-tree\t')
+      expect(request.system).not.toContain('RUNTIME_START')
+      expect(request.tools.some((tool) => tool.name === 'skill_read')).toBe(true)
+      if (requests === 1)
+        return [
+          {
+            type: 'toolcall_end',
+            call: { toolUseId: '', name: 'skill_read', args: { name: 'from-tree' }, ordinal: 0 },
+            via: 'native',
+          },
+          { type: 'done', reason: 'toolUse' },
+        ]
+      const latest = request.messages.filter((message) => message.role === 'tool_result').at(-1)
+      const result = latest?.content.find((block) => block.type === 'text')?.text ?? ''
+      expect(result).toContain('directory: -')
+      if (pages === 0) expect(result).toContain('RUNTIME_START')
+      pages++
+      const continuation = /call skill_read with (\{[^\n]+\})\]/u.exec(result)?.[1]
+      if (continuation)
+        return [
+          {
+            type: 'toolcall_end',
+            call: { toolUseId: '', name: 'skill_read', args: JSON.parse(continuation), ordinal: 0 },
+            via: 'native',
+          },
+          { type: 'done', reason: 'toolUse' },
+        ]
+      expect(result).toContain('RUNTIME_END')
+      return [
+        { type: 'text_delta', delta: 'Runtime Skill complete.' },
+        { type: 'done', reason: 'stop' },
+      ]
+    }
+    const provider = new ScriptedProvider({
+      models: [fakeModel({ route: 'gw', id: 'm1', contextWindow: 200_000 })],
+      scripts: Array.from({ length: 12 }, () => script),
+      onExhausted: 'error',
+    })
+    try {
+      const { host } = await createTestHost({
+        dataDir,
+        packageDirs: { '@agnes/base': baseDir },
+        provider,
+        disableSessionTitle: true,
+        skillResources,
+      })
+      try {
+        const session = await host.createSession({ cwd: dataDir })
+        await session.enqueue('next-turn', {
+          content: [{ type: 'text', text: 'Use the from-tree Skill.' }],
+          actor: session.d.actor,
+          kind: 'prompt',
+        })
+        await expect(
+          session.run({ until: 'turn-end', signal: new AbortController().signal }),
+        ).resolves.toMatchObject({ reason: 'completed' })
+        expect(pages).toBeGreaterThan(2)
+        expect(requests).toBe(pages + 1)
+      } finally {
+        await host.close()
+      }
+    } finally {
+      await assembled.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
   })
 })
 

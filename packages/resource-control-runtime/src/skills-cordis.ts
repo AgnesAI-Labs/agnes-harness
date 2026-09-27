@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { type Context, type Fiber, symbols } from '@agnes/cordis'
 import {
   type createSkillCandidateRegistry,
+  MAX_DESCRIPTION_LENGTH,
+  MAX_NAME_LENGTH,
   RUNTIME_SKILL_PRIORITY,
   type RuntimeSkillOwner,
   runtimeSkillOwnerBlocks,
@@ -9,9 +11,8 @@ import {
 } from './skills.js'
 
 /** Disk frontmatter limits. Runtime registration uses the same bounds. */
-const MAX_NAME_LENGTH = 128
-/** Agent Skills specification: description is 1–1024 characters. */
-const MAX_DESCRIPTION_LENGTH = 1024
+export { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH }
+
 const MAX_BODY_BYTES = 192 * 1024
 const KEBAB_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 

@@ -909,9 +909,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // 25024, exact, no spare (+4).
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
-  // The tool registry also bounds a description after sanitization. Measured 25029, exact, no spare
-  // (+3).
-  'packages/core/src': 25029,
+  // Context notes, per-turn prefix memo, and typed cold-block signal on the compaction-prefix base.
+  // Host-selected Skill preload notes and cold-compaction prompt denial are both present.
+  // Child compaction inheritance removes one line. Re-measured 25422, exact; no spare.
+  'packages/core/src': 25422,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2093,12 +2094,16 @@ const INITIAL_CEILING: Record<string, number> = {
   // note. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: original catalog/name activation plus corrected row accounting;
   // removed catalog-dependent search helper. Measured 1008, exact; see clean-rewrite execution record.
-  'packages/base/extensions/skills': 1008,
+  // Skill description bounds: a per-entry catalog description cap and a count-only log when the
+  // catalog budget shortens or drops entries. Paged Skill/text reads measure 1121, exact.
+  'packages/base/extensions/skills': 1121,
   // T6.3 injects the Host-owned HTTP executor. CORDIS-C1b Task 6 adds workspace snapshot loading,
   // synchronous registration and descendant-drained command execution; exact measured total.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line, the AGH_DIR import for the
-  // workspace `.agh/hooks.json` fallback path. Re-measured with this guard's countLines(): 955, exact cap.
-  'packages/base/extensions/hooks-runner': 955,
+  // workspace `.agh/hooks.json` fallback path. Prompt-submit result memo adds 41 counted lines.
+  // Context-first exit 2 reuses the before_step prompt verdict. A workspace/policy-scoped memo
+  // prevents cross-sandbox verdict reuse. Re-measured 1007, exact cap.
+  'packages/base/extensions/hooks-runner': 1007,
   // MCP rows step 4 (design 2026-09-21-resource-rows-design.md §3.9, D122): agnes/mcp-client was
   // retired. Its shared MCP library (connect.ts, register.ts, index-table.ts, the McpServerConfig type)
   // moved here unchanged apart from import paths; the profile-preset reader (config.ts's
@@ -2460,8 +2465,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // live invocation. Measured 38081, exact, no spare (+6).
   // Cancelling a child's creation also settles its execution state in the same SQLite statement.
   // Measured 38084, exact, no spare (+3).
-  // Tool-definition refusals name the tool and each problem. Measured 38096, exact, no spare (+12).
-  'packages/host/src': 38096,
+  // Tool-definition refusals and title nonce query. Host Skill preload notes add 2 counted lines.
+  // Migration measured 38099, exact, no spare.
+  'packages/host/src': 38099,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2679,12 +2685,13 @@ const extensionDirs = existsSync(extensionsDir)
 const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // CORDIS-C1b Task 6 adds invocation-scoped workspace hook snapshots and descendant draining.
   // 2026-09-21 AGH namespace rename, +1 approved by the user: the AGH_DIR import for the workspace
-  // `.agh/hooks.json` fallback path. Measured 955.
-  ['hooks-runner', 955],
+  // `.agh/hooks.json` fallback path. Context-first prompt denial and scoped memo; measured 1007.
+  ['hooks-runner', 1007],
   ['computer-use', 1786],
   // 2026-09-23 user-approved: dsh-compatible Skill discovery. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
-  ['skills', 1008],
+  // Skill description bounds and paged reads. Measured 1121, exact.
+  ['skills', 1121],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {
