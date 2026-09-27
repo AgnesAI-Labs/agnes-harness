@@ -1,5 +1,4 @@
 import type { UITimeline } from '@agnes/protocol'
-import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { getBrowserLog } from './browser-log.js'
 import { type CollectedDiagnostics, collectDiagnostics, type RpcCall } from './diagnostics-bundle.js'
 
@@ -155,29 +154,36 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
     generate.textContent = '生成诊断包'
   }
 
-  bindDismissibleDialog({
-    dialog,
-    cancel: q<HTMLButtonElement>('[data-action="cancel"]'),
-    additional: dialog.querySelectorAll<HTMLButtonElement>('[data-action="close"]'),
-    canClose: () => true,
-    // Closing mid-generation aborts the collection; its late result is dropped by the `controller` check.
-    // A finished ZIP (up to 64 MiB) is released right away rather than on the next open().
-    close: () => {
-      controller?.abort()
-      idle()
-      result = undefined
-      summary.textContent = ''
-      savedName.textContent = ''
-      dialog.close()
-    },
-    restoreFocus: () => trigger?.focus(),
+  // Both closing and disposal retire the request before a late collection can publish a ZIP.
+  const clearCollection = () => {
+    controller?.abort()
+    idle()
+    result = undefined
+    summary.textContent = ''
+    savedName.textContent = ''
+  }
+  const dismiss = () => {
+    if (disposed) return
+    clearCollection()
+    dialog.close()
+    trigger?.focus()
+  }
+  q<HTMLButtonElement>('[data-action="cancel"]').addEventListener('click', dismiss)
+  for (const close of dialog.querySelectorAll<HTMLButtonElement>('[data-action="close"]'))
+    close.addEventListener('click', dismiss)
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault()
+    dismiss()
+  })
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dismiss()
   })
   q<HTMLButtonElement>('[data-action="share"]').addEventListener('click', () => show('share'))
   for (const back of dialog.querySelectorAll<HTMLButtonElement>('[data-back]'))
     back.addEventListener('click', () => show(back.dataset.back as Step))
 
   generate.addEventListener('click', () => {
-    if (controller) return
+    if (disposed || controller) return
     const mine = new AbortController()
     controller = mine
     generate.disabled = true
@@ -215,7 +221,7 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
 
   saveButton.addEventListener('click', () => {
     const current = result
-    if (!current || saveButton.disabled) return
+    if (disposed || !current || saveButton.disabled) return
     saveButton.disabled = true
     error.textContent = ''
     // No await before save(): showSaveFilePicker needs this click's user activation.
@@ -236,8 +242,9 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
   })
 
   const dispose = () => {
+    if (disposed) return
     disposed = true
-    controller?.abort()
+    clearCollection()
     window.removeEventListener('pagehide', dispose)
     dialog.remove()
   }

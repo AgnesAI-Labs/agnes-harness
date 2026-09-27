@@ -210,7 +210,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
   'packages/web-ui/src': 4300,
-  'packages/web-units/src': 4814,
+  // C-4 helper migration on UI integration: owned outside-click dismissal; measured 4814 + 12.
+  'packages/web-units/src': 4826,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -1981,7 +1982,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (13161) with the streaming-smoothness quick fixes (13313): the preview
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
-  'packages/web/src': 13922,
+  // C-4 helper migration on UI integration: measured current source 13140 + 7; no spare allocation.
+  'packages/web/src': 13147,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

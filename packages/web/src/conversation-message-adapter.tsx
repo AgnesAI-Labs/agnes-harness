@@ -1,5 +1,4 @@
 import type { UINode, UITurn } from '@agnes/protocol'
-import { bindAutoDismissDisclosure } from '@agnes/web-admin-frame'
 import {
   type ClientResourceService,
   type LocaleService,
@@ -41,7 +40,6 @@ function TurnActions({
     if (!element) return
     const instance = createConversationMessageActions({
       ...(onFork ? { onFork } : {}),
-      bindAutoDismiss: bindAutoDismissDisclosure,
     })
     actions.current = instance
     element.append(instance.element)

@@ -16,6 +16,7 @@ export interface ConversationMessageActionState {
 
 export interface ConversationMessageActionOptions {
   onFork?(turn: UITurn): Promise<void>
+  /** Compatibility override; otherwise the renderer owns outside-click dismissal and cleanup. */
   bindAutoDismiss?(element: HTMLDetailsElement): void
 }
 
@@ -139,7 +140,17 @@ export function createConversationMessageActions(
   usagePanel.append(meta, usage)
   const feedback = createConversationFeedback()
   element.append(copy, fork, usagePanel, feedback.element)
-  options.bindAutoDismiss?.(usagePanel)
+  let stopDismiss: (() => void) | undefined
+  if (options.bindAutoDismiss) options.bindAutoDismiss(usagePanel)
+  else {
+    const doc = usagePanel.ownerDocument
+    const dismiss = (event: Event) => {
+      if (usagePanel.isConnected && usagePanel.open && !event.composedPath().includes(usagePanel))
+        usagePanel.open = false
+    }
+    doc.addEventListener('click', dismiss)
+    stopDismiss = () => doc.removeEventListener('click', dismiss)
+  }
 
   let state: ConversationMessageActionState | undefined
   let forkPending = false
@@ -275,6 +286,8 @@ export function createConversationMessageActions(
       render()
     },
     dispose() {
+      stopDismiss?.()
+      stopDismiss = undefined
       feedback.dispose()
     },
   }
