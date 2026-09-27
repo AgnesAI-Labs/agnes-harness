@@ -123,6 +123,18 @@ describe('createProvider without decision adapters', () => {
   })
 })
 
+describe('createProvider route names across kinds', () => {
+  // A route name is one namespace. A decision route that shares a chat route's name would make every
+  // route-keyed projection (the table, the ledger, the doctor) ambiguous about which one it meant.
+  it('refuses a decision route named like a chat route at construction', () => {
+    const gwModel = { ...jevModel, route: 'gw' }
+    const clash = new Scripted(async () => ({ answers: ANSWERS, model: gwModel.id }), [gwModel])
+    expect(() => build(clash, [{ ...jevDecl, route: 'gw', models: [gwModel] }])).toThrow(
+      expect.objectContaining({ code: 'DUPLICATE_ROUTE', detail: expect.objectContaining({ route: 'gw' }) }),
+    )
+  })
+})
+
 describe('provider.decisionModels', () => {
   it('lists the decision catalogue while models() stays chat-only', () => {
     const p = build(ok())

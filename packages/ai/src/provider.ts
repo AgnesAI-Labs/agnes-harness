@@ -421,6 +421,11 @@ export function createProvider(opts: {
     opts.decision && (decisionAdapters.length > 0 || opts.decision.routes.length > 0)
       ? buildDecisionRegistry(decisionAdapters, opts.decision.routes)
       : undefined
+  // Route names are one namespace across both registries: a decision route that reuses a chat
+  // route's name would leave every route-keyed reader unsure which of the two it meant.
+  for (const { route } of decisions?.routes() ?? [])
+    if (registry.lookup(route))
+      throw new AiSetupError('DUPLICATE_ROUTE', { route, kinds: ['chat', 'decision'] })
   resolveCredentials(
     [...opts.adapters, ...decisionAdapters],
     opts.secrets,
