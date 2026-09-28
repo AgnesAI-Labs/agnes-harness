@@ -6,7 +6,7 @@ import {
   createConversationProjectionStore,
   useConversationRuntime,
 } from '@agnes/web-ui/assistant-ui'
-import { act, createElement } from 'react'
+import { act, createElement, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WebConversationMessages } from '../src/conversation-message-adapter.js'
@@ -94,6 +94,7 @@ it('keeps the React adapter disclosure through replay and retires its binding on
   const remove = vi.spyOn(document, 'removeEventListener')
   try {
     await act(async () => root.render(createElement(Harness)))
+    expect(host.querySelector('[data-agnes-turn-actions]')).toBeNull()
     const old = required<HTMLDetailsElement>(host, '.turn-usage')
     const summary = required<HTMLElement>(old, 'summary')
     const click = add.mock.calls.find(([type]) => type === 'click')?.[1]
@@ -122,5 +123,43 @@ it('keeps the React adapter disclosure through replay and retires its binding on
     expect(next.open).toBe(false)
   } finally {
     await act(async () => root.unmount())
+  }
+})
+
+it('retires the legacy action root after a parent React commit without nested-root warnings', async () => {
+  Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
+  const host = document.createElement('section')
+  document.body.append(host)
+  const timeline = createTimelineRenderer({
+    transcript: host,
+    newContentButton: document.createElement('button'),
+  })
+  timeline.render([], [turn])
+  const details = required<HTMLDetailsElement>(host, '.turn-usage')
+  const add = vi.spyOn(document, 'addEventListener')
+  const remove = vi.spyOn(document, 'removeEventListener')
+  const parent = createRoot(document.body.appendChild(document.createElement('div')))
+  function Owner() {
+    useLayoutEffect(() => () => timeline.reset(), [])
+    return null
+  }
+  await act(async () => parent.render(createElement(Owner)))
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  try {
+    await act(async () => parent.unmount())
+    expect(errors.mock.calls.map(([message]) => String(message))).not.toContainEqual(
+      expect.stringContaining('synchronously unmount a root'),
+    )
+    expect(errors.mock.calls.map(([message]) => String(message))).not.toContainEqual(
+      expect.stringContaining('flushSync was called from inside a lifecycle method'),
+    )
+    expect(details.isConnected).toBe(false)
+    expect(remove.mock.calls.filter(([type]) => type === 'click')).toHaveLength(1)
+    expect(add.mock.calls.filter(([type]) => type === 'click')).toHaveLength(0)
+  } finally {
+    errors.mockRestore()
+    add.mockRestore()
+    remove.mockRestore()
+    timeline.dispose?.()
   }
 })

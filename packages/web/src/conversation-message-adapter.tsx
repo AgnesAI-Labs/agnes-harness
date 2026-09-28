@@ -12,8 +12,9 @@ import {
   ConversationMarkdown,
   ConversationMessages,
   type ConversationMessagesProps,
+  ConversationTurnActions,
 } from '@agnes/web-ui/assistant-ui'
-import { createConversationMessageActions, createConversationToolCard } from '@agnes/web-units'
+import { createConversationToolCard } from '@agnes/web-units'
 import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { toolIcon } from './tool-icon.js'
@@ -21,37 +22,6 @@ import { toolIcon } from './tool-icon.js'
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 type SlotNode = Extract<UINode, { kind: 'slot' }>
 const noSessionSubscription = () => () => undefined
-
-function TurnActions({
-  turn,
-  finalText,
-  settled,
-  onFork,
-}: {
-  turn: UITurn
-  finalText: string
-  settled: boolean
-  onFork?: (turn: UITurn) => Promise<void>
-}) {
-  const host = useRef<HTMLDivElement>(null)
-  const actions = useRef<ReturnType<typeof createConversationMessageActions>>()
-  useLayoutEffect(() => {
-    const element = host.current
-    if (!element) return
-    const instance = createConversationMessageActions({
-      ...(onFork ? { onFork } : {}),
-    })
-    actions.current = instance
-    element.append(instance.element)
-    return () => {
-      instance.dispose()
-      instance.element.remove()
-      actions.current = undefined
-    }
-  }, [onFork])
-  useLayoutEffect(() => actions.current?.update({ turn, finalText, settled }))
-  return <div ref={host} data-agnes-turn-actions="" />
-}
 
 function ToolLeaf({ node }: { node: ToolNode }) {
   const element = useRef<HTMLDivElement>(null)
@@ -188,7 +158,7 @@ export function WebConversationMessages({
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
     renderTurnActions: (turn, finalText, settled) => (
-      <TurnActions
+      <ConversationTurnActions
         key={turn.id}
         turn={turn}
         finalText={finalText}
