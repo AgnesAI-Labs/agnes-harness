@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client'
 export type MarkdownState = { streaming?: boolean }
 export type MarkdownRenderer = {
   update(source: string, state?: MarkdownState): void
-  dispose(): void
+  dispose(options?: { defer?: boolean }): void
 }
 type MarkdownOptions = Omit<ConversationMarkdownProps, 'source' | 'part' | 'onRelease' | 'syntax'> & {
   part?: 'body' | 'thinking'
@@ -42,10 +42,10 @@ export function createMarkdownRenderer(
       streaming = state?.streaming ?? streaming
       render(source)
     },
-    dispose() {
+    dispose(options) {
       if (disposed) return
       disposed = true
-      flushSync(() => root.unmount())
+      options?.defer ? queueMicrotask(() => flushSync(() => root.unmount())) : flushSync(() => root.unmount())
     },
   }
 }

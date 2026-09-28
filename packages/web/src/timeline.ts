@@ -273,8 +273,8 @@ function createEntry(node: UINode): Entry {
         bodyRenderer.update(assistantText(next), { streaming: next.streaming === true })
       },
       dispose() {
-        thinkingRenderer.dispose()
-        bodyRenderer.dispose()
+        thinkingRenderer.dispose({ defer: true })
+        bodyRenderer.dispose({ defer: true })
       },
     }
   }
