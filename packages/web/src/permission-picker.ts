@@ -1,5 +1,4 @@
-import { bindListboxKeys, positionPopover } from '@agnes/web-ui'
-import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
+import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 
 export type PermissionMode = 'view' | 'workspace' | 'full'
@@ -109,7 +108,7 @@ export function createPermissionPicker(options: {
     if (!listbox) return
     listbox.setAttribute('aria-activedescendant', `permission-picker-option-${activeIndex}`)
     listbox.setAttribute('aria-busy', String(state.pending || selecting))
-    renderRegion(
+    webUi.renderRegion(
       listbox,
       permissionOptions(state, activeIndex, (index) => {
         selectingFromPointer = true
@@ -123,14 +122,14 @@ export function createPermissionPicker(options: {
 
   function position(): void {
     if (!popover) return
-    positionPopover(trigger, popover, { preferredWidth: 280, preferredHeight: 220, viewportPadding })
+    webUi.positionPopover(trigger, popover, { preferredWidth: 280, preferredHeight: 220, viewportPadding })
   }
 
   function close(closeOptions: { returnFocus?: boolean } = {}): void {
     interaction += 1
     selecting = false
     const wasOpen = popover !== undefined
-    if (listbox) unmountRegion(listbox)
+    if (listbox) webUi.unmountRegion(listbox)
     popover?.remove()
     popover = undefined
     listbox = undefined
@@ -173,15 +172,15 @@ export function createPermissionPicker(options: {
     if (popover || state.disabled || state.pending || selecting) return
     interaction += 1
     activeIndex = selectedIndex()
-    popover = createRegionHost(document.body, 'section', 'permission-picker')
+    popover = webUi.createRegionHost(document.body, 'section', 'permission-picker')
     popover.id = 'permission-picker-popover'
     popover.setAttribute('aria-label', '选择本会话权限')
-    listbox = createRegionHost(popover, 'div', 'permission-picker-list')
+    listbox = webUi.createRegionHost(popover, 'div', 'permission-picker-list')
     listbox.id = 'permission-listbox'
     listbox.setAttribute('role', 'listbox')
     listbox.setAttribute('aria-label', '本会话权限')
     listbox.tabIndex = -1
-    bindListboxKeys(listbox, (intent) => {
+    webUi.bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)
       else if (intent.kind === 'first') setActive(0)
       else if (intent.kind === 'last') setActive(PERMISSION_OPTIONS.length - 1)

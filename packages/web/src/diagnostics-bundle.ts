@@ -16,8 +16,8 @@ import {
   type DiagnosticsWarning,
   type LogTail,
 } from '@agnes/web-units/diagnostics-types'
-import { buildZip, type ZipEntry } from '@agnes/web-units/diagnostics-zip'
 import { renderDiagnosticsViewer } from '@agnes/web-units/diagnostics-viewer'
+import { buildZip, type ZipEntry } from '@agnes/web-units/diagnostics-zip'
 import { redactDiagnostic, redactDiagnosticText } from './diagnostics-redact.js'
 
 export type RpcCall = (method: string, params: unknown, opts?: { signal?: AbortSignal }) => Promise<unknown>

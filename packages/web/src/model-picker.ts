@@ -1,5 +1,4 @@
-import { bindListboxKeys, positionPopover } from '@agnes/web-ui'
-import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
+import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 
 export type ModelPickerOption = {
@@ -144,7 +143,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
       help.hidden = state.selected !== undefined
       help.textContent = '选择此任务使用的模型'
     }
-    renderRegion(
+    webUi.renderRegion(
       listbox,
       modelOptions(state, activeIndex, selecting, (index) => {
         selectingFromPointer = true
@@ -158,15 +157,15 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function position(): void {
     if (!popover) return
-    positionPopover(trigger, popover, { preferredWidth, preferredHeight, viewportPadding })
+    webUi.positionPopover(trigger, popover, { preferredWidth, preferredHeight, viewportPadding })
   }
 
   function close(closeOptions: { returnFocus?: boolean } = {}): void {
     interaction += 1
     selecting = false
     const wasOpen = popover !== undefined
-    if (help) unmountRegion(help)
-    if (listbox) unmountRegion(listbox)
+    if (help) webUi.unmountRegion(help)
+    if (listbox) webUi.unmountRegion(listbox)
     popover?.remove()
     popover = undefined
     help = undefined
@@ -211,17 +210,17 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     if (popover || isUnavailable()) return
     interaction += 1
     activeIndex = Math.min(Math.max(initialIndex, 0), Math.max(state.options.length - 1, 0))
-    popover = createRegionHost(document.body, 'section', 'model-picker')
+    popover = webUi.createRegionHost(document.body, 'section', 'model-picker')
     popover.id = 'model-picker-popover'
     popover.setAttribute('aria-label', '选择当前会话模型')
-    help = createRegionHost(popover, 'p', 'model-picker-help')
+    help = webUi.createRegionHost(popover, 'p', 'model-picker-help')
     help.dataset.modelPickerHelp = ''
-    listbox = createRegionHost(popover, 'div', 'model-picker-list')
+    listbox = webUi.createRegionHost(popover, 'div', 'model-picker-list')
     listbox.id = 'model-listbox'
     listbox.setAttribute('role', 'listbox')
     listbox.setAttribute('aria-label', '可用模型')
     listbox.tabIndex = -1
-    bindListboxKeys(listbox, (intent) => {
+    webUi.bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)
       else if (intent.kind === 'first') setActive(0)
       else if (intent.kind === 'last') setActive(state.options.length - 1)
