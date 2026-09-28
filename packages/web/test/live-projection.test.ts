@@ -314,6 +314,21 @@ describe('Web live projection', () => {
     await live.stop()
   })
 
+  it('ignores an in-flight preview callback after the session projection stops', async () => {
+    vi.useFakeTimers()
+    const d = daemon()
+    const s = sink()
+    const live = createLiveProjection(d.session as never, connected, s.sink)
+    await live.start()
+    await d.write('assistant/output', started('e1'))
+    await vi.advanceTimersByTimeAsync(60)
+    d.preview('e1', 0, 'partial')
+    const callback = d.session.onPreview.mock.calls[0]?.[0]
+    await live.stop()
+    callback?.({ sessionId: 's', lane: 'main', effectId: 'e1', stream: 'text', offset: 7, delta: ' stale' })
+    expect(s.text('ev-1')).toBe('partial')
+  })
+
   it('rejects start() when the first opening fails', async () => {
     const d = daemon()
     d.projectUIOpening.mockRejectedValueOnce(
