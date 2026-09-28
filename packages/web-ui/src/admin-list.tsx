@@ -260,7 +260,7 @@ export function PluginList({
             : undefined
         return (
           <article
-            key={item.id}
+            key={`${item.id}@${item.version}`}
             className="plugin-row"
             data-plugin-id={item.id}
             data-tab={tab}
