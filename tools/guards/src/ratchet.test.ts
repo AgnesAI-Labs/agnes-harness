@@ -211,8 +211,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-slots/src': 605,
   // W8a-1: React turn actions, usage, and feedback. Measured 4621, exact cap.
   'packages/web-ui/src': 4621,
-  // C-4 helper migration on UI integration: owned outside-click dismissal; measured 4814 + 12.
-  'packages/web-units/src': 4826,
+  // W8a-2: replace the native action renderer with a bridge to the shared React footer; measured 4652.
+  'packages/web-units/src': 4652,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -1984,7 +1984,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // C-4 helper migration on UI integration: measured current source 13140 + 7; no spare allocation.
-  'packages/web/src': 13147,
+  // W8a-2: the Web adapter renders shared React turn actions directly; measured 13093.
+  'packages/web/src': 13093,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

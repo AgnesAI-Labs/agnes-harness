@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
-import type { UINode } from '@agnes/protocol'
+import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
 import {
   AssistantRuntimeProvider,
@@ -271,4 +271,93 @@ it('uses the complete shared cost contract through the real adapter without an i
   }
   await update(store, [user])
   expect(details.isConnected).toBe(false)
+})
+
+it('keeps each React action footer through replay and history prepend, then retires reused turn IDs across sessions', async () => {
+  const firstNodes: UINode[] = [
+    { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'first' }] },
+    { kind: 'assistant', id: 'a1', seq: 2, text: 'first answer' },
+    { kind: 'user', id: 'u2', seq: 3, content: [{ type: 'text', text: 'second' }] },
+    { kind: 'assistant', id: 'a2', seq: 4, text: 'second answer' },
+  ]
+  const makeTurn = (id: string, userId: string, answerId: string): UITurn => ({
+    id,
+    turn: Number(id.slice(-1)),
+    startSeq: 1,
+    startedAt: '2026-09-27T00:00:00.000Z',
+    endedAt: '2026-09-27T00:00:01.000Z',
+    status: 'completed',
+    nodeIds: [userId, answerId],
+    finalAssistantId: answerId,
+    inherited: false,
+    forkable: true,
+    usage: {
+      totals: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: true,
+      billingComplete: true,
+      calls: [],
+    },
+  })
+  const first = makeTurn('turn:1', 'u1', 'a1')
+  const second = makeTurn('turn:2', 'u2', 'a2')
+  const earlier = makeTurn('turn:0', 'u0', 'a0')
+  const store = createConversationProjectionStore({
+    sessionId: 'session',
+    nodes: firstNodes,
+    turns: [first, second],
+  })
+  const onFork = async () => {
+    throw new Error('offline')
+  }
+  function TurnHarness({ turns }: { turns: UITurn[] }) {
+    const runtime = useConversationRuntime(store)
+    return createElement(
+      AssistantRuntimeProvider,
+      { runtime },
+      createElement(WebConversationMessages, { registry, turns, onFork }),
+    )
+  }
+  await act(async () => root.render(createElement(TurnHarness, { turns: [first, second] })))
+  const firstFooter = host.querySelector<HTMLElement>('[data-turn-id="turn:1"] footer.turn-footer')
+  const secondFooter = host.querySelector<HTMLElement>('[data-turn-id="turn:2"] footer.turn-footer')
+  const secondDetails = secondFooter?.querySelector<HTMLDetailsElement>('.turn-usage')
+  const secondSummary = secondDetails?.querySelector<HTMLElement>('summary')
+  expect(secondFooter).not.toBeNull()
+  expect(secondDetails).not.toBeNull()
+  if (!secondDetails || !secondSummary) throw new Error('missing second turn disclosure')
+  secondDetails.open = true
+  secondSummary.focus()
+
+  const prepended: UINode[] = [
+    { kind: 'user', id: 'u0', seq: -1, content: [{ type: 'text', text: 'earlier' }] },
+    { kind: 'assistant', id: 'a0', seq: 0, text: 'earlier answer' },
+    ...firstNodes,
+  ]
+  await act(async () => {
+    store.update({ sessionId: 'session', nodes: prepended, turns: [earlier, first, second] })
+    root.render(createElement(TurnHarness, { turns: [earlier, first, second] }))
+  })
+  expect(
+    Array.from(host.querySelectorAll('[data-turn-id]')).map((item) => item.getAttribute('data-turn-id')),
+  ).toEqual(['turn:0', 'turn:1', 'turn:2'])
+  expect(host.querySelector('[data-turn-id="turn:2"] footer.turn-footer')).toBe(secondFooter)
+  expect(secondDetails.open).toBe(true)
+  expect(document.activeElement).toBe(secondSummary)
+  await act(async () => {
+    store.update({ sessionId: 'session', nodes: prepended, turns: [earlier, first, second] })
+  })
+  expect(host.querySelector('[data-turn-id="turn:2"] footer.turn-footer')).toBe(secondFooter)
+
+  const fork = host.querySelector<HTMLButtonElement>('[data-turn-id="turn:1"] [aria-label="分支到新聊天"]')
+  await act(async () => fork?.click())
+  expect(host.querySelector('[data-turn-id="turn:1"] .turn-feedback')?.textContent).toBe('分支失败，请重试。')
+  expect(host.querySelector('[data-turn-id="turn:2"] .turn-feedback')?.textContent).toBe('')
+  await act(async () => {
+    registry.setSession('next-session')
+    store.update({ sessionId: 'next-session', nodes: firstNodes.slice(0, 2), turns: [first] })
+    root.render(createElement(TurnHarness, { turns: [first] }))
+  })
+  expect(host.querySelector('[data-turn-id="turn:1"] .turn-feedback')?.textContent).toBe('')
+  expect(host.querySelector('[data-turn-id="turn:2"]')).toBeNull()
+  expect(host.querySelector('[data-turn-id="turn:1"] footer.turn-footer')).not.toBe(firstFooter)
 })

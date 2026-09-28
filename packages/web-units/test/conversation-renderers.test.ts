@@ -48,6 +48,7 @@ describe('conversation leaf renderers', () => {
   it('owns outside-click dismissal without an injected binding and preserves the disclosure on updates', () => {
     const actions = createConversationMessageActions()
     document.body.append(actions.element)
+    expect(actions.element.querySelector('footer.turn-footer')).not.toBeNull()
     const details = required<HTMLDetailsElement>(actions.element, '.turn-usage')
     const summary = required<HTMLElement>(details, 'summary')
     const process = document.createElement('details')
@@ -182,9 +183,55 @@ describe('conversation leaf renderers', () => {
     expect(first.feedback.element.textContent).toBe('only first')
     expect(second.feedback.element.textContent).toBe('')
     first.dispose()
+    expect(vi.getTimerCount()).toBe(0)
     await vi.advanceTimersByTimeAsync(1600)
     expect(first.feedback.element.textContent).toBe('')
     second.dispose()
+  })
+
+  it('keeps two legacy action roots independent through replay and a failed fork retry', async () => {
+    let rejectFirst: (error: Error) => void = () => undefined
+    const onFork = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirst = reject
+          }),
+      )
+      .mockResolvedValueOnce(undefined)
+    const first = createConversationMessageActions({ onFork })
+    const second = createConversationMessageActions()
+    document.body.append(first.element, second.element)
+    const firstTurn = completedTurn({ id: 'turn:first' })
+    const secondTurn = completedTurn({ id: 'turn:second' })
+    try {
+      first.update({ turn: firstTurn, finalText: 'first answer', settled: true })
+      second.update({ turn: secondTurn, finalText: 'second answer', settled: true })
+      const firstDetails = required<HTMLDetailsElement>(first.element, '.turn-usage')
+      const secondDetails = required<HTMLDetailsElement>(second.element, '.turn-usage')
+      firstDetails.open = true
+      first.update({ turn: { ...firstTurn, durationMs: 4000 }, finalText: 'first answer+', settled: true })
+      first.update({ turn: firstTurn, finalText: 'first answer+', settled: true })
+      expect(required(first.element, '.turn-usage')).toBe(firstDetails)
+      expect(firstDetails.open).toBe(true)
+      expect(required(second.element, '.turn-usage')).toBe(secondDetails)
+
+      const fork = required<HTMLButtonElement>(first.element, '[aria-label="分支到新聊天"]')
+      fork.click()
+      await vi.waitFor(() => expect(fork.disabled).toBe(true))
+      rejectFirst(new Error('offline'))
+      await vi.waitFor(() => expect(first.feedback.element.textContent).toBe('分支失败，请重试。'))
+      expect(fork.disabled).toBe(false)
+      expect(second.feedback.element.textContent).toBe('')
+      fork.click()
+      await vi.waitFor(() => expect(onFork).toHaveBeenCalledTimes(2))
+      expect(first.feedback.element.textContent).toBe('')
+      expect(secondDetails.isConnected).toBe(true)
+    } finally {
+      first.dispose()
+      second.dispose()
+    }
   })
 
   it('keeps the attachment surface empty until the protocol supplies attachment nodes', () => {
