@@ -13,6 +13,7 @@ const configurationCallback = vi.hoisted(() => ({
 }))
 const traceBridge = vi.hoisted(() => ({
   options: undefined as unknown,
+  transcriptOptions: undefined as unknown,
   metas: [] as unknown[],
 }))
 vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
@@ -21,6 +22,7 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
     ...actual,
     startClientModules: async (options: Parameters<typeof actual.startClientModules>[0]) => {
       traceBridge.options = options.trace
+      traceBridge.transcriptOptions = options.transcript
       const runtime = await actual.startClientModules(options)
       if (runtime.trace) {
         const render = runtime.trace.render.bind(runtime.trace)
@@ -237,6 +239,7 @@ afterEach(async () => {
   vi.resetModules()
   vi.clearAllMocks()
   traceBridge.options = undefined
+  traceBridge.transcriptOptions = undefined
   traceBridge.metas.length = 0
   vi.unstubAllGlobals()
   document.documentElement.replaceChildren()
@@ -270,6 +273,7 @@ describe('web session selection', () => {
     }))
 
     await import('../src/app.js')
+    expect(traceBridge.transcriptOptions).toMatchObject({ nodeHost: 'react' })
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
     const trace = traceBridge.options as {
       readToolDetail: (sessionId: string, callSeq: number, resultSeq?: number) => Promise<unknown>
