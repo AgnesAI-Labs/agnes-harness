@@ -289,6 +289,9 @@ function createEntry(node: UINode): Entry {
         if (next.kind !== 'tool') return
         card.update(next)
       },
+      dispose() {
+        card.dispose()
+      },
     }
   }
 

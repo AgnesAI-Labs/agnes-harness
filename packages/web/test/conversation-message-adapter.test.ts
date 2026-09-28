@@ -44,7 +44,7 @@ const slot = (current: number): UINode => ({
   id: 'slot',
   fill: { slot: 'tool.card.inline', extId: 'plugin-a', payload: { current } },
 })
-const tool = (status: Extract<UINode, { kind: 'tool' }>['status']): UINode => ({
+const tool = (status: Extract<UINode, { kind: 'tool' }>['status']): Extract<UINode, { kind: 'tool' }> => ({
   kind: 'tool',
   id: 'tool',
   seq: 2,
@@ -168,7 +168,7 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     offAgain()
   })
 
-  it('uses the original tool card, shared React cost detail and Markdown leaves, with DSH toolview claim and fallback', async () => {
+  it('uses the shared tool card, shared React cost detail and Markdown leaves, with DSH toolview claim and fallback', async () => {
     const assistant: UINode = {
       kind: 'assistant',
       id: 'assistant',
@@ -188,6 +188,7 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     expect(paragraph?.textContent).toBe('first')
     const toolElement = item('tool')?.querySelector<HTMLElement>('[data-agnes-tool-card]')
     expect(toolElement?.textContent).toContain('正在执行')
+    expect(toolElement?.querySelector('svg.icon.tool-icon')?.getAttribute('aria-hidden')).toBe('true')
     const details = item('cost')?.querySelector<HTMLDetailsElement>('details.call-usage')
     expect(details?.textContent).toContain('费用未提供')
     if (details) details.open = true
@@ -219,6 +220,57 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     expect(item('tool')?.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
     expect(item('tool')?.textContent).toContain('Permission denied')
     expect(item('tool')?.querySelector('[data-agnes-tool-card]')).toBe(toolElement)
+    await update(store, [user, assistant, tool('failed'), cost])
+    expect(item('tool')?.querySelector('[data-agnes-tool-card]')).toBe(toolElement)
+    await act(async () => {
+      registry.setSession('second')
+      store.update({ sessionId: 'second', nodes: [tool('planned')] })
+      await Promise.resolve()
+    })
+    expect(item('tool')?.querySelector('[data-agnes-tool-card]')).not.toBe(toolElement)
+    expect(item('tool')?.querySelector('.tool-status')?.textContent).toBe('等待执行')
+  })
+
+  it('updates a tool glyph and retains its disclosure when a tool name changes under the same ID', async () => {
+    const initial = tool('running')
+    const store = createConversationProjectionStore({ sessionId: 'session', nodes: [initial] })
+    await mount(store)
+    const card = item('tool')?.querySelector<HTMLElement>('[data-agnes-tool-card]')
+    const button = card?.querySelector<HTMLButtonElement>('.tool-detail')
+    await act(async () => button?.click())
+    button?.focus()
+    await update(store, [{ ...initial, name: 'web_search', status: 'completed' }])
+    expect(item('tool')?.querySelector('[data-agnes-tool-card]')).toBe(card)
+    expect(card?.querySelector('svg.icon.tool-icon path')?.getAttribute('d')).toContain('m21 21-4.34-4.34')
+    expect(button?.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(button)
+  })
+
+  it('retains selected tool detail text until the reader releases the selection', async () => {
+    const initial = { ...tool('running'), argsPreview: 'first argument' }
+    const store = createConversationProjectionStore({ sessionId: 'session', nodes: [initial] })
+    await mount(store)
+    await act(async () => item('tool')?.querySelector<HTMLButtonElement>('.tool-detail')?.click())
+    const detail = item('tool')?.querySelector<HTMLElement>('.tool-detail-text')
+    if (!detail?.firstChild) throw new Error('missing tool detail text')
+    const selection = document.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(detail.firstChild)
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    try {
+      await update(store, [{ ...initial, argsPreview: 'first argument plus more' }])
+      expect(selection?.toString()).toContain('first argument')
+      expect(detail.textContent).not.toContain('plus more')
+      await act(async () => {
+        selection?.removeAllRanges()
+        document.dispatchEvent(new Event('selectionchange'))
+        await Promise.resolve()
+      })
+      expect(detail.textContent).toContain('first argument plus more')
+    } finally {
+      selection?.removeAllRanges()
+    }
   })
 })
 

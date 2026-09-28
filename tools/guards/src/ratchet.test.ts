@@ -209,10 +209,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  // W8a-1: React turn actions, usage, and feedback. Measured 4621, exact cap.
-  'packages/web-ui/src': 4621,
-  // W8a-2: replace the native action renderer with a bridge to the shared React footer; measured 4652.
-  'packages/web-units/src': 4652,
+  // W8a-3: full React tool card plus prior action component; measured 4559, exact cap.
+  'packages/web-ui/src': 4559,
+  // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
+  'packages/web-units/src': 4630,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -395,7 +395,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 745,
+  'packages/web/src/timeline': 748,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1984,8 +1984,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // C-4 helper migration on UI integration: measured current source 13140 + 7; no spare allocation.
-  // W8a-2: the Web adapter renders shared React turn actions directly; measured 13093.
-  'packages/web/src': 13093,
+  // W8a-3: direct React tool leaf and legacy root disposal; measured 13094.
+  'packages/web/src': 13094,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
