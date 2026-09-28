@@ -1997,7 +1997,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Reload only into a new daemon address, failed first connection, resume and probe hardening.
   // Measured 13382, exact (+32).
   // Load earlier re-arms only after a landed page. Measured 13381, exact (-1).
-  'packages/web/src': 13381,
+  // Diagnostics export redacts Cookie headers, *_KEY assignments and URL query values.
+  // Measured 13388, exact (+7).
+  'packages/web/src': 13388,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
