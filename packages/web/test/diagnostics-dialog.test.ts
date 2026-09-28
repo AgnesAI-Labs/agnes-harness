@@ -116,13 +116,35 @@ describe('createDiagnosticsDialog', () => {
     expect(t.box('conversation').checked).toBe(false)
   })
 
+  it('returns through all four steps without losing the selected options', async () => {
+    const t = setup()
+    t.collect.mockResolvedValue(collected())
+    t.save.mockResolvedValue('saved')
+    ui?.open()
+    t.button('分享诊断').click()
+    t.box('logs').click()
+    t.button('返回').click()
+    expect(t.step()).toBe('menu')
+    t.button('分享诊断').click()
+    expect(t.box('logs').checked).toBe(false)
+    t.button('生成诊断包').click()
+    await flush()
+    t.button('返回').click()
+    expect(t.step()).toBe('share')
+    t.button('生成诊断包').click()
+    await flush()
+    t.button('保存 ZIP 包').click()
+    await flush()
+    expect(t.step()).toBe('saved')
+  })
+
   it('generates with the checked include set, then shows name and size', async () => {
     const t = setup()
     const pending = deferred<CollectedDiagnostics>()
     t.collect.mockReturnValue(pending.promise)
     ui?.open()
     t.button('分享诊断').click()
-    t.box('logs').checked = false
+    t.box('logs').click()
     t.button('生成诊断包').click()
     const busy = t.button('正在生成…')
     expect(busy.disabled).toBe(true)
@@ -224,6 +246,21 @@ describe('createDiagnosticsDialog', () => {
     expect(t.step()).toBe('menu')
   })
 
+  it('ignores a late generation failure after closing and reopening', async () => {
+    const t = setup()
+    const pending = deferred<CollectedDiagnostics>()
+    t.collect.mockReturnValue(pending.promise)
+    ui?.open()
+    t.button('分享诊断').click()
+    t.button('生成诊断包').click()
+    t.dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+    ui?.open()
+    pending.reject(new Error('late failure'))
+    await flush()
+    expect(t.step()).toBe('menu')
+    expect(t.error()).toBe('')
+  })
+
   it('retires an in-flight collection on disposal without repainting its detached dialog', async () => {
     const t = setup()
     const pending = deferred<CollectedDiagnostics>()
@@ -236,7 +273,7 @@ describe('createDiagnosticsDialog', () => {
     expect(t.collect.mock.calls[0]?.[2].aborted).toBe(true)
     pending.resolve(collected())
     await flush()
-    expect(t.dialog.querySelector('[data-ready-summary]')?.textContent).toBe('')
+    expect(t.dialog.querySelector('[data-ready-summary]')).toBeNull()
     ui?.open()
     expect(t.dialog.isConnected).toBe(false)
   })
@@ -249,7 +286,7 @@ describe('createDiagnosticsDialog', () => {
     t.dialog.querySelector<HTMLButtonElement>('[data-action="save"]')?.click()
     await flush()
     expect(t.save).not.toHaveBeenCalled()
-    expect(t.dialog.querySelector('[data-ready-summary]')?.textContent).toBe('')
+    expect(t.dialog.querySelector('[data-ready-summary]')).toBeNull()
   })
 
   it('releases the generated ZIP when the dialog closes', async () => {
@@ -339,6 +376,15 @@ describe('createDiagnosticsDialog', () => {
     t.button('取消').click()
     expect(t.dialog.open).toBe(false)
     expect(document.activeElement).toBe(trigger)
+  })
+
+  it('starts saving from the dialog click before yielding user activation', async () => {
+    const t = setup()
+    await toReady(t)
+    t.save.mockReturnValue(new Promise(() => {}))
+    t.button('保存 ZIP 包').click()
+    expect(t.save).toHaveBeenCalledTimes(1)
+    expect(t.button('保存 ZIP 包').disabled).toBe(true)
   })
 })
 
