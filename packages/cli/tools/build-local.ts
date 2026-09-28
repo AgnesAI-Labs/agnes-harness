@@ -5,12 +5,14 @@ import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm } from 'n
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { build, type Plugin } from 'esbuild'
+import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
+import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repoPackages = join(cliRoot, '..')
+const webRoot = join(repoPackages, 'web')
 const require = createRequire(import.meta.url)
 const computerUseNoticeSource = join(repoPackages, 'base', 'extensions', 'computer-use', 'NOTICE')
 const computerUseNoticeRelative = join('THIRD-PARTY-NOTICES', 'computer-use-hermes.txt')
@@ -146,7 +148,10 @@ async function runtimeDefines(version: string): Promise<Record<string, string>> 
 }
 
 export async function buildLocalWeb(webOut: string): Promise<void> {
-  await mkdir(webOut, { recursive: true })
+  const metafiles: BuildResult[] = []
+  const buildWithMetadata = async (options: BuildOptions): Promise<void> => {
+    metafiles.push(await build({ ...options, absWorkingDir: webRoot, metafile: true }))
+  }
   // Plugin entrypoints resolve these imports through index.html's import map, so the host bundle
   // must leave them external and serve exactly one shared platform instance.
   const platformExternals = [
@@ -159,7 +164,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     '@agnes/web-ui/assistant-ui',
     'antd',
   ]
-  await build({
+  await buildWithMetadata({
     entryPoints: {
       app: join(repoPackages, 'web', 'src', 'app.ts'),
       admin: join(repoPackages, 'web', 'src', 'admin', 'plugins', 'admin.tsx'),
@@ -199,7 +204,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     entryNames: '[name]',
     chunkNames: 'chunk-[hash]',
   }
-  await build({
+  await buildWithMetadata({
     entryPoints: {
       react: join(repoPackages, 'web', 'tools', 'vendor', 'react-entry.js'),
       'react-jsx-runtime': join(repoPackages, 'web', 'tools', 'vendor', 'react-jsx-runtime-entry.js'),
@@ -209,7 +214,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     ...vendorOptions,
   })
   // UI vendors import the same React modules supplied by the first pass and the page import map.
-  await build({
+  await buildWithMetadata({
     entryPoints: {
       antd: join(repoPackages, 'web', 'tools', 'vendor', 'antd-entry.js'),
       'assistant-ui': join(repoPackages, 'web', 'tools', 'vendor', 'assistant-ui-entry.js'),
@@ -225,7 +230,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   // 首帧主题必须早于第一次绘制，所以这一份单独打成 IIFE 并以阻塞式 <script> 引入。
   // ESM 一律 defer，会先闪一帧浅色。CSP 是 script-src 'self' 无 unsafe-inline，内联脚本不可用。
   // 注意：本文件与 packages/web/tools/build.ts 是两份独立配置，新增 web 入口两边都要加。
-  await build({
+  await buildWithMetadata({
     entryPoints: { theme: join(repoPackages, 'web', 'src', 'theme-boot.ts') },
     outdir: webOut,
     bundle: true,
@@ -259,12 +264,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   ])
   await appendFile(join(webOut, 'style.css'), `\n${core}\n${light}\n${dark}\n${overrides}`)
   await rm(markdownCss)
-  const markdownPackage = require.resolve('@ant-design/x-markdown/package.json', { paths: [webUi] })
-  await mkdir(join(webOut, 'THIRD-PARTY-NOTICES'), { recursive: true })
-  await copyFile(
-    join(dirname(markdownPackage), 'LICENSE'),
-    join(webOut, 'THIRD-PARTY-NOTICES', 'x-markdown.txt'),
-  )
+  await collectThirdPartyNotices(webRoot, webOut, metafiles)
 }
 
 async function buildLocal(out: string, nativeOutput?: string): Promise<void> {

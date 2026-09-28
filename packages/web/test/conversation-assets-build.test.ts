@@ -36,7 +36,7 @@ it('ships private conversation styles in the existing three-page style asset', a
 
 it('resolves assistant-ui from the shared vendor instead of bundling a second app copy', async () => {
   const output = resolve(web, 'dist/web')
-  const license = await readFile(resolve(output, 'THIRD-PARTY-NOTICES/x-markdown.txt'), 'utf8')
+  const license = await readFile(resolve(output, 'THIRD-PARTY-NOTICES/ant-design-x-markdown.txt'), 'utf8')
   expect(license).toContain('Copyright (c) 2015-present Ant UED')
   const app = await readFile(resolve(output, 'app.js'), 'utf8')
   expect(/from\s+["']@agnes\/web-ui\/assistant-ui["']/.test(app)).toBe(true)

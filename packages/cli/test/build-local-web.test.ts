@@ -12,13 +12,20 @@ it('builds local web assets with the shared platform vendor modules', async () =
     await buildLocalWeb(output)
 
     const app = await readFile(join(output, 'app.js'), 'utf8')
+    const appChunks = [...app.matchAll(/from\s+["'](\.\/chunk-[^"']+\.js)["']/g)].map((match) => match[1])
+    const chunkSources = await Promise.all(
+      appChunks.map((chunk) => readFile(join(output, chunk ?? ''), 'utf8')),
+    )
     const html = await readFile(join(output, 'index.html'), 'utf8')
     const antdVendor = await readFile(join(output, 'vendor', 'antd.js'), 'utf8')
     const markdownVendor = await readFile(join(output, 'vendor', 'assistant-ui.js'), 'utf8')
-    const markdownLicense = await readFile(join(output, 'THIRD-PARTY-NOTICES/x-markdown.txt'), 'utf8')
+    const markdownLicense = await readFile(
+      join(output, 'THIRD-PARTY-NOTICES/ant-design-x-markdown.txt'),
+      'utf8',
+    )
     expect(markdownLicense).toContain('Copyright (c) 2015-present Ant UED')
     expect(app).toMatch(/from\s+["']react["']/)
-    expect(app).toMatch(/from\s+["']antd["']/)
+    expect(chunkSources.some((source) => /from\s+["']antd["']/.test(source))).toBe(true)
     expect(app).toMatch(/from\s+["']@agnes\/web-ui\/assistant-ui["']/)
     expect(html).toContain('"react": "/vendor/react.js"')
     expect(antdVendor.includes('Copyright (c) Meta Platforms, Inc. and affiliates.')).toBe(true)
