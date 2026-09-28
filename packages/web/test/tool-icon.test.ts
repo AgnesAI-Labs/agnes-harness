@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
+
+import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
-import { toolIcon } from '../src/tool-icon.js'
+import { toolIcon, toolIconReact } from '../src/tool-icon.js'
 
 const paths = (name: string): string =>
   [...toolIcon(name).querySelectorAll('path')].map((node) => node.getAttribute('d') ?? '').join(' ')
@@ -27,4 +29,29 @@ it('图标沿用全站 .icon 的 24 网格描边口径', () => {
   expect(svg.getAttribute('aria-hidden')).toBe('true')
   // 镜身是 path、镜圈是 circle：两种节点都要能建出来
   expect(svg.querySelectorAll('circle')).toHaveLength(1)
+})
+
+it('React 工具卡使用与兼容 SVG 同源的字形和样式钩子', () => {
+  for (const name of [
+    'tool_search',
+    'bash_shell',
+    'read_file',
+    'edit_file',
+    'web_fetch',
+    'list_dir',
+    'unknown',
+  ]) {
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(toolIconReact(name))
+    const rendered = host.querySelector('svg')
+    expect(rendered?.getAttribute('class')).toBe('icon tool-icon')
+    expect(rendered?.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(rendered?.getAttribute('aria-hidden')).toBe('true')
+    expect(rendered?.querySelectorAll('path, circle, rect')).toHaveLength(
+      toolIcon(name).querySelectorAll('path, circle, rect').length,
+    )
+    expect([...(rendered?.querySelectorAll('path') ?? [])].map((path) => path.getAttribute('d'))).toEqual(
+      [...toolIcon(name).querySelectorAll('path')].map((path) => path.getAttribute('d')),
+    )
+  }
 })

@@ -132,7 +132,7 @@ describe('conversation leaf renderers', () => {
     }
   })
 
-  it('owns tool detail state and updates it without replacing the surrounding card', () => {
+  it('owns tool detail state and updates it without replacing the surrounding card', async () => {
     const element = document.createElement('article')
     document.body.append(element)
     const node: Extract<UINode, { kind: 'tool' }> = {
@@ -153,6 +153,24 @@ describe('conversation leaf renderers', () => {
     const detail = element.querySelector<HTMLButtonElement>('.tool-detail')
     detail?.click()
     expect(element.dataset.expanded).toBe('true')
+    for (const [status, label] of [
+      ['planned', '等待执行'],
+      ['awaiting_approval', '等待审批'],
+      ['running', '正在执行'],
+      ['completed', '执行完成'],
+      ['cancelled', '已取消'],
+    ] as const) {
+      card.update({ ...node, status })
+      expect(element.dataset.status).toBe(status)
+      expect(element.querySelector('.tool-status')?.textContent).toBe(label)
+      expect(element.querySelector('.tool-detail-text')?.textContent).toContain(`状态：${label}`)
+    }
+    card.update({ ...node, summary: 'read_file {"path":"README.md"}' })
+    expect(element.querySelector<HTMLElement>('.tool-summary')?.hidden).toBe(true)
+    card.update({ ...node, summary: 'read_file 已读取 README.md' })
+    expect(element.querySelector<HTMLElement>('.tool-summary')?.hidden).toBe(false)
+    expect(element.querySelector('.tool-summary')?.textContent).toBe('read_file 已读取 README.md')
+    expect(element.querySelector('[data-agnes-tool-card]')).not.toBeNull()
 
     card.update({ ...node, status: 'failed', resultPreview: 'Permission denied' })
     expect(element.dataset.status).toBe('failed')
@@ -160,6 +178,12 @@ describe('conversation leaf renderers', () => {
     expect(element.querySelector('.tool-detail-text')?.textContent).toContain('错误详情')
     expect(element.querySelector('.tool-detail-text')?.textContent).toContain('Permission denied')
     expect(element.dataset.expanded).toBe('true')
+    card.dispose()
+    card.update({ ...node, status: 'completed' })
+    expect(element.dataset.status).toBe('failed')
+    await Promise.resolve()
+    expect(element.querySelector('[data-agnes-tool-card]')).toBeNull()
+    element.remove()
   })
 
   it('keeps feedback local to the turn action renderer and clears its timer on disposal', async () => {

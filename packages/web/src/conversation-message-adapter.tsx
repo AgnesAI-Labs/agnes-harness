@@ -12,32 +12,15 @@ import {
   ConversationMarkdown,
   ConversationMessages,
   type ConversationMessagesProps,
+  ConversationToolCard,
   ConversationTurnActions,
 } from '@agnes/web-ui/assistant-ui'
-import { createConversationToolCard } from '@agnes/web-units'
-import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
-import { toolIcon } from './tool-icon.js'
+import { toolIconReact } from './tool-icon.js'
 
-type ToolNode = Extract<UINode, { kind: 'tool' }>
 type SlotNode = Extract<UINode, { kind: 'slot' }>
 const noSessionSubscription = () => () => undefined
-
-function ToolLeaf({ node }: { node: ToolNode }) {
-  const element = useRef<HTMLDivElement>(null)
-  const card = useRef<ReturnType<typeof createConversationToolCard>>()
-  const initialNode = useRef(node)
-  useLayoutEffect(() => {
-    const host = element.current
-    if (!host) return
-    card.current = createConversationToolCard(host, initialNode.current, { icon: toolIcon })
-    return () => {
-      card.current = undefined
-    }
-  }, [])
-  useLayoutEffect(() => card.current?.update(node), [node])
-  return <div ref={element} data-agnes-tool-card="" />
-}
 
 function SlotLeaf({
   node,
@@ -174,7 +157,7 @@ export function WebConversationMessages({
         streaming={state?.streaming ?? false}
       />
     ),
-    renderTool: (node) => <ToolLeaf node={node} />,
+    renderTool: (node) => <ConversationToolCard node={node} icon={toolIconReact(node.name)} />,
     renderSlot: (node) => <SlotLeaf key={node.id} node={node} registry={registry} claim={claim} />,
     renderNode: (node, native) =>
       registry ? <DshNodeLeaf key={node.id} node={node} native={native} registry={registry} /> : native,

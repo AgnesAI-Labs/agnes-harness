@@ -6,6 +6,8 @@
  *  与本页的单色描边体系不同族，故不采用那套。
  */
 
+import { createElement, type ReactElement } from 'react'
+
 type Glyph = readonly (readonly [tag: 'path' | 'circle' | 'rect', attrs: string])[]
 
 const SEARCH: Glyph = [
@@ -67,6 +69,21 @@ const FALLBACK = WRENCH
 function glyphFor(name: string): Glyph {
   for (const [pattern, glyph] of MATCHERS) if (pattern.test(name)) return glyph
   return FALLBACK
+}
+
+/** The React leaf and the legacy SVG factory share the same immutable glyph selection. */
+export function toolIconReact(name: string): ReactElement {
+  return createElement(
+    'svg',
+    { className: 'icon tool-icon', viewBox: '0 0 24 24', 'aria-hidden': 'true' },
+    ...glyphFor(name).map(([tag, attrs], index) => {
+      const properties: Record<string, string | number> = { key: index }
+      for (const [, attribute, value] of attrs.matchAll(/([a-z-]+)="([^"]*)"/g)) {
+        if (attribute && value !== undefined) properties[attribute] = value
+      }
+      return createElement(tag, properties)
+    }),
+  )
 }
 
 /** 生成工具行的前缀图标元素（样式沿用 `.icon`，另加 `tool-icon` 供布局微调）。 */

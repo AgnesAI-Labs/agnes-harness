@@ -1,6 +1,7 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import { useThread } from '@assistant-ui/react'
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { ConversationCost } from './cost.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
@@ -113,13 +114,28 @@ function AssistantMessage({
   )
 }
 
-function ToolMessage({ node }: { node: ToolNode }) {
+export function ConversationToolCard({
+  node,
+  icon,
+  onExpandedChange,
+}: {
+  node: ToolNode
+  icon?: ReactNode
+  onExpandedChange?: (expanded: boolean) => void
+}) {
   const [expanded, setExpanded] = useState(false)
+  const cardHost = useRef<HTMLDivElement>(null)
+  const detailHost = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const article = cardHost.current?.closest<HTMLElement>('.timeline-node.tool')
+    if (article && (expanded || article.dataset.expanded !== undefined))
+      article.dataset.expanded = String(expanded)
+  }, [expanded])
   const summary = node.summary.trim()
   const remainder = summary.startsWith(node.name) ? summary.slice(node.name.length).trim() : summary
   const meaningful =
     summary && summary !== node.name && remainder && !remainder.startsWith('{') && !remainder.startsWith('[')
-  const detail = [
+  const nextDetail = [
     `工具：${node.name}`,
     `状态：${toolLabels[node.status]}`,
     ...(node.argsPreview ? ['', '执行参数', node.argsPreview] : []),
@@ -127,10 +143,17 @@ function ToolMessage({ node }: { node: ToolNode }) {
       ? ['', node.status === 'failed' ? '错误详情' : '执行结果', node.resultPreview]
       : []),
   ].join('\n')
+  const detail = useInteractionSnapshot(detailHost, nextDetail)
   return (
-    <>
+    <div
+      ref={cardHost}
+      data-agnes-tool-card=""
+      data-status={node.status}
+      data-expanded={expanded ? 'true' : undefined}
+    >
       <div className="tool-head">
         <div className="tool-meta">
+          {icon}
           <span className="tool-name">{node.name}</span>
           <span className="tool-status">{toolLabels[node.status]}</span>
         </div>
@@ -138,16 +161,26 @@ function ToolMessage({ node }: { node: ToolNode }) {
           type="button"
           className="tool-detail"
           aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => {
+            const next = !expanded
+            onExpandedChange?.(next)
+            flushSync(() => setExpanded(next))
+          }}
         >
           {expanded ? '收起详情' : '查看详情'}
         </button>
       </div>
-      {meaningful && <div className="tool-summary">{summary}</div>}
-      <div className="tool-detail-body" hidden={!expanded}>
-        <div className="tool-detail-text">{detail}</div>
+      <div className="tool-summary" hidden={!meaningful}>
+        {meaningful ? summary : ''}
       </div>
-    </>
+      <div className="tool-detail-body">
+        <div className="tool-detail-inner">
+          <div ref={detailHost} className="tool-detail-text">
+            {detail}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -183,7 +216,7 @@ function nativeContent(
         />
       )
     case 'tool':
-      return props.renderTool ? props.renderTool(node) : <ToolMessage node={node} />
+      return props.renderTool ? props.renderTool(node) : <ConversationToolCard node={node} />
     case 'approval':
       return (
         <>

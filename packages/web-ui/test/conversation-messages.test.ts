@@ -133,6 +133,10 @@ describe('W3b projected message DOM', () => {
     expect(item('assistant')?.textContent).toContain('思考中')
     expect(item('assistant')?.textContent).toContain('回答 **正文**')
     expect(item('tool')?.textContent).toContain('正在执行')
+    expect(item('tool')?.querySelector('[data-agnes-tool-card]')).not.toBeNull()
+    expect(item('tool')?.querySelector('.tool-detail-inner .tool-detail-text')?.textContent).toContain(
+      '执行参数',
+    )
     expect(item('approval')?.textContent).toContain('需要你确认')
     expect(item('cost')?.textContent).toContain('费用未提供')
     expect(item('artifact')?.textContent).toContain('report.md')
@@ -154,6 +158,7 @@ describe('W3b projected message DOM', () => {
     const toolButton = item('tool')?.querySelector<HTMLButtonElement>('button.tool-detail')
     await act(async () => toolButton?.click())
     expect(toolButton?.getAttribute('aria-expanded')).toBe('true')
+    expect(item('tool')?.dataset.expanded).toBe('true')
     const cost = item('cost')?.querySelector<HTMLDetailsElement>('details.call-usage')
     if (cost) cost.open = true
 
@@ -194,6 +199,7 @@ describe('W3b projected message DOM', () => {
     expect(item('tool')?.getAttribute('aria-label')).toBe('工具 read_file：执行失败')
     expect(item('tool')?.textContent).toContain('Permission denied')
     expect(toolButton?.getAttribute('aria-expanded')).toBe('true')
+    expect(item('tool')?.dataset.expanded).toBe('true')
     expect(item('approval')?.getAttribute('aria-label')).toBe('审批：已拒绝')
     expect(item('approval')?.querySelectorAll('button')).toHaveLength(0)
     expect(item('cost')?.textContent).toContain('1.25 credits（网关记录）')
