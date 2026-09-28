@@ -367,7 +367,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // manual retry after the automatic window. Measured 1811, exact, no spare (+28).
   // Reload only into a new daemon address, recover after a failed first connection, resume on
   // tab show, and a notice consistent with the recovery status. Measured 1824, exact (+13).
-  'packages/web/src/app': 1824,
+  // Diagnostics export tells the bundle whether the projection has unloaded earlier history.
+  // Measured 1825, exact (+1).
+  'packages/web/src/app': 1825,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-17: composer permission listbox. Measured 203, exact.
   'packages/web/src/permission-picker': 203,
@@ -1999,7 +2001,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Load earlier re-arms only after a landed page. Measured 13381, exact (-1).
   // Diagnostics export redacts Cookie headers, *_KEY assignments and URL query values.
   // Measured 13388, exact (+7).
-  'packages/web/src': 13388,
+  // Diagnostics export keeps another session's projection out and flags a windowed trace.
+  // Measured 13399, exact (+11).
+  'packages/web/src': 13399,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

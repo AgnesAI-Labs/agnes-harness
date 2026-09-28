@@ -116,6 +116,7 @@ function input(call: RpcCall, over: Partial<CollectInput> = {}): CollectInput {
     sessionId: 'abc-123_DEF456',
     sessionTitle: 'a title',
     projection: { sessionId: 'abc-123_DEF456', upto: 0, generation: 1, opState: null, nodes: [], turns: [] },
+    projectionHasEarlier: false,
     browserLog,
     browser: { origin: 'http://127.0.0.1:4177' },
     now: NOW,
@@ -182,7 +183,7 @@ describe('collectDiagnostics', () => {
       'config.get': () => ({ profile: 'default', provider: { note: `key ${SECRET_CONFIG}` } }),
     })
     const projection = {
-      sessionId: 's',
+      sessionId: 'abc-123_DEF456',
       upto: 1,
       generation: 1,
       opState: null,
@@ -213,7 +214,7 @@ describe('collectDiagnostics', () => {
     const image = { type: 'image', mimeType: 'image/png', data: b64 }
     const pdf = { type: 'document', source: { type: 'base64', data: b64 } }
     const projection = {
-      sessionId: 's',
+      sessionId: 'abc-123_DEF456',
       upto: 1,
       generation: 1,
       opState: null,
@@ -229,6 +230,40 @@ describe('collectDiagnostics', () => {
       expect(files.get(name)).not.toContain(b64)
     }
     expect(image.data).toBe(b64)
+  })
+
+  it('drops a projection built for another session and warns, still packaging the ledger', async () => {
+    // While a session switch loads, the Web still shows (and holds) the previous session's projection.
+    const projection = {
+      sessionId: 'previous-session',
+      upto: 1,
+      generation: 1,
+      opState: null,
+      nodes: [{ kind: 'context', id: 'n1', seq: 1, text: 'previous session text' }],
+      turns: [],
+    } as UITimeline
+    const { call } = fake(standard())
+    const out = await collectDiagnostics(input(call, { projection }), ALL, new AbortController().signal)
+    const files = readZip(out.zip)
+    expect(files.has('trace.json')).toBe(false)
+    expect(files.get('index.html')).not.toContain('previous session text')
+    expect(files.has('events.jsonl')).toBe(true)
+    expect(out.bundle.warnings).toContainEqual({ source: 'trace', reason: 'unavailable' })
+  })
+
+  it('flags a trace that holds only the loaded window of a longer session', async () => {
+    const { call } = fake(standard())
+    const out = await collectDiagnostics(
+      input(call, { projectionHasEarlier: true }),
+      ALL,
+      new AbortController().signal,
+    )
+    const files = readZip(out.zip)
+    expect(files.has('trace.json')).toBe(true)
+    expect(out.bundle.warnings).toContainEqual(
+      expect.objectContaining({ source: 'trace', reason: 'truncated' }),
+    )
+    expect(files.get('diagnostic-export-warnings.json')).toContain('"source": "trace"')
   })
 
   it('degrades METHOD_NOT_FOUND to unavailable and keeps packaging', async () => {
