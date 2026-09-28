@@ -1926,6 +1926,26 @@
         "subscription": { "type": "boolean" }
       }
     },
+    "ResponseMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "integer" },
+        "id": { "type": "string", "maxLength": 128 },
+        "model": { "type": "string", "maxLength": 256 },
+        "headers": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z0-9-]{1,64}$" },
+          "maxProperties": 16,
+          "additionalProperties": { "type": "string", "maxLength": 256 }
+        },
+        "headerNames": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "maxLength": 128 }
+        }
+      }
+    },
     "CostLedger": {
       "type": "object",
       "additionalProperties": false,
@@ -1949,6 +1969,7 @@
           "minimum": 0
         },
         "billing": { "$ref": "#/$defs/Billing" },
+        "response": { "$ref": "#/$defs/ResponseMeta" },
         "creditSource": {
           "enum": ["gateway", "estimated"]
         },

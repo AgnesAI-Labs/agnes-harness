@@ -263,6 +263,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   RepairDecision: SessionGen.RepairDecision,
   FormatDeviation: SessionGen.FormatDeviation,
   Billing: SessionGen.Billing,
+  ResponseMeta: SessionGen.ResponseMeta,
   CostLedger: SessionGen.CostLedger,
   ApprovalAsked: SessionGen.ApprovalAsked,
   ApprovalDecided: SessionGen.ApprovalDecided,
@@ -467,6 +468,7 @@ const MODEL_DEFS: Record<string, TSchema> = {
   ContentBlock: ModelGen.ContentBlock,
   ToolCall: ModelGen.ToolCall,
   Billing: ModelGen.Billing,
+  ResponseMeta: ModelGen.ResponseMeta,
   SlotName: ModelGen.SlotName,
   ThinkingLevel: ModelGen.ThinkingLevel,
   AiErrorCode: ModelGen.AiErrorCode,
@@ -1434,6 +1436,24 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'USD is represented as non-negative integer micros; source is closed and subscription is explicit',
   },
+  ResponseMeta: {
+    valid: {
+      status: 200,
+      id: 'chatcmpl-1',
+      model: 'served-model',
+      headers: { 'x-request-id': 'req-1' },
+      headerNames: ['set-cookie', 'x-request-id'],
+    },
+    invalid: [
+      { status: 200.5 }, // integer
+      { headers: { 'X-Request-Id': 'req-1' } }, // header names are recorded lowercased
+      { headers: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`h-${i}`, 'v'])) }, // maxProperties:16
+      { headers: { 'x-request-id': rep(257) } }, // boundary: one over maxLength:256
+      { headerNames: Array.from({ length: 65 }, (_, i) => `h-${i}`) }, // maxItems:64
+      { status: 200, body: '{}' }, // additionalProperties:false
+    ],
+    note: 'every member is optional; values are recorded only for allowlisted headers, names for all of them',
+  },
   CostLedger: {
     valid: costLedgerOk,
     invalid: [
@@ -1443,6 +1463,7 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { ...costLedgerOk, billing: { usdMicros: -1, source: 'gateway', subscription: true } },
       { ...costLedgerOk, tokens: { input: 1, output: 1, cacheRead: 0 } }, // missing cacheWrite
       { ...costLedgerOk, timing: { ttftMs: 1, wallMs: 2 } }, // additionalProperties:false on the closed timing keys
+      { ...costLedgerOk, response: { status: '200' } }, // the response status is an integer
     ],
     note: 'valid is the row core/src/step/inference.ts writes; credits is optional because only a gateway supplies one',
   },
@@ -3069,6 +3090,7 @@ const MODEL_SAMPLES: Record<string, Sample> = {
   ContentBlock: SESSION_SAMPLES.ContentBlock as Sample,
   ToolCall: SESSION_SAMPLES.ToolCall as Sample,
   Billing: SESSION_SAMPLES.Billing as Sample,
+  ResponseMeta: SESSION_SAMPLES.ResponseMeta as Sample,
   SlotName: {
     valid: 'primary',
     invalid: ['Primary', 'nope', 1],

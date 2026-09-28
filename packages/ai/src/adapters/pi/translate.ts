@@ -1,4 +1,4 @@
-import type { ToolCall } from '@agnes/protocol'
+import type { ResponseMeta, ToolCall } from '@agnes/protocol'
 import type { Api, AssistantMessageEvent, Model } from '@earendil-works/pi-ai'
 import type { WireEvent } from '../../adapter.js'
 import { classifyPiError } from './errors.js'
@@ -16,6 +16,7 @@ export function translateEvent(
   ev: AssistantMessageEvent,
   model: Model<Api>,
   nextOrdinal: () => number,
+  wire: ResponseMeta = {},
 ): WireEvent[] {
   switch (ev.type) {
     case 'start':
@@ -59,6 +60,7 @@ export function translateEvent(
           ...(u.reasoning !== undefined ? { reasoning: u.reasoning } : {}),
         },
         creditSource: 'estimated',
+        ...withResponse(wire, ev.message.responseId, ev.message.responseModel),
       }
       // A deferred answer is not a finish this package can express yet; it reads as a stop, which is
       // the closest honest reading until the deferred path exists.
@@ -79,8 +81,54 @@ export function translateEvent(
           retryable: c.retryable,
           ...(c.retryAfterMs !== undefined ? { retryAfterMs: c.retryAfterMs } : {}),
           ...(ev.error.responseId ? { requestId: ev.error.responseId } : {}),
+          ...withResponse(wire, ev.error.responseId, ev.error.responseModel),
         },
       ]
     }
   }
+}
+
+// Header values recorded verbatim. Every other header is recorded by name only: a value can be a
+// cookie, a token or an account id, while a name - a local proxy's `x-litellm-*`, say - is the signal
+// that tells a reviewer which hop actually answered.
+const HEADER_VALUES = new Set([
+  'x-request-id',
+  'request-id',
+  'server',
+  'via',
+  'cf-ray',
+  'openai-processing-ms',
+  'x-ratelimit-limit-requests',
+  'x-ratelimit-limit-tokens',
+  'x-ratelimit-remaining-requests',
+  'x-ratelimit-remaining-tokens',
+  'x-ratelimit-reset-requests',
+  'x-ratelimit-reset-tokens',
+  'retry-after',
+  'retry-after-ms',
+])
+
+/** What the HTTP response itself says about who answered: status, allowlisted values, all names. */
+export function responseMeta(res: Response): ResponseMeta {
+  const names = [...new Set([...res.headers.keys()].map((n) => n.toLowerCase().slice(0, 128)))].sort()
+  const headers: Record<string, string> = {}
+  for (const name of names) {
+    const value = HEADER_VALUES.has(name) ? res.headers.get(name) : null
+    if (value !== null) headers[name] = value.slice(0, 256)
+  }
+  return {
+    status: res.status,
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(names.length > 0 ? { headerNames: names.slice(0, 64) } : {}),
+  }
+}
+
+/** The `response` member of a usage or error event, or nothing when nothing was learned. */
+export function withResponse(wire: ResponseMeta, id?: string, model?: string): { response?: ResponseMeta } {
+  const response: ResponseMeta = {
+    ...wire,
+    ...(id ? { id: id.slice(0, 128) } : {}),
+    ...(model ? { model: model.slice(0, 256) } : {}),
+  }
+  return Object.keys(response).length > 0 ? { response } : {}
 }
