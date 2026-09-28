@@ -919,7 +919,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // stop verdict. Reviewed diff measures 25433 (+11), exact cap without spare allocation.
   // code-fix: atomically retain steering at approved completion and bind verifier evidence at
   // commit time. Measured 25451 (+18), exact cap without spare allocation.
-  'packages/core/src': 25451,
+  // Import provenance marker: new session/start carries the importer's imported option.
+  // Measured 25456 (+5).
+  'packages/core/src': 25456,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2480,7 +2482,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // live invocation. Measured 38081, exact, no spare (+6).
   // Cancelling a child's creation also settles its execution state in the same SQLite statement.
   // Measured 38084, exact, no spare (+3).
-  'packages/host/src': 38099,
+  // Import provenance marker: createSession forwards the in-process imported option.
+  // Measured 38101 (+2).
+  'packages/host/src': 38101,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

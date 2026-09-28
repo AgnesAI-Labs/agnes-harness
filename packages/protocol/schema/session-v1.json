@@ -196,7 +196,7 @@
           "additionalProperties": false,
           "required": ["source", "sourceId", "cwd"],
           "properties": {
-            "source": { "enum": ["claude-code", "codex", "pi"] },
+            "source": { "enum": ["claude-code", "codex", "pi", "agnes"] },
             "sourceId": { "type": "string", "maxLength": 256 },
             "cwd": { "type": "string", "maxLength": 4096 }
           }

@@ -54,6 +54,7 @@ const UNAVAILABLE = new Set<unknown>([
   'NOT_REGISTERED',
 ])
 const ARTIFACT_URI = /^artifact:\/\/([0-9a-f]{64})$/
+const IMPORT_SOURCES = new Set<unknown>(['claude-code', 'codex', 'pi', 'agnes'])
 const encoder = new TextEncoder()
 
 const abortError = () => new DOMException('Aborted', 'AbortError')
@@ -194,6 +195,14 @@ export async function collectDiagnostics(
       }
       read = true
       for (const event of page.events) {
+        // Only the source is named: the imported id and path would identify the original machine.
+        const start = event.seq === 1 && event.type === 'session/start' ? event.data : undefined
+        const imported = (start as { imported?: unknown } | null | undefined)?.imported
+        if (imported && typeof imported === 'object' && !Array.isArray(imported)) {
+          const { source } = imported as { source?: unknown }
+          const named = IMPORT_SOURCES.has(source) ? source : 'unknown'
+          warnings.push({ source: 'session', reason: 'imported', detail: `imported from ${named}` })
+        }
         const line = JSON.stringify(redactDiagnostic(event))
         bytes += encoder.encode(line).byteLength + 1
         if (bytes > limits.ledgerBytes) {

@@ -107,6 +107,7 @@ describe('Kernel (I1 assembly)', () => {
     expect(k.get('k1')).toBe(s)
     expect(k.get('nope')).toBeUndefined()
     expect((await s.scan({ fromSeq: 1, limit: 5 })).map((e) => e.type)).toEqual(['session/start'])
+    expect((await s.scan({ fromSeq: 1, limit: 1 }))[0]?.data).not.toHaveProperty('imported')
     await k.close()
     expect(k.sessions.size).toBe(0)
     // Closing the kernel closes the sessions it opened, rather than only dropping the storage:
@@ -820,9 +821,11 @@ describe('turn hook registration snapshots', () => {
     const starts: string[] = []
     registry.on('session_start', (payload) => void starts.push(payload.reason), source)
     const k = base({ storage, hooksFactory: factory(registry) })
-    const s = await k.session('verbatim', { ...sessionOpts, skipSessionStartHooks: true })
+    const imported = { source: 'agnes', sourceId: 'original', cwd: '/w' } as const
+    const s = await k.session('verbatim', { ...sessionOpts, skipSessionStartHooks: true, imported })
     expect(starts).toEqual([])
     expect(s.lastSeq).toBe(1)
+    expect((await s.scan({ fromSeq: 1, limit: 1 }))[0]?.data).toMatchObject({ imported })
     await k.close()
     const reopened = base({ storage, hooksFactory: factory(registry) })
     await reopened.session('verbatim', { ...sessionOpts, writerRunId: 'r2', skipSessionStartHooks: true })
