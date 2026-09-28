@@ -193,6 +193,7 @@ describe('W3a projected conversation adapter', () => {
       turns: [turn(['u1', 'a1', 't1', 'p1', 'c1'])],
     })
     await mount(store)
+    expect(observed?.thread.getState().isDisabled).toBe(true)
     expect(ids()).toEqual(['u1', 'a1', 't1', 'p1', 'c1'])
     expect(byId('u1')?.textContent).toBe('ask\nagain')
     expect(byId('a1')?.textContent).toBe('checking | first')

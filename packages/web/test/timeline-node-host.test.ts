@@ -274,6 +274,39 @@ describe('W4a opt-in transcript node host', () => {
     }
   })
 
+  it('shows each windowed node once under its last declared turn owner', async () => {
+    const { transcript, mount } = await setup()
+    const shared = say('shared', 2, 'shared answer')
+    const orphan = say('orphan', 3, 'outside every turn')
+    await act(async () =>
+      mount.render(
+        [user, shared, orphan],
+        [
+          turn({ id: 'turn:1', nodeIds: ['user', 'shared'] }),
+          turn({ id: 'turn:2', turn: 2, startSeq: 2, nodeIds: ['shared', 'outside-window'] }),
+        ],
+      ),
+    )
+    expect(transcript.querySelector('[data-turn-id="turn:1"] [data-node-id="shared"]')).toBeNull()
+    expect(transcript.querySelector('[data-turn-id="turn:2"] [data-node-id="shared"]')).toBeTruthy()
+    expect(transcript.querySelector('[data-node-id="outside-window"]')).toBeNull()
+    expect(transcript.querySelector('.timeline-unassigned [data-node-id="orphan"]')).toBeTruthy()
+    expect(
+      [...transcript.querySelectorAll('[data-node-id]')].map((node) => node.getAttribute('data-node-id')),
+    ).toEqual(['user', 'shared', 'orphan'])
+    await act(async () =>
+      mount.render(
+        [user, shared, orphan],
+        [
+          turn({ id: 'turn:1', nodeIds: ['user', 'shared'] }),
+          turn({ id: 'turn:2', turn: 2, startSeq: 2, nodeIds: ['outside-window'] }),
+        ],
+      ),
+    )
+    expect(transcript.querySelector('[data-turn-id="turn:1"] [data-node-id="shared"]')).toBeTruthy()
+    expect(transcript.querySelectorAll('[data-node-id="shared"]')).toHaveLength(1)
+  })
+
   it('keeps the final article, selection, focus and manual process preference across settlement', async () => {
     const { transcript, mount } = await setup()
     const assistant: UINode = {
@@ -318,6 +351,40 @@ describe('W4a opt-in transcript node host', () => {
       ),
     )
     expect(details?.open).toBe(true)
+  })
+
+  it('holds selected thinking in the final article until the reader releases it', async () => {
+    const { transcript, mount } = await setup()
+    const thinking: UINode = {
+      kind: 'assistant',
+      id: 'assistant',
+      seq: 2,
+      text: '',
+      thinking: '分析中',
+      streaming: true,
+    }
+    await act(async () => mount.render([user, thinking], [turn()]))
+    const article = item(transcript, 'assistant')
+    const thought = article?.querySelector<HTMLElement>('.thinking-content p')
+    const selection = document.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(thought?.firstChild ?? transcript)
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    await act(async () =>
+      mount.render(
+        [user, { ...thinking, text: '最终回答', streaming: false }],
+        [turn({ status: 'completed', finalAssistantId: 'assistant' })],
+      ),
+    )
+    expect(item(transcript, 'assistant')).toBe(article)
+    expect(article?.querySelector('.thinking-content p')).toBe(thought)
+    expect(selection?.toString()).toBe('分析中')
+    selection?.removeAllRanges()
+    await act(async () => document.dispatchEvent(new Event('selectionchange')))
+    expect(transcript.querySelector('.turn-process .thinking-content')?.textContent).toContain('分析中')
+    expect(article?.querySelector('.thinking-content')).toBeNull()
+    expect(article?.textContent).toContain('最终回答')
   })
 
   it('reuses Web message actions for settled copy and fork availability', async () => {
@@ -404,9 +471,20 @@ describe('W4a opt-in transcript node host', () => {
   it('stops the active clock on terminal state, reset and unmount, and retains no-turn display', async () => {
     const setClock = vi.spyOn(globalThis, 'setInterval')
     const clearClock = vi.spyOn(globalThis, 'clearInterval')
+    const visibility = vi.spyOn(document, 'visibilityState', 'get')
+    const now = vi.spyOn(Date, 'now')
     try {
       const { transcript, mount } = await setup()
       await act(async () => mount.render([user], [turn({ nodeIds: ['user'] })]))
+      const activeLabel = transcript.querySelector('.turn-status')?.textContent
+      const tick = setClock.mock.calls.find(([, delay]) => delay === 1000)?.[0]
+      now.mockReturnValue(Date.parse('2026-09-25T00:00:10.000Z'))
+      visibility.mockReturnValue('hidden')
+      await act(async () => tick?.())
+      expect(transcript.querySelector('.turn-status')?.textContent).toBe(activeLabel)
+      visibility.mockReturnValue('visible')
+      await act(async () => tick?.())
+      expect(transcript.querySelector('.turn-status')?.textContent).toContain('用时 10 秒')
       const clock = setClock.mock.results.find(
         (result, index) => setClock.mock.calls[index]?.[1] === 1000 && result.type === 'return',
       )?.value
@@ -425,9 +503,31 @@ describe('W4a opt-in transcript node host', () => {
       await act(async () => mount.dispose())
       expect(clearClock).toHaveBeenCalledWith(lastClock)
     } finally {
+      now.mockRestore()
+      visibility.mockRestore()
       setClock.mockRestore()
       clearClock.mockRestore()
     }
+  })
+
+  it('keeps an empty streaming assistant and a terminal turn without a final answer non-actionable', async () => {
+    const { transcript, mount } = await setup()
+    const empty: UINode = { kind: 'assistant', id: 'assistant', seq: 2, text: '', streaming: true }
+    await act(async () => mount.render([user, empty], [turn()]))
+    expect(item(transcript, 'assistant')?.hidden).toBe(true)
+    expect(transcript.querySelector<HTMLElement>('.turn-status')?.hidden).toBe(false)
+    expect(transcript.querySelector<HTMLElement>('.turn-footer')?.hidden).toBe(true)
+    await act(async () => mount.render([user, { ...empty, streaming: false }], [turn({ status: 'failed' })]))
+    expect(transcript.querySelector<HTMLElement>('.conversation-turn')?.dataset.status).toBe('failed')
+    expect(transcript.querySelector<HTMLElement>('.turn-footer')?.hidden).toBe(true)
+    expect(transcript.querySelectorAll('[data-node-id="assistant"]')).toHaveLength(0)
+    const terminal = turn({ status: 'completed', finalAssistantId: 'assistant' })
+    await act(async () => mount.render([user], [terminal]))
+    expect(transcript.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')?.disabled).toBe(true)
+    await act(async () => mount.render([user, say('assistant', 2, '迟到的最终正文')], [terminal]))
+    expect(transcript.querySelector('.turn-final')?.textContent).toContain('迟到的最终正文')
+    expect(transcript.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')?.disabled).toBe(false)
+    expect(transcript.querySelectorAll('[data-node-id="assistant"]')).toHaveLength(1)
   })
 
   it('keeps a claimed process card mounted while a streamed answer becomes final', async () => {

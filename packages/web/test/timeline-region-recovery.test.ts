@@ -3,7 +3,7 @@
 import { Context } from '@agnes/cordis'
 import type { SessionPreviewParams, UINode, UITimeline, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
-import { act } from 'react'
+import { act, createElement, useState } from 'react'
 import { expect, it, vi } from 'vitest'
 import { createLiveProjection } from '../src/live-projection.js'
 import { mountTranscriptRegion } from '../src/region-slots.js'
@@ -122,6 +122,7 @@ it.each(['legacy', 'xmarkdown'] as const)(
       },
     }
     const errors: unknown[] = []
+    let releaseToolView: (() => void) | undefined
     const seen: Array<{ text: string; status: UITurn['status'] | undefined }> = []
     const live = createLiveProjection(session as never, connection as never, {
       timeline(value) {
@@ -207,9 +208,47 @@ it.each(['legacy', 'xmarkdown'] as const)(
       })
       expect(firstArticle?.querySelector('.node-body p')).toBe(paragraph)
       expect(selection?.toString()).toBe('restarted output')
+      const toolNode: Extract<UINode, { kind: 'tool' }> = {
+        kind: 'tool',
+        id: 'tool-1',
+        seq: 3,
+        toolUseId: 'call-1',
+        name: 'read_file',
+        status: 'running',
+        summary: '读取中',
+      }
+      state.nodes.push(toolNode)
+      state.turns[0]?.nodeIds.push('tool-1')
+      state.upto = 3
+      await act(async () => live.refresh())
+      await vi.waitFor(() => expect(transcript.querySelector('[data-node-id="tool-1"]')).toBeTruthy())
+      const toolArticle = transcript.querySelector<HTMLElement>('[data-node-id="tool-1"]')
+      expect(toolArticle?.querySelector('[data-agnes-tool-card]')?.textContent).toContain('正在执行')
+      function ToolView({ owner }: { owner: { block: { status: string } } }) {
+        const [count, setCount] = useState(0)
+        return createElement(
+          'button',
+          { type: 'button', onClick: () => setCount(count + 1) },
+          `${owner.block.status}:${count}`,
+        )
+      }
+      await act(async () => {
+        releaseToolView = registry.register(
+          { name: 'tool.call.toolview', key: 'read_file', id: 'recovery-view' },
+          ToolView as never,
+        )
+      })
+      await vi.waitFor(() =>
+        expect(toolArticle?.querySelector('[data-agnes-dsh-slot] button')?.textContent).toBe('running:0'),
+      )
+      const toolButton = toolArticle?.querySelector<HTMLButtonElement>('[data-agnes-dsh-slot] button')
+      await act(async () => toolButton?.click())
+      expect(toolButton?.textContent).toBe('running:1')
       state.upto = 3
       state.nodes[1] = assistant('a1', 2, 'e1', 'restarted output done', false)
+      state.nodes[2] = { ...toolNode, status: 'completed', summary: '已读取' }
       state.turns[0] = turn('t1', ['u1', 'a1'], 'completed', 'a1')
+      state.turns[0]?.nodeIds.push('tool-1')
       await act(async () => live.refresh())
       await vi.waitFor(() =>
         expect(transcript.querySelector('[data-turn-id="t1"]')?.getAttribute('data-status')).toBe(
@@ -218,6 +257,9 @@ it.each(['legacy', 'xmarkdown'] as const)(
       )
       expect(seen.at(-1)).toEqual({ text: 'restarted output done', status: 'completed' })
       expect(transcript.querySelector('[data-node-id="a1"]')).toBe(firstArticle)
+      expect(transcript.querySelector('[data-node-id="tool-1"]')).toBe(toolArticle)
+      expect(toolArticle?.querySelector('[data-agnes-dsh-slot] button')).toBe(toolButton)
+      expect(toolButton?.textContent).toBe('completed:1')
       expect(selection?.toString()).toBe('restarted output')
       selection?.removeAllRanges()
       document.dispatchEvent(new Event('selectionchange'))
@@ -248,22 +290,84 @@ it.each(['legacy', 'xmarkdown'] as const)(
       expect(transcript.querySelector('[data-node-id="a2"]')).toBe(secondArticle)
       expect(secondArticle?.textContent).toContain('second partial')
       state.upto = 6
-      state.nodes[3] = assistant('a2', 5, 'e2', 'second answer', false)
-      state.turns[1] = turn('t2', ['u2', 'a2'], 'completed', 'a2')
+      state.nodes[4] = assistant('a2-final', 5, 'e2', 'second answer', false)
+      state.turns[1] = turn('t2', ['u2', 'a2-final'], 'completed', 'a2-final')
       await act(async () => live.refresh())
-      await vi.waitFor(() => expect(secondArticle?.textContent).toContain('second answer'))
+      await vi.waitFor(() =>
+        expect(transcript.querySelector('[data-node-id="a2-final"]')?.textContent).toContain('second answer'),
+      )
       expect(
         [...transcript.querySelectorAll('[data-node-id]')].map((node) => node.getAttribute('data-node-id')),
-      ).toEqual(['u1', 'a1', 'u2', 'a2'])
+      ).toEqual(['u1', 'tool-1', 'a1', 'u2', 'a2-final'])
+      expect(transcript.querySelector('[data-node-id="a2"]')).toBeNull()
+      expect(secondArticle?.isConnected).toBe(false)
       expect(transcript.querySelectorAll('[data-node-id="a1"]')).toHaveLength(1)
       const patchCount = session.projectUIPatch.mock.calls.length
       await act(async () => live.refresh())
       await vi.waitFor(() => expect(session.projectUIPatch.mock.calls.length).toBeGreaterThan(patchCount))
       expect(transcript.querySelector('[data-node-id="a1"]')).toBe(firstArticle)
-      expect(transcript.querySelector('[data-node-id="a2"]')).toBe(secondArticle)
-      expect(transcript.querySelectorAll('[data-node-id]')).toHaveLength(4)
+      expect(transcript.querySelectorAll('[data-node-id="a2-final"]')).toHaveLength(1)
+      expect(transcript.querySelector('[data-node-id="tool-1"]')).toBe(toolArticle)
+      expect(toolArticle?.querySelector('[data-agnes-dsh-slot] button')).toBe(toolButton)
+      expect(transcript.querySelectorAll('[data-node-id]')).toHaveLength(5)
+      await act(async () => releaseToolView?.())
+      releaseToolView = undefined
+      expect(toolArticle?.querySelector('[data-agnes-timeline-native]')?.getAttribute('hidden')).toBeNull()
+      expect(toolArticle?.querySelector('[data-agnes-tool-card]')?.textContent).toContain('执行完成')
+      state.upto = 8
+      state.nodes.push(user('u3', 7, 'cancelled request'), assistant('a3', 8, 'e3', '', true))
+      state.turns.push(turn('t3', ['u3', 'a3'], 'running'))
+      await act(async () => live.refresh())
+      await vi.waitFor(() => expect(transcript.querySelector('[data-node-id="a3"]')).toBeTruthy())
+      await act(async () => {
+        for (const listener of previewListeners)
+          listener({
+            sessionId: 's',
+            lane: 'main',
+            effectId: 'e3',
+            stream: 'text',
+            offset: 0,
+            delta: 'partial third',
+          })
+      })
+      const cancelledArticle = transcript.querySelector<HTMLElement>('[data-node-id="a3"]')
+      expect(cancelledArticle?.textContent).toContain('partial third')
+      state.upto = 9
+      state.nodes[6] = assistant('a3', 8, 'e3', 'partial third', false)
+      state.turns[2] = turn('t3', ['u3', 'a3'], 'cancelled')
+      await act(async () => live.refresh())
+      await vi.waitFor(() =>
+        expect(transcript.querySelector('[data-turn-id="t3"]')?.getAttribute('data-status')).toBe(
+          'cancelled',
+        ),
+      )
+      await act(async () => {
+        for (const listener of previewListeners)
+          listener({
+            sessionId: 's',
+            lane: 'main',
+            effectId: 'e3',
+            stream: 'text',
+            offset: 'partial third'.length,
+            delta: ' stale',
+          })
+      })
+      expect(cancelledArticle?.textContent).toContain('partial third')
+      expect(cancelledArticle?.textContent).not.toContain('stale')
+      const openingsBeforeReconnect = session.projectUIOpening.mock.calls.length
+      connection.connectionState = 'reconnecting'
+      connection.emit('reconnecting')
+      connection.connectionState = 'connected'
+      connection.emit('reconnected')
+      await vi.waitFor(() =>
+        expect(session.projectUIOpening.mock.calls.length).toBeGreaterThan(openingsBeforeReconnect),
+      )
+      expect(transcript.querySelector('[data-node-id="a3"]')).toBe(cancelledArticle)
+      expect(transcript.querySelectorAll('[data-node-id="a3"]')).toHaveLength(1)
+      expect(transcript.querySelector('[data-turn-id="t3"]')?.getAttribute('data-status')).toBe('cancelled')
       expect(errors).toEqual([])
     } finally {
+      releaseToolView?.()
       await live.stop()
       mounted.dispose()
       await ctx.fiber.dispose()
