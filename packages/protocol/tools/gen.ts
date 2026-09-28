@@ -175,6 +175,7 @@ const TARGETS: Array<{
           'ExecutionDomain',
           'ToolCall',
           'Billing',
+          'ResponseMeta',
         ],
       },
     ],

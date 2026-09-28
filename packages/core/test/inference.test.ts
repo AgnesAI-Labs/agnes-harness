@@ -771,11 +771,14 @@ describe('Inference segment', () => {
       stopReason: 'end_turn',
     })
     // The stream's own usage row is what is billed, not the four-chars-a-token fallback.
-    expect((await log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data).toMatchObject({
+    const ledger = (await log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data
+    expect(ledger).toMatchObject({
       tokens: { input: 10, output: 5 },
       credits: 1,
       purpose: 'inference',
     })
+    // A provider that reported no response metadata leaves the row without any.
+    expect(ledger).not.toHaveProperty('response')
     expect((await log.scan({ type: 'effect/settled', limit: 5 }))[0]?.data).toMatchObject({ outcome: 'ok' })
     expect(session.pendingEffects()).toEqual([])
   })
@@ -1140,7 +1143,17 @@ describe('Inference segment', () => {
   it('retryable error waits and then succeeds; a non-retryable one drains', async () => {
     let now = 1_757_203_200_000
     const scripts: Script[] = [
-      [sent(), { type: 'error', reason: 'error', code: 'RATE_LIMIT', message: 'slow', retryable: true }],
+      [
+        sent(),
+        {
+          type: 'error',
+          reason: 'error',
+          code: 'RATE_LIMIT',
+          message: 'slow',
+          retryable: true,
+          response: { status: 429, headers: { 'retry-after': '5' }, headerNames: ['retry-after'] },
+        },
+      ],
       textTurn('ok'),
     ]
     const s = await openSession({ provider: fakeProvider(scripts), clock: () => now })
@@ -1154,6 +1167,7 @@ describe('Inference segment', () => {
     // The interrupted attempt is still billed, and its effect is settled rather than left pending.
     expect((await s.log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data).toMatchObject({
       interrupted: true,
+      response: { status: 429, headers: { 'retry-after': '5' }, headerNames: ['retry-after'] },
     })
     expect(s.session.pendingEffects()).toEqual([])
     // Not yet due: the segment refuses to spend a second attempt before notBefore.
@@ -1803,13 +1817,17 @@ it('persists reported request timing and restores the same usage details in UI p
         creditSource: 'estimated',
         timing: { ttftMs: 120, durationMs: 450 },
         billing: { usdMicros: 250, source: 'estimated', subscription: false },
+        response: { status: 200, id: 'resp-1', model: 'served-model', headerNames: ['x-litellm-call-id'] },
       },
       { type: 'done', reason: 'stop' },
     ],
   ])
   await session.runInference()
   const costs = await log.scan({ type: 'cost/ledger', limit: 10 })
-  expect(costs[0]?.data).toMatchObject({ timing: { ttftMs: 120, durationMs: 450 } })
+  expect(costs[0]?.data).toMatchObject({
+    timing: { ttftMs: 120, durationMs: 450 },
+    response: { status: 200, id: 'resp-1', model: 'served-model', headerNames: ['x-litellm-call-id'] },
+  })
   const timeline = await session.projectUI()
   expect(timeline.nodes.find((node) => node.kind === 'cost')).toMatchObject({
     tokens: { input: 10, output: 5, cacheRead: 20, reasoning: 2 },
