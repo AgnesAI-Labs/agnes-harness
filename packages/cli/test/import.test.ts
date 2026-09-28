@@ -114,6 +114,7 @@ describe('import command', () => {
           'turn/end',
         ])
         expect(events.slice(1).every((event) => event.trust === 'untrusted')).toBe(true)
+        expect(events[0]?.data).toMatchObject({ imported: { source: 'pi', sourceId: 'pi-cli', cwd: '/old' } })
       } finally {
         await session.close()
       }
@@ -262,9 +263,13 @@ describe('import command', () => {
         return session
       },
     } as unknown as typeof host
+    // A native agnes export carries no import marker of its own; import records where it came from.
     const native = new TextEncoder().encode(
       importSession(source('native'), { from: 'pi' })
-        .events.map((event) => JSON.stringify(event))
+        .events.map(({ data, ...event }, index) => {
+          const { imported: _marker, ...plain } = data as Record<string, unknown>
+          return JSON.stringify({ ...event, data: index === 0 ? plain : data })
+        })
         .join('\n'),
     )
     const admission = await memoryAdmission(host, dataDir)
@@ -280,6 +285,18 @@ describe('import command', () => {
     try {
       await expect(run('hooked', source())).resolves.toBe(0)
       await expect(run('hooked-native', native)).resolves.toBe(0)
+      const restored = await openAdmittedSession(host, admission, 'hooked-native', dataDir)
+      try {
+        expect((await restored.scan({ fromSeq: 1, limit: 1 }))[0]?.data).toMatchObject({
+          imported: {
+            source: 'agnes',
+            sourceId: 'agnes:local:default:import:dm:native',
+            cwd: restored.d.cwd,
+          },
+        })
+      } finally {
+        await restored.close()
+      }
     } finally {
       await host.close()
       rmSync(dataDir, { recursive: true, force: true })

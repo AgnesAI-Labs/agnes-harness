@@ -15,6 +15,7 @@ import type {
   RequestBody,
   RequestMediaHeader,
   ResolvedToolCallPolicy,
+  SessionStart,
   ThinkingLevel,
   UISpan,
   UITurn,
@@ -392,6 +393,8 @@ export type SessionDeps = {
   clock: Clock
   actor: Actor
   resolvedProfileHash: string | null
+  /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
+  imported?: SessionStart['imported']
   cwd: string
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
@@ -662,6 +665,7 @@ export class SessionImpl {
           resolvedProfileHash: this.d.resolvedProfileHash,
           preset: this.preset.name,
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
+          ...(this.d.imported ? { imported: this.d.imported } : {}),
         },
       },
     ])

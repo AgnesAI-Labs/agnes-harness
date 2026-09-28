@@ -914,7 +914,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Context notes, per-turn prefix memo, and typed cold-block signal on the compaction-prefix base.
   // Host-selected Skill preload notes and cold-compaction prompt denial are both present.
   // Child compaction inheritance removes one line. Re-measured 25422, exact; no spare.
-  'packages/core/src': 25422,
+  // Import provenance marker: new session/start carries the importer's imported option.
+  // Measured 25427, exact (+5).
+  'packages/core/src': 25427,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2003,7 +2005,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 13388, exact (+7).
   // Diagnostics export keeps another session's projection out and flags a windowed trace.
   // Measured 13399, exact (+11).
-  'packages/web/src': 13399,
+  // Import provenance marker: diagnostics export names an imported session's source only.
+  // Measured 13407, exact (+8).
+  'packages/web/src': 13407,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2473,7 +2477,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Tool-definition refusals and title nonce query. Host Skill preload notes add 2 counted lines.
   // Migration measured 38099, exact, no spare.
-  'packages/host/src': 38099,
+  // Import provenance marker: createSession forwards the in-process imported option.
+  // Measured 38101, exact (+2).
+  'packages/host/src': 38101,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

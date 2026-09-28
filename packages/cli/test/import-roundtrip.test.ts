@@ -68,14 +68,34 @@ describe('agnes export -> import round trip', () => {
         const shape = (event: EventEnvelope) => [event.seq, event.type, event.sourceEventSeqs ?? null]
         const landed = await restored.scan({ toSeq: rows.length })
         expect(landed.slice(1).map(shape)).toEqual(rows.slice(1).map(shape))
+        expect(landed[0]?.data).toMatchObject({
+          imported: { source: 'agnes', sourceId: (rows[0]?.data as { key?: string } | undefined)?.key },
+        })
         await restored.close()
       } finally {
         await host.close()
       }
+
+      // Exported and imported again, the session still names where it first came from.
+      expect((await run(dir, ['export', 'restored', '-o', file])).code).toBe(0)
+      const marker = (JSON.parse(readFileSync(file, 'utf8').split('\n')[0] ?? '') as EventEnvelope).data
+      expect(marker).toMatchObject({ imported: { source: 'agnes' } })
+      const again = await run(dir, ['import', file, '--key', 'restored-again'])
+      expect(again.code, again.err).toBe(0)
+      const reopened = await createTestHost({ dataDir: dir })
+      try {
+        const twice = await reopened.host.createSession({ key: 'restored-again', cwd: dir })
+        expect((await twice.scan({ fromSeq: 1, limit: 1 }))[0]?.data).toMatchObject({
+          imported: (marker as { imported: unknown }).imported,
+        })
+        await twice.close()
+      } finally {
+        await reopened.host.close()
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('refuses an export that still carries the removed assistant/chunk rows', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-roundtrip-old-'))

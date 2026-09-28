@@ -82,7 +82,7 @@ const RUNTIME_SCRIPT = `
   }
 
   var STATUS_LABEL = { running: '进行中', waiting: '等待中', completed: '已完成', failed: '失败', cancelled: '已取消' };
-  var REASON_LABEL = { unavailable: '不可用', truncated: '已截断', limit: '超出上限', timeout: '超时', failed: '失败' };
+  var REASON_LABEL = { unavailable: '不可用', truncated: '已截断', limit: '超出上限', timeout: '超时', failed: '失败', imported: '导入' };
   var INCLUDE_LABEL = { conversation: '对话与轨迹', logs: '日志', system: '系统信息' };
 
   var tabButtons = Array.prototype.slice.call(document.querySelectorAll('#agh-tabs button'));
