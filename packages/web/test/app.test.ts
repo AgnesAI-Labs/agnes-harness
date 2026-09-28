@@ -275,6 +275,14 @@ describe('web session selection', () => {
     await import('../src/app.js')
     expect(traceBridge.transcriptOptions).toMatchObject({ nodeHost: 'react' })
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
+    const reportProblem = document.getElementById('report-problem') as HTMLButtonElement
+    reportProblem.click()
+    const diagnostics = document.querySelector('dialog.diagnostics-dialog') as HTMLDialogElement
+    expect(diagnostics.open).toBe(true)
+    expect(diagnostics.querySelector('section:not([hidden])')?.getAttribute('data-step')).toBe('menu')
+    diagnostics.querySelector<HTMLButtonElement>('[data-action="cancel"]')?.click()
+    expect(diagnostics.open).toBe(false)
+    expect(document.activeElement).toBe(reportProblem)
     const trace = traceBridge.options as {
       readToolDetail: (sessionId: string, callSeq: number, resultSeq?: number) => Promise<unknown>
     }

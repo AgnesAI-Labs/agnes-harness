@@ -209,8 +209,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  // W8a-3: full React tool card plus prior action component; measured 4559, exact cap.
-  'packages/web-ui/src': 4559,
+  // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
+  'packages/web-ui/src': 4706,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   'packages/web-units/src': 4630,
   'packages/base/extensions/tools-core': 800,
@@ -1984,8 +1984,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // C-4 helper migration on UI integration: measured current source 13140 + 7; no spare allocation.
-  // W8a-3: direct React tool leaf and legacy root disposal; measured 13094.
-  'packages/web/src': 13094,
+  // B-line diagnostics dialog: controller replaces DOM wiring; measured 13102, exact cap.
+  'packages/web/src': 13102,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
