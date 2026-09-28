@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import type { ConfigSnapshot, ConfigTestResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { unmountRegion } from '@agnes/web-ui'

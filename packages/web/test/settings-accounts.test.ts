@@ -1,4 +1,7 @@
+// @vitest-environment happy-dom
+
 import { readFileSync } from 'node:fs'
+import { URL as NodeURL } from 'node:url'
 import type { ConfigAccount, ConfigSnapshot } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { unmountRegion } from '@agnes/web-ui'
@@ -35,7 +38,7 @@ const account = (id: string): ConfigAccount => ({
 async function setup() {
   window = new Window()
   window.document.write(
-    readFileSync(new URL('../public/index.html', import.meta.url), 'utf8').replace(
+    readFileSync(new NodeURL('../public/index.html', import.meta.url), 'utf8').replace(
       /<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g,
       '',
     ),
