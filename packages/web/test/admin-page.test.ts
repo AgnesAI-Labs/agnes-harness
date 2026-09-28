@@ -122,6 +122,74 @@ afterEach(() => {
   document.documentElement.replaceChildren()
 })
 
+it.each([
+  ['object', [{ operationId: 'restore-install', mode: 'install', packageId: 'acme/restored' }]],
+  ['legacy string', ['restore-install']],
+])('restores an in-flight operation from %s session records', async (_format, records) => {
+  document.documentElement.innerHTML = html
+    .replace('<link rel="stylesheet" href="/style.css" />', '')
+    .replace('<script type="module" src="/admin.js"></script>', '')
+  history.replaceState(null, '', '/admin/plugins#restore-token')
+  sessionStorage.setItem('agnes-plugin-operation-ids:auth.restore:local-dev', JSON.stringify(records))
+
+  const installed: PackageInstalledDescriptor = {
+    id: 'acme/restored',
+    version: '1.0.0',
+    source: { type: 'file', ref: 'file:./restored' },
+    integrity: `sha256-${'a'.repeat(64)}`,
+    trusted: true,
+    desired: 'installed-disabled',
+    actual: 'not-running',
+    cleanupPending: false,
+    rollbackTarget: null,
+    contributions: [],
+    blockers: [],
+    capabilityHash,
+  }
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const url = String(input)
+    if (url.endsWith('/session')) return Response.json({ authenticated: true })
+    if (url.endsWith('/context'))
+      return Response.json({
+        profile: 'local-dev',
+        clientId: 'restore-test',
+        permissions: ['packages.read', 'packages.activate'],
+        readOnly: false,
+        authScope: 'auth.restore',
+        features: Object.values(ADMIN_FEATURES),
+      })
+    if (url.endsWith('/list')) return Response.json({ packages: [installed] })
+    if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
+    if (url.endsWith('/surfaces')) return Response.json({ surfaces: [] })
+    if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [] })
+    if (url.endsWith('/operation/get')) {
+      const body = JSON.parse(String(init?.body)) as { operationId: string }
+      expect(body.operationId).toBe('restore-install')
+      return Response.json(
+        operation('restore-install', 'install', {
+          packageId: installed.id,
+          state: 'installing',
+          progress: 25,
+        }),
+      )
+    }
+    return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
+  })
+  vi.stubGlobal('fetch', fetcher)
+
+  const mounted = await mountAdmin()
+  try {
+    await vi.waitFor(() => {
+      expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/operation/get'))).toBe(true)
+      expect(document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.disabled).toBe(
+        true,
+      )
+    })
+  } finally {
+    mounted.dispose()
+  }
+})
+
 it('renders all real local releases and carries a selected catalog source through preview and install', async () => {
   document.documentElement.innerHTML = html
     .replace('<link rel="stylesheet" href="/style.css" />', '')

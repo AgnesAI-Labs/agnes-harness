@@ -197,6 +197,7 @@ const computerUseStatus = createComputerUsePaneController(client)
 addEventListener('pagehide', () => computerUseStatus.dispose(), { once: true })
 const clientModules = await startClientModules({
   agnes: client,
+  claim: claimSlotCard,
   clientServiceCaller: async (module, sessionId, service, input) => {
     const response = await fetch('/api/client-modules/service', {
       method: 'POST',

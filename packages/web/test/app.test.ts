@@ -14,6 +14,7 @@ const configurationCallback = vi.hoisted(() => ({
 const traceBridge = vi.hoisted(() => ({
   options: undefined as unknown,
   transcriptOptions: undefined as unknown,
+  claim: undefined as unknown,
   metas: [] as unknown[],
 }))
 vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
@@ -23,6 +24,7 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
     startClientModules: async (options: Parameters<typeof actual.startClientModules>[0]) => {
       traceBridge.options = options.trace
       traceBridge.transcriptOptions = options.transcript
+      traceBridge.claim = options.claim
       const runtime = await actual.startClientModules(options)
       if (runtime.trace) {
         const render = runtime.trace.render.bind(runtime.trace)
@@ -240,6 +242,7 @@ afterEach(async () => {
   vi.clearAllMocks()
   traceBridge.options = undefined
   traceBridge.transcriptOptions = undefined
+  traceBridge.claim = undefined
   traceBridge.metas.length = 0
   vi.unstubAllGlobals()
   document.documentElement.replaceChildren()
@@ -274,6 +277,7 @@ describe('web session selection', () => {
 
     await import('../src/app.js')
     expect(traceBridge.transcriptOptions).toMatchObject({ nodeHost: 'react' })
+    expect(traceBridge.claim).toEqual(expect.any(Function))
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
     const reportProblem = document.getElementById('report-problem') as HTMLButtonElement
     reportProblem.click()

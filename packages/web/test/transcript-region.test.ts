@@ -67,4 +67,35 @@ describe('rendered transcript region', () => {
       expect(document.querySelector('#shadow-transcript')).toBeNull()
     }, committed)
   })
+
+  it('renders a claimed plugin card through the default React region bootstrap', async () => {
+    runtime = await mountRenderedIndex({
+      transcript: { nodeHost: 'react' },
+      claim: (entry, extId) => entry.owner === extId,
+    })
+    const remove = runtime.registry.register(
+      'tool.card.inline',
+      () => createElement('span', null, '已认领卡片'),
+      { owner: 'fixture.card', id: 'claimed-card' },
+    )
+    try {
+      const slot: UINode = {
+        kind: 'slot',
+        id: 'slot-claimed',
+        seq: 1,
+        fill: { slot: 'tool.card.inline', extId: 'fixture.card', payload: {} },
+      }
+      runtime.transcript?.render([slot])
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-slot-node="tool.card.inline"]')?.textContent).toContain(
+          '已认领卡片',
+        ),
+      )
+      expect(document.querySelector('[data-slot-node="tool.card.inline"]')?.textContent).not.toContain(
+        '此卡片的插件未就绪',
+      )
+    } finally {
+      remove()
+    }
+  })
 })

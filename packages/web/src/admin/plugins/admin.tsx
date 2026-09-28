@@ -900,7 +900,7 @@ class PluginAdminPage {
       if (!Array.isArray(stored)) return []
       return stored.flatMap((value): TrackedOperation[] => {
         if (typeof value === 'string') return [{ operationId: value }]
-        if (!value || typeof value === 'object') return []
+        if (!value || typeof value !== 'object') return []
         const record = value as Record<string, unknown>
         if (typeof record.operationId !== 'string') return []
         return [

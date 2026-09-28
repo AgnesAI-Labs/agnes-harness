@@ -101,7 +101,7 @@
   "packages/daemon/src/supervisor/discovery": 436,
   "packages/daemon/src/supervisor/startup": 18,
   "packages/web/src/serve": 188,
-  "packages/web/src/app": 1825,
+  "packages/web/src/app": 1826,
   "packages/web/src/permission-picker": 215,
   "packages/web/src/trace-panel": 478,
   "packages/web/src/model-picker": 274,

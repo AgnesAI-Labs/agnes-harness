@@ -199,6 +199,7 @@ export async function startClientModules(options: {
       const emptyState = mountEmptyStateRegion(registry, children.emptyState, { session, locale })
       const transcript = mountTranscriptRegion(registry, children.transcript, {
         ...options.transcript,
+        ...(options.claim ? { claim: options.claim } : {}),
         newContentButton: children.newContentButton,
         session,
         resources,
@@ -309,6 +310,7 @@ export async function startClientModules(options: {
     !conversation && options.transcriptContainer
       ? mountTranscriptRegion(registry, options.transcriptContainer, {
           ...options.transcript,
+          ...(options.claim ? { claim: options.claim } : {}),
           session,
           resources,
         })
