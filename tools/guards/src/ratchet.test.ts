@@ -365,9 +365,16 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines() on the merged tree: 1767, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
   // and the Web says so plainly in session recovery. Measured 1776, exact, no spare (+4).
-  // PR review repair: the default React transcript now receives the inline card claim callback.
-  // Re-measured with countLines(): 1826, exact cap, no spare.
-  'packages/web/src/app': 1826,
+  // TRACE-INSPECTION-20260925: session-scoped tool detail bridge; measured 1783, exact.
+  // Daemon-restart recovery: the page probes its own bootstrap before reloading and keeps a visible
+  // manual retry after the automatic window. Measured 1811, exact, no spare (+28).
+  // Reload only into a new daemon address, recover after a failed first connection, resume on
+  // tab show, and a notice consistent with the recovery status. Measured 1824, exact (+13).
+  // Diagnostics export tells the bundle whether the projection has unloaded earlier history.
+  // Measured 1825, exact (+1).
+  // UI integration merge: the default React transcript now receives the inline card claim callback,
+  // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
+  'packages/web/src/app': 1827,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -1985,9 +1992,21 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (13161) with the streaming-smoothness quick fixes (13313): the preview
   // merge and the throttled trace feed both stand. Re-measured on the merged tree: 13251, exact, no spare.
   // LEGACY-LEDGER-OPEN: a session an older build wrote is refused as LEGACY_LEDGER_FORMAT (audited),
-  // C-4 helper migration on UI integration: measured current source 13140 + 7; no spare allocation.
-  // B-line diagnostics dialog: controller replaces DOM wiring; measured 13102, exact cap.
-  'packages/web/src': 13102,
+  // and the Web says so plainly: errorNotice and session recovery. Measured 13266, exact, no spare (+6).
+  // TRACE-INSPECTION-20260925: trace detail callback wiring; measured 13269, exact.
+  // Per-node roots in the timeline unmount after the current commit: measured 13268, exact.
+  // Daemon-restart recovery: probe-before-reload controller and its page wiring. Measured 13344, exact (+76).
+  // Load earlier: instant restore after a prepend and a sentinel re-read. Measured 13350, exact (+6).
+  // Reload only into a new daemon address, failed first connection, resume and probe hardening.
+  // Measured 13382, exact (+32).
+  // Load earlier re-arms only after a landed page. Measured 13381, exact (-1).
+  // Diagnostics export redacts Cookie headers, *_KEY assignments and URL query values.
+  // Measured 13388, exact (+7).
+  // Diagnostics export keeps another session's projection out and flags a windowed trace.
+  // Measured 13399, exact (+11).
+  // UI integration merge: the three UI lines moved most of this scope into packages/web-ui/src,
+  // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
+  'packages/web/src': 13120,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

@@ -1,4 +1,3 @@
-import type { UITimeline } from '@agnes/protocol'
 import {
   createAntdRoot,
   type DiagnosticsDialogSnapshot,
@@ -9,7 +8,12 @@ import {
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { getBrowserLog } from './browser-log.js'
-import { type CollectedDiagnostics, collectDiagnostics, type RpcCall } from './diagnostics-bundle.js'
+import {
+  type CollectedDiagnostics,
+  type CollectInput,
+  collectDiagnostics,
+  type RpcCall,
+} from './diagnostics-bundle.js'
 
 // lib.dom has no File System Access typings; this is the slice saveZip uses.
 type SaveFilePicker = (o: {
@@ -22,7 +26,7 @@ type SaveFilePicker = (o: {
 
 export type DiagnosticsDialogDeps = {
   call: RpcCall
-  context(): { sessionId: string | null; sessionTitle: string | null; projection: UITimeline | undefined }
+  context(): Pick<CollectInput, 'sessionId' | 'sessionTitle' | 'projection' | 'projectionHasEarlier'>
   collect?: typeof collectDiagnostics
   save?: (zip: Uint8Array, fileName: string) => Promise<'saved' | 'canceled'>
 }

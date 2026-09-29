@@ -61,9 +61,9 @@ jobs:
         include:
           - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=4', testExclude: '', shard: '' }
           - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', testExclude: '', shard: '' }
-          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts', shard: '1/3' }
-          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts', shard: '2/3' }
-          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts', shard: '3/3' }
+          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '1/3' }
+          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '2/3' }
+          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '3/3' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -98,6 +98,14 @@ jobs:
       - name: Windows Skill install requests
         if: runner.os == 'Windows' && matrix.shard == '2/3'
         run: pnpm exec vitest run packages/daemon/test/skill-install-requests.test.ts --maxWorkers=1
+      # These files drive real daemon startup and MCP server processes under fixed startup and
+      # shutdown deadlines; run each alone so parallel Vitest files do not starve them.
+      - name: Windows daemon startup directories
+        if: runner.os == 'Windows' && matrix.shard == '1/3'
+        run: pnpm exec vitest run packages/daemon/test/windows-startup-directories.test.ts --maxWorkers=1
+      - name: Windows conversation MCP registration
+        if: runner.os == 'Windows' && matrix.shard == '2/3'
+        run: pnpm exec vitest run packages/daemon/test/conversation-mcp.test.ts --maxWorkers=1
       # Keep boot/session creation in the functional gate above. The isolated run reports wall-clock
       # time in the job summary even if another test fails; a stable performance runner can opt into
       # the 300 ms assertion. Do not restart this test after a cancelled or skipped suite.
@@ -172,7 +180,7 @@ jobs:
       # held out here.
       - name: test heavy tier
         env:
-          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts' || '' }}
+          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
         run: pnpm exec vitest run --project heavy --maxWorkers=2
       # The ACP cold-start bound measures concurrent CLI processes. Run it without other Vitest
       # files competing for this runner's cores, while retaining its original assertion.
@@ -184,6 +192,14 @@ jobs:
       - name: Windows ephemeral CLI lifecycle
         if: runner.os == 'Windows'
         run: pnpm exec vitest run packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts --maxWorkers=1
+      # These heavy files drive real worker, MCP server and built CLI processes under fixed startup and
+      # shutdown deadlines; run each alone so parallel Vitest files do not starve them.
+      - name: Windows service worker boundary
+        if: runner.os == 'Windows'
+        run: pnpm exec vitest run packages/daemon/test/service-worker.e2e.test.ts --maxWorkers=1
+      - name: Windows built CLI managed MCP lifecycle
+        if: runner.os == 'Windows'
+        run: pnpm exec vitest run packages/cli/test/built-resource-mcp.e2e.test.ts --maxWorkers=1
       - name: verify working tree is clean
         run: git diff --exit-code
   runtime-package:

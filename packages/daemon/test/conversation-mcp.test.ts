@@ -225,16 +225,19 @@ it('a conversation approves registration and calls the real stdio server on its 
     await session.run({ until: 'turn-end', signal: AbortSignal.timeout(10_000) })
     const result = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
     expect(JSON.stringify(result)).toContain('AGH_CONVERSATION_MCP_OK')
-    await vi.waitFor(async () => {
-      const journal = JSON.parse(
-        await readFile(join(root, 'resources', 'mcp', 'local-dev.mcp.json'), 'utf8'),
-      ) as { operations: { operation: { state: string } }[] }
-      expect(
-        journal.operations.every(({ operation }) =>
-          ['succeeded', 'failed', 'cancelled'].includes(operation.state),
-        ),
-      ).toBe(true)
-    })
+    await vi.waitFor(
+      async () => {
+        const journal = JSON.parse(
+          await readFile(join(root, 'resources', 'mcp', 'local-dev.mcp.json'), 'utf8'),
+        ) as { operations: { operation: { state: string } }[] }
+        expect(
+          journal.operations.every(({ operation }) =>
+            ['succeeded', 'failed', 'cancelled'].includes(operation.state),
+          ),
+        ).toBe(true)
+      },
+      { timeout: 10_000 },
+    )
     await session.close()
     await h.host.applyRuntimeTarget(
       decodeRuntimeTargetArtifact(withoutPackageRows(target, '@agnes/mcp-helper')),

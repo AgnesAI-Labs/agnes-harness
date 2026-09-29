@@ -1762,6 +1762,7 @@ const diagnostics = createDiagnosticsDialog({
     sessionId: current?.id ?? null,
     sessionTitle: sessionTitles.get(current?.id ?? '') ?? null,
     projection,
+    projectionHasEarlier: live?.hasEarlier() ?? false,
   }),
 })
 const reportProblem = button('report-problem')
