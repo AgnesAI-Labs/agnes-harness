@@ -1,5 +1,10 @@
 import { validateAgainst } from '@agnes/protocol'
 import { scanAll } from '../log/scan-pages.js'
+import {
+  hasAuthenticToolPolicyHash,
+  hasTrustedToolCallProvenance,
+  type PersistedToolPolicyFields,
+} from '../registry/tool-policy.js'
 import { canonicalJson, sha256Hex } from '../request/hash.js'
 import type { Event, Seq } from '../types.js'
 import type { SessionImpl } from './session.js'
@@ -11,7 +16,7 @@ import type { SessionImpl } from './session.js'
  * below is projected from the ledger — an invented one would read as a real check result.
  */
 export type CoreVerifyInput = {
-  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean }>
+  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean; isReadOnly: boolean }>
   deviations: number
   recentToolKeys: string[]
   surfaceTailHashes: string[]
@@ -68,6 +73,18 @@ function schemaOk(s: SessionImpl, name: string, args: unknown): boolean {
   }
 }
 
+/** Missing or untrusted policy is never evidence that a call was read-only. Do not rerun a
+ * classifier or consult mutable metadata: the ledger records the policy used at dispatch. */
+function readOnlyCall(e: Event | undefined): boolean {
+  if (!e || !hasTrustedToolCallProvenance(e)) return false
+  const policy = e.data as PersistedToolPolicyFields
+  return (
+    hasAuthenticToolPolicyHash(policy) &&
+    policy.resolvedPolicy?.isReadOnly === true &&
+    policy.resolvedPolicy.isDestructive === false
+  )
+}
+
 /** The repeated-write key verifierT0 compares: (tool, JCS(args)), one per call in order. */
 const toolKey = (name: string, args: unknown): string => `${name}|${canonicalJson(args)}`
 
@@ -99,7 +116,7 @@ function assemble(s: SessionImpl, w: Window): CoreVerifyInput {
   const toolCalls = w.calls.map((e) => {
     const d = e.data as { name?: unknown; args?: unknown }
     const name = String(d.name)
-    return { name, args: d.args, schemaOk: schemaOk(s, name, d.args) }
+    return { name, args: d.args, schemaOk: schemaOk(s, name, d.args), isReadOnly: readOnlyCall(e) }
   })
   const hashes = w.messages.map((e) => sha256Hex(messageText(e)))
   const last = w.messages[w.messages.length - 1]
@@ -123,15 +140,16 @@ function assemble(s: SessionImpl, w: Window): CoreVerifyInput {
  */
 export async function toolVerifyInput(
   s: SessionImpl,
-  call: { name: string; args: unknown },
+  call: { name: string; args: unknown; toolUseId: string },
   argsSchemaOk: boolean,
 ): Promise<CoreVerifyInput> {
   const startSeq = s.state.openStep.get(s.lane)?.startSeq ?? s.lastSeq
   const w = await scanWindow(s, startSeq)
   const input = assemble(s, w)
+  const row = w.calls.find((e) => (e.data as { toolUseId?: string }).toolUseId === call.toolUseId)
   return {
     ...input,
-    toolCalls: [{ name: call.name, args: call.args, schemaOk: argsSchemaOk }],
+    toolCalls: [{ name: call.name, args: call.args, schemaOk: argsSchemaOk, isReadOnly: readOnlyCall(row) }],
     recentToolKeys: [toolKey(call.name, call.args)],
   }
 }

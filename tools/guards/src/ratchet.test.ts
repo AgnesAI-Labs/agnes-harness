@@ -915,7 +915,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // 25024, exact, no spare (+4).
   // subagent_end and the child cost row report the stored terminal state. Measured 25026, exact,
   // no spare (+2).
-  'packages/core/src': 25422,
+  // Verifier polling/approval fix: reuse authenticated per-call policy and complete an approved
+  // stop verdict. Reviewed diff measures 25433 (+11), exact cap without spare allocation.
+  // code-fix: atomically retain steering at approved completion and bind verifier evidence at
+  // commit time. Measured 25451 (+18), exact cap without spare allocation.
+  'packages/core/src': 25451,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

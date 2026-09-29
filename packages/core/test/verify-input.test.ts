@@ -4,6 +4,7 @@ import type { SeamImplementations } from '../src/effects/seams.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { withPhase } from '../src/step/op-state.js'
+import { turnVerifyInput } from '../src/step/verify-input.js'
 import { fakeProvider, sent, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, openWorldTool, readTool } from './helpers/open-session.js'
@@ -103,25 +104,61 @@ describe('verify input contract', () => {
     // tools.ts approveAndExecute: exactly the call that just ran, with the dispatch's own
     // schema-validation result, against this step's deviation count.
     const tool = captured[0]?.input
-    expect(tool?.toolCalls).toEqual([{ name: 'read', args: { path: 'a' }, schemaOk: true }])
+    expect(tool?.toolCalls).toEqual([{ name: 'read', args: { path: 'a' }, schemaOk: true, isReadOnly: true }])
     expect(tool?.deviations).toBe(0)
     expect(tool?.lastFinishReason).toBe('tool_use')
 
     // tools.ts runToolsPhase: the same step read back from the ledger, call included.
     const step = captured[1]?.input
-    expect(step?.toolCalls).toEqual([{ name: 'read', args: { path: 'a' }, schemaOk: true }])
+    expect(step?.toolCalls).toEqual([{ name: 'read', args: { path: 'a' }, schemaOk: true, isReadOnly: true }])
     expect(step?.deviations).toBe(0)
     expect(step?.lastFinishReason).toBe('tool_use')
 
     // gate.ts stopGate: the whole turn, with the repeated-write and no-progress projections.
     const turn = captured[2]?.input
-    expect(turn?.toolCalls).toEqual([{ name: 'read', args: { path: 'a' }, schemaOk: true }])
+    expect(turn?.toolCalls).toEqual([{ name: 'read', args: { path: 'a' }, schemaOk: true, isReadOnly: true }])
     expect(turn?.recentToolKeys).toEqual([`read|${canonicalJson({ path: 'a' })}`])
     expect(turn?.surfaceTailHashes).toEqual([sha256Hex(''), sha256Hex('done')])
     expect(turn?.newToolResults).toBe(0)
     expect(turn?.deviations).toBe(0)
     expect(turn?.lastFinishReason).toBe('stop')
   })
+
+  it.each(['persisted', 'missing policy', 'bad hash', 'untrusted call'] as const)(
+    'classifies repeat evidence from the %s without a live tool snapshot',
+    async (kind) => {
+      const { session, log } = await openSession({
+        provider: fakeProvider([toolTurn('read', {}), textTurn('done')]),
+        registry: withRead(),
+      })
+      try {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+        expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+        expect(session.turn).toBeNull()
+        const scan = log.scan.bind(log)
+        vi.spyOn(log, 'scan').mockImplementation(async (query) =>
+          (await scan(query)).map((row) => {
+            if (row.type !== 'tool/call') return row
+            const data = row.data as Record<string, unknown>
+            if (kind === 'missing policy') {
+              const { resolvedPolicy: _policy, policyHash: _hash, ...rest } = data
+              return { ...row, data: rest as typeof row.data }
+            }
+            if (kind === 'bad hash')
+              return { ...row, data: { ...data, policyHash: '0'.repeat(64) } as typeof row.data }
+            if (kind === 'untrusted call') return { ...row, trust: 'untrusted' as const }
+            return row
+          }),
+        )
+        const input = await turnVerifyInput(session, 1)
+        expect(input.toolCalls).toEqual([
+          { name: 'read', args: {}, schemaOk: true, isReadOnly: kind === 'persisted' },
+        ])
+      } finally {
+        await session.close()
+      }
+    },
+  )
 
   it('counts format/deviation rows into deviations at every scope', async () => {
     const captured: Captured[] = []
@@ -204,7 +241,7 @@ describe('verify input contract', () => {
     expect(await session.runDeferred()).toEqual({ phase: 'checkpoint' })
     const step = captured.find((c) => c.scope === 'step')?.input
     expectContract(step)
-    expect(step?.toolCalls).toEqual([{ name: 'export_job', args: {}, schemaOk: true }])
+    expect(step?.toolCalls).toEqual([{ name: 'export_job', args: {}, schemaOk: true, isReadOnly: true }])
     expect(step?.deviations).toBe(0)
     expect(step?.lastFinishReason).toBe('tool_use')
     expect((await session.d.log.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]?.trust).toBe(
