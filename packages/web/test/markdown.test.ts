@@ -104,8 +104,9 @@ describe('Markdown DOM renderer', () => {
 
     copy?.blur()
     await vi.runAllTicks()
-    expect(element.querySelector('.code-copy')).not.toBe(copy)
+    expect(element.querySelector('.code-copy')).toBe(copy)
     expect(element.querySelector('pre code')?.textContent).toBe('new code')
+    markdown.dispose()
     expect(clearTimer).toHaveBeenCalled()
   })
 
@@ -155,7 +156,7 @@ describe('Markdown DOM renderer', () => {
 
     markdown.update('稳定段落\n\n[文档][ref]\n\n[ref]: https://example.test/docs')
     expect(element.querySelector('p')).toBe(stable)
-    expect(element.querySelectorAll('p')[1]).not.toBe(unresolved)
+    expect(element.querySelectorAll('p')[1]).toBe(unresolved)
     expect(element.querySelectorAll('p')[1]?.querySelector<HTMLAnchorElement>('a')?.href).toBe(
       'https://example.test/docs',
     )

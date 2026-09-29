@@ -1,4 +1,12 @@
-import { bindDismissibleDialog } from '@agnes/web-admin-frame'
+import {
+  createAntdRoot,
+  type DiagnosticsDialogSnapshot,
+  DiagnosticsDialogView,
+  type DiagnosticsInclude,
+  type DiagnosticsStep,
+} from '@agnes/web-ui'
+import { createElement } from 'react'
+import { flushSync } from 'react-dom'
 import { getBrowserLog } from './browser-log.js'
 import {
   type CollectedDiagnostics,
@@ -23,8 +31,7 @@ export type DiagnosticsDialogDeps = {
   save?: (zip: Uint8Array, fileName: string) => Promise<'saved' | 'canceled'>
 }
 
-type Step = 'menu' | 'share' | 'ready' | 'saved'
-const TITLES: Record<Step, string> = {
+const TITLES: Record<DiagnosticsStep, string> = {
   menu: '报告问题',
   share: '选择要包含的内容',
   ready: '诊断包已生成',
@@ -101,148 +108,151 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
   dialog.className = 'diagnostics-dialog'
   dialog.setAttribute('aria-labelledby', 'diagnostics-heading')
   dialog.dataset.agnesRegion = 'dialog'
-  // Static markup only; every dynamic string below goes through textContent. Everything sits in one
-  // padded wrapper so the only click whose target is the <dialog> itself is a backdrop click.
-  dialog.innerHTML = `<div class="diagnostics-body"><div class="dialog-heading"><h2 id="diagnostics-heading"></h2></div>
-    <section data-step="menu">
-      <p class="dialog-intro">创建一个可分享给支持人员的诊断 ZIP 包，包含当前会话的对话与轨迹、日志和系统信息。</p>
-      <p class="diagnostics-badge">分享前会先对密钥脱敏。</p>
-      <div class="dialog-actions"><button class="secondary-button" type="button" data-action="cancel">取消</button><button class="primary-button" type="button" data-action="share">分享诊断</button></div>
-    </section>
-    <section data-step="share" hidden>
-      <fieldset class="diagnostics-include" aria-labelledby="diagnostics-heading">
-        <label><input type="checkbox" name="conversation" /> 对话与轨迹</label>
-        <label><input type="checkbox" name="logs" /> 日志</label>
-        <label><input type="checkbox" name="system" /> 系统信息</label>
-      </fieldset>
-      <div class="dialog-actions"><button class="secondary-button" type="button" data-back="menu">返回</button><button class="primary-button" type="button" data-action="generate">生成诊断包</button></div>
-    </section>
-    <section data-step="ready" hidden>
-      <p class="dialog-intro" data-ready-summary></p>
-      <p class="dialog-intro" data-ready-warning hidden>部分诊断资料不可用或超出导出上限，详见包内 diagnostic-export-warnings.json。</p>
-      <div class="dialog-actions"><button class="secondary-button" type="button" data-back="share">返回</button><button class="primary-button" type="button" data-action="save">保存 ZIP 包</button></div>
-    </section>
-    <section data-step="saved" hidden>
-      <p class="dialog-intro">把这个 ZIP 包分享给支持或研发人员。解压后打开 index.html 查看。</p>
-      <p class="diagnostics-file" data-saved-name></p>
-      <div class="dialog-actions"><button class="primary-button" type="button" data-action="close">关闭</button></div>
-    </section>
-    <p class="dialog-error" role="alert"></p></div>`
   document.body.append(dialog)
-  const q = <T extends Element>(selector: string) => dialog.querySelector(selector) as T
-  const heading = q<HTMLHeadingElement>('h2')
-  const error = q<HTMLParagraphElement>('.dialog-error')
-  const sections = dialog.querySelectorAll<HTMLElement>('section[data-step]')
-  const box = (name: string) => q<HTMLInputElement>(`input[name="${name}"]`)
-  const boxes = { conversation: box('conversation'), logs: box('logs'), system: box('system') }
-  const generate = q<HTMLButtonElement>('[data-action="generate"]')
-  const saveButton = q<HTMLButtonElement>('[data-action="save"]')
-  const shareBack = q<HTMLButtonElement>('[data-back="menu"]')
-  const summary = q<HTMLElement>('[data-ready-summary]')
-  const warningLine = q<HTMLElement>('[data-ready-warning]')
-  const savedName = q<HTMLElement>('[data-saved-name]')
+  const root = createAntdRoot(dialog)
+  let snapshot: DiagnosticsDialogSnapshot = {
+    step: 'menu',
+    title: TITLES.menu,
+    hasSession: false,
+    include: { conversation: false, logs: true, system: true },
+    generating: false,
+    saving: false,
+    summary: '',
+    hasWarnings: false,
+    savedName: '',
+    error: '',
+  }
   let controller: AbortController | undefined
   let result: CollectedDiagnostics | undefined
   let trigger: HTMLElement | undefined
+  let generation = 0
   let disposed = false
 
-  const show = (step: Step, title = TITLES[step]) => {
-    for (const section of sections) section.hidden = section.dataset.step !== step
-    heading.textContent = title
-    error.textContent = ''
-    dialog.querySelector<HTMLElement>(`[data-step="${step}"] :is(button, input):not(:disabled)`)?.focus()
+  const render = () => {
+    flushSync(() => root.render(createElement(DiagnosticsDialogView, { snapshot, actions })))
   }
-  const idle = () => {
+  const focusStep = () => {
+    dialog
+      .querySelector<HTMLElement>(`[data-step="${snapshot.step}"] :is(button, input):not(:disabled)`)
+      ?.focus()
+  }
+  const show = (step: DiagnosticsStep, title = TITLES[step]) => {
+    snapshot = { ...snapshot, step, title, error: '' }
+    render()
+    focusStep()
+  }
+  // The generation token retires both collection and save continuations across close and reopen.
+  const retire = () => {
+    generation++
+    controller?.abort()
     controller = undefined
-    generate.disabled = false
-    shareBack.disabled = false
-    generate.textContent = '生成诊断包'
+    result = undefined
+    snapshot = {
+      ...snapshot,
+      step: 'menu',
+      title: TITLES.menu,
+      generating: false,
+      saving: false,
+      summary: '',
+      hasWarnings: false,
+      savedName: '',
+      error: '',
+    }
   }
-
-  bindDismissibleDialog({
-    dialog,
-    cancel: q<HTMLButtonElement>('[data-action="cancel"]'),
-    additional: dialog.querySelectorAll<HTMLButtonElement>('[data-action="close"]'),
-    canClose: () => true,
-    // Closing mid-generation aborts the collection; its late result is dropped by the `controller` check.
-    // A finished ZIP (up to 64 MiB) is released right away rather than on the next open().
-    close: () => {
-      controller?.abort()
-      idle()
-      result = undefined
-      summary.textContent = ''
-      savedName.textContent = ''
-      dialog.close()
+  const dismiss = () => {
+    if (disposed) return
+    retire()
+    render()
+    dialog.close()
+    trigger?.focus()
+  }
+  const actions = {
+    close: dismiss,
+    share: () => show('share'),
+    back: (step: 'menu' | 'share') => show(step),
+    setInclude: (name: keyof DiagnosticsInclude, checked: boolean) => {
+      snapshot = { ...snapshot, include: { ...snapshot.include, [name]: checked } }
+      render()
     },
-    restoreFocus: () => trigger?.focus(),
-  })
-  q<HTMLButtonElement>('[data-action="share"]').addEventListener('click', () => show('share'))
-  for (const back of dialog.querySelectorAll<HTMLButtonElement>('[data-back]'))
-    back.addEventListener('click', () => show(back.dataset.back as Step))
-
-  generate.addEventListener('click', () => {
-    if (controller) return
-    const mine = new AbortController()
-    controller = mine
-    generate.disabled = true
-    shareBack.disabled = true
-    generate.textContent = '正在生成…'
-    error.textContent = ''
-    const include = {
-      conversation: boxes.conversation.checked,
-      logs: boxes.logs.checked,
-      system: boxes.system.checked,
-    }
-    const input = {
-      call: deps.call,
-      ...deps.context(),
-      browserLog: getBrowserLog(),
-      browser: browserInfo(),
-      now: new Date(),
-    }
-    collect(input, include, mine.signal).then(
-      (value) => {
-        if (controller !== mine) return
-        idle()
-        result = value
-        summary.textContent = `${value.fileName}（${formatSize(value.zip.byteLength)}）`
-        warningLine.hidden = value.bundle.warnings.length === 0
-        show('ready')
-      },
-      (failure: unknown) => {
-        if (controller !== mine) return
-        idle()
-        error.textContent = `生成诊断包失败：${message(failure)}`
-      },
-    )
-  })
-
-  saveButton.addEventListener('click', () => {
-    const current = result
-    if (!current || saveButton.disabled) return
-    saveButton.disabled = true
-    error.textContent = ''
-    // No await before save(): showSaveFilePicker needs this click's user activation.
-    void save(current.zip, current.fileName)
-      .then(
-        (outcome) => {
-          if (outcome !== 'saved' || result !== current) return
-          savedName.textContent = current.fileName
-          show('saved', current.bundle.warnings.length ? '问题包已导出，部分资料不完整' : TITLES.saved)
+    generate: () => {
+      if (disposed || controller || snapshot.step !== 'share') return
+      const mine = new AbortController()
+      const currentGeneration = ++generation
+      controller = mine
+      snapshot = { ...snapshot, generating: true, error: '' }
+      render()
+      const input = {
+        call: deps.call,
+        ...deps.context(),
+        browserLog: getBrowserLog(),
+        browser: browserInfo(),
+        now: new Date(),
+      }
+      void collect(input, snapshot.include, mine.signal).then(
+        (value) => {
+          if (disposed || generation !== currentGeneration || controller !== mine) return
+          controller = undefined
+          result = value
+          snapshot = {
+            ...snapshot,
+            generating: false,
+            summary: `${value.fileName}（${formatSize(value.zip.byteLength)}）`,
+            hasWarnings: value.bundle.warnings.length > 0,
+          }
+          show('ready')
         },
         (failure: unknown) => {
-          if (result === current) error.textContent = `保存诊断分享包失败：${message(failure)}`
+          if (disposed || generation !== currentGeneration || controller !== mine) return
+          controller = undefined
+          snapshot = { ...snapshot, generating: false, error: `生成诊断包失败：${message(failure)}` }
+          render()
         },
       )
-      .finally(() => {
-        saveButton.disabled = false
-      })
-  })
+    },
+    save: () => {
+      const current = result
+      if (disposed || !current || snapshot.saving || snapshot.step !== 'ready') return
+      const currentGeneration = generation
+      snapshot = { ...snapshot, saving: true, error: '' }
+      // saveZip calls the native picker before its first await, inside this click callback.
+      const pending = save(current.zip, current.fileName)
+      render()
+      void pending
+        .then(
+          (outcome) => {
+            if (disposed || generation !== currentGeneration || result !== current) return
+            if (outcome !== 'saved') return
+            snapshot = { ...snapshot, savedName: current.fileName }
+            show('saved', current.bundle.warnings.length ? '问题包已导出，部分资料不完整' : TITLES.saved)
+          },
+          (failure: unknown) => {
+            if (disposed || generation !== currentGeneration || result !== current) return
+            snapshot = { ...snapshot, error: `保存诊断分享包失败：${message(failure)}` }
+            render()
+          },
+        )
+        .finally(() => {
+          if (disposed || generation !== currentGeneration || result !== current) return
+          snapshot = { ...snapshot, saving: false }
+          render()
+        })
+    },
+  } satisfies import('@agnes/web-ui').DiagnosticsDialogActions
 
+  render()
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault()
+    dismiss()
+  })
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dismiss()
+  })
   const dispose = () => {
+    if (disposed) return
+    retire()
     disposed = true
-    controller?.abort()
     window.removeEventListener('pagehide', dispose)
+    root.unmount()
     dialog.remove()
   }
   window.addEventListener('pagehide', dispose, { once: true })
@@ -251,16 +261,16 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
     open(from) {
       if (disposed) return
       trigger = from
-      controller?.abort()
-      idle()
-      result = undefined
+      retire()
       const hasSession = deps.context().sessionId !== null
-      boxes.conversation.disabled = !hasSession
-      boxes.conversation.checked = hasSession
-      boxes.logs.checked = true
-      boxes.system.checked = true
-      show('menu')
+      snapshot = {
+        ...snapshot,
+        hasSession,
+        include: { conversation: hasSession, logs: true, system: true },
+      }
+      render()
       if (!dialog.open) dialog.showModal()
+      focusStep()
     },
     dispose,
   }

@@ -10,6 +10,8 @@
  * }
  * ```
  * 宿主装载时经 `clientModule()` 包装，注册自动绑定插件 fiber。
+ * 插件自行创建 React root 并渲染 antd 时，需从当前 document 的 `agnes-csp-nonce` meta
+ * 读取 nonce 并传给 `ConfigProvider`；通过宿主 slot 渲染的组件由宿主处理。
  */
 
 export type {

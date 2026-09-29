@@ -7,9 +7,9 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
+import { createAntdRoot } from '@agnes/web-ui'
 import { createConversationToolCard } from '@agnes/web-units'
 import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
-import { createRoot } from 'react-dom/client'
 import { getSlotCardContext, mountSlotCard } from './client-modules/timeline-slot.js'
 import { isConversationNode } from './conversation-visibility.js'
 import { createMarkdownRenderer } from './markdown.js'
@@ -233,11 +233,16 @@ function createEntry(node: UINode): Entry {
     thinkingContent.className = 'thinking-content markdown'
     thinking.append(thinkingSummary, thinkingContent)
     element.append(thinking)
-    const thinkingRenderer = createMarkdownRenderer(thinkingContent, node.thinking ?? '')
+    const thinkingRenderer = createMarkdownRenderer(thinkingContent, node.thinking ?? '', {
+      part: 'thinking',
+      streaming: node.streaming === true,
+    })
     const body = document.createElement('div')
     body.className = 'node-body markdown'
     element.append(body)
-    const bodyRenderer = createMarkdownRenderer(body, assistantText(node))
+    const bodyRenderer = createMarkdownRenderer(body, assistantText(node), {
+      streaming: node.streaming === true,
+    })
     element.dataset.streaming = String(node.streaming === true)
     return {
       kind: node.kind,
@@ -263,12 +268,13 @@ function createEntry(node: UINode): Entry {
         if (thinkingWasActive && !active) thinkingPreference = false
         thinkingWasActive = active
         thinking.open = thinkingPreference ?? active
-        if (next.thinking !== undefined) thinkingRenderer.update(next.thinking)
-        bodyRenderer.update(assistantText(next))
+        if (next.thinking !== undefined)
+          thinkingRenderer.update(next.thinking, { streaming: next.streaming === true })
+        bodyRenderer.update(assistantText(next), { streaming: next.streaming === true })
       },
       dispose() {
-        thinkingRenderer.dispose()
-        bodyRenderer.dispose()
+        thinkingRenderer.dispose({ defer: true })
+        bodyRenderer.dispose({ defer: true })
       },
     }
   }
@@ -282,6 +288,9 @@ function createEntry(node: UINode): Entry {
       update(next) {
         if (next.kind !== 'tool') return
         card.update(next)
+      },
+      dispose() {
+        card.dispose()
       },
     }
   }
@@ -364,6 +373,9 @@ function createEntry(node: UINode): Entry {
         if (next.kind !== 'slot') return
         mount.update(next)
       },
+      dispose() {
+        mount.dispose()
+      },
     }
   }
 
@@ -418,8 +430,8 @@ function mountDshNode(
   const childHost = document.createElement('div')
   childHost.dataset.agnesDshChildren = projection.slotName
   native.append(childHost)
-  const root = createRoot(host)
-  const childRoot = createRoot(childHost)
+  const root = createAntdRoot(host)
+  const childRoot = createAntdRoot(childHost)
 
   // 流式期间每个 delta 都会走到 update()。没有任何插件认领本节点或其子槽位时，
   // 两遍 root.render 是无产出的 reconcile——原生内容才是显示者。此时跳过 React，
@@ -815,23 +827,25 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     scrollContainer.focus({ preventScroll: true })
   })
 
+  const reset = () => {
+    for (const entry of entries.values()) {
+      entry.dispose?.()
+      entry.dshNode?.dispose()
+    }
+    options.transcript.replaceChildren()
+    entries.clear()
+    firstShown = undefined
+    turnProjector.reset()
+    follow = true
+    expectedTop = scrollContainer.scrollTop
+    options.newContentButton.hidden = true
+  }
+
   return {
     render,
-    reset() {
-      for (const entry of entries.values()) {
-        entry.dispose?.()
-        entry.dshNode?.dispose()
-      }
-      options.transcript.replaceChildren()
-      entries.clear()
-      firstShown = undefined
-      turnProjector.reset()
-      follow = true
-      expectedTop = scrollContainer.scrollTop
-      options.newContentButton.hidden = true
-    },
+    reset,
     dispose() {
-      turnProjector.reset()
+      reset()
       scrollContainer.removeEventListener('scroll', onScroll)
       sentinel?.disconnect()
       earlier.remove()

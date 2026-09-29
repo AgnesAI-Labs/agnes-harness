@@ -1,5 +1,4 @@
 import type { UINode, UITurn } from '@agnes/protocol'
-import { bindAutoDismissDisclosure } from '@agnes/web-admin-frame'
 import { type ConversationMessageActions, createConversationMessageActions } from '@agnes/web-units'
 
 type TurnEntry = {
@@ -93,7 +92,6 @@ function makeTurnEntry(onFork?: (turn: UITurn) => Promise<void>): TurnEntry {
   final.className = 'turn-final'
   const actions = createConversationMessageActions({
     ...(onFork ? { onFork } : {}),
-    bindAutoDismiss: bindAutoDismissDisclosure,
   })
   response.append(identity, status, process, attention, final, actions.element)
   element.append(user, response)
@@ -147,7 +145,10 @@ export function createTurnProjector(options: {
       ticking.clear()
       if (!turns?.length) {
         stopClock()
-        for (const shell of turnEntries.values()) shell.element.remove()
+        for (const shell of turnEntries.values()) {
+          shell.actions.dispose()
+          shell.element.remove()
+        }
         turnEntries.clear()
         orphan.remove()
         return false

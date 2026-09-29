@@ -1,5 +1,60 @@
 import type { ConfigModel, ConfigOAuthInput, ConfigProvider } from '@agnes/protocol'
 import { loginSubscription, type OAuthClient } from '@agnes/sdk/browser'
+import { Button, createRegionHost, Field, mountRegion } from '@agnes/web-ui'
+import { createElement } from 'react'
+
+type UiButton = { button: HTMLButtonElement; host: HTMLElement; dispose?: () => void }
+type UiField = { field: HTMLLabelElement; input: HTMLInputElement; host: HTMLElement; dispose?: () => void }
+
+/**
+ * OAuth keeps its public controller API for the settings state machine, but its visible actions
+ * now come from the shared UI layer. The fallback is only for the controller's minimal fake DOM
+ * tests, which intentionally do not install a browser runtime for ReactDOM.
+ */
+function uiButton(parent: HTMLElement, text: string, className?: string): UiButton {
+  if (typeof window !== 'undefined' && typeof document.querySelector === 'function') {
+    const host = createRegionHost(parent, 'span', 'agnes-ui-button-host')
+    const props =
+      className === undefined ? { type: 'default' as const } : { className, type: 'default' as const }
+    const dispose = mountRegion(host, createElement(Button, props, text))
+    const button = host.querySelector('button')
+    if (button) return { button, host, dispose }
+    dispose()
+    host.remove()
+  }
+  const button = createRegionHost(parent, 'button') as HTMLButtonElement
+  button.type = 'button'
+  button.textContent = text
+  if (className) button.className = className
+  return { button, host: button }
+}
+
+function uiField(parent: HTMLElement): UiField {
+  if (typeof window !== 'undefined' && typeof document.querySelector === 'function') {
+    const host = createRegionHost(parent, 'span', 'agnes-ui-field-host')
+    const dispose = mountRegion(
+      host,
+      createElement(
+        Field,
+        { className: 'form-field oauth-prompt', hidden: true, label: '授权码或回调地址' },
+        createElement('input', { autoComplete: 'off', type: 'password' }),
+      ),
+    )
+    const field = host.querySelector('label')
+    const input = host.querySelector('input')
+    if (field && input) return { field, input, host, dispose }
+    dispose()
+    host.remove()
+  }
+  const field = createRegionHost(parent, 'label') as HTMLLabelElement
+  field.className = 'form-field oauth-prompt'
+  field.textContent = '授权码或回调地址'
+  const input = createRegionHost(field, 'input') as HTMLInputElement
+  input.type = 'password'
+  input.autocomplete = 'off'
+  field.append(input)
+  return { field, input, host: field }
+}
 
 /** Native controls remain in the existing account dialog and its focus trap. */
 export function oauthControls(
@@ -13,40 +68,30 @@ export function oauthControls(
     error(error: unknown): void
   },
 ) {
-  const panel = document.createElement('section')
+  const panel = createRegionHost(parent, 'section')
   panel.className = 'oauth-controls'
   panel.setAttribute('aria-label', '订阅登录')
   panel.hidden = true
-  const status = document.createElement('p')
-  status.className = 'oauth-status'
+  const status = createRegionHost(panel, 'p', 'oauth-status')
   status.setAttribute('role', 'status')
-  const links = document.createElement('div')
-  links.className = 'oauth-links'
-  const prompt = document.createElement('label')
-  prompt.className = 'form-field oauth-prompt'
-  prompt.textContent = '授权码或回调地址'
-  const answer = document.createElement('input')
-  answer.type = 'password'
-  answer.autocomplete = 'off'
-  prompt.append(answer)
+  const links = createRegionHost(panel, 'div', 'oauth-links')
+  const promptView = uiField(panel)
+  const prompt = promptView.field
+  const answer = promptView.input
   prompt.hidden = true
-  const button = (text: string) => {
-    const b = document.createElement('button')
-    b.type = 'button'
-    b.textContent = text
-    return b
-  }
-  const browser = button('浏览器登录'),
-    device = button('设备码登录'),
-    cancel = button('取消登录'),
-    submit = button('提交授权码')
-  const actions = document.createElement('div')
-  actions.className = 'oauth-actions'
-  actions.append(browser, device, cancel)
-  submit.className = 'secondary-button'
+  const actions = createRegionHost(panel, 'div', 'oauth-actions')
+  const browserView = uiButton(actions, '浏览器登录')
+  const deviceView = uiButton(actions, '设备码登录')
+  const cancelView = uiButton(actions, '取消登录')
+  const submitView = uiButton(actions, '提交授权码', 'secondary-button')
+  const browser = browserView.button
+  const device = deviceView.button
+  const cancel = cancelView.button
+  const submit = submitView.button
+  actions.append(browserView.host, deviceView.host, cancelView.host)
   submit.hidden = true
   cancel.hidden = true
-  panel.append(actions, status, links, prompt, submit)
+  panel.append(actions, status, links, promptView.host, submitView.host)
   parent.append(panel)
   let controller: AbortController | undefined
   let operationId: string | undefined
@@ -112,17 +157,17 @@ export function oauthControls(
             const url = new URL(notice.url)
             if (url.protocol !== 'https:' || !allowedHosts.has(url.hostname) || url.username || url.password)
               return
-            const link = document.createElement('a')
+            const link = createRegionHost(links, 'a') as HTMLAnchorElement
             link.href = url.href
             link.target = '_blank'
             link.rel = 'noopener noreferrer'
             link.textContent = `打开 ${provider.label} 登录页面`
-            links.append(link)
           },
           prompt: (value, signal) =>
             new Promise<string>((resolve, reject) => {
-              prompt.firstChild?.remove()
-              prompt.prepend(document.createTextNode(value.message))
+              const promptLabel = prompt.querySelector<HTMLElement>('.agnes-ui-field-label')
+              if (promptLabel) promptLabel.textContent = value.message
+              else if (prompt.firstChild) prompt.firstChild.textContent = value.message
               answer.type = value.type === 'secret' ? 'password' : 'text'
               answer.placeholder = value.placeholder ?? ''
               submit.textContent = value.type === 'text' ? '继续' : '提交授权码'

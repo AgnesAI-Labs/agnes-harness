@@ -13,6 +13,8 @@ const configurationCallback = vi.hoisted(() => ({
 }))
 const traceBridge = vi.hoisted(() => ({
   options: undefined as unknown,
+  transcriptOptions: undefined as unknown,
+  claim: undefined as unknown,
   metas: [] as unknown[],
 }))
 vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
@@ -21,6 +23,8 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
     ...actual,
     startClientModules: async (options: Parameters<typeof actual.startClientModules>[0]) => {
       traceBridge.options = options.trace
+      traceBridge.transcriptOptions = options.transcript
+      traceBridge.claim = options.claim
       const runtime = await actual.startClientModules(options)
       if (runtime.trace) {
         const render = runtime.trace.render.bind(runtime.trace)
@@ -209,7 +213,7 @@ function installPublicFixture(): void {
   // The entry point is imported directly below; removing only its production module tag keeps this
   // test rooted in the public DOM without attempting an HTTP fetch for /app.js.
   document.documentElement.innerHTML = publicHtml
-    .replace(/<link rel="stylesheet" href="\/style\.css" \/>/, '')
+    .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
     .replace(/<script type="module" src="\/app\.js"><\/script>/, '')
   if (!document.getElementById('new-session'))
     document.body.insertAdjacentHTML(
@@ -237,6 +241,8 @@ afterEach(async () => {
   vi.resetModules()
   vi.clearAllMocks()
   traceBridge.options = undefined
+  traceBridge.transcriptOptions = undefined
+  traceBridge.claim = undefined
   traceBridge.metas.length = 0
   vi.unstubAllGlobals()
   document.documentElement.replaceChildren()
@@ -270,7 +276,17 @@ describe('web session selection', () => {
     }))
 
     await import('../src/app.js')
+    expect(traceBridge.transcriptOptions).toMatchObject({ nodeHost: 'react' })
+    expect(traceBridge.claim).toEqual(expect.any(Function))
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
+    const reportProblem = document.getElementById('report-problem') as HTMLButtonElement
+    reportProblem.click()
+    const diagnostics = document.querySelector('dialog.diagnostics-dialog') as HTMLDialogElement
+    expect(diagnostics.open).toBe(true)
+    expect(diagnostics.querySelector('section:not([hidden])')?.getAttribute('data-step')).toBe('menu')
+    diagnostics.querySelector<HTMLButtonElement>('[data-action="cancel"]')?.click()
+    expect(diagnostics.open).toBe(false)
+    expect(document.activeElement).toBe(reportProblem)
     const trace = traceBridge.options as {
       readToolDetail: (sessionId: string, callSeq: number, resultSeq?: number) => Promise<unknown>
     }
@@ -1081,6 +1097,17 @@ describe('web session selection', () => {
     submit('本轮还没结束，先补充下一轮')
     await vi.waitFor(() => expect(running.followUp).toHaveBeenCalledTimes(1))
     expect(titleList).toHaveBeenCalledTimes(reads)
+    const firstCancel = deferred<void>()
+    running.cancel.mockImplementationOnce(() => firstCancel.promise)
+    cancel.click()
+    await vi.waitFor(() => expect(running.cancel).toHaveBeenCalledTimes(1))
+    cancel.click()
+    expect(running.cancel).toHaveBeenCalledTimes(1)
+    firstCancel.reject(new Error('cancel temporarily unavailable'))
+    await vi.waitFor(() => expect(cancel.disabled).toBe(false))
+    cancel.click()
+    await vi.waitFor(() => expect(running.cancel).toHaveBeenCalledTimes(2))
+    expect(running.prompt).not.toHaveBeenCalled()
   })
 })
 
@@ -1544,4 +1571,60 @@ describe('incremental opening', () => {
     await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBe(openings + 1))
     await vi.waitFor(() => expect(approval.textContent).toContain('正在查找'))
   })
+})
+
+it('renders Computer Use in the application and retires its late operation reply on pagehide', async () => {
+  installPublicFixture()
+  history.replaceState(null, '', '/#test-launcher-token')
+  let finish!: (value: unknown) => void
+  const pending = new Promise<unknown>((resolvePromise) => {
+    finish = resolvePromise
+  })
+  const call = vi.fn(async (method: string) => {
+    if (method.endsWith('operation.start')) return pending
+    if (method.endsWith('operation.status')) return { status: 'not-found' }
+    if (method.endsWith('permissions.status')) return { status: 'granted' }
+    return {
+      status: 'ready',
+      driver: { platform: 'darwin', version: 'fixture' },
+      runtime: { state: 'idle', startAttempted: false },
+    }
+  })
+  sdk.createClient.mockReturnValue({
+    call,
+    initialize: vi.fn(async () => undefined),
+    on: vi.fn(),
+    close: vi.fn(async () => undefined),
+    apis: vi.fn(async () => ({ profile: { models: [] } })),
+    config: {
+      get: vi.fn(async () => ({ configured: true })),
+      providers: vi.fn(async () => ({ providers: [] })),
+    },
+    workspace: { list: vi.fn(async () => ({ items: [] })) },
+    session: { list: vi.fn(async () => ({ items: [] })) },
+  })
+  await import('../src/app.js')
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
+  )
+  document.querySelector<HTMLButtonElement>('#computer-use-management')?.click()
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLElement>('#computer-use-settings-pane')?.hidden).toBe(false),
+  )
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
+  )
+  document.querySelector<HTMLButtonElement>('#computer-use-update')?.click()
+  await vi.waitFor(() =>
+    expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.start', { kind: 'update' }),
+  )
+  window.dispatchEvent(new Event('pagehide'))
+  const pane = document.getElementById('computer-use-settings-pane')
+  const before = pane?.innerHTML
+  const requests = call.mock.calls.length
+  finish({ status: 'found', operationId: 'retired', kind: 'update', state: 'running', phase: 'installing' })
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 20))
+  expect(pane?.innerHTML).toBe(before)
+  expect(call.mock.calls).toHaveLength(requests)
+  expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
 })

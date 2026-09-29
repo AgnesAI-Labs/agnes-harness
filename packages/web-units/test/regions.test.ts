@@ -9,6 +9,8 @@ import {
   Conversation,
   type ConversationChildContainers,
   EMPTY_SIDEBAR_STATE,
+  SettingsBuiltin,
+  SettingsPaneBuiltin,
   Sidebar,
   Transcript,
   type TranscriptHandle,
@@ -22,6 +24,29 @@ afterEach(() => {
 })
 
 describe('independent core web-unit implementations', () => {
+  it('mounts the model settings body and account dialog as React-owned surfaces', () => {
+    const host = document.createElement('dialog')
+    host.id = 'config'
+    document.body.append(host)
+    const shell = createRoot(host)
+    roots.push(shell)
+    flushSync(() => shell.render(createElement(SettingsBuiltin, { options: {} })))
+    const paneSlot = host.querySelector<HTMLElement>('#settings-pane-slot-model')
+    if (!paneSlot) throw new Error('model settings slot is missing')
+    const pane = createRoot(paneSlot)
+    roots.push(pane)
+    flushSync(() => pane.render(createElement(SettingsPaneBuiltin, { pane: 'model' })))
+
+    expect(host.querySelector('#config-form')).toBeInstanceOf(HTMLFormElement)
+    expect(host.querySelector('#model-settings-pane')).toBeTruthy()
+    expect(host.querySelector('#config-accounts')).toBeTruthy()
+    expect(host.querySelector('#settings-dsh-slot-settings-models-provider-card')).toBeTruthy()
+    expect(host.querySelector('#account-dialog')).toBeInstanceOf(HTMLDialogElement)
+    expect(host.querySelector('#config-provider')).toBeInstanceOf(HTMLSelectElement)
+    expect(host.querySelector('#config-save')).toBeInstanceOf(HTMLButtonElement)
+    expect(host.querySelector('#config-save')?.getAttribute('form')).toBe('config-form')
+  })
+
   it('keeps the conversation child contract in the web-units package', () => {
     const host = document.createElement('div')
     document.body.append(host)

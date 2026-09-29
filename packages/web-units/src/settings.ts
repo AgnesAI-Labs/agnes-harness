@@ -1,4 +1,13 @@
-import { createElement, forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef } from 'react'
+import { mountSettingsSelectOptions, SettingsAccountDialog, SettingsModelPane } from '@agnes/web-ui'
+import {
+  createElement,
+  forwardRef,
+  type ReactNode,
+  useCallback,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+} from 'react'
 
 export type SettingsPane = 'model' | 'plugin' | 'resources' | 'archived' | 'computer-use' | 'appearance'
 export type SettingsResourceTab = 'skills' | 'mcp'
@@ -91,8 +100,6 @@ function settingsShellMarkup(): string {
   // This modal is an overlay owned by the settings shell, rather than a child of the replaceable
   // model pane. Keeping it stable means an account edit can finish even while that pane is
   // reconciled or hot-reloaded.
-  const accountDialog = template.content.getElementById('account-dialog')
-  if (!accountDialog) throw new Error('settings markup is missing #account-dialog')
   const railHeading = form.querySelector('.settings-rail-heading')
   railHeading?.appendChild(createSettingsDshSlotHost('settings.close'))
   const navGroup = form.querySelector('.settings-nav-group')
@@ -126,7 +133,7 @@ function settingsShellMarkup(): string {
   content.id = 'settings-content-slots'
   content.append(dshShellSlots, host)
   form.appendChild(content)
-  return `${form.outerHTML}${accountDialog.outerHTML}`
+  return form.outerHTML
 }
 
 /** Render exactly one pane, rather than cloning the complete settings tree into every web row. */
@@ -157,8 +164,10 @@ function SettingsBuiltinImpl(
   ref: React.ForwardedRef<SettingsRegionHandle>,
 ) {
   const host = useRef<HTMLDivElement>(null)
+  const activePane = useRef<SettingsPane>('model')
   const form = useCallback(() => host.current?.querySelector<HTMLFormElement>('#config-form') ?? null, [])
   const open = useCallback((pane: SettingsPane): void => {
+    activePane.current = pane
     const root = host.current
     if (!root) return
     for (const id of Object.values(PANE_IDS))
@@ -190,6 +199,17 @@ function SettingsBuiltinImpl(
     if (!root) return
     open('model')
     const listeners: Array<() => void> = []
+    // The shell owns visibility. A replacement Computer Use row starts hidden, so restore
+    // the current navigation choice when that row returns without another navigation click.
+    let computerUsePane = root.querySelector('#computer-use-settings-pane')
+    const observer = new MutationObserver(() => {
+      const next = root.querySelector('#computer-use-settings-pane')
+      if (next === computerUsePane) return
+      computerUsePane = next
+      open(activePane.current)
+    })
+    observer.observe(root, { childList: true, subtree: true })
+    listeners.push(() => observer.disconnect())
     const bind = (id: string, change: SettingsPaneChange) => {
       const button = root.querySelector<HTMLButtonElement>(`#${id}`)
       if (!button) return
@@ -234,22 +254,65 @@ function SettingsBuiltinImpl(
       for (const dispose of listeners) dispose()
     }
   }, [open, options])
-  return createElement('div', {
-    ref: host,
-    // biome-ignore lint/security/noDangerouslySetInnerHtml: this is the fixed in-module template that creates row mount points.
-    dangerouslySetInnerHTML: { __html: settingsShellMarkup() },
-  })
+  return createElement(
+    'div',
+    { ref: host },
+    createElement('div', {
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: this is the fixed in-module template that creates row mount points.
+      dangerouslySetInnerHTML: { __html: settingsShellMarkup() },
+    }),
+    createElement(SettingsAccountDialog),
+  )
 }
 
 /** Used by DOM-contract tests and non-React fixtures; production mounts the same markup through React. */
-export function renderSettingsMarkup(container: HTMLElement): void {
+export function renderSettingsMarkup(container: HTMLElement): () => void {
   container.innerHTML = SETTINGS_MARKUP
+  const dispose: Array<() => void> = []
+  for (const id of ['config-provider', 'config-auth-method', 'config-model']) {
+    const select = container.querySelector<HTMLSelectElement>(`#${id}`)
+    if (!select) throw new Error(`missing settings select #${id}`)
+    dispose.push(mountSettingsSelectOptions(select))
+  }
+  return () => {
+    for (const unmount of dispose) unmount()
+  }
 }
 
 export const SettingsBuiltin = forwardRef(SettingsBuiltinImpl)
 
 /** One independently mounted settings contribution. Its lifetime is owned by the corresponding row. */
-export function SettingsPaneBuiltin({ pane }: { pane: SettingsPane }): ReturnType<typeof createElement> {
+export function SettingsPaneBuiltin({
+  pane,
+  computerUse,
+}: {
+  pane: SettingsPane
+  computerUse?: ReactNode
+}): ReturnType<typeof createElement> {
+  if (pane === 'computer-use' && computerUse)
+    return createElement(
+      'div',
+      {
+        'data-agnes-region-owner': 'builtin',
+        'data-agnes-region-unit': 'settings-computer-use',
+      },
+      computerUse,
+    )
+  if (pane === 'model')
+    return createElement(
+      'div',
+      { 'data-agnes-region-owner': 'builtin', 'data-agnes-region-unit': 'settings-model' },
+      createElement(SettingsModelPane, {
+        beforeAccounts: createElement('div', {
+          id: settingsDshSlotHostId('settings.models.provider-card'),
+          'data-agnes-dsh-slot': 'settings.models.provider-card',
+        }),
+        afterAccounts: createElement('div', {
+          id: settingsDshSlotHostId('settings.models.footer'),
+          'data-agnes-dsh-slot': 'settings.models.footer',
+        }),
+      }),
+    )
   return createElement('div', {
     'data-agnes-region-owner': 'builtin',
     'data-agnes-region-unit': `settings-${pane}`,

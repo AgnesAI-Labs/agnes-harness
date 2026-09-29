@@ -8,7 +8,7 @@ English | [简体中文](mcp.zh-CN.md)
 
 Connect an existing MCP tool service to AGH's task flow. This guide covers adding a service, reviewing its tool scope, connecting, and checking actual state after configuration changes.
 
-Definitions, trust, desired enablement, and actual connection state are managed separately. Complete the flow, inspect the catalog, then verify a real tool call.
+Definitions, security approval, desired enablement, and actual connection state remain separate in the control plane. In Web, users review the definition and choose Enable once; AGH completes the approval check before enabling. Inspect the catalog, then verify a real tool call.
 
 **Current implementation:** Session MCP services run as individual Host rows. OAuth bindings are still skipped on this session path; see [runtime behavior and versions](#runtime-behavior-and-versions). See [verification](../maintainers/verification.md) for versioned results.
 
@@ -35,7 +35,7 @@ node packages/cli/dist/local/agnes.mjs mcp add docs-tools --name docs-tools --ht
 node packages/cli/dist/local/agnes.mjs mcp get docs-tools
 ```
 
-New services start untrusted and disabled. Record the current revision, review the endpoint/process, secret references, and tool scope, then confirm interactively:
+New services start disabled. In Web, review the endpoint/process, secret references, and tool scope, then choose Enable; there is no separate trust action. The switch follows your enable request: it stays on once you have asked for it, even when the connection or policy check fails, and the error code and reason appear in the same row. Turning it off withdraws the request, and is required before the server can be removed. The CLI exposes the underlying approval and enablement steps separately, so record the current revision and run:
 
 ```sh
 node packages/cli/dist/local/agnes.mjs mcp trust docs-tools --expected-revision REVISION

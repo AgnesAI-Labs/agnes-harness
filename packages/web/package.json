@@ -21,6 +21,7 @@
     "@agnes/web-admin-frame": "workspace:*",
     "@agnes/web-client": "workspace:*",
     "@agnes/web-server": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
     "@agnes/web-units": "workspace:*",
     "marked": "18.0.12"
   },

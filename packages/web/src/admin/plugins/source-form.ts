@@ -11,9 +11,18 @@ export const SOURCE_FORMATS: Readonly<
   Record<PackageSource['type'], Readonly<{ prefix: string; example: string }>>
 > = Object.freeze({
   npm: { prefix: 'npm:', example: 'npm:scope/package@1.2.3' },
-  file: { prefix: 'file:./', example: 'file:./examples/packages/hot-service/v1' },
-  workspace: { prefix: 'workspace:extensions/', example: 'workspace:extensions/my-extension' },
-  git: { prefix: 'git:', example: 'git:https://example.com/org/repo.git#<40 位提交哈希>' },
+  file: {
+    prefix: 'file:./',
+    example: 'file:./examples/packages/hot-service/v1',
+  },
+  workspace: {
+    prefix: 'workspace:extensions/',
+    example: 'workspace:extensions/my-extension',
+  },
+  git: {
+    prefix: 'git:',
+    example: 'git:https://example.com/org/repo.git#<40 位提交哈希>',
+  },
 })
 
 /** A problem the page can see before asking the backend, or undefined when the reference looks right. */
