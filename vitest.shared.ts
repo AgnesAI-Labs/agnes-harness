@@ -1,4 +1,7 @@
+import { fileURLToPath } from 'node:url'
 import { defaultExclude, defineConfig } from 'vitest/config'
+
+const zeroTestReporter = fileURLToPath(new URL('./tools/guards/src/zero-test-reporter.mjs', import.meta.url))
 
 // 单一事实源:include/exclude 只在这里定义一次,根 vitest.config.ts 与十三份包级
 // vitest.config.ts 都直接复用这份配置(不再各自维护 include),新增目录不需要改配置(I2)。
@@ -6,8 +9,9 @@ import { defaultExclude, defineConfig } from 'vitest/config'
 // 不追加会把编译后的 .test.js 也当测试跑一遍(M7:在默认值基础上追加,不整体替换)。
 export default defineConfig({
   test: {
-    include: ['**/*.test.ts'],
+    include: ['**/*.test.{ts,tsx,jsx}'],
     exclude: [...defaultExclude, '**/dist/**'],
+    reporters: ['default', zeroTestReporter],
     // Windows suites start real PowerShell, daemon and worker processes; macOS hosted runners
     // also hit the default 5s deadline in unrelated suites when the full gate runs concurrently.
     // Keep functional checks finite without changing product-level deadlines.

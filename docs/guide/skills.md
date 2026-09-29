@@ -25,7 +25,7 @@ Read the README and related documentation, then list conflicting statements and 
 Suggest changes only. Do not write files or install dependencies.
 ```
 
-Create a Web session for the project. In Skills management, refresh that workspace and check the source, content revision, and trust state. You can also inspect and manage it from the CLI:
+Create a Web session for the project. In Skills management, refresh that workspace and check the source and content revision, then choose Enable. Web performs the version approval before enabling and does not show a separate trust action. The switch follows your enable request: it stays on once you have asked for it, even when the Skill fails to load, and the reason appears in the same row. Turning it off withdraws the request. You can also inspect and manage the underlying states from the CLI:
 
 ```sh
 node packages/cli/dist/local/agnes.mjs resources list --kind skill
@@ -66,9 +66,9 @@ A failed refresh may leave stale or last-known content. Stale data is not eviden
 ## Change same-name candidate priority
 
 1. Open Settings → Skills, choose the workspace, and inspect the Skill's source, current winner, shadowed candidates, and effective priority.
-2. Enter an **integer from 50 to 500** in the priority field, save, and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files, grant trust, or enable the Skill.
-3. Wait for completion and check the winner and actual state again. Review and enable a new winner separately if necessary; saving a priority is not enough.
-4. Restoring default priority removes the override and uses the source's default from the table. Concurrent priority edits can happen without a content revision change, so saving also checks `expectedPriority`. Refresh on conflict rather than retrying blindly.
+2. Enter an **integer from 50 to 500** in the priority field, save, and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files or enable the Skill.
+3. Wait for completion and check the winner and actual state again. Review and enable a new winner if necessary; saving a priority is not enough.
+4. The current Web page does not expose reset-to-default. Use the Node client with `priority: null` when that administrative action is required. Concurrent priority edits can happen without a content revision change, so saving also checks `expectedPriority`. Refresh on conflict rather than retrying blindly.
 
 For example, an `AGH_HOME/skills` candidate defaults to 400 and a workspace candidate to 500. To use the home candidate, lower the workspace candidate to 350. Do not set both to 500 and guess the winner. Deleting a higher-priority item may allow another candidate to take its place, but the remaining item does not inherit trust or enablement. Active turns hold immutable snapshots. Management success does not prove that an in-progress turn has switched; inspect the next turn or a new session after completion.
 
@@ -96,7 +96,7 @@ These management actions are available through Web and the Node SDK. Current she
 - Both require server-granted admin authority and `resources.skills.write`. JSON arguments cannot grant permission. The browser management page uses a constrained same-origin BFF without giving plugins the management SDK.
 - Use identity, revision, and priority returned by the current instance, and retain commandId and operation receipts. Reuse a commandId to query/replay the same accepted request. A fresh retry after failed deletion is a new explicit operation. Query results with `client.resources.operation.get({ profile, operationId })` or shell `resources operation OPERATION_ID`.
 
-Contracts: [resource schema](../../packages/protocol/schema/resource-control.json), [methods and permissions](../../packages/resource-control-contracts/src/resource-control.ts), [Node client](../../packages/resource-control-client-node/src/resource-control.ts), [persistent control and deletion markers](../../packages/resource-control-store/src/skills.ts), [Web actions](../../packages/resource-control-web/src/admin.ts), [worker wiring](../../packages/resource-control-worker/src/runtime-bootstrap.ts). The [worker deletion implementation](../../packages/resource-control-worker/src/skill-remove.ts) calls system-node for native deletion. Source links match this document's revision; check the matching contract when running an older build.
+Contracts: [resource schema](../../packages/protocol/schema/resource-control.json), [methods and permissions](../../packages/resource-control-contracts/src/resource-control.ts), [Node client](../../packages/resource-control-client-node/src/resource-control.ts), [persistent control and deletion markers](../../packages/resource-control-store/src/skills.ts), [Web actions](../../packages/resource-control-web/src/admin.tsx), [worker wiring](../../packages/resource-control-worker/src/runtime-bootstrap.ts). The [worker deletion implementation](../../packages/resource-control-worker/src/skill-remove.ts) calls system-node for native deletion. Source links match this document's revision; check the matching contract when running an older build.
 
 <a id="cordis-运行时贡献"></a>
 

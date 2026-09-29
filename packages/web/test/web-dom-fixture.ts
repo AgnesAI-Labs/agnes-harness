@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { vi } from 'vitest'
 import {
   type AgnesClient,
+  type ClaimResolver,
   type ClientModulesRuntime,
   startClientModules,
 } from '../src/client-modules/boot.js'
@@ -13,6 +14,8 @@ export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
 export type WebDomFixtureOptions = {
   composer?: Partial<ComposerRegionOptions>
   sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> }
+  transcript?: { nodeHost: 'react' }
+  claim?: ClaimResolver
 }
 
 const packageRoot = process.cwd().endsWith('/packages/web')
@@ -52,6 +55,8 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     panelContainer: document.getElementById('main-content') ?? undefined,
     sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
     ...(options.sidebar ? { sidebar: options.sidebar } : {}),
+    ...(options.transcript ? { transcript: options.transcript } : {}),
+    ...(options.claim ? { claim: options.claim } : {}),
     conversationContainer: document.getElementById('conversation-shell') ?? undefined,
     topbarContainer: document.querySelector<HTMLElement>('header.topbar') ?? undefined,
     approvalContainer: document.getElementById('approval') ?? undefined,

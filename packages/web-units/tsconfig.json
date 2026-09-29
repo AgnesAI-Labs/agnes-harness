@@ -9,6 +9,7 @@
   "references": [
     { "path": "../../tsconfig.config.json" },
     { "path": "../protocol" },
-    { "path": "../web-slots" }
+    { "path": "../web-slots" },
+    { "path": "../web-ui" }
   ]
 }

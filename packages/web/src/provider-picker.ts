@@ -1,4 +1,4 @@
-import { createSelectPicker, type SelectPicker } from '@agnes/web-admin-frame'
+import { createSelectPicker, type SelectPicker } from '@agnes/web-ui'
 
 export function createProviderPicker(select: HTMLSelectElement): SelectPicker {
   return createSelectPicker(select, {

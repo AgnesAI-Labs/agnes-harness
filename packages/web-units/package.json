@@ -5,7 +5,10 @@
   "type": "module",
   "description": "Stable built-in web unit identities and contributes.client contracts for the Agnes web shell",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./diagnostics-types": "./src/diagnostics-types.ts",
+    "./diagnostics-zip": "./src/diagnostics-zip.ts",
+    "./diagnostics-viewer": "./src/diagnostics-viewer.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -13,6 +16,7 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
     "@agnes/web-slots": "workspace:*"
   },
   "devDependencies": {

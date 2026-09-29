@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { chmod, copyFile, cp, mkdir, readdir, readFile } from 'node:fs/promises'
+import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { build, type Plugin } from 'esbuild'
+import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
+import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repoPackages = join(cliRoot, '..')
+const webRoot = join(repoPackages, 'web')
+const require = createRequire(import.meta.url)
 const computerUseNoticeSource = join(repoPackages, 'base', 'extensions', 'computer-use', 'NOTICE')
 const computerUseNoticeRelative = join('THIRD-PARTY-NOTICES', 'computer-use-hermes.txt')
 const isDarwin = (): boolean => process.platform === 'darwin' // guards-allow-platform: target native
@@ -144,7 +148,10 @@ async function runtimeDefines(version: string): Promise<Record<string, string>> 
 }
 
 export async function buildLocalWeb(webOut: string): Promise<void> {
-  await mkdir(webOut, { recursive: true })
+  const metafiles: BuildResult[] = []
+  const buildWithMetadata = async (options: BuildOptions): Promise<void> => {
+    metafiles.push(await build({ ...options, absWorkingDir: webRoot, metafile: true }))
+  }
   // Plugin entrypoints resolve these imports through index.html's import map, so the host bundle
   // must leave them external and serve exactly one shared platform instance.
   const platformExternals = [
@@ -154,12 +161,14 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     'react-dom/client',
     '@agnes/cordis',
     '@agnes/web-client',
+    '@agnes/web-ui/assistant-ui',
+    'antd',
   ]
-  await build({
+  await buildWithMetadata({
     entryPoints: {
       app: join(repoPackages, 'web', 'src', 'app.ts'),
-      admin: join(repoPackages, 'web', 'src', 'admin', 'plugins', 'admin.ts'),
-      resources: join(repoPackages, 'resource-control-web', 'src', 'admin.ts'),
+      admin: join(repoPackages, 'web', 'src', 'admin', 'plugins', 'admin.tsx'),
+      resources: join(repoPackages, 'resource-control-web', 'src', 'admin.tsx'),
       // 独立页（/admin/plugins、/admin/resources）的宿主入口；设置弹窗里嵌的是上面三个模块。
       'admin-standalone': join(repoPackages, 'web', 'src', 'admin', 'plugins', 'standalone.ts'),
       'resources-standalone': join(repoPackages, 'resource-control-web', 'src', 'standalone.ts'),
@@ -180,33 +189,48 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   })
   // Keep the local launcher's import-map targets and platform singleton graph identical to the
   // standalone Web build.
-  await build({
+  const vendorOptions = {
+    outdir: join(webOut, 'vendor'),
+    outbase: join(repoPackages, 'web', 'tools', 'vendor'),
+    bundle: true,
+    splitting: true,
+    format: 'esm' as const,
+    platform: 'browser' as const,
+    target: ['es2023'],
+    sourcemap: false,
+    legalComments: 'eof' as const,
+    charset: 'utf8' as const,
+    logLevel: 'warning' as const,
+    entryNames: '[name]',
+    chunkNames: 'chunk-[hash]',
+  }
+  await buildWithMetadata({
     entryPoints: {
       react: join(repoPackages, 'web', 'tools', 'vendor', 'react-entry.js'),
       'react-jsx-runtime': join(repoPackages, 'web', 'tools', 'vendor', 'react-jsx-runtime-entry.js'),
       'react-dom': join(repoPackages, 'web', 'tools', 'vendor', 'react-dom-entry.js'),
       'react-dom-client': join(repoPackages, 'web', 'tools', 'vendor', 'react-dom-client-entry.js'),
+    },
+    ...vendorOptions,
+  })
+  // UI vendors import the same React modules supplied by the first pass and the page import map.
+  await buildWithMetadata({
+    entryPoints: {
+      antd: join(repoPackages, 'web', 'tools', 'vendor', 'antd-entry.js'),
+      'assistant-ui': join(repoPackages, 'web', 'tools', 'vendor', 'assistant-ui-entry.js'),
       cordis: join(repoPackages, 'web', 'tools', 'vendor', 'cordis-entry.js'),
       'web-client': join(repoPackages, 'web', 'tools', 'vendor', 'web-client-entry.js'),
     },
-    outdir: join(webOut, 'vendor'),
-    outbase: join(repoPackages, 'web', 'tools', 'vendor'),
-    bundle: true,
-    splitting: true,
-    format: 'esm',
-    platform: 'browser',
-    target: ['es2023'],
-    sourcemap: false,
-    legalComments: 'none',
-    charset: 'utf8',
-    logLevel: 'warning',
-    entryNames: '[name]',
-    chunkNames: 'chunk-[hash]',
+    ...vendorOptions,
+    external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
+    banner: {
+      js: "import * as __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+    },
   })
   // 首帧主题必须早于第一次绘制，所以这一份单独打成 IIFE 并以阻塞式 <script> 引入。
   // ESM 一律 defer，会先闪一帧浅色。CSP 是 script-src 'self' 无 unsafe-inline，内联脚本不可用。
   // 注意：本文件与 packages/web/tools/build.ts 是两份独立配置，新增 web 入口两边都要加。
-  await build({
+  await buildWithMetadata({
     entryPoints: { theme: join(repoPackages, 'web', 'src', 'theme-boot.ts') },
     outdir: webOut,
     bundle: true,
@@ -223,6 +247,24 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
       copyFile(join(repoPackages, 'web', 'public', file), join(webOut, file)),
     ),
   )
+  const webUi = join(repoPackages, 'web-ui')
+  const antdCss = require.resolve('antd/dist/antd.css', { paths: [webUi] })
+  await Promise.all([
+    copyFile(antdCss, join(webOut, 'antd.css')),
+    copyFile(join(webUi, 'src', 'tokens.css'), join(webOut, 'tokens.css')),
+  ])
+  const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
+  await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)
+  const markdownCss = join(webOut, 'vendor', 'assistant-ui.css')
+  const [core, light, dark, overrides] = await Promise.all([
+    readFile(markdownCss, 'utf8'),
+    readFile(require.resolve('@ant-design/x-markdown/themes/light.css', { paths: [webUi] }), 'utf8'),
+    readFile(require.resolve('@ant-design/x-markdown/themes/dark.css', { paths: [webUi] }), 'utf8'),
+    readFile(join(webUi, 'src', 'conversation', 'markdown.css'), 'utf8'),
+  ])
+  await appendFile(join(webOut, 'style.css'), `\n${core}\n${light}\n${dark}\n${overrides}`)
+  await rm(markdownCss)
+  await collectThirdPartyNotices(webRoot, webOut, metafiles)
 }
 
 async function buildLocal(out: string, nativeOutput?: string): Promise<void> {

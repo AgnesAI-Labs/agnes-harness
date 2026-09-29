@@ -75,12 +75,13 @@ it('the resource toolbar keeps its actions with the tabs', async () => {
   expect(toolbar.contains(document.getElementById('skill-refresh'))).toBe(true)
 })
 
-it('list rows use fixed tracks so the status column aligns across rows', async () => {
+it('list rows use fixed tracks so the Switch column aligns across rows', async () => {
   const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
-  // Each row is its own grid, so an `auto` track is sized per row and the status column drifts.
+  // Each row is its own grid, so an `auto` track is sized per row and the Switch column drifts.
+  // 状态灯移除后每行只剩标题和 Switch；资源页也必须收成两段，否则空出来的第三段会把 Switch 挤离右边缘。
   expect(ruleBody(css, '.plugin-row')).not.toMatch(/grid-template-columns:[^;]*\bauto\b/)
-  expect(ruleBody(css, '.plugin-row')).toContain('grid-template-columns: minmax(0, 1fr) 8.5rem 2.375rem')
-  expect(ruleBody(css, '.resource-row')).toContain('grid-template-columns: minmax(0, 1fr) 8.5rem 2.375rem')
+  expect(ruleBody(css, '.plugin-row')).toContain('grid-template-columns: minmax(0, 1fr) 2.375rem')
+  expect(ruleBody(css, '.resource-row')).toContain('grid-template-columns: minmax(0, 1fr) 2.375rem')
 })
 
 it('the toolbar search field owns its type scale and a visible border in every state', async () => {

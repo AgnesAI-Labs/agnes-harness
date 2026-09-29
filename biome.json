@@ -37,6 +37,21 @@
   },
   "overrides": [
     {
+      "includes": [
+        "packages/web-ui/src/**",
+        "packages/resource-control-web/src/**",
+        "packages/web/src/admin/**"
+      ],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off",
+            "noNoninteractiveElementToInteractiveRole": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/web/public/style.css"],
       "linter": {
         "rules": {
