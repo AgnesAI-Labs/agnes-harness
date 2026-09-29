@@ -14,8 +14,8 @@ describe('hooks-map', () => {
     expect(unmapped.every((entry) => Boolean(entry.reason))).toBe(true)
   })
 
-  it('targets only the current 17-event protocol and extension-api vocabulary', () => {
-    expect(HOOK_EVENTS).toHaveLength(17)
+  it('targets only the current 16-event protocol and extension-api vocabulary', () => {
+    expect(HOOK_EVENTS).toHaveLength(16)
     for (const entry of Object.values(map.events))
       for (const target of entry.to ?? []) expect(HOOK_EVENTS).toContain(target)
   })
