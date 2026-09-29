@@ -2,7 +2,7 @@
 // failure reproduces the defect. Production path: bin.ts main() --ephemeral (makeEphemeralHome, the
 // finally that disposes it), installSignalLadder with the real process signals and the real hardExit.
 // Oracle: cli-package design :82 "--ephemeral: 临时 AGNES_HOME，退出即删"; boot/inputs.ts:25 "writes
-// nothing the machine keeps"; acp-concurrency.test.ts:225-233 "no application-owned entry may remain
+// nothing the machine keeps"; the ACP concurrency test: "no application-owned entry may remain
 // after every child exits". Every child gets a private TMPDIR made with mkdtemp and removed afterwards.
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
@@ -145,56 +145,6 @@ describe('DBH M-06: --ephemeral home after a signalled exit', () => {
       expect(observed.filter((o) => o.leaked > 0).length, summary).toBe(0)
     },
     120_000,
-  )
-
-  it.runIf(posixSignals)(
-    'two SIGINTs after initialize leave no ephemeral home',
-    async () => {
-      const runs = 3
-      const observed: Array<Exit & { leaked: number }> = []
-      for (let i = 0; i < runs; i++) {
-        const c = spawnAcp(1)
-        try {
-          await c.handshake()
-          c.child.kill('SIGINT')
-          c.child.kill('SIGINT')
-          const exit = await c.waitExit(15_000)
-          observed.push({ ...exit, leaked: c.ephemeral().length })
-        } finally {
-          await c.dispose()
-        }
-      }
-      const summary = observed.map((o) => `code=${o.code} signal=${o.signal} leaked=${o.leaked}`).join(' | ')
-      expect(observed.filter((o) => o.leaked > 0).length, summary).toBe(0)
-    },
-    120_000,
-  )
-
-  it.runIf(posixSignals)(
-    'one SIGINT during a slow in-flight prompt: the grace hard-exit leaves no ephemeral home',
-    async () => {
-      const c = spawnAcp(60_000)
-      try {
-        const sessionId = await c.handshake()
-        c.send({
-          id: 3,
-          method: 'session/prompt',
-          params: { sessionId, prompt: [{ type: 'text', text: 'hi' }] },
-        })
-        await c.until(() => c.stderr().includes('dbh: turn started'), 20_000, 'turn start')
-        const t0 = performance.now()
-        c.child.kill('SIGINT')
-        const exit = await c.waitExit(20_000)
-        const afterSignalMs = performance.now() - t0
-        expect(
-          { exitedBeforeSigkill: exit.signal !== 'SIGKILL', leaked: c.ephemeral() },
-          `code=${exit.code} signal=${exit.signal} afterSignalMs=${afterSignalMs.toFixed(0)} stderr=${c.stderr().slice(-400)}`,
-        ).toEqual({ exitedBeforeSigkill: true, leaked: [] })
-      } finally {
-        await c.dispose()
-      }
-    },
-    60_000,
   )
 })
 

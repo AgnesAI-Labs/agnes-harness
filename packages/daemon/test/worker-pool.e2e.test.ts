@@ -894,11 +894,16 @@ describe('WorkerPool', () => {
     }
   }, 60_000)
 
-  it('refreshes the idle watermark when a late worker reply arrives', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-activity-'))
+  // Reverse-verification (not optional per the task brief): prove the 5-minute rolling window
+  // actually ages crashes out, not just that three crashes in a row trips the breaker. Drives
+  // `crashed()` directly with a controllable clock - no real subprocess needed, since `crashed()`'s
+  // window/backoff math has no dependency on how a crash was detected.
+  it('never evicts the shared worker for idling, only a differently-keyed worker', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shared-idle-'))
     const profileFile = join(dir, 'profile.json')
     writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
     let now = 0
+    const notices: string[] = []
     const config: DaemonConfig = {
       profileName: 'p',
       dataDir: dir,
@@ -906,7 +911,6 @@ describe('WorkerPool', () => {
       workersSocketPath: workerSocket(dir),
       limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS, workerIdleEvictMs: 100 },
     }
-    const notices: string[] = []
     const pool = new WorkerPool({
       config,
       profile: { name: 'p', hash: 'h1' } as never,
@@ -921,61 +925,6 @@ describe('WorkerPool', () => {
     })
     const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
     try {
-      const key = 'agnes:t:a:x:dm:activity'
-      const link = await acquire(pool, key)
-      const reply = link.command('ping', {})
-      // Models a command that began before the idle threshold but only replied after it. The reply,
-      // not the old acquire time, would be the worker's real last activity - moot here because a
-      // session-kind acquire always lands on '@shared', which P1 exempts from idle eviction
-      // altogether (see the dedicated exemption test further down): evictIdle stays 0 forever,
-      // however long the gap, so this no longer distinguishes a refreshed watermark from a stale one.
-      now = 150
-      await expect(reply).resolves.toEqual({ ok: true })
-      expect(pool.evictIdle(now, () => false)).toBe(0)
-      now = 250
-      expect(pool.evictIdle(now, () => false)).toBe(0)
-      now = 251
-      expect(pool.evictIdle(now, () => false)).toBe(0)
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(notices).not.toContain('worker_crashed')
-      expect(notices).not.toContain('worker_quarantined')
-    } finally {
-      await pool.closeAll(1_000)
-      await server.close()
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 60_000)
-
-  // Reverse-verification (not optional per the task brief): prove the 5-minute rolling window
-  // actually ages crashes out, not just that three crashes in a row trips the breaker. Drives
-  // `crashed()` directly with a controllable clock - no real subprocess needed, since `crashed()`'s
-  // window/backoff math has no dependency on how a crash was detected.
-  it('never evicts the shared worker for idling, only a differently-keyed worker', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shared-idle-'))
-    const profileFile = join(dir, 'profile.json')
-    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
-    let now = 0
-    const config: DaemonConfig = {
-      profileName: 'p',
-      dataDir: dir,
-      socketPath: join(dir, 'a.sock'),
-      workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS, workerIdleEvictMs: 100 },
-    }
-    const pool = new WorkerPool({
-      config,
-      profile: { name: 'p', hash: 'h1' } as never,
-      profileFile,
-      execPath: process.execPath,
-      workerEntry: fakeWorker,
-      execArgv: ['--import', 'tsx'],
-      clock: () => now,
-      onEvent: () => undefined,
-      onRequest: async () => undefined,
-      notices: { emit() {} },
-    })
-    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
-    try {
       const link = await acquire(pool, 'agnes:t:a:x:dm:shared-idle', { cwd: dir })
       await link.closeSession()
       now = 1_000
@@ -984,6 +933,8 @@ describe('WorkerPool', () => {
       // however long it sits with no active session.
       expect(pool.evictIdle(now, () => false)).toBe(0)
       expect(pool.businessWorker()?.link.alive).toBe(true)
+      expect(notices).not.toContain('worker_crashed')
+      expect(notices).not.toContain('worker_quarantined')
     } finally {
       await pool.closeAll(1_000)
       await server.close()
@@ -1137,8 +1088,8 @@ describe('WorkerPool when a start from the desired target fails', () => {
       workersSocketPath: workerSocket(dir),
       // The same window bounds hello and boot_ready. A tsx-started fake worker can take more than
       // 2.5s to say hello on a loaded hosted runner, which then fails before the boot phase under
-      // test. These cases wait for boot_ready to time out, up to three times, so the window stays
-      // at 10s rather than the daemon default the other real-worker tests use.
+      // test. These cases wait for boot_ready to time out, so the window stays at 10s rather than
+      // the daemon default the other real-worker tests use.
       limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
     }
     const store = new CompositeTargetStore(sqliteTables().table('composite'), 'default')
@@ -1170,23 +1121,21 @@ describe('WorkerPool when a start from the desired target fails', () => {
   const bootstrapOnly = (store: CompositeTargetStore) => store.publishDesired(artifact('ext:bad'))
 
   it('records the failure and does not count a worker that never became ready as a crash', async () => {
+    // One failed start is enough: the shared worker is never quarantined, so repeating the start
+    // exercises nothing new.
     await withBoot(bootstrapOnly, async ({ pool, store, notices }) => {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        await expect(pool.acquireSharedWorker()).rejects.toThrow('did not boot_ready')
-      }
+      await expect(pool.acquireSharedWorker()).rejects.toThrow('did not boot_ready')
       expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
       expect(notices).not.toContain('worker_crashed')
       expect(pool.isQuarantined('@shared')).toBe(false)
     })
-  }, 90_000)
+  }, 40_000)
 
   it('records the failure when the worker process dies while it is starting from the target', async () => {
     process.env.AGNES_FAKE_BOOT = 'exit'
     try {
       await withBoot(bootstrapOnly, async ({ pool, store, notices }) => {
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          await expect(pool.acquireSharedWorker()).rejects.toThrow()
-        }
+        await expect(pool.acquireSharedWorker()).rejects.toThrow()
         expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
         expect(notices).not.toContain('worker_crashed')
         expect(pool.isQuarantined('@shared')).toBe(false)
@@ -1195,7 +1144,7 @@ describe('WorkerPool when a start from the desired target fails', () => {
       process.env.AGNES_FAKE_BOOT = undefined
       Reflect.deleteProperty(process.env, 'AGNES_FAKE_BOOT')
     }
-  }, 90_000)
+  }, 40_000)
 
   it('fails the start as soon as the worker says it cannot apply the target, and records that target', async () => {
     process.env.AGNES_FAKE_BOOT = 'fail'

@@ -188,7 +188,10 @@ it(
         authorization: 'Bearer fixture-key',
         path: '/v1/chat/completions',
       })
-      expect((await web.session.list({})).items.some((item) => item.sessionId === session.id)).toBe(true)
+      // The Web session list shows the platform's default preset for a session the CLI created.
+      expect((await web.session.list({})).items.find((item) => item.sessionId === session.id)?.preset).toBe(
+        createPlatform().snapshot().os === 'win32' ? 'standard-windows' : 'standard',
+      )
       const same = await web.session.load(session.id, { cwd: work })
       expect(JSON.stringify(await same.projectUI(undefined, { surface: 'web' }))).toContain(
         'Shared daemon works.',
@@ -283,6 +286,8 @@ it(
       await daemon.close()
       daemon = undefined
       daemon = await start()
+      // The saved configuration restarts the daemon on its file-backed secret store; the prompt after
+      // the restart below authenticates with the replacement key read back from that store.
       const restored = createClient({
         journal: memoryJournal(),
         auth: { kind: 'local' },

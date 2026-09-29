@@ -220,7 +220,7 @@ import { listenWebSocket } from './ws.js'
  * already-landed, already-tested files to widen a type parameter, it wraps every entry `WorkerRegistry`
  * hands out in a view object that structurally satisfies `SessionEntry`, with exactly one unsound
  * line (`.session`'s cast) confined to `RemoteEntryView` below and exercised end-to-end by
- * `supervisor-e2e.test.ts`.
+ * `supervisor.e2e.test.ts`.
  */
 class RemoteEntryView implements SessionEntry {
   readonly key: string
@@ -243,7 +243,7 @@ class RemoteEntryView implements SessionEntry {
     // projectUIHistory / lastSeq
     // (enumerated in this task's report) - never the full interface.
     // A call this package does not already make would fail at runtime ("not a function") rather than
-    // at compile time; supervisor-e2e.test.ts is what actually proves the subset in use today is
+    // at compile time; supervisor.e2e.test.ts is what actually proves the subset in use today is
     // covered, and reverse-verification in this task's report deliberately breaks this line once to
     // confirm the test would catch a regression here.
     this.session = e.session as unknown as HostSession
