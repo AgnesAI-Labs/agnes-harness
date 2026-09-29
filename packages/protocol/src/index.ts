@@ -377,6 +377,7 @@ export type {
   RequestMediaManifestEntry,
   RequestSent,
   ResolvedToolCallPolicy,
+  ResponseMeta,
   SessionStart,
   StepEnd,
   StepStart,

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
 import type { Host, HostSession } from '@agnes/host'
-import type { EventEnvelope } from '@agnes/protocol'
+import type { EventEnvelope, SessionStart } from '@agnes/protocol'
 import { CommandError, ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs, SessionAdmissionPort } from '../types.js'
 
@@ -58,12 +58,33 @@ export function importBatches(events: AppendEvent[], limit = BATCH_SIZE): Append
   return batches
 }
 
-const importedKey = (events: EventEnvelope[]): string | undefined => {
+const startData = (events: EventEnvelope[]): { key?: unknown; imported?: unknown } | undefined => {
   const data = events[0]?.type === 'session/start' ? events[0].data : undefined
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined
-  const key = (data as { key?: unknown }).key
+  return data && typeof data === 'object' && !Array.isArray(data) ? data : undefined
+}
+
+const importedKey = (events: EventEnvelope[]): string | undefined => {
+  const key = startData(events)?.key
   if (typeof key !== 'string' || key.length === 0) return undefined
   return key.startsWith('agnes:') ? key : `agnes:local:default:import:dm:${key}`
+}
+
+/**
+ * The file's session/start is replaced by the target's own, so its provenance is carried over: an
+ * existing marker verbatim (a re-imported export keeps its first source), else the native session's key.
+ */
+const importedMarker = (
+  events: EventEnvelope[],
+  source: string,
+  cwd: string,
+): SessionStart['imported'] | undefined => {
+  const data = startData(events)
+  const marker = data?.imported
+  if (marker && typeof marker === 'object' && !Array.isArray(marker))
+    return marker as SessionStart['imported']
+  if (source !== 'agnes') return undefined
+  const key = typeof data?.key === 'string' ? data.key : ''
+  return { source: 'agnes', sourceId: key.slice(0, 256), cwd: cwd.slice(0, 4096) }
 }
 
 export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<number> {
@@ -94,12 +115,14 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
   try {
     const reserved = await deps.admission.reserve(key, deps.cwd)
     reservedNew = reserved.reservedNew
+    const imported = importedMarker(converted.events, converted.report.source, reserved.binding.canonicalRoot)
     session = await deps.host
       .createSession({
         key,
         cwd: reserved.binding.canonicalRoot,
         binding: reserved.binding,
         skipSessionStartHooks: true,
+        ...(imported ? { imported } : {}),
       })
       .catch((error: unknown) => {
         // Without --key an agnes export maps back onto its own session, which the daemon usually holds.

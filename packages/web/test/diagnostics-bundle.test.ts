@@ -500,6 +500,25 @@ describe('collectDiagnostics', () => {
     expect(files.has('logs/browser.json')).toBe(true)
   })
 
+  // The reader should know the ledger was imported, but not from where on disk or under what id.
+  it.each([
+    [{ source: 'codex', sourceId: 'sess-private', cwd: '/work/private-repo' }, ['imported from codex']],
+    [{ source: 'elsewhere', sourceId: 'sess-private', cwd: '/work/private-repo' }, ['imported from unknown']],
+    [undefined, []],
+  ])('names an imported session only by its source (%o)', async (imported, details) => {
+    const start = { key: 'k', resolvedProfileHash: null, preset: null, agnesVersion: '1', imported }
+    const { call } = fake({ 'diagnostics.events': ledger([[ev(1, 'session/start', start)]]) })
+    const out = await collectDiagnostics(
+      input(call),
+      { conversation: true, logs: false, system: false },
+      new AbortController().signal,
+    )
+    expect(out.bundle.warnings.filter((w) => w.reason === 'imported')).toEqual(
+      details.map((detail) => ({ source: 'session', reason: 'imported', detail })),
+    )
+    expect(JSON.stringify(out.bundle.warnings)).not.toMatch(/sess-private|private-repo/)
+  })
+
   it('does not warn about diagnostics.collect when neither logs nor system is selected', async () => {
     const { call, calls } = fake({ 'diagnostics.events': ledger([[ev(1, 'user/message', {})]]) })
     const out = await collectDiagnostics(

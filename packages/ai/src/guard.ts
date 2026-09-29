@@ -1,4 +1,5 @@
-import type { AiErrorCode, InferenceEvent } from '@agnes/protocol'
+import { type AiErrorCode, type InferenceEvent, validateAgainst } from '@agnes/protocol'
+import { ResponseMeta } from '@agnes/protocol/gen/model'
 
 type ErrorEvent = Extract<InferenceEvent, { type: 'error' }>
 
@@ -55,7 +56,16 @@ export function normalizeError(e: ErrorEvent): ErrorEvent {
   }
   if (retryable && e.retryAfterMs !== undefined) out.retryAfterMs = e.retryAfterMs
   if (e.requestId) out.requestId = e.requestId
+  Object.assign(out, checkedResponse(e.response))
   return out
+}
+
+/**
+ * Response metadata is kept only in the shape the ledger row accepts. It is diagnostic, and an
+ * adapter's malformed copy must not be what makes the spend unrecordable.
+ */
+export function checkedResponse(r: unknown): { response?: ResponseMeta } {
+  return r !== undefined && validateAgainst(ResponseMeta, r).ok ? { response: r as ResponseMeta } : {}
 }
 
 const fail = (message: string): ErrorEvent => ({

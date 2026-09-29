@@ -220,7 +220,7 @@ describe('protocol src boundary', () => {
       'ArtifactRef',
       'ArtifactJob',
     ],
-    model: ['JsonValue', 'ContentBlock', 'ToolCall', 'Billing'],
+    model: ['JsonValue', 'ContentBlock', 'ToolCall', 'Billing', 'ResponseMeta'],
   }
   it('every session-v1.json $def type is on the root surface (both directions)', () => {
     expect(reexportedTypesFrom('session-v1')).toEqual(schemaDefNames('session-v1.json').sort())

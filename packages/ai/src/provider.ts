@@ -6,7 +6,7 @@ import { createState, finish, step } from './decode/machine.js'
 import { PARSER_VERSION } from './decode/rules/index.js'
 import type { DecodeContext } from './decode/types.js'
 import { AiSetupError } from './errors.js'
-import { guardSequence } from './guard.js'
+import { checkedResponse, guardSequence } from './guard.js'
 import { buildRegistry, type Registry } from './registry.js'
 import { resolveSelection, SlotUnresolved } from './route.js'
 import { buildStamp, renderPrefixedPrompt, type SentReport } from './stamp.js'
@@ -185,9 +185,10 @@ export async function* runInference(
         // Do not let an invalid runtime billing object survive through the spread below. Adapter
         // implementations are TypeScript-typed, but a remote decoder can still hand one an invalid
         // value; only the closed shape above is allowed onto the public stream.
-        const { billing: _untrustedBilling, ...usage } = ev
+        const { billing: _untrustedBilling, response, ...usage } = ev
         yield {
           ...usage,
+          ...checkedResponse(response),
           credits: ev.credits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd),
           ...(safeBilling ? { billing: safeBilling } : {}),
           timing: {

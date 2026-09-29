@@ -914,7 +914,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Context notes, per-turn prefix memo, and typed cold-block signal on the compaction-prefix base.
   // Host-selected Skill preload notes and cold-compaction prompt denial are both present.
   // Child compaction inheritance removes one line. Re-measured 25422, exact; no spare.
-  'packages/core/src': 25422,
+  // Import provenance marker: new session/start carries the importer's imported option.
+  // Measured 25427, exact (+5).
+  // Response metadata on cost/ledger: inference carries the usage/error event's response.
+  // Measured 25429, exact (+2).
+  'packages/core/src': 25429,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -926,7 +930,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with countLines(): 3719, exact cap, no spare.
   // 2026-09-22 pi-ai 0.87.0: transcript normalization and two JSON boundary type imports; exact +3.
   // Explicit short cache retention at the adapter boundary. Measured 3835, exact.
-  'packages/ai/src': 3835,
+  // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
+  // and header names, plus provider-side shape checks. Measured 3886, exact (+51).
+  'packages/ai/src': 3886,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1216,7 +1222,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // formatter splits the validate.js export list once it no longer fits a line). Measured 2194,
   // exact, no spare (+9).
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
-  'packages/protocol/src': 2201,
+  // Response metadata on cost/ledger: ResponseMeta root type export. Measured 2202, exact (+1).
+  'packages/protocol/src': 2202,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -2003,7 +2010,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 13388, exact (+7).
   // Diagnostics export keeps another session's projection out and flags a windowed trace.
   // Measured 13399, exact (+11).
-  'packages/web/src': 13399,
+  // Import provenance marker: diagnostics export names an imported session's source only.
+  // Measured 13407, exact (+8).
+  'packages/web/src': 13407,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2473,7 +2482,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Tool-definition refusals and title nonce query. Host Skill preload notes add 2 counted lines.
   // Migration measured 38099, exact, no spare.
-  'packages/host/src': 38099,
+  // Import provenance marker: createSession forwards the in-process imported option.
+  // Measured 38101, exact (+2).
+  'packages/host/src': 38101,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
