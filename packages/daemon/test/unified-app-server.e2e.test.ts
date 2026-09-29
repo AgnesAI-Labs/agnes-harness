@@ -66,6 +66,10 @@ it(
     const requests: Array<{ model: string; authorization: string | undefined; path: string | undefined }> = []
     let availableModels = ['deepseek-flash']
     let held = false
+    let markHeld!: () => void
+    const requestHeld = new Promise<void>((resolve) => {
+      markHeld = resolve
+    })
     let releaseRequest!: () => void
     const requestBarrier = new Promise<void>((resolve) => {
       releaseRequest = resolve
@@ -92,6 +96,7 @@ it(
       )
       if (!held && JSON.stringify(body).includes('HOT_UPDATE_GATE')) {
         held = true
+        markHeld()
         await requestBarrier
       }
       res.end(
@@ -197,7 +202,15 @@ it(
         'Shared daemon works.',
       )
       const inflight = session.prompt('HOT_UPDATE_GATE')
-      await vi.waitFor(() => expect(held).toBe(true))
+      // Wait for the gated request itself rather than polling for it under a fixed deadline: on a
+      // loaded runner the prompt can take longer than a poll allows to reach the provider. A prompt
+      // that settles without ever reaching it fails here with its own outcome.
+      await Promise.race([
+        requestHeld,
+        inflight.then((result) => {
+          throw new Error(`the gated prompt settled before its request was held: ${result.reason}`)
+        }),
+      ])
       const replacement = await web.config.save({
         providerId: 'deepseek',
         baseUrl,
