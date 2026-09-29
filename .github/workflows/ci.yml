@@ -159,7 +159,8 @@ jobs:
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
-    # Matches the check job: one Windows runner carries the whole heavy tier.
+    # Matches the check job. One Windows runner carries the whole heavy tier, one file at a time;
+    # its files added up to about 13 minutes there when they ran two at a time.
     timeout-minutes: 60
     steps:
       - name: preserve repository line endings
@@ -176,12 +177,14 @@ jobs:
       - run: pnpm --filter @agnes/host build:native
       - run: pnpm --filter @agnes/system-node build:native
       # These tests start real processes and are the most sensitive to a loaded runner, so they
-      # run with less file fan-out than the fast tier. The files run alone below on Windows are
-      # held out here.
+      # run with less file fan-out than the fast tier. The check job spreads Windows files over
+      # three runners, but this job holds every heavy file on one; two at a time there starved each
+      # other's process startup, shutdown and file-handle release, so Windows runs them one at a
+      # time. The files run alone below on Windows are held out here.
       - name: test heavy tier
         env:
           AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
-        run: pnpm exec vitest run --project heavy --maxWorkers=2
+        run: pnpm exec vitest run --project heavy --maxWorkers=${{ runner.os == 'Windows' && 1 || 2 }}
       # The ACP cold-start bound measures concurrent CLI processes. Run it without other Vitest
       # files competing for this runner's cores, while retaining its original assertion.
       - name: Windows ACP cold-start concurrency
