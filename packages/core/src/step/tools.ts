@@ -1137,11 +1137,7 @@ export async function approveAndExecute(
     } else {
       result = observation.result
     }
-    const verdict = await s.d.runtime.verify(
-      'tool',
-      await toolVerifyInput(s, { name: call.name, args: call.args }, true),
-      ac.signal,
-    )
+    const verdict = await s.d.runtime.verify('tool', await toolVerifyInput(s, call, true), ac.signal)
     // A transform hook: an extension may override the result surfaced to the ledger and to the
     // model, the same `accept`-callback waterfall `context`/`before_request` already use. Verified
     // above against the tool's real, unoverridden result — the hook gets the final say over what is

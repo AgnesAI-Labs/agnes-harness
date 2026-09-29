@@ -190,3 +190,65 @@ describe('verifier pause continuation', () => {
     }
   })
 })
+
+// An approval can wait while the user adds work, and after-core can append ledger rows.
+it.each(['allowed-once', 'allowed-session'] as const)(
+  'preserves steering and verifier evidence when completing synchronous %s',
+  async (verdict) => {
+    let asks = 0
+    const provider = fakeProvider([textTurn('first answer'), textTurn('additional answer')])
+    const content = [{ type: 'text' as const, text: 'also check this' }]
+    const h = await openSession({
+      provider,
+      operations: [
+        {
+          name: 'completion-note',
+          slot: 'after-core',
+          replay: 'safe',
+          applicable: async () => 'applied',
+          run: async () => ({
+            effects: [{ type: 'x/test/completed', origin: 'system', trust: 'trusted', actor, data: {} }],
+          }),
+        },
+      ],
+      seams: fakeSeams({
+        verifier: { verify: async () => ({ verdict: 'needs_revision', reasons: ['needs review'] }) },
+        repair: { decide: async () => 'park' },
+        approval: {
+          ask: async () => {
+            if (++asks > 1) return 'rejected'
+            await h.session.enqueue('next-step', { actor: approver, content, trust: 'untrusted' })
+            return verdict
+          },
+        },
+      }),
+    })
+    try {
+      await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+      expect((await run(h)).reason).toBe('completed')
+      expect(h.session.latest('inbox')).toMatchObject({
+        items: [{ target: 'next-turn', actor: approver, content, trust: 'untrusted', kind: 'steer' }],
+      })
+      const [repair] = await h.log.scan({ type: 'repair/decision', limit: 1 })
+      if (!repair) throw new Error('missing repair decision')
+      const seq = (repair.data as { verdictSeq: number }).verdictSeq
+      const [evidence] = await h.log.scan({ fromSeq: seq, toSeq: seq, limit: 1 })
+      expect(evidence).toMatchObject({ type: 'verifier/signal', data: { verdict: 'needs_revision' } })
+      // The pending work starts its own turn and still goes through verification.
+      expect((await run(h)).reason).toBe('blocked')
+      expect(h.session.latest('inbox')).toEqual({ items: [] })
+      expect(await h.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(2)
+      const messages = await h.log.scan({ type: 'user/message', limit: 10 })
+      expect(
+        messages.some(
+          (row) =>
+            row.actor.id === approver.id &&
+            row.trust === 'untrusted' &&
+            JSON.stringify(row.data).includes('also check this'),
+        ),
+      ).toBe(true)
+    } finally {
+      await h.session.close()
+    }
+  },
+)

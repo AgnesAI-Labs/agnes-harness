@@ -756,6 +756,9 @@ export class SessionImpl {
    * a compare-and-set on the op.state cell the phase was read from. Two writers cannot both advance
    * from the same phase, and a crash between them is impossible because there is no between.
    *
+   * An event factory runs inside the commit lock with the batch start sequence, so related
+   * evidence and inbox changes can be built without racing an enqueue.
+   *
    * The CAS seq is captured **before** the queue, not inside it: read inside, it names whatever the
    * cell holds once the lock is free, so a transition built on a phase another transition has
    * already superseded would be written with a fresh, matching seq and would succeed. Read outside,
@@ -769,12 +772,18 @@ export class SessionImpl {
    * the two sites that used to predict their own seqs need and could not safely guess outside.
    */
   transition(
-    events: EventInput[],
+    events: EventInput[] | ((nextSeq: Seq) => EventInput[]),
     next: OpStateObj | null | ((cur: OpStateObj | null, nextSeq: Seq) => OpStateObj | null),
     opts: { refineCaller?: boolean } = {},
   ): Promise<Seq[]> {
     const expected = this.opSeq()
-    const step = { events, next: typeof next === 'function' ? next : () => next }
+    const step: ChainStep = {
+      events: typeof events === 'function' ? [] : events,
+      next: (cur, nextSeq) => {
+        if (typeof events === 'function') step.events.push(...events(nextSeq))
+        return typeof next === 'function' ? next(cur, nextSeq) : next
+      },
+    }
     // No extra promise hop: the caller resumes on the same tick it always has.
     return this.commitChain([step], typeof next === 'function' ? undefined : expected, opts, (seqs) => seqs)
   }
@@ -839,19 +848,18 @@ export class SessionImpl {
     extra: {
       error?: { code: string; message: string }
       lastAssistantSeq?: Seq | null
-      events?: EventInput[]
+      events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
     const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
+    const events = extra.events
+    const end = this.ev('turn/end', {
+      reason,
+      lastAssistantSeq: last,
+      ...(extra.error ? { error: extra.error } : {}),
+    })
     const seqs = await this.transition(
-      [
-        ...(extra.events ?? []),
-        this.ev('turn/end', {
-          reason,
-          lastAssistantSeq: last,
-          ...(extra.error ? { error: extra.error } : {}),
-        }),
-      ],
+      typeof events === 'function' ? (seq) => [...events(seq), end] : [...(events ?? []), end],
       null,
     )
     this.turn = null
