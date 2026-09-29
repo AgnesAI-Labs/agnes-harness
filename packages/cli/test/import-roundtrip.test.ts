@@ -37,6 +37,8 @@ function run(dir: string, argv: string[]): Promise<{ code: number; out: string; 
 // Native rows point at each other by sequence number (sourceEventSeqs, requestSeq, ...), so an agnes
 // export only imports back if every row lands on the sequence it was exported with. The export has to
 // carry its assistant/output rows to have no holes, and the target must hold nothing but session/start.
+// Every case boots a Host for each of its three or four CLI runs, which on a loaded Windows runner can
+// take longer than the default per-test deadline, so each case carries a 30-second bound.
 describe('agnes export -> import round trip', () => {
   it('lands every exported row on its own sequence number, through core relation checks', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-roundtrip-'))
@@ -75,7 +77,7 @@ describe('agnes export -> import round trip', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('refuses an export that still carries the removed assistant/chunk rows', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-roundtrip-old-'))
@@ -103,7 +105,7 @@ describe('agnes export -> import round trip', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('refuses an export that still carries the removed op.state rows', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-roundtrip-op-'))
