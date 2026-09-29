@@ -136,19 +136,33 @@ async function qualifyInstalledSkin(tree: CompositeTargetStore): Promise<void> {
     },
   })
   const rowId = 'ext:examples/skins-builtin/main'
+  const skinRow = createPluginRow({
+    id: rowId,
+    plugin: `${row.id}@${integrity}/main`,
+    snapshotDigest: integrity,
+    exportName: 'main',
+    entryRevision: integrity,
+    extrasRevision: 'none',
+    mountRevision: 'skin-test:v1',
+  })
+  const webRow = createPluginRow({
+    id: `web:${row.id}`,
+    plugin: `${row.id}@${integrity}/client`,
+    snapshotDigest: integrity,
+    exportName: 'client',
+    entryRevision: integrity,
+    extrasRevision: 'none',
+    mountRevision: 'skin-test:v1',
+  })
+  const ordinary = buildRuntimeTarget({
+    rows: [skinRow],
+    resources: { mcp: [], skills: {} },
+    resourceRevision: 'a'.repeat(64),
+    compositeRevision: 'b'.repeat(64),
+  })
   const target = encodeRuntimeTargetArtifact(
     buildRuntimeTarget({
-      rows: [
-        createPluginRow({
-          id: rowId,
-          plugin: `${row.id}@${integrity}/main`,
-          snapshotDigest: integrity,
-          exportName: 'main',
-          entryRevision: integrity,
-          extrasRevision: 'none',
-          mountRevision: 'skin-test:v1',
-        }),
-      ],
+      rows: [skinRow, webRow],
       resources: { mcp: [], skills: {} },
       resourceRevision: 'a'.repeat(64),
       compositeRevision: 'b'.repeat(64),
@@ -157,7 +171,8 @@ async function qualifyInstalledSkin(tree: CompositeTargetStore): Promise<void> {
   tree.publishDesired(target)
   if (
     !tree.qualifyConverged(1, target, {
-      hash: target.identity.treeHash,
+      // Host reports the ordinary tree; browser rows stay in the complete desired artifact.
+      hash: ordinary.tree.hash,
       ok: true,
       rows: [{ id: rowId, state: 'active' }],
     })

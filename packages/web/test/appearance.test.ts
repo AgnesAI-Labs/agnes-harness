@@ -250,9 +250,7 @@ describe('bindSkinGroup', () => {
     return found
   }
   const pick = (value: string): void => {
-    const target = input(value)
-    target.checked = true
-    target.dispatchEvent(new Event('change'))
+    input(value).click()
   }
 
   beforeEach(mountSkin)
