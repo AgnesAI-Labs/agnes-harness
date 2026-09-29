@@ -113,7 +113,7 @@ function skinOption(value: string, name: string, hint: string, props: SkinOption
       name: 'agnes-skin',
       value,
       checked: value === props.selected,
-      readOnly: true,
+      onChange: () => props.onChoose(value),
     }),
     createElement(
       'span',
@@ -202,15 +202,6 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
         render()
       })
   }
-
-  container.addEventListener(
-    'change',
-    (event) => {
-      const input = event.target as HTMLInputElement | null
-      if (input?.type === 'radio' && input.name === 'agnes-skin' && input.checked) choose(input.value)
-    },
-    true,
-  )
 
   // 初始加载由调用方在打开面板时触发（`refresh`），避免绑定即发请求、也避免一次打开拉两遍。
   return { sync, refresh }

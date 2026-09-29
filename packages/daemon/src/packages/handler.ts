@@ -518,8 +518,9 @@ class Service implements PackageAdminService {
     const actual = store && pluginTreeList(store, inventory.profile, this.options.workerGeneration?.()).actual
     const artifact = store?.desired()
     const report = store?.report()
-    if (!actual?.actual || !artifact || !report?.ok || report.hash !== artifact.identity.treeHash)
-      return { inventory, activeRows: new Set() }
+    // The Host report hashes its ordinary tree, which excludes browser-only web: rows. `actual`
+    // already qualifies that report against the complete desired artifact and worker generation.
+    if (!actual?.actual || !artifact || !report?.ok) return { inventory, activeRows: new Set() }
     try {
       const pins = await this.options.manager.listRuntimePins(profileDirectory)
       const activePins = new Map(
