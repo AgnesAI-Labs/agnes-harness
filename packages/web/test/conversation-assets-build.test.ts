@@ -6,8 +6,14 @@ import { beforeAll, expect, it } from 'vitest'
 const repository = resolve(import.meta.dirname, '../../..')
 const web = resolve(repository, 'packages/web')
 
+// The build runs through `process.execPath` plus the `tsx` loader rather than through the `pnpm`
+// shim. On Windows `pnpm` is a `.cmd`, and `execFileSync` does not use a shell, so spawning it by
+// name failed the whole file with `spawnSync pnpm ENOENT`. This mirrors how the package's own
+// `build` script runs the file (`tsx tools/build.ts`), minus the package-manager layer, and the
+// repository already drives Node with `--import tsx` elsewhere (see
+// `packages/cli/test/acp-concurrency.e2e.test.ts`).
 beforeAll(() => {
-  execFileSync('pnpm', ['--filter', '@agnes/web', 'build'], { cwd: repository, stdio: 'pipe' })
+  execFileSync(process.execPath, ['--import', 'tsx', 'tools/build.ts'], { cwd: web, stdio: 'pipe' })
 }, 30_000)
 
 it('ships private conversation styles in the existing three-page style asset', async () => {
