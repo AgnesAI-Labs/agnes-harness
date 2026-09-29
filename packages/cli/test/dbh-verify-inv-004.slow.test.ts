@@ -29,7 +29,8 @@ import { say, TEST_LOCK } from './boot-host.js'
 
 const tmp: string[] = []
 afterEach(() => {
-  for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true })
+  // Windows can release a closed Host's file handles a moment after the close returns.
+  for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 const ALIVE = Symbol('tui still running')
@@ -74,7 +75,9 @@ async function runUntilSettled(argv: string[], budgetMs: number) {
   ])
   if (outcome === ALIVE) {
     h.signals.emit('SIGTERM')
-    await Promise.race([run, new Promise((r) => setTimeout(r, 5_000))]).catch(() => undefined)
+    // main() returns only after it has closed the Host, whose files Windows will not let the cleanup
+    // remove while they are open. The bound is for a shutdown that never finishes, not a slow one.
+    await Promise.race([run, new Promise((r) => setTimeout(r, 20_000))]).catch(() => undefined)
   }
   return { outcome, stderr: h.err(), exits: h.exits }
 }
