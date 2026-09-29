@@ -13,7 +13,7 @@ describe('author documentation generation', () => {
   it('has all hooks, their policy and nonempty schema-linked descriptions', () => {
     const docs = generateAll(),
       hooks = docs['hooks.md'] ?? ''
-    expect(hooks.match(/^\| `[a-z_]+` \|/gm)).toHaveLength(17)
+    expect(hooks.match(/^\| `[a-z_]+` \|/gm)).toHaveLength(16)
     expect(hooks).toContain('| `tool_call` | serial | directive | closed | 2000 | – |')
     expect(hooks).toContain('| `session_start` | parallel | observe | open | 500 | ✓ |')
     expect(hooks).toContain('hooks.json#/$defs/ContextPayload')

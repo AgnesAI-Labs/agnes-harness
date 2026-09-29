@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { renderHooksDoc, renderSlotsDoc, renderToolsMetaDoc } from '../tools/gen-docs.js'
 
 describe('gen-docs', () => {
-  it('hooks.md lists all seventeen events with the five columns', () => {
+  it('hooks.md lists all sixteen events with the five columns', () => {
     const md = renderHooksDoc()
     for (const e of ['session_start', 'tool_call', 'shutdown'])
       expect(md).toMatch(new RegExp(`^\\| \`${e}\` \\|`, 'm'))
@@ -11,7 +11,7 @@ describe('gen-docs', () => {
     // One row per event in the five-tuple table, and one per event in the IO table below it.
     expect(
       md.split('\n').filter((l) => /^\| `[a-z_]+` \| (emit|parallel|serial|waterfall) \|/.test(l)),
-    ).toHaveLength(17)
+    ).toHaveLength(16)
   })
   // Independent of the renderer: the page must carry facts read out of the decision tables, not out
   // of the renderer's own output. Without this, the staleness case below only ever proves the file

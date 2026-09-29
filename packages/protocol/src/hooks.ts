@@ -8,7 +8,6 @@ export const HOOK_EVENTS = [
   'before_step',
   'context',
   'before_request',
-  'before_provider_headers',
   'request_error',
   'tool_call',
   'tool_result',

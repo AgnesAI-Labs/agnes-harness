@@ -19,7 +19,6 @@ const valid: { [E in HookEvent]: HookReturnMap[E] } = {
     additionalContext: 'note',
   },
   before_request: { patch: { maxTokens: 10, samplingParams: { temperature: 0 }, metadata: { test: true } } },
-  before_provider_headers: { headers: { 'X-Ext-Test': 'value' } },
   request_error: undefined,
   tool_call: { allow: false, reason: 'refused' },
   tool_result: {
@@ -180,12 +179,6 @@ describe('author hook return boundary', () => {
     for (const event of ['context', 'tool_call', 'session_start'] as const) {
       expect(() => authorHookReturn(event, null)).toThrow()
     }
-  })
-
-  it('does not allow default headers to be overwritten through an extension header return', () => {
-    expect(() =>
-      authorHookReturn('before_provider_headers', { headers: { Authorization: 'secret' } }),
-    ).toThrow('invalid author hook return')
   })
 })
 

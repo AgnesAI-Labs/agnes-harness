@@ -4,6 +4,17 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+The `before_provider_headers` hook event is removed: the kernel never dispatched it, so no handler could
+have run. The public table now has sixteen events, and registering the old name is refused with an
+invalid-registration error. This is a removal that would normally call for a major version; the project
+is pre-alpha with no published package and no known external plugin, so `API_VERSION` stays at 1.4.0 and
+the change is recorded here instead.
+
+Migration: delete `before_provider_headers` from any manifest `capabilities.hooks`, lockfile or Preset
+`hooks` entry (each now fails validation with an unknown-event error) and remove any `registerHook` call
+for it. Provider request headers are not an extension point; the only mechanism is the static `headers`
+field on a model record.
+
 `checkToolDef` now bounds what a model is shown: a description of at most `TOOL_DESCRIPTION_MAX_LENGTH`
 (4096) UTF-16 code units, and a parameter schema of at most `TOOL_PARAMETERS_MAX_BYTES` (262144)
 serialized bytes and `TOOL_PARAMETERS_MAX_DEPTH` (32) levels, root at depth 0. Symbol keys are ignored,

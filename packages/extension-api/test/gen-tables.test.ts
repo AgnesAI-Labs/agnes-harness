@@ -20,7 +20,6 @@ const EXPECTED = {
   before_step: ['serial', 'directive', 'closed', 1000, false],
   context: ['waterfall', 'transform', 'closed', 1500, false],
   before_request: ['waterfall', 'transform', 'closed', 1500, false],
-  before_provider_headers: ['waterfall', 'transform', 'closed', 500, false],
   request_error: ['parallel', 'observe', 'open', 500, false],
   tool_call: ['serial', 'directive', 'closed', 2000, false],
   tool_result: ['waterfall', 'transform', 'open', 2000, false],
@@ -34,7 +33,7 @@ const EXPECTED = {
   shutdown: ['parallel', 'observe', 'open', 1000, false],
 } as const
 describe('generated author tables', () => {
-  it('pins all seventeen approved five-tuples independently of generation', () => {
+  it('pins all sixteen approved five-tuples independently of generation', () => {
     for (const name of HOOK_EVENTS) {
       const row = HOOK_TABLE[name]
       expect([row.mode, row.category, row.failPolicy, row.timeoutMs, row.replayOnResume], name).toEqual(

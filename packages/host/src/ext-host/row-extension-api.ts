@@ -11,7 +11,7 @@ import {
   type PluginExtensionAPI,
   type ToolDef,
 } from '@agnes/extension-api'
-import { inspectJsonData } from '@agnes/protocol'
+import { inspectJsonData, isHookEvent } from '@agnes/protocol'
 import type { Lease } from './lease.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
@@ -286,7 +286,7 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): PluginExtensi
     }),
     registerHook<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>) {
       registering()
-      if (typeof handler !== 'function') return refuse('invalid hook registration')
+      if (typeof handler !== 'function' || !isHookEvent(event)) return refuse('invalid hook registration')
       return input.attach('hook', event, (ports) => {
         const projections = projectionReader(ports.projections, meta, lease, alive, [])
         // Unlike `on` above, the handler's real return value reaches the kernel: this is what lets a

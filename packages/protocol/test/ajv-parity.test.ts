@@ -526,8 +526,6 @@ const HOOKS_DEFS: Record<string, TSchema> = {
   ContextReturn: HooksGen.ContextReturn,
   BeforeRequestPayload: HooksGen.BeforeRequestPayload,
   BeforeRequestReturn: HooksGen.BeforeRequestReturn,
-  BeforeProviderHeadersPayload: HooksGen.BeforeProviderHeadersPayload,
-  BeforeProviderHeadersReturn: HooksGen.BeforeProviderHeadersReturn,
   RequestErrorPayload: HooksGen.RequestErrorPayload,
   RequestErrorReturn: HooksGen.RequestErrorReturn,
   ToolCallPayload: HooksGen.ToolCallPayload,
@@ -3548,7 +3546,7 @@ const HOOKS_SAMPLES: Record<string, Sample> = {
   HookEvent: {
     valid: 'tool_call',
     invalid: ['toolCall', 'registerCommand', 1],
-    note: 'the seventeen event names are a closed enum; the negatives are a case variant, a non-member and a non-string',
+    note: 'the sixteen event names are a closed enum; the negatives are a case variant, a non-member and a non-string',
   },
   PromptSection: {
     valid: promptSectionOk,
@@ -3672,25 +3670,6 @@ const HOOKS_SAMPLES: Record<string, Sample> = {
       { maxTokens: 100 }, // additionalProperties:false - the patch is a named envelope
     ],
     note: 'the patch is a closed set of fields, so a hook cannot silently repoint the request at another model',
-  },
-  BeforeProviderHeadersPayload: {
-    valid: { route: 'default', headers: { Authorization: 'x' } },
-    invalid: [
-      { route: 'default' }, // missing required headers
-      { route: 'default', headers: { Authorization: 1 } }, // the dictionary's value type
-    ],
-    note: 'hand-written',
-  },
-  BeforeProviderHeadersReturn: {
-    valid: { headers: { 'X-Ext-Trace': '1' } },
-    invalid: [
-      { headers: { 'X-Agnes-Session': 'x' } }, // propertyNames: an extension may only add its own namespace
-      { headers: { 'X-Ext-Trace': 1 } }, // the value type
-      { headers: {}, extra: 1 }, // additionalProperties:false
-    ],
-    note:
-      'the key pattern is the whole point of this return, and TypeBox needed the closing option to ' +
-      'enforce it - see the keyed-dictionary branch in tools/gen-core.ts',
   },
   RequestErrorPayload: {
     valid: { code: 'RATE_LIMIT', message: 'slow down', attempt: 2, retryable: true },

@@ -4,12 +4,12 @@ import { HOOK_EVENTS, HOOK_TABLE, isHookEvent, validateHook } from '../src/index
 import { type Fixture, runFixtureLine } from '../tools/conformance-core.js'
 
 describe('hooks', () => {
-  // The whole five-tuple table, all seventeen rows times five cells, written out. Spot-checking a
+  // The whole five-tuple table, all sixteen rows times five cells, written out. Spot-checking a
   // few cells is what would let a wrong timeout or a wrong failPolicy ship: the extension host and
   // the hooks runner read this table and nothing else pins it. The expected object is written from
   // the decision table, not copied back out of hooks.json, or the assertion proves only itself.
   it('the five-tuple table matches the decision table cell for cell', () => {
-    expect(HOOK_EVENTS).toHaveLength(17)
+    expect(HOOK_EVENTS).toHaveLength(16)
     expect(HOOK_TABLE).toEqual({
       session_start: {
         mode: 'parallel',
@@ -44,13 +44,6 @@ describe('hooks', () => {
         category: 'transform',
         failPolicy: 'closed',
         timeoutMs: 1500,
-        replayOnResume: false,
-      },
-      before_provider_headers: {
-        mode: 'waterfall',
-        category: 'transform',
-        failPolicy: 'closed',
-        timeoutMs: 500,
         replayOnResume: false,
       },
       request_error: {
@@ -157,17 +150,12 @@ describe('hooks', () => {
     // A deny with no reason is a refusal nobody can explain to the caller.
     expect(validateHook('tool_call', 'return', { allow: false }).ok).toBe(false)
   })
-  it('before_compact returns null or a plan; the headers hook may only add X-Ext-*', () => {
+  it('before_compact returns null or a plan', () => {
     expect(validateHook('before_compact', 'return', null).ok).toBe(true)
-    expect(validateHook('before_provider_headers', 'return', { headers: { 'X-Ext-Trace': '1' } }).ok).toBe(
-      true,
-    )
-    // TypeBox compiles a patterned Record key to `patternProperties` alone, which constrains nothing
-    // by itself; the generator closes it with additionalProperties:false so this is really refused.
-    // Without that, an extension could overwrite the harness's own headers through this return.
-    const r = validateHook('before_provider_headers', 'return', { headers: { 'X-Agnes-Session': 'x' } })
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.errors[0]).toMatchObject({ code: 'UNKNOWN_KEY' })
+  })
+  it('the removed before_provider_headers event is no longer a hook event', () => {
+    expect(isHookEvent('before_provider_headers')).toBe(false)
+    expect(HOOK_EVENTS as readonly string[]).not.toContain('before_provider_headers')
   })
   it('turn_stopping continue carries a note, stop does not', () => {
     expect(validateHook('turn_stopping', 'return', { action: 'stop' }).ok).toBe(true)
@@ -178,7 +166,7 @@ describe('hooks', () => {
     const lines = readFileSync(new URL('../fixtures/hooks/hooks.jsonl', import.meta.url), 'utf8')
       .split('\n')
       .filter(Boolean)
-    expect(lines.length).toBe(34) // 17 events x (one positive + one negative)
+    expect(lines.length).toBe(32) // 16 events x (one positive + one negative)
     for (const line of lines) {
       const f = JSON.parse(line) as Fixture
       expect(runFixtureLine(f).pass, f.id).toBe(true)
