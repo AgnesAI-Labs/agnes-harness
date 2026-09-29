@@ -2,7 +2,7 @@
 // failure reproduces the defect. Production path: bin.ts main() --ephemeral (makeEphemeralHome, the
 // finally that disposes it), installSignalLadder with the real process signals and the real hardExit.
 // Oracle: cli-package design :82 "--ephemeral: 临时 AGNES_HOME，退出即删"; boot/inputs.ts:25 "writes
-// nothing the machine keeps"; acp-concurrency.test.ts:225-233 "no application-owned entry may remain
+// nothing the machine keeps"; acp-concurrency.e2e.test.ts:225-233 "no application-owned entry may remain
 // after every child exits". Every child gets a private TMPDIR made with mkdtemp and removed afterwards.
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
