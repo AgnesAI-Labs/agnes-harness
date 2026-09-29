@@ -6,8 +6,13 @@ import { defaultExclude, defineConfig } from 'vitest/config'
 // 不追加会把编译后的 .test.js 也当测试跑一遍(M7:在默认值基础上追加,不整体替换)。
 // Vitest applies the `--exclude` CLI flag to the root config only, not inside `projects`, so a run
 // that must hold named files out (CI runs a few contention-sensitive files alone on Windows) lists
-// them in AGNES_TEST_EXCLUDE as comma-separated globs relative to the repository root.
-const held = (process.env.AGNES_TEST_EXCLUDE ?? '').split(',').filter(Boolean)
+// them in AGNES_TEST_EXCLUDE as comma-separated globs relative to the repository root (run from the
+// root). A non-empty list is printed so a stray variable cannot silently drop tests.
+const held = (process.env.AGNES_TEST_EXCLUDE ?? '')
+  .split(',')
+  .map((glob) => glob.trim())
+  .filter(Boolean)
+if (held.length > 0) process.stderr.write(`AGNES_TEST_EXCLUDE holds out: ${held.join(', ')}\n`)
 const exclude = [...defaultExclude, '**/dist/**', ...held]
 
 // Test tiers are chosen by file name. `*.e2e.test.ts` starts real daemons, workers or CLI processes
@@ -25,7 +30,8 @@ export default defineConfig({
     // Explicit per-test timeouts and CLI maxWorkers overrides still take precedence.
     ...(['win32', 'darwin'].includes(process.platform) ? { maxWorkers: 2, testTimeout: 15_000 } : {}), // guards-allow-platform: hosted OS test-runner limits.
     projects: [
-      { extends: true, test: { name: 'fast', include: ['**/*.test.ts'], exclude: [...exclude, ...heavy] } },
+      // `extends: true` concatenates the root exclude, so fast only adds the heavy globs.
+      { extends: true, test: { name: 'fast', include: ['**/*.test.ts'], exclude: heavy } },
       { extends: true, test: { name: 'heavy', include: heavy } },
     ],
   },
