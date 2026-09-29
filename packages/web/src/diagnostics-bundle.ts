@@ -24,6 +24,8 @@ export type CollectInput = {
   sessionId: string | null
   sessionTitle: string | null
   projection: UITimeline | undefined
+  /** Whether `projection` is a window with earlier history left unloaded (the Web's bounded opening). */
+  projectionHasEarlier: boolean
   browserLog: BrowserLog
   browser: Record<string, unknown>
   now: Date
@@ -157,6 +159,9 @@ export async function collectDiagnostics(
   }
 
   const sessionId = input.sessionId
+  // The Web keeps showing the previous session's projection until the new one's first timeline
+  // lands; a projection built for another session never ships beside this session's ledger.
+  const projection = input.projection?.sessionId === sessionId ? input.projection : undefined
   const effective = { ...include, conversation: include.conversation && sessionId !== null }
   const [collected, apis, config] = await Promise.all([
     // Always read for bundle.version, but a failure only matters when logs or system were selected.
@@ -208,7 +213,13 @@ export async function collectDiagnostics(
     }
     if (read) ledger = { file: 'events.jsonl', count: lines.length, lastSeq: afterSeq, truncated }
   }
-  if (effective.conversation && !input.projection) warnings.push({ source: 'trace', reason: 'unavailable' })
+  if (effective.conversation) {
+    if (!projection) warnings.push({ source: 'trace', reason: 'unavailable' })
+    else if (input.projectionHasEarlier) {
+      const detail = `仅含已加载的最近 ${projection.nodes.length} 个节点，更早的历史未包含`
+      warnings.push({ source: 'trace', reason: 'truncated', detail })
+    }
+  }
   if (expired) warnings.push({ source: 'collect', reason: 'timeout' })
   if (signal.aborted) throw abortError()
 
@@ -229,9 +240,7 @@ export async function collectDiagnostics(
     sessionId,
     sessionTitle: input.sessionTitle,
     include: effective,
-    ...(effective.conversation && input.projection
-      ? { trace: omitInlineMedia(input.projection) as UITimeline }
-      : {}),
+    ...(effective.conversation && projection ? { trace: omitInlineMedia(projection) as UITimeline } : {}),
     ...(ledger ? { events: ledger } : {}),
     artifacts: [...artifacts.values()],
     ...(effective.logs

@@ -45,7 +45,7 @@ function setup(sessionId: string | null = 's1', over: Partial<DiagnosticsDialogD
   const save = vi.fn<(zip: Uint8Array, fileName: string) => Promise<'saved' | 'canceled'>>()
   ui = createDiagnosticsDialog({
     call: vi.fn(),
-    context: () => ({ sessionId, sessionTitle: null, projection: undefined }),
+    context: () => ({ sessionId, sessionTitle: null, projection: undefined, projectionHasEarlier: false }),
     collect,
     save,
     ...over,
