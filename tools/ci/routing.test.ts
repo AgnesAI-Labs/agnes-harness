@@ -59,7 +59,8 @@ describe('CI scope', () => {
 
   it('does not treat empty changes or non-PR events as docs-only', () => {
     expect(isDocsOnly([])).toBe(false)
-    for (const event of ['push', 'workflow_dispatch']) expect(detectDocsOnly(event, {})).toBe(false)
+    for (const event of ['push', 'workflow_dispatch', 'schedule'])
+      expect(detectDocsOnly(event, {})).toBe(false)
   })
 
   it('uses the PR merge base so unrelated target-branch changes do not change its scope', () => {
@@ -127,6 +128,7 @@ function results(docsOnly: boolean): Record<string, { result: string; outputs?: 
     static: { result: 'success' },
     check: { result: docsOnly ? 'skipped' : 'success' },
     'windows-check-result': { result: docsOnly ? 'skipped' : 'success' },
+    heavy: { result: docsOnly ? 'skipped' : 'success' },
     'runtime-package': { result: docsOnly ? 'skipped' : 'success' },
     sea: { result: docsOnly ? 'skipped' : 'success' },
   }
@@ -137,7 +139,7 @@ describe('CI result', () => {
     expect(() => verifyResults(results(docsOnly))).not.toThrow()
   })
 
-  it.each(['changes', 'static', 'check', 'windows-check-result', 'runtime-package', 'sea'])(
+  it.each(['changes', 'static', 'check', 'windows-check-result', 'heavy', 'runtime-package', 'sea'])(
     'fails closed for a failed, cancelled, skipped or missing code job: %s',
     (job) => {
       for (const state of ['failure', 'cancelled', 'skipped', undefined]) {
