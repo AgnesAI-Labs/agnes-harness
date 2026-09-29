@@ -7,11 +7,12 @@ on:
   schedule:
     - cron: '0 18 * * *'
 permissions: { contents: read }
-# The event name keeps a nightly run on main and a push to main from cancelling each other; a
-# newer push to the same pull request still cancels its older run.
+# The event name keeps a nightly run on main and a push to main from cancelling each other. Only a
+# newer push to the same pull request cancels its older run; runs on main always finish, because
+# they carry the only macOS and Windows heavy-tier results.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   changes:
     name: classify changes
@@ -56,6 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The three Windows shards must carry the same testExclude, or the shards overlap or leave gaps.
         include:
           - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=4', testExclude: '', shard: '' }
           - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', testExclude: '', shard: '' }
