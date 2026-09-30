@@ -12,9 +12,14 @@ export class GitTree {
   }
 
   static open(root: string, rev: string): GitTree {
-    const resolved = git(root, ['rev-parse', '--verify', `${rev}^{commit}`])
-      .toString('utf8')
-      .trim()
+    let resolved: string
+    try {
+      resolved = git(root, ['rev-parse', '--verify', `${rev}^{commit}`])
+        .toString('utf8')
+        .trim()
+    } catch (error) {
+      throw new Error(missingCommit(rev, error), { cause: error })
+    }
     if (!/^[0-9a-f]{40}$/.test(resolved)) throw new Error(`unusable commit id for ${rev}`)
     return new GitTree(root, resolved)
   }
@@ -61,6 +66,14 @@ export class GitTree {
   text(path: string): string {
     return this.read(path).toString('utf8')
   }
+}
+
+function missingCommit(rev: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  if (/unknown revision|Needed a single revision|bad revision|ambiguous argument/i.test(detail)) {
+    return `commit ${rev} is not in this clone. The inventory reads that commit from local history and needs a full checkout (fetch-depth: 0).`
+  }
+  return detail
 }
 
 function git(root: string, args: readonly string[], input?: string): Buffer {
