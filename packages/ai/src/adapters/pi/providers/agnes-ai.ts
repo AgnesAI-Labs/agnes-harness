@@ -10,10 +10,10 @@ export const AGNES_AI_BASE_URL = 'https://api.agnes-ai.cn/v1'
  * Chat models only: the image and video generation ids the gateway also lists stay out of the
  * catalogue. Ids are what `GET /v1/models` returns; it publishes no modalities, so `true` marks a
  * model that correctly described a test image on the live gateway (2026-09-22). The rest stay
- * text-only until verified. The limits are provisional until the provider publishes per-model
- * numbers. The 3.0 Flash gateway accepted a 16384-token output allowance in a synthetic tool-call
- * probe (2026-09-30); a full long-output probe timed out, so this is not a verified capacity claim.
- * Older entries keep their provisional 4096-token allowance.
+ * text-only until verified. Output allowances follow the official model docs (2026-09-30):
+ * https://agnes-ai.com/zh-Hans/docs/agnes-30-flash and agnes-25-pro{-alpha}: 65536.
+ * agnes-25-flash and agnes-20-flash publish rounded 65.5K, interpreted as 65536 tokens.
+ * Pro Beta uses the Pro family allowance. Context limits remain provisional; deprecated ids stay.
  */
 const CHAT_MODELS = [
   ['agnes-3.0-flash', 'Agnes 3.0 Flash', true],
@@ -34,7 +34,7 @@ const AGNES_AI_MODELS: Model<Api>[] = CHAT_MODELS.map(
       baseUrl: AGNES_AI_BASE_URL,
       input: image ? ['text', 'image'] : ['text'],
       contextWindow: 200000,
-      maxTokens: id === 'agnes-3.0-flash' ? 16384 : 4096,
+      maxTokens: 65536,
       compat: { maxTokensField: 'max_tokens' },
       reasoning: false,
       samplingParams: {
