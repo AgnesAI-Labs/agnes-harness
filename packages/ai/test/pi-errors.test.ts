@@ -120,13 +120,22 @@ describe('timeouts and cancellation', () => {
   // The total deadline is set far out of reach, so only the first-token one can end this. With both
   // in range the two are indistinguishable - the message is chosen from whether anything arrived,
   // not from which timer fired - and a case that cannot tell them apart tests neither.
-  it('a stream that never speaks fails on the first-token deadline', async () => {
-    expect(
-      await drain(adapter({ streamImpl: hang }), { timeoutMs: { firstToken: 20, total: 60_000 } }),
-    ).toEqual([
-      { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'first token timeout', retryable: true },
-    ])
-  })
+  it.each([undefined, 'start', 'text_start', 'thinking_start', 'toolcall_start', 'text_delta'])(
+    'a stream with only %s and no output fails on the first-token deadline',
+    async (type) => {
+      const silent: StreamImpl = () =>
+        (async function* () {
+          if (type) yield { type, contentIndex: 0, delta: '', partial: msg('') } as never
+          await new Promise<never>(() => {})
+        })()
+      const out = await drain(adapter({ streamImpl: silent }), {
+        timeoutMs: { firstToken: 20, total: 60_000 },
+      })
+      expect(out.filter((event) => event.type !== 'text_delta')).toEqual([
+        { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'first token timeout', retryable: true },
+      ])
+    },
+  )
 
   // And once it has spoken, the first-token deadline is spent. A model that thinks for longer than
   // that between tokens is answering, not hanging, and must not be cut off by the deadline that

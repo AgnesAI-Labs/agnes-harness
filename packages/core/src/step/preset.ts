@@ -22,6 +22,7 @@ export type PresetView = {
     id: Record<string, string>
     retry: { maxAttempts: number; baseDelayMs: number }
     timeoutMs: number
+    maxTokens?: number
   }
   budget: {
     preflight: 'count' | 'estimate'
@@ -120,6 +121,9 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
         baseDelayMs: pick(raw, 'model.retry.base_delay_ms', d.model.retry.baseDelayMs),
       },
       timeoutMs: pick(raw, 'model.timeout_ms', d.model.timeoutMs),
+      ...(get(raw, 'model.max_tokens') === undefined
+        ? {}
+        : { maxTokens: pick<number>(raw, 'model.max_tokens', 1) }),
     },
     budget: {
       preflight: pick(raw, 'budget.preflight', d.budget.preflight),

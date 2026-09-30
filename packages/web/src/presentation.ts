@@ -114,6 +114,10 @@ export function errorNotice(
   if (reason === 'legacy-ledger-format') return '该会话由旧版本创建，当前版本无法打开，请新建会话。'
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'AUTH')
     return '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。'
+  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'OUTPUT_LIMIT')
+    return '模型回复达到输出额度，本轮已停止。请要求分步生成，或调整请求输出额度后继续。'
+  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'RATE_LIMIT')
+    return '模型服务返回限流错误（HTTP 429）。请稍后重试；若持续出现，请检查该账号的服务额度或联系模型服务方。'
   if (message !== 'INTERNAL_ERROR (-32603)') return message
   const id =
     typeof diagnosticId === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(diagnosticId)

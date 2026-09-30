@@ -194,17 +194,23 @@ const imageModel: ModelRecord = {
 describe('Inference segment', () => {
   it('captures the post-hook primary prefix for later summary requests', async () => {
     const registry = readRegistry()
-    const { session } = await primed([toolTurn('read', { path: 'x' })], registry)
+    const { session, provider } = await primed([toolTurn('read', { path: 'x' })], registry)
+    session.preset.model.maxTokens = 32768
     session.hooks = {
       ...session.hooks,
-      beforeRequest: async (out) =>
-        applyBeforeRequestPatches(out, [{ ext: 'test', patch: { samplingParams: { temperature: 0.2 } } }]),
+      beforeRequest: async (out) => {
+        expect(out.request.maxTokens).toBe(32768)
+        return applyBeforeRequestPatches(out, [
+          { ext: 'test', patch: { maxTokens: 512, samplingParams: { temperature: 0.2 } } },
+        ])
+      },
     }
     await session.runInference()
     const prefix = session.turn?.lastPrefix
     expect(prefix?.samplingParams?.temperature).toBe(0.2)
     expect(prefix?.sections[0]?.id).toBe('core:untrusted-envelope')
     expect(prefix?.tools.map((tool) => tool.name)).toContain('read')
+    expect(provider.requests[0]?.sampling?.maxTokens).toBe(512)
   })
 
   it('preflights surface artifacts and sends native images only to an image-capable primary model', async () => {
@@ -1039,24 +1045,50 @@ describe('Inference segment', () => {
     ])
   })
 
-  it('length-truncated output with tool calls discards the calls and feeds the model back', async () => {
-    const script: Script = [
-      sent(),
-      { type: 'toolcall_end', call: { toolUseId: '', name: 'read', args: {}, ordinal: 0 }, via: 'native' },
-      usage(),
-      { type: 'done', reason: 'length' },
-    ]
-    const { session, log } = await primed([script], readRegistry())
-    expect(await session.runInference()).toEqual({ phase: 'checkpoint' })
-    expect(await log.scan({ type: 'tool/call', limit: 10 })).toHaveLength(0)
-    expect(session.op()?.phase).toMatchObject({ kind: 'checkpoint', continuation: 'need_assistant' })
-    const notes = (await log.scan({ type: 'user/message', limit: 10 })).filter((e) => e.origin === 'system')
-    expect(notes).toHaveLength(1)
-    expect(notes[0]?.data).toMatchObject({ kind: 'runtime_context' })
-    expect((await log.scan({ type: 'assistant/message', limit: 5 }))[0]?.data).toMatchObject({
-      stopReason: 'max_tokens',
-    })
-  })
+  it.each([true, false])(
+    'ends truncated output without automatic retries (tool call: %s)',
+    async (withCall) => {
+      const script: Script = [
+        sent(),
+        { type: 'text_delta', delta: 'partial text' },
+        ...(withCall
+          ? [
+              {
+                type: 'toolcall_end',
+                call: { toolUseId: '', name: 'read', args: {}, ordinal: 0 },
+                via: 'native',
+              } as const,
+            ]
+          : []),
+        usage(),
+        { type: 'done', reason: 'length' },
+      ]
+      const { session, log, provider } = await primed([script, textTurn('continued')], readRegistry())
+      expect(await session.runInference()).toEqual({ phase: 'failure_drain' })
+      expect(await log.scan({ type: 'tool/call', limit: 10 })).toHaveLength(0)
+      expect(session.op()?.phase).toMatchObject({ kind: 'failure_drain', error: { code: 'OUTPUT_LIMIT' } })
+      const notes = (await log.scan({ type: 'user/message', limit: 10 })).filter((e) => e.origin === 'system')
+      expect(notes).toHaveLength(1)
+      expect(notes[0]?.data).toMatchObject({ kind: 'runtime_context' })
+      expect(JSON.stringify(notes[0]?.data)).toContain('build large files incrementally')
+      expect((await log.scan({ type: 'assistant/message', limit: 5 }))[0]?.data).toMatchObject({
+        stopReason: 'max_tokens',
+        content: [{ type: 'text', text: 'partial text' }],
+      })
+      const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome).toMatchObject({ reason: 'error', error: { code: 'OUTPUT_LIMIT' } })
+      expect(provider.calls).toBe(1)
+      expect(session.op()).toBeNull()
+      await session.enqueue('next-turn', {
+        actor,
+        content: [{ type: 'text', text: 'continue in smaller parts' }],
+      })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(provider.calls).toBe(2)
+    },
+  )
 
   it('a tool call decoded from text records a format deviation', async () => {
     const script: Script = [
