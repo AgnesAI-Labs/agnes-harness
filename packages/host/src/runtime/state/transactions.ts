@@ -1,16 +1,28 @@
 import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite'
 import { defaultIds, type Event, LedgerIntegrityFailure, verifyIntegrityRows } from '@agnes/core'
 import type {
+  AckOutboxRequest,
+  AckOutboxResult,
+  ActionVisibilityValue,
   AdmissionProbe,
   AdmitInvocationResult,
+  AdmitQueryResult,
   AdvanceRunRequest,
+  ClaimOutboxRequest,
+  ClaimOutboxResult,
   CloseInvocationRequest,
   CloseInvocationResult,
   CommitControlRequest,
   DispatchAdmissionProbe,
   DispatchAdmissionRequest,
   DispatchAdmissionResult,
+  FailOutboxRequest,
+  FailOutboxResult,
   InvocationAdmission,
+  ProbeActionResultRequest,
+  QueryAdmission,
+  ReceiptIntakeRequest,
+  ReceiptIntakeResult,
   RunAdmission,
   StateAuthorityRef,
   StateCommitReceipt,
@@ -30,17 +42,23 @@ import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import { canonicalJson } from './canonical-json.js'
 import {
+  ackOutboxTx,
   admitInvocationTx,
+  admitQueryTx,
   advanceRunTx,
   type ControlPorts,
   type ControlScan,
+  claimOutboxTx,
   closeInvocationTx,
   commitControlTx,
   createControlScan,
   dispatchAdmissionTx,
+  failOutboxTx,
   finishControlScan,
+  intakeReceiptTx,
   noteControlSide,
   noteControlVersion,
+  probeActionResultTx,
   probeDispatchTx,
   type WriteCommitInput,
 } from './control.js'
@@ -184,6 +202,23 @@ const RUNTIME_DDL = [
   `CREATE TABLE IF NOT EXISTS runtime_dispatch_domains (
      session_id TEXT PRIMARY KEY,
      domain_json TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS runtime_outbox_delivery (
+     event_id TEXT PRIMARY KEY,
+     session_id TEXT NOT NULL,
+     destination TEXT NOT NULL,
+     claim_epoch INTEGER NOT NULL,
+     active_owner TEXT,
+     active_epoch INTEGER,
+     active_until INTEGER,
+     acked_epoch INTEGER,
+     attempts INTEGER NOT NULL,
+     next_attempt_at INTEGER NOT NULL,
+     delivery TEXT NOT NULL,
+     ack_ref TEXT,
+     error_json TEXT,
+     last_owner TEXT)`,
+  `CREATE INDEX IF NOT EXISTS runtime_outbox_delivery_due
+     ON runtime_outbox_delivery (destination, delivery, next_attempt_at)`,
 ]
 
 export type { StateFailure } from './refusal.js'
@@ -362,11 +397,18 @@ function proofDataHolds(data: unknown, canonicalized: boolean): boolean {
   }
 }
 
+export type CommitNotice = { method: string; requestId: string; wrote: boolean }
+
+type QueryTicket = { fingerprint: string; ticketId: string; remainingQueries: number }
+
+type QueryMeter = { capacity: number; observed: number; tickets: Map<string, QueryTicket> }
+
 export type RuntimeStateDatabaseOptions = {
   file: string
   authority: StateAuthorityRef
   now?: () => number
   beforeCommit?: () => void
+  onCommit?: (commit: CommitNotice) => void
 }
 
 export class RuntimeStateDatabase {
@@ -375,14 +417,18 @@ export class RuntimeStateDatabase {
   private readonly authority: StateAuthorityRef
   private readonly now: () => number
   private readonly beforeCommit: (() => void) | undefined
+  private readonly onCommit: ((commit: CommitNotice) => void) | undefined
   private readonly ids: ReturnType<typeof defaultIds>
   private readonly verifiedHeads = new Map<string, VerifiedSession>()
+  private readonly queryMeters = new Map<string, QueryMeter>()
+  private pendingWrite = false
   private closed = false
 
   constructor(options: RuntimeStateDatabaseOptions) {
     this.authority = options.authority
     this.now = options.now ?? (() => Date.now())
     this.beforeCommit = options.beforeCommit
+    this.onCommit = options.onCommit
     this.ids = defaultIds(this.now)
     this.db = new DatabaseSync(options.file)
     try {
@@ -424,7 +470,7 @@ export class RuntimeStateDatabase {
   }
 
   async open(request: StateOpenRequest): Promise<StateOpenResult> {
-    const opened = await this.tx(async () => {
+    const opened = await this.tx('open', request.requestId, async () => {
       const meta = this.sessionMeta(request.sessionId)
       if (!meta) refuse('invalid_input', 'session_absent', 'session does not exist')
       // Opening verifies the whole session again, so a cached head cannot hide earlier tampering.
@@ -449,7 +495,7 @@ export class RuntimeStateDatabase {
   }
 
   async lease(request: StateLeaseRequest): Promise<StateLeaseResult> {
-    return this.tx(async () => {
+    return this.tx('lease', request.requestId, async () => {
       if (request.expectedWriterEpoch === null)
         refuse('invalid_input', 'writer_epoch', 'lease operation needs an expected writer epoch')
       const verified = await this.requireSession(request.sessionId)
@@ -470,159 +516,178 @@ export class RuntimeStateDatabase {
   }
 
   async createRun(input: CreateRunInput): Promise<AdmissionProbe> {
-    const committed = await this.tx(async (): Promise<CommittedRun> => {
-      const stored = this.get<AdmissionRow>(
-        'SELECT ticket_id, fingerprint, run_id, probe_json FROM runtime_admissions WHERE ticket_id = ?',
-        input.admission.ticketId,
-      )
-      if (stored) {
-        if (stored.fingerprint !== input.admission.fingerprint)
-          refuse(
-            'conflict',
-            'idempotency_conflict',
-            'admission ticket was already committed with different content',
+    const committed = await this.tx(
+      'createRun',
+      input.admission.ticketId,
+      async (): Promise<CommittedRun> => {
+        const stored = this.get<AdmissionRow>(
+          'SELECT ticket_id, fingerprint, run_id, probe_json FROM runtime_admissions WHERE ticket_id = ?',
+          input.admission.ticketId,
+        )
+        if (stored) {
+          if (stored.fingerprint !== input.admission.fingerprint)
+            refuse(
+              'conflict',
+              'idempotency_conflict',
+              'admission ticket was already committed with different content',
+            )
+          const verified = await this.requireSession(input.admission.sessionId)
+          const probe = this.rebuildStoredAdmission(stored, verified, input.admission.sessionId)
+          const storedProbe = this.parseJson<unknown>(
+            stored.probe_json,
+            'stored admission probe cannot be decoded',
           )
-        const verified = await this.requireSession(input.admission.sessionId)
-        const probe = this.rebuildStoredAdmission(stored, verified, input.admission.sessionId)
-        const storedProbe = this.parseJson<unknown>(
-          stored.probe_json,
-          'stored admission probe cannot be decoded',
+          if (!sameJson(storedProbe, probe) || probe.state !== 'created')
+            integrity('admission replay does not match the attested run')
+          if (probe.commit.transactionFingerprint !== digestOf(input.admission))
+            integrity('admission replay does not match the attested commit')
+          return { probe }
+        }
+        if (
+          this.get(
+            'SELECT record_id FROM runtime_records WHERE record_id = ?',
+            runRecordId(input.admission.runId),
+          )
         )
-        if (!sameJson(storedProbe, probe) || probe.state !== 'created')
-          integrity('admission replay does not match the attested run')
-        if (probe.commit.transactionFingerprint !== digestOf(input.admission))
-          integrity('admission replay does not match the attested commit')
-        return { probe }
-      }
-      if (
-        this.get(
-          'SELECT record_id FROM runtime_records WHERE record_id = ?',
-          runRecordId(input.admission.runId),
-        )
-      )
-        refuse('conflict', 'run_exists', 'run already exists')
-      const existing = this.sessionMeta(input.admission.sessionId)
-      const verified = existing
-        ? await this.requireSession(input.admission.sessionId)
-        : this.verifyEmptyOrOthers(input.admission.sessionId)
-      if (existing && existing.workspace_id !== input.admission.workspaceId)
-        refuse('conflict', 'session_workspace', 'session workspace does not match the admission')
-      const started = verified?.chain ?? emptyIntegrity()
-      const commitId = this.ids.ulid()
-      const at = input.admission.admittedAt
-      const owner = this.owner(input.admission.bindingId, input.scope)
-      const records = this.createRunRecords(input, owner, existing === undefined)
-      const manifests = records.map((record) => createManifest(commitId, record))
-      const sides: CommitSideEntry[] = []
-      const data: RuntimeCommitData = {
-        commitId,
-        transactionFingerprint: digestOf(input.admission),
-        runId: input.admission.runId,
-        actionId: null,
-        authorityEpoch: this.authority.authorityEpoch,
-        writerEpoch: 0,
-        previousCommitId: verified?.latestCommitId ?? null,
-        mutationsDigest: mutationDigest(manifests),
-        mutationCount: manifests.length,
-        sideListsDigest: sideListsDigest(sides),
-        counts: sideCounts(sides),
-      }
-      let chain = started
-      let firstSeq = 0
-      if (!existing) {
-        const format = this.event(this.ids.ulid(), at, FORMAT_EVENT, this.formatData(), chain)
-        const protectedFormat = protectEvent(input.admission.sessionId, format, chain)
-        this.appendEvent(input.admission.sessionId, format, protectedFormat.integrity)
-        chain = protectedFormat.state
-        firstSeq = format.seq
-      }
-      const commit = this.event(this.ids.ulid(), at, STATE_COMMIT_EVENT, data, chain)
-      const protectedCommit = protectEvent(input.admission.sessionId, commit, chain)
-      this.appendEvent(input.admission.sessionId, commit, protectedCommit.integrity)
-      if (firstSeq === 0) firstSeq = commit.seq
-      for (const record of records) this.insertRecord(record, commitId, at)
-      const parent = JSON.stringify(null)
-      if (existing) {
-        this.run(
-          'UPDATE runtime_session_meta SET latest_commit_id = ? WHERE session_id = ?',
+          refuse('conflict', 'run_exists', 'run already exists')
+        const existing = this.sessionMeta(input.admission.sessionId)
+        const verified = existing
+          ? await this.requireSession(input.admission.sessionId)
+          : this.verifyEmptyOrOthers(input.admission.sessionId)
+        if (existing && existing.workspace_id !== input.admission.workspaceId)
+          refuse('conflict', 'session_workspace', 'session workspace does not match the admission')
+        const started = verified?.chain ?? emptyIntegrity()
+        const commitId = this.ids.ulid()
+        const at = input.admission.admittedAt
+        const owner = this.owner(input.admission.bindingId, input.scope)
+        const records = this.createRunRecords(input, owner, existing === undefined)
+        const manifests = records.map((record) => createManifest(commitId, record))
+        const sides: CommitSideEntry[] = []
+        const data: RuntimeCommitData = {
           commitId,
-          input.admission.sessionId,
-        )
-      } else {
-        this.run(
-          `INSERT INTO runtime_session_meta (
+          transactionFingerprint: digestOf(input.admission),
+          runId: input.admission.runId,
+          actionId: null,
+          authorityEpoch: this.authority.authorityEpoch,
+          writerEpoch: 0,
+          previousCommitId: verified?.latestCommitId ?? null,
+          mutationsDigest: mutationDigest(manifests),
+          mutationCount: manifests.length,
+          sideListsDigest: sideListsDigest(sides),
+          counts: sideCounts(sides),
+        }
+        let chain = started
+        let firstSeq = 0
+        if (!existing) {
+          const format = this.event(this.ids.ulid(), at, FORMAT_EVENT, this.formatData(), chain)
+          const protectedFormat = protectEvent(input.admission.sessionId, format, chain)
+          this.appendEvent(input.admission.sessionId, format, protectedFormat.integrity)
+          chain = protectedFormat.state
+          firstSeq = format.seq
+        }
+        const commit = this.event(this.ids.ulid(), at, STATE_COMMIT_EVENT, data, chain)
+        const protectedCommit = protectEvent(input.admission.sessionId, commit, chain)
+        this.pendingWrite = true
+        this.appendEvent(input.admission.sessionId, commit, protectedCommit.integrity)
+        if (firstSeq === 0) firstSeq = commit.seq
+        for (const record of records) this.insertRecord(record, commitId, at)
+        const parent = JSON.stringify(null)
+        if (existing) {
+          this.run(
+            'UPDATE runtime_session_meta SET latest_commit_id = ? WHERE session_id = ?',
+            commitId,
+            input.admission.sessionId,
+          )
+        } else {
+          this.run(
+            `INSERT INTO runtime_session_meta (
              session_id, workspace_id, format_version, min_reader, authority_json, parent_json, latest_commit_id
            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          input.admission.sessionId,
-          input.admission.workspaceId,
-          FORMAT_VERSION,
-          MIN_READER,
-          JSON.stringify(this.authority),
-          parent,
+            input.admission.sessionId,
+            input.admission.workspaceId,
+            FORMAT_VERSION,
+            MIN_READER,
+            JSON.stringify(this.authority),
+            parent,
+            commitId,
+          )
+          this.run(
+            'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, ?, NULL, NULL, ?)',
+            input.admission.sessionId,
+            FORMAT_VERSION,
+            at,
+          )
+        }
+        const receipt: StateCommitReceipt = {
           commitId,
-        )
-        this.run(
-          'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, ?, NULL, NULL, ?)',
-          input.admission.sessionId,
-          FORMAT_VERSION,
-          at,
-        )
-      }
-      const receipt: StateCommitReceipt = {
-        commitId,
-        transactionFingerprint: data.transactionFingerprint,
-        sessionId: input.admission.sessionId,
-        firstSeq,
-        lastSeq: commit.seq,
-        headDigest: protectedCommit.integrity.digest,
-        runRevision: 0,
-        actionIds: [],
-      }
-      const probe: AdmissionProbe = { state: 'created', runId: input.admission.runId, commit: receipt }
-      this.run(
-        'INSERT INTO runtime_admissions (ticket_id, fingerprint, run_id, probe_json) VALUES (?, ?, ?, ?)',
-        input.admission.ticketId,
-        input.admission.fingerprint,
-        input.admission.runId,
-        JSON.stringify(probe),
-      )
-      // Remember the new head only after commit, so a rolled-back write cannot advance the cache.
-      return {
-        probe,
-        head: {
+          transactionFingerprint: data.transactionFingerprint,
           sessionId: input.admission.sessionId,
-          verified: {
-            lastSeq: commit.seq,
-            formatSeq: verified?.formatSeq ?? firstSeq,
-            headDigest: protectedCommit.integrity.digest,
-            latestCommitId: commitId,
-            workspaceId: input.admission.workspaceId,
-            formatVersion: FORMAT_VERSION,
-            minReader: MIN_READER,
-            parent: verified?.parent ?? null,
-            chain: protectedCommit.state,
+          firstSeq,
+          lastSeq: commit.seq,
+          headDigest: protectedCommit.integrity.digest,
+          runRevision: 0,
+          actionIds: [],
+        }
+        const probe: AdmissionProbe = { state: 'created', runId: input.admission.runId, commit: receipt }
+        this.run(
+          'INSERT INTO runtime_admissions (ticket_id, fingerprint, run_id, probe_json) VALUES (?, ?, ?, ?)',
+          input.admission.ticketId,
+          input.admission.fingerprint,
+          input.admission.runId,
+          JSON.stringify(probe),
+        )
+        // Remember the new head only after commit, so a rolled-back write cannot advance the cache.
+        return {
+          probe,
+          head: {
+            sessionId: input.admission.sessionId,
+            verified: {
+              lastSeq: commit.seq,
+              formatSeq: verified?.formatSeq ?? firstSeq,
+              headDigest: protectedCommit.integrity.digest,
+              latestCommitId: commitId,
+              workspaceId: input.admission.workspaceId,
+              formatVersion: FORMAT_VERSION,
+              minReader: MIN_READER,
+              parent: verified?.parent ?? null,
+              chain: protectedCommit.state,
+            },
           },
-        },
-      }
-    })
+        }
+      },
+    )
     if (committed.head) this.verifiedHeads.set(committed.head.sessionId, committed.head.verified)
     return committed.probe
   }
 
   async admitInvocation(request: InvocationAdmission): Promise<AdmitInvocationResult> {
-    return this.finishControl(await this.tx(() => admitInvocationTx(this.controlPorts(), request)))
+    return this.finishControl(
+      await this.tx('admitInvocation', request.requestId, () =>
+        admitInvocationTx(this.controlPorts(), request),
+      ),
+    )
   }
 
   async closeInvocation(request: CloseInvocationRequest): Promise<CloseInvocationResult> {
-    return this.finishControl(await this.tx(() => closeInvocationTx(this.controlPorts(), request)))
+    return this.finishControl(
+      await this.tx('closeInvocation', request.requestId, () =>
+        closeInvocationTx(this.controlPorts(), request),
+      ),
+    )
   }
 
   async advanceRun(request: AdvanceRunRequest): Promise<StateCommitReceipt> {
-    return this.finishControl(await this.tx(() => advanceRunTx(this.controlPorts(), request)))
+    return this.finishControl(
+      await this.tx('advanceRun', request.commitId, () => advanceRunTx(this.controlPorts(), request)),
+    )
   }
 
   async dispatchAdmission(request: DispatchAdmissionRequest): Promise<DispatchAdmissionResult> {
-    return this.finishControl(await this.tx(() => dispatchAdmissionTx(this.controlPorts(), request)))
+    return this.finishControl(
+      await this.tx('dispatchAdmission', request.admissionId, () =>
+        dispatchAdmissionTx(this.controlPorts(), request),
+      ),
+    )
   }
 
   probeDispatchAdmission(admissionId: string): DispatchAdmissionProbe {
@@ -630,7 +695,41 @@ export class RuntimeStateDatabase {
   }
 
   async commitControl(request: CommitControlRequest): Promise<StateCommitReceipt> {
-    return this.finishControl(await this.tx(() => commitControlTx(this.controlPorts(), request)))
+    return this.finishControl(
+      await this.tx('commitControl', request.commitId, () => commitControlTx(this.controlPorts(), request)),
+    )
+  }
+
+  async intakeReceipt(request: ReceiptIntakeRequest): Promise<ReceiptIntakeResult> {
+    return this.finishControl(
+      await this.tx('intakeReceipt', request.intakeId, () => intakeReceiptTx(this.controlPorts(), request)),
+    )
+  }
+
+  probeActionResult(request: ProbeActionResultRequest): ActionVisibilityValue | null {
+    return probeActionResultTx(this.controlPorts(), request)
+  }
+
+  async admitQuery(request: QueryAdmission): Promise<AdmitQueryResult> {
+    return admitQueryTx(this.controlPorts(), request)
+  }
+
+  async claimOutbox(request: ClaimOutboxRequest): Promise<ClaimOutboxResult> {
+    return this.finishControl(
+      await this.tx('claimOutbox', request.requestId, () => claimOutboxTx(this.controlPorts(), request)),
+    )
+  }
+
+  async ackOutbox(request: AckOutboxRequest): Promise<AckOutboxResult> {
+    return this.finishControl(
+      await this.tx('ackOutbox', request.requestId, () => ackOutboxTx(this.controlPorts(), request)),
+    )
+  }
+
+  async failOutbox(request: FailOutboxRequest): Promise<FailOutboxResult> {
+    return this.finishControl(
+      await this.tx('failOutbox', request.requestId, () => failOutboxTx(this.controlPorts(), request)),
+    )
   }
 
   private finishControl<T>(committed: { result: T; sessionId: string; verified?: VerifiedSession }): T {
@@ -896,6 +995,7 @@ export class RuntimeStateDatabase {
         )?.domain_json,
     })
     await this.verifySessionAdmissions(sessionId, runs, formatSeq)
+    this.verifyOutboxDelivery(sessionId)
     return {
       lastSeq: chain.lastSeq,
       formatSeq,
@@ -1627,12 +1727,14 @@ export class RuntimeStateDatabase {
     return this.get<MetaRow>('SELECT * FROM runtime_session_meta WHERE session_id = ?', sessionId)
   }
 
-  private async tx<T>(body: () => T | Promise<T>): Promise<T> {
+  private async tx<T>(method: string, requestId: string, body: () => T | Promise<T>): Promise<T> {
+    this.pendingWrite = false
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const value = await body()
       this.beforeCommit?.()
       this.db.exec('COMMIT')
+      this.onCommit?.({ method, requestId, wrote: this.pendingWrite })
       return value
     } catch (error) {
       try {
@@ -1693,10 +1795,82 @@ export class RuntimeStateDatabase {
       loadHead: (recordId) => this.get(HEAD_BY_ID, recordId),
       writeCommit: (input) => this.writeCommit(input),
       assertReceipt: (sessionId, receipt, fingerprint) => this.assertReceipt(sessionId, receipt, fingerprint),
+      noteWrite: () => {
+        this.pendingWrite = true
+      },
+      openQueryMeter: (grantId, capacity) => this.openQueryMeter(grantId, capacity),
+      queryMeter: (grantId) => this.queryMeter(grantId),
+      lookupQueryTicket: (grantId, requestId) => this.lookupQueryTicket(grantId, requestId),
+      rememberQueryTicket: (grantId, requestId, ticket) =>
+        this.rememberQueryTicket(grantId, requestId, ticket),
+    }
+  }
+
+  private openQueryMeter(grantId: string, capacity: number): void {
+    if (this.queryMeters.has(grantId)) return
+    this.queryMeters.set(grantId, { capacity, observed: 0, tickets: new Map() })
+  }
+
+  private queryMeter(grantId: string): { capacity: number; observed: number } | undefined {
+    const meter = this.queryMeters.get(grantId)
+    return meter ? { capacity: meter.capacity, observed: meter.observed } : undefined
+  }
+
+  private lookupQueryTicket(grantId: string, requestId: string): QueryTicket | undefined {
+    return this.queryMeters.get(grantId)?.tickets.get(requestId)
+  }
+
+  private rememberQueryTicket(grantId: string, requestId: string, ticket: QueryTicket): void {
+    const meter = this.queryMeters.get(grantId)
+    if (!meter) integrity('query meter is not available for this grant')
+    if (meter.observed >= meter.capacity) refuse('conflict', 'quota', 'query grant is exhausted')
+    meter.observed += 1
+    meter.tickets.set(requestId, ticket)
+  }
+
+  private verifyOutboxDelivery(sessionId: string): void {
+    const records = this.all<{ record_id: string; value_json: string }>(
+      `SELECT record_id, value_json FROM runtime_records WHERE record_id LIKE 'outbox:%'`,
+    )
+    const rows = this.all<{
+      event_id: string
+      claim_epoch: number
+      acked_epoch: number | null
+      delivery: string
+    }>(
+      `SELECT event_id, claim_epoch, acked_epoch, delivery FROM runtime_outbox_delivery WHERE session_id = ?`,
+      sessionId,
+    )
+    const byEvent = new Map(rows.map((row) => [row.event_id, row]))
+    const known = new Set<string>()
+    for (const record of records) {
+      const value = this.parseJson<{ sessionId?: unknown }>(
+        record.value_json,
+        'record body cannot be decoded',
+      )
+      if (value.sessionId !== sessionId) continue
+      const eventId = record.record_id.slice('outbox:'.length)
+      known.add(eventId)
+      const row = byEvent.get(eventId)
+      if (!row) integrity('outbox delivery row is missing')
+      if (row.delivery !== 'acked') continue
+      if (
+        row.acked_epoch === null ||
+        !Number.isSafeInteger(row.acked_epoch) ||
+        row.acked_epoch < 1 ||
+        !Number.isSafeInteger(row.claim_epoch) ||
+        row.claim_epoch < 1 ||
+        row.acked_epoch > row.claim_epoch
+      )
+        integrity('outbox acknowledgement has no claim epoch')
+    }
+    for (const row of rows) {
+      if (!known.has(row.event_id)) integrity('outbox delivery names an unknown event')
     }
   }
 
   private writeCommit(input: WriteCommitInput): { receipt: StateCommitReceipt; verified: VerifiedSession } {
+    this.pendingWrite = true
     const manifests = [
       ...input.creates.map((record) => createManifest(input.commitId, record)),
       ...input.updates.map((update) =>

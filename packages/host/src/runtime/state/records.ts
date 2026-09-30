@@ -269,6 +269,14 @@ const queryGrantSchema = recordSchema('agh.runtime/query-grant.value', ['grantId
 const dispatchAdmissionSchema = recordSchema('agh.runtime/dispatch-admission.value', ['admissionId'])
 const receiptRecordSchema = recordSchema('agh.runtime/receipt-record.value', ['receipt'])
 const quotaMirrorSchema = recordSchema('agh.runtime/quota-mirror.value', ['reservationId'])
+const signalRecordSchema = recordSchema('agh.runtime/signal-record.value', ['signalId'])
+const actionVisibilitySchema = recordSchema('agh.runtime/action-visibility.value', [
+  'actionId',
+  'sourceReceiptId',
+])
+const usageMirrorSchema = recordSchema('agh.runtime/usage-mirror.value', ['usageId'])
+const outboxRecordSchema = recordSchema('agh.runtime/outbox-record.value', ['eventId'])
+const referenceRecordSchema = recordSchema('agh.runtime/reference-record.value', ['referenceId'])
 
 export const SESSION_IDENTITY_SCHEMA = schemaRef(
   'agh.runtime/session-identity-record@1',
@@ -288,6 +296,11 @@ export const DISPATCH_ADMISSION_SCHEMA = schemaRef(
 )
 export const RECEIPT_SCHEMA = schemaRef('agh.runtime/receipt-record@1', receiptRecordSchema)
 export const QUOTA_MIRROR_SCHEMA = schemaRef('agh.runtime/quota-mirror@1', quotaMirrorSchema)
+export const SIGNAL_SCHEMA = schemaRef('agh.runtime/signal-record@1', signalRecordSchema)
+export const VISIBILITY_SCHEMA = schemaRef('agh.runtime/action-visibility@1', actionVisibilitySchema)
+export const USAGE_MIRROR_SCHEMA = schemaRef('agh.runtime/usage-mirror@1', usageMirrorSchema)
+export const OUTBOX_SCHEMA = schemaRef('agh.runtime/outbox-record@1', outboxRecordSchema)
+export const REFERENCE_SCHEMA = schemaRef('agh.runtime/reference-record@1', referenceRecordSchema)
 
 const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [SESSION_IDENTITY_SCHEMA.typeId]: SESSION_IDENTITY_SCHEMA,
@@ -302,6 +315,11 @@ const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [DISPATCH_ADMISSION_SCHEMA.typeId]: DISPATCH_ADMISSION_SCHEMA,
   [RECEIPT_SCHEMA.typeId]: RECEIPT_SCHEMA,
   [QUOTA_MIRROR_SCHEMA.typeId]: QUOTA_MIRROR_SCHEMA,
+  [SIGNAL_SCHEMA.typeId]: SIGNAL_SCHEMA,
+  [VISIBILITY_SCHEMA.typeId]: VISIBILITY_SCHEMA,
+  [USAGE_MIRROR_SCHEMA.typeId]: USAGE_MIRROR_SCHEMA,
+  [OUTBOX_SCHEMA.typeId]: OUTBOX_SCHEMA,
+  [REFERENCE_SCHEMA.typeId]: REFERENCE_SCHEMA,
 }
 
 export function sessionIdentityRecordId(sessionId: string): string {
@@ -350,6 +368,26 @@ export function grantRecordId(grantId: string): string {
 
 export function runQuotaRecordId(runId: string): string {
   return `run-quota:${runId}`
+}
+
+export function signalRecordId(signalId: string): string {
+  return `signal:${signalId}`
+}
+
+export function visibilityRecordId(sourceReceiptId: string): string {
+  return `visibility:${sourceReceiptId}`
+}
+
+export function usageMirrorRecordId(usageId: string): string {
+  return `usage:${usageId}`
+}
+
+export function outboxRecordId(eventId: string): string {
+  return `outbox:${eventId}`
+}
+
+export function referenceRecordId(referenceId: string): string {
+  return `reference:${referenceId}`
 }
 
 export function stableId(prefix: string, material: string): string {

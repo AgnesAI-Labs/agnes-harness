@@ -1,6 +1,7 @@
-// Times 300 advanceRun calls and 300 dispatchAdmission calls in one session.
-// Setup (createRun, write-open, invocation admission and close) is not included.
+// Times 300 intakeReceipt, 300 claimOutbox, and 300 ackOutbox calls in one session.
+// Setup (createRun, write-open, action admission, and mark_running) is not included.
 // The store clock is Date.now, so the writer lease has to stay live for the whole sample.
+// A 50-call window reports its maximum and the average of the 25th and 26th ordered samples.
 //
 //   tsx tools/bench-runtime-state-writes.ts
 import { createHash } from 'node:crypto'
@@ -9,27 +10,38 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type {
+  AckOutboxRequest,
   AdvanceRunRequest,
   CallContext,
+  ClaimOutboxRequest,
   CloseInvocationRequest,
+  CommitControlRequest,
   CommitGuard,
   DispatchAdmissionRequest,
   InvocationAdmission,
+  OutboxClaim,
   Outcome,
   PreparedAction,
+  Receipt,
+  ReceiptIntakeRequest,
   RunAdmission,
   StateAuthorityRef,
+  UsageFact,
 } from '../packages/extension-api/src/runtime/index.ts'
 import { createRuntimeStateStore } from '../packages/host/src/runtime/providers/state.ts'
 import { digestOf as canonicalDigest, stableId } from '../packages/host/src/runtime/state/records.ts'
 import { jcs } from '../packages/protocol/src/jcs.ts'
 
 const CALLS = 300
+const BATCH = 64
 const LEASE_TTL_MS = 600_000
 const WINDOWS = [
-  [1, 10],
-  [141, 150],
-  [291, 300],
+  [1, 50],
+  [51, 100],
+  [101, 150],
+  [151, 200],
+  [201, 250],
+  [251, 300],
 ] as const
 
 const authority: StateAuthorityRef = {
@@ -157,7 +169,7 @@ function commitGuard(invocationId: string, expectedRunRevision: number): CommitG
   }
 }
 
-function advanceBody(index: number, revision: number, action: PreparedAction): AdvanceRunRequest {
+function advanceBody(index: number, revision: number, actions: PreparedAction[]): AdvanceRunRequest {
   const invocationId = `invocation-${index}`
   return {
     commitId: `advance-${index}`,
@@ -166,7 +178,7 @@ function advanceBody(index: number, revision: number, action: PreparedAction): A
       expectedRevision: revision,
       continuation: continuation(revision + 1, admittedAt),
       consumeSignals: [],
-      actions: [action],
+      actions,
       next: { kind: 'continue' },
     },
   }
@@ -175,6 +187,7 @@ function advanceBody(index: number, revision: number, action: PreparedAction): A
 function dispatchBody(
   index: number,
   action: PreparedAction,
+  invocationId: string,
   runRevision: number,
   deadline: string,
 ): DispatchAdmissionRequest {
@@ -182,7 +195,7 @@ function dispatchBody(
   return {
     admissionId,
     commitId: `dispatch-${index}`,
-    guard: commitGuard(`invocation-${CALLS}`, runRevision),
+    guard: commitGuard(invocationId, runRevision),
     atomicDomain: {
       domainId: 'domain-bench',
       revision: 1,
@@ -206,23 +219,68 @@ function dispatchBody(
   }
 }
 
-function mean(samples: readonly number[]): number {
-  const total = samples.reduce((sum, sample) => sum + sample, 0)
-  return samples.length === 0 ? 0 : total / samples.length
+function intakeBody(
+  index: number,
+  action: PreparedAction,
+  attemptId: string,
+  authorizationRef: string,
+): ReceiptIntakeRequest {
+  const actionId = stableId('act', `${runId}\0${action.key}`)
+  const originKey = `origin-${index}`
+  const usage: UsageFact = {
+    usageId: `usage-${index}`,
+    originKey,
+    actionId,
+    attemptId,
+    source: toolBinding,
+    dimensions: inline({ tokens: 1 }),
+    externalRequest: {
+      system: 'ext',
+      requestId: `ext-${index}`,
+      requestDigest: 'e'.repeat(64),
+    },
+    observedAt: admittedAt,
+    certainty: 'measured',
+  }
+  const receipt: Receipt = {
+    receiptId: `receipt-${index}`,
+    actionId,
+    attemptId,
+    bindingId,
+    inputDigest: canonicalDigest(action.input),
+    outcome: 'succeeded',
+    result: inline({ ok: true }),
+    externalRequests: [],
+    usageRefs: [usage.usageId],
+    references: [],
+    provenance: { sourceRefs: [], producer: toolBinding, trustLabels: [] },
+    completedAt: admittedAt,
+  }
+  return {
+    intakeId: `intake-${index}`,
+    receipt,
+    usage: [usage],
+    evidence: [],
+    sourceAuthorizationRef: authorizationRef,
+    queryUsage: null,
+    resultHandling: { kind: 'no-hook' },
+  }
 }
 
-/** Nearest-rank percentile. A window of 10 uses the largest sample as P95. */
-function percentile(samples: readonly number[], p: number): number {
+function segment(samples: readonly number[]) {
   const sorted = [...samples].sort((left, right) => left - right)
-  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))
-  return sorted[index] ?? 0
+  const medianMs = ((sorted[24] ?? 0) + (sorted[25] ?? 0)) / 2
+  return { medianMs, maxMs: sorted.at(-1) ?? 0 }
 }
 
 function windowsOf(samples: readonly number[]) {
-  return WINDOWS.map(([from, to]) => {
-    const slice = samples.slice(from - 1, to)
-    return { from, to, meanMs: mean(slice), p95Ms: percentile(slice, 95) }
-  })
+  return WINDOWS.map(([from, to]) => ({ from, to, ...segment(samples.slice(from - 1, to)) }))
+}
+
+async function timeCall(samples: number[], body: () => Promise<void>): Promise<void> {
+  const started = performance.now()
+  await body()
+  samples.push(performance.now() - started)
 }
 
 async function prepareInvocation(
@@ -263,8 +321,9 @@ async function main(): Promise<void> {
   const directory = mkdtempSync(join(tmpdir(), 'agnes-state-writes-'))
   const file = join(directory, 'state.sqlite')
   const store = createRuntimeStateStore({ file, authority, now: () => Date.now() })
-  const advanceMs: number[] = []
-  const dispatchMs: number[] = []
+  const intakeMs: number[] = []
+  const claimMs: number[] = []
+  const ackMs: number[] = []
   try {
     unwrap(await store.createRun(admission(deadline), call), 'createRun')
     unwrap(
@@ -282,41 +341,94 @@ async function main(): Promise<void> {
       'write-open',
     )
     const actions: PreparedAction[] = []
-    for (let index = 1; index <= CALLS; index += 1) {
-      const revision = index - 1
-      await prepareInvocation(store, index, revision, deadline, call)
-      const action = preparedAction(`step-${index}`, deadline)
-      actions.push(action)
-      const started = performance.now()
-      const receipt = unwrap(
-        await store.advanceRun(advanceBody(index, revision, action), call),
-        `advance ${index}`,
-      )
-      advanceMs.push(performance.now() - started)
-      if (receipt.runRevision !== index) {
-        throw new Error(`advance ${index} left revision ${receipt.runRevision}`)
+    let revision = 0
+    let batch = 0
+    while (actions.length < CALLS) {
+      batch += 1
+      const count = Math.min(BATCH, CALLS - actions.length)
+      const created: PreparedAction[] = []
+      for (let offset = 0; offset < count; offset += 1) {
+        created.push(preparedAction(`step-${actions.length + offset + 1}`, deadline))
       }
+      await prepareInvocation(store, batch, revision, deadline, call)
+      const receipt = unwrap(
+        await store.advanceRun(advanceBody(batch, revision, created), call),
+        `advance ${batch}`,
+      )
+      revision = receipt.runRevision
+      actions.push(...created)
     }
+    const invocationId = `invocation-${batch}`
+    const ready: { action: PreparedAction; attemptId: string; authorizationId: string }[] = []
     for (let index = 1; index <= CALLS; index += 1) {
       const action = actions[index - 1]
       if (!action) throw new Error(`missing action ${index}`)
-      const started = performance.now()
-      const admitted = unwrap(
-        await store.dispatchAdmission(dispatchBody(index, action, CALLS, deadline), call),
-        `dispatch ${index}`,
-      )
-      dispatchMs.push(performance.now() - started)
+      const request = dispatchBody(index, action, invocationId, revision, deadline)
+      const admitted = unwrap(await store.dispatchAdmission(request, call), `dispatch ${index}`)
       if (admitted.state !== 'admitted') throw new Error(`dispatch ${index} settled as ${admitted.state}`)
+      const mark: CommitControlRequest = {
+        commitId: `mark-${index}`,
+        guard: commitGuard(invocationId, revision),
+        command: {
+          kind: 'mark_running',
+          attemptId: request.attemptId,
+          expectedAttemptRevision: 1,
+          externalRequests: [],
+        },
+      }
+      unwrap(await store.commitControl(mark, call), `mark ${index}`)
+      ready.push({ action, attemptId: request.attemptId, authorizationId: admitted.authorizationId })
+    }
+    for (let index = 1; index <= CALLS; index += 1) {
+      const item = ready[index - 1]
+      if (!item) throw new Error(`missing intake ${index}`)
+      const request = intakeBody(index, item.action, item.attemptId, item.authorizationId)
+      await timeCall(intakeMs, async () => {
+        const accepted = unwrap(await store.intakeReceipt(request, call), `intake ${index}`)
+        if (accepted.state !== 'accepted') throw new Error(`intake ${index} settled as ${accepted.state}`)
+      })
+    }
+    const destination = stableId('obxdst', authority.authorityId)
+    const claims: OutboxClaim[] = []
+    for (let index = 1; index <= CALLS; index += 1) {
+      const request: ClaimOutboxRequest = {
+        requestId: `claim-${index}`,
+        destination,
+        ownerId: 'owner-bench',
+        limit: 1,
+        leaseMs: 60_000,
+      }
+      await timeCall(claimMs, async () => {
+        const claimed = unwrap(await store.claimOutbox(request, call), `claim ${index}`)
+        const claim = claimed[0]?.claim
+        if (!claim) throw new Error(`claim ${index} returned no event`)
+        claims.push(claim)
+      })
+    }
+    for (let index = 1; index <= CALLS; index += 1) {
+      const claim = claims[index - 1]
+      if (!claim) throw new Error(`missing claim ${index}`)
+      const request: AckOutboxRequest = {
+        requestId: `ack-${index}`,
+        claim,
+        acknowledgement: inline({ acked: true }),
+      }
+      await timeCall(ackMs, async () => {
+        const acked = unwrap(await store.ackOutbox(request, call), `ack ${index}`)
+        if (acked.state !== 'acked') throw new Error(`ack ${index} settled as ${acked.state}`)
+      })
     }
     console.log(
       JSON.stringify({
         mode: 'state-writes',
         calls: CALLS,
+        window: 50,
         sessionId,
         leaseTtlMs: LEASE_TTL_MS,
-        note: 'Times only advanceRun and dispatchAdmission. Open performance is not part of this sample.',
-        advanceRun: windowsOf(advanceMs),
-        dispatchAdmission: windowsOf(dispatchMs),
+        note: 'Times only intakeReceipt, claimOutbox, and ackOutbox. The segment median averages the 25th and 26th ordered samples.',
+        intakeReceipt: windowsOf(intakeMs),
+        claimOutbox: windowsOf(claimMs),
+        ackOutbox: windowsOf(ackMs),
       }),
     )
   } finally {

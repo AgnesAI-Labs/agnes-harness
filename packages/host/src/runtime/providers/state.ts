@@ -20,23 +20,17 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'acceptBridgeChild',
   'acceptInbox',
   'acceptServiceCommand',
-  'ackOutbox',
-  'admitQuery',
   'advanceProvider',
   'appendStream',
   'beginMigration',
   'beginReconciliation',
   'cancelAdmission',
   'cancelPreparedActionAdmission',
-  'claimOutbox',
   'commitMigratedRun',
   'completeReconciliation',
   'createChild',
-  'failOutbox',
   'fireTimer',
   'importConversation',
-  'intakeReceipt',
-  'probeActionResult',
   'probeAdmission',
   'probeBridgeChild',
   'probeConversationImport',
@@ -158,7 +152,12 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
         return Promise.resolve(failure('invalid_input', 'schema', 'InvocationAdmission is not valid'))
       return run(context, () => database.admitInvocation(result.value))
     },
-    admitQuery: (_request, context) => unavailable('admitQuery', context),
+    admitQuery: (request, context) => {
+      const result = validateRuntime('QueryAdmission', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'QueryAdmission is not valid'))
+      return run(context, () => database.admitQuery(result.value))
+    },
     closeInvocation: (request, context) => {
       const result = validateRuntime('CloseInvocationRequest', request)
       if (!result.ok)
@@ -195,13 +194,38 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
       if (rejected) return Promise.resolve(rejected)
       return run(context, () => database.commitControl(result.value))
     },
-    intakeReceipt: (_request, context) => unavailable('intakeReceipt', context),
+    intakeReceipt: (request, context) => {
+      const result = validateRuntime('ReceiptIntakeRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'ReceiptIntakeRequest is not valid'))
+      return run(context, () => database.intakeReceipt(result.value))
+    },
     publishActionResult: (_request, context) => unavailable('publishActionResult', context),
-    probeActionResult: (_request, context) => unavailable('probeActionResult', context),
+    probeActionResult: (request, context) => {
+      const result = validateRuntime('ProbeActionResultRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'ProbeActionResultRequest is not valid'))
+      return run(context, () => database.probeActionResult(result.value))
+    },
     acceptInbox: (_delivery, context) => unavailable('acceptInbox', context),
-    claimOutbox: (_request, context) => unavailable('claimOutbox', context),
-    ackOutbox: (_request, context) => unavailable('ackOutbox', context),
-    failOutbox: (_request, context) => unavailable('failOutbox', context),
+    claimOutbox: (request, context) => {
+      const result = validateRuntime('ClaimOutboxRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'ClaimOutboxRequest is not valid'))
+      return run(context, () => database.claimOutbox(result.value))
+    },
+    ackOutbox: (request, context) => {
+      const result = validateRuntime('AckOutboxRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'AckOutboxRequest is not valid'))
+      return run(context, () => database.ackOutbox(result.value))
+    },
+    failOutbox: (request, context) => {
+      const result = validateRuntime('FailOutboxRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'FailOutboxRequest is not valid'))
+      return run(context, () => database.failOutbox(result.value))
+    },
     pruneRecordVersions: (_request, context) => unavailable('pruneRecordVersions', context),
     close: () => database.close(),
     durability: () => database.durability(),

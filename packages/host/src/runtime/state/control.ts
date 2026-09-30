@@ -1,21 +1,42 @@
 import type {
+  AckOutboxRequest,
+  AckOutboxResult,
+  ActionResultView,
+  ActionVisibilityValue,
   AdmitInvocationResult,
+  AdmitQueryResult,
   AdvanceRunRequest,
+  BindingRef,
+  ClaimOutboxRequest,
+  ClaimOutboxResult,
   CloseInvocationRequest,
   CloseInvocationResult,
   CommitControlRequest,
   CommitGuard,
+  DataRef,
   DispatchAdmissionProbe,
   DispatchAdmissionRequest,
   DispatchAdmissionResult,
   ExternalRequestRef,
+  FailOutboxRequest,
+  FailOutboxResult,
   InvocationAdmission,
+  OutboxClaim,
+  OutboxRecord,
   PreparedAction,
+  ProbeActionResultRequest,
+  QueryAdmission,
+  QueryUsageFlush,
   ReadGuard,
+  Receipt,
+  ReceiptIntakeRequest,
+  ReceiptIntakeResult,
   RuntimeError,
   SchemaRef,
+  Signal,
   StateAuthorityRef,
   StateCommitReceipt,
+  UsageFact,
 } from '@agnes/extension-api/runtime'
 import { canonicalJson } from './canonical-json.js'
 import {
@@ -32,25 +53,35 @@ import {
   type IntegrityState,
   invocationRecordId,
   MIN_READER,
+  OUTBOX_SCHEMA,
+  outboxRecordId,
   PREPARE_QUOTA_SCHEMA,
   prepareRecordId,
   QUERY_GRANT_SCHEMA,
   QUOTA_MIRROR_SCHEMA,
   quotaRecordId,
   RECEIPT_SCHEMA,
+  REFERENCE_SCHEMA,
   type RecordOwner,
   RUN_QUOTA_SCHEMA,
   RUN_RECORD_SCHEMA,
   type RunRecordValue,
   type RunTaintValue,
   receiptRecordId,
+  referenceRecordId,
   runQuotaRecordId,
   runRecordId,
   type SessionIdentityValue,
+  SIGNAL_SCHEMA,
   type StoredRecord,
   sameJson,
+  signalRecordId,
   stableId,
   taintRecordId,
+  USAGE_MIRROR_SCHEMA,
+  usageMirrorRecordId,
+  VISIBILITY_SCHEMA,
+  visibilityRecordId,
 } from './records.js'
 import { integrity, refuse } from './refusal.js'
 
@@ -65,24 +96,20 @@ const MAX_CONTINUATION_BYTES = 256 * 1024
 const MAX_PARALLEL_ACTIONS = 16
 const LIMIT_POLICY = 'default-limits'
 
-const SIGNAL_CONSUMPTION = 'signal consumption is not implemented'
 const CONVERSATION_CONTRIBUTION = 'conversation contribution is not implemented'
 const OTHER_TRANSITION = 'wait, complete, and fail transitions are not implemented'
-const QUERY_FLUSH = 'query usage flush is not implemented'
+const INLINE_PURE_RESULT = 'inline pure result handling is not implemented'
+const STAGED_RESULT = 'staged result handling is not implemented'
 const BUDGET_RESERVATION = 'bounded-units and cost-hard budget reservation is not implemented'
 const LIVE_AGENT_QUOTA = 'live-agent quota is not implemented'
 const HOOK_RESULTS = 'hook results and approval taint acknowledgement are not implemented'
 const CONTROL_COMMAND = 'control command is not implemented'
-
-// A rejected admission settles the action and stores one receipt. It does not publish the no-hook
-// ready view, the unique result fact, or the completion signal. Receipt intake has to publish those
-// three together, and this rejection has to call that same publication in this transaction.
-export const REJECTION_RESULT_PUBLICATION = 'rejection result publication is not implemented'
-const publicationGaps = new Set<string>([REJECTION_RESULT_PUBLICATION])
-
-function noteRejectionGap(): void {
-  if (!publicationGaps.has(REJECTION_RESULT_PUBLICATION)) refuse('internal', 'gap', 'rejection publication')
-}
+const RESULT_TYPE = 'agh.runtime/action-result@1'
+const STREAM_END_TYPE = 'agh.runtime/stream-end@1'
+const COMPLETED_SIGNAL_TYPE = 'agh.runtime/action-completed@1'
+const MAX_OUTBOX_CLAIM = 10_000
+const OUTBOX_DEAD_AFTER = 20
+const OUTBOX_BACKOFF_CAP_MS = 60_000
 
 export type SqlArg = string | number | bigint | Uint8Array | null
 
@@ -140,6 +167,18 @@ export interface ControlPorts {
   loadHead(recordId: string): StoredHead | undefined
   writeCommit(input: WriteCommitInput): { receipt: StateCommitReceipt; verified: SessionView }
   assertReceipt(sessionId: string, receipt: StateCommitReceipt, fingerprint: string): void
+  noteWrite(): void
+  openQueryMeter(grantId: string, capacity: number): void
+  queryMeter(grantId: string): { capacity: number; observed: number } | undefined
+  lookupQueryTicket(
+    grantId: string,
+    requestId: string,
+  ): { fingerprint: string; ticketId: string; remainingQueries: number } | undefined
+  rememberQueryTicket(
+    grantId: string,
+    requestId: string,
+    ticket: { fingerprint: string; ticketId: string; remainingQueries: number },
+  ): void
 }
 
 type LeaseRow = {
@@ -447,6 +486,532 @@ function loadQuota(ports: ControlPorts, runId: string): { head?: StoredHead; val
   return head ? { head, value: storedValue<RunQuotaValue>(head) } : {}
 }
 
+type SignalRecordValue = {
+  signal: Signal
+  targetRevisionAtCreation: number
+  consumedByCommitId: string | null
+  sourceReceiptId: string
+}
+
+type StoredReceiptValue = {
+  receipt: Receipt
+  evidenceRefs: readonly DataRef[]
+  acceptedBy: string
+  acceptedAt: string
+  intakeId?: string | null
+  contentFingerprint?: string | null
+}
+
+type StoredOutbox = OutboxRecord & { sessionId: string; sourceReceiptId: string }
+
+type DeliveryRow = {
+  event_id: string
+  session_id: string
+  destination: string
+  claim_epoch: number
+  active_owner: string | null
+  active_epoch: number | null
+  active_until: number | null
+  acked_epoch: number | null
+  attempts: number
+  next_attempt_at: number
+  delivery: OutboxRecord['delivery']
+  ack_ref: string | null
+  error_json: string | null
+  last_owner: string | null
+}
+
+type RecordUpdate = { record: StoredRecord; previousRevision: number }
+
+type QueryDelta = {
+  grantHead: StoredHead
+  prepareHead: StoredHead
+  grant: GrantValue
+  prepare: PrepareValue
+  delta: number
+}
+
+const inlineSchemaDocument = { $id: 'agh.runtime/json-value@1', type: 'object' }
+const inlineSchema: SchemaRef = {
+  typeId: 'agh.runtime/json-value@1',
+  revision: 1,
+  digest: digestOf(inlineSchemaDocument),
+}
+
+function dataRef(value: unknown): DataRef {
+  return {
+    kind: 'inline',
+    schema: inlineSchema,
+    value: value as Extract<DataRef, { kind: 'inline' }>['value'],
+    digest: digestOf(value),
+    bytes: Buffer.byteLength(canonicalJson(value)),
+  }
+}
+
+function intakeFingerprint(request: ReceiptIntakeRequest): string {
+  return digestOf({
+    receipt: request.receipt,
+    usage: request.usage,
+    evidence: request.evidence,
+    queryUsage: request.queryUsage,
+    resultHandling: request.resultHandling,
+  })
+}
+
+function assertNoHookHandling(kind: ReceiptIntakeRequest['resultHandling']['kind']): void {
+  if (kind === 'inline-pure') refuse('internal', 'unsupported', INLINE_PURE_RESULT)
+  if (kind === 'staged') refuse('internal', 'unsupported', STAGED_RESULT)
+  if (kind !== 'no-hook') refuse('invalid_input', 'result_handling', 'result handling is not supported')
+}
+
+function resultView(receipt: Receipt): ActionResultView {
+  const view: ActionResultView = {
+    receiptId: receipt.receiptId,
+    actionId: receipt.actionId,
+    attemptId: receipt.attemptId,
+    bindingId: receipt.bindingId,
+    inputDigest: receipt.inputDigest,
+    outcome: receipt.outcome,
+    externalRequests: [...receipt.externalRequests],
+    usageRefs: [...receipt.usageRefs],
+    references: [...receipt.references],
+    provenance: receipt.provenance,
+    completedAt: receipt.completedAt,
+    visibility: 'ready',
+    viewId: stableId('view', `${receipt.receiptId}\0`),
+    sourceReceiptId: receipt.receiptId,
+    hookResultSetRef: null,
+  }
+  if (receipt.result !== undefined) view.result = receipt.result
+  if (receipt.error !== undefined) view.error = receipt.error
+  return view
+}
+
+function nextSignalSeq(ports: ControlPorts, runId: string, targetActionId: string | null): number {
+  let max = 0
+  const rows = ports.all<{ value_json: string }>(
+    `SELECT value_json FROM runtime_records WHERE record_id LIKE 'signal:%'`,
+  )
+  for (const row of rows) {
+    const value = parseJson(row.value_json) as {
+      signal?: { runId?: string; targetActionId?: string | null; seq?: number }
+    }
+    if (value.signal?.runId !== runId || (value.signal.targetActionId ?? null) !== targetActionId) continue
+    if (typeof value.signal.seq === 'number' && value.signal.seq > max) max = value.signal.seq
+  }
+  return max + 1
+}
+
+function insertOutboxDelivery(
+  ports: ControlPorts,
+  sessionId: string,
+  eventId: string,
+  destination: string,
+  nextAttemptAt: number,
+): void {
+  ports.run(
+    `INSERT INTO runtime_outbox_delivery (
+       event_id, session_id, destination, claim_epoch, active_owner, active_epoch, active_until,
+       acked_epoch, attempts, next_attempt_at, delivery, ack_ref, error_json, last_owner
+     ) VALUES (?, ?, ?, 0, NULL, NULL, NULL, NULL, 0, ?, 'pending', NULL, NULL, NULL)`,
+    eventId,
+    sessionId,
+    destination,
+    nextAttemptAt,
+  )
+}
+
+function outboxValue(
+  ports: ControlPorts,
+  sessionId: string,
+  commitId: string,
+  receiptId: string,
+  eventId: string,
+  destination: string,
+  typeId: string,
+  payloadValue: unknown,
+  stamp: string,
+): StoredOutbox {
+  return {
+    eventId,
+    sourceAuthorityId: ports.authority.authorityId,
+    sourceCommitId: commitId,
+    destination,
+    typeId,
+    payload: dataRef(payloadValue),
+    fingerprint: digestOf(payloadValue),
+    delivery: 'pending',
+    attempts: 0,
+    nextAttemptAt: stamp,
+    claim: null,
+    ackRef: null,
+    sessionId,
+    sourceReceiptId: receiptId,
+  }
+}
+
+function releaseHeldMirrors(
+  ports: ControlPorts,
+  runId: string,
+  actionId: string,
+  stamp: string,
+): RecordUpdate[] {
+  const actionKey = actionRecordId(actionId)
+  const rows = ports.all<{ record_id: string }>(
+    `SELECT record_id FROM runtime_records WHERE record_id LIKE 'quota:%'`,
+  )
+  const updates: RecordUpdate[] = []
+  const released: string[] = []
+  for (const row of rows) {
+    const head = ports.loadHead(row.record_id)
+    if (!head) continue
+    const value = storedValue<Record<string, unknown>>(head)
+    const source = value.source
+    const sourceId =
+      source !== null && typeof source === 'object' && !Array.isArray(source)
+        ? (source as { recordId?: unknown }).recordId
+        : undefined
+    if (value.kind !== 'parallel-action' || value.status !== 'held' || sourceId !== actionKey) continue
+    if (typeof value.reservationId === 'string') released.push(value.reservationId)
+    updates.push(
+      updated(head, QUOTA_MIRROR_SCHEMA, ownerOf(head), { ...value, status: 'released', releasedAt: stamp }),
+    )
+  }
+  if (released.length === 0) return updates
+  const quotaHead = requireHead(ports, runQuotaRecordId(runId), 'quota_absent', 'run quota record is missing')
+  const quota = storedValue<RunQuotaValue>(quotaHead)
+  const dropping = new Set(released)
+  updates.push(
+    updated(quotaHead, RUN_QUOTA_SCHEMA, ownerOf(quotaHead), {
+      ...quota,
+      activeQuotaReservationRefs: quota.activeQuotaReservationRefs.filter((id) => !dropping.has(id)),
+    }),
+  )
+  return updates
+}
+
+function publishNoHook(
+  ports: ControlPorts,
+  input: {
+    commitId: string
+    stamp: string
+    sessionId: string
+    owner: RecordOwner
+    run: RunRecordValue
+    action: ActionValue
+    attempt: AttemptValue
+    receipt: Receipt
+    usage: readonly UsageFact[]
+    evidence: readonly DataRef[]
+    acceptedBy: string
+    intakeId: string | null
+    contentFingerprint: string | null
+    actionHead?: StoredHead
+    attemptHead?: StoredHead
+    includeReceipt: boolean
+  },
+): { creates: StoredRecord[]; updates: RecordUpdate[]; sides: CommitSideEntry[] } {
+  const creates: StoredRecord[] = []
+  const updates: RecordUpdate[] = []
+  const sides: CommitSideEntry[] = []
+  const { commitId, stamp, owner, receipt } = input
+  if (input.includeReceipt) {
+    creates.push(
+      record(receiptRecordId(receipt.receiptId), RECEIPT_SCHEMA, 1, owner, {
+        receipt,
+        evidenceRefs: input.evidence,
+        acceptedBy: input.acceptedBy,
+        acceptedAt: stamp,
+        intakeId: input.intakeId,
+        contentFingerprint: input.contentFingerprint,
+      } satisfies StoredReceiptValue),
+    )
+    sides.push({ commitId, kind: 'receipt-created', receiptId: receipt.receiptId })
+  }
+  if (input.actionHead) {
+    updates.push(
+      updated(input.actionHead, ACTION_SCHEMA, ownerOf(input.actionHead), {
+        ...input.action,
+        state: 'settled',
+        firstReceiptId: input.action.firstReceiptId ?? receipt.receiptId,
+        resolvedReceiptId: receipt.receiptId,
+      }),
+    )
+  }
+  if (input.attemptHead) {
+    updates.push(
+      updated(input.attemptHead, ATTEMPT_SCHEMA, ownerOf(input.attemptHead), {
+        ...input.attempt,
+        state: 'settled',
+        finishedAt: stamp,
+        receiptIds: input.attempt.receiptIds.includes(receipt.receiptId)
+          ? input.attempt.receiptIds
+          : [...input.attempt.receiptIds, receipt.receiptId],
+      }),
+    )
+  }
+  updates.push(...releaseHeldMirrors(ports, input.run.runId, input.action.actionId, stamp))
+  const seenOrigins = new Set<string>()
+  for (const fact of input.usage) {
+    const identity = `${ports.authority.authorityId}\0${fact.originKey}`
+    if (seenOrigins.has(identity)) continue
+    seenOrigins.add(identity)
+    const usageId = stableId('use', identity)
+    if (ports.loadHead(usageMirrorRecordId(usageId))) continue
+    creates.push(
+      record(usageMirrorRecordId(usageId), USAGE_MIRROR_SCHEMA, 1, owner, {
+        usageId,
+        sourceAuthorityId: ports.authority.authorityId,
+        originKey: fact.originKey,
+        usage: fact,
+        status: 'recorded',
+      }),
+    )
+    sides.push({
+      commitId,
+      kind: 'usage-origin',
+      sourceAuthorityId: ports.authority.authorityId,
+      originKey: fact.originKey,
+    })
+  }
+  for (const pin of receipt.references) {
+    const referenceId = stableId('ref', `${receipt.receiptId}\0${pin.pinId}`)
+    creates.push(
+      record(referenceRecordId(referenceId), REFERENCE_SCHEMA, 1, owner, {
+        referenceId,
+        status: 'confirmed',
+        target: pin,
+      }),
+    )
+  }
+  const targetActionId = input.action.parentActionId
+  const signalKey =
+    targetActionId === null
+      ? `${ports.authority.authorityId}\0${receipt.receiptId}\0run`
+      : `${ports.authority.authorityId}\0${receipt.receiptId}\0${targetActionId}`
+  const signalId = stableId('sig', signalKey)
+  const source: BindingRef = receipt.provenance.producer
+  const signal: Signal = {
+    signalId,
+    runId: input.run.runId,
+    targetActionId,
+    seq: nextSignalSeq(ports, input.run.runId, targetActionId),
+    typeId: COMPLETED_SIGNAL_TYPE,
+    schema: inlineSchema,
+    source,
+    payload: dataRef({ receiptId: receipt.receiptId, outcome: receipt.outcome }),
+    createdAt: stamp,
+    causation: { actionId: input.action.actionId, attemptId: input.attempt.attemptId },
+  }
+  creates.push(
+    record(signalRecordId(signalId), SIGNAL_SCHEMA, 1, owner, {
+      signal,
+      targetRevisionAtCreation: input.run.revision,
+      consumedByCommitId: null,
+      sourceReceiptId: receipt.receiptId,
+    } satisfies SignalRecordValue),
+  )
+  const view = resultView(receipt)
+  creates.push(
+    record(visibilityRecordId(receipt.receiptId), VISIBILITY_SCHEMA, 1, owner, {
+      actionId: input.action.actionId,
+      sourceReceiptId: receipt.receiptId,
+      revision: 1,
+      state: 'ready',
+      stageActionId: null,
+      registrationDigest: null,
+      result: view,
+      uiResult: null,
+      publishedByCommitId: commitId,
+    } satisfies ActionVisibilityValue),
+  )
+  const destination = stableId('obxdst', ports.authority.authorityId)
+  const nowMs = Date.parse(stamp)
+  const pushOutbox = (eventId: string, typeId: string, payloadValue: unknown) => {
+    creates.push(
+      record(
+        outboxRecordId(eventId),
+        OUTBOX_SCHEMA,
+        1,
+        owner,
+        outboxValue(
+          ports,
+          input.sessionId,
+          commitId,
+          receipt.receiptId,
+          eventId,
+          destination,
+          typeId,
+          payloadValue,
+          stamp,
+        ),
+      ),
+    )
+    sides.push({ commitId, kind: 'outbox-created', eventId })
+    insertOutboxDelivery(ports, input.sessionId, eventId, destination, nowMs)
+  }
+  pushOutbox(stableId('obx', `${commitId}\0result\0${receipt.receiptId}`), RESULT_TYPE, {
+    receiptId: receipt.receiptId,
+    actionId: receipt.actionId,
+    attemptId: receipt.attemptId,
+    outcome: receipt.outcome,
+    viewId: view.viewId,
+  })
+  for (const streamId of input.attempt.streamIds) {
+    pushOutbox(
+      stableId('obx', `${commitId}\0stream-end\0${receipt.receiptId}\0${streamId}`),
+      STREAM_END_TYPE,
+      {
+        streamId,
+        receiptId: receipt.receiptId,
+        status: receipt.outcome,
+      },
+    )
+  }
+  return { creates, updates, sides }
+}
+
+function planQueryFlush(
+  ports: ControlPorts,
+  invocation: InvocationValue,
+  usage: QueryUsageFlush,
+): QueryDelta | undefined {
+  if (usage.invocationId !== invocation.invocationId || usage.grantId !== invocation.queryGrantId)
+    refuse('invalid_input', 'grant_absent', 'query grant does not match the invocation')
+  if (usage.writerEpoch !== invocation.writerEpoch)
+    refuse('conflict', 'writer_lease', 'query usage writer epoch does not match')
+  const grantHead = requireHead(
+    ports,
+    grantRecordId(invocation.queryGrantId),
+    'grant_absent',
+    'query grant does not match the invocation',
+  )
+  const grant = storedValue<GrantValue>(grantHead)
+  if (grant.state === 'settled') {
+    if (usage.cumulativeCount !== grant.settledCount)
+      refuse('conflict', 'query_count', 'query count does not match the settled grant')
+    return undefined
+  }
+  const meter = ports.queryMeter(grant.grantId)
+  if (!meter) refuse('conflict', 'query_owner', 'query meter is not available for this grant')
+  if (usage.cumulativeCount !== meter.observed)
+    refuse('invalid_input', 'query_count', 'query count does not match the query meter')
+  if (usage.cumulativeCount < grant.flushedCount || usage.cumulativeCount > grant.capacity)
+    refuse('conflict', 'query_count', 'query count is outside the grant')
+  const delta = usage.cumulativeCount - grant.flushedCount
+  if (delta === 0) return undefined
+  const prepareHead = requireHead(
+    ports,
+    prepareRecordId(invocation.prepareId),
+    'prepare_absent',
+    'prepare quota record is missing',
+  )
+  const prepare = storedValue<PrepareValue>(prepareHead)
+  return {
+    grantHead,
+    prepareHead,
+    grant: { ...grant, flushedCount: usage.cumulativeCount },
+    prepare: {
+      ...prepare,
+      totalQueries: prepare.totalQueries + delta,
+      reservedQueries: prepare.reservedQueries - delta,
+    },
+    delta,
+  }
+}
+
+function applyQueryDelta(quota: RunQuotaValue, delta: number): RunQuotaValue {
+  return {
+    ...quota,
+    totalQueries: quota.totalQueries + delta,
+    reservedQueries: quota.reservedQueries - delta,
+  }
+}
+
+function consumeSignals(
+  ports: ControlPorts,
+  runId: string,
+  signalIds: readonly string[],
+  commitId: string,
+): { updates: RecordUpdate[]; sides: CommitSideEntry[] } {
+  const updates: RecordUpdate[] = []
+  const sides: CommitSideEntry[] = []
+  for (const signalId of signalIds) {
+    const head = ports.loadHead(signalRecordId(signalId))
+    if (!head) refuse('conflict', 'signal_absent', 'signal does not exist')
+    const value = storedValue<SignalRecordValue>(head)
+    if (value.signal.runId !== runId) refuse('conflict', 'signal_absent', 'signal does not exist')
+    if (value.consumedByCommitId !== null)
+      refuse('conflict', 'signal_consumed', 'signal was already consumed')
+    updates.push(
+      updated(head, SIGNAL_SCHEMA, ownerOf(head), {
+        ...value,
+        consumedByCommitId: commitId,
+      } satisfies SignalRecordValue),
+    )
+    sides.push({ commitId, kind: 'signal-consumed', signalId })
+  }
+  return { updates, sides }
+}
+
+function claimIsCurrent(
+  row: DeliveryRow,
+  claim: OutboxClaim,
+  now: number,
+  requireUnexpired: boolean,
+): boolean {
+  if (row.delivery !== 'claimed' || row.event_id !== claim.eventId) return false
+  if (row.active_owner !== claim.ownerId || row.active_epoch !== claim.epoch || row.active_until === null)
+    return false
+  if (new Date(row.active_until).toISOString() !== claim.until) return false
+  if (requireUnexpired && row.active_until <= now) return false
+  return true
+}
+
+function assembleOutbox(stored: StoredOutbox, row: DeliveryRow): OutboxRecord {
+  const claim =
+    row.delivery === 'claimed' &&
+    row.active_owner !== null &&
+    row.active_epoch !== null &&
+    row.active_until !== null
+      ? {
+          ownerId: row.active_owner,
+          epoch: row.active_epoch,
+          until: new Date(row.active_until).toISOString(),
+        }
+      : null
+  return {
+    eventId: stored.eventId,
+    sourceAuthorityId: stored.sourceAuthorityId,
+    sourceCommitId: stored.sourceCommitId,
+    destination: stored.destination,
+    typeId: stored.typeId,
+    payload: stored.payload,
+    fingerprint: stored.fingerprint,
+    delivery: row.delivery,
+    attempts: row.attempts,
+    nextAttemptAt: new Date(row.next_attempt_at).toISOString(),
+    claim,
+    ackRef: row.ack_ref,
+  }
+}
+
+const DELIVERY_COLUMNS = `event_id, session_id, destination, claim_epoch, active_owner, active_epoch, active_until,
+  acked_epoch, attempts, next_attempt_at, delivery, ack_ref, error_json, last_owner`
+
+function loadDelivery(ports: ControlPorts, eventId: string): DeliveryRow | undefined {
+  return ports.get<DeliveryRow>(
+    `SELECT ${DELIVERY_COLUMNS} FROM runtime_outbox_delivery WHERE event_id = ?`,
+    eventId,
+  )
+}
+
+function anySessionId(ports: ControlPorts): string {
+  const row = ports.get<{ session_id: string }>('SELECT session_id FROM runtime_session_meta LIMIT 1')
+  if (!row) refuse('invalid_input', 'session_absent', 'session does not exist')
+  return row.session_id
+}
+
 export async function admitInvocationTx(
   ports: ControlPorts,
   request: InvocationAdmission,
@@ -531,7 +1096,7 @@ export async function admitInvocationTx(
     runId: request.runId,
     targetActionId: request.targetActionId,
     baseRevision: request.baseRevision,
-    totalQueries: capacity,
+    totalQueries: 0,
     reservedQueries: capacity,
     closed: false,
   }
@@ -561,6 +1126,7 @@ export async function admitInvocationTx(
   const updates = []
   if (existing.head) updates.push(updated(existing.head, RUN_QUOTA_SCHEMA, ownerOf(existing.head), quota))
   else creates.push(record(runQuotaRecordId(request.runId), RUN_QUOTA_SCHEMA, 1, loaded.owner, quota))
+  ports.openQueryMeter(grantId, capacity)
   return rememberWrapped(
     ports,
     {
@@ -602,8 +1168,6 @@ export async function closeInvocationTx(
     fingerprint,
   )
   if (replayed) return { result: replayed, sessionId: loaded.value.sessionId }
-  if (request.observedQueryCount !== 0)
-    refuse('invalid_input', 'query_count', 'observed query count must be zero')
   assertLiveEpoch(ports, loaded.value.sessionId, invocation.writerEpoch)
   if (invocation.state !== 'active') refuse('conflict', 'invocation_state', 'invocation is not active')
   assertReadGuards(ports, request.readGuards)
@@ -628,11 +1192,19 @@ export async function closeInvocationTx(
   const prepare = storedValue<PrepareValue>(prepareHead)
   const grant = storedValue<GrantValue>(grantHead)
   const quota = storedValue<RunQuotaValue>(quotaHead)
-  const resulting = request.unresolvedInflightIds.length > 0 ? 'faulted' : request.state
+  const meter = ports.queryMeter(grant.grantId)
+  const worst = meter === undefined || request.unresolvedInflightIds.length > 0 || request.state === 'faulted'
+  if (meter && request.observedQueryCount !== meter.observed)
+    refuse('invalid_input', 'query_count', 'observed query count does not match the query meter')
+  const settledCount = worst ? grant.capacity : request.observedQueryCount
+  if (settledCount < grant.flushedCount || settledCount > grant.capacity)
+    refuse('conflict', 'query_count', 'observed query count is outside the grant')
+  const delta = settledCount - grant.flushedCount
+  const unused = worst ? 0 : grant.capacity - settledCount
+  const resulting = worst ? 'faulted' : request.state
   const failed = quota.failedInvocations + (resulting === 'faulted' ? 1 : 0)
   if (failed > MAX_FAILED_INVOCATIONS) refuse('conflict', 'quota', 'failed invocation quota is exhausted')
-  if (quota.reservedQueries < prepare.reservedQueries)
-    integrity('query reservation is larger than the run reserve')
+  if (quota.reservedQueries < delta + unused) integrity('query reservation is larger than the run reserve')
   const stamp = at(ports)
   const result: CloseInvocationResult = { invocationId: request.invocationId, state: resulting }
   return rememberWrapped(
@@ -652,7 +1224,7 @@ export async function closeInvocationTx(
         updated(invocationHead, INVOCATION_SCHEMA, ownerOf(invocationHead), {
           ...invocation,
           state: resulting,
-          queryCount: 0,
+          queryCount: settledCount,
           readGuards: request.readGuards,
           domainReads: request.domainReads,
           closedAt: stamp,
@@ -660,16 +1232,19 @@ export async function closeInvocationTx(
         }),
         updated(prepareHead, PREPARE_QUOTA_SCHEMA, ownerOf(prepareHead), {
           ...prepare,
-          reservedQueries: 0,
+          totalQueries: prepare.totalQueries + delta,
+          reservedQueries: prepare.reservedQueries - delta - unused,
         }),
         updated(grantHead, QUERY_GRANT_SCHEMA, ownerOf(grantHead), {
           ...grant,
+          flushedCount: settledCount,
           state: 'settled',
-          settledCount: 0,
+          settledCount,
         }),
         updated(quotaHead, RUN_QUOTA_SCHEMA, ownerOf(quotaHead), {
           ...quota,
-          reservedQueries: quota.reservedQueries - prepare.reservedQueries,
+          totalQueries: quota.totalQueries + delta,
+          reservedQueries: quota.reservedQueries - delta - unused,
           failedInvocations: failed,
         }),
       ],
@@ -683,11 +1258,15 @@ export async function closeInvocationTx(
 
 function assertTransition(request: AdvanceRunRequest): void {
   const transition = request.transition
-  if (transition.consumeSignals.length > 0) refuse('internal', 'unsupported', SIGNAL_CONSUMPTION)
+  const seenSignals = new Set<string>()
+  for (const signalId of transition.consumeSignals) {
+    if (seenSignals.has(signalId))
+      refuse('invalid_input', 'signal_duplicate', 'signal is listed more than once')
+    seenSignals.add(signalId)
+  }
   if (transition.conversation !== undefined && transition.conversation.length > 0)
     refuse('internal', 'unsupported', CONVERSATION_CONTRIBUTION)
   if (transition.next.kind !== 'continue') refuse('internal', 'unsupported', OTHER_TRANSITION)
-  if (request.guard.queryUsage !== null) refuse('internal', 'unsupported', QUERY_FLUSH)
   if (transition.actions.length > MAX_ACTIONS)
     refuse('invalid_input', 'action_count', 'a transition has too many actions')
   if (Buffer.byteLength(canonicalJson(transition.continuation)) > MAX_CONTINUATION_BYTES)
@@ -695,7 +1274,6 @@ function assertTransition(request: AdvanceRunRequest): void {
 }
 
 function assertGuard(ports: ControlPorts, guard: CommitGuard, mode: 'advance' | 'follow') {
-  if (guard.queryUsage !== null) refuse('internal', 'unsupported', QUERY_FLUSH)
   if (!sameJson(guard.authority, ports.authority))
     refuse('conflict', 'authority', 'authority does not match this store')
   assertWriter(ports, guard.sessionId, guard.writerId, guard.writerEpoch)
@@ -742,6 +1320,15 @@ export async function advanceRunTx(
   }
   assertTransition(request)
   const guarded = assertGuard(ports, request.guard, 'advance')
+  const flushed = request.guard.queryUsage
+    ? planQueryFlush(ports, guarded.invocation, request.guard.queryUsage)
+    : undefined
+  const consumed = consumeSignals(
+    ports,
+    request.guard.runId,
+    request.transition.consumeSignals,
+    request.commitId,
+  )
   if (request.transition.expectedRevision !== guarded.value.revision)
     refuse('conflict', 'revision', 'run revision does not match')
   const planned: { key: string; actionId: string; create?: StoredRecord }[] = []
@@ -791,7 +1378,8 @@ export async function advanceRunTx(
     'run quota record is missing',
   )
   const quota = storedValue<RunQuotaValue>(quotaHead)
-  const noProgress = created > 0 ? 0 : quota.noProgressTransitions + 1
+  const progressed = created > 0 || request.transition.consumeSignals.length > 0
+  const noProgress = progressed ? 0 : quota.noProgressTransitions + 1
   if (noProgress > MAX_NO_PROGRESS || quota.totalTransitions + 1 > MAX_TRANSITIONS)
     refuse('conflict', 'quota', 'run transition quota is exhausted')
   const prepareHead = requireHead(
@@ -803,6 +1391,13 @@ export async function advanceRunTx(
   const prepare = storedValue<PrepareValue>(prepareHead)
   const lastCreated = planned.filter((item) => item.create).at(-1)
   const actionIds = planned.map((item) => ({ key: item.key, actionId: item.actionId }))
+  const quotaNext = {
+    ...quota,
+    totalTransitions: quota.totalTransitions + 1,
+    noProgressTransitions: noProgress,
+    submittedActions: quota.submittedActions + created,
+    lastProgressRef: lastCreated?.actionId ?? quota.lastProgressRef,
+  }
   const stamp = at(ports)
   const written = ports.writeCommit({
     ...blankInput(
@@ -829,20 +1424,31 @@ export async function advanceRunTx(
         ...guarded.invocation,
         state: 'committed',
       }),
-      updated(prepareHead, PREPARE_QUOTA_SCHEMA, ownerOf(prepareHead), { ...prepare, closed: true }),
-      updated(quotaHead, RUN_QUOTA_SCHEMA, ownerOf(quotaHead), {
-        ...quota,
-        totalTransitions: quota.totalTransitions + 1,
-        noProgressTransitions: noProgress,
-        submittedActions: quota.submittedActions + created,
-        lastProgressRef: lastCreated?.actionId ?? quota.lastProgressRef,
-      }),
+      updated(
+        flushed ? flushed.prepareHead : prepareHead,
+        PREPARE_QUOTA_SCHEMA,
+        ownerOf(flushed ? flushed.prepareHead : prepareHead),
+        flushed ? { ...flushed.prepare, closed: true } : { ...prepare, closed: true },
+      ),
+      updated(
+        quotaHead,
+        RUN_QUOTA_SCHEMA,
+        ownerOf(quotaHead),
+        flushed ? applyQueryDelta(quotaNext, flushed.delta) : quotaNext,
+      ),
+      ...(flushed
+        ? [updated(flushed.grantHead, QUERY_GRANT_SCHEMA, ownerOf(flushed.grantHead), flushed.grant)]
+        : []),
+      ...consumed.updates,
     ],
-    sides: planned.flatMap((item) =>
-      item.create
-        ? [{ commitId: request.commitId, kind: 'action-created' as const, actionId: item.actionId }]
-        : [],
-    ),
+    sides: [
+      ...planned.flatMap((item) =>
+        item.create
+          ? [{ commitId: request.commitId, kind: 'action-created' as const, actionId: item.actionId }]
+          : [],
+      ),
+      ...consumed.sides,
+    ],
   })
   ports.rememberRequest('advanceRun', request.commitId, fingerprint, written.receipt)
   return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
@@ -1099,7 +1705,6 @@ export async function dispatchAdmissionTx(
     input.creates = creates
     input.updates = updates
   } else {
-    noteRejectionGap()
     const controlId = stableId('ctl', admissionId)
     const receiptId = stableId('rcpt', admissionId)
     result = { state: 'rejected', commitId: request.commitId, reason: decision.reason, error: decision.error }
@@ -1149,15 +1754,47 @@ export async function dispatchAdmissionTx(
         result,
       } satisfies DispatchValue),
     ]
-    input.updates = [
-      updated(actionHead, ACTION_SCHEMA, owner, {
-        ...action,
-        state: 'settled',
-        currentAttemptId: controlId,
-        firstReceiptId: receiptId,
-      }),
-    ]
+    const settledAction: ActionValue = {
+      ...action,
+      state: 'settled',
+      currentAttemptId: controlId,
+      firstReceiptId: receiptId,
+    }
+    input.updates = [updated(actionHead, ACTION_SCHEMA, owner, settledAction)]
     input.sides = [{ commitId: request.commitId, kind: 'receipt-created', receiptId }]
+    const rejectionReceipt: Receipt = {
+      receiptId,
+      actionId: request.actionId,
+      attemptId: controlId,
+      bindingId: request.guard.bindingId,
+      inputDigest: actionInputDigest(action),
+      outcome: decision.outcome,
+      error: decision.error,
+      externalRequests: [],
+      usageRefs: [],
+      references: [],
+      provenance: { sourceRefs: [], producer: owner.ownerBinding, trustLabels: [] },
+      completedAt: stamp,
+    }
+    const published = publishNoHook(ports, {
+      commitId: request.commitId,
+      stamp,
+      sessionId: request.guard.sessionId,
+      owner,
+      run: guarded.value,
+      action: settledAction,
+      attempt,
+      receipt: rejectionReceipt,
+      usage: [],
+      evidence: [],
+      acceptedBy: request.guard.writerId,
+      intakeId: null,
+      contentFingerprint: null,
+      includeReceipt: false,
+    })
+    input.creates.push(...published.creates)
+    input.updates.push(...published.updates)
+    input.sides.push(...published.sides)
   }
   if (pinned === undefined) pinDomain(ports, request.guard.sessionId, request.atomicDomain)
   const written = ports.writeCommit(input)
@@ -1238,7 +1875,29 @@ export async function commitControlTx(
   if (action.runId !== request.guard.runId)
     refuse('conflict', 'action_state', 'action state does not match the admission')
   const externalRequests = mergeExternal(attempt.externalRequests, command.externalRequests)
+  const flushed = request.guard.queryUsage
+    ? planQueryFlush(ports, guarded.invocation, request.guard.queryUsage)
+    : undefined
   const stamp = at(ports)
+  const queryUpdates: RecordUpdate[] = []
+  if (flushed) {
+    const quotaHead = requireHead(
+      ports,
+      runQuotaRecordId(request.guard.runId),
+      'quota_absent',
+      'run quota record is missing',
+    )
+    queryUpdates.push(
+      updated(flushed.prepareHead, PREPARE_QUOTA_SCHEMA, ownerOf(flushed.prepareHead), flushed.prepare),
+      updated(flushed.grantHead, QUERY_GRANT_SCHEMA, ownerOf(flushed.grantHead), flushed.grant),
+      updated(
+        quotaHead,
+        RUN_QUOTA_SCHEMA,
+        ownerOf(quotaHead),
+        applyQueryDelta(storedValue(quotaHead), flushed.delta),
+      ),
+    )
+  }
   const written = ports.writeCommit({
     ...blankInput(
       request.guard.sessionId,
@@ -1257,10 +1916,376 @@ export async function commitControlTx(
         startedAt: attempt.startedAt ?? stamp,
         externalRequests,
       }),
+      ...queryUpdates,
     ],
   })
   ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
   return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+export async function intakeReceiptTx(
+  ports: ControlPorts,
+  request: ReceiptIntakeRequest,
+): Promise<Committed<ReceiptIntakeResult>> {
+  assertNoHookHandling(request.resultHandling.kind)
+  const actionHead = requireHead(
+    ports,
+    actionRecordId(request.receipt.actionId),
+    'action_absent',
+    'action does not exist',
+  )
+  const action = storedValue<ActionValue>(actionHead)
+  const loaded = loadRun(ports, action.runId)
+  const verified = await ports.requireSession(loaded.value.sessionId)
+  const fingerprint = intakeFingerprint(request)
+  const replayed = replayWrapped<ReceiptIntakeResult>(
+    ports,
+    loaded.value.sessionId,
+    'intakeReceipt',
+    request.intakeId,
+    fingerprint,
+  )
+  if (replayed) return { result: replayed, sessionId: loaded.value.sessionId }
+  const attemptHead = requireHead(
+    ports,
+    attemptRecordId(request.receipt.attemptId),
+    'attempt_absent',
+    'attempt does not exist',
+  )
+  const attempt = storedValue<AttemptValue>(attemptHead)
+  const receiptHead = ports.loadHead(receiptRecordId(request.receipt.receiptId))
+  if (receiptHead) {
+    const stored = storedValue<StoredReceiptValue>(receiptHead)
+    if (stored.contentFingerprint !== fingerprint || !stored.intakeId)
+      refuse('conflict', 'receipt_conflict', 'receipt was already accepted with different content')
+    assertLiveEpoch(ports, loaded.value.sessionId, attempt.writerEpoch)
+    const original = ports.replayRequest<Remembered<ReceiptIntakeResult>>(
+      'intakeReceipt',
+      stored.intakeId,
+      fingerprint,
+    )
+    if (!original) integrity('stored receipt intake is missing')
+    const result: ReceiptIntakeResult = { intakeId: original.result.intakeId, state: 'duplicate' }
+    ports.rememberRequest('intakeReceipt', request.intakeId, fingerprint, {
+      result,
+      receipt: original.receipt,
+    })
+    return { result, sessionId: loaded.value.sessionId }
+  }
+  assertLiveEpoch(ports, loaded.value.sessionId, attempt.writerEpoch)
+  if (action.resultHookPlan !== null)
+    refuse('conflict', 'result_handling', 'action result hook plan is not eligible for no-hook intake')
+  if (attempt.kind === 'control' || attempt.number < 1)
+    refuse('conflict', 'attempt_state', 'control attempt cannot accept a receipt')
+  if (attempt.actionId !== action.actionId || attempt.attemptId !== request.receipt.attemptId)
+    refuse('conflict', 'attempt_state', 'receipt attempt does not match the action')
+  if (
+    attempt.receiptIds.length > 0 ||
+    (action.resolvedReceiptId !== null && action.resolvedReceiptId !== request.receipt.receiptId)
+  )
+    refuse('conflict', 'receipt_conflict', 'action already has a receipt')
+  if (attempt.state !== 'dispatching' && attempt.state !== 'running')
+    refuse('conflict', 'attempt_state', 'attempt is not open for a receipt')
+  if (request.receipt.bindingId !== attempt.bindingId || request.receipt.actionId !== action.actionId)
+    refuse('conflict', 'binding', 'receipt binding does not match the attempt')
+  if (request.receipt.inputDigest !== attempt.inputDigest)
+    refuse('conflict', 'input_digest', 'receipt input digest does not match the attempt')
+  if (!sameJson(request.receipt.externalRequests, attempt.externalRequests))
+    refuse('conflict', 'external_request', 'receipt external requests do not match the attempt')
+  if (request.sourceAuthorizationRef !== attempt.authorizationRef)
+    refuse('conflict', 'authorization', 'source authorization does not match the attempt')
+  for (const fact of request.usage) {
+    if (fact.actionId !== action.actionId || fact.attemptId !== attempt.attemptId)
+      refuse('invalid_input', 'usage', 'usage fact does not match the attempt')
+  }
+  const lease = loadLease(ports, loaded.value.sessionId)
+  if (!lease.writer_id) refuse('conflict', 'writer_lease', 'writer lease is not live')
+  const flushed = request.queryUsage
+    ? planQueryFlush(ports, loadInvocation(ports, request.queryUsage.invocationId), request.queryUsage)
+    : undefined
+  if (flushed && flushed.grant.runId !== action.runId)
+    refuse('conflict', 'grant_absent', 'query grant does not match the run')
+  const stamp = at(ports)
+  const commitId = ports.ulid()
+  const published = publishNoHook(ports, {
+    commitId,
+    stamp,
+    sessionId: loaded.value.sessionId,
+    owner: ownerOf(actionHead),
+    run: loaded.value,
+    action,
+    attempt,
+    receipt: request.receipt,
+    usage: request.usage,
+    evidence: request.evidence,
+    acceptedBy: lease.writer_id,
+    intakeId: request.intakeId,
+    contentFingerprint: fingerprint,
+    actionHead,
+    attemptHead,
+    includeReceipt: true,
+  })
+  if (flushed) mergeQuery(ports, published.updates, flushed)
+  const result: ReceiptIntakeResult = { intakeId: request.intakeId, state: 'accepted' }
+  return rememberWrapped(
+    ports,
+    {
+      ...blankInput(
+        loaded.value.sessionId,
+        verified,
+        commitId,
+        stamp,
+        fingerprint,
+        action.runId,
+        attempt.writerEpoch,
+        loaded.value.revision,
+      ),
+      actionId: action.actionId,
+      creates: published.creates,
+      updates: published.updates,
+      sides: published.sides,
+    },
+    'intakeReceipt',
+    request.intakeId,
+    fingerprint,
+    result,
+  )
+}
+
+function loadInvocation(ports: ControlPorts, invocationId: string): InvocationValue {
+  const head = requireHead(
+    ports,
+    invocationRecordId(invocationId),
+    'invocation_absent',
+    'invocation does not exist',
+  )
+  return storedValue<InvocationValue>(head)
+}
+
+function mergeQuery(ports: ControlPorts, updates: RecordUpdate[], flushed: QueryDelta): void {
+  updates.push(updated(flushed.grantHead, QUERY_GRANT_SCHEMA, ownerOf(flushed.grantHead), flushed.grant))
+  const prepareIndex = updates.findIndex((update) => update.record.recordId === flushed.prepareHead.record_id)
+  if (prepareIndex >= 0) {
+    const current = updates[prepareIndex]
+    if (current) {
+      updates[prepareIndex] = {
+        record: {
+          ...current.record,
+          value: { ...(current.record.value as PrepareValue), ...flushed.prepare },
+        },
+        previousRevision: current.previousRevision,
+      }
+    }
+  } else {
+    updates.push(
+      updated(flushed.prepareHead, PREPARE_QUOTA_SCHEMA, ownerOf(flushed.prepareHead), flushed.prepare),
+    )
+  }
+  const quotaHead = requireHead(
+    ports,
+    runQuotaRecordId(flushed.grant.runId),
+    'quota_absent',
+    'run quota record is missing',
+  )
+  const quotaIndex = updates.findIndex((update) => update.record.recordId === quotaHead.record_id)
+  if (quotaIndex >= 0) {
+    const current = updates[quotaIndex]
+    if (!current) return
+    updates[quotaIndex] = {
+      record: {
+        ...current.record,
+        value: applyQueryDelta(current.record.value as RunQuotaValue, flushed.delta),
+      },
+      previousRevision: current.previousRevision,
+    }
+    return
+  }
+  updates.push(
+    updated(
+      quotaHead,
+      RUN_QUOTA_SCHEMA,
+      ownerOf(quotaHead),
+      applyQueryDelta(storedValue(quotaHead), flushed.delta),
+    ),
+  )
+}
+
+export function probeActionResultTx(
+  ports: ControlPorts,
+  request: ProbeActionResultRequest,
+): ActionVisibilityValue | null {
+  const head = ports.loadHead(visibilityRecordId(request.sourceReceiptId))
+  if (!head) return null
+  const value = storedValue<ActionVisibilityValue>(head)
+  if (value.actionId !== request.actionId) return null
+  return value
+}
+
+export async function admitQueryTx(ports: ControlPorts, request: QueryAdmission): Promise<AdmitQueryResult> {
+  const invocationHead = requireHead(
+    ports,
+    invocationRecordId(request.invocationId),
+    'invocation_absent',
+    'invocation does not exist',
+  )
+  const invocation = storedValue<InvocationValue>(invocationHead)
+  const loaded = loadRun(ports, invocation.runId)
+  await ports.requireSession(loaded.value.sessionId)
+  const grantHead = ports.loadHead(grantRecordId(invocation.queryGrantId))
+  if (!grantHead) refuse('invalid_input', 'grant_absent', 'query grant does not exist')
+  const grant = storedValue<GrantValue>(grantHead)
+  const meter = ports.queryMeter(grant.grantId)
+  if (grant.state !== 'active' || !meter)
+    refuse('conflict', 'query_owner', 'query meter is not available for this grant')
+  const existing = ports.lookupQueryTicket(grant.grantId, request.requestId)
+  if (existing) {
+    if (existing.fingerprint !== request.queryFingerprint)
+      refuse('conflict', 'idempotency_conflict', 'request id was already committed with different content')
+    return { queryTicketId: existing.ticketId, remainingQueries: existing.remainingQueries }
+  }
+  if (meter.observed >= meter.capacity) refuse('conflict', 'quota', 'query grant is exhausted')
+  const ticket = {
+    fingerprint: request.queryFingerprint,
+    ticketId: stableId('qt', `${grant.grantId}\0${request.requestId}`),
+    remainingQueries: meter.capacity - (meter.observed + 1),
+  }
+  ports.rememberQueryTicket(grant.grantId, request.requestId, ticket)
+  return { queryTicketId: ticket.ticketId, remainingQueries: ticket.remainingQueries }
+}
+
+export async function claimOutboxTx(
+  ports: ControlPorts,
+  request: ClaimOutboxRequest,
+): Promise<Committed<ClaimOutboxResult>> {
+  const fingerprint = digestOf(request)
+  const sessionId = anySessionId(ports)
+  await ports.requireSession(sessionId)
+  const replayed = ports.replayRequest<ClaimOutboxResult>('claimOutbox', request.requestId, fingerprint)
+  if (replayed) return { result: replayed, sessionId }
+  const limit = Math.min(request.limit, MAX_OUTBOX_CLAIM)
+  const now = ports.now()
+  const due =
+    limit <= 0
+      ? []
+      : ports.all<DeliveryRow>(
+          `SELECT ${DELIVERY_COLUMNS} FROM runtime_outbox_delivery
+           WHERE destination = ? AND delivery = 'pending' AND next_attempt_at <= ?
+           ORDER BY event_id LIMIT ?`,
+          request.destination,
+          now,
+          limit,
+        )
+  if (due.length === 0) {
+    ports.rememberRequest('claimOutbox', request.requestId, fingerprint, [])
+    return { result: [], sessionId }
+  }
+  const claimed: ClaimOutboxResult = []
+  for (const row of due) {
+    if (row.session_id !== sessionId) await ports.requireSession(row.session_id)
+    const epoch = row.claim_epoch + 1
+    const until = now + request.leaseMs
+    ports.run(
+      `UPDATE runtime_outbox_delivery
+       SET claim_epoch = ?, active_owner = ?, active_epoch = ?, active_until = ?, delivery = 'claimed', last_owner = ?
+       WHERE event_id = ? AND delivery = 'pending'`,
+      epoch,
+      request.ownerId,
+      epoch,
+      until,
+      request.ownerId,
+      row.event_id,
+    )
+    const head = requireHead(
+      ports,
+      outboxRecordId(row.event_id),
+      'outbox_absent',
+      'outbox event does not exist',
+    )
+    const stored = storedValue<StoredOutbox>(head)
+    const next: DeliveryRow = {
+      ...row,
+      claim_epoch: epoch,
+      active_owner: request.ownerId,
+      active_epoch: epoch,
+      active_until: until,
+      delivery: 'claimed',
+      last_owner: request.ownerId,
+    }
+    const event = assembleOutbox(stored, next)
+    const claim: OutboxClaim = {
+      eventId: row.event_id,
+      ownerId: request.ownerId,
+      epoch,
+      until: new Date(until).toISOString(),
+    }
+    claimed.push({ claim, event })
+  }
+  ports.noteWrite()
+  ports.rememberRequest('claimOutbox', request.requestId, fingerprint, claimed)
+  return { result: claimed, sessionId }
+}
+
+export async function ackOutboxTx(
+  ports: ControlPorts,
+  request: AckOutboxRequest,
+): Promise<Committed<AckOutboxResult>> {
+  const fingerprint = digestOf(request)
+  const replayed = ports.replayRequest<AckOutboxResult>('ackOutbox', request.requestId, fingerprint)
+  if (replayed) return { result: replayed, sessionId: anySessionId(ports) }
+  const row = loadDelivery(ports, request.claim.eventId)
+  if (!row || !claimIsCurrent(row, request.claim, ports.now(), true))
+    refuse('conflict', 'claim_epoch', 'outbox claim epoch does not match')
+  await ports.requireSession(row.session_id)
+  const ackRef = stableId('ack', `${row.event_id}\0${request.requestId}`)
+  ports.run(
+    `UPDATE runtime_outbox_delivery
+     SET delivery = 'acked', acked_epoch = ?, ack_ref = ?, active_owner = NULL, active_epoch = NULL, active_until = NULL
+     WHERE event_id = ?`,
+    request.claim.epoch,
+    ackRef,
+    row.event_id,
+  )
+  ports.noteWrite()
+  const result: AckOutboxResult = { eventId: row.event_id, state: 'acked' }
+  ports.rememberRequest('ackOutbox', request.requestId, fingerprint, result)
+  return { result, sessionId: row.session_id }
+}
+
+export async function failOutboxTx(
+  ports: ControlPorts,
+  request: FailOutboxRequest,
+): Promise<Committed<FailOutboxResult>> {
+  const fingerprint = digestOf(request)
+  const replayed = ports.replayRequest<FailOutboxResult>('failOutbox', request.requestId, fingerprint)
+  if (replayed) return { result: replayed, sessionId: anySessionId(ports) }
+  const row = loadDelivery(ports, request.claim.eventId)
+  if (!row || !claimIsCurrent(row, request.claim, ports.now(), false))
+    refuse('conflict', 'claim_epoch', 'outbox claim epoch does not match')
+  await ports.requireSession(row.session_id)
+  const attempts = row.attempts + 1
+  const dead = attempts >= OUTBOX_DEAD_AFTER
+  const delay = Math.min(OUTBOX_BACKOFF_CAP_MS, 1_000 * 2 ** (attempts - 1))
+  const nextAt = ports.now() + delay
+  ports.run(
+    `UPDATE runtime_outbox_delivery
+     SET delivery = ?, attempts = ?, next_attempt_at = ?, active_owner = NULL, active_epoch = NULL,
+         active_until = NULL, error_json = ?, last_owner = ?
+     WHERE event_id = ?`,
+    dead ? 'dead' : 'pending',
+    attempts,
+    nextAt,
+    canonicalJson(request.error),
+    row.active_owner,
+    row.event_id,
+  )
+  ports.noteWrite()
+  const result: FailOutboxResult = {
+    eventId: row.event_id,
+    state: dead ? 'dead' : 'pending',
+    nextAttemptAt: new Date(nextAt).toISOString(),
+  }
+  ports.rememberRequest('failOutbox', request.requestId, fingerprint, result)
+  return { result, sessionId: row.session_id }
 }
 
 type CreationNote = { commitId: string; createdBy: string }
@@ -1294,6 +2319,17 @@ type AdmissionNote = {
   result: DispatchAdmissionResult
 }
 
+type ReceiptOutcome = { outcome: string; actionId: string; errorCode: string | null }
+
+type ViewNote = {
+  revision: number
+  commitId: string
+  actionId: string
+  outcome: string
+  errorCode: string | null
+  state: string
+}
+
 export type ControlScan = {
   actions: Map<string, CreationNote>
   actionSides: Map<string, string>
@@ -1302,11 +2338,20 @@ export type ControlScan = {
   receiptSides: Map<string, string>
   duplicateReceiptSide: boolean
   receiptsOnCommit: Map<string, number>
+  receiptOutcomes: Map<string, ReceiptOutcome>
   attempts: Map<string, AttemptNote>
   attemptsOnCommit: Map<string, AttemptNote[]>
   actionStates: Map<string, string[]>
   admissions: Map<string, AdmissionNote>
   quotas: Map<string, QuotaNote>
+  views: Map<string, ViewNote>
+  signalsByReceipt: Set<string>
+  signalConsumed: Map<string, number>
+  outboxes: Map<string, string>
+  outboxSides: Map<string, string>
+  usages: Map<string, string>
+  usageSides: Map<string, string>
+  usageSideCount: Map<string, number>
 }
 
 export type ControlVersionNote = {
@@ -1336,6 +2381,15 @@ export function createControlScan(): ControlScan {
     actionStates: new Map(),
     admissions: new Map(),
     quotas: new Map(),
+    receiptOutcomes: new Map(),
+    views: new Map(),
+    signalsByReceipt: new Set(),
+    signalConsumed: new Map(),
+    outboxes: new Map(),
+    outboxSides: new Map(),
+    usages: new Map(),
+    usageSides: new Map(),
+    usageSideCount: new Map(),
   }
 }
 
@@ -1344,6 +2398,16 @@ function bodyRecord(text: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value))
     integrity('record body cannot be decoded')
   return value as Record<string, unknown>
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
+function errorCodeOf(value: unknown): string | null {
+  const code = objectRecord(value)?.code
+  return typeof code === 'string' ? code : null
 }
 
 function textList(value: unknown): string[] {
@@ -1362,6 +2426,10 @@ export function noteControlVersion(scan: ControlScan, version: ControlVersionNot
   else if (id.startsWith('dispatch:')) noteAdmissionVersion(scan, version)
   else if (id.startsWith('receipt:')) noteReceiptVersion(scan, version)
   else if (id.startsWith('quota:')) noteQuotaVersion(scan, version)
+  else if (id.startsWith('visibility:')) noteVisibilityVersion(scan, version)
+  else if (id.startsWith('signal:')) noteSignalVersion(scan, version)
+  else if (id.startsWith('outbox:')) noteOutboxVersion(scan, version)
+  else if (id.startsWith('usage:')) noteUsageVersion(scan, version)
 }
 
 function noteActionVersion(scan: ControlScan, version: ControlVersionNote): void {
@@ -1426,6 +2494,12 @@ function noteReceiptVersion(scan: ControlScan, version: ControlVersionNote): voi
   const prior = scan.receipts.get(receiptId)
   if (prior && prior.commitId !== version.commit_id) scan.duplicateReceiptSide = true
   scan.receipts.set(receiptId, { commitId: version.commit_id, createdBy: version.commit_id })
+  const receiptRecord = objectRecord(receipt)
+  scan.receiptOutcomes.set(receiptId, {
+    outcome: typeof receiptRecord?.outcome === 'string' ? receiptRecord.outcome : '',
+    actionId: typeof receiptRecord?.actionId === 'string' ? receiptRecord.actionId : '',
+    errorCode: errorCodeOf(receiptRecord?.error),
+  })
 }
 
 function noteQuotaVersion(scan: ControlScan, version: ControlVersionNote): void {
@@ -1439,6 +2513,41 @@ function noteQuotaVersion(scan: ControlScan, version: ControlVersionNote): void 
   })
 }
 
+function noteVisibilityVersion(scan: ControlScan, version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  const result = objectRecord(body.result)
+  const sourceReceiptId = typeof body.sourceReceiptId === 'string' ? body.sourceReceiptId : ''
+  noteLatest(scan.views, sourceReceiptId, {
+    revision: version.record_revision,
+    commitId: version.commit_id,
+    actionId: typeof body.actionId === 'string' ? body.actionId : '',
+    outcome: typeof result?.outcome === 'string' ? result.outcome : '',
+    errorCode: errorCodeOf(result?.error),
+    state: typeof body.state === 'string' ? body.state : '',
+  })
+}
+
+function noteSignalVersion(scan: ControlScan, version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  const sourceReceiptId = typeof body.sourceReceiptId === 'string' ? body.sourceReceiptId : ''
+  if (sourceReceiptId !== '') scan.signalsByReceipt.add(sourceReceiptId)
+}
+
+function noteOutboxVersion(scan: ControlScan, version: ControlVersionNote): void {
+  if (version.record_revision !== 1) return
+  const body = bodyRecord(version.value_json)
+  const eventId = typeof body.eventId === 'string' ? body.eventId : version.record_id.slice('outbox:'.length)
+  scan.outboxes.set(eventId, version.commit_id)
+}
+
+function noteUsageVersion(scan: ControlScan, version: ControlVersionNote): void {
+  if (version.record_revision !== 1) return
+  const body = bodyRecord(version.value_json)
+  const authorityId = typeof body.sourceAuthorityId === 'string' ? body.sourceAuthorityId : ''
+  const originKey = typeof body.originKey === 'string' ? body.originKey : ''
+  scan.usages.set(`${authorityId}\0${originKey}`, version.commit_id)
+}
+
 export function noteControlSide(scan: ControlScan, entry: CommitSideEntry): void {
   if (entry.kind === 'action-created') {
     if (scan.actionSides.has(entry.actionId)) scan.duplicateActionSide = true
@@ -1447,6 +2556,14 @@ export function noteControlSide(scan: ControlScan, entry: CommitSideEntry): void
     scan.receiptsOnCommit.set(entry.commitId, (scan.receiptsOnCommit.get(entry.commitId) ?? 0) + 1)
     if (scan.receiptSides.has(entry.receiptId)) scan.duplicateReceiptSide = true
     else scan.receiptSides.set(entry.receiptId, entry.commitId)
+  } else if (entry.kind === 'signal-consumed') {
+    scan.signalConsumed.set(entry.signalId, (scan.signalConsumed.get(entry.signalId) ?? 0) + 1)
+  } else if (entry.kind === 'outbox-created') {
+    scan.outboxSides.set(entry.eventId, entry.commitId)
+  } else {
+    const identity = `${entry.sourceAuthorityId}\0${entry.originKey}`
+    scan.usageSideCount.set(identity, (scan.usageSideCount.get(identity) ?? 0) + 1)
+    if (!scan.usageSides.has(identity)) scan.usageSides.set(identity, entry.commitId)
   }
 }
 
@@ -1482,6 +2599,64 @@ function storedRequest(text: string): {
     request: body.request as Record<string, unknown>,
     decisionRef: body.decisionRef,
     result: body.result,
+  }
+}
+
+function receiptIdOnCommit(scan: ControlScan, commitId: string): string | undefined {
+  let found: string | undefined
+  for (const [receiptId, sideCommit] of scan.receiptSides) {
+    if (sideCommit !== commitId) continue
+    if (found !== undefined) return undefined
+    found = receiptId
+  }
+  return found
+}
+
+function assertRejectionPublished(scan: ControlScan, commitId: string): void {
+  const receiptId = receiptIdOnCommit(scan, commitId)
+  const view = receiptId === undefined ? undefined : scan.views.get(receiptId)
+  const eventId = receiptId === undefined ? undefined : stableId('obx', `${commitId}\0result\0${receiptId}`)
+  if (
+    receiptId === undefined ||
+    view === undefined ||
+    view.state !== 'ready' ||
+    view.commitId !== commitId ||
+    !scan.signalsByReceipt.has(receiptId) ||
+    eventId === undefined ||
+    scan.outboxSides.get(eventId) !== commitId
+  )
+    integrity('rejected admission does not publish a completion')
+}
+
+function assertPublication(scan: ControlScan): void {
+  for (const count of scan.signalConsumed.values()) {
+    if (count > 1) integrity('signal was consumed more than once')
+  }
+  for (const count of scan.usageSideCount.values()) {
+    if (count > 1) integrity('usage origin was recorded twice')
+  }
+  if (scan.usages.size !== scan.usageSides.size)
+    integrity('usage origin side entry does not match the usage mirror')
+  for (const [identity, commitId] of scan.usages) {
+    if (scan.usageSides.get(identity) !== commitId)
+      integrity('usage origin side entry does not match the usage mirror')
+  }
+  if (scan.outboxes.size !== scan.outboxSides.size)
+    integrity('outbox creation side entry does not match the outbox')
+  for (const [eventId, commitId] of scan.outboxes) {
+    if (scan.outboxSides.get(eventId) !== commitId)
+      integrity('outbox creation side entry does not match the outbox')
+  }
+  for (const [receiptId, view] of scan.views) {
+    if (view.state !== 'ready') continue
+    const receipt = scan.receiptOutcomes.get(receiptId)
+    if (
+      receipt === undefined ||
+      receipt.outcome !== view.outcome ||
+      receipt.actionId !== view.actionId ||
+      receipt.errorCode !== view.errorCode
+    )
+      integrity('ready view does not match the receipt')
   }
 }
 
@@ -1577,9 +2752,11 @@ export function finishControlScan(scan: ControlScan, evidence: ControlEvidence):
           )
             integrity('rejected admission still holds quota')
         }
+        assertRejectionPublished(scan, admission.commitId)
       }
     }
   }
+  assertPublication(scan)
   const pinnedText = evidence.domainJson()
   if (scan.admissions.size === 0) {
     if (pinnedText !== undefined) integrity('dispatch domain does not match the pinned domain')
