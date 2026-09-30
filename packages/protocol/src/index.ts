@@ -378,6 +378,8 @@ export type {
   RequestSent,
   ResolvedToolCallPolicy,
   ResponseMeta,
+  RuntimeCommitData,
+  RuntimeFormatData,
   SessionStart,
   StepEnd,
   StepStart,

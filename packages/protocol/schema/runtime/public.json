@@ -18531,6 +18531,45 @@
       },
       "required": ["requestId", "streamId", "actionId", "attemptId", "durability", "retentionUntil"]
     },
+    "RuntimeFormatData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formatVersion",
+        "runtimeSchemaMajor",
+        "minReader",
+        "previousFormat",
+        "legacyThroughSeq",
+        "sourceHeadDigest"
+      ],
+      "properties": {
+        "formatVersion": {
+          "const": 2
+        },
+        "runtimeSchemaMajor": {
+          "const": 1
+        },
+        "minReader": {
+          "const": 1
+        },
+        "previousFormat": {
+          "enum": [1, 2]
+        },
+        "legacyThroughSeq": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "sourceHeadDigest": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "RuntimeCommitData": {
       "type": "object",
       "additionalProperties": false,
@@ -33074,6 +33113,8 @@
     }
   },
   "x-schema-ids": {
+    "RuntimeCommitData": "agh.runtime/state-commit@1",
+    "RuntimeFormatData": "agh.runtime/format@1",
     "StandardToolOutput": "agh.tool/standard-output@1",
     "SimplePromptPayload": "agh.sdk/simple-loop-instructions@1",
     "SimpleLoopOutput": "agh.sdk/simple-loop-output@1",

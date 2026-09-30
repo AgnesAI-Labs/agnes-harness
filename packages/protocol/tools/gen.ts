@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { generateModule, type JsonSchemaDoc } from './gen-core.js'
 import { writeDocs } from './gen-docs.js'
 import { writeRuntime } from './gen-runtime.js'
+import { prepareSessionSchema } from './gen-session.js'
 
 const pkg = join(dirname(fileURLToPath(import.meta.url)), '..')
 type ImportSpec = { from: string; defs: string[] }
@@ -349,7 +350,10 @@ let dirty = 0
 for (const t of TARGETS) {
   const schemaPath = join(pkg, t.schema)
   if (!existsSync(schemaPath)) continue
-  const doc = inlineImports(JSON.parse(readFileSync(schemaPath, 'utf8')) as JsonSchemaDoc, t.imports)
+  const doc =
+    t.schema === 'schema/session-v1.json'
+      ? prepareSessionSchema(schemaPath)
+      : inlineImports(JSON.parse(readFileSync(schemaPath, 'utf8')) as JsonSchemaDoc, t.imports)
   // UNSUPPORTED_NODES keys are repo-root-relative paths (the same granularity as the exemption lists
   // in tools/guards). `pkg` is the absolute path to packages/protocol, so prefixing the fixed segment
   // is enough — no need to resolve the repo root a second time.

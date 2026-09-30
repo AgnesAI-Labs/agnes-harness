@@ -74,6 +74,7 @@ import {
   validateMethod,
   validateRequestMedia,
 } from '../src/index.js'
+import { runtimeCommitData, runtimeFormatData } from './fixtures/runtime-ledger.js'
 
 type Json = Record<string, unknown>
 type FixtureRow = { id: string; payload: unknown }
@@ -155,6 +156,8 @@ const AjvCtor = nodeRequire('ajv/dist/2020.js').Ajv2020 as typeof Ajv2020Class
 const addFormats = nodeRequire('ajv-formats') as (ajv: InstanceType<typeof Ajv2020Class>) => void
 
 const ajv = new AjvCtor({ strict: false, allowUnionTypes: true })
+for (const file of ['runtime/public.json', 'runtime/prototype.json'])
+  ajv.addSchema(JSON.parse(readFileSync(`${pkgRoot}schema/${file}`, 'utf8')))
 addFormats(ajv)
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
@@ -222,6 +225,8 @@ function ajvDef(fileId: string, name: string): (x: unknown) => boolean {
 // to a schema without registering it here (or the reverse) goes red.
 
 const SESSION_DEFS: Record<string, TSchema> = {
+  RuntimeCommitData: SessionGen.RuntimeCommitData,
+  RuntimeFormatData: SessionGen.RuntimeFormatData,
   JsonValue: SessionGen.JsonValue,
   Actor: SessionGen.Actor,
   ContentBlock: SessionGen.ContentBlock,
@@ -839,6 +844,22 @@ const harnessRefineOk: Json = {
   outcome: 'applied',
 }
 const SESSION_SAMPLES: Record<string, Sample> = {
+  RuntimeCommitData: {
+    valid: runtimeCommitData,
+    invalid: [
+      { ...runtimeCommitData, writerEpoch: -1 },
+      { ...runtimeCommitData, extra: true },
+    ],
+    note: 'runtime state attestation uses the public runtime payload authority',
+  },
+  RuntimeFormatData: {
+    valid: runtimeFormatData,
+    invalid: [
+      { ...runtimeFormatData, minReader: 2 },
+      { ...runtimeFormatData, legacyThroughSeq: -1 },
+    ],
+    note: 'runtime format declaration preserves the existing ledger envelope',
+  },
   EventEnvelope: {
     valid: envOk,
     invalid: [
