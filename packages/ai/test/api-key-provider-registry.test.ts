@@ -292,6 +292,8 @@ describe('API-key provider registry', () => {
       'agnes-2.5-flash': ['text', 'image'],
       'agnes-2.0-flash': ['text', 'image'],
     })
+    expect(adapter?.models('agnes-ai').find((model) => model.id === 'agnes-3.0-flash')?.maxTokens).toBe(16384)
+    expect(adapter?.models('agnes-ai').find((model) => model.id === 'agnes-2.5-pro')?.maxTokens).toBe(4096)
   })
 
   it('fails closed when a requested thinking level is not supported by the selected model', async () => {
