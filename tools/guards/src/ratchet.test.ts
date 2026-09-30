@@ -2507,7 +2507,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38101 (+2).
   // Session records, mutation manifests, and runtime ledger attestation share one database.
   // Measured 39675.
-  'packages/host/src': 39675,
+  // Record heads match their latest attested version, and a repeated write request returns its
+  // original result. Measured 39883.
+  'packages/host/src': 39883,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

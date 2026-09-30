@@ -2,15 +2,13 @@ import { createHash } from 'node:crypto'
 import type { SchemaRef, StateAuthorityRef } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 
-/** Session catalogue does not register these types yet. Rows are still appended. */
+/** Registered session-ledger proofs. Rows are appended in the session database. */
 export const FORMAT_EVENT = 'runtime/format'
 export const STATE_COMMIT_EVENT = 'runtime/state-commit'
 export const LEDGER_INTEGRITY_ALGORITHM = 'agnes-ledger-jcs-sha256-v1'
 export const FORMAT_VERSION = 2
 export const RUNTIME_SCHEMA_MAJOR = 1
 export const MIN_READER = 1
-
-const DIGEST = /^[0-9a-f]{64}$/
 
 export type RecordOwner = {
   authority: StateAuthorityRef
@@ -344,14 +342,6 @@ export function createManifest(commitId: string, record: StoredRecord): CommitMu
   }
 }
 
-function sameDigest(left: string, right: string): boolean {
-  if (left.length !== right.length) return false
-  let different = 0
-  for (let index = 0; index < left.length; index++)
-    different |= left.charCodeAt(index) ^ right.charCodeAt(index)
-  return different === 0
-}
-
 function anchorDigest(sessionKey: string, legacyThroughSeq: number, event: LedgerEvent): string {
   return digestOf({ algorithm: LEDGER_INTEGRITY_ALGORITHM, sessionKey, legacyThroughSeq, event })
 }
@@ -386,31 +376,6 @@ export function protectEvent(
 
 export type ChainRow = { event: LedgerEvent; integrity: IntegrityMetadata | null }
 
-export function verifyChain(sessionKey: string, rows: readonly ChainRow[]): IntegrityState {
-  let state: IntegrityState = { lastSeq: 0, legacyThroughSeq: 0, headDigest: null }
-  for (const row of rows) {
-    if (row.event.seq !== state.lastSeq + 1) throw new Error('ledger sequence is not contiguous')
-    if (!row.integrity) throw new Error('runtime ledger row is missing integrity')
-    if (!DIGEST.test(row.integrity.digest)) throw new Error('malformed ledger digest')
-    const expected =
-      row.integrity.mode === 'anchor'
-        ? state.headDigest !== null || row.integrity.previousDigest !== null
-          ? null
-          : anchorDigest(sessionKey, state.legacyThroughSeq, row.event)
-        : row.integrity.mode === 'chain' &&
-            state.headDigest !== null &&
-            row.integrity.previousDigest !== null &&
-            DIGEST.test(row.integrity.previousDigest) &&
-            sameDigest(row.integrity.previousDigest, state.headDigest)
-          ? chainDigest(sessionKey, row.integrity.previousDigest, row.event)
-          : null
-    if (expected === null) throw new Error('ledger chain predecessor mismatch')
-    if (!sameDigest(row.integrity.digest, expected)) throw new Error('ledger digest mismatch')
-    state = { ...state, lastSeq: row.event.seq, headDigest: row.integrity.digest }
-  }
-  return state
-}
-
 export function knownSchema(typeId: string): SchemaRef | undefined {
   return SCHEMAS[typeId]
 }
@@ -421,19 +386,6 @@ export function sameJson(left: unknown, right: unknown): boolean {
 
 export function emptyIntegrity(): IntegrityState {
   return { lastSeq: 0, legacyThroughSeq: 0, headDigest: null }
-}
-
-export function isFormatData(value: unknown): value is FormatEventData {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
-  const data = value as FormatEventData
-  return (
-    data.formatVersion === FORMAT_VERSION &&
-    data.runtimeSchemaMajor === RUNTIME_SCHEMA_MAJOR &&
-    data.minReader === MIN_READER &&
-    (data.previousFormat === 1 || data.previousFormat === 2) &&
-    typeof data.legacyThroughSeq === 'number' &&
-    (data.sourceHeadDigest === null || typeof data.sourceHeadDigest === 'string')
-  )
 }
 
 export function isSideEntry(value: unknown): value is CommitSideEntry {
@@ -454,18 +406,4 @@ export function isSideEntry(value: unknown): value is CommitSideEntry {
     default:
       return false
   }
-}
-
-export function isCommitData(value: unknown): value is RuntimeCommitData {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
-  const data = value as RuntimeCommitData
-  return (
-    typeof data.commitId === 'string' &&
-    typeof data.transactionFingerprint === 'string' &&
-    typeof data.mutationsDigest === 'string' &&
-    typeof data.sideListsDigest === 'string' &&
-    typeof data.mutationCount === 'number' &&
-    data.counts !== null &&
-    typeof data.counts === 'object'
-  )
 }

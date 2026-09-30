@@ -1,5 +1,5 @@
 import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite'
-import { defaultIds } from '@agnes/core'
+import { defaultIds, type Event, LedgerIntegrityFailure, verifyIntegrityRows } from '@agnes/core'
 import type {
   AdmissionProbe,
   RunAdmission,
@@ -11,6 +11,7 @@ import type {
   StateOpenResult,
   WriterClaim,
 } from '@agnes/extension-api/runtime'
+import { validateEvent } from '@agnes/protocol'
 import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import {
@@ -25,8 +26,6 @@ import {
   FORMAT_VERSION,
   type FormatEventData,
   type IntegrityState,
-  isCommitData,
-  isFormatData,
   isSideEntry,
   knownSchema,
   type LedgerEvent,
@@ -39,6 +38,7 @@ import {
   RUN_TAINT_SCHEMA,
   RUNTIME_ACTOR,
   RUNTIME_SCHEMA_MAJOR,
+  type RunRecordValue,
   type RuntimeCommitData,
   runRecordId,
   SESSION_IDENTITY_SCHEMA,
@@ -50,7 +50,6 @@ import {
   sideCounts,
   sideListsDigest,
   taintRecordId,
-  verifyChain,
 } from './records.js'
 
 const SNAPSHOT_TTL_MS = 60_000
@@ -96,6 +95,12 @@ const RUNTIME_DDL = [
      fingerprint TEXT NOT NULL,
      run_id TEXT NOT NULL,
      probe_json TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS runtime_request_results (
+     method TEXT NOT NULL,
+     request_id TEXT NOT NULL,
+     fingerprint TEXT NOT NULL,
+     result_json TEXT NOT NULL,
+     PRIMARY KEY (method, request_id))`,
   `CREATE TABLE IF NOT EXISTS runtime_leases (
      scope_id TEXT PRIMARY KEY,
      writer_id TEXT,
@@ -204,8 +209,21 @@ type LeaseRow = {
   last_writer_epoch: number
 }
 
+type AdmissionRow = {
+  ticket_id: string
+  fingerprint: string
+  run_id: string
+  probe_json: string
+}
+
+type RequestResultRow = {
+  fingerprint: string
+  result_json: string
+}
+
 type VerifiedSession = {
   lastSeq: number
+  formatSeq: number
   headDigest: string
   latestCommitId: string
   workspaceId: string
@@ -215,7 +233,11 @@ type VerifiedSession = {
   chain: IntegrityState
 }
 
-type ParsedCommit = { seq: number; data: RuntimeCommitData }
+type ParsedCommit = { seq: number; data: RuntimeCommitData; digest: string }
+
+type ValidatedProof =
+  | { kind: 'format'; event: LedgerEvent; data: FormatEventData; digest: string }
+  | { kind: 'commit'; event: LedgerEvent; data: RuntimeCommitData; digest: string }
 
 function refuse(code: StateFailure['code'], detailCode: string, message: string): never {
   throw new StateRefusal({ code, detailCode, message })
@@ -288,22 +310,17 @@ export class RuntimeStateDatabase {
   open(request: StateOpenRequest): StateOpenResult {
     return this.tx(() => {
       const verified = this.requireSession(request.sessionId)
-      const claim =
-        request.mode === 'write' ? this.takeLease(request.sessionId, request.writerId, request.ttlMs) : null
-      return {
-        snapshot: {
-          snapshotId: this.ids.ulid(),
-          authority: this.authority,
-          sessionId: request.sessionId,
-          throughSeq: verified.lastSeq,
-          headDigest: verified.headDigest,
-          expiresAt: new Date(this.now() + SNAPSHOT_TTL_MS).toISOString(),
-        },
-        formatVersion: verified.formatVersion,
-        minReader: verified.minReader,
-        claim,
-        parent: verified.parent,
+      if (request.mode !== 'write') {
+        // A read open takes no writer authority, so a repeated request id is a new snapshot.
+        return this.openResult(request, verified, null)
       }
+      const fingerprint = digestOf(request)
+      const replayed = this.replayRequest<StateOpenResult>('open', request.requestId, fingerprint)
+      if (replayed) return replayed
+      const claim = this.takeLease(request.sessionId, request.writerId, request.ttlMs)
+      const result = this.openResult(request, verified, claim)
+      this.rememberRequest('open', request.requestId, fingerprint, result)
+      return result
     })
   }
 
@@ -314,20 +331,21 @@ export class RuntimeStateDatabase {
       const verified = this.requireSession(request.sessionId)
       if (request.expectedLastSeq !== verified.lastSeq)
         refuse('conflict', 'seq_mismatch', 'expected sequence does not match the verified head')
+      const fingerprint = digestOf(request)
+      const replayed = this.replayRequest<StateLeaseResult>('lease', request.requestId, fingerprint)
+      if (replayed) return replayed
       const current = this.loadLease(request.sessionId)
       const now = this.now()
-      if (request.operation === 'renew') return this.renewLease(request, current, now)
-      if (request.operation === 'release') return this.releaseLease(request, current)
-      if (request.operation === 'acquire' || request.operation === 'reclaim')
-        return this.grantLease(request, current, now)
-      refuse('invalid_input', 'operation', 'unknown lease operation')
+      const result = this.applyLease(request, current, now)
+      this.rememberRequest('lease', request.requestId, fingerprint, result)
+      return result
     })
   }
 
   createRun(input: CreateRunInput): AdmissionProbe {
     return this.tx(() => {
-      const stored = this.get<{ fingerprint: string; probe_json: string }>(
-        'SELECT fingerprint, probe_json FROM runtime_admissions WHERE ticket_id = ?',
+      const stored = this.get<AdmissionRow>(
+        'SELECT ticket_id, fingerprint, run_id, probe_json FROM runtime_admissions WHERE ticket_id = ?',
         input.admission.ticketId,
       )
       if (stored) {
@@ -338,7 +356,13 @@ export class RuntimeStateDatabase {
             'admission ticket was already committed with different content',
           )
         this.requireSession(input.admission.sessionId)
-        return this.parseJson<AdmissionProbe>(stored.probe_json, 'stored admission probe cannot be decoded')
+        const probe = this.parseJson<AdmissionProbe>(
+          stored.probe_json,
+          'stored admission probe cannot be decoded',
+        )
+        if (probe.state !== 'created' || probe.commit.transactionFingerprint !== digestOf(input.admission))
+          integrity('admission replay does not match the attested commit')
+        return probe
       }
       if (
         this.get(
@@ -574,6 +598,7 @@ export class RuntimeStateDatabase {
       verified.set(meta.session_id, session)
     }
     this.verifyProofs(attested, verified)
+    this.verifyAdmissions(attested, verified)
     return verified
   }
 
@@ -584,7 +609,11 @@ export class RuntimeStateDatabase {
     )
     if (!sameJson(authority, this.authority))
       refuse('conflict', 'authority', 'session authority does not match this store')
-    if (meta.format_version !== FORMAT_VERSION || meta.min_reader !== MIN_READER)
+    if (
+      meta.format_version !== FORMAT_VERSION ||
+      !Number.isSafeInteger(meta.min_reader) ||
+      meta.min_reader !== MIN_READER
+    )
       integrity('session format is not readable')
     const product = this.get<{ format_version: number }>(
       'SELECT format_version FROM sessions WHERE session_key = ?',
@@ -600,23 +629,34 @@ export class RuntimeStateDatabase {
     if (rows.length === 0) integrity('session has no ledger events')
     let chain: IntegrityState
     try {
-      chain = verifyChain(meta.session_id, rows)
+      chain = verifyIntegrityRows(
+        rows.map((row) => ({
+          sessionKey: meta.session_id,
+          event: row.event as Event,
+          integrity: row.integrity,
+        })),
+      )
     } catch (error) {
-      integrity(error instanceof Error ? error.message : 'ledger integrity verification failed')
+      integrity(
+        error instanceof LedgerIntegrityFailure || error instanceof Error
+          ? error.message
+          : 'ledger integrity verification failed',
+      )
     }
-    const first = rows[0]
-    if (!first || first.event.type !== FORMAT_EVENT || !isFormatData(first.event.data))
-      integrity('session format declaration is missing')
-    const format = first.event.data
+    const proofs = rows.map((row) => this.validatedProof(row))
+    const first = proofs[0]
+    if (first?.kind !== 'format') integrity('session format declaration is missing')
+    const format = first.data
+    if (!Number.isSafeInteger(format.minReader) || format.minReader !== MIN_READER)
+      integrity('session format reader requirement is not readable')
     if (format.legacyThroughSeq !== 0 || format.sourceHeadDigest !== null || format.previousFormat !== 1)
       integrity('session format declaration does not match the ledger anchor')
     const commits: ParsedCommit[] = []
-    for (const row of rows.slice(1)) {
-      if (row.event.type !== STATE_COMMIT_EVENT || !isCommitData(row.event.data))
-        integrity('unexpected ledger event')
-      if (row.event.data.authorityEpoch !== this.authority.authorityEpoch)
+    for (const row of proofs.slice(1)) {
+      if (row.kind !== 'commit') integrity('unexpected ledger event')
+      if (row.data.authorityEpoch !== this.authority.authorityEpoch)
         integrity('state commit authority does not match this store')
-      commits.push({ seq: row.event.seq, data: row.event.data })
+      commits.push({ seq: row.event.seq, data: row.data, digest: row.digest })
     }
     if (commits.length === 0) integrity('session has no state commit attestation')
     let previous: string | null = null
@@ -632,14 +672,36 @@ export class RuntimeStateDatabase {
     if (chain.headDigest === null) integrity('session head digest is missing')
     return {
       lastSeq: chain.lastSeq,
+      formatSeq: first.event.seq,
       headDigest: chain.headDigest,
       latestCommitId: latest.data.commitId,
       workspaceId: meta.workspace_id,
       formatVersion: meta.format_version,
-      minReader: meta.min_reader,
+      minReader: format.minReader,
       parent: this.parseJson(meta.parent_json, 'session parent cannot be decoded'),
       chain,
     }
+  }
+
+  private validatedProof(row: ChainRow): ValidatedProof {
+    if (!row.integrity) integrity('runtime ledger row is missing integrity')
+    const checked = validateEvent(row.event)
+    if (!checked.ok) integrity('stored ledger event is not a registered proof')
+    if (checked.value.type === FORMAT_EVENT)
+      return {
+        kind: 'format',
+        event: row.event,
+        data: checked.value.data as FormatEventData,
+        digest: row.integrity.digest,
+      }
+    if (checked.value.type === STATE_COMMIT_EVENT)
+      return {
+        kind: 'commit',
+        event: row.event,
+        data: checked.value.data as RuntimeCommitData,
+        digest: row.integrity.digest,
+      }
+    integrity('unexpected ledger event')
   }
 
   private verifyProofs(attested: Map<string, ParsedCommit>, sessions: Map<string, VerifiedSession>): void {
@@ -689,8 +751,9 @@ export class RuntimeStateDatabase {
         integrity('side counts do not match entries')
       for (const manifest of commitManifests) this.verifyManifestVersion(manifest, versions)
     }
+    this.verifyVersionCorrespondence(manifests, versions)
     this.verifyContinuity(manifests, attested)
-    this.verifyHeads(heads, versions, sessions)
+    this.verifyHeads(heads, this.latestLiveVersions(manifests, versions, attested), sessions)
   }
 
   private verifyManifestVersion(manifest: CommitMutationManifest, versions: readonly VersionRow[]): void {
@@ -699,7 +762,10 @@ export class RuntimeStateDatabase {
       return
     }
     const version = versions.find(
-      (row) => row.record_id === manifest.recordId && row.record_revision === manifest.next?.recordRevision,
+      (row) =>
+        row.record_id === manifest.recordId &&
+        row.record_revision === manifest.next?.recordRevision &&
+        row.commit_id === manifest.commitId,
     )
     if (!version) integrity('mutation manifest has no version header')
     const schema = this.parseJson<unknown>(version.schema_json, 'record schema cannot be decoded')
@@ -737,31 +803,69 @@ export class RuntimeStateDatabase {
     }
   }
 
+  private verifyVersionCorrespondence(
+    manifests: readonly CommitMutationManifest[],
+    versions: readonly VersionRow[],
+  ): void {
+    const claimed = new Set<string>()
+    for (const manifest of manifests) {
+      if (manifest.next === null) continue
+      const key = this.versionKey(manifest.recordId, manifest.next.recordRevision, manifest.commitId)
+      if (claimed.has(key)) integrity('record version is claimed by more than one manifest')
+      claimed.add(key)
+    }
+    for (const version of versions) {
+      const key = this.versionKey(version.record_id, version.record_revision, version.commit_id)
+      if (!claimed.has(key)) integrity('record version has no mutation manifest')
+    }
+  }
+
+  private versionKey(recordId: string, revision: number, commitId: string): string {
+    return digestOf({ recordId, revision, commitId })
+  }
+
+  private latestLiveVersions(
+    manifests: readonly CommitMutationManifest[],
+    versions: readonly VersionRow[],
+    attested: Map<string, ParsedCommit>,
+  ): Map<string, VersionRow> {
+    const ordered = [...manifests].sort((left, right) => {
+      const leftSeq = attested.get(left.commitId)?.seq ?? 0
+      const rightSeq = attested.get(right.commitId)?.seq ?? 0
+      return leftSeq - rightSeq || left.recordId.localeCompare(right.recordId)
+    })
+    const latestManifest = new Map<string, CommitMutationManifest>()
+    for (const manifest of ordered) latestManifest.set(manifest.recordId, manifest)
+    const live = new Map<string, VersionRow>()
+    for (const [recordId, manifest] of latestManifest) {
+      if (manifest.next === null) continue
+      const version = versions.find(
+        (row) =>
+          row.record_id === recordId &&
+          row.record_revision === manifest.next?.recordRevision &&
+          row.commit_id === manifest.commitId,
+      )
+      if (!version) integrity('latest record version is missing')
+      live.set(recordId, version)
+    }
+    return live
+  }
+
   private verifyHeads(
     heads: readonly HeadRow[],
-    versions: readonly VersionRow[],
+    latest: ReadonlyMap<string, VersionRow>,
     sessions: Map<string, VerifiedSession>,
   ): void {
-    const latest = new Map<string, VersionRow>()
-    for (const version of versions) {
-      const current = latest.get(version.record_id)
-      if (!current || version.record_revision > current.record_revision)
-        latest.set(version.record_id, version)
-    }
-    if (heads.length !== latest.size) integrity('record head does not match versions')
+    const seen = new Set<string>()
     for (const head of heads) {
+      if (seen.has(head.record_id)) integrity('duplicate record head')
+      seen.add(head.record_id)
       const version = latest.get(head.record_id)
       if (!version) integrity('record head has no version')
-      const headValue = this.parseJson<unknown>(head.value_json, 'record body cannot be decoded')
-      const versionValue = this.parseJson<unknown>(version.value_json, 'record body cannot be decoded')
-      if (
-        head.record_revision !== version.record_revision ||
-        head.last_commit_id !== version.commit_id ||
-        head.body_digest !== version.digest ||
-        !sameJson(headValue, versionValue) ||
-        head.owner_json !== version.owner_json
-      )
-        integrity('record head does not match its latest version')
+      this.verifyHeadMatches(head, version)
+    }
+    for (const recordId of latest.keys()) {
+      if (!seen.has(recordId)) integrity('latest record version has no head')
     }
     for (const [sessionId, session] of sessions) {
       const head = heads.find((row) => row.record_id === sessionIdentityRecordId(sessionId))
@@ -776,10 +880,143 @@ export class RuntimeStateDatabase {
         value.formatVersion !== session.formatVersion ||
         value.minReader !== session.minReader ||
         value.runtimeSchemaMajor !== RUNTIME_SCHEMA_MAJOR ||
-        !sameJson(value.parent, session.parent)
+        !sameJson(value.parent, session.parent) ||
+        value.minReader !== head.min_reader
       )
         integrity('session identity does not match the session catalogue')
     }
+  }
+
+  private verifyHeadMatches(head: HeadRow, version: VersionRow): void {
+    const headSchema = this.attestedSchema(head.schema_json)
+    const versionSchema = this.attestedSchema(version.schema_json)
+    if (!sameJson(headSchema, versionSchema))
+      integrity('record head schema does not match its latest version')
+    // The format event attests the reader requirement. It is checked on every live head, not copied onto the version row.
+    if (!Number.isSafeInteger(head.min_reader) || head.min_reader !== MIN_READER)
+      integrity('record reader requirement is not readable')
+    const headValue = this.parseJson<unknown>(head.value_json, 'record body cannot be decoded')
+    const versionValue = this.parseJson<unknown>(version.value_json, 'record body cannot be decoded')
+    const headOwner = this.parseJson<RecordOwner>(head.owner_json, 'record owner cannot be decoded')
+    const versionOwner = this.parseJson<RecordOwner>(version.owner_json, 'record owner cannot be decoded')
+    if (
+      head.record_revision !== version.record_revision ||
+      head.last_commit_id !== version.commit_id ||
+      head.body_digest !== version.digest ||
+      bodyDigest(headOwner, headValue) !== version.digest ||
+      !sameJson(headValue, versionValue) ||
+      !sameJson(headOwner, versionOwner)
+    )
+      integrity('record head does not match its latest version')
+  }
+
+  private attestedSchema(text: string): unknown {
+    const schema = this.parseJson<{ typeId?: string }>(text, 'record schema cannot be decoded')
+    const known = schema.typeId === undefined ? undefined : knownSchema(schema.typeId)
+    if (!known || !sameJson(known, schema)) integrity('record schema does not match the codec')
+    return schema
+  }
+
+  private verifyAdmissions(
+    attested: Map<string, ParsedCommit>,
+    sessions: Map<string, VerifiedSession>,
+  ): void {
+    const versions = this.all<VersionRow>(
+      `SELECT record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
+       FROM runtime_record_versions`,
+    )
+    for (const row of this.all<AdmissionRow>(
+      'SELECT ticket_id, fingerprint, run_id, probe_json FROM runtime_admissions',
+    )) {
+      const rebuilt = this.rebuildProbe(row, attested, versions, sessions)
+      const stored = this.parseJson<unknown>(row.probe_json, 'stored admission probe cannot be decoded')
+      if (!sameJson(stored, rebuilt)) integrity('admission replay does not match the attested run')
+    }
+  }
+
+  private rebuildProbe(
+    row: AdmissionRow,
+    attested: Map<string, ParsedCommit>,
+    versions: readonly VersionRow[],
+    sessions: Map<string, VerifiedSession>,
+  ): AdmissionProbe {
+    const found: { commit: ParsedCommit; value: RunRecordValue }[] = []
+    for (const version of versions) {
+      if (version.record_id !== runRecordId(row.run_id)) continue
+      const commit = attested.get(version.commit_id)
+      if (!commit || commit.data.runId !== row.run_id) continue
+      const value = this.parseJson<RunRecordValue>(version.value_json, 'record body cannot be decoded')
+      if (value.runId !== row.run_id || value.admissionTicketId !== row.ticket_id) continue
+      if (!Number.isSafeInteger(value.revision)) integrity('attested run revision is not readable')
+      found.push({ commit, value })
+    }
+    if (found.length !== 1) integrity('admission does not match one attested run')
+    const match = found[0]
+    if (!match) integrity('admission does not match one attested run')
+    const session = sessions.get(match.value.sessionId)
+    if (!session) integrity('admission session failed verification')
+    const receipt: StateCommitReceipt = {
+      commitId: match.commit.data.commitId,
+      transactionFingerprint: match.commit.data.transactionFingerprint,
+      sessionId: match.value.sessionId,
+      firstSeq: match.commit.data.previousCommitId === null ? session.formatSeq : match.commit.seq,
+      lastSeq: match.commit.seq,
+      headDigest: match.commit.digest,
+      runRevision: match.value.revision,
+      actionIds: [],
+    }
+    return { state: 'created', runId: row.run_id, commit: receipt }
+  }
+
+  private openResult(
+    request: StateOpenRequest,
+    verified: VerifiedSession,
+    claim: WriterClaim | null,
+  ): StateOpenResult {
+    return {
+      snapshot: {
+        snapshotId: this.ids.ulid(),
+        authority: this.authority,
+        sessionId: request.sessionId,
+        throughSeq: verified.lastSeq,
+        headDigest: verified.headDigest,
+        expiresAt: new Date(this.now() + SNAPSHOT_TTL_MS).toISOString(),
+      },
+      formatVersion: verified.formatVersion,
+      minReader: verified.minReader,
+      claim,
+      parent: verified.parent,
+    }
+  }
+
+  private applyLease(request: StateLeaseRequest, current: LeaseRow, now: number): StateLeaseResult {
+    if (request.operation === 'renew') return this.renewLease(request, current, now)
+    if (request.operation === 'release') return this.releaseLease(request, current)
+    if (request.operation === 'acquire' || request.operation === 'reclaim')
+      return this.grantLease(request, current, now)
+    refuse('invalid_input', 'operation', 'unknown lease operation')
+  }
+
+  private replayRequest<T>(method: string, requestId: string, fingerprint: string): T | undefined {
+    const stored = this.get<RequestResultRow>(
+      'SELECT fingerprint, result_json FROM runtime_request_results WHERE method = ? AND request_id = ?',
+      method,
+      requestId,
+    )
+    if (!stored) return undefined
+    if (stored.fingerprint !== fingerprint)
+      refuse('conflict', 'idempotency_conflict', 'request id was already committed with different content')
+    return this.parseJson<T>(stored.result_json, 'stored request result cannot be decoded')
+  }
+
+  private rememberRequest(method: string, requestId: string, fingerprint: string, result: unknown): void {
+    this.run(
+      'INSERT INTO runtime_request_results (method, request_id, fingerprint, result_json) VALUES (?, ?, ?, ?)',
+      method,
+      requestId,
+      fingerprint,
+      JSON.stringify(result),
+    )
   }
 
   private decodeEvent(row: EventRow): ChainRow {

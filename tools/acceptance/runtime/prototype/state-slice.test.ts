@@ -1,15 +1,17 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
+import { defaultIds, openTracked } from '../../../../packages/core/src/index.ts'
 import type {
   CallContext,
   Outcome,
   RunAdmission,
   StateAuthorityRef,
 } from '../../../../packages/extension-api/src/runtime/index.ts'
+import { createSqliteStorage } from '../../../../packages/host/src/adapters/storage-sqlite.ts'
 import {
   createRuntimeStateStore,
   type RuntimeStateStore,
@@ -109,6 +111,53 @@ function mutate(path: string, change: (db: DatabaseSync) => void): void {
   } finally {
     db.close()
   }
+}
+
+const writeOpen = (requestId: string, writerId = 'writer-a', ttlMs = 1_000) => ({
+  requestId,
+  authority,
+  sessionId: 'session-1' as const,
+  mode: 'write' as const,
+  writerId,
+  ttlMs,
+})
+
+const readOpen = (requestId: string) => ({
+  requestId,
+  authority,
+  sessionId: 'session-1' as const,
+  mode: 'read' as const,
+  writerId: null,
+  ttlMs: null,
+})
+
+function leaseRequest(
+  requestId: string,
+  operation: 'acquire' | 'renew' | 'release' | 'reclaim',
+  writerId: string,
+  expectedWriterEpoch: number,
+  ttlMs = 1_000,
+) {
+  return {
+    requestId,
+    authority,
+    sessionId: 'session-1',
+    writerId,
+    operation,
+    expectedWriterEpoch,
+    expectedLastSeq: 2,
+    ttlMs,
+  }
+}
+
+async function refuseDamaged(path: string, requestId: string): Promise<void> {
+  const reopened = openStore(path)
+  const opened = await reopened.open(writeOpen(requestId), context())
+  reopened.close()
+  expect(opened.ok).toBe(false)
+  if (opened.ok) expect(opened.value.snapshot).toBeUndefined()
+  if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+  expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
 }
 
 afterEach(() => {
@@ -471,6 +520,207 @@ describe('runtime state records, proof rows, and ledger events', () => {
     expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
   })
 
+  it('replays the written ledger through the session reader', async () => {
+    const path = file()
+    const store = openStore(path)
+    const created = await store.createRun(admission(), context())
+    store.close()
+    expect(created.ok).toBe(true)
+    const storage = createSqliteStorage({
+      file: path,
+      clock: () => Date.parse(admittedAt),
+      tablesDir: join(dirname(path), 'tables'),
+    })
+    const opened = await openTracked({
+      storage,
+      key: 'session-1',
+      writerRunId: 'session-reader',
+      ttlMs: 1_000,
+      ids: defaultIds(() => Date.parse(admittedAt)),
+      clock: () => Date.parse(admittedAt),
+      timers: { setTimeout: () => 0, clearTimeout: () => undefined },
+    })
+    const events = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq, limit: 10 })
+    expect(opened.log.lastSeq).toBe(2)
+    expect(opened.tracker.state.lastSeq).toBe(2)
+    expect(events.map((event) => event.type)).toEqual(['runtime/format', 'runtime/state-commit'])
+    await opened.log.close()
+    await storage.close()
+  })
+
+  it('rejects a record version and head that no mutation manifest covers', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      db.prepare(
+        `INSERT INTO runtime_record_versions
+         SELECT 'rogue-record', record_revision, schema_json, commit_id, digest, owner_json, value_json
+         FROM runtime_record_versions WHERE record_id = 'run:run-1'`,
+      ).run()
+      db.prepare(
+        `INSERT INTO runtime_records
+         SELECT 'rogue-record', schema_json, min_reader, record_revision, last_commit_id,
+                created_at, updated_at, owner_json, value_json, body_digest
+         FROM runtime_records WHERE record_id = 'run:run-1'`,
+      ).run()
+    })
+    await refuseDamaged(path, 'open-rogue-record')
+  })
+
+  it('rejects a record head that has no version', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      db.prepare(
+        `INSERT INTO runtime_records
+         SELECT 'rogue-head', schema_json, min_reader, record_revision, last_commit_id,
+                created_at, updated_at, owner_json, value_json, body_digest
+         FROM runtime_records WHERE record_id = 'run:run-1'`,
+      ).run()
+    })
+    await refuseDamaged(path, 'open-head-without-version')
+  })
+
+  it('rejects a latest record version whose head was removed', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      db.prepare("DELETE FROM runtime_records WHERE record_id = 'run:run-1'").run()
+    })
+    await refuseDamaged(path, 'open-missing-head')
+  })
+
+  it('rejects a record head whose reader requirement was raised', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      db.prepare("UPDATE runtime_records SET min_reader = 999 WHERE record_id = 'run:run-1'").run()
+    })
+    await refuseDamaged(path, 'open-reader')
+  })
+
+  it('rejects a record head whose schema no longer matches the attested version', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      db.prepare("UPDATE runtime_records SET schema_json = ? WHERE record_id = 'run:run-1'").run(
+        JSON.stringify({ typeId: 'unknown@1', revision: 1, digest: 'bad' }),
+      )
+    })
+    await refuseDamaged(path, 'open-schema')
+  })
+
+  it('rejects a replay index whose stored result no longer matches the attested run', async () => {
+    const path = file()
+    const store = openStore(path)
+    const request = admission()
+    expect((await store.createRun(request, context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      db.prepare('UPDATE runtime_admissions SET probe_json = ?').run(
+        JSON.stringify({ state: 'created', runId: 'rogue-run', commit: {} }),
+      )
+    })
+    await refuseDamaged(path, 'open-probe')
+    const retry = openStore(path)
+    const replayed = await retry.createRun(request, context())
+    retry.close()
+    expect(replayed.ok).toBe(false)
+    if (replayed.ok) expect(replayed.value).toBeUndefined()
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(count(path, 'events')).toBe(2)
+    expect(
+      query<{ record_id: string }>(
+        path,
+        "SELECT record_id FROM runtime_records WHERE record_id LIKE 'run:%'",
+      ),
+    ).toEqual([{ record_id: 'run:run-1' }])
+    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+  })
+
+  it('returns the original write-open result for the same request', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    const first = await store.open(request, context())
+    const second = await store.open(request, context())
+    const changed = await store.open(writeOpen('open-write', 'writer-b'), context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(second).toEqual(first)
+    expect(changed.ok).toBe(false)
+    if (!changed.ok) expect(changed.error.detailCode).toBe('idempotency_conflict')
+    expect(query<{ n: number }>(path, 'SELECT COUNT(*) AS n FROM runtime_leases')).toEqual([{ n: 1 }])
+  })
+
+  it('returns the original lease for the same acquire request', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = leaseRequest('lease-acquire', 'acquire', 'writer-a', 0)
+    const first = await store.lease(request, context())
+    const second = await store.lease(request, context())
+    const changed = await store.lease(leaseRequest('lease-acquire', 'acquire', 'writer-b', 0), context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(second).toEqual(first)
+    expect(changed.ok).toBe(false)
+    if (!changed.ok) expect(changed.error.detailCode).toBe('idempotency_conflict')
+    expect(query<{ writer_epoch: number }>(path, 'SELECT writer_epoch FROM runtime_leases')).toEqual([
+      { writer_epoch: 1 },
+    ])
+  })
+
+  it('returns the original lease deadline when the same renew request is repeated', async () => {
+    const path = file()
+    let now = Date.parse(admittedAt)
+    const store = openStore(path, () => now)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    expect((await store.lease(leaseRequest('lease-acquire', 'acquire', 'writer-a', 0), context())).ok).toBe(
+      true,
+    )
+    const request = leaseRequest('lease-renew', 'renew', 'writer-a', 1, 5_000)
+    const first = await store.lease(request, context())
+    now += 1
+    const second = await store.lease(request, context())
+    const changed = await store.lease(leaseRequest('lease-renew', 'renew', 'writer-a', 1, 9_000), context())
+    store.close()
+    expect(first.ok).toBe(true)
+    if (first.ok) expect(first.value.claim?.leaseUntil).toBe('2026-04-01T00:00:05.000Z')
+    expect(second).toEqual(first)
+    expect(changed.ok).toBe(false)
+    if (!changed.ok) expect(changed.error.detailCode).toBe('idempotency_conflict')
+  })
+
+  it('does not deduplicate a read open, which takes no writer lease', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = readOpen('open-read')
+    const first = await store.open(request, context())
+    const second = await store.open(request, context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(true)
+    if (first.ok && second.ok) {
+      expect(first.value.claim).toBeNull()
+      expect(second.value.claim).toBeNull()
+      expect(second.value.snapshot.snapshotId).not.toBe(first.value.snapshot.snapshotId)
+    }
+    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+  })
+
   it('refuses every state method that is not implemented yet', async () => {
     const path = file()
     const store = openStore(path)
@@ -490,8 +740,13 @@ describe('runtime state records, proof rows, and ledger events', () => {
     expect(cancelled.ok).toBe(false)
     if (!cancelled.ok) expect(cancelled.error.code).toBe('cancelled')
     for (const method of UNIMPLEMENTED_STATE_METHODS) {
-      const call = store[method] as (request: never, callContext: CallContext) => Promise<Outcome<unknown>>
-      const result = await call({} as never, context())
+      const result =
+        method === 'cancelAdmission'
+          ? await store.cancelAdmission('ticket-unused', 'a'.repeat(64), context())
+          : await (store[method] as (request: never, callContext: CallContext) => Promise<Outcome<unknown>>)(
+              {} as never,
+              context(),
+            )
       expect(result.ok, method).toBe(false)
       if (!result.ok) {
         expect(result.error.code, method).toBe('internal')
