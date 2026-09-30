@@ -131,6 +131,9 @@
       "path": "tools/guards"
     },
     {
+      "path": "tools/acceptance"
+    },
+    {
       "path": "packages/system-node"
     },
     {
