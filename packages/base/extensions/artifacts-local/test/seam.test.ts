@@ -178,6 +178,10 @@ describe('artifacts-local put/get', () => {
 
     init.data.set(path, new TextEncoder().encode('jello'))
     await expect(seam.get(ref)).rejects.toThrow(`artifact integrity mismatch: ${ref.sha256}`)
+    // A crash part-way through a write leaves wrong bytes like these at the content address. The next
+    // put of the same bytes replaces them instead of skipping the file, or the digest stays unreadable.
+    expect(await seam.put(new TextEncoder().encode('hello'))).toEqual(ref)
+    expect(new TextDecoder().decode(await seam.get(ref))).toBe('hello')
 
     init.data.set(path, new TextEncoder().encode('hello'))
     await expect(seam.get({ ...ref, size: ref.size + 1 })).rejects.toThrow(

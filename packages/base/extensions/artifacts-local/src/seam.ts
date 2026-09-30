@@ -56,13 +56,15 @@ export const artifactsLocal: SeamFactory<ArtifactsSeam> = async (ctx) => {
       const isComputerUse = computerUseArtifactName(meta?.name)
       const metadata = `${ctx.profile.dataDir}/${COMPUTER_USE_METADATA}/${sha256.slice(0, 2)}/${sha256}.json`
       // Written once. A second put of the same bytes is the same file, so it is skipped rather than
-      // rewritten - and the skip is decided by asking whether the file is there, which is the only
-      // question whose answer does not depend on what this process has done before.
-      let present = true
-      try {
-        await fs.stat(at)
-      } catch {
-        present = false
+      // rewritten - but only when the file there hashes to the digest. A write cut short by a crash
+      // leaves torn bytes at this path, and skipping those would leave the digest unreadable for good.
+      const intact = async (): Promise<boolean> => {
+        try {
+          const stored = await fs.read(at)
+          return createHash('sha256').update(stored).digest('hex') === sha256
+        } catch {
+          return false
+        }
       }
       if (ctx.privateArtifactStore && isComputerUse) {
         // Classify the digest before making screenshot bytes reachable. A metadata failure must not
@@ -79,7 +81,7 @@ export const artifactsLocal: SeamFactory<ArtifactsSeam> = async (ctx) => {
         // On GC-capable platforms the whole shared CAS is private from its first write. That avoids
         // a prior ordinary artifact creating a broad-permission shard before CU uses the same hash.
         await ctx.privateArtifactStore.put(sha256, bytes)
-      } else if (!present) {
+      } else if (!(await intact())) {
         await fs.mkdir(at.slice(0, at.lastIndexOf('/')))
         await fs.write(at, bytes)
       }
