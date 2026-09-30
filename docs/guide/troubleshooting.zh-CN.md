@@ -30,7 +30,8 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | 页面问 token/文档要求复制 token | 检查是否混用旧 build/旧说明；当前本地 Web 打印普通 URL |
 | 缺 Provider / 非法 route/model | 运行 config 或 Web 设置，测试保存后从当前目录选模型；新默认不修改旧会话 |
 | `TOOL_ARGS_INVALID` | 按错误中的参数路径补齐符合工具定义的参数再重试。`write` 必须同时传入 `path` 和 `content`；被拒绝的调用不会写文件 |
-| 输出以 `max_tokens` 结束 | 模型回复达到输出额度，未完成的工具调用会被丢弃。应缩小单次调用，分步构建大文件；这与输入上下文超限不同 |
+| 输出以 `max_tokens` / `OUTPUT_LIMIT` 结束 | 模型回复达到输出额度，保留已生成文字、丢弃未完成的工具调用并停止本轮，不自动重试。可要求分步继续，或在 Provider 支持范围内配置 preset 的 `model.max_tokens`；这与输入上下文超限不同 |
+| `RATE_LIMIT` / HTTP 429 | 模型服务返回限流错误，稍后重试；若持续出现，检查账号的服务限制或联系 Provider。该错误不能证明输入上下文或输出 token 超限 |
 | 读取文件后显示通用后台错误 | 保留诊断编号并匹配 daemon 审计记录。仅凭通用提示不能判定是 token 超限 |
 | `SANDBOX_UNAVAILABLE` | Linux 检查 bwrap 的真实执行及 user namespace，macOS 检查系统沙箱可用性；不可用时保留拒绝 |
 | 插件安装成功却没有工具 | 看 trusted、desired、actual、行错误、依赖和 manifest；单独旧 `agnes.extensions` 不是现行普通后端插件入口 |
