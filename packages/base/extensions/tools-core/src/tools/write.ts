@@ -34,7 +34,11 @@ export const writeTool = defineTool({
         // refusal from the sandbox arriving here as "no previous content" would switch the
         // truncation guard off on precisely the reads that failed for a reason, and the overwrite
         // would go ahead against a file nobody could look at. Anything else is a failed call.
-        if ((e as { code?: string }).code !== 'ENOENT') throw e
+        if ((e as { code?: string }).code !== 'ENOENT')
+          return {
+            content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
+            isError: true,
+          }
       }
       const t = looksTruncated(old, args.content)
       if (t.truncated)
