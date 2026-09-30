@@ -11,6 +11,15 @@
       ]
     },
     {
+      "id": "runtime.state-store",
+      "evidence": [
+        {
+          "path": "packages/host/src/runtime/providers/state.ts",
+          "marker": "not implemented"
+        }
+      ]
+    },
+    {
       "id": "code.runtime.lifecycle",
       "evidence": [
         {
