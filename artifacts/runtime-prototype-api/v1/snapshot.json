@@ -428,7 +428,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/preset.ts",
-        "sha256": "f1df0673472905fc59a0796afbec0a2b81ed2992dd0e325aab898b45315e83ea"
+        "sha256": "982d543ac3e3af74a01471e677d10b99d8fa264bece7a123549c75b3fd282414"
       },
       {
         "path": "packages/protocol/gen/ts/profile.ts",
@@ -783,9 +783,9 @@
         "sha256": "6effb83adf28dd31a581090c491264dbbbeea33ae930bcc51394bcea1a09dcff"
       }
     ],
-    "inputDigest": "4581bf8e6acd11806315f17a6ff7de5973f9e49b3ef6f211af3ab1256b9cd351",
+    "inputDigest": "740275735e2270c8a67af888b96c02c8ca06119d0fe169c8f36df2124003c4f4",
     "diagnostics": [],
-    "reportDigest": "71c72a752bb09bf8505187d89472436124f61d8ffb25b28bdf3d6efa4c4b4b00"
+    "reportDigest": "d1f306ec934b066468270ec093d2420f90a04c092eed6cb044e7746277173de1"
   },
-  "snapshotDigest": "6ac01fa6aebc9ff89f4f6a8fa2608031d15834c4ded19d9a75af52288e7bbc68"
+  "snapshotDigest": "6e03223034b578405ebe6c8929fa62fb1f3a94222ccf38ab5d3f247660589194"
 }
