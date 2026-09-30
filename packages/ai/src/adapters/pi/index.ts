@@ -519,12 +519,13 @@ export class PiAdapter extends WireAdapter {
             // and a loop waiting on it could not notice its own deadline passing.
             const next = await Promise.race([it.next(), stopped])
             if (next === ABORTED || next.done) break
-            if (!firstSeen) {
-              firstSeen = true
-              clearTimeout(first)
-              first = undefined
-            }
             for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
+              // HTTP headers and pi's start markers contain no model output.
+              if (!firstSeen && w.type !== 'error' && (!('delta' in w) || w.delta.length > 0)) {
+                firstSeen = true
+                clearTimeout(first)
+                first = undefined
+              }
               if (
                 w.type === 'error' &&
                 w.code === 'AUTH' &&
