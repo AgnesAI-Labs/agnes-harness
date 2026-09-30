@@ -62,6 +62,8 @@ Credentials use `secret://namespace/name` references. File, environment, and vau
 
 An exported [preset definition](../../packages/protocol/schema/preset.json) may set `model.max_tokens` to a positive safe integer, for example `model: { max_tokens: 32768 }`. This sets the primary model's per-request output allowance, independently of catalog capacity; omitting it preserves the provider default. Request hooks may override it, and tree budgets may lower it. Use a value supported by the selected provider. This field belongs to the preset definition, not the profile's `presets` selection or a top-level profile `model` field. Existing sessions retain their resolved preset.
 
+For the official Agnes China gateway, the adapter explicitly sends its provisional catalog allowance as `max_tokens` when no request override is present: 16384 for Agnes 3.0 Flash and 4096 for the other built-in Agnes models. Catalog metadata alone does not set the raw OpenAI-compatible stream's request allowance.
+
 <a id="skills-同名优先级覆盖"></a>
 
 ## Same-name Skill priority overrides

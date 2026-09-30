@@ -35,6 +35,7 @@ const AGNES_AI_MODELS: Model<Api>[] = CHAT_MODELS.map(
       input: image ? ['text', 'image'] : ['text'],
       contextWindow: 200000,
       maxTokens: id === 'agnes-3.0-flash' ? 16384 : 4096,
+      compat: { maxTokensField: 'max_tokens' },
       reasoning: false,
       samplingParams: {
         temperature: { min: 0, max: 2, step: 0.01 },
