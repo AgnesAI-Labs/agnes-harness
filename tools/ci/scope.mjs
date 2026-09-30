@@ -34,7 +34,7 @@ export function changedPaths(base, head, cwd = process.cwd()) {
 }
 
 export function detectDocsOnly(eventName, event, cwd) {
-  // Main-branch pushes (including docs) and manually requested runs validate everything.
+  // Branch pushes (including docs) and manually requested runs validate everything.
   if (eventName !== 'pull_request') return false
   return isDocsOnly(changedPaths(event.pull_request?.base?.sha, event.pull_request?.head?.sha, cwd))
 }

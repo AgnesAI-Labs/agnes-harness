@@ -1,15 +1,15 @@
 name: ci
 on:
-  push: { branches: [main] }
+  push: { branches: [main, feat/runtime-pluginization] }
   pull_request:
   workflow_dispatch:
   # Nightly run of every job, including the heavy tier on all three platforms.
   schedule:
     - cron: '0 18 * * *'
 permissions: { contents: read }
-# The event name keeps a nightly run on main and a push to main from cancelling each other. Only a
-# newer push to the same pull request cancels its older run; runs on main always finish, because
-# they carry the only macOS and Windows heavy-tier results.
+# Separate nightly, manual and push runs. Newer PR pushes cancel the older in-progress run;
+# post-merge runs already in progress are not cancelled. GitHub may replace a pending run
+# with a newer run in the same group, so check the tested SHA before using its results.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -149,7 +149,7 @@ jobs:
     steps:
       - run: echo "All platform test shards passed."
   # Real daemon, worker and CLI process tests, and large-ledger or timer-bound tests. Every PR runs
-  # them on Linux; pushes to main, the nightly schedule and manual runs cover all three platforms.
+  # them on Linux; pushes to main or the integration branch, nightly and manual runs cover all platforms.
   heavy:
     name: heavy (${{ matrix.os }})
     needs: changes
