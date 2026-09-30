@@ -1,0 +1,167 @@
+{
+  "checkpointId": "runtime-prototype-api.v1",
+  "schemaVersion": 1,
+  "productBaseline": "5da40731214976ad8aff982cd5626d3a676fdd88",
+  "sourceFiles": [
+    {
+      "path": "packages/protocol-validation/src/validate.ts",
+      "sha256": "f2e716203343d6888a321c85bdf2f7e2caefaa9511e91781672ab20586512c7e"
+    },
+    {
+      "path": "packages/protocol/schema/runtime/prototype.json",
+      "sha256": "8702d2d274c217f398440febd8281d4ec67cfe8215f4162646800fcb796fc075"
+    },
+    {
+      "path": "packages/protocol/src/jcs.ts",
+      "sha256": "d0e1a16ae6b054f73099d303d5fb2dd610f56494d66376d33a2f7ea7cae2c1ef"
+    },
+    {
+      "path": "packages/protocol/tools/gen-core.ts",
+      "sha256": "750d974cf3fd898236b19df111d0a23a83d9cb0075ca4ef96d995605ee104d7f"
+    },
+    {
+      "path": "packages/protocol/tools/gen-runtime.ts",
+      "sha256": "ebe5b29e66e5a0b0b5e9c46b5995314cbc31b9596a94519b5f98b6ae9965cd7a"
+    },
+    {
+      "path": "packages/protocol/tools/gen.ts",
+      "sha256": "916d9b3aef979957b7749aff2f0eb6a8ddc5ec922929afcec367f7cfbd3e4c2e"
+    }
+  ],
+  "generatedFiles": [
+    {
+      "path": "packages/extension-api/src/runtime/index.ts",
+      "sha256": "68f51212cd87315f5cda763eb826009b1fd9fb70b8f4fde6660837e8fbc0103d"
+    },
+    {
+      "path": "packages/protocol/gen/ts/runtime-prototype.ts",
+      "sha256": "0f173a1c2e094f6a2aa889bdacb7c134666b7af6f3dd526e80fc92e710768f07"
+    },
+    {
+      "path": "packages/protocol/src/runtime/index.ts",
+      "sha256": "d605d310272bcc9852cfba17ddf739641d8b526f7bb5128848bc87b020096ea6"
+    }
+  ],
+  "publicSurface": [
+    "DispatchBudgetPlan",
+    "HookStageRequest",
+    "OwnerRef",
+    "ReceiptIntakeRequest",
+    "ResultHookPlan",
+    "StateStoreControl.acceptInbox",
+    "StateStoreControl.ackOutbox",
+    "StateStoreControl.admitInvocation",
+    "StateStoreControl.admitQuery",
+    "StateStoreControl.advanceProvider",
+    "StateStoreControl.advanceRun",
+    "StateStoreControl.claimOutbox",
+    "StateStoreControl.closeInvocation",
+    "StateStoreControl.commitControl",
+    "StateStoreControl.createRun",
+    "StateStoreControl.dispatchAdmission",
+    "StateStoreControl.failOutbox",
+    "StateStoreControl.intakeReceipt",
+    "StateStoreControl.lease",
+    "StateStoreControl.open",
+    "StateStoreControl.probeActionResult",
+    "StateStoreControl.probeAdmission",
+    "StateStoreControl.probeDispatchAdmission",
+    "StateStoreControl.pruneRecordVersions",
+    "StateStoreControl.publishActionResult"
+  ],
+  "compileEvidence": {
+    "compiler": "typescript",
+    "compilerVersion": "7.0.2",
+    "command": [
+      "node",
+      "node_modules/typescript/bin/tsc",
+      "--project",
+      "tools/runtime-prototype/tsconfig.compile.json",
+      "--pretty",
+      "false",
+      "--listFiles"
+    ],
+    "inputs": [
+      {
+        "path": "package.json",
+        "sha256": "716f98fa2053d9b7e75e7e2de84735cae002ab19d5d349bdbe85245470b5b519"
+      },
+      {
+        "path": "packages/extension-api/package.json",
+        "sha256": "b6fb7d55d7e9a90b11a28a00c7b92f57f0d117ddac912cc38afce73650dc926d"
+      },
+      {
+        "path": "packages/extension-api/src/runtime/index.ts",
+        "sha256": "68f51212cd87315f5cda763eb826009b1fd9fb70b8f4fde6660837e8fbc0103d"
+      },
+      {
+        "path": "packages/extension-api/test/runtime/prototype-consumer.compile.ts",
+        "sha256": "847efc3387a36f06f8bde0350b7dc41e53ba9728dbf59dc6708fc841c48328fc"
+      },
+      {
+        "path": "packages/protocol-validation/src/validate.ts",
+        "sha256": "f2e716203343d6888a321c85bdf2f7e2caefaa9511e91781672ab20586512c7e"
+      },
+      {
+        "path": "packages/protocol/gen/ts/runtime-prototype.ts",
+        "sha256": "0f173a1c2e094f6a2aa889bdacb7c134666b7af6f3dd526e80fc92e710768f07"
+      },
+      {
+        "path": "packages/protocol/package.json",
+        "sha256": "86af744e97f22c0248373172707aee8c98e3b2fbcc81415c380b5776c46c3a69"
+      },
+      {
+        "path": "packages/protocol/schema/runtime/prototype.json",
+        "sha256": "8702d2d274c217f398440febd8281d4ec67cfe8215f4162646800fcb796fc075"
+      },
+      {
+        "path": "packages/protocol/src/jcs.ts",
+        "sha256": "d0e1a16ae6b054f73099d303d5fb2dd610f56494d66376d33a2f7ea7cae2c1ef"
+      },
+      {
+        "path": "packages/protocol/src/runtime/index.ts",
+        "sha256": "d605d310272bcc9852cfba17ddf739641d8b526f7bb5128848bc87b020096ea6"
+      },
+      {
+        "path": "packages/protocol/tools/gen-core.ts",
+        "sha256": "750d974cf3fd898236b19df111d0a23a83d9cb0075ca4ef96d995605ee104d7f"
+      },
+      {
+        "path": "packages/protocol/tools/gen-runtime.ts",
+        "sha256": "ebe5b29e66e5a0b0b5e9c46b5995314cbc31b9596a94519b5f98b6ae9965cd7a"
+      },
+      {
+        "path": "packages/protocol/tools/gen.ts",
+        "sha256": "916d9b3aef979957b7749aff2f0eb6a8ddc5ec922929afcec367f7cfbd3e4c2e"
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "sha256": "e036b58faca59514e5cd8cb105722574fde78c8f7d61a04f00b8cd7e2dd1b133"
+      },
+      {
+        "path": "tools/check-runtime-prototype-checkpoint.ts",
+        "sha256": "c83e063ff1a0bb57020329316b460ed1664819430970d29cc37cc10a8ff8b05e"
+      },
+      {
+        "path": "tools/runtime-prototype/checkpoint.ts",
+        "sha256": "8d3f8f9bf88a25e1015b5b41fbd1ec5a54b7b77d932e0e980ad849ff9543dc83"
+      },
+      {
+        "path": "tools/runtime-prototype/compile.ts",
+        "sha256": "1dcbb49aaa260474193a450975186d5f36118f832b779f350eb74d621a780c88"
+      },
+      {
+        "path": "tools/runtime-prototype/files.ts",
+        "sha256": "fac054fac874e153df44febb213b19c9808ffc02c8d30c25a5b9c0ae14f2e039"
+      },
+      {
+        "path": "tools/runtime-prototype/tsconfig.compile.json",
+        "sha256": "446fb8cb128de652097c634eb686ace143788ce12895ec4ae4063979e62b2ddd"
+      }
+    ],
+    "inputDigest": "9a3e6fc23da4b5a95802ea4694852b273360cfc51cd38cdb2e0d82abd86b0dea",
+    "diagnostics": [],
+    "reportDigest": "f85ada24a7f8c996236612a3494a1d3896f8ca3bbd178f607b8fcb99b99b2a51"
+  },
+  "snapshotDigest": "1d237a5e8a057e64960dced7a6e674591dfb26a0854e8c8dc2602705f3fc58d5"
+}

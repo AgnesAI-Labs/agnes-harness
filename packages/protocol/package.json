@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./runtime": "./src/runtime/index.ts",
     "./gen/*": "./gen/ts/*.ts"
   },
   "scripts": {
