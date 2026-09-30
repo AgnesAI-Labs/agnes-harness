@@ -1,6 +1,6 @@
 import { hash } from 'node:crypto'
 import type { SchemaRef, StateAuthorityRef } from '@agnes/extension-api/runtime'
-import { jcs } from '@agnes/protocol'
+import { canonicalJson } from './canonical-json.js'
 
 /** Registered session-ledger proofs. Rows are appended in the session database. */
 export const FORMAT_EVENT = 'runtime/format'
@@ -232,7 +232,7 @@ const runTaintSchema = {
 }
 
 export function digestOf(value: unknown): string {
-  return digestText(jcs(value))
+  return digestText(canonicalJson(value))
 }
 
 function digestText(text: string): string {
@@ -470,7 +470,7 @@ function canonicalSchemaText(typeId: string): string | undefined {
   if (!known) return undefined
   let canonical = knownSchemaCanonical.get(typeId)
   if (canonical === undefined) {
-    canonical = jcs(known)
+    canonical = canonicalJson(known)
     knownSchemaCanonical.set(typeId, canonical)
   }
   return canonical
@@ -499,7 +499,7 @@ export function matchesKnownSchemaText(text: string): boolean {
 }
 
 export function sameJson(left: unknown, right: unknown): boolean {
-  return jcs(left) === jcs(right)
+  return canonicalJson(left) === canonicalJson(right)
 }
 
 export function emptyIntegrity(): IntegrityState {

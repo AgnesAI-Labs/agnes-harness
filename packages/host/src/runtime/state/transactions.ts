@@ -11,7 +11,6 @@ import type {
   StateOpenResult,
   WriterClaim,
 } from '@agnes/extension-api/runtime'
-import { jcs } from '@agnes/protocol'
 import {
   EventEnvelope,
   RuntimeCommitData as RuntimeCommitSchema,
@@ -20,6 +19,7 @@ import {
 import { TypeCompiler } from '@sinclair/typebox/compiler'
 import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
+import { canonicalJson } from './canonical-json.js'
 import {
   bodyDigest,
   type ChainRow,
@@ -346,7 +346,7 @@ function proofDataHolds(data: unknown, canonicalized: boolean): boolean {
   if (containsNegativeZero(data)) return false
   if (canonicalized) return true
   try {
-    jcs(data)
+    canonicalJson(data)
     return true
   } catch {
     return false
@@ -1488,9 +1488,9 @@ export class RuntimeStateDatabase {
   private insertRecord(record: StoredRecord, commitId: string, at: string): void {
     const digest = bodyDigest(record.owner, record.value)
     const manifest = createManifest(commitId, record)
-    const schemaJson = jcs(record.schema)
-    const ownerJson = jcs(record.owner)
-    const valueJson = jcs(record.value)
+    const schemaJson = canonicalJson(record.schema)
+    const ownerJson = canonicalJson(record.owner)
+    const valueJson = canonicalJson(record.value)
     this.run(
       `INSERT INTO runtime_records (
          record_id, schema_json, min_reader, record_revision, last_commit_id, created_at, updated_at,
@@ -1525,7 +1525,7 @@ export class RuntimeStateDatabase {
       manifest.commitId,
       manifest.recordId,
       manifest.previousRevision,
-      manifest.next === null ? null : jcs(manifest.next),
+      manifest.next === null ? null : canonicalJson(manifest.next),
     )
   }
 

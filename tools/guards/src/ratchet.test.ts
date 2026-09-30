@@ -2513,7 +2513,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 40049.
   // Open verification hashes canonical stored bodies and checks compiled proof schemas once.
   // Measured 40263.
-  'packages/host/src': 40263,
+  // The state store canonicalizes JSON beside the protocol serializer. Measured 40328.
+  'packages/host/src': 40328,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
