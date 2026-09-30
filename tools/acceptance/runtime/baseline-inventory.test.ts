@@ -51,6 +51,9 @@ describe('baseline behavior inventory', () => {
   it('follows a fixture tree and rejects a frozen or altered inventory', { timeout: 60_000 }, () => {
     const fixture = writeFixture()
     try {
+      expect(() => buildInventory(fixture, IMPLEMENTATION_BASELINE)).toThrow(
+        new RegExp(`${IMPLEMENTATION_BASELINE}[\\s\\S]*full checkout \\(fetch-depth: 0\\)`),
+      )
       const committed = buildInventory(fixture, 'HEAD')
       const before = committed.counts.test
       writeFileSync(join(fixture, 'packages/core/test/extra.test.ts'), 'export {}\n')
