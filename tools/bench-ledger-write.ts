@@ -25,6 +25,7 @@ import type { EventInput } from '../packages/core/src/types.js'
 import {
   actor,
   fakeProvider,
+  fakeSeams,
   MemoryStorage,
   openSession,
   readTool,
@@ -163,10 +164,53 @@ async function singleCallTurns(open: Opener, turns: number) {
   return h
 }
 
+/**
+ * The `read` tool of the k scenarios, unchanged but for asking before every call, so a one-call turn
+ * with it differs from `k1` by the approval alone.
+ */
+const askingRead = () => {
+  const tool = readTool() as unknown as { meta: object }
+  return { ...tool, meta: { ...tool.meta, requiresApproval: 'always' as const } }
+}
+
 const SCENARIOS: Record<string, Scenario> = {
   k1: oneTurn(1, 'one call'),
   k4: oneTurn(4, 'four calls'),
+  k8: oneTurn(8, 'eight calls'),
   k16: oneTurn(16, 'sixteen calls'),
+  // One question and one answer: a turn with no tool call, offered the same tool as the k scenarios.
+  async chat(open) {
+    const h = await open({ provider: fakeProvider([textTurn('done')]), registry: registryOf(readTool()) })
+    await h.session.enqueue('next-turn', say('one question'))
+    await h.session.run(turnEnd())
+    return undefined
+  },
+  // The k1 turn in manual approval mode with a call that must be asked about, answered once and at
+  // once by the approval seam. Also reports what the turn asked the seam to keep: a grant is the only
+  // approval write outside the ledger on this path.
+  async 'approval-k1'(open) {
+    const seamCalls = { ask: 0, putGrant: 0 }
+    const seams = fakeSeams({
+      approval: {
+        ask: async () => {
+          seamCalls.ask++
+          return 'allowed-once'
+        },
+        putGrant: async () => {
+          seamCalls.putGrant++
+        },
+      },
+    })
+    const h = await open({
+      provider: fakeProvider([batchTurn(1), textTurn('done')]),
+      registry: registryOf(askingRead()),
+      seams,
+      approvalMode: 'manual',
+    })
+    await h.session.enqueue('next-turn', say('one call'))
+    await h.session.run(turnEnd())
+    return { approvalSeamCalls: seamCalls }
+  },
   async 'host-computer-use'(open) {
     const provider = fakeProvider([toolTurn('computer_use', {}), textTurn('done')])
     Object.assign(provider, { models: () => [imageModel] })
@@ -414,6 +458,15 @@ async function measure(name: string, scenario: Scenario) {
         )
         .all() as Array<{ name: string; n: number }>)
         pages[row.name] = row.n
+      // The daemon indexes an approval ticket for exactly the asked rows that carry a parked ticket;
+      // that index is the only ticket write, so counting those rows counts its writes.
+      let approvalTicketIndexWrites = 0
+      for (const row of db.prepare("SELECT data FROM events WHERE type = 'approval/asked'").all() as Array<{
+        data: string
+      }>) {
+        const pending = (JSON.parse(row.data) as { pending?: { ticket?: unknown } } | null)?.pending
+        if (typeof pending?.ticket === 'string') approvalTicketIndexWrites++
+      }
       const callCommits: Record<string, number> = {}
       for (const n of perCall.values()) callCommits[n] = (callCommits[n] ?? 0) + 1
       return {
@@ -427,6 +480,7 @@ async function measure(name: string, scenario: Scenario) {
         opCellBytes,
         // Calls by how many commits moved them; a call no commit moved (a nested one) is not counted.
         callCommits,
+        approvalTicketIndexWrites,
         pages,
         walBytes,
         walSegments,
@@ -435,6 +489,7 @@ async function measure(name: string, scenario: Scenario) {
           p50: round(percentile(commitMs, 0.5)),
           p95: round(percentile(commitMs, 0.95)),
           max: round(Math.max(0, ...commitMs)),
+          total: round(commitMs.reduce((sum, ms) => sum + ms, 0)),
         },
         wallMs: round(wallMs),
         ...(extra ?? {}),
