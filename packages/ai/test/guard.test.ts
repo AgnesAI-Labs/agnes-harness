@@ -115,8 +115,11 @@ describe('normalizeError', () => {
       message: 'x'.repeat(600),
       retryable: true,
       retryAfterMs: 5,
+      // Not a shape the ledger row accepts, so it cannot be allowed to make the spend unrecordable.
+      response: { status: 401, headers: { Authorization: 'x' } },
     })
     expect(e.retryable).toBe(false)
+    expect(e).not.toHaveProperty('response')
     // A wait attached to a failure nobody may retry is a number that can only be acted on wrongly.
     expect(e.retryAfterMs).toBeUndefined()
     expect(e.message).toHaveLength(512)
@@ -137,7 +140,7 @@ describe('normalizeError', () => {
       ).toBe(retryable)
   })
 
-  it('keeps the wait and the request id on a failure that may be retried', () => {
+  it('keeps the wait, the request id and the response on a failure that may be retried', () => {
     const e = normalizeError({
       type: 'error',
       reason: 'error',
@@ -146,8 +149,14 @@ describe('normalizeError', () => {
       retryable: true,
       retryAfterMs: 7000,
       requestId: 'req_1',
+      response: { status: 429, headers: { 'retry-after': '7' }, headerNames: ['retry-after'] },
     })
-    expect(e).toMatchObject({ retryAfterMs: 7000, requestId: 'req_1', retryable: true })
+    expect(e).toMatchObject({
+      retryAfterMs: 7000,
+      requestId: 'req_1',
+      retryable: true,
+      response: { status: 429, headers: { 'retry-after': '7' }, headerNames: ['retry-after'] },
+    })
   })
 })
 

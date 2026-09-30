@@ -1140,6 +1140,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       cacheRead: 0,
       cacheWrite: 0,
     }
+    // What answered, as the provider's HTTP response said: recorded on every exit, failures included.
+    const response = usage?.response ?? error?.response
     const spend = {
       purpose: 'inference' as const,
       effectId: effect.effectId,
@@ -1149,6 +1151,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       model: target.model,
       ...(usage?.billing ? { billing: usage.billing } : {}),
       ...(usage?.timing ? { timing: usage.timing } : {}),
+      ...(response ? { response } : {}),
     }
     const cost = (interrupted: boolean): EventInput =>
       s.ev('cost/ledger', { ...spend, ...(interrupted ? { interrupted: true } : {}) })

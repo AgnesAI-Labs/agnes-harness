@@ -98,12 +98,13 @@ describe('model.json', () => {
       $defs: Record<string, unknown>
     }
     const names = Object.keys(m.$defs)
-    expect(names).toHaveLength(24)
+    expect(names).toHaveLength(25)
     for (const shipped of [
       'JsonValue',
       'ContentBlock',
       'ToolCall',
       'Billing',
+      'ResponseMeta',
       'SlotName',
       'ThinkingLevel',
       'AiErrorCode',

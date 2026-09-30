@@ -1,4 +1,4 @@
-import type { ModelRecord, RequestBody, RouteDecl } from '@agnes/protocol'
+import type { ModelRecord, RequestBody, ResponseMeta, RouteDecl } from '@agnes/protocol'
 import type {
   Api,
   AssistantMessageEvent,
@@ -13,7 +13,7 @@ import { sha256Hex } from '../../hash.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
 import { toContext } from './to-context.js'
-import { translateEvent } from './translate.js'
+import { responseMeta, translateEvent, withResponse } from './translate.js'
 import { AMBIENT_CREDENTIAL_APIS, streamOverApi } from './wire.js'
 
 /**
@@ -413,12 +413,18 @@ export class PiAdapter extends WireAdapter {
       'mistral-conversations',
       'pi-messages',
     ])
-    const fetchBody: typeof globalThis.fetch = async (input, init) => {
-      const request = new Request(input, init)
-      const bytes = new Uint8Array(await request.clone().arrayBuffer())
-      opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
-      return globalThis.fetch(request)
-    }
+    // `wire` belongs to one attempt: an abandoned attempt's late response must not overwrite the
+    // metadata of the attempt that replaced it.
+    const fetchBody =
+      (wire: ResponseMeta): typeof globalThis.fetch =>
+      async (input, init) => {
+        const request = new Request(input, init)
+        const bytes = new Uint8Array(await request.clone().arrayBuffer())
+        opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
+        const response = await globalThis.fetch(request)
+        Object.assign(wire, responseMeta(response))
+        return response
+      }
     // Two deadlines, both enforced here rather than by the wire library, and both merged with the
     // caller's own signal into one controller so the request below sees a single cancellation.
     //
@@ -448,6 +454,7 @@ export class PiAdapter extends WireAdapter {
         let ordinal = 0
         const nextOrdinal = () => ordinal++
         let emitted = false
+        const wire: ResponseMeta = {}
         let retryAfter: number | undefined
         let requestAuth: ModelAuth | undefined
         if (this.resolveCredential) {
@@ -499,7 +506,7 @@ export class PiAdapter extends WireAdapter {
           ...(decl.api === 'openai-codex-responses' && this.resolveCredential
             ? { transport: 'sse' as const }
             : {}),
-          ...(observable.has(decl.api) ? { fetch: fetchBody } : {}),
+          ...(observable.has(decl.api) ? { fetch: fetchBody(wire) } : {}),
         })[Symbol.asyncIterator]()
         try {
           for (;;) {
@@ -512,7 +519,7 @@ export class PiAdapter extends WireAdapter {
               clearTimeout(first)
               first = undefined
             }
-            for (const w of translateEvent(next.value, requestModel, nextOrdinal)) {
+            for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
               if (
                 w.type === 'error' &&
                 w.code === 'AUTH' &&
@@ -566,16 +573,15 @@ export class PiAdapter extends WireAdapter {
           // Whose cancellation it was decides what the caller is told, and the two are not the same
           // outcome: an abort is the caller's own decision and is never retried, a deadline is the
           // route's failure and may be.
-          if (opts.signal.aborted)
-            yield { type: 'error', reason: 'aborted', code: 'ABORTED', message: 'aborted', retryable: false }
-          else
-            yield {
-              type: 'error',
-              reason: 'error',
-              code: 'TIMEOUT',
-              message: firstSeen ? 'total timeout' : 'first token timeout',
-              retryable: true,
-            }
+          const aborted = opts.signal.aborted
+          yield {
+            type: 'error',
+            reason: aborted ? 'aborted' : 'error',
+            code: aborted ? 'ABORTED' : 'TIMEOUT',
+            message: aborted ? 'aborted' : firstSeen ? 'total timeout' : 'first token timeout',
+            retryable: !aborted,
+            ...withResponse(wire),
+          }
           return
         }
         if (retryAfter === undefined) {
@@ -588,6 +594,7 @@ export class PiAdapter extends WireAdapter {
               code: 'TRANSPORT',
               message: 'empty stream',
               retryable: true,
+              ...withResponse(wire),
             }
           return
         }

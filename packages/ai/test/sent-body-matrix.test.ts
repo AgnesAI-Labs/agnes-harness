@@ -7,12 +7,19 @@ import { fakeModel, fakeRequest } from '../testkit/index.js'
 import { assertLoopbackOnly, installLoopbackOnly, restoreLoopbackOnly } from './loopback-only.js'
 
 const apis = [
+  'openai-completions',
   'openai-responses',
   'azure-openai-responses',
   'anthropic-messages',
   'mistral-conversations',
   'pi-messages',
 ] as const
+// A local proxy's own header, a request id and a cookie: only the id's value may be recorded.
+const responseHeaders = {
+  'x-request-id': 'req-loopback',
+  'x-litellm-call-id': 'proxy-call-loopback',
+  'set-cookie': 'sid=cookie-value-never-recorded',
+}
 const usage = {
   input: 1,
   output: 1,
@@ -67,6 +74,16 @@ function reply(api: string): string {
       },
       { type: 'message_stop' },
     ]
+  } else if (api === 'openai-completions') {
+    // The served model differs from the requested one, as a gateway that remaps a model name does.
+    events = [
+      {
+        id: 'chatcmpl-loopback',
+        model: 'served-model',
+        choices: [{ index: 0, delta: { role: 'assistant', content: 'matrix-ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      },
+    ]
   } else if (api === 'mistral-conversations') {
     events = [
       {
@@ -99,10 +116,10 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
     bodies.push(Buffer.concat(chunks))
     paths.push(req.url ?? '')
     if (fail) {
-      res.writeHead(503, { 'content-type': 'application/json' })
+      res.writeHead(503, { ...responseHeaders, 'content-type': 'application/json' })
       res.end('{"error":{"message":"temporary loopback failure"}}')
     } else {
-      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.writeHead(200, { ...responseHeaders, 'content-type': 'text/event-stream' })
       res.end(reply(api))
     }
   })
@@ -167,16 +184,26 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
         },
       })
       expect(JSON.stringify(events[0])).not.toContain('fixture-secret')
+      expect(JSON.stringify(events)).not.toContain('cookie-value-never-recorded')
+      const response = events.flatMap((e) => (e.type === 'usage' || e.type === 'error' ? [e.response] : []))
+      expect(response).toHaveLength(1)
+      expect(response[0]?.headers).toEqual({ 'x-request-id': 'req-loopback' })
+      expect(response[0]?.headerNames).toEqual(expect.arrayContaining(['set-cookie', 'x-litellm-call-id']))
       expect(body.toString()).toContain(system)
       expect(body.toString()).toContain('hello é')
       return { events, body: JSON.parse(body.toString()) as Record<string, unknown> }
     }
     const first = await execute()
     expect(first.events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+    expect(first.events.find((e) => e.type === 'usage')).toMatchObject({ response: { status: 200 } })
+    if (api === 'openai-completions')
+      expect(first.events.find((e) => e.type === 'usage')).toMatchObject({
+        response: { id: 'chatcmpl-loopback', model: 'served-model' },
+      })
     expect(first.events.flatMap((e) => (e.type === 'text_delta' ? [e.delta] : [])).join('')).toBe('matrix-ok')
     fail = true
     const failed = await execute('m', 'failing system')
-    expect(failed.events.at(-1)).toMatchObject({ type: 'error' })
+    expect(failed.events.at(-1)).toMatchObject({ type: 'error', response: { status: 503 } })
     fail = false
     const recovered = await execute('m', 'recovered system')
     expect(recovered.events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
@@ -202,7 +229,7 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
         path.includes(
           api.endsWith('responses')
             ? 'responses'
-            : api === 'mistral-conversations'
+            : api === 'mistral-conversations' || api === 'openai-completions'
               ? 'chat/completions'
               : 'messages',
         ),
