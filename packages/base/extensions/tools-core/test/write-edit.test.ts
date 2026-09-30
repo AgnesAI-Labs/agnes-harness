@@ -53,18 +53,26 @@ describe('write', () => {
     expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('x'.repeat(100))
   })
 
-  it('does not mistake an unreadable file for a new one', async () => {
-    // Only "the file is not there" may be read as a new file. A permission error, a directory, or
-    // a sandbox refusal arriving as "no previous content" would switch the truncation guard off on
-    // exactly the reads that failed for a reason, and the overwrite would go ahead unchecked. This
-    // is a branch a memory filesystem never produces on its own, which is why it needs a fixture.
-    const ctx = fakeToolContext({
-      files: { 'locked.ts': 'x'.repeat(100) },
-      readErrors: { 'locked.ts': { code: 'EACCES', message: 'EACCES: permission denied' } },
-    })
-    await expect(writeTool.execute({ path: 'locked.ts', content: 'y' }, ctx)).rejects.toThrow('EACCES')
-    expect(dec.decode(ctx.mem.files.get('/work/proj/locked.ts'))).toBe('x'.repeat(100))
-  })
+  it.each([
+    ['EACCES', 'EACCES: permission denied'],
+    ['E_FS_DENIED', 'E_FS_DENIED: /locked.ts is outside every allow rule'],
+  ])(
+    'reports %s before writing and does not mistake an unreadable file for a new one',
+    async (code, message) => {
+      // Only "the file is not there" may be read as a new file. A permission error, a directory, or
+      // a sandbox refusal arriving as "no previous content" would switch the truncation guard off on
+      // exactly the reads that failed for a reason, and the overwrite would go ahead unchecked. This
+      // is a branch a memory filesystem never produces on its own, which is why it needs a fixture.
+      const ctx = fakeToolContext({
+        files: { 'locked.ts': 'x'.repeat(100) },
+        readErrors: { 'locked.ts': { code, message } },
+      })
+      const result = await writeTool.execute({ path: 'locked.ts', content: 'y' }, ctx)
+      expect(result.isError).toBe(true)
+      expect(textOf(result)).toBe(`write failed before writing: ${message}`)
+      expect(dec.decode(ctx.mem.files.get('/work/proj/locked.ts'))).toBe('x'.repeat(100))
+    },
+  )
 })
 
 describe('edit', () => {
