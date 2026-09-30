@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { generateModule, type JsonSchemaDoc } from './gen-core.js'
 import { writeDocs } from './gen-docs.js'
+import { writeRuntime } from './gen-runtime.js'
 
 const pkg = join(dirname(fileURLToPath(import.meta.url)), '..')
 type ImportSpec = { from: string; defs: string[] }
@@ -369,4 +370,5 @@ for (const t of TARGETS) {
 // stale page is as wrong as a stale module, and it is the only place the declaration tables are
 // readable as prose.
 dirty += writeDocs(check)
+dirty += writeRuntime(check)
 if (check && dirty) process.exit(1)

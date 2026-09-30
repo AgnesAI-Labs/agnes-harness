@@ -1229,7 +1229,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  'packages/protocol/src': 2201,
+  // Runtime public schema exports and generated authority SPI: measured 2452, no spare allocation.
+  'packages/protocol/src': 2452,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1343,7 +1344,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 936 -> 937; approved feature scope, no spare allocation.
   // checkToolDef bounds description length and parameter schema size and depth, with the three limits
   // exported. Measured 978, exact, no spare (+41).
-  'packages/extension-api/src': 978, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // Runtime public schema exports and generated authority SPI: measured 1132, no spare allocation.
+  'packages/extension-api/src': 1132, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
