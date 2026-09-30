@@ -60,6 +60,8 @@ The configuration service supports account lists, per-account routes, and a defa
 
 Credentials use `secret://namespace/name` references. File, environment, and vault adapters are different deployment options. Do not copy fake demo tokens into real services or expose real values in browser `publicConfig`, tool output, or environment dumps.
 
+An exported [preset definition](../../packages/protocol/schema/preset.json) may set `model.max_tokens` to a positive safe integer, for example `model: { max_tokens: 32768 }`. This sets the primary model's per-request output allowance, independently of catalog capacity; omitting it preserves the provider default. Request hooks may override it, and tree budgets may lower it. Use a value supported by the selected provider. This field belongs to the preset definition, not the profile's `presets` selection or a top-level profile `model` field. Existing sessions retain their resolved preset.
+
 <a id="skills-同名优先级覆盖"></a>
 
 ## Same-name Skill priority overrides

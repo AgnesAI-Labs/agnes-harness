@@ -313,7 +313,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
-  'packages/web/src/presentation': 116,
+  // Output-limit and rate-limit failures render actionable guidance. Measured +4, exact allocation.
+  'packages/web/src/presentation': 120,
   'packages/web/src/markdown': 48,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
@@ -923,7 +924,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 25456 (+5).
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
-  'packages/core/src': 25458,
+  // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
+  'packages/core/src': 25478,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2018,7 +2020,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 13399, exact (+11).
   // UI integration merge: the three UI lines moved most of this scope into packages/web-ui/src,
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
-  'packages/web/src': 13120,
+  // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
+  'packages/web/src': 13124,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

@@ -185,6 +185,12 @@ describe('web presentation controls', () => {
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'UNKNOWN')).toBe(
       '后台未能完成请求，请稍后重试。',
     )
+    expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'OUTPUT_LIMIT')).toBe(
+      '模型回复达到输出额度，本轮已停止。请要求分步生成，或调整请求输出额度后继续。',
+    )
+    expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'RATE_LIMIT')).toBe(
+      '模型服务返回限流错误（HTTP 429）。请稍后重试；若持续出现，请检查该账号的服务额度或联系模型服务方。',
+    )
     expect(errorNotice('配置已被其他客户端修改，请重新打开设置后再试。')).toBe(
       '配置已被其他客户端修改，请重新打开设置后再试。',
     )

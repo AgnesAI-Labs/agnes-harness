@@ -646,6 +646,14 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
   })
+  if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
+    const { request, derivedHash } = remintRequestWithMaxTokens(
+      out.request,
+      out.media,
+      s.preset.model.maxTokens,
+    )
+    out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
+  }
   out = await s.hooks.beforeRequest(out, slot, attempt)
   const mintedPrefix = {
     sections: out.request.sections,
@@ -1343,14 +1351,14 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         }
       }
     events.push(...refusedCalls, ...deviations, cost(false), effect.settle(effectOutcome({})))
-    if ((truncated && calls.length) || unparsed)
+    if (truncated || unparsed)
       events.push(
         s.ev('user/message', {
           content: [
             {
               type: 'text',
               text: truncated
-                ? 'Output was truncated; tool calls were discarded and no tool was executed. Use smaller tool calls and build large files incrementally; do not repeat the same oversized call.'
+                ? 'Output limit reached; this turn stopped and its unfinished tool calls were discarded. Continue with smaller tool calls and build large files incrementally, or configure a higher request output allowance.'
                 : 'INVALID_TOOL_CALL_FORMAT: a tool call was emitted as text and was not executed.',
             },
           ],
@@ -1381,16 +1389,26 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           )
         : withPhase(
             base,
-            {
-              kind: 'checkpoint',
-              continuation: (truncated && calls.length) || unparsed ? 'need_assistant' : 'may_finish',
-              triggerSeq: op.meta.triggerSeq,
-            },
+            truncated
+              ? {
+                  kind: 'failure_drain',
+                  error: {
+                    code: 'OUTPUT_LIMIT',
+                    message:
+                      'Model output limit reached. Use smaller requests or increase model.max_tokens before continuing.',
+                  },
+                  provenance: { kind: 'inference' },
+                }
+              : {
+                  kind: 'checkpoint',
+                  continuation: unparsed ? 'need_assistant' : 'may_finish',
+                  triggerSeq: op.meta.triggerSeq,
+                },
             { latestAssistantSeq: assistantSeq },
           )
     })
     await record(false)
-    return { phase: planned.length ? 'tools' : 'checkpoint' }
+    return { phase: planned.length ? 'tools' : truncated ? 'failure_drain' : 'checkpoint' }
   } finally {
     s.ac.signal.removeEventListener('abort', onSessionAbort)
   }
