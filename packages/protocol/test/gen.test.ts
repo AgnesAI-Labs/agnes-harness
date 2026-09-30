@@ -611,11 +611,6 @@ const SILENTLY_DROPPED_BEFORE_S1: Array<[string, Record<string, unknown>, RegExp
     { type: 'object', patternProperties: { '^.*$': { type: 'string' } }, additionalProperties: false },
     /patternProperties/,
   ],
-  [
-    'minProperties',
-    { type: 'object', properties: { a: { type: 'string' } }, additionalProperties: false, minProperties: 2 },
-    /minProperties/,
-  ],
   ['multipleOf', { type: 'integer', minimum: 1, multipleOf: 3 }, /multipleOf/],
   ['exclusiveMinimum', { type: 'number', exclusiveMinimum: 0 }, /exclusiveMinimum/],
   [

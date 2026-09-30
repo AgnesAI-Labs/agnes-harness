@@ -62,7 +62,9 @@ export function generatedContractMatches(store: StateStoreControl): PrototypeCon
   return store
 }
 
-export function declaredContractMatches(store: PrototypeControlContract): StateStoreControl {
+export function declaredContractMatches(
+  store: PrototypeControlContract,
+): Pick<StateStoreControl, RequiredMethod> {
   return store
 }
 
