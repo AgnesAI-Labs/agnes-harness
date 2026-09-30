@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/runtime/v1/preset.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://agnes.ai/schema/runtime/v1/preset.schema.json"
+    },
+    "kind": {
+      "const": "agh.preset"
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "extends": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "presetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["presetId", "digest"]
+    },
+    "selections": {
+      "type": "array",
+      "items": {
+        "$ref": "public.json#/$defs/ServiceSelection"
+      },
+      "maxItems": 128,
+      "minItems": 0
+    },
+    "configOverrides": {
+      "type": "array",
+      "items": {
+        "$ref": "public.json#/$defs/ConfigOverride"
+      },
+      "maxItems": 256,
+      "minItems": 0
+    },
+    "parameters": {
+      "$ref": "public.json#/$defs/ConfigValue"
+    },
+    "restrictions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capabilityCeiling": {
+          "type": "array",
+          "items": {
+            "$ref": "public.json#/$defs/CapabilityRequirement"
+          },
+          "maxItems": 256,
+          "minItems": 0
+        },
+        "minimumRecovery": {
+          "enum": ["R0", "R1", "R2"]
+        },
+        "allowedIsolation": {
+          "type": "array",
+          "items": {
+            "enum": ["trusted-in-process", "isolated-process", "remote"]
+          },
+          "maxItems": 3,
+          "minItems": 1
+        },
+        "limits": {
+          "$ref": "public.json#/$defs/Limits"
+        }
+      },
+      "required": []
+    }
+  },
+  "required": [
+    "$schema",
+    "kind",
+    "schemaVersion",
+    "id",
+    "revision",
+    "selections",
+    "configOverrides",
+    "parameters",
+    "restrictions"
+  ]
+}

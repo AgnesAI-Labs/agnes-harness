@@ -451,6 +451,9 @@
         "kind": {
           "const": "approval"
         },
+        "title": {
+          "type": "string"
+        },
         "body": {
           "type": "string"
         },

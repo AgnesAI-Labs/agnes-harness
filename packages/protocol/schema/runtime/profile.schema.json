@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/runtime/v1/profile.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://agnes.ai/schema/runtime/v1/profile.schema.json"
+    },
+    "kind": {
+      "const": "agh.profile"
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "extends": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["profileId", "digest"]
+    },
+    "requiredContractSet": {
+      "const": "agh.runtime/full-v1"
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "source": {
+            "$ref": "public.json#/$defs/PackageSource"
+          },
+          "manifestDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["id", "source", "manifestDigest", "enabled"]
+      },
+      "maxItems": 256,
+      "minItems": 0
+    },
+    "selections": {
+      "type": "array",
+      "items": {
+        "$ref": "public.json#/$defs/ServiceSelection"
+      },
+      "maxItems": 256,
+      "minItems": 0
+    },
+    "providerConfigs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "$ref": "public.json#/$defs/ProviderRef"
+          },
+          "config": {
+            "$ref": "public.json#/$defs/ConfigValue"
+          }
+        },
+        "required": ["provider", "config"]
+      },
+      "maxItems": 256,
+      "minItems": 0
+    },
+    "selectionPolicy": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+            "not": {
+              "const": "agh.container"
+            }
+          },
+          "major": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "logicalName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "allowedProviders": {
+            "type": "array",
+            "items": {
+              "$ref": "public.json#/$defs/ProviderRef"
+            },
+            "maxItems": 64,
+            "minItems": 1
+          },
+          "allowSessionSelect": {
+            "type": "boolean"
+          },
+          "configOverridePaths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "maxItems": 128,
+            "minItems": 0
+          },
+          "allowedIsolation": {
+            "type": "array",
+            "items": {
+              "enum": ["trusted-in-process", "isolated-process", "remote"]
+            },
+            "maxItems": 3,
+            "minItems": 1
+          },
+          "minimumRecovery": {
+            "enum": ["R0", "R1", "R2"]
+          }
+        },
+        "required": [
+          "contract",
+          "major",
+          "logicalName",
+          "allowedProviders",
+          "allowSessionSelect",
+          "configOverridePaths",
+          "allowedIsolation",
+          "minimumRecovery"
+        ]
+      },
+      "maxItems": 256,
+      "minItems": 0
+    },
+    "presets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "allowed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "presetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": ["presetId", "digest"]
+          },
+          "maxItems": 256,
+          "minItems": 1
+        }
+      },
+      "required": ["default", "allowed"]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capabilityCeiling": {
+          "type": "array",
+          "items": {
+            "$ref": "public.json#/$defs/CapabilityRequirement"
+          },
+          "maxItems": 256,
+          "minItems": 0
+        },
+        "minimumRecovery": {
+          "enum": ["R0", "R1", "R2"]
+        },
+        "allowedIsolation": {
+          "type": "array",
+          "items": {
+            "enum": ["trusted-in-process", "isolated-process", "remote"]
+          },
+          "maxItems": 3,
+          "minItems": 1
+        },
+        "sourcePolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowLocal": {
+              "type": "boolean"
+            },
+            "npmRegistries": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              },
+              "maxItems": 32,
+              "minItems": 0
+            },
+            "gitOrigins": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              },
+              "maxItems": 32,
+              "minItems": 0
+            },
+            "allowBuildScripts": {
+              "type": "boolean"
+            }
+          },
+          "required": ["allowLocal", "npmRegistries", "gitOrigins", "allowBuildScripts"]
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "$ref": "public.json#/$defs/ProviderRef"
+              },
+              "decision": {
+                "enum": ["allow", "ask", "deny"]
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "$ref": "public.json#/$defs/CapabilityRequirement"
+                },
+                "maxItems": 128,
+                "minItems": 0
+              },
+              "resourceScopes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "maxItems": 128,
+                "minItems": 0
+              }
+            },
+            "required": ["provider", "decision", "capabilities", "resourceScopes"]
+          },
+          "maxItems": 512,
+          "minItems": 0
+        }
+      },
+      "required": ["capabilityCeiling", "minimumRecovery", "allowedIsolation", "sourcePolicy", "grants"]
+    },
+    "limits": {
+      "$ref": "public.json#/$defs/Limits"
+    },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rendererSelections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "renderKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "rendererId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "target": {
+                "enum": ["web", "tui", "im", "sdk"]
+              }
+            },
+            "required": ["renderKey", "rendererId", "target"]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "requiredTargets": {
+          "type": "array",
+          "items": {
+            "enum": ["web", "tui", "im", "sdk"]
+          },
+          "maxItems": 4,
+          "minItems": 1
+        },
+        "shell": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "packageId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "contributionId": {
+              "$ref": "prototype.json#/$defs/Id"
+            }
+          },
+          "required": ["packageId", "contributionId"]
+        },
+        "registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "packageId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "contributionId": {
+              "$ref": "prototype.json#/$defs/Id"
+            }
+          },
+          "required": ["packageId", "contributionId"]
+        },
+        "fallbackRenderer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "packageId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "contributionId": {
+              "$ref": "prototype.json#/$defs/Id"
+            }
+          },
+          "required": ["packageId", "contributionId"]
+        }
+      },
+      "required": ["rendererSelections", "requiredTargets", "shell", "registry", "fallbackRenderer"]
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dataDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "cacheDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["dataDir", "cacheDir"]
+    },
+    "overrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowWorkspaceRestrictions": {
+          "type": "boolean"
+        },
+        "sessionParametersSchema": {
+          "$ref": "prototype.json#/$defs/SchemaRef"
+        }
+      },
+      "required": ["allowWorkspaceRestrictions", "sessionParametersSchema"]
+    }
+  },
+  "required": [
+    "$schema",
+    "kind",
+    "schemaVersion",
+    "id",
+    "revision",
+    "requiredContractSet",
+    "packages",
+    "selections",
+    "providerConfigs",
+    "selectionPolicy",
+    "presets",
+    "policy",
+    "limits",
+    "client",
+    "storage",
+    "overrides"
+  ]
+}

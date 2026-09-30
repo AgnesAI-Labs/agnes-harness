@@ -1,0 +1,1223 @@
+{
+  "anyOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$schema": {
+          "const": "https://agnes.ai/schema/runtime/v1/plugin-manifest.schema.json"
+        },
+        "kind": {
+          "const": "agh.plugin"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+        },
+        "runtimeApiMajor": {
+          "const": 1
+        },
+        "packageDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "entries": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "runtime": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            },
+            "web": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            },
+            "tui": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            },
+            "im": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            },
+            "sdk": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            }
+          },
+          "required": ["web"]
+        },
+        "schemas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ref": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+              }
+            },
+            "required": ["ref", "path"]
+          },
+          "maxItems": 512,
+          "minItems": 0
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "descriptor": {
+                "$ref": "public.json#/$defs/ProviderDescriptor"
+              },
+              "factory": {
+                "$ref": "public.json#/$defs/ExportRef"
+              }
+            },
+            "required": ["descriptor", "factory"]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "domainType": {
+                "$ref": "prototype.json#/$defs/TypeId"
+              },
+              "onCommittedTypes": {
+                "type": "array",
+                "items": {
+                  "$ref": "prototype.json#/$defs/TypeId"
+                },
+                "maxItems": 64,
+                "minItems": 1
+              },
+              "stateSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "viewSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "renderKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "reducer": {
+                "$ref": "public.json#/$defs/ExportRef"
+              },
+              "selectAuthorized": {
+                "$ref": "public.json#/$defs/ExportRef"
+              },
+              "commands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    },
+                    "inputSchema": {
+                      "$ref": "prototype.json#/$defs/SchemaRef"
+                    },
+                    "resultSchema": {
+                      "$ref": "prototype.json#/$defs/SchemaRef"
+                    },
+                    "handler": {
+                      "$ref": "public.json#/$defs/ExportRef"
+                    },
+                    "completion": {
+                      "enum": ["domain-commit", "runtime-accepted"]
+                    }
+                  },
+                  "required": ["name", "inputSchema", "resultSchema", "handler", "completion"]
+                },
+                "maxItems": 128,
+                "minItems": 0
+              },
+              "retention": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "readerAfterDisable": {
+                    "type": "boolean"
+                  },
+                  "deletionPolicy": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  }
+                },
+                "required": ["readerAfterDisable", "deletionPolicy"]
+              },
+              "readStateSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "querySchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "readerPolicy": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "capability": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "rules": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "pointer": {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        "resourcePointer": {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        "operation": {
+                          "type": "string",
+                          "maxLength": 1024
+                        }
+                      },
+                      "required": ["pointer", "resourcePointer", "operation"]
+                    },
+                    "maxItems": 128
+                  }
+                },
+                "required": ["capability", "rules"]
+              }
+            },
+            "required": [
+              "domainType",
+              "onCommittedTypes",
+              "stateSchema",
+              "viewSchema",
+              "renderKey",
+              "reducer",
+              "selectAuthorized",
+              "commands",
+              "retention",
+              "readStateSchema",
+              "querySchema",
+              "readerPolicy"
+            ]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "inputSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "outputSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "action": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "providerId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  },
+                  "method": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  }
+                },
+                "required": ["providerId", "method"]
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": ["id", "description", "inputSchema", "outputSchema", "action"]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "renderers": {
+          "type": "array",
+          "items": {
+            "$ref": "public.json#/$defs/RendererDescriptor"
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "runtime": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            },
+            "web": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            },
+            "tui": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            },
+            "im": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            },
+            "sdk": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            }
+          },
+          "required": ["runtime", "web", "tui", "im", "sdk"]
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "versionRange": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "optional": {
+                "type": "boolean"
+              },
+              "kind": {
+                "enum": ["runtime", "peer"]
+              }
+            },
+            "required": ["packageId", "versionRange", "optional", "kind"]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "bytes": {
+                "$ref": "prototype.json#/$defs/UInt53"
+              }
+            },
+            "required": ["path", "digest", "bytes"]
+          },
+          "maxItems": 4096,
+          "minItems": 1
+        },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "generatorVersion": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+            },
+            "sourceDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "authorDefinitionDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "reproducible": {
+              "type": "boolean"
+            }
+          },
+          "required": ["generatorVersion", "sourceDigest", "authorDefinitionDigest", "reproducible"]
+        },
+        "clientServices": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "packageDigest": {
+                    "$ref": "prototype.json#/$defs/Digest"
+                  },
+                  "contract": {
+                    "const": "agh.shell"
+                  },
+                  "apiMajor": {
+                    "const": 1
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "const": "web"
+                    },
+                    "maxItems": 1,
+                    "minItems": 1
+                  },
+                  "scope": {
+                    "const": "client"
+                  },
+                  "configSchema": {
+                    "$ref": "prototype.json#/$defs/SchemaRef"
+                  },
+                  "entry": {
+                    "$ref": "public.json#/$defs/ExportRef"
+                  },
+                  "requiredFeatures": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "prototype.json#/$defs/Id"
+                    },
+                    "maxItems": 64
+                  }
+                },
+                "required": [
+                  "id",
+                  "packageDigest",
+                  "contract",
+                  "apiMajor",
+                  "targets",
+                  "scope",
+                  "configSchema",
+                  "entry",
+                  "requiredFeatures"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "packageDigest": {
+                    "$ref": "prototype.json#/$defs/Digest"
+                  },
+                  "contract": {
+                    "const": "agh.ui-registry"
+                  },
+                  "apiMajor": {
+                    "const": 1
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "enum": ["web", "tui", "im", "sdk"]
+                    },
+                    "maxItems": 4,
+                    "minItems": 1
+                  },
+                  "scope": {
+                    "const": "client"
+                  },
+                  "configSchema": {
+                    "$ref": "prototype.json#/$defs/SchemaRef"
+                  },
+                  "entry": {
+                    "$ref": "public.json#/$defs/ExportRef"
+                  },
+                  "requiredFeatures": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "prototype.json#/$defs/Id"
+                    },
+                    "maxItems": 64
+                  }
+                },
+                "required": [
+                  "id",
+                  "packageDigest",
+                  "contract",
+                  "apiMajor",
+                  "targets",
+                  "scope",
+                  "configSchema",
+                  "entry",
+                  "requiredFeatures"
+                ]
+              }
+            ]
+          },
+          "maxItems": 128
+        },
+        "clientAssets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "styles": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "stylesheet"
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 7,
+                        "maxLength": 256,
+                        "pattern": "^\\./(?!/)(?!\\.\\.?/)(?!.*\\/\\.\\.?/)(?!.*//)[^\\\\:\\u0000-\\u001f]+\\.css$"
+                      }
+                    },
+                    "required": ["kind", "path"]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "skin"
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 7,
+                        "maxLength": 256,
+                        "pattern": "^\\./(?!/)(?!\\.\\.?/)(?!.*\\/\\.\\.?/)(?!.*//)[^\\\\:\\u0000-\\u001f]+\\.css$"
+                      },
+                      "skin": {
+                        "$ref": "public.json#/$defs/SkinMetadata"
+                      }
+                    },
+                    "required": ["kind", "path", "skin"]
+                  }
+                ]
+              }
+            }
+          },
+          "required": ["styles"]
+        },
+        "contracts": {
+          "type": "array",
+          "items": {
+            "$ref": "public.json#/$defs/CommunityContractDefinition"
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "default": []
+        },
+        "interceptors": {
+          "type": "array",
+          "items": {
+            "$ref": "public.json#/$defs/InterceptorRegistration"
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "default": []
+        }
+      },
+      "required": [
+        "$schema",
+        "kind",
+        "schemaVersion",
+        "id",
+        "version",
+        "runtimeApiMajor",
+        "packageDigest",
+        "entries",
+        "schemas",
+        "providers",
+        "domains",
+        "tools",
+        "renderers",
+        "permissions",
+        "dependencies",
+        "files",
+        "build",
+        "clientServices",
+        "clientAssets"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$schema": {
+          "const": "https://agnes.ai/schema/runtime/v1/plugin-manifest.schema.json"
+        },
+        "kind": {
+          "const": "agh.plugin"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+        },
+        "runtimeApiMajor": {
+          "const": 1
+        },
+        "packageDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "entries": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "runtime": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            },
+            "web": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            },
+            "tui": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            },
+            "im": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            },
+            "sdk": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+            }
+          },
+          "required": []
+        },
+        "schemas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ref": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+              }
+            },
+            "required": ["ref", "path"]
+          },
+          "maxItems": 512,
+          "minItems": 0
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "descriptor": {
+                "$ref": "public.json#/$defs/ProviderDescriptor"
+              },
+              "factory": {
+                "$ref": "public.json#/$defs/ExportRef"
+              }
+            },
+            "required": ["descriptor", "factory"]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "domainType": {
+                "$ref": "prototype.json#/$defs/TypeId"
+              },
+              "onCommittedTypes": {
+                "type": "array",
+                "items": {
+                  "$ref": "prototype.json#/$defs/TypeId"
+                },
+                "maxItems": 64,
+                "minItems": 1
+              },
+              "stateSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "viewSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "renderKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "reducer": {
+                "$ref": "public.json#/$defs/ExportRef"
+              },
+              "selectAuthorized": {
+                "$ref": "public.json#/$defs/ExportRef"
+              },
+              "commands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    },
+                    "inputSchema": {
+                      "$ref": "prototype.json#/$defs/SchemaRef"
+                    },
+                    "resultSchema": {
+                      "$ref": "prototype.json#/$defs/SchemaRef"
+                    },
+                    "handler": {
+                      "$ref": "public.json#/$defs/ExportRef"
+                    },
+                    "completion": {
+                      "enum": ["domain-commit", "runtime-accepted"]
+                    }
+                  },
+                  "required": ["name", "inputSchema", "resultSchema", "handler", "completion"]
+                },
+                "maxItems": 128,
+                "minItems": 0
+              },
+              "retention": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "readerAfterDisable": {
+                    "type": "boolean"
+                  },
+                  "deletionPolicy": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  }
+                },
+                "required": ["readerAfterDisable", "deletionPolicy"]
+              },
+              "readStateSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "querySchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "readerPolicy": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "capability": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "rules": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "pointer": {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        "resourcePointer": {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        "operation": {
+                          "type": "string",
+                          "maxLength": 1024
+                        }
+                      },
+                      "required": ["pointer", "resourcePointer", "operation"]
+                    },
+                    "maxItems": 128
+                  }
+                },
+                "required": ["capability", "rules"]
+              }
+            },
+            "required": [
+              "domainType",
+              "onCommittedTypes",
+              "stateSchema",
+              "viewSchema",
+              "renderKey",
+              "reducer",
+              "selectAuthorized",
+              "commands",
+              "retention",
+              "readStateSchema",
+              "querySchema",
+              "readerPolicy"
+            ]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "inputSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "outputSchema": {
+                "$ref": "prototype.json#/$defs/SchemaRef"
+              },
+              "action": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "providerId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  },
+                  "method": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  }
+                },
+                "required": ["providerId", "method"]
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": ["id", "description", "inputSchema", "outputSchema", "action"]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "renderers": {
+          "type": "array",
+          "items": {
+            "$ref": "public.json#/$defs/RendererDescriptor"
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "runtime": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            },
+            "web": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            },
+            "tui": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            },
+            "im": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            },
+            "sdk": {
+              "type": "array",
+              "items": {
+                "$ref": "public.json#/$defs/CapabilityRequirement"
+              },
+              "maxItems": 128,
+              "minItems": 0
+            }
+          },
+          "required": ["runtime", "web", "tui", "im", "sdk"]
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "versionRange": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "optional": {
+                "type": "boolean"
+              },
+              "kind": {
+                "enum": ["runtime", "peer"]
+              }
+            },
+            "required": ["packageId", "versionRange", "optional", "kind"]
+          },
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^\\./(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f]+$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "bytes": {
+                "$ref": "prototype.json#/$defs/UInt53"
+              }
+            },
+            "required": ["path", "digest", "bytes"]
+          },
+          "maxItems": 4096,
+          "minItems": 1
+        },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "generatorVersion": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+            },
+            "sourceDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "authorDefinitionDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "reproducible": {
+              "type": "boolean"
+            }
+          },
+          "required": ["generatorVersion", "sourceDigest", "authorDefinitionDigest", "reproducible"]
+        },
+        "clientServices": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "packageDigest": {
+                    "$ref": "prototype.json#/$defs/Digest"
+                  },
+                  "contract": {
+                    "const": "agh.shell"
+                  },
+                  "apiMajor": {
+                    "const": 1
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "const": "web"
+                    },
+                    "maxItems": 1,
+                    "minItems": 1
+                  },
+                  "scope": {
+                    "const": "client"
+                  },
+                  "configSchema": {
+                    "$ref": "prototype.json#/$defs/SchemaRef"
+                  },
+                  "entry": {
+                    "$ref": "public.json#/$defs/ExportRef"
+                  },
+                  "requiredFeatures": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "prototype.json#/$defs/Id"
+                    },
+                    "maxItems": 64
+                  }
+                },
+                "required": [
+                  "id",
+                  "packageDigest",
+                  "contract",
+                  "apiMajor",
+                  "targets",
+                  "scope",
+                  "configSchema",
+                  "entry",
+                  "requiredFeatures"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "packageDigest": {
+                    "$ref": "prototype.json#/$defs/Digest"
+                  },
+                  "contract": {
+                    "const": "agh.ui-registry"
+                  },
+                  "apiMajor": {
+                    "const": 1
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "enum": ["web", "tui", "im", "sdk"]
+                    },
+                    "maxItems": 4,
+                    "minItems": 1
+                  },
+                  "scope": {
+                    "const": "client"
+                  },
+                  "configSchema": {
+                    "$ref": "prototype.json#/$defs/SchemaRef"
+                  },
+                  "entry": {
+                    "$ref": "public.json#/$defs/ExportRef"
+                  },
+                  "requiredFeatures": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "prototype.json#/$defs/Id"
+                    },
+                    "maxItems": 64
+                  }
+                },
+                "required": [
+                  "id",
+                  "packageDigest",
+                  "contract",
+                  "apiMajor",
+                  "targets",
+                  "scope",
+                  "configSchema",
+                  "entry",
+                  "requiredFeatures"
+                ]
+              }
+            ]
+          },
+          "maxItems": 128
+        },
+        "contracts": {
+          "type": "array",
+          "items": {
+            "$ref": "public.json#/$defs/CommunityContractDefinition"
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "default": []
+        },
+        "interceptors": {
+          "type": "array",
+          "items": {
+            "$ref": "public.json#/$defs/InterceptorRegistration"
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "default": []
+        }
+      },
+      "required": [
+        "$schema",
+        "kind",
+        "schemaVersion",
+        "id",
+        "version",
+        "runtimeApiMajor",
+        "packageDigest",
+        "entries",
+        "schemas",
+        "providers",
+        "domains",
+        "tools",
+        "renderers",
+        "permissions",
+        "dependencies",
+        "files",
+        "build",
+        "clientServices"
+      ]
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/runtime/v1/plugin-manifest.schema.json"
+}

@@ -1,10 +1,20 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { JsonSchemaDoc } from '../../../packages/protocol/tools/gen-core.js'
-import { generateRuntimeArtifacts } from '../../../packages/protocol/tools/gen-runtime.js'
+import { generateFullRuntimeArtifacts } from '../../../packages/protocol/tools/gen-runtime-full.js'
 import {
   ARTIFACT_PATH,
   buildPrototypeSnapshot,
@@ -19,6 +29,46 @@ let snapshot: PrototypeSnapshot
 const rehash = (value: PrototypeSnapshot): PrototypeSnapshot => {
   const { snapshotDigest: _, ...body } = value
   return { ...body, snapshotDigest: jsonDigest(body) }
+}
+
+/** Workspace links stay in the copied checkout; external compiler dependencies use the installation. */
+function linkFixtureDependencies(
+  fixture: string,
+  inputs: PrototypeSnapshot['compileEvidence']['inputs'],
+): void {
+  const packages = new Map<string, string>()
+  for (const { path } of inputs) {
+    if (!/^packages\/[^/]+\/package\.json$/.test(path)) continue
+    const manifest = JSON.parse(readFileSync(join(fixture, path), 'utf8')) as { name: string }
+    packages.set(manifest.name, dirname(path))
+  }
+  const link = (source: string, target: string): void => {
+    mkdirSync(dirname(target), { recursive: true })
+    symlinkSync(source, target, 'junction')
+  }
+  const dependenciesAt = (directory: string): string[] => {
+    if (!existsSync(directory)) return []
+    return readdirSync(directory).flatMap((name) => {
+      if (name.startsWith('.')) return []
+      return name.startsWith('@')
+        ? readdirSync(join(directory, name)).map((child) => `${name}/${child}`)
+        : [name]
+    })
+  }
+  for (const directory of ['', ...packages.values()]) {
+    const installed = join(root, directory, 'node_modules')
+    const target = join(fixture, directory, 'node_modules')
+    mkdirSync(target, { recursive: true })
+    for (const name of dependenciesAt(installed)) {
+      if (packages.has(name) || name.startsWith('@agnes/')) continue
+      const dependency = realpathSync(join(installed, name))
+      // A workspace with another scope must also never point back to the source checkout.
+      const workspacePath = relative(join(root, 'packages'), dependency)
+      if (workspacePath && !isAbsolute(workspacePath) && !workspacePath.startsWith('..')) continue
+      link(dependency, join(target, name))
+    }
+    for (const [name, packageDirectory] of packages) link(join(fixture, packageDirectory), join(target, name))
+  }
 }
 
 beforeAll(() => {
@@ -159,35 +209,34 @@ describe('runtime prototype checkpoint', () => {
         mkdirSync(dirname(join(fixture, path)), { recursive: true })
         cpSync(join(root, path), join(fixture, path))
       }
-      symlinkSync(join(root, 'node_modules'), join(fixture, 'node_modules'), 'junction')
-      const agnes = join(fixture, 'packages/extension-api/node_modules/@agnes')
-      mkdirSync(agnes, { recursive: true })
-      symlinkSync(join(fixture, 'packages/protocol'), join(agnes, 'protocol'), 'junction')
-      for (const pkg of ['protocol', 'protocol-validation']) {
-        const target = join(fixture, 'packages', pkg, 'node_modules/@sinclair')
-        mkdirSync(target, { recursive: true })
-        symlinkSync(
-          join(root, 'packages', pkg, 'node_modules/@sinclair/typebox'),
-          join(target, 'typebox'),
-          'junction',
-        )
-      }
+      linkFixtureDependencies(fixture, snapshot.compileEvidence.inputs)
+      expect(
+        realpathSync(join(fixture, 'packages/protocol/node_modules/@agnes/resource-control-contracts')),
+      ).toBe(realpathSync(join(fixture, 'packages/resource-control-contracts')))
       expect(compilePrototype(fixture).diagnostics).toEqual([])
       const consumer = join(fixture, 'packages/extension-api/test/runtime/prototype-consumer.compile.ts')
       const source = readFileSync(consumer, 'utf8')
       writeFileSync(consumer, `${source}\nconst invalid: string = 123\n`)
-      expect(() => compilePrototype(fixture)).toThrow('public prototype API compilation failed')
+      expect(() => compilePrototype(fixture)).toThrow(/prototype-consumer\.compile\.ts.*error TS/)
       writeFileSync(consumer, source)
-      const schemaPath = join(fixture, 'packages/protocol/schema/runtime/prototype.json')
-      const schema: JsonSchemaDoc = JSON.parse(readFileSync(schemaPath, 'utf8'))
-      const methods = schema['x-state-store-control'] as Record<string, { input: string }>
-      const open = methods.open
-      if (!open) throw new Error('open must exist before the mutation')
-      open.input = 'Id'
-      writeFileSync(schemaPath, JSON.stringify(schema))
-      for (const [path, content] of Object.entries(generateRuntimeArtifacts(schema)))
+      const directory = join(fixture, 'packages/protocol/schema/runtime')
+      const metadataPath = join(directory, 'local-api.json')
+      const metadata = JSON.parse(readFileSync(metadataPath, 'utf8')) as {
+        'x-local-api': { runtime: { StateStoreControl: string } }
+      }
+      const declaration = metadata['x-local-api'].runtime.StateStoreControl
+      expect(declaration).toContain('open(request: Wire.StateOpenRequest,')
+      metadata['x-local-api'].runtime.StateStoreControl = declaration.replace(
+        'open(request: Wire.StateOpenRequest,',
+        'open(request: Wire.Id,',
+      )
+      writeFileSync(metadataPath, JSON.stringify(metadata))
+      // Keep the complete public surface and mutate only its generated Local declarations.
+      for (const [path, content] of Object.entries(generateFullRuntimeArtifacts(directory))) {
+        if (!/^\.\.\/extension-api\/src\/runtime\/public-\d+\.ts$/.test(path)) continue
         writeFileSync(join(fixture, 'packages/protocol', path), content)
-      expect(() => compilePrototype(fixture)).toThrow('public prototype API compilation failed')
+      }
+      expect(() => compilePrototype(fixture)).toThrow(/prototype-consumer\.compile\.ts.*error TS/)
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }

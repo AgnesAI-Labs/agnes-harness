@@ -363,6 +363,9 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
 
   packages/host:
     dependencies:
@@ -2713,7 +2716,6 @@ packages:
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   lightningcss-linux-x64-gnu@1.33.0:
     resolution: {integrity: sha512-ar+Ju7LmcN0Jo4FpL4hpFybwNG9/3A/Br5KW2n2jyODg3MEZXaDYADdemoNS+BDNfMgKvylJLj4S5tyRActuAg==}
