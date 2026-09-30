@@ -82,6 +82,12 @@
             "timeout_ms": {
               "type": "integer",
               "minimum": 1
+            },
+            "max_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "description": "Per-request output allowance, independent of the model catalog capacity. Omission preserves the selected provider default."
             }
           }
         },

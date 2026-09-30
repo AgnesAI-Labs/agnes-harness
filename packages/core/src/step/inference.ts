@@ -1,5 +1,4 @@
-import type { RequestBody as WireBody } from '@agnes/protocol'
-import { type InferenceEvent, type JsonValue, type ModelRecord, validateAgainst } from '@agnes/protocol'
+import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { conservativeSerializedTokens } from '../child/credits.js'
 import {
   releaseTreeReservation,
@@ -57,6 +56,7 @@ import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForMod
 import { type OpStateObj, type ToolCallState, withPhase } from './op-state.js'
 import { runCoreReplacement, runSlot } from './reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from './session.js'
+import { toolArgumentError } from './tool-args.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
 const reportedMediaWindows = new WeakMap<SessionImpl, Set<RequestMediaScanTruncation['reason']>>()
@@ -646,6 +646,14 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
   })
+  if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
+    const { request, derivedHash } = remintRequestWithMaxTokens(
+      out.request,
+      out.media,
+      s.preset.model.maxTokens,
+    )
+    out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
+  }
   out = await s.hooks.beforeRequest(out, slot, attempt)
   const mintedPrefix = {
     sections: out.request.sections,
@@ -1289,17 +1297,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         else if (!offered.has(c.name))
           refusal = { code: 'TOOL_NOT_DISCLOSED', text: 'tool was not disclosed in this request' }
         else {
-          let valid = false
-          try {
-            valid = validateAgainst(def.parameters, c.args).ok
-          } catch {
-            // A malformed schema is an argument refusal, never permission to invoke a classifier.
-          }
-          if (!valid)
-            refusal = {
-              code: 'TOOL_ARGS_INVALID',
-              text: 'tool arguments do not match the registered schema',
-            }
+          const argsError = toolArgumentError(def.parameters, c.args)
+          if (argsError) refusal = { code: 'TOOL_ARGS_INVALID', text: argsError }
           else {
             try {
               policy = resolveValidatedToolCallPolicy(def, c.args as JsonValue)
@@ -1352,14 +1351,14 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         }
       }
     events.push(...refusedCalls, ...deviations, cost(false), effect.settle(effectOutcome({})))
-    if ((truncated && calls.length) || unparsed)
+    if (truncated || unparsed)
       events.push(
         s.ev('user/message', {
           content: [
             {
               type: 'text',
               text: truncated
-                ? 'Output was truncated; tool calls were discarded. Continue.'
+                ? 'Output limit reached; this turn stopped and its unfinished tool calls were discarded. Continue with smaller tool calls and build large files incrementally, or configure a higher request output allowance.'
                 : 'INVALID_TOOL_CALL_FORMAT: a tool call was emitted as text and was not executed.',
             },
           ],
@@ -1390,16 +1389,26 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           )
         : withPhase(
             base,
-            {
-              kind: 'checkpoint',
-              continuation: (truncated && calls.length) || unparsed ? 'need_assistant' : 'may_finish',
-              triggerSeq: op.meta.triggerSeq,
-            },
+            truncated
+              ? {
+                  kind: 'failure_drain',
+                  error: {
+                    code: 'OUTPUT_LIMIT',
+                    message:
+                      'Model output limit reached. Use smaller requests or increase model.max_tokens before continuing.',
+                  },
+                  provenance: { kind: 'inference' },
+                }
+              : {
+                  kind: 'checkpoint',
+                  continuation: unparsed ? 'need_assistant' : 'may_finish',
+                  triggerSeq: op.meta.triggerSeq,
+                },
             { latestAssistantSeq: assistantSeq },
           )
     })
     await record(false)
-    return { phase: planned.length ? 'tools' : 'checkpoint' }
+    return { phase: planned.length ? 'tools' : truncated ? 'failure_drain' : 'checkpoint' }
   } finally {
     s.ac.signal.removeEventListener('abort', onSessionAbort)
   }

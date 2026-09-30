@@ -100,9 +100,11 @@ describe('I9 auth, usage and thinking protocol contracts', () => {
     expect(
       Value.Check(PresetDoc, {
         name: 'subscription',
-        model: { thinking: { primary: 'high', compaction: 'medium' } },
+        model: { thinking: { primary: 'high', compaction: 'medium' }, max_tokens: 32768 },
       }),
     ).toBe(true)
+    for (const max_tokens of [0, -1, 1.5, '32768', null, Number.MAX_SAFE_INTEGER + 1])
+      expect(Value.Check(PresetDoc, { name: 'subscription', model: { max_tokens } })).toBe(false)
     expect(
       Value.Check(PresetDoc, { name: 'subscription', model: { thinking: { primary: 'extreme' } } }),
     ).toBe(false)
