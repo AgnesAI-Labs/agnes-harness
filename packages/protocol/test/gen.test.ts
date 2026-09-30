@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { Value } from '@sinclair/typebox/value'
 import { describe, expect, it } from 'vitest'
 import { generateModule, UNSUPPORTED_NODES } from '../tools/gen-core.js'
+import { prepareSessionSchema } from '../tools/gen-session.js'
 
 const mini = {
   $defs: {
@@ -56,7 +58,7 @@ describe('generateModule', () => {
     expect(Value.Check(mod.EventEnvelope, { seq: 1 })).toBe(false)
   })
   it('checked-in gen/ts/session-v1.ts equals a fresh generation', () => {
-    const schema = JSON.parse(readFileSync(new URL('../schema/session-v1.json', import.meta.url), 'utf8'))
+    const schema = prepareSessionSchema(fileURLToPath(new URL('../schema/session-v1.json', import.meta.url)))
     const fresh = generateModule(schema, 'SessionV1')
     const onDisk = readFileSync(new URL('../gen/ts/session-v1.ts', import.meta.url), 'utf8')
     expect(onDisk).toBe(fresh)
@@ -771,7 +773,7 @@ describe('generateModule: contradictory sibling constraints on const/enum nodes'
     expect(() => generateModule(schema, 'M', 'probe.json')).toThrow(/contradictory schema/)
   })
   it('EventEnvelope.type (enum ∪ pattern under maxLength:128) is NOT contradictory', () => {
-    const doc = JSON.parse(readFileSync(new URL('../schema/session-v1.json', import.meta.url), 'utf8'))
+    const doc = prepareSessionSchema(fileURLToPath(new URL('../schema/session-v1.json', import.meta.url)))
     expect(() => generateModule(doc, 'SessionV1', 'packages/protocol/schema/session-v1.json')).not.toThrow()
   })
 })

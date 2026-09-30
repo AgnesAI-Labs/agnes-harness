@@ -9,6 +9,7 @@ import { type ToolDef, ToolDef as ToolDefSchema } from '../gen/ts/tooldef.js'
 import { EXT_EVENT_PATTERN } from './constants.js'
 import { type RpcError, rpcError } from './errors.js'
 import { validateRequestMedia } from './request-media.js'
+import { validateRuntimeValue } from './runtime/validation.js'
 
 export type { ValidationError, ValidationResult } from '../../protocol-validation/src/validate.js'
 export { isDateTime, validateAgainst } from '../../protocol-validation/src/validate.js'
@@ -37,7 +38,17 @@ export function validateEvent(x: unknown): ValidationResult<S.EventEnvelope> {
     if (EXT_EVENT_PATTERN.test(env.value.type)) return env
     return { ok: false, errors: [{ path: '/type', message: 'no data schema', code: 'OTHER' }] }
   }
-  const data = validateAgainst<unknown>(def, env.value.data, '/data')
+  const runtimeProof = env.value.type === 'runtime/format' || env.value.type === 'runtime/state-commit'
+  if (runtimeProof && env.value.ignorable === true)
+    return {
+      ok: false,
+      errors: [{ path: '/ignorable', message: 'authority proof is not ignorable', code: 'OTHER' }],
+    }
+  const data = runtimeProof
+    ? validateRuntimeValue<unknown>(def, env.value.data)
+    : validateAgainst<unknown>(def, env.value.data, '/data')
+  if (!data.ok && runtimeProof)
+    return { ok: false, errors: data.errors.map((error) => ({ ...error, path: `/data${error.path}` })) }
   if (!data.ok) return { ok: false, errors: data.errors }
   if (env.value.type === 'request/header') {
     const media = (data.value as S.RequestHeader).media

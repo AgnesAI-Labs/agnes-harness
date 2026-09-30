@@ -376,6 +376,7 @@ export interface RuntimeWireTypes {
   StateScanRequest: Schemas.StateScanRequest
   ChildCreateRequest: Schemas.ChildCreateRequest
   StreamRegistration: Schemas.StreamRegistration
+  RuntimeFormatData: Schemas.RuntimeFormatData
   RuntimeCommitData: Schemas.RuntimeCommitData
   InboxRecord: Schemas.InboxRecord
   MaintenanceEnvelopeJsonValue: Schemas.MaintenanceEnvelopeJsonValue
