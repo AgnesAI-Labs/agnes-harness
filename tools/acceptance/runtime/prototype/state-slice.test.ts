@@ -703,6 +703,317 @@ describe('runtime state records, proof rows, and ledger events', () => {
     if (!changed.ok) expect(changed.error.detailCode).toBe('idempotency_conflict')
   })
 
+  it('verifies one session when a sibling session ledger is damaged', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    expect(
+      (
+        await store.createRun(
+          admission({ sessionId: 'session-2', runId: 'run-2', ticketId: 'ticket-2', text: 'other' }),
+          context(),
+        )
+      ).ok,
+    ).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      const row = db
+        .prepare(
+          "SELECT integrity_digest FROM events WHERE session_key = 'session-2' AND type = 'runtime/state-commit'",
+        )
+        .get() as { integrity_digest: string }
+      const flipped = `${row.integrity_digest.startsWith('0') ? '1' : '0'}${row.integrity_digest.slice(1)}`
+      db.prepare(
+        "UPDATE events SET integrity_digest = ? WHERE session_key = 'session-2' AND type = 'runtime/state-commit'",
+      ).run(flipped)
+    })
+    const reopened = openStore(path)
+    const continued = await reopened.createRun(
+      admission({ ticketId: 'ticket-3', runId: 'run-3', text: 'more' }),
+      context(),
+    )
+    const damaged = await reopened.open(
+      {
+        requestId: 'open-sibling',
+        authority,
+        sessionId: 'session-2',
+        mode: 'write',
+        writerId: 'writer-b',
+        ttlMs: 1_000,
+      },
+      context(),
+    )
+    reopened.close()
+    expect(continued.ok).toBe(true)
+    if (continued.ok && continued.value.state === 'created') expect(continued.value.commit.lastSeq).toBe(3)
+    expect(damaged.ok).toBe(false)
+    if (!damaged.ok) expect(damaged.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        "SELECT writer_id FROM runtime_leases WHERE scope_id = 'session-2'",
+      ),
+    ).toEqual([])
+  })
+
+  it('continues after another connection appends a valid commit', async () => {
+    const path = file()
+    const local = openStore(path)
+    expect((await local.createRun(admission(), context())).ok).toBe(true)
+    const remote = openStore(path)
+    const appended = await remote.createRun(
+      admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'remote' }),
+      context(),
+    )
+    remote.close()
+    const continued = await local.createRun(
+      admission({ ticketId: 'ticket-3', runId: 'run-3', text: 'local' }),
+      context(),
+    )
+    local.close()
+    expect(appended.ok).toBe(true)
+    expect(continued.ok).toBe(true)
+    if (continued.ok && continued.value.state === 'created') {
+      expect(continued.value.commit.firstSeq).toBe(4)
+      expect(continued.value.commit.lastSeq).toBe(4)
+    }
+    expect(
+      query<{ n: number }>(path, "SELECT COUNT(*) AS n FROM events WHERE type = 'runtime/state-commit'"),
+    ).toEqual([{ n: 3 }])
+  })
+
+  it.each([
+    [
+      'sequence',
+      (db: DatabaseSync) => {
+        db.prepare('UPDATE events SET seq = 99 WHERE session_key = ? AND seq = 2').run('session-1')
+      },
+    ],
+    [
+      'digest',
+      (db: DatabaseSync) => {
+        const row = db
+          .prepare('SELECT integrity_digest FROM events WHERE session_key = ? AND seq = 2')
+          .get('session-1') as {
+          integrity_digest: string
+        }
+        const flipped = `${row.integrity_digest.startsWith('0') ? '1' : '0'}${row.integrity_digest.slice(1)}`
+        db.prepare('UPDATE events SET integrity_digest = ? WHERE session_key = ? AND seq = 2').run(
+          flipped,
+          'session-1',
+        )
+      },
+    ],
+    [
+      'latest commit',
+      (db: DatabaseSync) => {
+        db.prepare(
+          "UPDATE runtime_session_meta SET latest_commit_id = 'missing-commit' WHERE session_id = ?",
+        ).run('session-1')
+      },
+    ],
+  ])('refuses the next write when the verified %s changes', async (_name, change) => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    mutate(path, change)
+    const opened = await store.open(writeOpen('open-tail'), context())
+    const created = await store.createRun(
+      admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'after' }),
+      context(),
+    )
+    store.close()
+    expect(opened.ok).toBe(false)
+    if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(created.ok).toBe(false)
+    if (!created.ok) expect(created.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+    expect(count(path, 'events')).toBe(2)
+  })
+
+  it('does not advance past a rolled-back write', async () => {
+    const path = file()
+    let fail = false
+    const store = openStore(
+      path,
+      () => Date.parse(admittedAt),
+      () => {
+        if (fail) throw new Error('stop before commit')
+      },
+    )
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    fail = true
+    const rolled = await store.createRun(
+      admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'rollback' }),
+      context(),
+    )
+    fail = false
+    const next = await store.createRun(
+      admission({ ticketId: 'ticket-3', runId: 'run-3', text: 'after' }),
+      context(),
+    )
+    store.close()
+    expect(rolled.ok).toBe(false)
+    if (!rolled.ok) expect(rolled.error).toMatchObject({ code: 'internal', detailCode: 'fault' })
+    expect(next.ok).toBe(true)
+    if (next.ok && next.value.state === 'created') {
+      expect(next.value.commit.firstSeq).toBe(3)
+      expect(next.value.commit.lastSeq).toBe(3)
+    }
+    expect(
+      query<{ n: number }>(path, "SELECT COUNT(*) AS n FROM events WHERE type = 'runtime/state-commit'"),
+    ).toEqual([{ n: 2 }])
+  })
+
+  it('leaves an uncovered record head for the next open', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    mutate(path, (db) => {
+      db.prepare(
+        `INSERT INTO runtime_record_versions
+         SELECT 'rogue-record', record_revision, schema_json, commit_id, digest, owner_json, value_json
+         FROM runtime_record_versions WHERE record_id = 'run:run-1'`,
+      ).run()
+      db.prepare(
+        `INSERT INTO runtime_records
+         SELECT 'rogue-record', schema_json, min_reader, record_revision, last_commit_id,
+                created_at, updated_at, owner_json, value_json, body_digest
+         FROM runtime_records WHERE record_id = 'run:run-1'`,
+      ).run()
+    })
+    const continued = await store.createRun(
+      admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'next' }),
+      context(),
+    )
+    const opened = await store.open(writeOpen('open-rogue-live'), context())
+    store.close()
+    expect(continued.ok).toBe(true)
+    if (continued.ok && continued.value.state === 'created') expect(continued.value.commit.lastSeq).toBe(3)
+    expect(opened.ok).toBe(false)
+    if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+  })
+
+  it('leaves a changed record reader for the next open', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    mutate(path, (db) => {
+      db.prepare("UPDATE runtime_records SET min_reader = 999 WHERE record_id = 'run:run-1'").run()
+    })
+    const continued = await store.createRun(
+      admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'next' }),
+      context(),
+    )
+    const opened = await store.open(writeOpen('open-reader-live'), context())
+    store.close()
+    expect(continued.ok).toBe(true)
+    expect(opened.ok).toBe(false)
+    if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+  })
+
+  it.each([
+    [
+      'run id',
+      (probe: { runId: string; commit: { lastSeq: number } }) => {
+        probe.runId = 'rogue-run'
+      },
+    ],
+    [
+      'commit sequence',
+      (probe: { runId: string; commit: { lastSeq: number } }) => {
+        probe.commit.lastSeq = 99
+      },
+    ],
+  ])('rejects a reopened admission whose %s no longer matches the attested run', async (_name, change) => {
+    const path = file()
+    const store = openStore(path)
+    const request = admission()
+    expect((await store.createRun(request, context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      const row = db.prepare('SELECT probe_json FROM runtime_admissions').get() as { probe_json: string }
+      const probe = JSON.parse(row.probe_json) as { runId: string; commit: { lastSeq: number } }
+      change(probe)
+      db.prepare('UPDATE runtime_admissions SET probe_json = ?').run(JSON.stringify(probe))
+    })
+    const reopened = openStore(path)
+    const replayed = await reopened.createRun(request, context())
+    reopened.close()
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(count(path, 'events')).toBe(2)
+    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+  })
+
+  it('rejects a repeated admission when its stored run id changes', async () => {
+    const path = file()
+    const store = openStore(path)
+    const request = admission()
+    expect((await store.createRun(request, context())).ok).toBe(true)
+    mutate(path, (db) => {
+      const row = db.prepare('SELECT probe_json FROM runtime_admissions').get() as { probe_json: string }
+      const probe = JSON.parse(row.probe_json) as { runId: string }
+      probe.runId = 'rogue-run'
+      db.prepare('UPDATE runtime_admissions SET probe_json = ?').run(JSON.stringify(probe))
+    })
+    const replayed = await store.createRun(request, context())
+    store.close()
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(count(path, 'events')).toBe(2)
+  })
+
+  it('rejects a replayed write-open whose stored writer epoch was changed', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    const first = await store.open(request, context())
+    mutate(path, (db) => {
+      const row = db
+        .prepare(
+          "SELECT result_json FROM runtime_request_results WHERE method = 'open' AND request_id = 'open-write'",
+        )
+        .get() as { result_json: string }
+      const result = JSON.parse(row.result_json) as { claim: { writerEpoch: number } }
+      result.claim.writerEpoch = 42
+      db.prepare(
+        "UPDATE runtime_request_results SET result_json = ? WHERE method = 'open' AND request_id = 'open-write'",
+      ).run(JSON.stringify(result))
+    })
+    const replayed = await store.open(request, context())
+    store.close()
+    expect(first.ok).toBe(true)
+    if (first.ok) expect(first.value.claim?.writerEpoch).toBe(1)
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(query<{ writer_epoch: number }>(path, 'SELECT writer_epoch FROM runtime_leases')).toEqual([
+      { writer_epoch: 1 },
+    ])
+  })
+
+  it('replays an acquire after the ledger advances', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = leaseRequest('lease-acquire', 'acquire', 'writer-a', 0)
+    const first = await store.lease(request, context())
+    expect(
+      (await store.createRun(admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'next' }), context()))
+        .ok,
+    ).toBe(true)
+    const replayed = await store.lease(request, context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(replayed).toEqual(first)
+    expect(query<{ writer_epoch: number }>(path, 'SELECT writer_epoch FROM runtime_leases')).toEqual([
+      { writer_epoch: 1 },
+    ])
+  })
+
   it('does not deduplicate a read open, which takes no writer lease', async () => {
     const path = file()
     const store = openStore(path)

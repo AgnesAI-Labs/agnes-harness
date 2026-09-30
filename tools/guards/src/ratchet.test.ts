@@ -2509,7 +2509,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 39675.
   // Record heads match their latest attested version, and a repeated write request returns its
   // original result. Measured 39883.
-  'packages/host/src': 39883,
+  // A verified session head is reused for later writes. Opening a session still rechecks that session.
+  // Measured 40049.
+  'packages/host/src': 40049,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

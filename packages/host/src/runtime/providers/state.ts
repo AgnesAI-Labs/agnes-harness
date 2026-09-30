@@ -86,10 +86,10 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
     ok: false,
     error: error(code, detailCode, message),
   })
-  const run = <T>(context: CallContext, body: () => T): Promise<Outcome<T>> => {
-    if (context.signal.aborted) return Promise.resolve(failure('cancelled', 'aborted', 'call was cancelled'))
+  const run = async <T>(context: CallContext, body: () => T | Promise<T>): Promise<Outcome<T>> => {
+    if (context.signal.aborted) return failure('cancelled', 'aborted', 'call was cancelled')
     try {
-      return Promise.resolve({ ok: true, value: body() })
+      return { ok: true, value: await body() }
     } catch (caught) {
       if (caught instanceof StateRefusal)
         return Promise.resolve({
