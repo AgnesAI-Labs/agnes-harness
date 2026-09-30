@@ -12,6 +12,7 @@
   },
   "files": [
     "../../packages/extension-api/test/runtime/prototype-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/authoring-consumer.compile.ts",
     "../check-runtime-prototype-checkpoint.ts"
   ]
 }

@@ -541,11 +541,11 @@ function emit(s: Json, ctx: EmitCtx): string {
   }
   if (s.const !== undefined) {
     checkLiteralNode([s.const], s, ctx, 'const')
-    return `Type.Literal(${lit(s.const)})`
+    return s.const === null ? 'Type.Null()' : `Type.Literal(${lit(s.const)})`
   }
   if (Array.isArray(s.enum)) {
     checkLiteralNode(s.enum as unknown[], s, ctx, 'enum')
-    return `Type.Union([${(s.enum as unknown[]).map((v) => `Type.Literal(${lit(v)})`).join(', ')}])`
+    return `Type.Union([${(s.enum as unknown[]).map((v) => (v === null ? 'Type.Null()' : `Type.Literal(${lit(v)})`)).join(', ')}])`
   }
   if (Array.isArray(s.oneOf)) return emitCombinator(s, 'oneOf', ctx)
   if (Array.isArray(s.anyOf) && !s.type) return emitCombinator(s, 'anyOf', ctx)
@@ -646,18 +646,28 @@ function emit(s: Json, ctx: EmitCtx): string {
             )
           return `Type.Record(Type.String({ pattern: ${lit(names.pattern)} }), ${valueSrc}${opts({ ...s, additionalProperties: false }, ['additionalProperties', 'minProperties', 'maxProperties'])})`
         }
-        // Plain dictionary Record<string, T>: consumes only type + additionalProperties. This
-        // branch likewise does not implement `minProperties` and friends; they fall through to
-        // checkNoLeftoverKeys and throw.
-        checkNoLeftoverKeys(s, ctx, 'object (dict)', ['type', 'additionalProperties'])
-        return `Type.Record(Type.String(), ${valueSrc})`
+        // Plain dictionaries preserve the same property count limits as keyed dictionaries.
+        checkNoLeftoverKeys(s, ctx, 'object (dict)', [
+          'type',
+          'additionalProperties',
+          'minProperties',
+          'maxProperties',
+        ])
+        return `Type.Record(Type.String(), ${valueSrc}${opts(s, ['minProperties', 'maxProperties'])})`
       }
       // The important one, and the worst case the leftover-key check was added for:
       // `patternProperties` is not in the consumed list, so
       // `{type:'object', patternProperties:…, additionalProperties:false}` now throws instead of
       // emitting `Type.Object({}, { additionalProperties: false })` — an always-false validator that
       // rejects every key.
-      checkNoLeftoverKeys(s, ctx, 'object', ['type', 'properties', 'required', 'additionalProperties'])
+      checkNoLeftoverKeys(s, ctx, 'object', [
+        'type',
+        'properties',
+        'required',
+        'additionalProperties',
+        'minProperties',
+        'maxProperties',
+      ])
       // `required` may name a property that is not present in `properties`. JSON Schema uses this
       // shape for presence-only assertions (for example inside `not`), but the old emitter silently
       // dropped those names because it only iterated `properties`. Preserve the assertion with an
@@ -684,14 +694,14 @@ function emit(s: Json, ctx: EmitCtx): string {
         }),
         ...requiredOnly,
       ].join(', ')
-      let ap = ''
-      if (s.additionalProperties === false) ap = ', { additionalProperties: false }'
+      let ap = opts(s, ['additionalProperties', 'minProperties', 'maxProperties'])
+      if (s.additionalProperties === true) ap = opts(s, ['minProperties', 'maxProperties'])
       else if (s.additionalProperties && typeof s.additionalProperties === 'object') {
         const additional = emit(s.additionalProperties as Json, {
           ...ctx,
           path: `${ctx.path}/additionalProperties`,
         })
-        ap = `, { additionalProperties: ${additional} }`
+        ap = `, { additionalProperties: ${additional}${s.minProperties === undefined ? '' : `, minProperties: ${s.minProperties}`}${s.maxProperties === undefined ? '' : `, maxProperties: ${s.maxProperties}`} }`
       }
       return `Type.Object({ ${body} }${ap})`
     }

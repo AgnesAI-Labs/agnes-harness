@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./runtime": "./src/runtime/index.ts",
+    "./runtime/authoring": "./src/runtime/authoring.ts",
+    "./client": "./src/client/index.ts",
     "./testkit": "./testkit/index.ts"
   },
   "scripts": {
@@ -22,6 +24,7 @@
     "@sinclair/typebox": ">=0.34"
   },
   "devDependencies": {
+    "@types/react": "18.3.12",
     "@sinclair/typebox": "0.34.33",
     "@agnes/core": "workspace:*"
   },

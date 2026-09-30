@@ -1345,7 +1345,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // checkToolDef bounds description length and parameter schema size and depth, with the three limits
   // exported. Measured 978, exact, no spare (+41).
   // Runtime public schema exports and generated authority SPI: measured 1132, no spare allocation.
-  'packages/extension-api/src': 1132, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // Generated runtime/client contracts and pure author declarations: exact measured total, no spare.
+  'packages/extension-api/src': 2439,
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.

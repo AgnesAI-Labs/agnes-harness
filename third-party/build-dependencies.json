@@ -24,9 +24,10 @@
       "version": "18.3.12",
       "license": "MIT",
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react",
-      "purpose": "Type declarations for React 18 used by the web workbench and the web-client module author API.",
+      "purpose": "Type declarations for React 18 used by the web workbench and public client author APIs.",
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
+        "packages/extension-api",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-client",
