@@ -35,6 +35,9 @@ export const EVENT_TYPES = [
   'participant',
   'harness/refine',
   'subagent/cost',
+  // Runtime authority proofs
+  'runtime/format',
+  'runtime/state-commit',
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 

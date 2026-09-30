@@ -3,6 +3,8 @@
   "$id": "https://agnes.ai/schema/session-v1.json",
   "title": "agnes-session/v1",
   "x-agnes-data": {
+    "runtime/format": "RuntimeFormatData",
+    "runtime/state-commit": "RuntimeCommitData",
     "session/start": "SessionStart",
     "turn/start": "TurnStart",
     "turn/end": "TurnEnd",
@@ -37,6 +39,12 @@
   },
   "$ref": "#/$defs/EventEnvelope",
   "$defs": {
+    "RuntimeCommitData": {
+      "$ref": "https://agnes.ai/schema/runtime/v1/public.json#/$defs/RuntimeCommitData"
+    },
+    "RuntimeFormatData": {
+      "$ref": "https://agnes.ai/schema/runtime/v1/public.json#/$defs/RuntimeFormatData"
+    },
     "JsonValue": {
       "anyOf": [
         { "type": "null" },
@@ -149,7 +157,9 @@
                 "feedback/implicit",
                 "participant",
                 "harness/refine",
-                "subagent/cost"
+                "subagent/cost",
+                "runtime/format",
+                "runtime/state-commit"
               ]
             },
             {

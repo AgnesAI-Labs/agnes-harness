@@ -23,6 +23,7 @@ export const SOURCE_FILES = [
   'packages/protocol/tools/gen-runtime.ts',
   'packages/protocol/tools/gen-runtime-full.ts',
   'packages/protocol/tools/gen-runtime-refs.ts',
+  'packages/protocol/tools/gen-session.ts',
   'packages/protocol/tools/gen.ts',
   'packages/protocol/src/jcs.ts',
   'packages/protocol/src/runtime/jcs-digest.ts',
@@ -31,6 +32,8 @@ export const SOURCE_FILES = [
 ] as const
 
 export const GENERATED_FILES = [
+  'packages/protocol/gen/ts/session-v1.ts',
+  'packages/protocol/gen/ts/agnes-v1.ts',
   'packages/extension-api/src/runtime/index.ts',
   'packages/protocol/gen/ts/runtime-prototype.ts',
   'packages/protocol/src/runtime/index.ts',

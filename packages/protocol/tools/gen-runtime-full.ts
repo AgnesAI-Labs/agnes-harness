@@ -58,9 +58,13 @@ export function loadRuntimeSchemaGraph(directory: string): {
         if (!match) throw new Error(`unsupported external runtime reference ${child}`)
         let target = match[1] ? resolve(dirname(file), match[1]) : file
         if (match[1]?.startsWith('https://agnes.ai/schema/')) {
+          const runtime = /^https:\/\/agnes\.ai\/schema\/runtime\/v1\/(prototype|public)\.json$/.exec(
+            match[1],
+          )
           const external = /^https:\/\/agnes\.ai\/schema\/([a-z0-9-]+\.json)$/.exec(match[1])
-          if (!external) throw new Error(`unsupported canonical runtime reference ${child}`)
-          target = resolve(directory, '..', external[1] as string)
+          if (runtime) target = resolve(directory, `${runtime[1]}.json`)
+          else if (external) target = resolve(directory, '..', external[1] as string)
+          else throw new Error(`unsupported canonical runtime reference ${child}`)
         }
         return [key, `#/$defs/${add(target, match[2] as string)}`]
       }),

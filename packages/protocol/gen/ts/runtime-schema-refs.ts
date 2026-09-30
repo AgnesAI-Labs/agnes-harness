@@ -7,6 +7,16 @@ function freeze<T>(value: T): T {
   return value
 }
 export const RuntimeSchemaRefs = freeze({
+  "RuntimeCommitData": {
+    "typeId": "agh.runtime/state-commit@1",
+    "revision": 1,
+    "digest": "633cc1e6742cc39bdb77840fa3c6b5400d26cd521a382e7181f47a30a580fe2f"
+  },
+  "RuntimeFormatData": {
+    "typeId": "agh.runtime/format@1",
+    "revision": 1,
+    "digest": "e1afdd22b9e3e474975689edd75c23890cdd00d74a13cafbf899d7791d4575c6"
+  },
   "StandardToolOutput": {
     "typeId": "agh.tool/standard-output@1",
     "revision": 1,
