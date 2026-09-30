@@ -12,6 +12,7 @@ import { AiSetupError } from '../../errors.js'
 import { sha256Hex } from '../../hash.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
+import { AGNES_AI_BASE_URL } from './providers/agnes-ai.js'
 import { toContext } from './to-context.js'
 import { responseMeta, translateEvent, withResponse } from './translate.js'
 import { AMBIENT_CREDENTIAL_APIS, streamOverApi } from './wire.js'
@@ -499,6 +500,10 @@ export class PiAdapter extends WireAdapter {
         if (this.providerId) requestModel.provider = this.providerId
         const it = this.streamImpl(requestModel, context, {
           ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
+          // Raw pi streaming does not apply catalog limits; Agnes otherwise defaults to 4096 upstream.
+          ...(decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL
+            ? { maxTokens: req.sampling?.maxTokens ?? record.maxTokens }
+            : {}),
           ...(requestAuth?.apiKey === undefined ? {} : { apiKey: requestAuth.apiKey }),
           // pi-ai checks header-owned authentication in stream options before it
           // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
