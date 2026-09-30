@@ -279,7 +279,7 @@ describe('API-key provider registry', () => {
     })
   })
 
-  it('marks only the Agnes models that read an image on the live gateway as image-capable', async () => {
+  it('preserves verified Agnes modalities and sends each model output allowance on the wire', async () => {
     const adapter = await getApiKeyProvider('agnes-ai')?.createAdapter()
     const inputs = Object.fromEntries(
       (adapter?.models('agnes-ai') ?? []).map((model) => [model.id, model.input]),
@@ -292,8 +292,6 @@ describe('API-key provider registry', () => {
       'agnes-2.5-flash': ['text', 'image'],
       'agnes-2.0-flash': ['text', 'image'],
     })
-    expect(adapter?.models('agnes-ai').find((model) => model.id === 'agnes-3.0-flash')?.maxTokens).toBe(16384)
-    expect(adapter?.models('agnes-ai').find((model) => model.id === 'agnes-2.5-pro')?.maxTokens).toBe(4096)
     if (!adapter) throw new Error('missing Agnes adapter')
     adapter.bindCredential('agnes-ai', 'fixture-output-limit-key')
     const bodies: Array<Record<string, unknown>> = []
@@ -305,21 +303,25 @@ describe('API-key provider registry', () => {
       )
     })
     try {
-      for (const maxTokens of [undefined, 512, 32768]) {
-        const events = await collect(
-          adapter.stream(
-            'agnes-ai',
-            fakeRequest({
-              route: 'agnes-ai',
-              model: 'agnes-3.0-flash',
-              ...(maxTokens === undefined ? {} : { sampling: { maxTokens } }),
-            }),
-            streamOptions(),
-          ),
-        )
-        expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
-        expect(bodies.at(-1)?.max_tokens).toBe(maxTokens ?? 16384)
-        expect(bodies.at(-1)?.max_completion_tokens).toBeUndefined()
+      for (const model of Object.keys(inputs)) {
+        expect(adapter.models('agnes-ai').find((entry) => entry.id === model)?.maxTokens).toBe(65536)
+        for (const maxTokens of [undefined, 512, 32768]) {
+          const events = await collect(
+            adapter.stream(
+              'agnes-ai',
+              fakeRequest({
+                route: 'agnes-ai',
+                model,
+                ...(maxTokens === undefined ? {} : { sampling: { maxTokens } }),
+              }),
+              streamOptions(),
+            ),
+          )
+          expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
+          expect(bodies.at(-1)?.model).toBe(model)
+          expect(bodies.at(-1)?.max_tokens).toBe(maxTokens ?? 65536)
+          expect(bodies.at(-1)?.max_completion_tokens).toBeUndefined()
+        }
       }
     } finally {
       fetch.mockRestore()
