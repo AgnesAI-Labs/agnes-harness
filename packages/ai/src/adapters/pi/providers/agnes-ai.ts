@@ -11,7 +11,9 @@ export const AGNES_AI_BASE_URL = 'https://api.agnes-ai.cn/v1'
  * catalogue. Ids are what `GET /v1/models` returns; it publishes no modalities, so `true` marks a
  * model that correctly described a test image on the live gateway (2026-09-22). The rest stay
  * text-only until verified. The limits are provisional until the provider publishes per-model
- * numbers, which is why every entry carries the same pair.
+ * numbers. The 3.0 Flash gateway accepted a 16384-token output allowance in a synthetic tool-call
+ * probe (2026-09-30); a full long-output probe timed out, so this is not a verified capacity claim.
+ * Older entries keep their provisional 4096-token allowance.
  */
 const CHAT_MODELS = [
   ['agnes-3.0-flash', 'Agnes 3.0 Flash', true],
@@ -32,7 +34,7 @@ const AGNES_AI_MODELS: Model<Api>[] = CHAT_MODELS.map(
       baseUrl: AGNES_AI_BASE_URL,
       input: image ? ['text', 'image'] : ['text'],
       contextWindow: 200000,
-      maxTokens: 4096,
+      maxTokens: id === 'agnes-3.0-flash' ? 16384 : 4096,
       reasoning: false,
       samplingParams: {
         temperature: { min: 0, max: 2, step: 0.01 },

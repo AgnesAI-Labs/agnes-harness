@@ -1053,6 +1053,7 @@ describe('Inference segment', () => {
     const notes = (await log.scan({ type: 'user/message', limit: 10 })).filter((e) => e.origin === 'system')
     expect(notes).toHaveLength(1)
     expect(notes[0]?.data).toMatchObject({ kind: 'runtime_context' })
+    expect(JSON.stringify(notes[0]?.data)).toContain('build large files incrementally')
     expect((await log.scan({ type: 'assistant/message', limit: 5 }))[0]?.data).toMatchObject({
       stopReason: 'max_tokens',
     })
