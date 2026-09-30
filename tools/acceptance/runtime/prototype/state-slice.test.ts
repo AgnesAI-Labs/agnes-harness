@@ -6,8 +6,15 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultIds, openTracked } from '../../../../packages/core/src/index.ts'
 import type {
+  AdvanceRunRequest,
   CallContext,
+  CloseInvocationRequest,
+  CommitControlRequest,
+  CommitGuard,
+  DispatchAdmissionRequest,
+  InvocationAdmission,
   Outcome,
+  PreparedAction,
   RunAdmission,
   StateAuthorityRef,
 } from '../../../../packages/extension-api/src/runtime/index.ts'
@@ -17,6 +24,18 @@ import {
   type RuntimeStateStore,
   UNIMPLEMENTED_STATE_METHODS,
 } from '../../../../packages/host/src/runtime/providers/state.ts'
+import { canonicalJson } from '../../../../packages/host/src/runtime/state/canonical-json.ts'
+import {
+  bodyDigest,
+  type CommitMutationManifest,
+  digestOf as canonicalDigest,
+  emptyIntegrity,
+  type LedgerEvent,
+  mutationDigest,
+  protectEvent,
+  type RecordOwner,
+  sideListsDigest,
+} from '../../../../packages/host/src/runtime/state/records.ts'
 import { jcs } from '../../../../packages/protocol/src/jcs.ts'
 
 const authority: StateAuthorityRef = { authorityId: 'authority-1', tenantId: 'tenant-1', authorityEpoch: 1 }
@@ -1090,6 +1109,1327 @@ describe('runtime state records, proof rows, and ledger events', () => {
         expect(result.error.retryAdvice).toEqual({ kind: 'never' })
       }
     }
+    store.close()
+  })
+})
+
+const toolBinding = {
+  bindingId: 'binding-1',
+  contract: 'agh.test/tool',
+  logicalName: 'tool',
+  providerId: 'provider-1',
+}
+const runBinding = {
+  bindingId: 'binding-1',
+  contract: 'agh.runtime/run-admission',
+  logicalName: 'run',
+  providerId: 'runtime-state',
+}
+const future = '2026-05-01T00:00:00.000Z'
+const past = '2026-03-01T00:00:00.000Z'
+
+function stableId(prefix: string, material: string): string {
+  return `${prefix}-${createHash('sha256').update(material).digest('hex').slice(0, 40)}`
+}
+
+function unwrap<T>(result: Outcome<T>, label: string): T {
+  if (!result.ok)
+    throw new Error(`${label}: ${result.error.code}/${result.error.detailCode} ${result.error.message}`)
+  return result.value
+}
+
+function recordValue<T>(path: string, recordId: string): T {
+  const rows = query<{ value_json: string }>(
+    path,
+    `SELECT value_json FROM runtime_records WHERE record_id = '${recordId}'`,
+  )
+  if (!rows[0]) throw new Error(`missing record ${recordId}`)
+  return JSON.parse(rows[0].value_json) as T
+}
+
+function continuation(step = 1) {
+  return {
+    namespace: 'agh.test/loop',
+    codecVersion: '1',
+    data: inline({ step }),
+    provenance: { sourceRefs: [] as string[], producer: toolBinding, trustLabels: [] as string[] },
+    createdAt: admittedAt,
+    references: [],
+  }
+}
+
+function preparedAction(key: string): PreparedAction {
+  const input = inline({ text: key })
+  const body = {
+    key,
+    target: toolBinding,
+    method: 'run',
+    input,
+    dependencies: [],
+    retry: { mode: 'never' as const, maxAttempts: 0, backoffMs: [] as number[] },
+    obligation: 'mandatory' as const,
+    deadline: future,
+    resultSchema: input.schema,
+    references: [],
+  }
+  return { ...body, intentFingerprint: canonicalDigest(body) }
+}
+
+function commitGuard(
+  invocationId: string,
+  expectedRunRevision: number,
+  readGuards: CommitGuard['readGuards'] = [],
+): CommitGuard {
+  return {
+    authority,
+    sessionId: 'session-1',
+    runId: 'run-1',
+    writerId: 'writer-a',
+    writerEpoch: 1,
+    expectedRunRevision,
+    bindingId: 'binding-1',
+    invocationId,
+    readGuards,
+    queryUsage: null,
+  }
+}
+
+function atomicDomain(domainId = 'domain-1') {
+  return {
+    domainId,
+    revision: 1,
+    stateAuthority: authority,
+    budgetAuthority: authority,
+    stateBinding: runBinding,
+    budgetBinding: runBinding,
+  }
+}
+
+function advanceBody(
+  commitId: string,
+  invocationId: string,
+  revision: number,
+  actions: PreparedAction[],
+): AdvanceRunRequest {
+  return {
+    commitId,
+    guard: commitGuard(invocationId, revision),
+    transition: {
+      expectedRevision: revision,
+      continuation: continuation(revision + 1),
+      consumeSignals: [],
+      actions,
+      next: { kind: 'continue' },
+    },
+  }
+}
+
+function dispatchBody(
+  action: PreparedAction,
+  invocationId: string,
+  runRevision: number,
+  admissionId: string,
+  quota: { name: 'parallel-action' | 'live-agent'; amount: number }[] = [],
+  deadline = future,
+): DispatchAdmissionRequest {
+  const actionId = stableId('act', `run-1\0${action.key}`)
+  return {
+    admissionId,
+    commitId: `commit-${admissionId}`,
+    guard: commitGuard(invocationId, runRevision),
+    atomicDomain: atomicDomain(),
+    actionId,
+    expectedActionRevision: 1,
+    decisionRef: inline({ allow: admissionId }),
+    attemptId: `attempt-${admissionId}`,
+    requestIdentity: {
+      system: 'tool',
+      aghRequestId: `agh-${admissionId}`,
+      idempotencyKey: null,
+      requestDigest: canonicalDigest(action.input),
+    },
+    budget: { reservation: null, quota },
+    deadline,
+  }
+}
+
+async function leasedRun(path = file()): Promise<{ path: string; store: RuntimeStateStore }> {
+  const store = openStore(path)
+  unwrap(await store.createRun(admission(), context()), 'createRun')
+  unwrap(await store.open(writeOpen('open-write'), context()), 'open')
+  return { path, store }
+}
+
+async function preparedInvocation(
+  store: RuntimeStateStore,
+  invocationId: string,
+  baseRevision: number,
+  queryAllowance = 0,
+  readGuards: CommitGuard['readGuards'] = [],
+) {
+  const request: InvocationAdmission = {
+    requestId: `admit-${invocationId}`,
+    runId: 'run-1',
+    targetActionId: null,
+    baseRevision,
+    bindingId: 'binding-1',
+    writerEpoch: 1,
+    invocationId,
+    deadline: future,
+    queryAllowance,
+  }
+  const admitted = unwrap(await store.admitInvocation(request, context()), 'admitInvocation')
+  const closeRequest: CloseInvocationRequest = {
+    requestId: `close-${invocationId}`,
+    invocationId,
+    state: 'prepared',
+    readGuards,
+    domainReads: [],
+    unresolvedInflightIds: [],
+    observedQueryCount: 0,
+  }
+  const closed = unwrap(await store.closeInvocation(closeRequest, context()), 'closeInvocation')
+  return { admitted, closed }
+}
+
+type EventWire = {
+  seq: number
+  ts: string
+  id: string
+  type: string
+  lane: Uint8Array | string
+  v: number
+  actor: string
+  origin: string
+  trust: string
+  data: string
+}
+
+function rehashSession(path: string): void {
+  const db = new DatabaseSync(path)
+  try {
+    const rows = db
+      .prepare(
+        `SELECT seq, ts, id, type, lane, v, actor, origin, trust, data
+         FROM events WHERE session_key = ? ORDER BY seq`,
+      )
+      .all('session-1') as EventWire[]
+    let state = emptyIntegrity()
+    const update = db.prepare(
+      `UPDATE events SET integrity_mode = ?, integrity_prev = ?, integrity_digest = ?
+       WHERE session_key = ? AND seq = ?`,
+    )
+    for (const row of rows) {
+      const event: LedgerEvent = {
+        seq: row.seq,
+        ts: row.ts,
+        id: row.id,
+        type: row.type,
+        lane: Buffer.from(row.lane).toString('utf8'),
+        v: row.v,
+        actor: JSON.parse(row.actor) as LedgerEvent['actor'],
+        origin: row.origin,
+        trust: row.trust,
+        data: JSON.parse(row.data) as unknown,
+      }
+      const protectedEvent = protectEvent('session-1', event, state)
+      state = protectedEvent.state
+      update.run(
+        protectedEvent.integrity.mode,
+        protectedEvent.integrity.previousDigest,
+        protectedEvent.integrity.digest,
+        'session-1',
+        row.seq,
+      )
+    }
+  } finally {
+    db.close()
+  }
+}
+
+function commitEvent(path: string, commitId: string): { seq: number; data: Record<string, unknown> } {
+  const rows = query<{ seq: number; data: string }>(
+    path,
+    `SELECT seq, data FROM events WHERE session_key = 'session-1' AND json_extract(data, '$.commitId') = '${commitId}'`,
+  )
+  const row = rows[0]
+  if (!row) throw new Error(`missing commit ${commitId}`)
+  return { seq: row.seq, data: JSON.parse(row.data) as Record<string, unknown> }
+}
+
+function saveCommitEvent(path: string, seq: number, data: unknown): void {
+  mutate(path, (db) => {
+    db.prepare('UPDATE events SET data = ? WHERE session_key = ? AND seq = ?').run(
+      JSON.stringify(data),
+      'session-1',
+      seq,
+    )
+  })
+}
+
+describe('runtime state advance, dispatch, and invocation', () => {
+  it('continues a run, admits an action, and marks the attempt running', async () => {
+    const { path, store } = await leasedRun()
+    expect(count(path, 'runtime_records')).toBe(3)
+    const prepared = await preparedInvocation(store, 'invocation-1', 0, 1_000)
+    expect(prepared.admitted).toMatchObject({
+      prepareId: stableId('prep', 'run-1\0invocation-1'),
+      invocationId: 'invocation-1',
+      queryGrantId: stableId('qg', 'invocation-1'),
+      grantedQueries: 128,
+      remainingQueries: 65_536 - 128,
+    })
+    expect(prepared.closed).toEqual({ invocationId: 'invocation-1', state: 'prepared' })
+    expect(count(path, 'runtime_records')).toBe(7)
+    const action = preparedAction('step-1')
+    const actionId = stableId('act', 'run-1\0step-1')
+    const advanced = unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advanceRun',
+    )
+    expect(advanced.runRevision).toBe(1)
+    expect(advanced.actionIds).toEqual([{ key: 'step-1', actionId }])
+    expect(advanced.firstSeq).toBe(advanced.lastSeq)
+    const createdAction = recordValue<{
+      state: string
+      resultHookPlan: null
+      taintSnapshot: { recordRevision: number; sourceSeq: number; clearedThroughSeq: number }
+      createdByCommitId: string
+      intentFingerprint: string
+    }>(path, `action:${actionId}`)
+    expect(createdAction).toMatchObject({
+      state: 'prepared',
+      resultHookPlan: null,
+      taintSnapshot: { recordRevision: 1, sourceSeq: 0, clearedThroughSeq: 0 },
+      createdByCommitId: advanced.commitId,
+      intentFingerprint: action.intentFingerprint,
+    })
+    expect(query<{ kind: string }>(path, 'SELECT kind FROM runtime_side_entries')).toEqual([
+      { kind: 'action-created' },
+    ])
+    const run = recordValue<{ revision: number; state: string; writerEpoch: number }>(path, 'run:run-1')
+    expect(run).toMatchObject({ revision: 1, state: 'admitted', writerEpoch: 1 })
+    const invocation = recordValue<{ state: string }>(path, 'invocation:invocation-1')
+    expect(invocation.state).toBe('committed')
+    const admissionId = 'admission-1'
+    const request = dispatchBody(action, 'invocation-1', 1, admissionId)
+    const admitted = unwrap(await store.dispatchAdmission(request, context()), 'dispatchAdmission')
+    const authorizationId = stableId('az', admissionId)
+    expect(admitted).toEqual({
+      state: 'admitted',
+      commitId: request.commitId,
+      authorizationId,
+      attemptId: request.attemptId,
+      budgetReservationRefs: [],
+      quotaReservationRefs: [],
+    })
+    const attempt = recordValue<{
+      kind: string
+      number: number
+      state: string
+      authorizationRef: string
+      requestIdentity: { requestDigest: string }
+    }>(path, `attempt:${request.attemptId}`)
+    expect(attempt).toMatchObject({
+      kind: 'leaf',
+      number: 1,
+      state: 'dispatching',
+      authorizationRef: authorizationId,
+    })
+    expect(attempt.requestIdentity.requestDigest).toBe(canonicalDigest(action.input))
+    const stored = query<{ fingerprint: string; result_json: string }>(
+      path,
+      "SELECT fingerprint, result_json FROM runtime_request_results WHERE method = 'dispatchAdmission'",
+    )
+    const payload = JSON.parse(stored[0]?.result_json ?? '{}') as {
+      request: { decisionRef: unknown }
+      decisionRef: unknown
+      result: unknown
+    }
+    expect(stored[0]?.fingerprint).toBe(canonicalDigest(request))
+    expect(payload.decisionRef).toEqual(request.decisionRef)
+    expect(payload.request.decisionRef).toEqual(request.decisionRef)
+    expect(payload.result).toEqual(admitted)
+    const running = unwrap(
+      await store.commitControl(
+        {
+          commitId: 'mark-1',
+          guard: commitGuard('invocation-1', 1),
+          command: {
+            kind: 'mark_running',
+            attemptId: request.attemptId,
+            expectedAttemptRevision: 1,
+            externalRequests: [{ system: 'ext', requestId: 'ext-1', requestDigest: 'e'.repeat(64) }],
+          },
+        },
+        context(),
+      ),
+      'mark_running',
+    )
+    expect(running.runRevision).toBe(1)
+    expect(
+      recordValue<{ state: string; startedAt: string }>(path, `attempt:${request.attemptId}`),
+    ).toMatchObject({
+      state: 'running',
+      startedAt: admittedAt,
+    })
+    const appended = unwrap(
+      await store.commitControl(
+        {
+          commitId: 'mark-2',
+          guard: commitGuard('invocation-1', 1),
+          command: {
+            kind: 'mark_running',
+            attemptId: request.attemptId,
+            expectedAttemptRevision: 2,
+            externalRequests: [{ system: 'ext', requestId: 'ext-1', requestDigest: 'e'.repeat(64) }],
+          },
+        },
+        context(),
+      ),
+      'mark_running append',
+    )
+    expect(appended.runRevision).toBe(1)
+    const listed = recordValue<{ externalRequests: { requestId: string }[]; startedAt: string }>(
+      path,
+      `attempt:${request.attemptId}`,
+    )
+    expect(listed.externalRequests).toEqual([
+      { system: 'ext', requestId: 'ext-1', requestDigest: 'e'.repeat(64) },
+    ])
+    expect(listed.startedAt).toBe(admittedAt)
+    store.close()
+    const reopened = openStore(path)
+    const opened = unwrap(await reopened.open(readOpen('open-read-again'), context()), 'reopen')
+    reopened.close()
+    expect(opened.claim).toBeNull()
+    expect(opened.snapshot.throughSeq).toBe(appended.lastSeq)
+  })
+
+  it('replays the same commit and keeps the original decision when the lease has expired', async () => {
+    const path = file()
+    const clock = { ms: Date.parse(admittedAt) }
+    const store = openStore(path, () => clock.ms)
+    unwrap(await store.createRun(admission(), context()), 'createRun')
+    unwrap(await store.open(writeOpen('open-write'), context()), 'open')
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    const request = advanceBody('advance-1', 'invocation-1', 0, [action])
+    const first = unwrap(await store.advanceRun(request, context()), 'advanceRun')
+    const eventsBefore = count(path, 'events')
+    clock.ms += 5_000
+    const replayed = unwrap(await store.advanceRun(request, context()), 'advance replay')
+    expect(replayed).toEqual(first)
+    expect(count(path, 'events')).toBe(eventsBefore)
+    const other = await store.advanceRun(advanceBody('advance-2', 'invocation-1', 1, []), context())
+    expect(other.ok).toBe(false)
+    if (!other.ok) expect(other.error).toMatchObject({ code: 'conflict', detailCode: 'writer_lease' })
+    store.close()
+  })
+
+  it('reuses an action with the same intent and conflicts when the intent differs', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    await preparedInvocation(store, 'invocation-2', 1)
+    const reused = unwrap(
+      await store.advanceRun(advanceBody('advance-2', 'invocation-2', 1, [action]), context()),
+      'reuse',
+    )
+    expect(reused.actionIds).toEqual([{ key: 'step-1', actionId: stableId('act', 'run-1\0step-1') }])
+    expect(
+      query<{ n: number }>(
+        path,
+        "SELECT COUNT(*) AS n FROM runtime_side_entries WHERE kind = 'action-created'",
+      ),
+    ).toEqual([{ n: 1 }])
+    const { intentFingerprint: _previous, ...body } = preparedAction('step-1')
+    body.method = 'other'
+    const changed = { ...body, intentFingerprint: canonicalDigest(body) }
+    await preparedInvocation(store, 'invocation-3', 2)
+    const before = count(path, 'events')
+    const conflict = await store.advanceRun(advanceBody('advance-3', 'invocation-3', 2, [changed]), context())
+    expect(conflict.ok).toBe(false)
+    if (!conflict.ok)
+      expect(conflict.error).toMatchObject({ code: 'conflict', detailCode: 'intent_fingerprint' })
+    expect(count(path, 'events')).toBe(before)
+    store.close()
+  })
+
+  it('returns the original dispatch and conflicts when the same admission id changes', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const absent = unwrap(await store.probeDispatchAdmission('admission-1', context()), 'probe absent')
+    expect(absent).toEqual({ state: 'absent' })
+    const request = dispatchBody(action, 'invocation-1', 1, 'admission-1')
+    const first = unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+    const again = unwrap(await store.dispatchAdmission(request, context()), 'dispatch replay')
+    expect(again).toEqual(first)
+    expect(count(path, 'runtime_records')).toBeGreaterThan(0)
+    const attempts = query<{ n: number }>(
+      path,
+      `SELECT COUNT(*) AS n FROM runtime_records WHERE record_id LIKE 'attempt:%'`,
+    )
+    expect(attempts).toEqual([{ n: 1 }])
+    const changed = { ...request, deadline: '2026-06-01T00:00:00.000Z' }
+    const before = count(path, 'events')
+    const conflict = await store.dispatchAdmission(changed, context())
+    expect(conflict.ok).toBe(false)
+    if (!conflict.ok)
+      expect(conflict.error).toMatchObject({ code: 'conflict', detailCode: 'idempotency_conflict' })
+    expect(count(path, 'events')).toBe(before)
+    const decided = unwrap(await store.probeDispatchAdmission('admission-1', context()), 'probe decided')
+    expect(decided).toMatchObject({
+      state: 'decided',
+      admissionId: 'admission-1',
+      requestFingerprint: canonicalDigest(request),
+      result: first,
+    })
+    expect(query<{ writer_epoch: number }>(path, 'SELECT writer_epoch FROM runtime_leases')).toEqual([
+      { writer_epoch: 1 },
+    ])
+    store.close()
+  })
+
+  it('refuses unsupported transitions, budget modes, hooks, and control commands without writing', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    const before = count(path, 'events')
+    const signal = await store.advanceRun(
+      {
+        ...advanceBody('advance-signal', 'invocation-1', 0, [action]),
+        transition: {
+          ...advanceBody('advance-signal', 'invocation-1', 0, [action]).transition,
+          consumeSignals: ['signal-1'],
+        },
+      },
+      context(),
+    )
+    const conversation = await store.advanceRun(
+      {
+        ...advanceBody('advance-talk', 'invocation-1', 0, []),
+        transition: {
+          ...advanceBody('advance-talk', 'invocation-1', 0, []).transition,
+          conversation: [
+            {
+              key: 'message-1',
+              kind: 'assistant-message',
+              content: inline({ text: 'hi' }),
+              sourceResultId: null,
+            },
+          ],
+        },
+      },
+      context(),
+    )
+    const failed = await store.advanceRun(
+      {
+        ...advanceBody('advance-fail', 'invocation-1', 0, []),
+        transition: {
+          ...advanceBody('advance-fail', 'invocation-1', 0, []).transition,
+          next: {
+            kind: 'fail',
+            error: {
+              code: 'internal',
+              detailCode: 'stop',
+              message: 'stop',
+              retryAdvice: { kind: 'never' },
+              diagnosticId: 'diag-1',
+            },
+          },
+        },
+      },
+      context(),
+    )
+    const flushed = await store.advanceRun(
+      {
+        commitId: 'advance-flush',
+        guard: {
+          ...commitGuard('invocation-1', 0),
+          queryUsage: {
+            grantId: 'grant-1',
+            invocationId: 'invocation-1',
+            writerEpoch: 1,
+            cumulativeCount: 1,
+          },
+        },
+        transition: advanceBody('advance-flush', 'invocation-1', 0, []).transition,
+      },
+      context(),
+    )
+    const reserved = await store.dispatchAdmission(
+      {
+        ...dispatchBody(action, 'invocation-1', 0, 'admission-budget'),
+        budget: {
+          reservation: {
+            accountRef: {
+              authorityId: 'authority-1',
+              recordId: 'account-1',
+              recordRevision: 1,
+              schema: inline({}).schema,
+              digest: 'a'.repeat(64),
+            },
+            parentReservationRef: null,
+            unitsByKind: [{ unit: 'token', value: '1' }],
+            amount: null,
+          },
+          quota: [],
+        },
+      },
+      context(),
+    )
+    const live = await store.dispatchAdmission(
+      {
+        ...dispatchBody(action, 'invocation-1', 0, 'admission-live', [{ name: 'live-agent', amount: 1 }]),
+      },
+      context(),
+    )
+    const hooked = await store.dispatchAdmission(
+      {
+        ...dispatchBody(action, 'invocation-1', 0, 'admission-hook'),
+        hookResults: [
+          {
+            stageId: 'stage-1',
+            event: 'tool_call',
+            registrationDigest: 'b'.repeat(64),
+            inputDigest: 'c'.repeat(64),
+            entries: [],
+            output: inline({ ok: true }),
+            digest: 'd'.repeat(64),
+            sourceActionId: null,
+          },
+        ],
+      },
+      context(),
+    )
+    const acked = await store.dispatchAdmission(
+      {
+        ...dispatchBody(action, 'invocation-1', 0, 'admission-ack'),
+        approvalTaintAck: {
+          interaction: {
+            authorityId: 'authority-1',
+            recordId: 'interaction-1',
+            recordRevision: 1,
+            schema: inline({}).schema,
+            digest: 'a'.repeat(64),
+          },
+          responseId: 'response-1',
+        },
+      },
+      context(),
+    )
+    const other: CommitControlRequest = {
+      commitId: 'control-other',
+      guard: commitGuard('invocation-1', 0),
+      command: {
+        kind: 'mark_unknown',
+        attemptId: 'attempt-x',
+        expectedAttemptRevision: 1,
+        evidence: [],
+        reconciliationOwnerRef: { kind: 'run', id: 'run-1' },
+        reason: 'lost',
+      },
+    }
+    const refused = await store.commitControl(other, context())
+    const zero = await store.dispatchAdmission(
+      dispatchBody(action, 'invocation-1', 0, 'admission-zero', [{ name: 'parallel-action', amount: 0 }]),
+      context(),
+    )
+    store.close()
+    expect(signal.ok).toBe(false)
+    if (!signal.ok) expect(signal.error.message).toBe('signal consumption is not implemented')
+    expect(conversation.ok).toBe(false)
+    if (!conversation.ok)
+      expect(conversation.error.message).toBe('conversation contribution is not implemented')
+    expect(failed.ok).toBe(false)
+    if (!failed.ok)
+      expect(failed.error.message).toBe('wait, complete, and fail transitions are not implemented')
+    expect(flushed.ok).toBe(false)
+    if (!flushed.ok) expect(flushed.error.message).toBe('query usage flush is not implemented')
+    expect(reserved.ok).toBe(false)
+    if (!reserved.ok)
+      expect(reserved.error.message).toBe('bounded-units and cost-hard budget reservation is not implemented')
+    expect(live.ok).toBe(false)
+    if (!live.ok) expect(live.error.message).toBe('live-agent quota is not implemented')
+    expect(hooked.ok).toBe(false)
+    if (!hooked.ok)
+      expect(hooked.error.message).toBe('hook results and approval taint acknowledgement are not implemented')
+    expect(acked.ok).toBe(false)
+    if (!acked.ok)
+      expect(acked.error.message).toBe('hook results and approval taint acknowledgement are not implemented')
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error.message).toBe('control command is not implemented')
+    expect(zero.ok).toBe(false)
+    if (!zero.ok) expect(zero.error).toMatchObject({ code: 'invalid_input', detailCode: 'quota_amount' })
+    expect(count(path, 'events')).toBe(before)
+    expect(
+      query(path, "SELECT request_id FROM runtime_request_results WHERE method = 'dispatchAdmission'"),
+    ).toEqual([])
+  })
+
+  it('rejects a non-zero observed query count without closing the invocation', async () => {
+    const { path, store } = await leasedRun()
+    unwrap(
+      await store.admitInvocation(
+        {
+          requestId: 'admit-invocation-1',
+          runId: 'run-1',
+          targetActionId: null,
+          baseRevision: 0,
+          bindingId: 'binding-1',
+          writerEpoch: 1,
+          invocationId: 'invocation-1',
+          deadline: future,
+          queryAllowance: 0,
+        },
+        context(),
+      ),
+      'admit',
+    )
+    const before = count(path, 'events')
+    const refused = await store.closeInvocation(
+      {
+        requestId: 'close-bad',
+        invocationId: 'invocation-1',
+        state: 'prepared',
+        readGuards: [],
+        domainReads: [],
+        unresolvedInflightIds: [],
+        observedQueryCount: 2,
+      },
+      context(),
+    )
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error).toMatchObject({ code: 'invalid_input', detailCode: 'query_count' })
+    expect(count(path, 'events')).toBe(before)
+    expect(recordValue<{ state: string }>(path, 'invocation:invocation-1').state).toBe('active')
+    unwrap(
+      await store.closeInvocation(
+        {
+          requestId: 'close-invocation-1',
+          invocationId: 'invocation-1',
+          state: 'prepared',
+          readGuards: [],
+          domainReads: [],
+          unresolvedInflightIds: [],
+          observedQueryCount: 0,
+        },
+        context(),
+      ),
+      'close',
+    )
+    store.close()
+  })
+
+  it('rejects an over-cap parallel hold and an expired deadline in the admission transaction', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const first = preparedAction('step-1')
+    unwrap(await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [first]), context()), 'advance')
+    const held = unwrap(
+      await store.dispatchAdmission(
+        dispatchBody(first, 'invocation-1', 1, 'admission-hold', [{ name: 'parallel-action', amount: 16 }]),
+        context(),
+      ),
+      'hold',
+    )
+    expect(held.state).toBe('admitted')
+    if (held.state === 'admitted') {
+      expect(held.quotaReservationRefs).toEqual([stableId('qr', 'admission-hold')])
+      expect(held.budgetReservationRefs).toEqual([])
+    }
+    await preparedInvocation(store, 'invocation-2', 1)
+    const second = preparedAction('step-2')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-2', 'invocation-2', 1, [second]), context()),
+      'advance 2',
+    )
+    const rejected = unwrap(
+      await store.dispatchAdmission(
+        dispatchBody(second, 'invocation-2', 2, 'admission-over', [{ name: 'parallel-action', amount: 1 }]),
+        context(),
+      ),
+      'over cap',
+    )
+    expect(rejected).toMatchObject({ state: 'rejected', reason: 'quota', commitId: 'commit-admission-over' })
+    if (rejected.state === 'rejected') expect(rejected.error.code).toBe('quota')
+    const settled = recordValue<{ state: string; currentAttemptId: string }>(
+      path,
+      `action:${stableId('act', 'run-1\0step-2')}`,
+    )
+    expect(settled.state).toBe('settled')
+    expect(settled.currentAttemptId).toBe(stableId('ctl', 'admission-over'))
+    const control = recordValue<{
+      kind: string
+      number: number
+      authorizationRef: null
+      requestIdentity: null
+    }>(path, `attempt:${stableId('ctl', 'admission-over')}`)
+    expect(control).toMatchObject({
+      kind: 'control',
+      number: 0,
+      authorizationRef: null,
+      requestIdentity: null,
+    })
+    expect(
+      query(path, `SELECT record_id FROM runtime_records WHERE record_id = 'attempt:attempt-admission-over'`),
+    ).toEqual([])
+    const mirrors = query<{ value_json: string }>(
+      path,
+      "SELECT value_json FROM runtime_records WHERE record_id LIKE 'quota:%'",
+    )
+    expect(
+      mirrors.filter(
+        (row) =>
+          (JSON.parse(row.value_json) as { requestFingerprint: string }).requestFingerprint ===
+          canonicalDigest(
+            dispatchBody(second, 'invocation-2', 2, 'admission-over', [
+              { name: 'parallel-action', amount: 1 },
+            ]),
+          ),
+      ),
+    ).toEqual([])
+    await preparedInvocation(store, 'invocation-3', 2)
+    const third = preparedAction('step-3')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-3', 'invocation-3', 2, [third]), context()),
+      'advance 3',
+    )
+    const expired = unwrap(
+      await store.dispatchAdmission(
+        dispatchBody(third, 'invocation-3', 3, 'admission-old', [], past),
+        context(),
+      ),
+      'expired',
+    )
+    expect(expired).toMatchObject({ state: 'rejected', reason: 'expired' })
+    if (expired.state === 'rejected')
+      expect(expired.error).toMatchObject({ code: 'timeout', detailCode: 'expired' })
+    const probe = unwrap(await store.probeDispatchAdmission('admission-over', context()), 'probe over')
+    expect(probe).toMatchObject({ state: 'decided', result: rejected })
+    store.close()
+    const reopened = openStore(path)
+    expect((await reopened.open(readOpen('open-after-reject'), context())).ok).toBe(true)
+    reopened.close()
+  })
+
+  it('does not publish a ready view, result fact, or completion signal for a rejection', async () => {
+    // A rejected admission settles the action and stores one receipt. It does not publish the
+    // no-hook ready view, the unique result fact, or the completion signal. Receipt intake has to
+    // publish those three together, and this rejection has to use that same publication in its
+    // admission transaction so the action cannot remain settled without a completion signal.
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const rejected = unwrap(
+      await store.dispatchAdmission(
+        dispatchBody(action, 'invocation-1', 1, 'admission-old', [], past),
+        context(),
+      ),
+      'expired',
+    )
+    expect(rejected).toMatchObject({ state: 'rejected', reason: 'expired' })
+    store.close()
+    expect(query<{ kind: string }>(path, 'SELECT kind FROM runtime_side_entries ORDER BY kind')).toEqual([
+      { kind: 'action-created' },
+      { kind: 'receipt-created' },
+    ])
+    const ids = query<{ record_id: string }>(path, 'SELECT record_id FROM runtime_records').map(
+      (row) => row.record_id,
+    )
+    expect(ids.some((id) => /^(outbox:|signal:|visibility:|result:|ready:)/.test(id))).toBe(false)
+    expect(recordValue<{ state: string }>(path, `action:${stableId('act', 'run-1\0step-1')}`).state).toBe(
+      'settled',
+    )
+  })
+
+  it('fails open when the stored decisionRef no longer matches the admission fingerprint', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const request = dispatchBody(action, 'invocation-1', 1, 'admission-1')
+    unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+    store.close()
+    mutate(path, (db) => {
+      const row = db
+        .prepare("SELECT result_json FROM runtime_request_results WHERE method = 'dispatchAdmission'")
+        .get() as { result_json: string }
+      const payload = JSON.parse(row.result_json) as {
+        request: { decisionRef: unknown }
+        decisionRef: unknown
+      }
+      payload.request.decisionRef = inline({ allow: 'changed' })
+      payload.decisionRef = payload.request.decisionRef
+      db.prepare("UPDATE runtime_request_results SET result_json = ? WHERE method = 'dispatchAdmission'").run(
+        JSON.stringify(payload),
+      )
+    })
+    const reopened = openStore(path)
+    const opened = await reopened.open(writeOpen('open-tampered-decision'), context())
+    reopened.close()
+    expect(opened.ok).toBe(false)
+    if (!opened.ok) {
+      expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+      expect(opened.error.message).toBe('stored dispatch request does not match its fingerprint')
+    }
+  })
+
+  it('fails open when an admitted attempt authorization differs from the saved decision', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const request = dispatchBody(action, 'invocation-1', 1, 'admission-1')
+    unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+    store.close()
+    mutate(path, (db) => {
+      const attemptId = `attempt:${request.attemptId}`
+      const head = db
+        .prepare('SELECT owner_json, value_json, schema_json FROM runtime_records WHERE record_id = ?')
+        .get(attemptId) as {
+        owner_json: string
+        value_json: string
+        schema_json: string
+      }
+      const value = JSON.parse(head.value_json) as { authorizationRef: string }
+      value.authorizationRef = 'forged-authorization'
+      const owner = JSON.parse(head.owner_json) as RecordOwner
+      const digest = bodyDigest(owner, value)
+      const valueJson = canonicalJson(value)
+      db.prepare('UPDATE runtime_records SET value_json = ?, body_digest = ? WHERE record_id = ?').run(
+        valueJson,
+        digest,
+        attemptId,
+      )
+      db.prepare('UPDATE runtime_record_versions SET value_json = ?, digest = ? WHERE record_id = ?').run(
+        valueJson,
+        digest,
+        attemptId,
+      )
+      const manifests = db
+        .prepare(
+          'SELECT record_id, previous_revision, next_json FROM runtime_mutation_manifests WHERE commit_id = ?',
+        )
+        .all(request.commitId) as {
+        record_id: string
+        previous_revision: number | null
+        next_json: string | null
+      }[]
+      const decoded: CommitMutationManifest[] = manifests.map((row) => {
+        const next =
+          row.next_json === null ? null : (JSON.parse(row.next_json) as CommitMutationManifest['next'])
+        if (next && row.record_id === attemptId) next.digest = digest
+        if (next && row.record_id === attemptId) {
+          db.prepare(
+            'UPDATE runtime_mutation_manifests SET next_json = ? WHERE commit_id = ? AND record_id = ?',
+          ).run(canonicalJson(next), request.commitId, row.record_id)
+        }
+        return {
+          commitId: request.commitId,
+          recordId: row.record_id,
+          previousRevision: row.previous_revision,
+          next,
+        }
+      })
+      const event = commitEvent(path, request.commitId)
+      event.data.mutationsDigest = mutationDigest(decoded)
+      saveCommitEvent(path, event.seq, event.data)
+    })
+    rehashSession(path)
+    const reopened = openStore(path)
+    const opened = await reopened.open(readOpen('open-forged-auth'), context())
+    reopened.close()
+    expect(opened.ok).toBe(false)
+    if (!opened.ok) {
+      expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+      expect(opened.error.message).toBe('admitted authorization does not match the decision')
+    }
+  })
+
+  it('fails open when a rejected admission still holds quota for the same fingerprint', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const first = preparedAction('step-1')
+    unwrap(await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [first]), context()), 'advance')
+    unwrap(
+      await store.dispatchAdmission(
+        dispatchBody(first, 'invocation-1', 1, 'admission-hold', [{ name: 'parallel-action', amount: 1 }]),
+        context(),
+      ),
+      'hold',
+    )
+    await preparedInvocation(store, 'invocation-2', 1)
+    const second = preparedAction('step-2')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-2', 'invocation-2', 1, [second]), context()),
+      'advance 2',
+    )
+    const request = dispatchBody(second, 'invocation-2', 2, 'admission-old', [], past)
+    unwrap(await store.dispatchAdmission(request, context()), 'expired')
+    store.close()
+    const fingerprint = canonicalDigest(request)
+    mutate(path, (db) => {
+      const sample = db
+        .prepare("SELECT schema_json, owner_json FROM runtime_records WHERE record_id LIKE 'quota:%' LIMIT 1")
+        .get() as { schema_json: string; owner_json: string }
+      const reservationId = 'forged-quota'
+      const value = {
+        source: {
+          authorityId: 'authority-1',
+          recordId: 'quota-source',
+          recordRevision: 1,
+          schema: inline({}).schema,
+          digest: 'a'.repeat(64),
+        },
+        reservationId,
+        ownerRef: { kind: 'run', id: 'run-1' },
+        scopeIds: ['run-1'],
+        kind: 'parallel-action',
+        quantity: 1,
+        status: 'held',
+        requestFingerprint: fingerprint,
+        createdAt: admittedAt,
+        releasedAt: null,
+      }
+      const owner = JSON.parse(sample.owner_json) as RecordOwner
+      const digest = bodyDigest(owner, value)
+      const valueJson = canonicalJson(value)
+      const recordId = `quota:${reservationId}`
+      db.prepare(
+        `INSERT INTO runtime_records (
+           record_id, schema_json, min_reader, record_revision, last_commit_id, created_at, updated_at,
+           owner_json, value_json, body_digest
+         ) VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        recordId,
+        sample.schema_json,
+        request.commitId,
+        admittedAt,
+        admittedAt,
+        sample.owner_json,
+        valueJson,
+        digest,
+      )
+      db.prepare(
+        `INSERT INTO runtime_record_versions (
+           record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
+         ) VALUES (?, 1, ?, ?, ?, ?, ?)`,
+      ).run(recordId, sample.schema_json, request.commitId, digest, sample.owner_json, valueJson)
+      const next = {
+        recordRevision: 1,
+        schema: JSON.parse(sample.schema_json) as CommitMutationManifest['next'],
+        digest,
+      }
+      db.prepare(
+        `INSERT INTO runtime_mutation_manifests (commit_id, record_id, previous_revision, next_json)
+         VALUES (?, ?, NULL, ?)`,
+      ).run(
+        request.commitId,
+        recordId,
+        canonicalJson({ recordRevision: 1, schema: JSON.parse(sample.schema_json), digest }),
+      )
+      const manifests = db
+        .prepare(
+          'SELECT record_id, previous_revision, next_json FROM runtime_mutation_manifests WHERE commit_id = ?',
+        )
+        .all(request.commitId) as { record_id: string; previous_revision: number | null; next_json: string }[]
+      const decoded: CommitMutationManifest[] = manifests.map((row) => ({
+        commitId: request.commitId,
+        recordId: row.record_id,
+        previousRevision: row.previous_revision,
+        next: JSON.parse(row.next_json) as CommitMutationManifest['next'],
+      }))
+      void next
+      const event = commitEvent(path, request.commitId)
+      event.data.mutationsDigest = mutationDigest(decoded)
+      event.data.mutationCount = decoded.length
+      saveCommitEvent(path, event.seq, event.data)
+    })
+    rehashSession(path)
+    const reopened = openStore(path)
+    const opened = await reopened.open(readOpen('open-held-quota'), context())
+    reopened.close()
+    expect(opened.ok).toBe(false)
+    if (!opened.ok) {
+      expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+      expect(opened.error.message).toBe('rejected admission still holds quota')
+    }
+  })
+
+  it('fails open when an action-created side entry is removed or no longer names its action', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    const advanced = unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    store.close()
+    mutate(path, (db) => {
+      db.prepare("DELETE FROM runtime_side_entries WHERE kind = 'action-created'").run()
+    })
+    const damaged = openStore(path)
+    const missingSide = await damaged.open(readOpen('open-missing-side'), context())
+    damaged.close()
+    expect(missingSide.ok).toBe(false)
+    if (!missingSide.ok)
+      expect(missingSide.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([
+      { writer_id: 'writer-a' },
+    ])
+    const restored = file()
+    const second = openStore(restored)
+    unwrap(await second.createRun(admission(), context()), 'create')
+    unwrap(await second.open(writeOpen('open-write'), context()), 'open')
+    await preparedInvocation(second, 'invocation-1', 0)
+    const committed = unwrap(
+      await second.advanceRun(
+        advanceBody('advance-1', 'invocation-1', 0, [preparedAction('step-1')]),
+        context(),
+      ),
+      'advance',
+    )
+    second.close()
+    mutate(restored, (db) => {
+      db.prepare("DELETE FROM runtime_side_entries WHERE kind = 'action-created'").run()
+      const event = commitEvent(restored, committed.commitId)
+      event.data.sideListsDigest = sideListsDigest([])
+      const counts = event.data.counts as { createdActions: number }
+      counts.createdActions = 0
+      saveCommitEvent(restored, event.seq, event.data)
+    })
+    rehashSession(restored)
+    const reopened = openStore(restored)
+    const opened = await reopened.open(readOpen('open-no-side'), context())
+    reopened.close()
+    expect(opened.ok).toBe(false)
+    if (!opened.ok) expect(opened.error.message).toBe('action creation side entry does not match the action')
+    void advanced
+  })
+
+  it('rolls the whole advance back when the commit is rejected', async () => {
+    const path = file()
+    let armed = false
+    const store = openStore(
+      path,
+      () => Date.parse(admittedAt),
+      () => {
+        if (armed) throw new Error('stop before commit')
+      },
+    )
+    unwrap(await store.createRun(admission(), context()), 'createRun')
+    unwrap(await store.open(writeOpen('open-write'), context()), 'open')
+    await preparedInvocation(store, 'invocation-1', 0)
+    const before = count(path, 'events')
+    armed = true
+    const advanced = await store.advanceRun(
+      advanceBody('advance-1', 'invocation-1', 0, [preparedAction('step-1')]),
+      context(),
+    )
+    store.close()
+    expect(advanced.ok).toBe(false)
+    if (!advanced.ok) expect(advanced.error).toMatchObject({ code: 'internal', detailCode: 'fault' })
+    expect(count(path, 'events')).toBe(before)
+    expect(query(path, "SELECT record_id FROM runtime_records WHERE record_id LIKE 'action:%'")).toEqual([])
+  })
+
+  it('refuses a read guard that does not match the current record', async () => {
+    const { path, store } = await leasedRun()
+    unwrap(
+      await store.admitInvocation(
+        {
+          requestId: 'admit-invocation-1',
+          runId: 'run-1',
+          targetActionId: null,
+          baseRevision: 0,
+          bindingId: 'binding-1',
+          writerEpoch: 1,
+          invocationId: 'invocation-1',
+          deadline: future,
+          queryAllowance: 0,
+        },
+        context(),
+      ),
+      'admit',
+    )
+    const before = count(path, 'events')
+    const refused = await store.closeInvocation(
+      {
+        requestId: 'close-bad-guard',
+        invocationId: 'invocation-1',
+        state: 'prepared',
+        readGuards: [{ recordId: 'run:run-1', expectedRecordRevision: 99 }],
+        domainReads: [],
+        unresolvedInflightIds: [],
+        observedQueryCount: 0,
+      },
+      context(),
+    )
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error).toMatchObject({ code: 'conflict', detailCode: 'read_guard' })
+    expect(count(path, 'events')).toBe(before)
+    unwrap(
+      await store.closeInvocation(
+        {
+          requestId: 'close-invocation-1',
+          invocationId: 'invocation-1',
+          state: 'prepared',
+          readGuards: [{ recordId: 'missing-record', expectedRecordRevision: null }],
+          domainReads: [],
+          unresolvedInflightIds: [],
+          observedQueryCount: 0,
+        },
+        context(),
+      ),
+      'close',
+    )
+    const advanced = unwrap(
+      await store.advanceRun(
+        {
+          ...advanceBody('advance-1', 'invocation-1', 0, []),
+          guard: commitGuard('invocation-1', 0, [
+            { recordId: 'missing-record', expectedRecordRevision: null },
+          ]),
+        },
+        context(),
+      ),
+      'advance',
+    )
+    expect(advanced.runRevision).toBe(1)
+    store.close()
+  })
+
+  it('stops an empty continue after 64 transitions that submit no action', async () => {
+    const { path, store } = await leasedRun()
+    for (let index = 0; index < 64; index += 1) {
+      await preparedInvocation(store, `invocation-${index}`, index)
+      unwrap(
+        await store.advanceRun(advanceBody(`advance-${index}`, `invocation-${index}`, index, []), context()),
+        `advance ${index}`,
+      )
+    }
+    await preparedInvocation(store, 'invocation-64', 64)
+    const before = count(path, 'events')
+    const refused = await store.advanceRun(advanceBody('advance-64', 'invocation-64', 64, []), context())
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error).toMatchObject({ code: 'conflict', detailCode: 'quota' })
+    expect(count(path, 'events')).toBe(before)
+    store.close()
+  })
+
+  it('pins the dispatch domain on the first committed admission and ignores an unimplemented reservation', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const reserved = await store.dispatchAdmission(
+      {
+        ...dispatchBody(action, 'invocation-1', 1, 'admission-budget'),
+        budget: {
+          reservation: {
+            accountRef: {
+              authorityId: 'authority-1',
+              recordId: 'account-1',
+              recordRevision: 1,
+              schema: inline({}).schema,
+              digest: 'a'.repeat(64),
+            },
+            parentReservationRef: null,
+            unitsByKind: [],
+            amount: null,
+          },
+          quota: [],
+        },
+      },
+      context(),
+    )
+    expect(reserved.ok).toBe(false)
+    const admitted = unwrap(
+      await store.dispatchAdmission(dispatchBody(action, 'invocation-1', 1, 'admission-1'), context()),
+      'dispatch',
+    )
+    expect(admitted.state).toBe('admitted')
+    expect(count(path, 'runtime_dispatch_domains')).toBe(1)
+    const moved = await store.dispatchAdmission(
+      {
+        ...dispatchBody(action, 'invocation-1', 1, 'admission-2'),
+        atomicDomain: atomicDomain('domain-2'),
+      },
+      context(),
+    )
+    expect(moved.ok).toBe(false)
+    if (!moved.ok) expect(moved.error).toMatchObject({ code: 'conflict', detailCode: 'domain' })
+    store.close()
+  })
+
+  it('conflicts when a running attempt repeats an external request with a different digest', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('step-1')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const request = dispatchBody(action, 'invocation-1', 1, 'admission-1')
+    unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+    unwrap(
+      await store.commitControl(
+        {
+          commitId: 'mark-1',
+          guard: commitGuard('invocation-1', 1),
+          command: {
+            kind: 'mark_running',
+            attemptId: request.attemptId,
+            expectedAttemptRevision: 1,
+            externalRequests: [{ system: 'ext', requestId: 'ext-1', requestDigest: 'e'.repeat(64) }],
+          },
+        },
+        context(),
+      ),
+      'mark',
+    )
+    const before = count(path, 'events')
+    const conflict = await store.commitControl(
+      {
+        commitId: 'mark-2',
+        guard: commitGuard('invocation-1', 1),
+        command: {
+          kind: 'mark_running',
+          attemptId: request.attemptId,
+          expectedAttemptRevision: 2,
+          externalRequests: [{ system: 'ext', requestId: 'ext-1', requestDigest: 'f'.repeat(64) }],
+        },
+      },
+      context(),
+    )
+    expect(conflict.ok).toBe(false)
+    if (!conflict.ok)
+      expect(conflict.error).toMatchObject({ code: 'conflict', detailCode: 'external_request' })
+    expect(count(path, 'events')).toBe(before)
     store.close()
   })
 })

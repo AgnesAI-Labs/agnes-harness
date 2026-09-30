@@ -21,22 +21,17 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'acceptInbox',
   'acceptServiceCommand',
   'ackOutbox',
-  'admitInvocation',
   'admitQuery',
   'advanceProvider',
-  'advanceRun',
   'appendStream',
   'beginMigration',
   'beginReconciliation',
   'cancelAdmission',
   'cancelPreparedActionAdmission',
   'claimOutbox',
-  'closeInvocation',
-  'commitControl',
   'commitMigratedRun',
   'completeReconciliation',
   'createChild',
-  'dispatchAdmission',
   'failOutbox',
   'fireTimer',
   'importConversation',
@@ -45,7 +40,6 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'probeAdmission',
   'probeBridgeChild',
   'probeConversationImport',
-  'probeDispatchAdmission',
   'probeMigration',
   'probePreparedActionAdmission',
   'pruneRecordVersions',
@@ -158,14 +152,49 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
     abortMigration: (_request, context) => unavailable('abortMigration', context),
     probeMigration: (_upgradeId, context) => unavailable('probeMigration', context),
     probeAdmission: (_ticketId, context) => unavailable('probeAdmission', context),
-    admitInvocation: (_request, context) => unavailable('admitInvocation', context),
+    admitInvocation: (request, context) => {
+      const result = validateRuntime('InvocationAdmission', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'InvocationAdmission is not valid'))
+      return run(context, () => database.admitInvocation(result.value))
+    },
     admitQuery: (_request, context) => unavailable('admitQuery', context),
-    closeInvocation: (_request, context) => unavailable('closeInvocation', context),
-    advanceRun: (_request, context) => unavailable('advanceRun', context),
+    closeInvocation: (request, context) => {
+      const result = validateRuntime('CloseInvocationRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'CloseInvocationRequest is not valid'))
+      return run(context, () => database.closeInvocation(result.value))
+    },
+    advanceRun: (request, context) => {
+      const result = validateRuntime('AdvanceRunRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'AdvanceRunRequest is not valid'))
+      const rejected = rejectAuthority(result.value.guard.authority)
+      if (rejected) return Promise.resolve(rejected)
+      return run(context, () => database.advanceRun(result.value))
+    },
     advanceProvider: (_request, context) => unavailable('advanceProvider', context),
-    dispatchAdmission: (_request, context) => unavailable('dispatchAdmission', context),
-    probeDispatchAdmission: (_admissionId, context) => unavailable('probeDispatchAdmission', context),
-    commitControl: (_request, context) => unavailable('commitControl', context),
+    dispatchAdmission: (request, context) => {
+      const result = validateRuntime('DispatchAdmissionRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'DispatchAdmissionRequest is not valid'))
+      const rejected = rejectAuthority(result.value.guard.authority)
+      if (rejected) return Promise.resolve(rejected)
+      return run(context, () => database.dispatchAdmission(result.value))
+    },
+    probeDispatchAdmission: (admissionId, context) => {
+      const result = validateRuntime('Id', admissionId)
+      if (!result.ok) return Promise.resolve(failure('invalid_input', 'schema', 'Id is not valid'))
+      return run(context, () => database.probeDispatchAdmission(result.value))
+    },
+    commitControl: (request, context) => {
+      const result = validateRuntime('CommitControlRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'CommitControlRequest is not valid'))
+      const rejected = rejectAuthority(result.value.guard.authority)
+      if (rejected) return Promise.resolve(rejected)
+      return run(context, () => database.commitControl(result.value))
+    },
     intakeReceipt: (_request, context) => unavailable('intakeReceipt', context),
     publishActionResult: (_request, context) => unavailable('publishActionResult', context),
     probeActionResult: (_request, context) => unavailable('probeActionResult', context),

@@ -2,6 +2,15 @@ import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlit
 import { defaultIds, type Event, LedgerIntegrityFailure, verifyIntegrityRows } from '@agnes/core'
 import type {
   AdmissionProbe,
+  AdmitInvocationResult,
+  AdvanceRunRequest,
+  CloseInvocationRequest,
+  CloseInvocationResult,
+  CommitControlRequest,
+  DispatchAdmissionProbe,
+  DispatchAdmissionRequest,
+  DispatchAdmissionResult,
+  InvocationAdmission,
   RunAdmission,
   StateAuthorityRef,
   StateCommitReceipt,
@@ -20,6 +29,21 @@ import { TypeCompiler } from '@sinclair/typebox/compiler'
 import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import { canonicalJson } from './canonical-json.js'
+import {
+  admitInvocationTx,
+  advanceRunTx,
+  type ControlPorts,
+  type ControlScan,
+  closeInvocationTx,
+  commitControlTx,
+  createControlScan,
+  dispatchAdmissionTx,
+  finishControlScan,
+  noteControlSide,
+  noteControlVersion,
+  probeDispatchTx,
+  type WriteCommitInput,
+} from './control.js'
 import {
   bodyDigest,
   type ChainRow,
@@ -58,9 +82,11 @@ import {
   sameSideCounts,
   sessionIdentityRecordId,
   sideCounts,
+  sideEntryIdentity,
   sideListsDigest,
   taintRecordId,
 } from './records.js'
+import { integrity, refuse, StateRefusal } from './refusal.js'
 
 const SNAPSHOT_TTL_MS = 60_000
 const PROOF_PAGE = 500
@@ -155,22 +181,13 @@ const RUNTIME_DDL = [
      authority_json TEXT NOT NULL,
      parent_json TEXT NOT NULL,
      latest_commit_id TEXT)`,
+  `CREATE TABLE IF NOT EXISTS runtime_dispatch_domains (
+     session_id TEXT PRIMARY KEY,
+     domain_json TEXT NOT NULL)`,
 ]
 
-export type StateFailure = {
-  code: 'invalid_input' | 'conflict' | 'incompatible' | 'internal'
-  detailCode: string
-  message: string
-}
-
-export class StateRefusal extends Error {
-  readonly failure: StateFailure
-  constructor(failure: StateFailure) {
-    super(failure.message)
-    this.name = 'StateRefusal'
-    this.failure = failure
-  }
-}
+export type { StateFailure } from './refusal.js'
+export { StateRefusal }
 
 export type CreateRunInput = {
   admission: RunAdmission
@@ -317,14 +334,6 @@ type ParsedCommit = { seq: number; data: RuntimeCommitData; digest: string }
 type ValidatedProof =
   | { kind: 'format'; event: LedgerEvent; data: FormatEventData; digest: string }
   | { kind: 'commit'; event: LedgerEvent; data: RuntimeCommitData; digest: string }
-
-function refuse(code: StateFailure['code'], detailCode: string, message: string): never {
-  throw new StateRefusal({ code, detailCode, message })
-}
-
-function integrity(message: string): never {
-  refuse('incompatible', 'integrity', message)
-}
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -600,6 +609,35 @@ export class RuntimeStateDatabase {
     return committed.probe
   }
 
+  async admitInvocation(request: InvocationAdmission): Promise<AdmitInvocationResult> {
+    return this.finishControl(await this.tx(() => admitInvocationTx(this.controlPorts(), request)))
+  }
+
+  async closeInvocation(request: CloseInvocationRequest): Promise<CloseInvocationResult> {
+    return this.finishControl(await this.tx(() => closeInvocationTx(this.controlPorts(), request)))
+  }
+
+  async advanceRun(request: AdvanceRunRequest): Promise<StateCommitReceipt> {
+    return this.finishControl(await this.tx(() => advanceRunTx(this.controlPorts(), request)))
+  }
+
+  async dispatchAdmission(request: DispatchAdmissionRequest): Promise<DispatchAdmissionResult> {
+    return this.finishControl(await this.tx(() => dispatchAdmissionTx(this.controlPorts(), request)))
+  }
+
+  probeDispatchAdmission(admissionId: string): DispatchAdmissionProbe {
+    return probeDispatchTx(this.controlPorts(), admissionId)
+  }
+
+  async commitControl(request: CommitControlRequest): Promise<StateCommitReceipt> {
+    return this.finishControl(await this.tx(() => commitControlTx(this.controlPorts(), request)))
+  }
+
+  private finishControl<T>(committed: { result: T; sessionId: string; verified?: VerifiedSession }): T {
+    if (committed.verified) this.verifiedHeads.set(committed.sessionId, committed.verified)
+    return committed.result
+  }
+
   private createRunRecords(
     input: CreateRunInput,
     owner: RecordOwner,
@@ -756,6 +794,7 @@ export class RuntimeStateDatabase {
     const revisions = new Map<string, number | null>()
     const live = new Map<string, LiveRecord>()
     const runs = new Map<string, RunEvidence>()
+    const control = createControlScan()
     const heads: HeadScan = {
       sessionId,
       meta,
@@ -825,7 +864,7 @@ export class RuntimeStateDatabase {
         previousCommit = proof.data.commitId
         latestCommitId = proof.data.commitId
       }
-      this.verifyCommitPage(pageCommits, revisions, live, runs, heads)
+      this.verifyCommitPage(pageCommits, revisions, live, runs, heads, control)
       const last = rows[rows.length - 1]
       if (!last) break
       after = last.seq
@@ -843,6 +882,19 @@ export class RuntimeStateDatabase {
       if (!heads.seen.has(recordId)) integrity('latest record version has no head')
     }
     if (!heads.sawIdentity) integrity('session identity record is missing')
+    finishControlScan(control, {
+      sessionId,
+      requests: () =>
+        this.all<{ request_id: string; fingerprint: string; result_json: string }>(
+          `SELECT request_id, fingerprint, result_json
+           FROM runtime_request_results WHERE method = 'dispatchAdmission'`,
+        ),
+      domainJson: () =>
+        this.get<{ domain_json: string }>(
+          'SELECT domain_json FROM runtime_dispatch_domains WHERE session_id = ?',
+          sessionId,
+        )?.domain_json,
+    })
     await this.verifySessionAdmissions(sessionId, runs, formatSeq)
     return {
       lastSeq: chain.lastSeq,
@@ -863,6 +915,7 @@ export class RuntimeStateDatabase {
     live: Map<string, LiveRecord>,
     runs: Map<string, RunEvidence>,
     scan: HeadScan,
+    control: ControlScan,
   ): void {
     if (commits.length === 0) return
     const idsJson = JSON.stringify(commits.map((commit) => commit.data.commitId))
@@ -935,7 +988,9 @@ export class RuntimeStateDatabase {
         const key = this.versionKey(version.record_id, version.record_revision, version.commit_id)
         if (!claimed.has(key)) integrity('record version has no mutation manifest')
         this.noteRunVersion(version, commit, runs, parsedBodies.get(key))
+        noteControlVersion(control, version)
       }
+      for (const side of commitSides) noteControlSide(control, side)
     }
     this.verifyPageHeads(idsJson, versionsByKey, live, scan)
   }
@@ -984,18 +1039,28 @@ export class RuntimeStateDatabase {
         : (parsed as RunRecordValue)
     if (!Number.isSafeInteger(value.revision)) integrity('attested run revision is not readable')
     const slot = runs.get(commit.data.runId) ?? { count: 0 }
-    slot.count += 1
-    if (value.runId === commit.data.runId) {
-      slot.match = {
-        sessionId: value.sessionId,
-        ticketId: value.admissionTicketId,
-        revision: value.revision,
-        seq: commit.seq,
-        digest: commit.digest,
-        commitId: commit.data.commitId,
-        transactionFingerprint: commit.data.transactionFingerprint,
-        previousCommitId: commit.data.previousCommitId,
+    // Only the creating version attests the admission. Later versions keep that identity.
+    if (value.revision === 0) {
+      slot.count += 1
+      if (value.runId === commit.data.runId) {
+        slot.match = {
+          sessionId: value.sessionId,
+          ticketId: value.admissionTicketId,
+          revision: value.revision,
+          seq: commit.seq,
+          digest: commit.digest,
+          commitId: commit.data.commitId,
+          transactionFingerprint: commit.data.transactionFingerprint,
+          previousCommitId: commit.data.previousCommitId,
+        }
       }
+    } else if (
+      !slot.match ||
+      value.runId !== commit.data.runId ||
+      value.sessionId !== slot.match.sessionId ||
+      value.admissionTicketId !== slot.match.ticketId
+    ) {
+      integrity('attested run identity changed')
     }
     runs.set(commit.data.runId, slot)
   }
@@ -1142,7 +1207,7 @@ export class RuntimeStateDatabase {
   ): AdmissionProbe {
     const versions = this.all<VersionRow>(
       `SELECT record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
-       FROM runtime_record_versions WHERE record_id = ?`,
+       FROM runtime_record_versions WHERE record_id = ? ORDER BY record_revision`,
       runRecordId(row.run_id),
     )
     const runs = new Map<string, RunEvidence>()
@@ -1611,6 +1676,184 @@ export class RuntimeStateDatabase {
 
   private run(sql: string, ...args: SQLInputValue[]): void {
     this.statement(sql).run(...args)
+  }
+
+  private controlPorts(): ControlPorts {
+    return {
+      now: () => this.now(),
+      authority: this.authority,
+      ulid: () => this.ids.ulid(),
+      get: (sql, ...args) => this.get(sql, ...args),
+      all: (sql, ...args) => this.all(sql, ...args),
+      run: (sql, ...args) => this.run(sql, ...args),
+      requireSession: (sessionId) => this.requireSession(sessionId),
+      replayRequest: (method, requestId, fingerprint) => this.replayRequest(method, requestId, fingerprint),
+      rememberRequest: (method, requestId, fingerprint, result) =>
+        this.rememberRequest(method, requestId, fingerprint, result),
+      loadHead: (recordId) => this.get(HEAD_BY_ID, recordId),
+      writeCommit: (input) => this.writeCommit(input),
+      assertReceipt: (sessionId, receipt, fingerprint) => this.assertReceipt(sessionId, receipt, fingerprint),
+    }
+  }
+
+  private writeCommit(input: WriteCommitInput): { receipt: StateCommitReceipt; verified: VerifiedSession } {
+    const manifests = [
+      ...input.creates.map((record) => createManifest(input.commitId, record)),
+      ...input.updates.map((update) =>
+        createManifest(input.commitId, update.record, update.previousRevision),
+      ),
+    ]
+    const data: RuntimeCommitData = {
+      commitId: input.commitId,
+      transactionFingerprint: input.fingerprint,
+      runId: input.runId,
+      actionId: input.actionId,
+      authorityEpoch: this.authority.authorityEpoch,
+      writerEpoch: input.writerEpoch,
+      previousCommitId: input.verified.latestCommitId,
+      mutationsDigest: mutationDigest(manifests),
+      mutationCount: manifests.length,
+      sideListsDigest: sideListsDigest(input.sides),
+      counts: sideCounts(input.sides),
+    }
+    const commit = this.event(this.ids.ulid(), input.at, STATE_COMMIT_EVENT, data, input.verified.chain)
+    const protectedCommit = protectEvent(input.sessionId, commit, input.verified.chain)
+    this.appendEvent(input.sessionId, commit, protectedCommit.integrity)
+    for (const record of input.creates) this.insertRecord(record, input.commitId, input.at)
+    for (const update of input.updates)
+      this.updateRecord(update.record, update.previousRevision, input.commitId, input.at)
+    for (const side of input.sides) this.insertSide(side)
+    this.run(
+      'UPDATE runtime_session_meta SET latest_commit_id = ? WHERE session_id = ?',
+      input.commitId,
+      input.sessionId,
+    )
+    const receipt: StateCommitReceipt = {
+      commitId: input.commitId,
+      transactionFingerprint: input.fingerprint,
+      sessionId: input.sessionId,
+      firstSeq: commit.seq,
+      lastSeq: commit.seq,
+      headDigest: protectedCommit.integrity.digest,
+      runRevision: input.runRevision,
+      actionIds: input.actionIds,
+    }
+    return {
+      receipt,
+      verified: {
+        lastSeq: commit.seq,
+        formatSeq: input.verified.formatSeq,
+        headDigest: protectedCommit.integrity.digest,
+        latestCommitId: input.commitId,
+        workspaceId: input.verified.workspaceId,
+        formatVersion: input.verified.formatVersion,
+        minReader: input.verified.minReader,
+        parent: input.verified.parent,
+        chain: protectedCommit.state,
+      },
+    }
+  }
+
+  private updateRecord(record: StoredRecord, previousRevision: number, commitId: string, at: string): void {
+    const digest = bodyDigest(record.owner, record.value)
+    const manifest = createManifest(commitId, record, previousRevision)
+    const schemaJson = canonicalJson(record.schema)
+    const ownerJson = canonicalJson(record.owner)
+    const valueJson = canonicalJson(record.value)
+    const updated = this.statement(
+      `UPDATE runtime_records
+       SET schema_json = ?, record_revision = ?, last_commit_id = ?, updated_at = ?,
+           owner_json = ?, value_json = ?, body_digest = ?
+       WHERE record_id = ? AND record_revision = ?`,
+    ).run(
+      schemaJson,
+      record.recordRevision,
+      commitId,
+      at,
+      ownerJson,
+      valueJson,
+      digest,
+      record.recordId,
+      previousRevision,
+    )
+    if (Number(updated.changes) !== 1) integrity('record head update missed its row')
+    this.run(
+      `INSERT INTO runtime_record_versions (
+         record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      record.recordId,
+      record.recordRevision,
+      schemaJson,
+      commitId,
+      digest,
+      ownerJson,
+      valueJson,
+    )
+    this.run(
+      `INSERT INTO runtime_mutation_manifests (commit_id, record_id, previous_revision, next_json)
+       VALUES (?, ?, ?, ?)`,
+      manifest.commitId,
+      manifest.recordId,
+      manifest.previousRevision,
+      manifest.next === null ? null : canonicalJson(manifest.next),
+    )
+  }
+
+  private insertSide(entry: CommitSideEntry): void {
+    this.run(
+      `INSERT INTO runtime_side_entries (commit_id, kind, identity, entry_json) VALUES (?, ?, ?, ?)`,
+      entry.commitId,
+      entry.kind,
+      sideEntryIdentity(entry),
+      canonicalJson(entry),
+    )
+  }
+
+  private assertReceipt(sessionId: string, receipt: StateCommitReceipt, fingerprint: string): void {
+    if (receipt.transactionFingerprint !== fingerprint)
+      integrity('stored commit receipt does not match the request')
+    if (receipt.sessionId !== sessionId || receipt.firstSeq !== receipt.lastSeq)
+      integrity('stored commit receipt does not match the attested commit')
+    const row = this.get<EventRow>(
+      `SELECT session_key, seq, ts, id, type, lane, v, actor, origin, trust, data,
+              integrity_mode, integrity_prev, integrity_digest
+       FROM events WHERE session_key = ? AND seq = ?`,
+      sessionId,
+      receipt.lastSeq,
+    )
+    if (!row) integrity('stored commit receipt does not match the attested commit')
+    const proof = this.validatedProof(this.decodeEvent(row), false)
+    if (
+      proof.kind !== 'commit' ||
+      proof.data.commitId !== receipt.commitId ||
+      proof.data.transactionFingerprint !== fingerprint ||
+      proof.digest !== receipt.headDigest
+    )
+      integrity('stored commit receipt does not match the attested commit')
+    if (proof.data.runId) {
+      const version = this.get<{ value_json: string }>(
+        `SELECT value_json FROM runtime_record_versions WHERE commit_id = ? AND record_id = ?`,
+        receipt.commitId,
+        runRecordId(proof.data.runId),
+      )
+      if (version) {
+        const value = this.parseJson<RunRecordValue>(version.value_json, 'record body cannot be decoded')
+        if (value.revision !== receipt.runRevision)
+          integrity('stored commit receipt does not match the attested commit')
+      }
+    }
+    const sides = this.all<{ entry_json: string }>(
+      `SELECT entry_json FROM runtime_side_entries WHERE commit_id = ? AND kind = 'action-created'`,
+      receipt.commitId,
+    )
+    for (const side of sides) {
+      const entry = this.parseJson<CommitSideEntry>(side.entry_json, 'commit side entry cannot be decoded')
+      if (
+        entry.kind !== 'action-created' ||
+        !receipt.actionIds.some((item) => item.actionId === entry.actionId)
+      )
+        integrity('stored commit receipt does not match the attested commit')
+    }
   }
 }
 

@@ -248,17 +248,60 @@ function schemaRef(typeId: string, document: unknown): SchemaRef {
   return { typeId, revision: 1, digest: digestOf(document) }
 }
 
+function recordSchema(id: string, required: readonly string[]) {
+  const properties: Record<string, { type: 'string' }> = {}
+  for (const key of required) properties[key] = { type: 'string' }
+  return {
+    $id: id,
+    type: 'object' as const,
+    additionalProperties: false,
+    required: [...required],
+    properties,
+  }
+}
+
+const actionRecordSchema = recordSchema('agh.runtime/action-record.value', ['actionId', 'runId'])
+const attemptRecordSchema = recordSchema('agh.runtime/attempt-record.value', ['attemptId', 'actionId'])
+const runQuotaSchema = recordSchema('agh.runtime/run-quota.value', ['runId'])
+const invocationSchema = recordSchema('agh.runtime/invocation.value', ['invocationId', 'runId'])
+const prepareQuotaSchema = recordSchema('agh.runtime/prepare-query-quota.value', ['prepareId', 'runId'])
+const queryGrantSchema = recordSchema('agh.runtime/query-grant.value', ['grantId', 'invocationId'])
+const dispatchAdmissionSchema = recordSchema('agh.runtime/dispatch-admission.value', ['admissionId'])
+const receiptRecordSchema = recordSchema('agh.runtime/receipt-record.value', ['receipt'])
+const quotaMirrorSchema = recordSchema('agh.runtime/quota-mirror.value', ['reservationId'])
+
 export const SESSION_IDENTITY_SCHEMA = schemaRef(
   'agh.runtime/session-identity-record@1',
   sessionIdentitySchema,
 )
 export const RUN_RECORD_SCHEMA = schemaRef('agh.runtime/run-record@1', runRecordSchema)
 export const RUN_TAINT_SCHEMA = schemaRef('agh.runtime/run-taint-record@1', runTaintSchema)
+export const ACTION_SCHEMA = schemaRef('agh.runtime/action-record@1', actionRecordSchema)
+export const ATTEMPT_SCHEMA = schemaRef('agh.runtime/attempt-record@1', attemptRecordSchema)
+export const RUN_QUOTA_SCHEMA = schemaRef('agh.runtime/run-quota@1', runQuotaSchema)
+export const INVOCATION_SCHEMA = schemaRef('agh.runtime/invocation@1', invocationSchema)
+export const PREPARE_QUOTA_SCHEMA = schemaRef('agh.runtime/prepare-query-quota@1', prepareQuotaSchema)
+export const QUERY_GRANT_SCHEMA = schemaRef('agh.runtime/query-grant@1', queryGrantSchema)
+export const DISPATCH_ADMISSION_SCHEMA = schemaRef(
+  'agh.runtime/dispatch-admission@1',
+  dispatchAdmissionSchema,
+)
+export const RECEIPT_SCHEMA = schemaRef('agh.runtime/receipt-record@1', receiptRecordSchema)
+export const QUOTA_MIRROR_SCHEMA = schemaRef('agh.runtime/quota-mirror@1', quotaMirrorSchema)
 
 const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [SESSION_IDENTITY_SCHEMA.typeId]: SESSION_IDENTITY_SCHEMA,
   [RUN_RECORD_SCHEMA.typeId]: RUN_RECORD_SCHEMA,
   [RUN_TAINT_SCHEMA.typeId]: RUN_TAINT_SCHEMA,
+  [ACTION_SCHEMA.typeId]: ACTION_SCHEMA,
+  [ATTEMPT_SCHEMA.typeId]: ATTEMPT_SCHEMA,
+  [RUN_QUOTA_SCHEMA.typeId]: RUN_QUOTA_SCHEMA,
+  [INVOCATION_SCHEMA.typeId]: INVOCATION_SCHEMA,
+  [PREPARE_QUOTA_SCHEMA.typeId]: PREPARE_QUOTA_SCHEMA,
+  [QUERY_GRANT_SCHEMA.typeId]: QUERY_GRANT_SCHEMA,
+  [DISPATCH_ADMISSION_SCHEMA.typeId]: DISPATCH_ADMISSION_SCHEMA,
+  [RECEIPT_SCHEMA.typeId]: RECEIPT_SCHEMA,
+  [QUOTA_MIRROR_SCHEMA.typeId]: QUOTA_MIRROR_SCHEMA,
 }
 
 export function sessionIdentityRecordId(sessionId: string): string {
@@ -271,6 +314,46 @@ export function runRecordId(runId: string): string {
 
 export function taintRecordId(runId: string): string {
   return `taint:${runId}`
+}
+
+export function actionRecordId(actionId: string): string {
+  return `action:${actionId}`
+}
+
+export function attemptRecordId(attemptId: string): string {
+  return `attempt:${attemptId}`
+}
+
+export function dispatchRecordId(admissionId: string): string {
+  return `dispatch:${admissionId}`
+}
+
+export function receiptRecordId(receiptId: string): string {
+  return `receipt:${receiptId}`
+}
+
+export function quotaRecordId(reservationId: string): string {
+  return `quota:${reservationId}`
+}
+
+export function invocationRecordId(invocationId: string): string {
+  return `invocation:${invocationId}`
+}
+
+export function prepareRecordId(prepareId: string): string {
+  return `prepare:${prepareId}`
+}
+
+export function grantRecordId(grantId: string): string {
+  return `grant:${grantId}`
+}
+
+export function runQuotaRecordId(runId: string): string {
+  return `run-quota:${runId}`
+}
+
+export function stableId(prefix: string, material: string): string {
+  return `${prefix}-${digestText(material).slice(0, 40)}`
 }
 
 export function bodyDigest(owner: RecordOwner, value: unknown): string {
@@ -347,6 +430,10 @@ function jsonString(value: string): boolean {
   return true
 }
 
+export function sideEntryIdentity(entry: CommitSideEntry): string {
+  return sideIdentity(entry).slice(1).join('\0')
+}
+
 function sideIdentity(entry: CommitSideEntry): readonly string[] {
   switch (entry.kind) {
     case 'action-created':
@@ -412,11 +499,15 @@ export function sideCounts(entries: readonly CommitSideEntry[]): RuntimeCommitDa
   return counts
 }
 
-export function createManifest(commitId: string, record: StoredRecord): CommitMutationManifest {
+export function createManifest(
+  commitId: string,
+  record: StoredRecord,
+  previousRevision: number | null = null,
+): CommitMutationManifest {
   return {
     commitId,
     recordId: record.recordId,
-    previousRevision: null,
+    previousRevision,
     next: {
       recordRevision: record.recordRevision,
       schema: record.schema,
@@ -476,7 +567,7 @@ function canonicalSchemaText(typeId: string): string | undefined {
   return canonical
 }
 
-/** True when `schema` is exactly one of the three runtime record schemas. */
+/** True when `schema` is exactly one of the registered runtime record schemas. */
 export function matchesKnownSchema(schema: unknown): boolean {
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
   const record = schema as { typeId?: unknown; revision?: unknown; digest?: unknown }
@@ -488,7 +579,7 @@ export function matchesKnownSchema(schema: unknown): boolean {
   )
 }
 
-/** True when stored schema JSON is one of the three schemas, including a non-canonical spelling. */
+/** True when stored schema JSON is one of the registered schemas, including a non-canonical spelling. */
 export function matchesKnownSchemaText(text: string): boolean {
   for (const typeId of Object.keys(SCHEMAS)) if (text === canonicalSchemaText(typeId)) return true
   try {
