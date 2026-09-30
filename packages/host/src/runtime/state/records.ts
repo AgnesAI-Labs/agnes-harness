@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { hash } from 'node:crypto'
 import type { SchemaRef, StateAuthorityRef } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 
@@ -232,7 +232,16 @@ const runTaintSchema = {
 }
 
 export function digestOf(value: unknown): string {
-  return createHash('sha256').update(jcs(value)).digest('hex')
+  return digestText(jcs(value))
+}
+
+function digestText(text: string): string {
+  return hash('sha256', text, 'hex')
+}
+
+/** sha256 of the JCS object `{"owner":<ownerJson>,"value":<valueJson>}`. Matches `bodyDigest` when both texts are already canonical. */
+export function canonicalStoredBodyDigest(ownerJson: string, valueJson: string): string {
+  return digestText(`{"owner":${ownerJson},"value":${valueJson}}`)
 }
 
 function schemaRef(typeId: string, document: unknown): SchemaRef {
@@ -273,6 +282,8 @@ export function compareUtf8(left: string, right: string): number {
 }
 
 export function mutationDigest(manifests: readonly CommitMutationManifest[]): string {
+  const encoded = canonicalMutations(manifests)
+  if (encoded !== null) return digestText(encoded)
   const body = manifests
     .map((manifest) => ({
       recordId: manifest.recordId,
@@ -281,6 +292,59 @@ export function mutationDigest(manifests: readonly CommitMutationManifest[]): st
     }))
     .sort((left, right) => compareUtf8(left.recordId, right.recordId))
   return digestOf(body)
+}
+
+function canonicalMutations(manifests: readonly CommitMutationManifest[]): string | null {
+  const ordered =
+    manifests.length < 2
+      ? manifests
+      : [...manifests].sort((left, right) => compareUtf8(left.recordId, right.recordId))
+  let encoded = '['
+  for (let index = 0; index < ordered.length; index++) {
+    const manifest = ordered[index]
+    if (!manifest || !jsonString(manifest.recordId)) return null
+    const previous = manifest.previousRevision === null ? 'null' : jsonNumber(manifest.previousRevision)
+    if (previous === null) return null
+    const next = canonicalNext(manifest.next)
+    if (next === null) return null
+    if (index > 0) encoded += ','
+    encoded += `{"next":${next},"previousRevision":${previous},"recordId":${JSON.stringify(manifest.recordId)}}`
+  }
+  return `${encoded}]`
+}
+
+function canonicalNext(next: MutationNext | null): string | null {
+  if (next === null) return 'null'
+  if (Object.keys(next).length !== 3 || !jsonString(next.digest)) return null
+  const revision = jsonNumber(next.recordRevision)
+  const schema = canonicalSchema(next.schema)
+  if (revision === null || schema === null) return null
+  return `{"digest":${JSON.stringify(next.digest)},"recordRevision":${revision},"schema":${schema}}`
+}
+
+function canonicalSchema(schema: SchemaRef): string | null {
+  if (Object.keys(schema).length !== 3 || !jsonString(schema.typeId) || !jsonString(schema.digest))
+    return null
+  const revision = jsonNumber(schema.revision)
+  if (revision === null) return null
+  return `{"digest":${JSON.stringify(schema.digest)},"revision":${revision},"typeId":${JSON.stringify(schema.typeId)}}`
+}
+
+function jsonNumber(value: number): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return JSON.stringify(value)
+}
+
+function jsonString(value: string): boolean {
+  if (typeof value !== 'string') return false
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(++index)
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false
+  }
+  return true
 }
 
 function sideIdentity(entry: CommitSideEntry): readonly string[] {
@@ -307,7 +371,13 @@ function compareIdentity(left: readonly string[], right: readonly string[]): num
   return 0
 }
 
+let emptySideDigest: string | undefined
+
 export function sideListsDigest(entries: readonly CommitSideEntry[]): string {
+  if (entries.length === 0) {
+    emptySideDigest ??= digestOf([])
+    return emptySideDigest
+  }
   const body = [...entries]
     .sort((left, right) => compareIdentity(sideIdentity(left), sideIdentity(right)))
     .map((entry) => {
@@ -315,6 +385,19 @@ export function sideListsDigest(entries: readonly CommitSideEntry[]): string {
       return rest
     })
   return digestOf(body)
+}
+
+export function sameSideCounts(
+  left: RuntimeCommitData['counts'],
+  right: RuntimeCommitData['counts'],
+): boolean {
+  return (
+    left.createdActions === right.createdActions &&
+    left.consumedSignals === right.consumedSignals &&
+    left.outboxEvents === right.outboxEvents &&
+    left.receipts === right.receipts &&
+    left.usageOrigins === right.usageOrigins
+  )
 }
 
 export function sideCounts(entries: readonly CommitSideEntry[]): RuntimeCommitData['counts'] {
@@ -378,6 +461,41 @@ export type ChainRow = { event: LedgerEvent; integrity: IntegrityMetadata | null
 
 export function knownSchema(typeId: string): SchemaRef | undefined {
   return SCHEMAS[typeId]
+}
+
+const knownSchemaCanonical = new Map<string, string>()
+
+function canonicalSchemaText(typeId: string): string | undefined {
+  const known = SCHEMAS[typeId]
+  if (!known) return undefined
+  let canonical = knownSchemaCanonical.get(typeId)
+  if (canonical === undefined) {
+    canonical = jcs(known)
+    knownSchemaCanonical.set(typeId, canonical)
+  }
+  return canonical
+}
+
+/** True when `schema` is exactly one of the three runtime record schemas. */
+export function matchesKnownSchema(schema: unknown): boolean {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
+  const record = schema as { typeId?: unknown; revision?: unknown; digest?: unknown }
+  if (typeof record.typeId !== 'string' || Object.keys(schema).length !== 3) return false
+  const known = SCHEMAS[record.typeId]
+  if (!known) return false
+  return (
+    record.typeId === known.typeId && record.revision === known.revision && record.digest === known.digest
+  )
+}
+
+/** True when stored schema JSON is one of the three schemas, including a non-canonical spelling. */
+export function matchesKnownSchemaText(text: string): boolean {
+  for (const typeId of Object.keys(SCHEMAS)) if (text === canonicalSchemaText(typeId)) return true
+  try {
+    return matchesKnownSchema(JSON.parse(text) as unknown)
+  } catch {
+    return false
+  }
 }
 
 export function sameJson(left: unknown, right: unknown): boolean {

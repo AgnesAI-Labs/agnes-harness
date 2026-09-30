@@ -5,6 +5,7 @@
 //   tsx tools/bench-runtime-state-head.ts latency
 //   tsx tools/bench-runtime-state-head.ts build --events <n> --file <path>
 //   tsx tools/bench-runtime-state-head.ts open --file <path>
+//   tsx tools/bench-runtime-state-head.ts opens --file <path> --runs <n>
 //   tsx tools/bench-runtime-state-head.ts rss-unit
 import { createHash } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
@@ -124,7 +125,10 @@ function memory() {
   const usage = process.memoryUsage()
   return {
     rssBytes: usage.rss,
+    heapTotalBytes: usage.heapTotal,
     heapUsedBytes: usage.heapUsed,
+    externalBytes: usage.external,
+    arrayBuffersBytes: usage.arrayBuffers,
     maxRss: process.resourceUsage().maxRSS,
   }
 }
@@ -225,15 +229,13 @@ async function build(): Promise<void> {
   )
 }
 
-async function open(): Promise<void> {
-  const file = requiredFlag('--file')
-  const before = memory()
+async function openOnce(file: string, requestId: string): Promise<number> {
   const store = openStore(file)
   try {
     const started = performance.now()
     const opened = await store.open(
       {
-        requestId: 'bench-cold-open',
+        requestId,
         authority,
         sessionId: 'session-bench',
         mode: 'read',
@@ -243,23 +245,75 @@ async function open(): Promise<void> {
       context(),
     )
     const openMs = performance.now() - started
-    const after = memory()
     if (!opened.ok) throw new Error(`open failed: ${opened.error.detailCode}`)
-    console.log(
-      JSON.stringify({
-        mode: 'open',
-        file,
-        events: eventCount(file),
-        openMs,
-        eventsPerSecond: eventCount(file) / (openMs / 1000),
-        before,
-        after,
-        rssDeltaBytes: after.rssBytes - before.rssBytes,
-      }),
-    )
+    return openMs
   } finally {
     store.close()
   }
+}
+
+async function open(): Promise<void> {
+  const file = requiredFlag('--file')
+  const before = memory()
+  const openMs = await openOnce(file, 'bench-cold-open')
+  const after = memory()
+  const events = eventCount(file)
+  console.log(
+    JSON.stringify({
+      mode: 'open',
+      file,
+      events,
+      openMs,
+      eventsPerSecond: events / (openMs / 1000),
+      before,
+      after,
+      rssDeltaBytes: after.rssBytes - before.rssBytes,
+    }),
+  )
+}
+
+/** One untimed open, then `--runs` timed opens. Each open builds its own store and verifies fully. */
+async function opens(): Promise<void> {
+  const file = requiredFlag('--file')
+  const runs = positive('--runs', 5)
+  const events = eventCount(file)
+  const prepareStarted = performance.now()
+  const prepared = openStore(file)
+  prepared.close()
+  const prepareMs = performance.now() - prepareStarted
+  const before = memory()
+  await openOnce(file, 'bench-warmup-open')
+  const samples: number[] = []
+  const rssAfter: number[] = []
+  for (let index = 1; index <= runs; index += 1) {
+    samples.push(await openOnce(file, `bench-open-${index}`))
+    rssAfter.push(memory().rssBytes)
+  }
+  const after = memory()
+  const medianMs = percentile(samples, 50)
+  const p95Ms = percentile(samples, 95)
+  console.log(
+    JSON.stringify({
+      mode: 'opens',
+      file,
+      events,
+      runs,
+      prepareMs,
+      note: 'prepareMs is store construction, including the first create-if-missing of runtime_records_commit. The warmup open is outside the samples. Each sample is a new store and a full session verify.',
+      samplesMs: samples,
+      medianMs,
+      p95Ms,
+      minMs: Math.min(...samples),
+      maxMs: Math.max(...samples),
+      medianEventsPerSecond: events / (medianMs / 1000),
+      p95EventsPerSecond: events / (p95Ms / 1000),
+      before,
+      after,
+      rssAfter,
+      rssDeltaBytes: after.rssBytes - before.rssBytes,
+      maxRssDelta: after.maxRss - before.maxRss,
+    }),
+  )
 }
 
 function rssUnit(): void {
@@ -283,5 +337,9 @@ const command = process.argv[2]
 if (command === 'latency') await latency()
 else if (command === 'build') await build()
 else if (command === 'open') await open()
+else if (command === 'opens') await opens()
 else if (command === 'rss-unit') rssUnit()
-else throw new Error('usage: latency | build --events <n> --file <path> | open --file <path> | rss-unit')
+else
+  throw new Error(
+    'usage: latency | build --events <n> --file <path> | open --file <path> | opens --file <path> --runs <n> | rss-unit',
+  )

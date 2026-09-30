@@ -2511,7 +2511,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // original result. Measured 39883.
   // A verified session head is reused for later writes. Opening a session still rechecks that session.
   // Measured 40049.
-  'packages/host/src': 40049,
+  // Open verification hashes canonical stored bodies and checks compiled proof schemas once.
+  // Measured 40263.
+  'packages/host/src': 40263,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

@@ -607,6 +607,30 @@ describe('runtime state records, proof rows, and ledger events', () => {
     await refuseDamaged(path, 'open-reader')
   })
 
+  it('accepts an equivalent spelling of a stored record body', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      const row = db
+        .prepare("SELECT value_json FROM runtime_record_versions WHERE record_id = 'run:run-1'")
+        .get() as {
+        value_json: string
+      }
+      const value = JSON.parse(row.value_json) as Record<string, unknown>
+      const reordered: Record<string, unknown> = {}
+      for (const key of Object.keys(value).reverse()) reordered[key] = value[key]
+      const text = JSON.stringify(reordered)
+      db.prepare("UPDATE runtime_record_versions SET value_json = ? WHERE record_id = 'run:run-1'").run(text)
+      db.prepare("UPDATE runtime_records SET value_json = ? WHERE record_id = 'run:run-1'").run(text)
+    })
+    const reopened = openStore(path)
+    const opened = await reopened.open(readOpen('open-reordered-body'), context())
+    reopened.close()
+    expect(opened.ok).toBe(true)
+  })
+
   it('rejects a record head whose schema no longer matches the attested version', async () => {
     const path = file()
     const store = openStore(path)

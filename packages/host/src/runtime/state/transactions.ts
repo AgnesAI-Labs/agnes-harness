@@ -11,7 +11,13 @@ import type {
   StateOpenResult,
   WriterClaim,
 } from '@agnes/extension-api/runtime'
-import { validateEvent } from '@agnes/protocol'
+import { jcs } from '@agnes/protocol'
+import {
+  EventEnvelope,
+  RuntimeCommitData as RuntimeCommitSchema,
+  RuntimeFormatData,
+} from '@agnes/protocol/gen/session-v1'
+import { TypeCompiler } from '@sinclair/typebox/compiler'
 import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import {
@@ -19,6 +25,7 @@ import {
   type ChainRow,
   type CommitMutationManifest,
   type CommitSideEntry,
+  canonicalStoredBodyDigest,
   createManifest,
   digestOf,
   emptyIntegrity,
@@ -31,6 +38,8 @@ import {
   type LedgerEvent,
   MIN_READER,
   type MutationNext,
+  matchesKnownSchema,
+  matchesKnownSchemaText,
   mutationDigest,
   protectEvent,
   type RecordOwner,
@@ -46,6 +55,7 @@ import {
   STATE_COMMIT_EVENT,
   type StoredRecord,
   sameJson,
+  sameSideCounts,
   sessionIdentityRecordId,
   sideCounts,
   sideListsDigest,
@@ -54,6 +64,33 @@ import {
 
 const SNAPSHOT_TTL_MS = 60_000
 const PROOF_PAGE = 500
+const proofChecks = {
+  envelope: TypeCompiler.Compile(EventEnvelope),
+  commit: TypeCompiler.Compile(RuntimeCommitSchema),
+  format: TypeCompiler.Compile(RuntimeFormatData),
+}
+const VERSIONS_BY_COMMIT = `SELECT record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
+  FROM runtime_record_versions WHERE commit_id IN (SELECT value FROM json_each(?))`
+const MANIFESTS_BY_COMMIT = `SELECT commit_id, record_id, previous_revision, next_json
+  FROM runtime_mutation_manifests WHERE commit_id IN (SELECT value FROM json_each(?))`
+const SIDES_BY_COMMIT = `SELECT commit_id, entry_json
+  FROM runtime_side_entries WHERE commit_id IN (SELECT value FROM json_each(?))`
+const HEADS_BY_COMMIT = `SELECT h.record_id, h.min_reader, h.record_revision, h.last_commit_id, h.body_digest,
+       (v.record_id IS NOT NULL) AS has_version,
+       (v.record_id IS NOT NULL
+         AND h.schema_json = v.schema_json
+         AND h.owner_json = v.owner_json
+         AND h.value_json = v.value_json
+         AND h.body_digest = v.digest) AS same_text,
+       CASE WHEN h.record_id = ? THEN h.value_json END AS identity_json
+  FROM runtime_records h
+  LEFT JOIN runtime_record_versions v
+    ON v.record_id = h.record_id
+   AND v.commit_id = h.last_commit_id
+   AND v.record_revision = h.record_revision
+ WHERE h.last_commit_id IN (SELECT value FROM json_each(?))`
+const HEAD_BY_ID = `SELECT record_id, schema_json, min_reader, record_revision, last_commit_id, owner_json, value_json, body_digest
+  FROM runtime_records WHERE record_id = ?`
 
 const RUNTIME_DDL = [
   `CREATE TABLE IF NOT EXISTS runtime_records (
@@ -67,6 +104,7 @@ const RUNTIME_DDL = [
      owner_json TEXT NOT NULL,
      value_json TEXT NOT NULL,
      body_digest TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS runtime_records_commit ON runtime_records (last_commit_id)`,
   `CREATE TABLE IF NOT EXISTS runtime_record_versions (
      record_id TEXT NOT NULL,
      record_revision INTEGER NOT NULL,
@@ -191,6 +229,21 @@ type VersionRow = {
   value_json: string
 }
 
+type HeadSummary = {
+  record_id: string
+  min_reader: number
+  record_revision: number
+  last_commit_id: string
+  body_digest: string
+  has_version: number | boolean
+  same_text: number | boolean
+  identity_json: string | null
+}
+
+function sqlFlag(value: number | boolean): boolean {
+  return value === true || value === 1
+}
+
 type HeadRow = {
   record_id: string
   schema_json: string
@@ -236,6 +289,14 @@ type VerifiedSession = {
 
 type LiveRecord = { revision: number | null; commitId: string }
 
+type HeadScan = {
+  sessionId: string
+  meta: MetaRow
+  parent: SessionIdentityValue['parent']
+  seen: Set<string>
+  sawIdentity: boolean
+}
+
 type RunMatch = {
   sessionId: string
   ticketId: string
@@ -263,6 +324,33 @@ function refuse(code: StateFailure['code'], detailCode: string, message: string)
 
 function integrity(message: string): never {
   refuse('incompatible', 'integrity', message)
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** TypeBox integers accept -0, and JCS then spells it as 0, so the chain digest cannot see it. */
+function containsNegativeZero(value: unknown): boolean {
+  if (typeof value === 'number') return Object.is(value, -0)
+  if (Array.isArray(value)) {
+    for (const item of value) if (containsNegativeZero(item)) return true
+    return false
+  }
+  if (!isPlainRecord(value)) return false
+  for (const key of Object.keys(value)) if (containsNegativeZero(value[key])) return true
+  return false
+}
+
+function proofDataHolds(data: unknown, canonicalized: boolean): boolean {
+  if (containsNegativeZero(data)) return false
+  if (canonicalized) return true
+  try {
+    jcs(data)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export type RuntimeStateDatabaseOptions = {
@@ -668,6 +756,16 @@ export class RuntimeStateDatabase {
     const revisions = new Map<string, number | null>()
     const live = new Map<string, LiveRecord>()
     const runs = new Map<string, RunEvidence>()
+    const heads: HeadScan = {
+      sessionId,
+      meta,
+      parent: this.parseJson<SessionIdentityValue['parent']>(
+        meta.parent_json,
+        'session parent cannot be decoded',
+      ),
+      seen: new Set<string>(),
+      sawIdentity: false,
+    }
     let after = 0
     for (;;) {
       const rows = this.all<EventRow>(
@@ -698,7 +796,8 @@ export class RuntimeStateDatabase {
       }
       const pageCommits: ParsedCommit[] = []
       for (const row of decoded) {
-        const proof = this.validatedProof(row)
+        // The chain digest already canonicalized this event, including its data.
+        const proof = this.validatedProof(row, true)
         if (!sawFormat) {
           if (proof.kind !== 'format') integrity('session format declaration is missing')
           const format = proof.data
@@ -726,7 +825,7 @@ export class RuntimeStateDatabase {
         previousCommit = proof.data.commitId
         latestCommitId = proof.data.commitId
       }
-      this.verifyCommitPage(pageCommits, revisions, live, runs)
+      this.verifyCommitPage(pageCommits, revisions, live, runs, heads)
       const last = rows[rows.length - 1]
       if (!last) break
       after = last.seq
@@ -739,7 +838,11 @@ export class RuntimeStateDatabase {
     if (!latestCommitId || meta.latest_commit_id !== latestCommitId)
       integrity('session head commit does not match')
     if (chain.headDigest === null) integrity('session head digest is missing')
-    await this.verifyLiveHeads(sessionId, meta, commitIds, live)
+    for (const [recordId, record] of live) {
+      if (record.revision === null) continue
+      if (!heads.seen.has(recordId)) integrity('latest record version has no head')
+    }
+    if (!heads.sawIdentity) integrity('session identity record is missing')
     await this.verifySessionAdmissions(sessionId, runs, formatSeq)
     return {
       lastSeq: chain.lastSeq,
@@ -749,7 +852,7 @@ export class RuntimeStateDatabase {
       workspaceId: meta.workspace_id,
       formatVersion: meta.format_version,
       minReader: MIN_READER,
-      parent: this.parseJson(meta.parent_json, 'session parent cannot be decoded'),
+      parent: heads.parent,
       chain,
     }
   }
@@ -759,29 +862,20 @@ export class RuntimeStateDatabase {
     revisions: Map<string, number | null>,
     live: Map<string, LiveRecord>,
     runs: Map<string, RunEvidence>,
+    scan: HeadScan,
   ): void {
     if (commits.length === 0) return
-    const ids = commits.map((commit) => commit.data.commitId)
-    const marks = ids.map(() => '?').join(', ')
-    const manifests = this.all<ManifestRow>(
-      `SELECT commit_id, record_id, previous_revision, next_json
-       FROM runtime_mutation_manifests WHERE commit_id IN (${marks})`,
-      ...ids,
-    ).map((row) => this.decodeManifest(row))
-    const sides = this.all<SideRow>(
-      `SELECT commit_id, entry_json FROM runtime_side_entries WHERE commit_id IN (${marks})`,
-      ...ids,
-    ).map((row) => {
+    const idsJson = JSON.stringify(commits.map((commit) => commit.data.commitId))
+    const manifests = this.all<ManifestRow>(MANIFESTS_BY_COMMIT, idsJson).map((row) =>
+      this.decodeManifest(row),
+    )
+    const sides = this.all<SideRow>(SIDES_BY_COMMIT, idsJson).map((row) => {
       const entry = this.parseJson<unknown>(row.entry_json, 'commit side entry cannot be decoded')
       if (!isSideEntry(entry) || entry.commitId !== row.commit_id)
         integrity('commit side entry does not match its row')
       return entry
     })
-    const versions = this.all<VersionRow>(
-      `SELECT record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
-       FROM runtime_record_versions WHERE commit_id IN (${marks})`,
-      ...ids,
-    )
+    const versions = this.all<VersionRow>(VERSIONS_BY_COMMIT, idsJson)
     const manifestsByCommit = new Map<string, CommitMutationManifest[]>()
     for (const manifest of manifests) {
       const list = manifestsByCommit.get(manifest.commitId) ?? []
@@ -808,6 +902,7 @@ export class RuntimeStateDatabase {
       )
     }
     const claimed = new Set<string>()
+    const parsedBodies = new Map<string, unknown>()
     for (const commit of commits) {
       const commitManifests = manifestsByCommit.get(commit.data.commitId) ?? []
       const commitSides = sidesByCommit.get(commit.data.commitId) ?? []
@@ -817,7 +912,7 @@ export class RuntimeStateDatabase {
         integrity('mutation digest does not match manifests')
       if (commit.data.sideListsDigest !== sideListsDigest(commitSides))
         integrity('side list digest does not match entries')
-      if (!sameJson(commit.data.counts, sideCounts(commitSides)))
+      if (!sameSideCounts(commit.data.counts, sideCounts(commitSides)))
         integrity('side counts do not match entries')
       for (const manifest of commitManifests) {
         this.noteContinuity(manifest, revisions)
@@ -834,27 +929,33 @@ export class RuntimeStateDatabase {
         const version = versionsByKey.get(key)
         if (!version) integrity('mutation manifest has no version header')
         claimed.add(key)
-        this.verifyVersionRow(manifest, version)
+        parsedBodies.set(key, this.verifyVersionRow(manifest, version))
       }
       for (const version of versionsByCommit.get(commit.data.commitId) ?? []) {
         const key = this.versionKey(version.record_id, version.record_revision, version.commit_id)
         if (!claimed.has(key)) integrity('record version has no mutation manifest')
-        this.noteRunVersion(version, commit, runs)
+        this.noteRunVersion(version, commit, runs, parsedBodies.get(key))
       }
     }
+    this.verifyPageHeads(idsJson, versionsByKey, live, scan)
   }
 
-  private verifyVersionRow(manifest: CommitMutationManifest, version: VersionRow): void {
-    if (manifest.next === null) return
-    const schema = this.parseJson<unknown>(version.schema_json, 'record schema cannot be decoded')
-    const owner = this.parseJson<RecordOwner>(version.owner_json, 'record owner cannot be decoded')
-    const value = this.parseJson<unknown>(version.value_json, 'record body cannot be decoded')
-    const known = knownSchema(manifest.next.schema.typeId)
-    if (!known || !sameJson(known, manifest.next.schema) || !sameJson(schema, manifest.next.schema))
+  private verifyVersionRow(manifest: CommitMutationManifest, version: VersionRow): unknown {
+    if (manifest.next === null) return undefined
+    if (!matchesKnownSchema(manifest.next.schema) || !matchesKnownSchemaText(version.schema_json))
       integrity('record schema digest does not match the codec')
     if (version.commit_id !== manifest.commitId || version.digest !== manifest.next.digest)
       integrity('version header does not match the mutation manifest')
-    if (bodyDigest(owner, value) !== version.digest) integrity('record body digest does not match')
+    const canonicalBody = canonicalStoredBodyDigest(version.owner_json, version.value_json) === version.digest
+    if (!canonicalBody) {
+      const owner = this.parseJson<RecordOwner>(version.owner_json, 'record owner cannot be decoded')
+      const value = this.parseJson<unknown>(version.value_json, 'record body cannot be decoded')
+      if (bodyDigest(owner, value) !== version.digest) integrity('record body digest does not match')
+      return value
+    }
+    // Run evidence is read back from the stored body. Other records are identified by their digest.
+    if (!version.record_id.startsWith('run:')) return undefined
+    return this.parseJson<unknown>(version.value_json, 'record body cannot be decoded')
   }
 
   private noteContinuity(manifest: CommitMutationManifest, seen: Map<string, number | null>): void {
@@ -870,9 +971,17 @@ export class RuntimeStateDatabase {
       integrity('deleted record was created again')
   }
 
-  private noteRunVersion(version: VersionRow, commit: ParsedCommit, runs: Map<string, RunEvidence>): void {
+  private noteRunVersion(
+    version: VersionRow,
+    commit: ParsedCommit,
+    runs: Map<string, RunEvidence>,
+    parsed: unknown,
+  ): void {
     if (!commit.data.runId || version.record_id !== runRecordId(commit.data.runId)) return
-    const value = this.parseJson<RunRecordValue>(version.value_json, 'record body cannot be decoded')
+    const value =
+      parsed === undefined
+        ? this.parseJson<RunRecordValue>(version.value_json, 'record body cannot be decoded')
+        : (parsed as RunRecordValue)
     if (!Number.isSafeInteger(value.revision)) integrity('attested run revision is not readable')
     const slot = runs.get(commit.data.runId) ?? { count: 0 }
     slot.count += 1
@@ -891,76 +1000,85 @@ export class RuntimeStateDatabase {
     runs.set(commit.data.runId, slot)
   }
 
-  private async verifyLiveHeads(
-    sessionId: string,
-    meta: MetaRow,
-    commitIds: ReadonlySet<string>,
+  private verifyPageHeads(
+    idsJson: string,
+    versionsByKey: ReadonlyMap<string, VersionRow>,
     live: ReadonlyMap<string, LiveRecord>,
-  ): Promise<void> {
-    const seen = new Set<string>()
-    let sawIdentity = false
-    const parent = this.parseJson(meta.parent_json, 'session parent cannot be decoded')
-    let after = ''
-    for (;;) {
-      const heads = this.all<HeadRow>(
-        `SELECT record_id, schema_json, min_reader, record_revision, last_commit_id, owner_json, value_json, body_digest
-         FROM runtime_records WHERE record_id > ? ORDER BY record_id LIMIT ?`,
-        after,
-        PROOF_PAGE,
-      )
-      if (heads.length === 0) break
-      const mine = heads.filter((head) => commitIds.has(head.last_commit_id))
-      const versions = this.versionsFor(mine.map((head) => head.record_id))
-      for (const head of mine) {
-        if (seen.has(head.record_id)) integrity('duplicate record head')
-        seen.add(head.record_id)
-        const record = live.get(head.record_id)
-        if (!record || record.revision === null) integrity('record head has no version')
-        const version = versions.get(this.versionKey(head.record_id, record.revision, record.commitId))
-        if (!version) integrity('latest record version is missing')
-        this.verifyHeadMatches(head, version)
-        if (head.record_id !== sessionIdentityRecordId(sessionId)) continue
-        sawIdentity = true
-        const value = this.parseJson<SessionIdentityValue>(
-          head.value_json,
-          'session identity cannot be decoded',
-        )
-        if (
-          value.sessionId !== sessionId ||
-          value.workspaceId !== meta.workspace_id ||
-          value.formatVersion !== meta.format_version ||
-          value.minReader !== meta.min_reader ||
-          value.runtimeSchemaMajor !== RUNTIME_SCHEMA_MAJOR ||
-          !sameJson(value.parent, parent) ||
-          value.minReader !== head.min_reader
-        )
-          integrity('session identity does not match the session catalogue')
-      }
-      const last = heads[heads.length - 1]
-      if (!last) break
-      after = last.record_id
-      if (heads.length < PROOF_PAGE) break
-      await this.pageBreak()
-    }
-    for (const [recordId, record] of live) {
-      if (record.revision === null) continue
-      if (!seen.has(recordId)) integrity('latest record version has no head')
-    }
-    if (!sawIdentity) integrity('session identity record is missing')
+    scan: HeadScan,
+  ): void {
+    const identityId = sessionIdentityRecordId(scan.sessionId)
+    for (const head of this.all<HeadSummary>(HEADS_BY_COMMIT, identityId, idsJson))
+      this.verifyHeadSummary(head, versionsByKey, live, scan, identityId)
   }
 
-  private versionsFor(recordIds: readonly string[]): Map<string, VersionRow> {
-    const versions = new Map<string, VersionRow>()
-    if (recordIds.length === 0) return versions
-    const marks = recordIds.map(() => '?').join(', ')
-    for (const version of this.all<VersionRow>(
-      `SELECT record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
-       FROM runtime_record_versions WHERE record_id IN (${marks})`,
-      ...recordIds,
-    )) {
-      versions.set(this.versionKey(version.record_id, version.record_revision, version.commit_id), version)
+  private verifyHeadSummary(
+    head: HeadSummary,
+    versionsByKey: ReadonlyMap<string, VersionRow>,
+    live: ReadonlyMap<string, LiveRecord>,
+    scan: HeadScan,
+    identityId: string,
+  ): void {
+    if (scan.seen.has(head.record_id)) integrity('duplicate record head')
+    scan.seen.add(head.record_id)
+    const record = live.get(head.record_id)
+    if (!record || record.revision === null) integrity('record head has no version')
+    if (record.revision !== head.record_revision || record.commitId !== head.last_commit_id)
+      integrity('record head does not match its latest version')
+    const version = versionsByKey.get(this.versionKey(head.record_id, record.revision, record.commitId))
+    if (!version || !sqlFlag(head.has_version)) integrity('latest record version is missing')
+    // Equal stored JSON is the same body already digested on the version row. Any other spelling
+    // still goes through the full head/version compare.
+    if (!sqlFlag(head.same_text)) {
+      const loaded = this.get<HeadRow>(HEAD_BY_ID, head.record_id)
+      if (!loaded) integrity('latest record version is missing')
+      this.verifyHeadMatches(loaded, version)
+    } else if (!Number.isSafeInteger(head.min_reader) || head.min_reader !== MIN_READER)
+      integrity('record reader requirement is not readable')
+    if (head.record_id !== identityId) return
+    scan.sawIdentity = true
+    if (head.identity_json === null) integrity('session identity cannot be decoded')
+    const value = this.parseJson<SessionIdentityValue>(
+      head.identity_json,
+      'session identity cannot be decoded',
+    )
+    if (
+      value.sessionId !== scan.sessionId ||
+      value.workspaceId !== scan.meta.workspace_id ||
+      value.formatVersion !== scan.meta.format_version ||
+      value.minReader !== scan.meta.min_reader ||
+      value.runtimeSchemaMajor !== RUNTIME_SCHEMA_MAJOR ||
+      !sameJson(value.parent, scan.parent) ||
+      value.minReader !== head.min_reader
+    )
+      integrity('session identity does not match the session catalogue')
+  }
+
+  private admissionMatches(stored: unknown, rebuilt: AdmissionProbe): boolean {
+    if (rebuilt.state !== 'created') return false
+    if (!isPlainRecord(stored) || Object.keys(stored).length !== 3) return false
+    if (stored.state !== rebuilt.state || stored.runId !== rebuilt.runId) return false
+    const commit = stored.commit
+    const expected = rebuilt.commit
+    if (!isPlainRecord(commit) || Object.keys(commit).length !== 8) return false
+    if (
+      commit.commitId !== expected.commitId ||
+      commit.transactionFingerprint !== expected.transactionFingerprint ||
+      commit.sessionId !== expected.sessionId ||
+      commit.firstSeq !== expected.firstSeq ||
+      commit.lastSeq !== expected.lastSeq ||
+      commit.headDigest !== expected.headDigest ||
+      commit.runRevision !== expected.runRevision
+    )
+      return false
+    const actions = commit.actionIds
+    if (!Array.isArray(actions) || actions.length !== expected.actionIds.length) return false
+    for (let index = 0; index < actions.length; index += 1) {
+      const item = actions[index]
+      const want = expected.actionIds[index]
+      if (!want || !isPlainRecord(item) || Object.keys(item).length !== 2) return false
+      if (item.key !== want.key || item.actionId !== want.actionId) return false
     }
-    return versions
+    return true
   }
 
   private async verifySessionAdmissions(
@@ -982,7 +1100,8 @@ export class RuntimeStateDatabase {
         if (!slot) continue
         const rebuilt = this.probeFromEvidence(row, slot, sessionId, formatSeq)
         const stored = this.parseJson<unknown>(row.probe_json, 'stored admission probe cannot be decoded')
-        if (!sameJson(stored, rebuilt)) integrity('admission replay does not match the attested run')
+        if (!this.admissionMatches(stored, rebuilt))
+          integrity('admission replay does not match the attested run')
       }
       const last = rows[rows.length - 1]
       if (!last || rows.length < PROOF_PAGE) break
@@ -1038,9 +1157,14 @@ export class RuntimeStateDatabase {
       )
       const event = stored[0]
       if (stored.length !== 1 || !event) integrity('admission does not match one attested run')
-      const proof = this.validatedProof(this.decodeEvent(event))
+      const proof = this.validatedProof(this.decodeEvent(event), false)
       if (proof.kind !== 'commit') integrity('unexpected ledger event')
-      this.noteRunVersion(version, { seq: proof.event.seq, data: proof.data, digest: proof.digest }, runs)
+      this.noteRunVersion(
+        version,
+        { seq: proof.event.seq, data: proof.data, digest: proof.digest },
+        runs,
+        undefined,
+      )
     }
     return this.probeFromEvidence(row, runs.get(row.run_id) ?? { count: 0 }, sessionId, verified.formatSeq)
   }
@@ -1142,29 +1266,26 @@ export class RuntimeStateDatabase {
     )
   }
 
-  private validatedProof(row: ChainRow): ValidatedProof {
+  private validatedProof(row: ChainRow, canonicalized: boolean): ValidatedProof {
     if (!row.integrity) integrity('runtime ledger row is missing integrity')
-    const checked = validateEvent(row.event)
-    if (!checked.ok) integrity('stored ledger event is not a registered proof')
-    if (checked.value.type === FORMAT_EVENT)
-      return {
-        kind: 'format',
-        event: row.event,
-        data: checked.value.data as FormatEventData,
-        digest: row.integrity.digest,
-      }
-    if (checked.value.type === STATE_COMMIT_EVENT)
-      return {
-        kind: 'commit',
-        event: row.event,
-        data: checked.value.data as RuntimeCommitData,
-        digest: row.integrity.digest,
-      }
+    const event = row.event as LedgerEvent & { ignorable?: boolean }
+    if (!proofChecks.envelope.Check(event) || event.ignorable === true)
+      integrity('stored ledger event is not a registered proof')
+    if (event.type === FORMAT_EVENT) {
+      if (!proofChecks.format.Check(event.data) || !proofDataHolds(event.data, canonicalized))
+        integrity('stored ledger event is not a registered proof')
+      return { kind: 'format', event, data: event.data as FormatEventData, digest: row.integrity.digest }
+    }
+    if (event.type === STATE_COMMIT_EVENT) {
+      if (!proofChecks.commit.Check(event.data) || !proofDataHolds(event.data, canonicalized))
+        integrity('stored ledger event is not a registered proof')
+      return { kind: 'commit', event, data: event.data as RuntimeCommitData, digest: row.integrity.digest }
+    }
     integrity('unexpected ledger event')
   }
 
   private versionKey(recordId: string, revision: number, commitId: string): string {
-    return digestOf({ recordId, revision, commitId })
+    return `${recordId}\0${revision}\0${commitId}`
   }
 
   private verifyHeadMatches(head: HeadRow, version: VersionRow): void {
@@ -1367,20 +1488,23 @@ export class RuntimeStateDatabase {
   private insertRecord(record: StoredRecord, commitId: string, at: string): void {
     const digest = bodyDigest(record.owner, record.value)
     const manifest = createManifest(commitId, record)
+    const schemaJson = jcs(record.schema)
+    const ownerJson = jcs(record.owner)
+    const valueJson = jcs(record.value)
     this.run(
       `INSERT INTO runtime_records (
          record_id, schema_json, min_reader, record_revision, last_commit_id, created_at, updated_at,
          owner_json, value_json, body_digest
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.recordId,
-      JSON.stringify(record.schema),
+      schemaJson,
       record.minReader,
       record.recordRevision,
       commitId,
       at,
       at,
-      JSON.stringify(record.owner),
-      JSON.stringify(record.value),
+      ownerJson,
+      valueJson,
       digest,
     )
     this.run(
@@ -1389,11 +1513,11 @@ export class RuntimeStateDatabase {
        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       record.recordId,
       record.recordRevision,
-      JSON.stringify(record.schema),
+      schemaJson,
       commitId,
       digest,
-      JSON.stringify(record.owner),
-      JSON.stringify(record.value),
+      ownerJson,
+      valueJson,
     )
     this.run(
       `INSERT INTO runtime_mutation_manifests (commit_id, record_id, previous_revision, next_json)
@@ -1401,7 +1525,7 @@ export class RuntimeStateDatabase {
       manifest.commitId,
       manifest.recordId,
       manifest.previousRevision,
-      JSON.stringify(manifest.next),
+      manifest.next === null ? null : jcs(manifest.next),
     )
   }
 
