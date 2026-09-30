@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/runtime/v1/simple-loop.schema.json",
+  "$ref": "public.json#/$defs/SimpleLoopCheckpoint"
+}
