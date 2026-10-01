@@ -1,8 +1,9 @@
 // generated from schema/runtime/prototype.json by tools/gen-runtime.ts — do not edit
 import type { TSchema } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
+import { boundedCanonicalJson } from '../../../protocol-validation/src/byte-budget.js'
 import { type ValidationResult, validateAgainst } from '../../../protocol-validation/src/validate.js'
-import { jcs } from '../jcs.js'
+import { RuntimeAuthorCodecPolicy } from '../../gen/ts/runtime-catalog.js'
 
 function validUInt53(schema: TSchema, value: unknown, references: Record<string, TSchema> = {}): boolean {
   const refs = { ...references, ...(schema.$defs as Record<string, TSchema> | undefined) }
@@ -38,13 +39,16 @@ function validUInt53(schema: TSchema, value: unknown, references: Record<string,
 }
 
 export function validateRuntimeValue<T>(schema: TSchema, value: unknown): ValidationResult<T> {
-  try {
-    jcs(value)
-  } catch {
-    return { ok: false, errors: [{ path: '', message: 'invalid JSON wire value', code: 'TYPE' }] }
-  }
-  const result = validateAgainst<T>(schema, value)
-  if (result.ok && !validUInt53(schema, value))
+  const policy = RuntimeAuthorCodecPolicy.payload
+  const snapshot = boundedCanonicalJson(value, {
+    maxBytes: policy.maxCanonicalJsonBytes,
+    maxDepth: policy.maxDepth,
+    maxMembers: policy.maxMembers,
+  })
+  if (!snapshot.ok) return snapshot
+  const json = snapshot.value.json
+  const result = validateAgainst<T>(schema, json)
+  if (result.ok && !validUInt53(schema, json))
     return { ok: false, errors: [{ path: '', message: 'UInt53 rejects negative zero', code: 'RANGE' }] }
   return result
 }

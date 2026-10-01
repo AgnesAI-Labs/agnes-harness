@@ -2,6 +2,14 @@
 import type * as Wire from '@agnes/protocol/runtime'
 import type { CallContext, Outcome } from './public-api.js'
 
+export interface EffectStreamHandle {
+  readonly streamId: Wire.Id
+  readonly chunks: AsyncIterable<Wire.StreamChunk>
+  readonly ended: Promise<Wire.TransportEnd>
+  cancel(reason: string): Promise<void>
+  close(): Promise<void>
+}
+
 export interface StreamHandle {
   readonly streamId: Wire.Id
   readonly durability: 'ephemeral' | 'durable'
@@ -216,4 +224,65 @@ export interface DomainCommandHandler {
     frame: Wire.DomainCommandFrame,
     context: ProjectionReadContext,
   ): Promise<Outcome<Wire.DomainCommandPlan>>
+}
+
+export interface AuthorityDirectoryControl {
+  compareAndSwap(
+    request: Wire.AuthorityDirectoryCompareAndSwapRequest,
+    context: CallContext,
+  ): Promise<Outcome<Wire.AuthorityDirectoryCompareAndSwapResult>>
+}
+
+export type ByteRangeResult = {
+  bytes: Uint8Array
+  offset: Wire.UInt53
+  totalBytes: Wire.UInt53
+  digest: Wire.Digest
+}
+
+export interface ByteReadStream {
+  readonly chunks: AsyncIterable<Uint8Array>
+  readonly ended: Promise<Outcome<Wire.ArtifactReadStreamEndResult>>
+  cancel(reason: string): Promise<void>
+  close(): Promise<void>
+}
+
+export interface BlobReadPort {
+  readRange(request: Wire.BlobReadRangeRequest, context: CallContext): Promise<Outcome<ByteRangeResult>>
+  openRead(request: Wire.BlobOpenReadRequest, context: CallContext): Promise<Outcome<ByteReadStream>>
+}
+
+export interface ArtifactAccessPort {
+  describe(input: Wire.ArtifactDescribeInput, context: CallContext): Promise<Outcome<Wire.ArtifactViewRef>>
+  openDownload(
+    input: Wire.ArtifactOpenDownloadRequest,
+    context: CallContext,
+  ): Promise<Outcome<Wire.ArtifactDownloadTicket>>
+  readRange(
+    input: Wire.ArtifactClientReadRangeRequest,
+    context: CallContext,
+  ): Promise<Outcome<ByteRangeResult>>
+  openStream(
+    input: Wire.ArtifactClientOpenStreamRequest,
+    context: CallContext,
+  ): Promise<Outcome<ByteReadStream>>
+}
+
+export interface ClientCommandIngressPort {
+  accept(request: Wire.ClientCommandRequest, context: CallContext): Promise<Outcome<Wire.ClientCommandReply>>
+}
+
+export interface InteractionAdmissionControl {
+  acceptResponse(
+    request: Wire.InteractionClientRespondRequest,
+    context: CallContext,
+  ): Promise<Outcome<Wire.InteractionResponseStatus>>
+  respondApproval(
+    request: Wire.ApprovalRespondRequest,
+    context: CallContext,
+  ): Promise<Outcome<Wire.InteractionResponseStatus>>
+  formLink(
+    request: Wire.InteractionFormLinkRequest,
+    context: CallContext,
+  ): Promise<Outcome<Wire.InteractionFormLink>>
 }

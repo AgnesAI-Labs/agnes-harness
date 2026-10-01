@@ -519,11 +519,45 @@ function emitAllOrNoneDependentRequired(s: Json, ctx: EmitCtx): string {
 //         (e.g. JsonValue)
 //       - everything else → Type.Ref('Name')
 function emit(s: Json, ctx: EmitCtx): string {
+  if (typeof s !== 'object' || s === null) return emitBase(s, ctx)
+  const keywords = ['x-max-utf8-bytes', 'x-max-canonical-json-bytes']
+  const bytes: Json = {}
+  for (const key of Object.keys(s)) {
+    if (key.startsWith('x-max-') && !keywords.includes(key))
+      throw new Error(`unsupported byte schema keyword ${key} at ${ctx.path}`)
+    if (!keywords.includes(key)) continue
+    const limit = s[key]
+    if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit <= 0)
+      throw new Error(`invalid byte schema keyword ${key} at ${ctx.path}`)
+    if (key === 'x-max-utf8-bytes' && s.type !== 'string')
+      throw new Error(`x-max-utf8-bytes requires string schema at ${ctx.path}`)
+    bytes[key] = limit
+  }
+  const shape = Object.fromEntries(Object.entries(s).filter(([key]) => !keywords.includes(key)))
+  const output = emitBase(shape, ctx)
+  return Object.keys(bytes).length ? `Object.assign(${output}, ${JSON.stringify(bytes)})` : output
+}
+
+function emitBase(s: Json, ctx: EmitCtx): string {
   if (typeof s !== 'object' || s === null)
     throw new Error(`schema must be an object at ${ctx.path || '(root)'}`)
   // `not` is an assertion on every type. Keep its siblings as a separate assertion rather
   // than letting the early const/enum/ref branches drop either half of the intersection.
   if (s.not !== undefined) {
+    const seenNegativeRefs = new Set<string>()
+    const bytesInNegation = (value: unknown): boolean => {
+      if (!value || typeof value !== 'object') return false
+      const reference = (value as Json).$ref
+      if (typeof reference === 'string' && !seenNegativeRefs.has(reference)) {
+        seenNegativeRefs.add(reference)
+        if (bytesInNegation(ctx.defs[refName(reference)])) return true
+      }
+      return Object.entries(value).some(
+        ([key, child]) =>
+          key === 'x-max-utf8-bytes' || key === 'x-max-canonical-json-bytes' || bytesInNegation(child),
+      )
+    }
+    if (bytesInNegation(s.not)) throw new Error(`byte assertions under not are unsupported at ${ctx.path}`)
     const { not, ...rest } = s
     const negative = `Type.Not(${emit(not as Json, { ...ctx, path: `${ctx.path}/not` })})`
     if (Object.keys(rest).every(isAnnotationKey)) return negative
@@ -690,7 +724,19 @@ function emit(s: Json, ctx: EmitCtx): string {
       const body = [
         ...Object.entries(props).map(([k, v]) => {
           const childCtx = { ...ctx, path: `${ctx.path}/properties/${k}` }
-          return `${JSON.stringify(k)}: ${required.has(k) ? emit(v, childCtx) : `Type.Optional(${emit(v, childCtx)})`}`
+          const value = emit(v, childCtx)
+          const dictionary =
+            v.type === 'object' &&
+            !v.properties &&
+            !(v.required as string[] | undefined)?.length &&
+            v.additionalProperties !== null &&
+            typeof v.additionalProperties === 'object' &&
+            v.dependentRequired === undefined
+          // TypeBox 0.34.33 loses a dictionary's index signature when a Module computes an
+          // Optional<Record>. An open object intersection preserves inference and asserts
+          // only the object type already required by Record; reference validators stay intact.
+          const optionalValue = dictionary ? `Type.Intersect([${value}, Type.Object({})])` : value
+          return `${JSON.stringify(k)}: ${required.has(k) ? value : `Type.Optional(${optionalValue})`}`
         }),
         ...requiredOnly,
       ].join(', ')

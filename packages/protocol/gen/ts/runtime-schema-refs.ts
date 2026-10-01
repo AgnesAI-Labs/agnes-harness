@@ -91,6 +91,11 @@ export const RuntimeSchemaRefs = freeze({
     "typeId": "agh.sdk/simple-step-decision@1",
     "revision": 1,
     "digest": "2a98ae63638001cbcfdc9bc788769d7b04343a7d1ca85e1ff48e5f6a127185cd"
+  },
+  "ControlledHttpHeaders": {
+    "typeId": "agh.network/http-headers@1",
+    "revision": 1,
+    "digest": "abb7fd3ae47a5ef439ce579b57dc8b8debbd0a5ce7ded494450ed92d2d43f936"
   }
 } as const)
 export const RuntimeMethodSchemaRefs = freeze({
@@ -117,6 +122,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.loop/resume.response@1",
         "revision": 1,
         "digest": "f8adbe929d3fe55732e6c2152a13ae36f83dda449614113dd9436ae55f48cd94"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.loop/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.loop/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.loop/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.loop/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.loop/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.loop/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.loop/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.loop/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.loop/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.loop/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.loop/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.loop/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.loop/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.loop/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.loop/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.loop/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -155,6 +256,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.context/refresh.response@1",
         "revision": 1,
         "digest": "0a118c383039c1777cfcb95eaf3f417fe0db4b49acbfda86ffb97b7f778c56d9"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.context/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.context/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.context/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.context/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.context/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.context/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.context/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.context/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.context/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.context/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.context/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.context/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.context/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.context/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.context/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.context/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -218,6 +415,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "a7a1eb4f77b22c61598d0355d337bbc2eb7d3f7dc445d22e14ed1e9f7f0939c3"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.compaction/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.compaction/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.compaction/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.compaction/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.compaction/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.compaction/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.compaction/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.compaction/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.compaction/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.compaction/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.compaction/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.compaction/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.compaction/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.compaction/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.compaction/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.compaction/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.model": {
@@ -256,6 +549,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "4e84d87bfb76f3e7b24d7357e243619eda1b940a58bbb722d77d5feed065de2b"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.model/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.model/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.model/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.model/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.model/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.model/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.model/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.model/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.model/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.model/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.model/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.model/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.model/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.model/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.model/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.model/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.routing": {
@@ -270,6 +659,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "7a503fe7e1e224dde093732d7be6ad5f89de4be741b3da238a3a3f811d60cec9"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.routing/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.routing/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.routing/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.routing/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.routing/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.routing/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.routing/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.routing/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.routing/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.routing/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.routing/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.routing/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.routing/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.routing/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.routing/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.routing/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.media": {
@@ -283,6 +768,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.media/prepare.response@1",
         "revision": 1,
         "digest": "4ea00c97d2503a6f0e33606c99dc9ca3efcc5b49f1ace9894a3db7ec40f4cc65"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.media/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.media/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.media/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.media/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.media/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.media/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.media/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.media/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.media/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.media/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.media/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.media/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.media/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.media/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.media/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.media/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -309,6 +890,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.model-adapter/reconcile.response@1",
         "revision": 1,
         "digest": "359955a377b57cecb90bbe9af8045a78a5dde6bfd086cd90bd45850b6a869e6b"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.model-adapter/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.model-adapter/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.model-adapter/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.model-adapter/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.model-adapter/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.model-adapter/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.model-adapter/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.model-adapter/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.model-adapter/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.model-adapter/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.model-adapter/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.model-adapter/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.model-adapter/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.model-adapter/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.model-adapter/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.model-adapter/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -384,6 +1061,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "eded2718b304b0dff19a4edcb771283501ddc30206e3aedc7ace0cc05cffc8d8"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.resources/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.resources/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.resources/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.resources/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.resources/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.resources/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.resources/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.resources/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.resources/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.resources/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.resources/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.resources/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.resources/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.resources/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.resources/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.resources/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.mcp": {
@@ -433,6 +1206,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.mcp/read.response@1",
         "revision": 1,
         "digest": "22e75558dd181df78b5390e0e5f7e97cc1dc75b54551198ef3f7ca31a9a2cba5"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.mcp/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.mcp/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.mcp/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.mcp/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.mcp/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.mcp/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.mcp/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.mcp/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.mcp/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.mcp/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.mcp/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.mcp/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.mcp/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.mcp/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.mcp/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.mcp/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -544,6 +1413,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "359955a377b57cecb90bbe9af8045a78a5dde6bfd086cd90bd45850b6a869e6b"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.tools/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.tools/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.tools/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.tools/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.tools/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.tools/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.tools/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.tools/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.tools/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.tools/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.tools/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.tools/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.tools/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.tools/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.tools/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.tools/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.memory": {
@@ -582,6 +1547,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "c7cf7f97174c7fb48f76166204c9100076752a842893cacd0f74b1471bcac776"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.memory/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.memory/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.memory/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.memory/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.memory/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.memory/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.memory/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.memory/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.memory/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.memory/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.memory/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.memory/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.memory/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.memory/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.memory/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.memory/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.retrieval": {
@@ -608,6 +1669,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "b249e96fb2066ecaddc7716d5d59847bdb6f283ba7dede54872bdcfdbd0c13a3"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.retrieval/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.retrieval/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.retrieval/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.retrieval/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.retrieval/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.retrieval/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.retrieval/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.retrieval/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.retrieval/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.retrieval/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.retrieval/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.retrieval/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.retrieval/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.retrieval/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.retrieval/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.retrieval/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.embedding": {
@@ -621,6 +1778,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.embedding/encode.response@1",
         "revision": 1,
         "digest": "baa082aeadf93e03267add3c2b4431a464de75408778d0b6a245b124c66666db"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.embedding/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.embedding/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.embedding/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.embedding/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.embedding/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.embedding/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.embedding/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.embedding/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.embedding/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.embedding/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.embedding/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.embedding/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.embedding/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.embedding/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.embedding/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.embedding/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -648,6 +1901,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "3c32b4c474b2d9593075d375a53e2da632d26afb715ac4f339b0f36b3fb702de"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.identity/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.identity/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.identity/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.identity/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.identity/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.identity/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.identity/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.identity/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.identity/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.identity/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.identity/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.identity/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.identity/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.identity/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.identity/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.identity/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.policy": {
@@ -661,6 +2010,126 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.policy/evaluate.response@1",
         "revision": 1,
         "digest": "624a7d67bfe1e608e1f355d67fb7bf12cb608fe86a583557d0aa5fed11e6cc5b"
+      }
+    },
+    "listGrants": {
+      "input": {
+        "typeId": "agh.policy/listGrants.request@1",
+        "revision": 1,
+        "digest": "0d812f2550955511014e156f35bfbc27924a57c90416bad4c76a0b5010bb59cf"
+      },
+      "output": {
+        "typeId": "agh.policy/listGrants.response@1",
+        "revision": 1,
+        "digest": "a043e664c3f614bf695b18921b8fefa0965a16c9147c3f199bc28a383054e20a"
+      }
+    },
+    "revokeGrant": {
+      "input": {
+        "typeId": "agh.policy/revokeGrant.request@1",
+        "revision": 1,
+        "digest": "3a357f416124900d0fb3df6c53e012ee7b5a277875532d4931ec1dd0e03834f2"
+      },
+      "output": {
+        "typeId": "agh.policy/revokeGrant.response@1",
+        "revision": 1,
+        "digest": "d45300fd5e2150c3ce1337664ffd72f8b223b697d8ed7ac448bcd86f2e7f933a"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.policy/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.policy/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.policy/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.policy/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.policy/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.policy/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.policy/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.policy/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.policy/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.policy/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.policy/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.policy/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.policy/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.policy/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.policy/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.policy/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -700,6 +2169,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "eebe8d22d77111acb972f36e7d80c46a2cf2cdf21b922b56aa75fecc6e77e431"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.effects/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.effects/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.effects/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.effects/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.effects/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.effects/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.effects/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.effects/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.effects/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.effects/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.effects/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.effects/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.effects/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.effects/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.effects/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.effects/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.workspace": {
@@ -725,6 +2290,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.workspace/release.response@1",
         "revision": 1,
         "digest": "f06fa246a3199c5ca58951ad4cab51ad6f7dfe68cb7e4913895ae7cd4aa278cb"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.workspace/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.workspace/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.workspace/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.workspace/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.workspace/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.workspace/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.workspace/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.workspace/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.workspace/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.workspace/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.workspace/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.workspace/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.workspace/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.workspace/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.workspace/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.workspace/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -788,6 +2449,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "a36d28b9d476d1a12169cdb1f4d949228ac0e1443626e7410e37746fbd89e45c"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.files/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.files/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.files/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.files/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.files/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.files/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.files/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.files/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.files/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.files/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.files/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.files/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.files/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.files/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.files/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.files/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.sandbox": {
@@ -826,6 +2583,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "77c8ef765cb012f55a7f84a689ee2f6946ac480f407016f5de806588a83d2c1d"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.sandbox/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.sandbox/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.sandbox/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.sandbox/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.sandbox/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.sandbox/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.sandbox/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.sandbox/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.sandbox/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.sandbox/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.sandbox/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.sandbox/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.sandbox/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.sandbox/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.sandbox/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.sandbox/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.exec": {
@@ -852,6 +2705,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "359955a377b57cecb90bbe9af8045a78a5dde6bfd086cd90bd45850b6a869e6b"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.exec/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.exec/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.exec/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.exec/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.exec/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.exec/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.exec/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.exec/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.exec/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.exec/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.exec/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.exec/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.exec/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.exec/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.exec/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.exec/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.network": {
@@ -865,6 +2814,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.network/request.response@1",
         "revision": 1,
         "digest": "b4b0555d8e4876c35cf29a872bda9f2bc62838be14ecfc912899f8adce4f9f3d"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.network/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.network/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.network/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.network/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.network/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.network/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.network/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.network/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.network/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.network/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.network/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.network/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.network/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.network/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.network/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.network/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -940,6 +2985,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "85f2ba9cb40ba00cc20e6e03872c6cdc43c131cb69864e468bf0d8cc634278a5"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.secrets/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.secrets/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.secrets/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.secrets/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.secrets/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.secrets/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.secrets/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.secrets/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.secrets/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.secrets/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.secrets/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.secrets/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.secrets/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.secrets/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.secrets/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.secrets/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.interaction": {
@@ -1002,6 +3143,162 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "8d982caa7914aa07ce08f4f5a848da77fa3958f07b559ef66c2d39948e3dc7c9"
       }
+    },
+    "pending": {
+      "input": {
+        "typeId": "agh.interaction/pending.request@1",
+        "revision": 1,
+        "digest": "a5e65bce47d3d1cdb93a982ea86988290b35576537ae3df66709748712a54237"
+      },
+      "output": {
+        "typeId": "agh.interaction/pending.response@1",
+        "revision": 1,
+        "digest": "13eca68391e371c2c95c304a7657021c54d2e9e354d504139484d913bbf69945"
+      }
+    },
+    "responseStatus": {
+      "input": {
+        "typeId": "agh.interaction/responseStatus.request@1",
+        "revision": 1,
+        "digest": "d6e106c62195165b73a5d3867a15a9cfb1821f408c1b23dc14fbc859f56b4a24"
+      },
+      "output": {
+        "typeId": "agh.interaction/responseStatus.response@1",
+        "revision": 1,
+        "digest": "5dea3564a265452b996bf031ccd2fb1e920145130428630c8d2d076a272d671d"
+      }
+    },
+    "acceptResponse": {
+      "input": {
+        "typeId": "agh.interaction/acceptResponse.request@1",
+        "revision": 1,
+        "digest": "7b2fa9d6e8cab96b134ecf94164bf846b2f422d5ae69734a3778ad22a6edfba0"
+      },
+      "output": {
+        "typeId": "agh.interaction/acceptResponse.response@1",
+        "revision": 1,
+        "digest": "5dea3564a265452b996bf031ccd2fb1e920145130428630c8d2d076a272d671d"
+      }
+    },
+    "respondApproval": {
+      "input": {
+        "typeId": "agh.interaction/respondApproval.request@1",
+        "revision": 1,
+        "digest": "ea9ff7937302537e25fbc0d82e0574af9ae9eb3bb4a33b78b9f66ea31592634b"
+      },
+      "output": {
+        "typeId": "agh.interaction/respondApproval.response@1",
+        "revision": 1,
+        "digest": "5dea3564a265452b996bf031ccd2fb1e920145130428630c8d2d076a272d671d"
+      }
+    },
+    "formLink": {
+      "input": {
+        "typeId": "agh.interaction/formLink.request@1",
+        "revision": 1,
+        "digest": "1ca21ad0eb3669b38a56483ba9e40186c88715969a72bff26cfb94b5bcb5d8ba"
+      },
+      "output": {
+        "typeId": "agh.interaction/formLink.response@1",
+        "revision": 1,
+        "digest": "c662eb1402318a9882e501ffe67522300dc9f5fec9367c624774cc83f827d1c7"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.interaction/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.interaction/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.interaction/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.interaction/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.interaction/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.interaction/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.interaction/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.interaction/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.interaction/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.interaction/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.interaction/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.interaction/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.interaction/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.interaction/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.interaction/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.interaction/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.recovery": {
@@ -1027,6 +3324,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.recovery/restore.response@1",
         "revision": 1,
         "digest": "76bb0ebcdf05fc4eed63df8634d13124cbabfbbe0be014e5ba5ae78fbd4076d6"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.recovery/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.recovery/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.recovery/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.recovery/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.recovery/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.recovery/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.recovery/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.recovery/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.recovery/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.recovery/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.recovery/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.recovery/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.recovery/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.recovery/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.recovery/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.recovery/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -1126,6 +3519,186 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "a38e9239711080504c9f50dcd37ce5fb75f5a1e628d9910715a3ac68b421ef7d"
       }
+    },
+    "createConversation": {
+      "input": {
+        "typeId": "agh.supervisor/createConversation.request@1",
+        "revision": 1,
+        "digest": "6ad862cfe82c1dce22b96ed1fa7c214e06802f6ecccc36a8bd24975e22cd8a90"
+      },
+      "output": {
+        "typeId": "agh.supervisor/createConversation.response@1",
+        "revision": 1,
+        "digest": "6a60bfdad6f9e48c3504e2f9974b68a933b7ae8fb03128674aeccf602150b302"
+      }
+    },
+    "submitConversation": {
+      "input": {
+        "typeId": "agh.supervisor/submitConversation.request@1",
+        "revision": 1,
+        "digest": "de1b9d7e18a3d89c21050cceba0f78f38afda77460baaaf829a409cfabd7922f"
+      },
+      "output": {
+        "typeId": "agh.supervisor/submitConversation.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "cancelConversation": {
+      "input": {
+        "typeId": "agh.supervisor/cancelConversation.request@1",
+        "revision": 1,
+        "digest": "49db42d563b66952aee95a56f4cea3eedb7429c5b78894637a8ad8f296edac38"
+      },
+      "output": {
+        "typeId": "agh.supervisor/cancelConversation.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "conversationCommandStatus": {
+      "input": {
+        "typeId": "agh.supervisor/conversationCommandStatus.request@1",
+        "revision": 1,
+        "digest": "a14a7cd9dce0b8ac7fe43475da3c37ab03281480c2cdb90e3d6f5a148baca734"
+      },
+      "output": {
+        "typeId": "agh.supervisor/conversationCommandStatus.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "readSessionControl": {
+      "input": {
+        "typeId": "agh.supervisor/readSessionControl.request@1",
+        "revision": 1,
+        "digest": "d6e106c62195165b73a5d3867a15a9cfb1821f408c1b23dc14fbc859f56b4a24"
+      },
+      "output": {
+        "typeId": "agh.supervisor/readSessionControl.response@1",
+        "revision": 1,
+        "digest": "dd578e1341ed6a90e57cf959f846c03419532b53ff5eddbc3b9a6cc54b55eec7"
+      }
+    },
+    "submitSessionControl": {
+      "input": {
+        "typeId": "agh.supervisor/submitSessionControl.request@1",
+        "revision": 1,
+        "digest": "764414d1b6fb20e808bfb760a0a2e35339713962bbcdd8f25f4485cb85af6083"
+      },
+      "output": {
+        "typeId": "agh.supervisor/submitSessionControl.response@1",
+        "revision": 1,
+        "digest": "91a5721999a1b75ac0de59da54c3d6daabc2569883f123f086b087379a51e791"
+      }
+    },
+    "sessionControlStatus": {
+      "input": {
+        "typeId": "agh.supervisor/sessionControlStatus.request@1",
+        "revision": 1,
+        "digest": "f505a79b699f163f5cad371fbf1d4e12e30550d7cd91126ec0e59d94702e6cb8"
+      },
+      "output": {
+        "typeId": "agh.supervisor/sessionControlStatus.response@1",
+        "revision": 1,
+        "digest": "91a5721999a1b75ac0de59da54c3d6daabc2569883f123f086b087379a51e791"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.supervisor/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.supervisor/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.supervisor/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.supervisor/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.supervisor/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.supervisor/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.supervisor/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.supervisor/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.supervisor/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.supervisor/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.supervisor/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.supervisor/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.supervisor/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.supervisor/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.supervisor/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.supervisor/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.scheduler": {
@@ -1163,6 +3736,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.scheduler/ack.response@1",
         "revision": 1,
         "digest": "f25981f6870b4ac8f55c927577ff6df9daadb022e9c023f8a6295dc1939c5f52"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.scheduler/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.scheduler/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.scheduler/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.scheduler/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.scheduler/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.scheduler/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.scheduler/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.scheduler/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.scheduler/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.scheduler/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.scheduler/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.scheduler/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.scheduler/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.scheduler/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.scheduler/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.scheduler/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -1237,6 +3906,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.agents/inspect.response@1",
         "revision": 1,
         "digest": "03a025c9ea642c10c91b9565053f27e7ed66e68a6e3ac8366e42698cdc5c562a"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.agents/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.agents/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.agents/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.agents/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.agents/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.agents/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.agents/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.agents/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.agents/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.agents/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.agents/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.agents/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.agents/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.agents/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.agents/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.agents/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -1396,6 +4161,186 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "073b40ccabd353e7e42e733fe8991fe2799067b32748ef9f52156ab729d65d00"
       }
+    },
+    "enqueueClientJob": {
+      "input": {
+        "typeId": "agh.jobs/enqueueClientJob.request@1",
+        "revision": 1,
+        "digest": "e372f65483beec5eb6f4876ee2ad1c61f29e5667e24635767c40f054e528757c"
+      },
+      "output": {
+        "typeId": "agh.jobs/enqueueClientJob.response@1",
+        "revision": 1,
+        "digest": "e854a8e55149e7055c76eb10a6891ab0dc1551577e8357fa4e3106a57e1fee61"
+      }
+    },
+    "pollClientJob": {
+      "input": {
+        "typeId": "agh.jobs/pollClientJob.request@1",
+        "revision": 1,
+        "digest": "2d9b839c50060d97992610870908fdb9ee5eda15d1c669273e56c4d8cc68ced4"
+      },
+      "output": {
+        "typeId": "agh.jobs/pollClientJob.response@1",
+        "revision": 1,
+        "digest": "2d930e37b9bfc597fdd0f6a709ce34798d50ed616eb7a6fee6de6178be822f36"
+      }
+    },
+    "cancelClientJob": {
+      "input": {
+        "typeId": "agh.jobs/cancelClientJob.request@1",
+        "revision": 1,
+        "digest": "32153ce7aecfd17e168c521425227d54586a48616fa330056e468c4f418bc781"
+      },
+      "output": {
+        "typeId": "agh.jobs/cancelClientJob.response@1",
+        "revision": 1,
+        "digest": "9036910dfe8d106f9fd2a45308a5cf328b74c7a56e3e8f1c498ba8e3ea34b20a"
+      }
+    },
+    "acceptCreateDefinition": {
+      "input": {
+        "typeId": "agh.jobs/acceptCreateDefinition.request@1",
+        "revision": 1,
+        "digest": "ca80e3becef407b60758a0e320c4129329b19fa7e030f346d20b28dfb1461f35"
+      },
+      "output": {
+        "typeId": "agh.jobs/acceptCreateDefinition.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "acceptUpdateDefinition": {
+      "input": {
+        "typeId": "agh.jobs/acceptUpdateDefinition.request@1",
+        "revision": 1,
+        "digest": "26da41473d491983f8fdf34a051ada9685b5990a2757ebdc101450f2adc9010a"
+      },
+      "output": {
+        "typeId": "agh.jobs/acceptUpdateDefinition.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "acceptCancelDefinition": {
+      "input": {
+        "typeId": "agh.jobs/acceptCancelDefinition.request@1",
+        "revision": 1,
+        "digest": "44cb6e39f1b2c437d5a07c7775af8b03f394d67441ce0f9a761b1c6078fe2e10"
+      },
+      "output": {
+        "typeId": "agh.jobs/acceptCancelDefinition.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "clientCommandStatus": {
+      "input": {
+        "typeId": "agh.jobs/clientCommandStatus.request@1",
+        "revision": 1,
+        "digest": "d6e106c62195165b73a5d3867a15a9cfb1821f408c1b23dc14fbc859f56b4a24"
+      },
+      "output": {
+        "typeId": "agh.jobs/clientCommandStatus.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.jobs/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.jobs/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.jobs/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.jobs/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.jobs/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.jobs/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.jobs/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.jobs/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.jobs/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.jobs/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.jobs/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.jobs/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.jobs/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.jobs/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.jobs/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.jobs/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.artifacts": {
@@ -1445,6 +4390,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.artifacts/query.response@1",
         "revision": 1,
         "digest": "7716150cc531680d0583c16312bc1870c189448f738e1ee1fbbf3f35e6d0eee5"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.artifacts/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.artifacts/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.artifacts/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.artifacts/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.artifacts/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.artifacts/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.artifacts/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.artifacts/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.artifacts/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.artifacts/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.artifacts/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.artifacts/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.artifacts/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.artifacts/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.artifacts/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.artifacts/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -1520,6 +4561,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "46063bf451b2f578f8f2700f761c2e22ea7839426ce7c80c1f365852987eb078"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.blob/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.blob/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.blob/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.blob/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.blob/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.blob/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.blob/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.blob/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.blob/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.blob/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.blob/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.blob/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.blob/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.blob/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.blob/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.blob/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.budget": {
@@ -1582,6 +4719,114 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "b525b9aff57619f557fc174990b1af67c81f074d33a9a4631f5aa6205910d2c2"
       }
+    },
+    "readSessionBudget": {
+      "input": {
+        "typeId": "agh.budget/readSessionBudget.request@1",
+        "revision": 1,
+        "digest": "1f20b66f3973787ae202cb06931f984e50531a6a398265ba6e73ed9bec085a2c"
+      },
+      "output": {
+        "typeId": "agh.budget/readSessionBudget.response@1",
+        "revision": 1,
+        "digest": "36429eae7be4034af7735a0774200e9a568de0842f9d3a1353cef527f62f51de"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.budget/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.budget/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.budget/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.budget/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.budget/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.budget/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.budget/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.budget/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.budget/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.budget/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.budget/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.budget/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.budget/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.budget/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.budget/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.budget/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.usage": {
@@ -1608,6 +4853,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "7f4fc56d3377fc672fdb3dbd513d6031f3927376144825ce72b2c83665b6c284"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.usage/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.usage/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.usage/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.usage/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.usage/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.usage/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.usage/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.usage/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.usage/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.usage/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.usage/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.usage/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.usage/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.usage/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.usage/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.usage/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.pricing": {
@@ -1621,6 +4962,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.pricing/quote.response@1",
         "revision": 1,
         "digest": "2f38b616b3e9878828c1e4a10483791a0624765272570aa40fc9f4bf21e8f457"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.pricing/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.pricing/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.pricing/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.pricing/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.pricing/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.pricing/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.pricing/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.pricing/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.pricing/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.pricing/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.pricing/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.pricing/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.pricing/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.pricing/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.pricing/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.pricing/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -1660,6 +5097,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "72adef9830f6a8a8a9ad80096723a0ccfbd3bcfc5255b531b2b92d8010ec485b"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.billing/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.billing/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.billing/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.billing/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.billing/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.billing/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.billing/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.billing/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.billing/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.billing/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.billing/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.billing/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.billing/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.billing/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.billing/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.billing/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.audit": {
@@ -1685,6 +5218,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.audit/export.response@1",
         "revision": 1,
         "digest": "1786056f7fedb8d3ac734aad4922e63e8a50de8c01527a94061024801470c8c5"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.audit/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.audit/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.audit/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.audit/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.audit/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.audit/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.audit/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.audit/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.audit/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.audit/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.audit/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.audit/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.audit/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.audit/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.audit/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.audit/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -1712,6 +5341,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "cc42d91e39bbb3d8719e946efbfd652b8dc92b2995445b5bd11a1556c2e03c59"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.trace/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.trace/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.trace/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.trace/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.trace/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.trace/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.trace/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.trace/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.trace/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.trace/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.trace/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.trace/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.trace/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.trace/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.trace/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.trace/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.events": {
@@ -1738,6 +5463,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "f640141397de7e03f7d17cc86f69dc5ec340224c97a577b064445e03be180e92"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.events/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.events/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.events/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.events/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.events/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.events/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.events/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.events/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.events/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.events/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.events/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.events/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.events/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.events/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.events/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.events/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.projection": {
@@ -1750,7 +5571,7 @@ export const RuntimeMethodSchemaRefs = freeze({
       "output": {
         "typeId": "agh.projection/snapshot.response@1",
         "revision": 1,
-        "digest": "2cf45e2742b2ea10473ba1b16540debcdca2fbd1915ac6a7860572592e84a779"
+        "digest": "7722bc67bdf91902e6a1051fb4154b939269c2b7f4557c6c50171445085fea0e"
       }
     },
     "changes": {
@@ -1762,7 +5583,7 @@ export const RuntimeMethodSchemaRefs = freeze({
       "output": {
         "typeId": "agh.projection/changes.response@1",
         "revision": 1,
-        "digest": "56cda6226caffe8a62841b908c753fbe26a89c6c23d1922ec3c919c488033527"
+        "digest": "853d16914cb4c9ba58c3a7c5f10dbcc68aacbfb284672362cb1d37c691f8f5d7"
       }
     },
     "command": {
@@ -1775,6 +5596,150 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.projection/command.response@1",
         "revision": 1,
         "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "openConversation": {
+      "input": {
+        "typeId": "agh.projection/openConversation.request@1",
+        "revision": 1,
+        "digest": "76f4718bd972faedd2e4dce5f173aac8511ac460f4abe8e4aad08e6066db50b9"
+      },
+      "output": {
+        "typeId": "agh.projection/openConversation.response@1",
+        "revision": 1,
+        "digest": "68985cbc150728926ddb62f72086084f142bf2534e87ba16f714845090e7140a"
+      }
+    },
+    "conversationHistory": {
+      "input": {
+        "typeId": "agh.projection/conversationHistory.request@1",
+        "revision": 1,
+        "digest": "c3156fde5078205f6f78dcf05614223cc53255edacf40ed17ce0f85f0de72b16"
+      },
+      "output": {
+        "typeId": "agh.projection/conversationHistory.response@1",
+        "revision": 1,
+        "digest": "68985cbc150728926ddb62f72086084f142bf2534e87ba16f714845090e7140a"
+      }
+    },
+    "acceptCommand": {
+      "input": {
+        "typeId": "agh.projection/acceptCommand.request@1",
+        "revision": 1,
+        "digest": "26e9e24c7ca2064e7a4e37d7f7d2e701dda5a0ecf6aaeb46e5c730287a0b5248"
+      },
+      "output": {
+        "typeId": "agh.projection/acceptCommand.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "commandStatus": {
+      "input": {
+        "typeId": "agh.projection/commandStatus.request@1",
+        "revision": 1,
+        "digest": "8d5196489ca39d04bc4f347335192e264405593e88752036947b566a0379404b"
+      },
+      "output": {
+        "typeId": "agh.projection/commandStatus.response@1",
+        "revision": 1,
+        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.projection/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.projection/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.projection/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.projection/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.projection/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.projection/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.projection/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.projection/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.projection/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.projection/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.projection/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.projection/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.projection/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.projection/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.projection/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.projection/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -1814,6 +5779,186 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
       }
+    },
+    "bootstrap": {
+      "input": {
+        "typeId": "agh.transport/bootstrap.request@1",
+        "revision": 1,
+        "digest": "9ca5858a8a03bf60008666286849c5f1e96bc03aa47ef753e93dbeee10c78ab7"
+      },
+      "output": {
+        "typeId": "agh.transport/bootstrap.response@1",
+        "revision": 1,
+        "digest": "d1ab9030608a86bbb53bbe71e4604d503e185907c36ebec61010543f8b442935"
+      }
+    },
+    "clientQuery": {
+      "input": {
+        "typeId": "agh.transport/clientQuery.request@1",
+        "revision": 1,
+        "digest": "d0fc239e4020508e1afc9d092c0a6038debf64eedf2741d95ea0280d32fbb0ee"
+      },
+      "output": {
+        "typeId": "agh.transport/clientQuery.response@1",
+        "revision": 1,
+        "digest": "01de74d6df9d4c585159eac0bebd58c8128e9d41b93d94434b4e134aa0782c03"
+      }
+    },
+    "clientCommand": {
+      "input": {
+        "typeId": "agh.transport/clientCommand.request@1",
+        "revision": 1,
+        "digest": "0cd6f47cd73935d581c6bed5fc38a3f29fce1c03a7f6978f95dfaf8204af2b4f"
+      },
+      "output": {
+        "typeId": "agh.transport/clientCommand.response@1",
+        "revision": 1,
+        "digest": "74552adfa5c7a7fab7dc25208e5aec7cf8e863cb0626edfba492ddbd6e4e7a23"
+      }
+    },
+    "catalogPage": {
+      "input": {
+        "typeId": "agh.transport/catalogPage.request@1",
+        "revision": 1,
+        "digest": "b94de8a83df41db687d526b560d45ca7870069981c6464ad37fcfb7c291f1319"
+      },
+      "output": {
+        "typeId": "agh.transport/catalogPage.response@1",
+        "revision": 1,
+        "digest": "0a759941f4e83ecd085be64f172d0d42a50a65431cf8c65f8beea453a12bc06a"
+      }
+    },
+    "subscribe": {
+      "input": {
+        "typeId": "agh.transport/subscribe.request@1",
+        "revision": 1,
+        "digest": "40363786e051134bda916a4be23a2d7a62819540414b191f1714ce74ed88870c"
+      },
+      "output": {
+        "typeId": "agh.transport/subscribe.response@1",
+        "revision": 1,
+        "digest": "25d661a0fcdfec608b985874a86bec20914bed9c2e7e40b27c693c22051c89c4"
+      }
+    },
+    "readSubscription": {
+      "input": {
+        "typeId": "agh.transport/readSubscription.request@1",
+        "revision": 1,
+        "digest": "4e2299a0c407f1235ed2237603d4e993133d511324698e0390c56939d8066739"
+      },
+      "output": {
+        "typeId": "agh.transport/readSubscription.response@1",
+        "revision": 1,
+        "digest": "06be034bde4bebb60640b5c313efbe5c80ab639c9d43eb66d4f23b7e270798b8"
+      }
+    },
+    "closeSubscription": {
+      "input": {
+        "typeId": "agh.transport/closeSubscription.request@1",
+        "revision": 1,
+        "digest": "5a2fc2757c5181c403436edf33495d42ca6036856049cf8167035d45a5a30002"
+      },
+      "output": {
+        "typeId": "agh.transport/closeSubscription.response@1",
+        "revision": 1,
+        "digest": "ee43f1e03ebe470c499febafcadf28a6e4cdf1d024e0db9fac9aee1ab7b9aef7"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.transport/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.transport/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.transport/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.transport/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.transport/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.transport/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.transport/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.transport/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.transport/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.transport/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.transport/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.transport/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.transport/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.transport/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.transport/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.transport/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.channel": {
@@ -1851,6 +5996,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.channel/callback.response@1",
         "revision": 1,
         "digest": "a2d83fb52846ef3d4029d427ad2fd846fc263584501fd4482345d2a8bc4660d2"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.channel/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.channel/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.channel/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.channel/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.channel/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.channel/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.channel/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.channel/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.channel/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.channel/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.channel/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.channel/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.channel/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.channel/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.channel/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.channel/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -1902,6 +6143,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "17153d2ea52db6c508366d6322889f81f0856ed74c98e6030f0e312d1129a39b"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.package-source/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.package-source/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.package-source/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.package-source/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.package-source/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.package-source/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.package-source/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.package-source/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.package-source/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.package-source/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.package-source/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.package-source/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.package-source/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.package-source/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.package-source/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.package-source/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.package-resolver": {
@@ -1915,6 +6252,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.package-resolver/resolve.response@1",
         "revision": 1,
         "digest": "69906703d64c1576d955497cf4fd23699c394663f4cafa15d596eeff2a0a8d74"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.package-resolver/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.package-resolver/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.package-resolver/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.package-resolver/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.package-resolver/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.package-resolver/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.package-resolver/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.package-resolver/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.package-resolver/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.package-resolver/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.package-resolver/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.package-resolver/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.package-resolver/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.package-resolver/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.package-resolver/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.package-resolver/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -2014,6 +6447,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "8aff5e79d9d91524424ea5879e20b93c35bcbeb719f2fcdfc6fbaa7f3d84a808"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.package-installer/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.package-installer/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.package-installer/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.package-installer/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.package-installer/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.package-installer/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.package-installer/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.package-installer/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.package-installer/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.package-installer/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.package-installer/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.package-installer/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.package-installer/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.package-installer/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.package-installer/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.package-installer/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.config": {
@@ -2027,6 +6556,114 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.config/read.response@1",
         "revision": 1,
         "digest": "5089c50bc6df3720223fbf9faf2b8911cd82860c0631d7b449598aae668e960f"
+      }
+    },
+    "resolve": {
+      "input": {
+        "typeId": "agh.config/resolve.request@1",
+        "revision": 1,
+        "digest": "40ba67e833af515ef44a7f6324968a450da7c6afda876c19a7e92458cd5768df"
+      },
+      "output": {
+        "typeId": "agh.config/resolve.response@1",
+        "revision": 1,
+        "digest": "997cc645aa6b9cd953e8cf81bdc84a2d8801ece0409ab8742fb920af5526cd30"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.config/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.config/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.config/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.config/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.config/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.config/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.config/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.config/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.config/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.config/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.config/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.config/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.config/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.config/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.config/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.config/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -2077,6 +6714,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.assembly/drain.response@1",
         "revision": 1,
         "digest": "9ffd36f72442faaaf9de7524c675828eddcd4bb2707edf336fd6e3031057c98c"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.assembly/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.assembly/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.assembly/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.assembly/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.assembly/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.assembly/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.assembly/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.assembly/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.assembly/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.assembly/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.assembly/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.assembly/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.assembly/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.assembly/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.assembly/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.assembly/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -2152,6 +6885,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "revision": 1,
         "digest": "f5ffd2df0579b4139254cceee14018c119583b788c3591c794c270c0e6b02413"
       }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.migration/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.migration/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.migration/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.migration/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.migration/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.migration/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.migration/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.migration/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.migration/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.migration/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.migration/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.migration/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.migration/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.migration/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.migration/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.migration/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
     }
   },
   "agh.integrity": {
@@ -2165,6 +6994,126 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.integrity/verifyPackage.response@1",
         "revision": 1,
         "digest": "5e05e7faae36739ddadb32f7af87eb503e9c259adc1a9fcd8afff41385d60976"
+      }
+    },
+    "canonicalize": {
+      "input": {
+        "typeId": "agh.integrity/canonicalize.request@1",
+        "revision": 1,
+        "digest": "0e4605ca7d201cbfcc6c2f26a5ec4b2aa09e882559e1c79c0222a3647c91b1dd"
+      },
+      "output": {
+        "typeId": "agh.integrity/canonicalize.response@1",
+        "revision": 1,
+        "digest": "be3af6ce94fca2a61988c4f498f03388a1e538f21cd087416282699166e0430b"
+      }
+    },
+    "verify": {
+      "input": {
+        "typeId": "agh.integrity/verify.request@1",
+        "revision": 1,
+        "digest": "db2493718c7f653fd0aae8ae9a38f3f686b0f4796cd8c31f507b59197f6713e6"
+      },
+      "output": {
+        "typeId": "agh.integrity/verify.response@1",
+        "revision": 1,
+        "digest": "4b4aafe4055dd6cacb90b5ee42a62f984e511eb04dc30cd486e508e1352f42a1"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.integrity/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.integrity/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.integrity/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.integrity/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.integrity/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.integrity/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.integrity/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.integrity/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.integrity/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.integrity/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.integrity/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.integrity/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.integrity/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.integrity/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.integrity/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.integrity/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -2191,6 +7140,114 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.authority-directory/transfer.response@1",
         "revision": 1,
         "digest": "f5ffd2df0579b4139254cceee14018c119583b788c3591c794c270c0e6b02413"
+      }
+    },
+    "compareAndSwap": {
+      "input": {
+        "typeId": "agh.authority-directory/compareAndSwap.request@1",
+        "revision": 1,
+        "digest": "279fd18c8df0ba491c9de311f030666d5507d405da25339622994d90c2bf8529"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/compareAndSwap.response@1",
+        "revision": 1,
+        "digest": "921ea28843b2b721f810b8040b54103c355c67de3e773262d146484ad4db8abc"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.authority-directory/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.authority-directory/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.authority-directory/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.authority-directory/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.authority-directory/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.authority-directory/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.authority-directory/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.authority-directory/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.authority-directory/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },
@@ -2697,6 +7754,102 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.state/cancelAdmission.response@1",
         "revision": 1,
         "digest": "8c3dcea5b56382d396774dd64fc9f71c93781d9d26937ed6e3b2cf2155b40d06"
+      }
+    },
+    "authorityFence": {
+      "input": {
+        "typeId": "agh.state/authorityFence.request@1",
+        "revision": 1,
+        "digest": "900585d2d818fa5e580c891745b3e1afefd135c6b81e4a57184a30a199eef28f"
+      },
+      "output": {
+        "typeId": "agh.state/authorityFence.response@1",
+        "revision": 1,
+        "digest": "1ae33721897b2233a71cc0690f542fef9784be46fbfc88596439c74b34afadda"
+      }
+    },
+    "authorityExport": {
+      "input": {
+        "typeId": "agh.state/authorityExport.request@1",
+        "revision": 1,
+        "digest": "021b4135df784fa547228753caa4211e848f633ba0824922db8209aac21f981e"
+      },
+      "output": {
+        "typeId": "agh.state/authorityExport.response@1",
+        "revision": 1,
+        "digest": "7b87bcf6f0188cae59d34237bc7b8c777fb5f1707ca136f8007eed107c52c4b2"
+      }
+    },
+    "authorityExportPage": {
+      "input": {
+        "typeId": "agh.state/authorityExportPage.request@1",
+        "revision": 1,
+        "digest": "fafed569715d56a26f535bebdc0e26b081be8b3a9a9b3b7a898654609b4f8caf"
+      },
+      "output": {
+        "typeId": "agh.state/authorityExportPage.response@1",
+        "revision": 1,
+        "digest": "d507289d3b7fad72142152580647e28e35e80c3ef9ece4ade758a45183fc3285"
+      }
+    },
+    "authorityImport": {
+      "input": {
+        "typeId": "agh.state/authorityImport.request@1",
+        "revision": 1,
+        "digest": "cdfdcb8b48c17db1c30ffdb4390d14cb88f517165f63560e9e3fbbfa0d75ab2c"
+      },
+      "output": {
+        "typeId": "agh.state/authorityImport.response@1",
+        "revision": 1,
+        "digest": "5ff1cddefc61e239e1aaaf8da90ece4249af4d9b690902687df06d4655d59536"
+      }
+    },
+    "authorityVerify": {
+      "input": {
+        "typeId": "agh.state/authorityVerify.request@1",
+        "revision": 1,
+        "digest": "9450c037b08a68a095559a7bdebdc659b21fa7d7e6220f760f96c32ee14f5a28"
+      },
+      "output": {
+        "typeId": "agh.state/authorityVerify.response@1",
+        "revision": 1,
+        "digest": "cd06c2c08955bbf49f023bdae11a390482ad3728dfada994cd0704b23905ad17"
+      }
+    },
+    "authorityActivate": {
+      "input": {
+        "typeId": "agh.state/authorityActivate.request@1",
+        "revision": 1,
+        "digest": "f071aa7b95b692e1949ca6be5919ed60d9882c60cb2fb5bea89761a4fe917b42"
+      },
+      "output": {
+        "typeId": "agh.state/authorityActivate.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityAbort": {
+      "input": {
+        "typeId": "agh.state/authorityAbort.request@1",
+        "revision": 1,
+        "digest": "800fa83bd387dd7f6b578770610b8704d5f25846941b860ae8d119b0328baccf"
+      },
+      "output": {
+        "typeId": "agh.state/authorityAbort.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
+      }
+    },
+    "authorityProbe": {
+      "input": {
+        "typeId": "agh.state/authorityProbe.request@1",
+        "revision": 1,
+        "digest": "70d859e318105d821cb5806c33e6a90ee1eeac9755b996563f7487cc4ba0aef0"
+      },
+      "output": {
+        "typeId": "agh.state/authorityProbe.response@1",
+        "revision": 1,
+        "digest": "56b07b7e2aa4ce7e200f14a5ad3adb46bb2fa155f07c02980895e81fb6eda07a"
       }
     }
   },

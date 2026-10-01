@@ -726,3 +726,7 @@ export function defineRuntimePlugin(input: PluginAuthorDefinition): PluginAuthor
     ...(author === undefined ? {} : { author }),
   })
 }
+
+export { standardHookOperations } from './authoring-hook-operations.js'
+export type { GeneratedAuthorSchemaSource } from './authoring-source.js'
+export { defineGeneratedAuthorSchema } from './authoring-source.js'

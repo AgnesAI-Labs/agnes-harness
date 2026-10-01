@@ -108,6 +108,51 @@ function webArtifact(packageId: string, revision: string, disabled = false) {
 }
 
 describe('client module immutable snapshots', () => {
+  it.each([
+    { config: '{"label":"Nested panel","nested":{"modes":[null,true,3]}}', accepted: true },
+    { config: '{"value":1e400}', accepted: false },
+    { config: '{"nested":{"apiKey":"private-material"}}', accepted: false },
+    { config: '{"nested":{"endpoint":"secret://model/key"}}', accepted: false },
+  ])('validates stored public configuration on reload: $config', async ({ config, accepted }) => {
+    const files = fixture()
+    const first = installed({ directory: files.packageDirectory, publicConfig: { label: 'Public panel' } })
+    const artifact = webArtifact(first.id, first.entry.integrity)
+    const options = {
+      snapshotDirectory: () => files.snapshots,
+      runtimeArtifacts: () => ({ desired: artifact, lastGood: artifact }),
+    }
+    const initial = createClientModuleRegistry(options)
+    const input = {
+      profile: 'local-dev',
+      profileDirectory: files.root,
+      inventory: inventory(first),
+      actual: async () => undefined,
+      refreshInventory: async () => inventory(first),
+    }
+    expect((await initial.list(input)).modules).toHaveLength(1)
+    initial.close()
+    const statePath = join(files.snapshots, '_client-modules.json')
+    const stored = readFileSync(statePath, 'utf8')
+    expect(stored).toContain('{"label":"Public panel"}')
+    writeFileSync(statePath, stored.replace('{"label":"Public panel"}', config))
+    const next = installed({ directory: files.packageDirectory, integrity: `sha256-${'2'.repeat(64)}` })
+    const reopened = createClientModuleRegistry(options)
+    try {
+      const result = await reopened.list({
+        ...input,
+        inventory: inventory(next),
+        refreshInventory: async () => inventory(next),
+      })
+      if (accepted) expect(result.modules[0]?.publicConfig).toEqual(JSON.parse(config))
+      else {
+        expect(result.modules).toEqual([])
+        expect(result.rows?.every((row) => row.publicConfig === undefined)).toBe(true)
+      }
+    } finally {
+      reopened.close()
+    }
+  })
+
   it('binds a row-owned client descriptor to its plugin service identity', async () => {
     const files = fixture()
     const base = installed({ directory: files.packageDirectory, backend: true })

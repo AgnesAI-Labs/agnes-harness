@@ -13,6 +13,14 @@
   "files": [
     "../../packages/extension-api/test/runtime/prototype-consumer.compile.ts",
     "../../packages/extension-api/test/runtime/authoring-consumer.compile.ts",
-    "../check-runtime-prototype-checkpoint.ts"
+    "../check-runtime-prototype-checkpoint.ts",
+    "../../packages/extension-api/test/runtime/owned-author-schema-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/client-types.compile.ts",
+    "../../packages/protocol/test/runtime/skin-token-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/authority-directory-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/standard-hook-operations-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/integrity-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/contract-tail-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/client-transport-consumer.compile.ts"
   ]
 }

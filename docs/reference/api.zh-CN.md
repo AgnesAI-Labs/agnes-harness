@@ -87,3 +87,34 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 | ACP 差异与来源 | [UPSTREAM](../../packages/protocol/schema/acp/UPSTREAM.md)、[DEVIATIONS](../../packages/protocol/schema/acp/DEVIATIONS.md) |
 
 生成类型在[gen/ts](../../packages/protocol/gen/ts)。Schema 通过只证明形状，跨对象关联、授权、事务和实际执行仍由相应实现验证。
+
+## Runtime 作者 Schema CLI（源码构建预览）
+
+当前 workspace 通过 `@agnes/extension-api/runtime` 提供 Runtime 作者 API，通过 `@agnes/protocol/runtime` 提供 Schema。协议包仍为 private；以下命令用于源码构建预览。Runtime 集成与 I/O 验收尚未完成。
+
+安装 workspace 依赖后，从仓库根目录执行：
+
+```sh
+pnpm --filter @agnes/protocol build:schema-cli
+node packages/protocol/dist/schema-cli/agnes-schema.mjs generate \
+  --package ./my-plugin \
+  --sources ./my-plugin/schema-sources.json \
+  --locked-schemas ./my-plugin/schema-lock.json \
+  --out ./src/generated/schemas
+```
+
+插件目录必须已存在并包含 `package.json`，其中的 `name` 是 Schema 所属包。必需的 `--sources` 文件内容是 `schemaSources` JSON 数组，不是整个插件清单，例如：
+
+```json
+[
+  { "name": "Message", "typeId": "@example/plugin/message@1", "revision": 1, "source": "./schemas/message.json" }
+]
+```
+
+此例假设 `package.json` 的 `name` 为 `"@example/plugin"`。每个 `source` 都是包内以 `./` 开头的 JSON 路径。`--package`、`--sources`、`--locked-schemas` 相对命令工作目录解析；`--out` 相对 `--package` 解析，必须指定专用生成目录。已有目录包含无关文件时会被拒绝。
+
+`--locked-schemas` 也必需；未引用依赖 Schema 时使用 `[]`。依赖条目用包 ID、版本、包/清单摘要、绝对包根路径及 Schema 源文件摘要标识已声明的 dependency 或 peer dependency。生成器只读取本地文件，不安装依赖、不拉取 Schema、不执行插件入口。
+
+此例生成 `Message.ts`，导出 `MessageSchema` 与只读类型 `MessageValue`，并生成 `schema-sources.generated.json`。在同一命令后添加 `--check` 可只校验生成结果而不写入；结果缺失或变化会失败。
+
+插件代码应导入生成模块。`MessageSchema.parse(unknown)` 校验后返回 `Outcome<MessageValue>`，成功值经过复制与冻结。`MessageSchema.encode(value)` 返回 `Outcome<DataRef>`，包含规范 JSON、Schema 身份、摘要及字节数。编码只生成不超过 **64 KiB 规范 JSON UTF-8 字节**的 inline 数据；超限返回 quota 错误，不生成 Blob 引用、不执行 I/O。当前合同见 [CLI 源码](../../packages/protocol/tools/gen-author-schema.ts)与 [codec](../../packages/extension-api/src/runtime/authoring-schema-core.ts)。

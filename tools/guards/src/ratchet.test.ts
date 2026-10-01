@@ -1233,7 +1233,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
   // Runtime public schema exports and generated authority SPI: measured 2452, no spare allocation.
-  'packages/protocol/src': 2452,
+  // Bounded schema codecs and client transport validation: exact measured 2985, no spare.
+  'packages/protocol/src': 2985,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1349,7 +1350,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported. Measured 978, exact, no spare (+41).
   // Runtime public schema exports and generated authority SPI: measured 1132, no spare allocation.
   // Generated runtime/client contracts and pure author declarations: exact measured total, no spare.
-  'packages/extension-api/src': 2439,
+  // Client transport ports, schema codecs and typed operations: exact measured 2717, no spare.
+  'packages/extension-api/src': 2717,
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1779,7 +1781,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
-  'packages/daemon/src': 26501,
+  // Stored public configuration uses canonical JSON and existing credential checks: exact 26512.
+  'packages/daemon/src': 26512,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left

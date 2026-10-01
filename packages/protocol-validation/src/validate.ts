@@ -1,5 +1,6 @@
 import { FormatRegistry, type TSchema } from '@sinclair/typebox'
 import { Value, type ValueError, ValueErrorType } from '@sinclair/typebox/value'
+import { validateByteKeywords } from './byte-keywords.js'
 export type ValidationError = {
   path: string
   message: string
@@ -74,7 +75,10 @@ export function isDateTime(value: unknown): value is string {
 }
 
 export function validateAgainst<T>(schema: TSchema, x: unknown, pathPrefix = ''): ValidationResult<T> {
-  if (Value.Check(schema, x)) return { ok: true, value: x as T }
+  if (Value.Check(schema, x)) {
+    const errors = validateByteKeywords(schema, x, pathPrefix)
+    return errors.length ? { ok: false, errors } : { ok: true, value: x as T }
+  }
   const errors = [...Value.Errors(schema, x)].map(classify).map((e) => ({ ...e, path: pathPrefix + e.path }))
   return {
     ok: false,

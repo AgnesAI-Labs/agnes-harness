@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/Message",
+  "$defs": {
+    "Message": {
+      "type": "object",
+      "properties": {
+        "message": { "type": "string", "maxLength": 100 },
+        "labels": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["message"],
+      "additionalProperties": false
+    }
+  }
+}

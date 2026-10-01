@@ -8,6 +8,7 @@ import {
   type InstalledPackage,
   isRuntimePackageEligible,
   resolveClientModuleAsset,
+  validatePublicClientConfig,
 } from '@agnes/package-manager'
 import {
   decodeRuntimeTargetArtifact,
@@ -21,7 +22,9 @@ import {
   isDshWebClientModuleSlotName,
   isWebClientModuleSlotName,
   jcs,
+  validateAgainst,
 } from '@agnes/protocol'
+import { JsonValue as JsonValueSchema } from '@agnes/protocol/gen/extension-manifest'
 import { init as initModuleLexer, parse as parseModule } from 'es-module-lexer'
 import { clientModuleRowIdForContribution, packageOfRow } from '../composite-desired.js'
 import type { PackageActivationObservation } from './handler.js'
@@ -65,7 +68,7 @@ type StoredDeclaration = Readonly<{
   extIds: readonly string[]
   services: readonly string[]
   backendRowId?: string
-  publicConfig?: Readonly<Record<string, unknown>>
+  publicConfig?: NonNullable<ClientContribution['publicConfig']>
 }>
 type PackageState = Readonly<{
   current?: string
@@ -184,6 +187,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function isPublicConfig(value: unknown): value is NonNullable<ClientContribution['publicConfig']> {
+  if (!isRecord(value) || !validateAgainst(JsonValueSchema, value).ok) return false
+  try {
+    validatePublicClientConfig(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function isWebRowId(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -250,7 +263,7 @@ function isState(value: unknown, profile: string): value is ProfileState {
             !declaration.extIds.every((id) => typeof id === 'string') ||
             !Array.isArray(declaration.services) ||
             !declaration.services.every((service) => typeof service === 'string') ||
-            (declaration.publicConfig !== undefined && !isRecord(declaration.publicConfig))
+            (declaration.publicConfig !== undefined && !isPublicConfig(declaration.publicConfig))
           )
             return false
         }

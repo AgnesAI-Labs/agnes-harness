@@ -828,9 +828,77 @@ export interface RuntimeWireTypes {
   IMRendererEncodeResult: Schemas.IMRendererEncodeResult
   IMRendererEncodeChannel: Schemas.IMRendererEncodeChannel
   TextRendererFormatContext: Schemas.TextRendererFormatContext
-  RuntimeEmptyAuthorConfig: Schemas.RuntimeEmptyAuthorConfig
+  ControlledHttpHeaders: Schemas.ControlledHttpHeaders
+  AuthorityDirectoryCompareAndSwapRequest: Schemas.AuthorityDirectoryCompareAndSwapRequest
+  AuthorityDirectoryCompareAndSwapResult: Schemas.AuthorityDirectoryCompareAndSwapResult
+  IntegrityCanonicalizeRequest: Schemas.IntegrityCanonicalizeRequest
+  IntegrityCanonicalizeResult: Schemas.IntegrityCanonicalizeResult
+  LedgerIntegrityCheckpoint: Schemas.LedgerIntegrityCheckpoint
+  LedgerIntegrityMetadata: Schemas.LedgerIntegrityMetadata
+  Externalsession_v1_Actor: Schemas.Externalsession_v1_Actor
+  Externalsession_v1_SurfaceOp: Schemas.Externalsession_v1_SurfaceOp
+  Externalsession_v1_EventEnvelope: Schemas.Externalsession_v1_EventEnvelope
+  LedgerIntegrityRow: Schemas.LedgerIntegrityRow
+  IntegrityVerifyRequest: Schemas.IntegrityVerifyRequest
+  IntegrityVerifyResult: Schemas.IntegrityVerifyResult
+  ClientInteractionFormLinkInput: Schemas.ClientInteractionFormLinkInput
+  InteractionFormLinkRequest: Schemas.InteractionFormLinkRequest
+  ConfigSourceIdentity: Schemas.ConfigSourceIdentity
   RuntimeProfile: Schemas.RuntimeProfile
+  ConfigProfileSnapshot: Schemas.ConfigProfileSnapshot
   RuntimePreset: Schemas.RuntimePreset
+  ConfigPresetSnapshot: Schemas.ConfigPresetSnapshot
+  RuntimeProfilePolicy: Schemas.RuntimeProfilePolicy
+  RuntimeProfileSelectionPolicy: Schemas.RuntimeProfileSelectionPolicy
+  RuntimeProfileAllowedPresets: Schemas.RuntimeProfileAllowedPresets
+  RuntimePresetConfigOverrides: Schemas.RuntimePresetConfigOverrides
+  ConfigManagedPolicy: Schemas.ConfigManagedPolicy
+  RuntimePresetRestrictions: Schemas.RuntimePresetRestrictions
+  ConfigWorkspaceOverlay: Schemas.ConfigWorkspaceOverlay
+  RuntimePresetSelections: Schemas.RuntimePresetSelections
+  ConfigSessionOverlay: Schemas.ConfigSessionOverlay
+  ConfigResolveRequest: Schemas.ConfigResolveRequest
+  ConfigResolutionEntry: Schemas.ConfigResolutionEntry
+  ConfigResolveResult: Schemas.ConfigResolveResult
+  ArtifactDescribeInput: Schemas.ArtifactDescribeInput
+  ArtifactOpenDownloadRequest: Schemas.ArtifactOpenDownloadRequest
+  BlobReadRangeRequest: Schemas.BlobReadRangeRequest
+  BlobOpenReadRequest: Schemas.BlobOpenReadRequest
+  ClientCallHeader: Schemas.ClientCallHeader
+  ClientQueryCall: Schemas.ClientQueryCall
+  ClientQueryValue: Schemas.ClientQueryValue
+  ClientQueryRequest: Schemas.ClientQueryRequest
+  ClientQueryReply: Schemas.ClientQueryReply
+  ClientCommandCall: Schemas.ClientCommandCall
+  ClientCommandValue: Schemas.ClientCommandValue
+  ClientCommandRequest: Schemas.ClientCommandRequest
+  ClientCommandReply: Schemas.ClientCommandReply
+  ClientBootstrapRejected: Schemas.ClientBootstrapRejected
+  ClientCatalogPageState: Schemas.ClientCatalogPageState
+  ClientBootstrapAccepted: Schemas.ClientBootstrapAccepted
+  ClientBootstrapResult: Schemas.ClientBootstrapResult
+  ClientCatalogPageRequest: Schemas.ClientCatalogPageRequest
+  ClientCatalogPageResult: Schemas.ClientCatalogPageResult
+  ClientInteractionChange: Schemas.ClientInteractionChange
+  ClientConversationSnapshot: Schemas.ClientConversationSnapshot
+  ClientDomainSnapshot: Schemas.ClientDomainSnapshot
+  ClientInteractionsSnapshot: Schemas.ClientInteractionsSnapshot
+  ClientSubscribeRequest: Schemas.ClientSubscribeRequest
+  ClientSubscriptionFrame: Schemas.ClientSubscriptionFrame
+  ClientConversationSubscriptionFrame: Schemas.ClientConversationSubscriptionFrame
+  ClientDomainSubscriptionFrame: Schemas.ClientDomainSubscriptionFrame
+  ClientInteractionsSubscriptionFrame: Schemas.ClientInteractionsSubscriptionFrame
+  ClientSubscribeResult: Schemas.ClientSubscribeResult
+  ClientReadSubscriptionRequest: Schemas.ClientReadSubscriptionRequest
+  ClientReadSubscriptionResult: Schemas.ClientReadSubscriptionResult
+  ClientCloseSubscriptionRequest: Schemas.ClientCloseSubscriptionRequest
+  ClientCloseSubscriptionResult: Schemas.ClientCloseSubscriptionResult
+  ClientArtifactReadRangeRequest: Schemas.ClientArtifactReadRangeRequest
+  ClientArtifactOpenStreamRequest: Schemas.ClientArtifactOpenStreamRequest
+  ClientArtifactRangeMetadata: Schemas.ClientArtifactRangeMetadata
+  ClientArtifactStreamMetadata: Schemas.ClientArtifactStreamMetadata
+  ClientTransportFrame: Schemas.ClientTransportFrame
+  RuntimeEmptyAuthorConfig: Schemas.RuntimeEmptyAuthorConfig
   RuntimePluginManifest: Schemas.RuntimePluginManifest
   RuntimeSimpleLoopCheckpoint: Schemas.RuntimeSimpleLoopCheckpoint
 }
