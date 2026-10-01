@@ -190,8 +190,10 @@ const nodePreview = (node: UINode): string => {
     const resources = node.content.filter((block) => block.type === 'resource_link').length
     return [
       message,
-      images ? traceText('trace.preview.images', { n: images }) : '',
-      resources ? traceText('trace.preview.resources', { n: resources }) : '',
+      images ? traceText(images === 1 ? 'trace.preview.image' : 'trace.preview.images', { n: images }) : '',
+      resources
+        ? traceText(resources === 1 ? 'trace.preview.resource' : 'trace.preview.resources', { n: resources })
+        : '',
     ]
       .filter(Boolean)
       .join(' · ')
@@ -249,8 +251,10 @@ const LIST_KINDS = new Set(['user', 'context', 'assistant', 'tool', 'approval', 
 
 /** A span placed where the trace shortened a subtree; its message is how many steps it stands for. */
 const isTruncation = (span: UISpan): boolean => span.error?.code === 'TRACE_TRUNCATED'
-const truncationLabel = (span: UISpan): string =>
-  traceText('trace.truncated', { n: span.error?.message ?? traceText('trace.truncated.some') })
+const truncationLabel = (span: UISpan): string => {
+  const n = span.error?.message ?? traceText('trace.truncated.some')
+  return traceText(n === '1' ? 'trace.truncated.one' : 'trace.truncated', { n })
+}
 
 type Placed = { span: UISpan; order: number; step: string | undefined }
 

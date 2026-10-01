@@ -59,7 +59,8 @@ const en = {
   'diagnostics.viewer.warning': '{source}: {reason}',
   'diagnostics.viewer.warningDetail': '{source}: {reason} ({detail})',
   'diagnostics.viewer.toolSummary': '{name}: {summary}',
-  'diagnostics.trace.window': 'Only the {n} most recently loaded nodes are included. Earlier history is not.',
+  'diagnostics.trace.window':
+    'Only the {n} most recently loaded nodes are included. Earlier history is not included.',
 } as const
 
 const zh: Record<keyof typeof en, string> = {
@@ -67,7 +68,8 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.title.share': '选择要包含的内容',
   'diagnostics.title.ready': '诊断包已生成',
   'diagnostics.title.saved': '诊断文件已保存',
-  'diagnostics.intro': '创建一个可分享给支持人员的诊断 ZIP 包，包含当前会话的对话与轨迹、日志和系统信息。',
+  'diagnostics.intro':
+    '创建一个可分享给支持人员的诊断 ZIP 包，可以包含当前会话的对话与轨迹、日志和系统信息。',
   'diagnostics.redaction': '分享前会先对密钥脱敏。',
   'diagnostics.cancel': '取消',
   'diagnostics.share': '分享诊断',
@@ -82,8 +84,8 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.savedIntro': '把这个 ZIP 包分享给支持或研发人员。解压后打开 index.html 查看。',
   'diagnostics.close': '关闭',
   'diagnostics.error.generate': '生成诊断包失败：{detail}',
-  'diagnostics.error.save': '保存诊断分享包失败：{detail}',
-  'diagnostics.savedPartial': '问题包已导出，部分资料不完整',
+  'diagnostics.error.save': '保存诊断包失败：{detail}',
+  'diagnostics.savedPartial': '诊断包已导出，部分资料不完整',
   'diagnostics.viewer.title': 'agh 诊断包',
   'diagnostics.viewer.fallbackTitle': '应用范围',
   'diagnostics.viewer.meta': '版本 {version} · 导出于 {createdAt}',

@@ -313,7 +313,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | `packages/web-client/src` | 1745 |
 | `packages/web-ui/src` | 4732 |
 | `packages/web/src` | 13622 |
-| `packages/web-units/src` | 5222 |
+| `packages/web-units/src` | 5234 |
 | `packages/web/src/app` | 1838 |
 
 某个目录加了文案文件或把句子搬进渲染之后超限，就在同一次提交里按实测行数改这个上限，并写明增加了多少行。不要放宽扫描范围，也不要为了留下余量把上限改得比实测更高。`packages/web-ui/src`、`packages/web-units/src`、`packages/cli-tui/src` 也有上限，改到它们时同样处理。

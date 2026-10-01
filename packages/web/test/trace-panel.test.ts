@@ -428,7 +428,7 @@ describe('trace panel', () => {
       ],
     }
     panel.render([attachmentOnly], [turn(undefined, ['u-attachment'])])
-    expect(root.querySelector('.trace-row')?.textContent).toContain('1 images · 1 resource links')
+    expect(root.querySelector('.trace-row')?.textContent).toContain('1 image · 1 resource link')
     ;(root.querySelector('.trace-row') as HTMLButtonElement).click()
     expect(root.querySelector('.trace-inspector')?.textContent).toContain('Image · image/png')
     expect(root.querySelector('.trace-inspector')?.textContent).toContain('notes.txt')

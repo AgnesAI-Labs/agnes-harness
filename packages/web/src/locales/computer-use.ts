@@ -23,7 +23,7 @@ const en = {
   'computerUse.status.running': 'Running',
   'computerUse.status.available': 'Available',
   'computerUse.status.readySummary':
-    '{platform} driver {version} is ready. Use an image-capable model in the conversation to operate the computer.',
+    '{platform} driver {version} is ready. Use a model that accepts images in the conversation to operate the computer.',
   'computerUse.runtime.active': 'Runtime: {count} active sessions',
   'computerUse.runtime.idle': 'Runtime: idle now, started before',
   'computerUse.runtime.ready': 'Runtime: ready, no session started yet',
@@ -34,7 +34,7 @@ const en = {
   'computerUse.status.firstPrepare': 'Prepares automatically on first use',
   'computerUse.status.refreshRetry': 'Refresh the status and try again.',
   'computerUse.runtime.imageModel':
-    'Operating the computer needs an image-capable model. Ordinary chat is unaffected.',
+    'Operating the computer needs a model that accepts images. Ordinary chat is unaffected.',
   'computerUse.status.blocked': 'Blocked',
   'computerUse.status.blockedSummary': 'Production driver admission stays closed on this platform.',
   'computerUse.runtime.notStarted': 'Runtime: not started, and start was not attempted',
@@ -196,8 +196,8 @@ const zh = {
   'computerUse.permissions.waitingDriver': '等待驱动就绪',
   'computerUse.permissions.notRequired': '无需系统授权',
   'computerUse.permissions.linuxSummary':
-    'Linux 不使用 macOS 的辅助功能和录屏授权；桌面会话能力由驱动健康检查验证。',
-  'computerUse.permissions.windowsSummary': 'Windows 无需额外的录屏或辅助功能授权。',
+    'Linux 不使用 macOS 的辅助功能和屏幕录制授权；桌面会话能力由驱动健康检查验证。',
+  'computerUse.permissions.windowsSummary': 'Windows 无需额外的屏幕录制或辅助功能授权。',
   'computerUse.permissions.granted': '已授权',
   'computerUse.permissions.grantedSummary': '辅助功能和屏幕录制均已授权。',
   'computerUse.permissions.required': '需要授权',
@@ -269,7 +269,7 @@ const zh = {
   'computerUse.operation.cancelFailed': '取消失败',
   'computerUse.operation.cancelFailedSummary': '无法确认取消结果，请刷新进度后再试。',
   'computerUse.blocker.releaseProvenance': '驱动发布来源与完整性证据尚未锁定',
-  'computerUse.blocker.compatibility': '固定版本兼容性证据尚未完成',
+  'computerUse.blocker.compatibility': '锁定版本兼容性证据尚未完成',
   'computerUse.blocker.platformAcceptance': '平台实机验收尚未完成',
   'computerUse.blocker.featureDisabled': '当前配置已关闭电脑操作，请检查本地配置中的 computerUse.enabled。',
   'computerUse.blocker.platformUnsupported': '当前系统或处理器暂不支持电脑操作。',

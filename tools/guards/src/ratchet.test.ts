@@ -216,7 +216,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-ui/src': 4732,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // Trace and diagnostics catalogs, plus the viewer labels. Measured 5222, exact, no spare (+592).
-  'packages/web-units/src': 5222,
+  // Singular trace counts and the wording pass. Measured 5234, exact, no spare (+12).
+  'packages/web-units/src': 5234,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.

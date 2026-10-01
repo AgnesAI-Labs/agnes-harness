@@ -264,7 +264,7 @@ describe('collectDiagnostics', () => {
       expect.objectContaining({
         source: 'trace',
         reason: 'truncated',
-        detail: 'Only the 0 most recently loaded nodes are included. Earlier history is not.',
+        detail: 'Only the 0 most recently loaded nodes are included. Earlier history is not included.',
       }),
     )
     expect(files.get('diagnostic-export-warnings.json')).toContain('"source": "trace"')
