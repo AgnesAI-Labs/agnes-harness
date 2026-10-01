@@ -4,6 +4,9 @@ export {
   type LocaleCatalog,
   type LocaleDictionary,
   type Translate,
+  // 宿主注册目录时要按这个名字登记（boot.ts 与测试 helpers 都从包入口取），
+  // 漏掉它会让 web 构建在 client-modules/boot.ts 直接失败。
+  WEB_UNITS_LOCALE_NAMESPACE,
   webUnitsLocaleCatalog,
 } from './locales/index.js'
 export {
