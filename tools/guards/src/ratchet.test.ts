@@ -1,3 +1,4 @@
+// OPTIONAL-STEP-BUDGET: Core 25478->25482 for the committed-cursor livelock guard; exact count, no spare.
 // UI-INTEGRATION-20260927: merged A/B/C lines (ui-refactor + ui-admin-pages); exact combined counts.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
@@ -925,7 +926,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
-  'packages/core/src': 25478,
+  'packages/core/src': 25482,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
