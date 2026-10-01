@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // One layout and two language dictionaries own the animated README architecture illustrations.
 // The SVG animates with CSS and SMIL only (no script), so it plays inside an <img> on GitHub and
-// stops under prefers-reduced-motion. Every element stays visible without animation support.
+// stops under prefers-reduced-motion. Every element is in place on the first frame, so the diagram
+// stays complete wherever the animation clock does not run; motion only adds flow and highlights.
+// An animated SVG image is re-rasterized whole on every frame, so glows are layered strokes and
+// halos rather than blur filters, which stall the browser at this size.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -165,8 +168,6 @@ const esc = (value) =>
     .replaceAll('"', '&quot;')
 
 const style = [
-  '.rise{animation:rise .9s cubic-bezier(.2,.7,.2,1) both}',
-  '@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}',
   '.beat{opacity:0;animation:beat 12s ease-in-out infinite}',
   '@keyframes beat{0%,100%{opacity:0}4%{opacity:1}13%{opacity:0}}',
   '.pulse{animation:pulse 2.6s ease-in-out infinite}',
@@ -206,16 +207,17 @@ function render(t, lang) {
   // A highlight outline that lights up once per 12 s cycle, in story order.
   const beat = (x, y, w, h, color, delay, r = 18) =>
     push(
-      `<rect class="beat" style="animation-delay:${delay}s" x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}"` +
-        ` fill="none" stroke="${color}" stroke-width="2.4" filter="url(#glow)"/>`,
+      `<g class="beat" style="animation-delay:${delay}s" fill="none" stroke="${color}">` +
+        `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" stroke-width="9" stroke-opacity=".22"/>` +
+        `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" stroke-width="2.4"/></g>`,
     )
   // A glowing particle travelling a path; hidden until it starts, so it never sits at the origin.
   const particle = (d, dur, begin, color, r = 4) =>
     push(
-      `<circle class="motion" r="${r}" fill="${color}" opacity="0" filter="url(#glow)">` +
+      `<g class="motion" fill="${color}" opacity="0"><circle r="${r * 2.6}" opacity=".22"/><circle r="${r}"/>` +
         `<animateMotion path="${d}" dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/>` +
         `<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="${dur}s" begin="${begin}s"` +
-        ' repeatCount="indefinite"/></circle>',
+        ' repeatCount="indefinite"/></g>',
     )
   const chip = (x, y, w, h, name, label, o = {}) => {
     const color = o.color ?? c.blue
@@ -230,11 +232,6 @@ function render(t, lang) {
       text(x + 48, y + h / 2 - 4, label, { size: 15, weight: 650 })
       text(x + 48, y + h / 2 + 15, o.sub, { size: 12, fill: c.muted })
     } else text(x + 48, y + h / 2 + 5, label, { size: o.size ?? 14.5, weight: 600 })
-  }
-  const group = (delay, body) => {
-    push(`<g class="rise" style="animation-delay:${delay}s">`)
-    body()
-    push('</g>')
   }
 
   push(
@@ -254,8 +251,6 @@ function render(t, lang) {
       '<stop offset="1" stop-color="#38d6ff" stop-opacity="0"/></linearGradient>' +
       '<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none"' +
       ' stroke="rgba(255,255,255,0.045)" stroke-width="1"/></pattern>' +
-      '<filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/>' +
-      '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
       '<clipPath id="memclip"><rect x="880" y="590" width="232" height="196" rx="10"/></clipPath>' +
       `<style>${style}</style>` +
       '</defs>',
@@ -265,47 +260,43 @@ function render(t, lang) {
   )
 
   // Header and legend.
-  group(0, () => {
-    text(60, 76, t.title, { size: 38, weight: 800 })
-    text(60, 110, t.subtitle, { size: 17, fill: c.muted })
-    push(`<path d="M ${W - 380} 64 H ${W - 348}" stroke="${c.cyan}" stroke-width="2.4"/>`)
-    text(W - 338, 69, t.existing, { size: 13, fill: c.muted })
-    push(
-      `<path d="M ${W - 380} 94 H ${W - 348}" stroke="${c.amber}" stroke-width="2.4" stroke-dasharray="6 5"` +
-        ' class="march"/>',
-    )
-    text(W - 338, 99, t.planned, { size: 13, fill: c.muted })
-  })
+  text(60, 76, t.title, { size: 38, weight: 800 })
+  text(60, 110, t.subtitle, { size: 17, fill: c.muted })
+  push(`<path d="M ${W - 380} 64 H ${W - 348}" stroke="${c.cyan}" stroke-width="2.4"/>`)
+  text(W - 338, 69, t.existing, { size: 13, fill: c.muted })
+  push(
+    `<path d="M ${W - 380} 94 H ${W - 348}" stroke="${c.amber}" stroke-width="2.4" stroke-dasharray="6 5"` +
+      ' class="march"/>',
+  )
+  text(W - 338, 99, t.planned, { size: 13, fill: c.muted })
 
   // Four roles: brain, cerebellum, memory, body.
   const roleIcon = ['brain', 'nodes', 'stack', 'arm']
   const roleColor = [c.violet, c.amber, c.cyan, c.amber]
-  group(0.15, () => {
-    t.roles.forEach(([name, role, line, status], i) => {
-      const x = 60 + i * 275
-      const planned = i === 1 || i === 3
-      panel(x, 148, 255, 104, {
-        fill: planned ? 'rgba(251,191,36,0.06)' : 'rgba(124,140,255,0.08)',
-        stroke: planned ? 'rgba(251,191,36,0.75)' : 'rgba(124,140,255,0.45)',
-        dashed: planned,
-      })
-      push(
-        `<circle cx="${x + 46}" cy="200" r="30" fill="url(#halo)" class="pulse"` +
-          ` style="animation-delay:${i * 0.6}s"/>`,
-        `<circle cx="${x + 46}" cy="200" r="24" fill="url(#core)" stroke="${roleColor[i]}" stroke-width="1.4"/>`,
-      )
-      icon(roleIcon[i], x + 46, 200, 26, roleColor[i])
-      text(x + 86, 186, name, { size: 18, weight: 800 })
-      // Bold 18 px Latin: about 13 px per capital and 10.5 px per lower-case letter.
-      const nameWidth = [...name].reduce((w, ch) => w + (ch === ch.toUpperCase() ? 13 : 10.5), 0)
-      text(x + 86 + nameWidth + 10, 186, role, { size: 15, weight: 600, fill: roleColor[i] })
-      text(x + 86, 210, line, { size: 12.5, fill: c.muted })
-      text(x + 86, 232, status, { size: 12, weight: 600, fill: planned ? c.amber : c.green })
+  t.roles.forEach(([name, role, line, status], i) => {
+    const x = 60 + i * 275
+    const planned = i === 1 || i === 3
+    panel(x, 148, 255, 104, {
+      fill: planned ? 'rgba(251,191,36,0.06)' : 'rgba(124,140,255,0.08)',
+      stroke: planned ? 'rgba(251,191,36,0.75)' : 'rgba(124,140,255,0.45)',
+      dashed: planned,
     })
+    push(
+      `<circle cx="${x + 46}" cy="200" r="30" fill="url(#halo)" class="pulse"` +
+        ` style="animation-delay:${i * 0.6}s"/>`,
+      `<circle cx="${x + 46}" cy="200" r="24" fill="url(#core)" stroke="${roleColor[i]}" stroke-width="1.4"/>`,
+    )
+    icon(roleIcon[i], x + 46, 200, 26, roleColor[i])
+    text(x + 86, 186, name, { size: 18, weight: 800 })
+    // Bold 18 px Latin: about 13 px per capital and 10.5 px per lower-case letter.
+    const nameWidth = [...name].reduce((w, ch) => w + (ch === ch.toUpperCase() ? 13 : 10.5), 0)
+    text(x + 86 + nameWidth + 10, 186, role, { size: 15, weight: 600, fill: roleColor[i] })
+    text(x + 86, 210, line, { size: 12.5, fill: c.muted })
+    text(x + 86, 232, status, { size: 12, weight: 600, fill: planned ? c.amber : c.green })
   })
 
   // App Server with its entry points.
-  group(0.3, () => {
+  {
     panel(60, 284, 1080, 140)
     text(84, 316, t.server, { size: 14, weight: 800, fill: c.cyan, ls: 1.6 })
     text(84, 338, t.serverDetail, { size: 13, fill: c.muted })
@@ -313,7 +304,7 @@ function render(t, lang) {
     t.clients.forEach((label, i) => {
       chip(84 + i * 264, 356, 240, 48, clientIcons[i], label, { color: c.cyan })
     })
-  })
+  }
   beat(84, 356, 1032, 48, c.cyan, 0, 12)
 
   // Flow from the App Server into the runtime.
@@ -325,7 +316,7 @@ function render(t, lang) {
   }
 
   // Agent runtime: brain, loop, memory and controlled execution.
-  group(0.45, () => {
+  {
     panel(60, 470, 1080, 440, { fill: 'rgba(124,140,255,0.05)', stroke: 'rgba(124,140,255,0.5)' })
     text(84, 502, t.runtime, { size: 14, weight: 800, fill: c.blue, ls: 1.6 })
     text(84, 524, t.runtimeDetail, { size: 13, fill: c.muted })
@@ -347,8 +338,10 @@ function render(t, lang) {
     const r = 100
     push(
       `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(124,140,255,0.25)" stroke-width="2"/>`,
-      `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c.cyan}" stroke-width="3" stroke-linecap="round"` +
-        ` stroke-dasharray="110 518.3" transform="rotate(-90 ${cx} ${cy})" class="comet" filter="url(#glow)"/>`,
+      `<g fill="none" stroke="${c.cyan}" stroke-linecap="round" stroke-dasharray="110 518.3"` +
+        ` transform="rotate(-90 ${cx} ${cy})">` +
+        `<circle cx="${cx}" cy="${cy}" r="${r}" stroke-width="10" stroke-opacity=".2" class="comet"/>` +
+        `<circle cx="${cx}" cy="${cy}" r="${r}" stroke-width="3" class="comet"/></g>`,
       `<circle cx="${cx}" cy="${cy}" r="62" fill="url(#core)" stroke="rgba(124,140,255,0.4)"/>`,
     )
     text(cx, cy - 4, t.loop[0], { size: 14, weight: 800, anchor: 'middle', ls: 1.4 })
@@ -416,7 +409,7 @@ function render(t, lang) {
     icon('shield', 116, 853, 26, c.green)
     text(144, 848, t.governance[0], { size: 13.5, weight: 800, fill: c.green, ls: 1.2 })
     text(144, 870, t.governance[1], { size: 13, fill: c.muted })
-  })
+  }
   beat(84, 556, 240, 236, c.violet, 2.4, 16)
   beat(868, 556, 248, 236, c.cyan, 3.4, 16)
   beat(84, 820, 1032, 66, c.green, 4.4, 14)
@@ -428,7 +421,7 @@ function render(t, lang) {
     )
     particle(`M ${x} 960 V 910`, 1.4, 6 + i * 0.3, c.blue, 3.4)
   }
-  group(0.6, () => {
+  {
     panel(60, 940, 1080, 164)
     text(84, 972, t.plugins, { size: 14, weight: 800, fill: c.blue, ls: 1.6 })
     text(84, 994, t.pluginsDetail, { size: 13, fill: c.muted })
@@ -443,7 +436,7 @@ function render(t, lang) {
       }
       chip(x, 1016, 240, 66, moduleIcons[i], label, { sub })
     })
-  })
+  }
   beat(84, 1016, 1032, 66, c.blue, 6, 12)
 
   // Two value directions on the same foundation.
@@ -453,7 +446,7 @@ function render(t, lang) {
     `<path d="M 876 1104 V 1150" stroke="${c.amber}" stroke-width="2" stroke-dasharray="5 5" class="march"/>`,
   )
   particle('M 876 1104 V 1150', 1.4, 8.2, c.amber, 3.6)
-  group(0.75, () => {
+  {
     panel(60, 1150, 528, 196, { fill: 'rgba(52,211,153,0.06)', stroke: 'rgba(52,211,153,0.55)' })
     text(84, 1182, t.fde[0], { size: 14, weight: 800, fill: c.green, ls: 1.4 })
     text(84, 1204, t.fde[1], { size: 13, fill: c.muted })
@@ -492,11 +485,11 @@ function render(t, lang) {
       chip(636 + i * 164, 1276, 152, 44, deviceIcons[i], label, { ...amber, size: 13.5 })
     })
     text(636, 1336, t.mhsNote, { size: 12, fill: c.faint })
-  })
+  }
   beat(60, 1150, 528, 196, c.green, 8, 18)
   beat(612, 1150, 528, 196, c.amber, 8.6, 18)
 
-  group(0.9, () => text(W / 2, 1380, t.footer, { size: 13.5, fill: c.muted, anchor: 'middle' }))
+  text(W / 2, 1380, t.footer, { size: 13.5, fill: c.muted, anchor: 'middle' })
   push('</g>', '</svg>')
   return `${out.join('\n')}\n`
 }
