@@ -82,6 +82,7 @@ describe('typed core segment replacements', () => {
       run: compatibilityRun,
       replace: async ({ input }) => {
         seen.push(`Budget:${input.nextStep}`)
+        expect(input.maxSteps).toBeNull()
         return { action: 'allow' }
       },
     }

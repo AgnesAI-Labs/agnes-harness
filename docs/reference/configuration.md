@@ -70,6 +70,14 @@ An exported [preset definition](../../packages/protocol/schema/preset.json) may 
 
 For the official Agnes China gateway, the adapter explicitly sends the built-in models' catalog allowance of 65536 as `max_tokens` when no request override is present. Official specifications list 65536 for [3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash), [2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro), and [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha). [Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) uses the Pro family allowance of 65536; its gateway capacity has not been independently verified. The [2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) and [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) docs publish a rounded 65.5K, interpreted here as 65536. Deprecated models remain registered for configuration compatibility; gateway availability still applies. Explicit request allowances take precedence. Catalog metadata alone does not set the raw OpenAI-compatible stream's request allowance. Large generated files should still be built across multiple small write/edit calls; the default is an allowance, not a guarantee that an arbitrarily large call completes.
 
+## Task step limits
+
+Normal tasks have no cumulative step ceiling. The Core default and the shipped `base`, `standard`, and `claw` presets use `budget.max_steps: null`; they no longer stop after 50, 80, or 200 steps. A step is one primary model iteration and may contain multiple tool calls. Completion, cancellation, provider failures, per-request timeouts, credit checks, and loop-hygiene checks still apply. The frozen `minimal-rl` evaluation preset retains its explicit 100-step ceiling.
+
+In an exported preset definition, `budget: { max_steps: null }` disables the ceiling, including an inherited ceiling. A positive integer such as `budget: { max_steps: 80 }` opts into a per-turn ceiling and still ends with `max_steps` when exhausted. Zero, negative numbers, fractions, and strings are invalid. Omission inherits the parent's setting; without an inherited setting, the default is no ceiling. This is a preset field, not a profile `limits` key.
+
+Already-open sessions keep their in-memory resolved preset. Restart the service and reopen the session, or start a new session, to resolve the updated defaults. Custom presets with explicit numeric ceilings keep those ceilings. Extensions replacing the Budget segment must handle `maxSteps: null` as an absent step ceiling. The internal run-loop guard bounds consecutive edges without a committed program-counter change rather than total task steps, so a progressing task does not spend its allowance.
+
 <a id="skills-同名优先级覆盖"></a>
 
 ## Same-name Skill priority overrides

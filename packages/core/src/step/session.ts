@@ -159,7 +159,8 @@ export type InboxReplacementInput = { inbox: Inbox | undefined; target: 'next-st
 export type InboxReplacementOutput = { action: 'none' } | { action: 'claim'; itemId: string }
 export type BudgetReplacementInput = {
   nextStep: number
-  maxSteps: number
+  /** null means no cumulative step ceiling; credit checks still apply. */
+  maxSteps: number | null
   creditsUsed: number
   creditsCap: number | null
 }
@@ -1591,13 +1592,17 @@ export class SessionImpl {
     // cancelled run that runs.
     if (opts.signal.aborted) onAbort()
     // A phase edge that reports where it went without writing where it went leaves step() reading
-    // the same phase forever, and the loop appends a row every pass. The budget bounds steps, not
-    // edges, and a stuck phase never spends a step — so the loop carries its own bound and fails
-    // loudly rather than filling the ledger with a livelock nobody is watching.
-    const maxEdges = this.preset.budget.maxSteps * 16 + 64
+    // the same phase forever. Bound consecutive edges without a committed program-counter change,
+    // independently of the optional step budget. Real tool dispatch and model steps advance the
+    // counter, so long tasks and large tool batches do not consume this livelock allowance.
+    const maxEdges = 64
     let edges = 0
+    let cursor = this.opSeq()
     try {
       for (;;) {
+        const nextCursor = this.opSeq()
+        if (nextCursor !== cursor) edges = 0
+        cursor = nextCursor
         if (++edges > maxEdges) {
           // A bound that throws hands the caller an exception off the declared outcome contract and
           // leaves the turn open with no `turn/end`, which is a state no resume can read. The turn

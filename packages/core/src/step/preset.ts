@@ -30,7 +30,8 @@ export type PresetView = {
     preflight: 'count' | 'estimate'
     perRequestCap: number | null
     onExceed: 'quote' | 'deny'
-    maxSteps: number
+    /** null disables the cumulative per-turn step ceiling. */
+    maxSteps: number | null
   }
   approval: {
     onTimeout: 'rejected'
@@ -67,7 +68,7 @@ export function presetDefaults(): PresetView {
       retry: { maxAttempts: 2, baseDelayMs: 1000 },
       timeoutMs: 600000,
     },
-    budget: { preflight: 'estimate', perRequestCap: null, onExceed: 'quote', maxSteps: 50 },
+    budget: { preflight: 'estimate', perRequestCap: null, onExceed: 'quote', maxSteps: null },
     // A timed-out approval reads as a rejection and nothing else: an unanswered prompt must never
     // be the path by which a destructive call proceeds.
     approval: { onTimeout: 'rejected', timeoutMs: 60000, onUnavailable: 'deny', pendingTtlMs: 86400000 },

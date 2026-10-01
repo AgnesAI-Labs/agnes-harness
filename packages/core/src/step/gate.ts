@@ -145,7 +145,7 @@ export function contextBudgetError(
  */
 async function builtinBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason: TurnEndReason }> {
   const op = s.op() as OpStateObj
-  if (op.step + 1 > s.preset.budget.maxSteps) {
+  if (s.preset.budget.maxSteps !== null && op.step + 1 > s.preset.budget.maxSteps) {
     await s.endTurn('max_steps')
     return { reason: 'max_steps' }
   }

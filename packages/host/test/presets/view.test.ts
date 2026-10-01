@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { toPresetView } from '../../src/presets/view.js'
 
 describe('toPresetView', () => {
-  it('delegates to core readPreset: snake_case doc in, camelCase view out', () => {
+  it.each([80, null])('delegates snake_case doc to the core view with max_steps=%s', (maxSteps) => {
     const v = toPresetView({
       name: 'standard',
       disclosure: 'standard',
@@ -13,7 +13,7 @@ describe('toPresetView', () => {
         max_tokens: 32768,
         retry: { max_attempts: 3, base_delay_ms: 500 },
       },
-      budget: { preflight: 'count', per_request_cap: 4000, on_exceed: 'quote', max_steps: 80 },
+      budget: { preflight: 'count', per_request_cap: 4000, on_exceed: 'quote', max_steps: maxSteps },
       approval: { on_unavailable: 'park', timeout_ms: 1000, pending_ttl_ms: 5000 },
       sandbox: { on_unavailable: 'deny' },
       tools: { timeout_ms: 120000, timeouts: { shell: 60000 } },
@@ -38,7 +38,7 @@ describe('toPresetView', () => {
         timeoutMs: 120000,
         maxTokens: 32768,
       },
-      budget: { preflight: 'count', perRequestCap: 4000, onExceed: 'quote', maxSteps: 80 },
+      budget: { preflight: 'count', perRequestCap: 4000, onExceed: 'quote', maxSteps },
       approval: { onTimeout: 'rejected', timeoutMs: 1000, onUnavailable: 'park', pendingTtlMs: 5000 },
       sandbox: { onUnavailable: 'deny' },
       tools: { timeoutMs: 120000, timeouts: { shell: 60000 } },
