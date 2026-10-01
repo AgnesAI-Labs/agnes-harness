@@ -4,8 +4,10 @@ import {
   FixedCordisAssembly,
   HOOKS_RUNNER_EVENTS,
   HOOKS_RUNNER_ROW_ID,
+  normalizeHookSnapshots,
   PUBLIC_HOOK_EVENTS,
 } from '../../../../packages/plugin-runtime/src/host/index.js'
+import { canonicalJsonDigest, validateRuntime } from '../../../../packages/protocol/src/runtime/index.js'
 
 const digest = 'a'.repeat(64)
 const stops: string[] = []
@@ -145,5 +147,34 @@ assert.equal(takeover.mode, 'takeover')
 assert.equal(takeover.rank, 4)
 assert.equal(takeover.execution, 'delegated')
 assert.equal(assembly.disableHooksRunnerTakeover().mode, 'builtin')
+
+const drafts = normalizeHookSnapshots({
+  workspaceId: 'workspace-1',
+  configRevision: 1,
+  registrations: [
+    {
+      id: 'mask',
+      event: 'tool_result',
+      source: 'interceptor',
+      sourceKey: 'pkg#mask',
+      provider: {
+        bindingId: 'binding-1',
+        contract: 'agh.hooks',
+        logicalName: 'default',
+        providerId: 'provider-1',
+      },
+      codeDigest: digest,
+      execution: 'opaque',
+      failPolicy: 'closed',
+      readFields: ['/result'],
+      writeFields: ['/content'],
+    },
+  ],
+})
+const draft = drafts[0]
+assert.ok(draft)
+const validated = validateRuntime('EffectiveHookSnapshot', draft.snapshot)
+assert.equal(validated.ok, true, JSON.stringify(validated))
+assert.equal(canonicalJsonDigest(JSON.parse(JSON.stringify(draft.digestMaterial))), draft.snapshot.digest)
 
 console.log('cordis assembly acceptance passed')

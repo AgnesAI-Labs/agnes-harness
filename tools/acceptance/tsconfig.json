@@ -23,5 +23,9 @@
     "runtime/sources.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
-  "references": [{ "path": "../../packages/extension-api" }, { "path": "../../packages/plugin-runtime" }]
+  "references": [
+    { "path": "../../packages/extension-api" },
+    { "path": "../../packages/plugin-runtime" },
+    { "path": "../../packages/protocol" }
+  ]
 }

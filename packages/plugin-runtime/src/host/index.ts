@@ -95,6 +95,16 @@ export {
   SharedResourceBroker,
   TOOL_CONTROL_METHODS,
 } from '../runtime/cordis-adapter.js'
+export type {
+  EffectiveHookSnapshot,
+  HookBinding,
+  HookDeclaration,
+  HookEffectRef,
+  HookRegistrationSnapshot,
+  HookSnapshotDraft,
+  InterceptorEvent,
+} from '../runtime/hook-snapshot.js'
+export { interceptorPhase, normalizeHookSnapshots } from '../runtime/hook-snapshot.js'
 export type { RuntimeScope } from '../runtime/scope-tree.js'
 export { isRuntimeScope, longScopeCapturesShort, scopeRank } from '../runtime/scope-tree.js'
 export type {
