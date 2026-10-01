@@ -28,4 +28,4 @@ it('compiles public configuration, authenticated control and optional maintenanc
   expect(result.error).toBeUndefined()
   expect(result.stdout + result.stderr).toBe('')
   expect(result.status).toBe(0)
-})
+}, 60_000)

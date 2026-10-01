@@ -1,7 +1,21 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { CHECKPOINT_FILES, digestFiles, GENERATED_FILES, jsonDigest, SOURCE_FILES } from './files.js'
+
+/** TypeScript emits forward slashes even when the checkout uses Windows separators. */
+export function compilerProjectFiles(checkout: string, output: string): string[] {
+  const prefix = `${checkout.replaceAll('\\', '/').replace(/\/$/, '')}/`
+  const windows = /^[a-z]:\//i.test(prefix) || prefix.startsWith('//')
+  return output
+    .split(/\r?\n/)
+    .map((path) => path.replaceAll('\\', '/'))
+    .filter((path) =>
+      windows ? path.toLowerCase().startsWith(prefix.toLowerCase()) : path.startsWith(prefix),
+    )
+    .map((path) => path.slice(prefix.length))
+    .filter((path) => !path.split('/').includes('node_modules'))
+}
 
 export function compilePrototype(root: string) {
   const checkout = realpathSync(root)
@@ -23,11 +37,7 @@ export function compilePrototype(root: string) {
     throw new Error(
       `public prototype API compilation failed:\n${result.error?.message ?? `${result.stdout}\n${result.stderr}`}`,
     )
-  const projectFiles = result.stdout
-    .split(/\r?\n/)
-    .filter((path) => path.startsWith(`${checkout}/`) || path.startsWith(`${checkout}\\`))
-    .map((path) => relative(checkout, path).replaceAll('\\', '/'))
-    .filter((path) => !path.split('/').includes('node_modules'))
+  const projectFiles = compilerProjectFiles(checkout, result.stdout)
   if (!projectFiles.includes('packages/extension-api/test/runtime/prototype-consumer.compile.ts'))
     throw new Error('compiler did not include the public API consumer')
   const packageManifests = new Set<string>()

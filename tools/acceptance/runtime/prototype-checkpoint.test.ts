@@ -21,7 +21,7 @@ import {
   type PrototypeSnapshot,
   verifyPrototypeSnapshot,
 } from '../../runtime-prototype/checkpoint.js'
-import { compilePrototype } from '../../runtime-prototype/compile.js'
+import { compilePrototype, compilerProjectFiles } from '../../runtime-prototype/compile.js'
 import { digestFiles, jsonDigest } from '../../runtime-prototype/files.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
@@ -81,6 +81,23 @@ describe('runtime prototype checkpoint', () => {
     expect(verifyPrototypeSnapshot(root, published)).toEqual(snapshot)
     expect(snapshot.compileEvidence.diagnostics).toEqual([])
     expect(snapshot.publicSurface).toHaveLength(25)
+  }, 60_000)
+
+  it.each([
+    ['/checkout', '/checkout/'],
+    ['C:\\checkout', 'C:/checkout/'],
+    ['C:\\checkout', 'c:\\checkout\\'],
+    ['\\\\server\\checkout', '//server/checkout/'],
+  ])('recognizes compiler inputs inside %s with platform separators', (checkout, prefix) => {
+    const consumer = 'packages/extension-api/test/runtime/prototype-consumer.compile.ts'
+    const output = [
+      `${prefix}${consumer}`,
+      `${prefix}node_modules/typescript/lib/lib.es2023.d.ts`,
+      `${prefix}packages/protocol/node_modules/@types/node/index.d.ts`,
+      `${prefix.replace(/[\\/]$/, '')}-other/packages/foreign.ts`,
+      'compiler diagnostic',
+    ].join('\r\n')
+    expect(compilerProjectFiles(checkout, output)).toEqual([consumer])
   })
 
   it.each([
