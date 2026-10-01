@@ -2536,9 +2536,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // config source pins admitted snapshots and resolves layered documents. A pinned
   // read names one revision and does not ask the source for a newer snapshot.
   // Combined measured 50715.
-  // Scoped dependency projection over one fixed Cordis root.
-  // Re-measured with this guard's countLines(): 51097, exact cap, no spare.
-  'packages/host/src': 51097,
+  // Scoped dependency projection over one fixed Cordis root. Measured 51097.
+  // Default blob and artifacts services: uploads, pins and gc in one SQLite store, publication,
+  // grants and download tickets in another, reads through the selected blob service.
+  // Re-measured with this guard's countLines(): 52711, exact cap, no spare.
+  'packages/host/src': 52711,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
