@@ -19,6 +19,8 @@ English | [简体中文](README.zh-CN.md)
 
 [Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS (coming soon)](docs/guide/mhs.md)
 
+Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0](LICENSE)
+
 </div>
 
 Taking AI into a real deployment is rarely about the model alone. It is about the customer's systems, the people who approve the work, and the details that differ at every site. Agnes Harness (AGH) connects models, tools, task state, and business interfaces: **put the differences into plugins, let the harness run and record the work, and carry what you validated into the next deployment.**
@@ -179,6 +181,8 @@ Follow the [quickstart](docs/guide/quickstart.md) to inspect results, find the s
 The full documentation is available in [English](docs/README.md) and [简体中文](docs/README.zh-CN.md). Each page links to the same topic in the other language.
 
 ## Current status
+
+AGH is a developer preview.
 
 | Area | State |
 | --- | --- |

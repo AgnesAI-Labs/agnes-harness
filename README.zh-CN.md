@@ -19,6 +19,8 @@
 
 [快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [体验示例](docs/guide/demo.zh-CN.md) · [开发插件](docs/develop/plugins.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [MHS（即将开放）](docs/guide/mhs.zh-CN.md)
 
+开发者预览（pre-alpha） · [源码构建](#从源码开始) · [Apache-2.0](LICENSE)
+
 </div>
 
 把 AI 带进真实现场，难点往往不在模型本身，而在客户的业务系统、负责审批的人，以及每个现场都不一样的细节。Agnes Harness（AGH）把模型、工具、任务状态和业务界面连接在一起：**把现场差异写进插件，让 Harness 负责执行并留下记录，把验证过的能力带到下一个项目。**
@@ -179,6 +181,8 @@ node packages/cli/dist/local/agnes.mjs -p "简要说明当前项目的用途"
 完整文档提供[英文](docs/README.md)与[简体中文](docs/README.zh-CN.md)版本，每页都可以切换到同一主题的另一种语言。
 
 ## 当前状态
+
+AGH 当前为开发者预览。
 
 | 方面 | 状态 |
 | --- | --- |
