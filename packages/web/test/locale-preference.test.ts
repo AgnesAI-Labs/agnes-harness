@@ -51,6 +51,8 @@ describe('locale preference', () => {
     document.body.innerHTML = `
       <section data-i18n-aria="settings.appearance.language" aria-label="Language">
         <span data-i18n="settings.appearance.language">Language</span>
+        <input data-i18n-placeholder="settings.appearance.language" placeholder="Language" />
+        <button data-i18n-title="settings.appearance.language" title="Language"></button>
         <input type="radio" name="agnes-locale" value="en" checked />
         <input type="radio" name="agnes-locale" value="zh-CN" />
       </section>
@@ -61,6 +63,8 @@ describe('locale preference', () => {
     expect(document.documentElement.lang).toBe('zh-CN')
     expect(document.querySelector('[data-i18n="settings.appearance.language"]')?.textContent).toBe('语言')
     expect(document.querySelector('section')?.getAttribute('aria-label')).toBe('语言')
+    expect(document.querySelector('[data-i18n-placeholder]')?.getAttribute('placeholder')).toBe('语言')
+    expect(document.querySelector('[data-i18n-title]')?.getAttribute('title')).toBe('语言')
     expect(document.querySelector<HTMLInputElement>('input[value="zh-CN"]')?.checked).toBe(true)
     expect(document.querySelector<HTMLInputElement>('input[value="en"]')?.checked).toBe(false)
   })

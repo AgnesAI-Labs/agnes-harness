@@ -38,17 +38,23 @@ export function applyDocumentLocale(root: LocaleRoot, locale: UiLocale): void {
   root.lang = locale
 }
 
-/** 把 `data-i18n` 文本和 `data-i18n-aria` 标签回填成当前语言。 */
+/** 把静态文案标记回填成当前语言。 */
 export function applyLocaleText(root: ParentNode, translate: (key: string) => string): void {
   for (const node of root.querySelectorAll<HTMLElement>('[data-i18n]')) {
     const key = node.getAttribute('data-i18n')
     if (!key) continue
     node.textContent = translate(key)
   }
-  for (const node of root.querySelectorAll<HTMLElement>('[data-i18n-aria]')) {
-    const key = node.getAttribute('data-i18n-aria')
-    if (!key) continue
-    node.setAttribute('aria-label', translate(key))
+  for (const [marker, attribute] of [
+    ['data-i18n-aria', 'aria-label'],
+    ['data-i18n-placeholder', 'placeholder'],
+    ['data-i18n-title', 'title'],
+  ] as const) {
+    for (const node of root.querySelectorAll<HTMLElement>(`[${marker}]`)) {
+      const key = node.getAttribute(marker)
+      if (!key) continue
+      node.setAttribute(attribute, translate(key))
+    }
   }
 }
 

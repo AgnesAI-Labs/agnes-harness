@@ -5573,20 +5573,26 @@ body.admin-page {
   color: var(--agnes-brand-primary);
   text-align: center;
 }
-.account-dialog-close {
+#account-dialog .account-dialog-close {
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
   z-index: 1;
 }
 .account-dialog-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   max-height: var(--dialog-max-height);
-  overflow-y: auto;
+  overflow: hidden;
 }
-/* 弹窗里不再需要卡片自己的内边距与滚动（由 .account-dialog-body 统一承担）。 */
+/* 只有表单内容滚动，标题与操作区始终保留在弹窗可视范围内。 */
 #account-dialog .config-detail-grid {
+  min-height: 0;
+  flex: 1 1 auto;
   padding: 0.875rem 1.25rem 1rem;
-  overflow: visible;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 #account-dialog .config-detail-heading {
   min-height: auto;
@@ -5613,8 +5619,8 @@ body.admin-page {
   text-align: start;
 }
 #account-dialog .config-detail-footer {
-  position: sticky;
-  bottom: 0;
+  position: static;
+  flex: 0 0 auto;
 }
 /* 模型账户页的字段整行铺开（用户要求改成上下结构）；
    设置弹窗整体在 #config-form 内，故用面板 id 收窄作用范围。 */
@@ -5910,6 +5916,9 @@ body.admin-page {
   #config-form #config-test,
   #config-save {
     width: 100%;
+  }
+  #account-dialog .config-detail-footer {
+    flex-direction: column;
   }
 }
 .usage-disclosure {

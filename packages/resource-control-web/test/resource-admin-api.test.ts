@@ -97,13 +97,13 @@ it('keeps pagination, operation progress reads, and cancellation on fixed typed 
 
 it('explains Skill roots with templates and never interpolates an absolute path', () => {
   expect(SKILL_LOCATION_HINTS).toEqual([
-    '<当前工作区>/.agh/skills/<名称>/SKILL.md',
-    '~/.agh/skills/<名称>/SKILL.md',
-    '~/.agents/skills/<名称>/SKILL.md',
-    '~/.claude/skills/<名称>/SKILL.md',
-    '~/.codex/skills/<名称>/SKILL.md',
+    '<current-workspace>/.agh/skills/<name>/SKILL.md',
+    '~/.agh/skills/<name>/SKILL.md',
+    '~/.agents/skills/<name>/SKILL.md',
+    '~/.claude/skills/<name>/SKILL.md',
+    '~/.codex/skills/<name>/SKILL.md',
   ])
-  expect(SKILL_EMPTY_COPY).toContain('不会读取普通 skills/ 文件夹')
+  expect(SKILL_EMPTY_COPY).toContain('ordinary skills/ folders are not read')
   expect(SKILL_EMPTY_COPY).not.toMatch(/\/Users\/|\/home\/|[A-Za-z]:\\/)
 })
 

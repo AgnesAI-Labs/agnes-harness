@@ -1,4 +1,12 @@
-import { applyDocumentLocale, LOCALE_STORAGE_KEY, readLocalePreference } from './locale-preference.js'
+import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
+import { pluginAdminShellLocaleCatalog } from './admin/plugins/locales/shell.js'
+import {
+  applyDocumentLocale,
+  applyLocaleText,
+  LOCALE_STORAGE_KEY,
+  readLocalePreference,
+  type UiLocale,
+} from './locale-preference.js'
 import {
   applySkinTokens,
   readSkinCache,
@@ -37,6 +45,33 @@ const storage = safeThemeStorage(window)
 const override = skinOverride(window.location.search)
 let writtenSkinTokens: Set<string> = new Set()
 let skinSheet: SkinSheetState = { sheet: undefined, css: undefined }
+let shellLocaleBootScheduled = false
+
+function staticShellCatalog() {
+  if (document.body?.id === 'plugin-admin-page') return pluginAdminShellLocaleCatalog
+  if (document.body?.id === 'resource-admin-page') return resourceAdminShellLocaleCatalog
+  return undefined
+}
+
+/** Apply the standalone page shell before its deferred application module can run. */
+function paintStaticShell(locale: UiLocale): void {
+  if (!document.body) {
+    if (shellLocaleBootScheduled) return
+    shellLocaleBootScheduled = true
+    document.addEventListener(
+      'DOMContentLoaded',
+      () => {
+        shellLocaleBootScheduled = false
+        paintStaticShell(readLocalePreference(storage))
+      },
+      { once: true },
+    )
+    return
+  }
+  const catalog = staticShellCatalog()
+  if (!catalog) return
+  applyLocaleText(document, (key) => catalog[locale][key] ?? catalog.en[key] ?? key)
+}
 
 /**
  * 皮肤样式表走**构造式样式表 + `adoptedStyleSheets`**。
@@ -65,7 +100,9 @@ const paint = (): void => {
   applyTheme(document.documentElement, mode)
   // 字号同样在首帧前定好，避免先按 100% 排一次版再跳。
   applyFontScale(document.documentElement, readFontScale(storage))
-  applyDocumentLocale(document.documentElement, readLocalePreference(storage))
+  const locale = readLocalePreference(storage)
+  applyDocumentLocale(document.documentElement, locale)
+  paintStaticShell(locale)
   paintSkin(mode)
 }
 

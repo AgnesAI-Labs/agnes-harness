@@ -940,28 +940,42 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
     if (!existing && (current?.accounts.length ?? 0) >= 64)
       throw new ConfigurationError('CONFIG_INVALID_INPUT')
     // Supplying a new API key is an explicit OAuth -> API-key conversion for dual-auth providers.
-    // An omitted key retains and revalidates the existing OAuth grant.
+    // An omitted key retains the existing OAuth grant; connection/model changes still revalidate it.
     const oauthEntry = existing?.authType === 'oauth' && parsed.apiKey === undefined
     const entry = oauthEntry ? providerFor(parsed.entry.id, 'oauth') : parsed.entry
     const baseUrl =
       input.baseUrl === undefined
         ? (existing?.baseUrl ?? providerEndpoint(entry, undefined))
         : providerEndpoint(entry, input.baseUrl)
-    const result = oauthEntry
-      ? {
-          models: (await staticCatalogue(entry)).records.map((m) => ({ id: m.id, name: m.name })),
-          verified: true,
-        }
-      : await test({
-          providerId: parsed.entry.id,
-          accountId: id,
-          baseUrl,
-          ...(parsed.apiKey === undefined ? {} : { apiKey: parsed.apiKey }),
-        })
+    const labelOnlyUpdate =
+      !!existing &&
+      parsed.apiKey === undefined &&
+      input.enabled === undefined &&
+      input.makeDefault === undefined &&
+      existing.id === parsed.entry.id &&
+      existing.baseUrl === baseUrl &&
+      existing.model === parsed.model &&
+      existing.label !== label
+    let result: ConfigTestResult
+    if (labelOnlyUpdate) {
+      result = { models: structuredClone(existing?.models ?? []), verified: true }
+    } else if (oauthEntry) {
+      result = {
+        models: (await staticCatalogue(entry)).records.map((m) => ({ id: m.id, name: m.name })),
+        verified: true,
+      }
+    } else {
+      result = await test({
+        providerId: parsed.entry.id,
+        accountId: id,
+        baseUrl,
+        ...(parsed.apiKey === undefined ? {} : { apiKey: parsed.apiKey }),
+      })
+    }
     if (!result.verified) throw new ConfigurationError('CONFIG_TEST_FAILED')
     if (!result.models.some((model) => model.id === parsed.model))
       throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
-    if (oauthEntry) {
+    if (oauthEntry && !labelOnlyUpdate) {
       if (!existing) throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
       const signal = AbortSignal.timeout(45_000)
       const provider = getSubscriptionProvider(existing.id)

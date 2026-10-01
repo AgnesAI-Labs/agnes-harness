@@ -174,9 +174,27 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   let focusReturn: HTMLElement | null = null
   let suggestedAccountLabel: string | undefined
   const providerId = () => ui.provider.value.split(':')[0] ?? ''
+  const canUseSavedModels = (): boolean => {
+    const account = selectedAccount()
+    return (
+      !!account &&
+      !!tested?.models.length &&
+      account.providerId === providerId() &&
+      account.authType === ui.authMethod.value &&
+      account.baseUrl.replace(/\/$/, '') === ui.baseUrl.value.trim().replace(/\/$/, '') &&
+      !ui.apiKey.value
+    )
+  }
   const authMethods = (provider: ConfigProvider) => provider.authMethods ?? [provider.authType ?? 'api-key']
   const providerValue = (provider: ConfigProvider, auth: string) =>
     auth === 'oauth' && authMethods(provider).includes('api-key') ? `${provider.id}:oauth` : provider.id
+  const isOAuth = () => ui.authMethod.value === 'oauth'
+  const hasUnverifiedSavedChanges = (): boolean => {
+    const account = selectedAccount()
+    if (!account || !canUseSavedModels()) return false
+    const name = accountName?.value.trim()
+    return ui.models.value !== account.model || (!!name && name !== account.label)
+  }
 
   const oauth = oauthControls(ui.oauthMount, options.client.config, {
     input: () => {
@@ -212,8 +230,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     },
     error: (error) => setError(error),
   })
-  const isOAuth = () => ui.authMethod.value === 'oauth'
-
+  const modelReadyForSave = (): boolean =>
+    !!tested?.verified ||
+    (isOAuth() && oauth.operation() !== undefined && ui.models.value !== '') ||
+    hasUnverifiedSavedChanges()
   const current = (token: number, inputRevision?: number): boolean =>
     token === lifecycle && ui.dialog.open && (inputRevision === undefined || inputRevision === revision)
 
@@ -262,9 +282,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       !connected ||
       busy ||
       (oauthSelected && (oauth.operation() ? !tested?.models.length || !ui.models.value : !selectedAccount()))
-    ui.models.disabled = !connected || busy || !tested?.models.length || (!oauthSelected && !tested.verified)
+    const savedModelsAvailable = canUseSavedModels()
+    ui.models.disabled =
+      !connected ||
+      busy ||
+      !tested?.models.length ||
+      (!oauthSelected && !tested.verified && !savedModelsAvailable)
     ui.save.disabled =
-      !connected || busy || !tested?.verified || tested.models.length === 0 || ui.models.value === ''
+      !connected || busy || !modelReadyForSave() || !tested?.models.length || ui.models.value === ''
     providerPicker.sync()
   }
 
@@ -339,7 +364,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     testGeneration += 1
     testPending = false
     const saved = selectedAccount()
-    tested = isOAuth() && saved?.authType === 'oauth' ? { models: saved.models, verified: false } : undefined
+    tested = saved?.models.length ? { models: saved.models, verified: false } : undefined
     ui.models.value = ''
     renderModels()
     if (clearError) ui.error.textContent = ''
@@ -452,7 +477,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       updateButtons()
       try {
         await options.client.config.oauth({ action: 'test', operationId: oauthId, model })
-        if (ownsTest()) ui.state.textContent = '所选模型测试通过，可以保存账户。'
+        if (ownsTest()) {
+          if (tested) tested = { ...tested, verified: true }
+          ui.state.textContent = '所选模型测试通过，可以保存账户。'
+        }
       } catch (error) {
         if (ownsTest()) setError(error)
       } finally {
@@ -500,7 +528,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   }
 
   const save = async (): Promise<void> => {
-    if (!connected || testPending || savePending || !tested?.verified || !ui.models.value) return
+    if (
+      !connected ||
+      testPending ||
+      savePending ||
+      !tested?.models.length ||
+      !modelReadyForSave() ||
+      !ui.models.value
+    )
+      return
     const token = lifecycle
     const inputRevision = revision
     const modelId = ui.models.value
@@ -582,7 +618,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     resetTest()
     renderAccounts()
     ui.state.textContent = id
-      ? '正在编辑账户。测试后保存；修改只对新会话生效。'
+      ? '正在编辑账户。只修改账户名称或默认模型可直接保存；连接信息有变更时需重新测试。'
       : '添加模型账户；每个账户单独保存地址与密钥。'
     if (accountDialogTitle) accountDialogTitle.textContent = id ? '账户详情' : '添加账户'
     if (accountDialogContext)
@@ -727,6 +763,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   })
   ui.baseUrl.addEventListener('input', () => resetTest())
   ui.apiKey.addEventListener('input', () => resetTest())
+  accountName?.addEventListener('input', updateButtons)
   ui.models.addEventListener('change', () => {
     if (isOAuth() && !oauth.operation() && tested) tested = { ...tested, verified: false }
     updateButtons()

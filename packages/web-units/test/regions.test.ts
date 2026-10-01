@@ -21,6 +21,7 @@ const roots: Root[] = []
 afterEach(() => {
   while (roots.length) roots.pop()?.unmount()
   document.body.replaceChildren()
+  document.documentElement.lang = 'en'
 })
 
 describe('independent core web-unit implementations', () => {
@@ -181,5 +182,21 @@ describe('independent core web-unit implementations', () => {
     root.unmount()
     expect(reset).toBe(1)
     expect(stopped).toBe(1)
+  })
+
+  it('renders plugin and resource pane templates with stable locale markers', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    document.documentElement.lang = 'en'
+    const root = createRoot(host)
+    roots.push(root)
+
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'plugin' })))
+    expect(host.querySelector('#install-source')?.textContent).toBe('Install from source')
+    expect(host.querySelector('#install-source')?.getAttribute('data-i18n')).toBe('shell.install')
+
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'resources' })))
+    expect(host.querySelector('#skill-refresh')?.textContent).toBe('Refresh Skill catalog')
+    expect(host.querySelector('#resource-list')?.getAttribute('data-i18n-aria')).toBe('shell.list.aria')
   })
 })

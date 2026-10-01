@@ -499,8 +499,8 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
             error: {
               code: 'ADMIN_UNAVAILABLE',
               message: adminPath.startsWith('/admin/plugins/api/')
-                ? '插件管理后台暂时不可用。'
-                : '资源管理后台暂时不可用。',
+                ? 'The plugin admin service is temporarily unavailable.'
+                : 'The resource admin service is temporarily unavailable.',
             },
           }),
         )

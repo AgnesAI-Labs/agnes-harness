@@ -206,7 +206,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | 语言底座 | yuan | 已完成（2026-10-01，`c3fbcb1`）。第 6.4 节的缺陷未修 |
 | Web 壳 | zzl | 进行中（2026-10-01） |
 | 设置与通用 | zzl | 进行中（2026-10-01） |
-| 管理与资源 | swx | 进行中（2026-10-01） |
+| 管理与资源 | swx | 已完成（2026-10-01） |
 | 诊断与 Computer Use | yuan | 已完成（2026-10-01，`661a0c0`、`22f6020`、`db1c53e`） |
 | CLI | zzl | 进行中（2026-10-01） |
 | 错误码收口 | yuan | 已完成（2026-10-01，`bb5d6d8`） |
@@ -241,11 +241,11 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| A1 | 集中标签 | `packages/web-ui/src/admin-text.ts`、`ui/state-lights.tsx` | 进行中，swx（2026-10-01） |
-| A2 | 确认、列表和详情 | `admin-confirmation.tsx`、`admin-dialogs.tsx`、`admin-list.tsx`、`admin-detail.tsx` | 未开始 |
-| A3 | 插件管理逻辑，以及插件页模板 | `packages/web/src/admin/plugins/admin.tsx`、`source-form.ts`；`settings.ts` 的 `#plugin-settings-pane` | 未开始 |
-| A4 | 资源管理 | `resource-list.tsx`、`resource-detail.tsx`；`packages/resource-control-web/src/admin.tsx`、`skill-copy.ts`、`mcp-form-validation.ts`、`api.ts`；`settings.ts` 的 `#resource-settings-pane` | 未开始 |
-| A5 | 静态管理页和服务器不可用提示 | `admin.html`、`resources.html` 的正文；`packages/web-server/src/server.ts` 的两句不可用提示。回填依赖 W6 的 `theme-boot.ts`，A5 在 W6 之后收尾 | 未开始 |
+| A1 | 集中标签 | `packages/web-ui/src/admin-text.ts`、`ui/state-lights.tsx` | 已完成，swx（2026-10-01） |
+| A2 | 确认、列表和详情 | `admin-confirmation.tsx`、`admin-dialogs.tsx`、`admin-list.tsx`、`admin-detail.tsx` | 已完成，swx（2026-10-01） |
+| A3 | 插件管理逻辑，以及插件页模板 | `packages/web/src/admin/plugins/admin.tsx`、`source-form.ts`；`settings.ts` 的 `#plugin-settings-pane` | 已完成，swx（2026-10-01） |
+| A4 | 资源管理 | `resource-list.tsx`、`resource-detail.tsx`；`packages/resource-control-web/src/admin.tsx`、`skill-copy.ts`、`mcp-form-validation.ts`、`api.ts`；`settings.ts` 的 `#resource-settings-pane` | 已完成，swx（2026-10-01） |
+| A5 | 静态管理页和服务器不可用提示 | `admin.html`、`resources.html` 的正文；`packages/web-server/src/server.ts` 的两句不可用提示。回填依赖 W6 的 `theme-boot.ts`，A5 在 W6 之后收尾 | 已完成，swx（2026-10-01） |
 
 ### 9.5 诊断与 Computer Use
 
