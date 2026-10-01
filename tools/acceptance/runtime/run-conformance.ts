@@ -70,14 +70,27 @@ export interface RunConformanceOptions {
 
 async function loadConfigBinder(href: string): Promise<{
   bindConfigContract: (harness: ConformanceHarness, command: string, providerId: string) => Promise<void>
+  bindReferenceConfigContract: (
+    harness: ConformanceHarness,
+    command: string,
+    providerId: string,
+  ) => Promise<void>
 }> {
   return (await import(href)) as {
     bindConfigContract: (harness: ConformanceHarness, command: string, providerId: string) => Promise<void>
+    bindReferenceConfigContract: (
+      harness: ConformanceHarness,
+      command: string,
+      providerId: string,
+    ) => Promise<void>
   }
 }
 
 function configProviderIds(providers: readonly string[]): readonly string[] {
-  return providers.filter((providerId) => providerId === 'default' || providerId === 'agh.default/config')
+  return providers.filter(
+    (providerId) =>
+      providerId === 'default' || providerId === 'agh.default/config' || providerId === 'reference',
+  )
 }
 
 async function registerRequestedContracts(
@@ -90,7 +103,11 @@ async function registerRequestedContracts(
   const href = new URL('./platform/config-conformance.ts', import.meta.url).href
   const binder = await loadConfigBinder(href)
   for (const providerId of providerIds) {
-    await binder.bindConfigContract(harness, options.command, providerId)
+    if (providerId === 'reference') {
+      await binder.bindReferenceConfigContract(harness, options.command, providerId)
+    } else {
+      await binder.bindConfigContract(harness, options.command, providerId)
+    }
   }
 }
 
