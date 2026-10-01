@@ -4,10 +4,17 @@ import { writeSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { StatementSync } from 'node:sqlite'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { BlobReadPort, CallContext, Outcome, ScopeRef } from '@agnes/extension-api/runtime'
-import { createTestServiceContainer } from '@agnes/extension-api/testkit'
+import type {
+  BlobReadPort,
+  BoundService,
+  CallContext,
+  Outcome,
+  ScopedDependencies,
+  ScopeRef,
+} from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
 import { RuntimeClientTransportPolicy, RuntimeSchemaRefs } from '@agnes/protocol/runtime'
+import { blobError } from '../../../src/runtime/blob/uploads.js'
 import {
   type ArtifactsService,
   BLOB_REQUIREMENT,
@@ -113,6 +120,22 @@ export const PUBLICATION_CONTENT: Content = {
 
 export type Services = Readonly<{ blob: BlobService; artifacts: ArtifactsService; close(): void }>
 
+/**
+ * The blob service the default artifacts service selects. Child processes assemble without the
+ * test service container, which only test files may import.
+ */
+function selectedBlob(bound: BoundService): ScopedDependencies {
+  const dependencies: ScopedDependencies = {
+    get: (requirement) =>
+      requirement.contract === BLOB_REQUIREMENT.contract && requirement.major === BLOB_REQUIREMENT.major
+        ? { ok: true, value: bound }
+        : { ok: false, error: blobError('not_found', 'service is not registered') },
+    openScope: async () => ({ ok: true, value: dependencies }),
+    close: async () => undefined,
+  }
+  return dependencies
+}
+
 /** The default artifacts service over the default blob service, as artifacts.test.ts assembles them. */
 export function openServices(
   dataDir: string,
@@ -131,16 +154,15 @@ export function openServices(
     authorizeRead: trusted,
     ...clock,
   })
-  const container = createTestServiceContainer()
-  container.register({
-    requirement: BLOB_REQUIREMENT,
-    binding: BLOB_BINDING,
-    blobRead: options.read ? options.read(blob.blobRead) : blob.blobRead,
-  })
   const assembled = createArtifactsService({
     dataDir,
     authorityId: 'artifacts-authority',
-    dependencies: container.dependencies,
+    dependencies: selectedBlob({
+      binding: BLOB_BINDING,
+      blobRead: options.read ? options.read(blob.blobRead) : blob.blobRead,
+      query: async () => ({ ok: false, error: blobError('operation_not_supported', 'no query') }),
+      compute: async () => ({ ok: false, error: blobError('operation_not_supported', 'no compute') }),
+    }),
     blobActions: { ...blob, ...options.actions?.(blob) },
     authorize: trusted,
     ...clock,
