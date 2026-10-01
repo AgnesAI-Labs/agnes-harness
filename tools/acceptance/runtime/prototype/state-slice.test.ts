@@ -46,6 +46,7 @@ import {
   sideListsDigest,
 } from '../../../../packages/host/src/runtime/state/records.ts'
 import { jcs } from '../../../../packages/protocol/src/jcs.ts'
+import { validateRuntime } from '../../../../packages/protocol/src/runtime/public.ts'
 
 const authority: StateAuthorityRef = { authorityId: 'authority-1', tenantId: 'tenant-1', authorityEpoch: 1 }
 const scope = { installationId: 'install-1', kind: 'installation' as const }
@@ -1480,6 +1481,25 @@ function unwrap<T>(result: Outcome<T>, label: string): T {
   if (!result.ok)
     throw new Error(`${label}: ${result.error.code}/${result.error.detailCode} ${result.error.message}`)
   return result.value
+}
+
+function expectSchema<K extends Parameters<typeof validateRuntime>[0]>(kind: K, value: unknown): void {
+  const result = validateRuntime(kind, value)
+  if (!result.ok) throw new Error(`${kind}: ${JSON.stringify(result.errors)}`)
+}
+
+function storedOutbox(path: string): Record<string, unknown> {
+  const rows = query<{ value_json: string }>(
+    path,
+    "SELECT value_json FROM runtime_records WHERE record_id LIKE 'outbox:%' ORDER BY record_id",
+  )
+  if (!rows[0]) throw new Error('missing outbox record')
+  return JSON.parse(rows[0].value_json) as Record<string, unknown>
+}
+
+function publicOutbox(value: Record<string, unknown>): Record<string, unknown> {
+  const { sessionId: _sessionId, sourceReceiptId: _sourceReceiptId, ...record } = value
+  return record
 }
 
 function recordValue<T>(path: string, recordId: string): T {
@@ -3672,6 +3692,8 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     if (!first) throw new Error('missing claim')
     expect(first.claim).toMatchObject({ ownerId: 'owner-1', epoch: 1, until: '2026-04-01T00:00:01.000Z' })
     expect(first.event.delivery).toBe('claimed')
+    expect(first.event.consecutiveFailures).toBe(0)
+    expect(first.event.lastError).toBeNull()
     expect(first.event.eventId).toBe(first.claim.eventId)
     const replayed = unwrap(
       await store.claimOutbox(
@@ -3768,6 +3790,10 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     if (!current) throw new Error('missing reclaim')
     expect(current.epoch).toBe(2)
     expect(current.eventId).toBe(stale.eventId)
+    expect(next[0]?.event.delivery).toBe('claimed')
+    expect(next[0]?.event.consecutiveFailures).toBe(1)
+    expect(next[0]?.event.attempts).toBe(1)
+    expect(next[0]?.event.lastError).toMatchObject({ code: 'internal', detailCode: 'downstream' })
     const oldAck = await store.ackOutbox(
       { requestId: 'ack-old', claim: stale, acknowledgement: inline({ acked: true }) },
       context(),
@@ -3783,6 +3809,161 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     )
     expect(acked).toEqual({ eventId: stale.eventId, state: 'acked' })
     store.close()
+  })
+
+  it('checks successful state results against the runtime schema', async () => {
+    const leasedPath = file()
+    const leased = openStore(leasedPath)
+    expectSchema('AdmissionProbe', unwrap(await leased.createRun(admission(), context()), 'createRun'))
+    expectSchema('StateOpenResult', unwrap(await leased.open(readOpen('open-read'), context()), 'read'))
+    expectSchema(
+      'StateLeaseResult',
+      unwrap(await leased.lease(leaseRequest('lease-acquire', 'acquire', 'writer-a', 0), context()), 'lease'),
+    )
+    leased.close()
+
+    const path = file()
+    const clock = { ms: Date.parse(admittedAt) }
+    const store = openStore(path, () => clock.ms)
+    unwrap(await store.createRun(admission(), context()), 'createRun')
+    expectSchema(
+      'StateOpenResult',
+      unwrap(await store.open(writeOpen('open-write', 'writer-a', 600_000), context()), 'open'),
+    )
+    const admittedInvocation = await preparedInvocation(store, 'invocation-1', 0)
+    expectSchema('AdmitInvocationResult', admittedInvocation.admitted)
+    const action = preparedAction('step-1')
+    expectSchema(
+      'StateCommitReceipt',
+      unwrap(
+        await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+        'advance',
+      ),
+    )
+    const request = dispatchBody(action, 'invocation-1', 1, 'admission-1')
+    const admitted = unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+    expectSchema('DispatchAdmissionResult', admitted)
+    if (admitted.state !== 'admitted') throw new Error('expected an admission')
+    await markRunning(store, 'invocation-1', 1, request.attemptId, 'mark-1')
+    expectSchema(
+      'ReceiptIntakeResult',
+      unwrap(
+        await store.intakeReceipt(
+          intakeOf('intake-1', action, request.attemptId, admitted.authorizationId, 'receipt-1'),
+          context(),
+        ),
+        'intake',
+      ),
+    )
+    const pending = publicOutbox(storedOutbox(path))
+    expectSchema('OutboxRecord', pending)
+    expect(pending).toMatchObject({
+      delivery: 'pending',
+      attempts: 0,
+      consecutiveFailures: 0,
+      lastError: null,
+    })
+    const destination = stableId('obxdst', authority.authorityId)
+    const claimed = unwrap(
+      await store.claimOutbox(
+        { requestId: 'claim-1', destination, ownerId: 'owner-1', limit: 10, leaseMs: 1_000 },
+        context(),
+      ),
+      'claim',
+    )
+    expectSchema('ClaimOutboxResult', claimed)
+    expect(claimed[0]?.event).toMatchObject({
+      delivery: 'claimed',
+      attempts: 0,
+      consecutiveFailures: 0,
+      lastError: null,
+    })
+    const claim = claimed[0]?.claim
+    if (!claim) throw new Error('missing claim')
+    const error = {
+      code: 'internal' as const,
+      detailCode: 'downstream',
+      message: 'downstream failed',
+      retryAdvice: { kind: 'never' as const },
+      diagnosticId: 'diag-fail-1',
+    }
+    const failed = unwrap(await store.failOutbox({ requestId: 'fail-1', claim, error }, context()), 'fail')
+    expectSchema('FailOutboxResult', failed)
+    expect(failed.state).toBe('pending')
+    const live = query<{
+      attempts: number
+      consecutive_failures: number
+      next_attempt_at: number
+      ack_ref: string | null
+      error_json: string
+    }>(
+      path,
+      'SELECT attempts, consecutive_failures, next_attempt_at, ack_ref, error_json FROM runtime_outbox_delivery',
+    )[0]
+    if (!live) throw new Error('missing delivery')
+    expectSchema('OutboxRecord', {
+      ...publicOutbox(storedOutbox(path)),
+      delivery: 'pending',
+      attempts: live.attempts,
+      consecutiveFailures: live.consecutive_failures,
+      nextAttemptAt: new Date(live.next_attempt_at).toISOString(),
+      claim: null,
+      ackRef: live.ack_ref,
+      lastError: JSON.parse(live.error_json),
+    })
+    clock.ms += 1_000
+    const again = unwrap(
+      await store.claimOutbox(
+        { requestId: 'claim-2', destination, ownerId: 'owner-1', limit: 10, leaseMs: 1_000 },
+        context(),
+      ),
+      'reclaim',
+    )
+    expect(again[0]?.event).toMatchObject({
+      delivery: 'claimed',
+      attempts: 1,
+      consecutiveFailures: 1,
+      lastError: error,
+    })
+    const current = again[0]?.claim
+    if (!current) throw new Error('missing reclaim')
+    expectSchema(
+      'AckOutboxResult',
+      unwrap(
+        await store.ackOutbox(
+          { requestId: 'ack-1', claim: current, acknowledgement: inline({ acked: true }) },
+          context(),
+        ),
+        'ack',
+      ),
+    )
+    const acked = query<{
+      delivery: string
+      attempts: number
+      consecutive_failures: number
+      error_json: string | null
+      ack_ref: string | null
+      next_attempt_at: number
+    }>(
+      path,
+      'SELECT delivery, attempts, consecutive_failures, error_json, ack_ref, next_attempt_at FROM runtime_outbox_delivery',
+    )[0]
+    if (!acked) throw new Error('missing acknowledgement')
+    expectSchema('OutboxRecord', {
+      ...publicOutbox(storedOutbox(path)),
+      delivery: 'acked',
+      attempts: acked.attempts,
+      consecutiveFailures: acked.consecutive_failures,
+      nextAttemptAt: new Date(acked.next_attempt_at).toISOString(),
+      claim: null,
+      ackRef: acked.ack_ref,
+      lastError: null,
+    })
+    expect(acked).toMatchObject({ delivery: 'acked', attempts: 1, consecutive_failures: 1, error_json: null })
+    store.close()
+    const reopened = openStore(path, () => clock.ms)
+    expect((await reopened.open(readOpen('open-after-ack'), context())).ok).toBe(true)
+    reopened.close()
   })
 
   it('dead-letters the original outbox event after 20 failures', async () => {
@@ -3826,9 +4007,14 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
         `claim ${attempt}`,
       )
       const claim = claimed[0]?.claim
-      if (!claim) throw new Error(`missing claim ${attempt}`)
+      const event = claimed[0]?.event
+      if (!claim || !event) throw new Error(`missing claim ${attempt}`)
       eventId = claim.eventId
       expect(claim.epoch).toBe(attempt)
+      expect(event.delivery).toBe('claimed')
+      expect(event.attempts).toBe(attempt - 1)
+      expect(event.consecutiveFailures).toBe(attempt - 1)
+      expect(event.lastError).toEqual(attempt === 1 ? null : error)
       const failed = unwrap(
         await store.failOutbox({ requestId: `fail-${attempt}`, claim, error }, context()),
         `fail ${attempt}`,
@@ -3857,12 +4043,33 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
       query<{ n: number }>(path, "SELECT COUNT(*) AS n FROM runtime_records WHERE record_id LIKE 'outbox:%'"),
     ).toEqual([{ n: 1 }])
     expect(
-      query<{ delivery: string; event_id: string }>(
+      query<{ delivery: string; event_id: string; attempts: number; consecutive_failures: number }>(
         path,
-        'SELECT delivery, event_id FROM runtime_outbox_delivery',
+        'SELECT delivery, event_id, attempts, consecutive_failures FROM runtime_outbox_delivery',
       ),
-    ).toEqual([{ delivery: 'dead', event_id: eventId }])
+    ).toEqual([{ delivery: 'dead', event_id: eventId, attempts: 20, consecutive_failures: 20 }])
+    const deadRow = query<{
+      next_attempt_at: number
+      ack_ref: string | null
+      error_json: string
+    }>(path, 'SELECT next_attempt_at, ack_ref, error_json FROM runtime_outbox_delivery')[0]
+    if (!deadRow) throw new Error('missing dead letter')
+    const stored = storedOutbox(path)
+    expectSchema('OutboxRecord', {
+      ...publicOutbox(stored),
+      delivery: 'dead',
+      attempts: 20,
+      consecutiveFailures: 20,
+      nextAttemptAt: new Date(deadRow.next_attempt_at).toISOString(),
+      claim: null,
+      ackRef: deadRow.ack_ref,
+      lastError: JSON.parse(deadRow.error_json),
+    })
     store.close()
+    const reopened = openStore(path, () => clock.ms)
+    const opened = await reopened.open(readOpen('open-after-dead'), context())
+    reopened.close()
+    expect(opened.ok).toBe(true)
   })
 
   it('issues query tickets in memory and flushes only the unflushed delta', async () => {

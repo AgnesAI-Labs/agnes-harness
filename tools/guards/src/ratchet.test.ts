@@ -2526,7 +2526,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // results are checked against their schema and the proved head, authority, and current
   // lease. Outbox verification reads 500 rows at a time. A version body is matched to
   // its proof header in one pass over each table. Measured 44962.
-  'packages/host/src': 44962,
+  // Outbox delivery stores consecutiveFailures beside attempts. Open assembles
+  // the public record from that row and checks it against the runtime schema.
+  // Measured 45057 before the configuration provider was on this base.
+  // Legacy profile and preset documents convert field by field. Explicit dag-code
+  // selection and community contract references sit beside them. A replaceable
+  // config source pins admitted snapshots and resolves layered documents. A pinned
+  // read names one revision and does not ask the source for a newer snapshot.
+  // Combined measured 50715.
+  'packages/host/src': 50715,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

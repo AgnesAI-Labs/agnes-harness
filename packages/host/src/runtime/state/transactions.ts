@@ -47,6 +47,7 @@ import {
   admitInvocationTx,
   admitQueryTx,
   advanceRunTx,
+  assertStoredOutbox,
   type ControlPorts,
   type ControlScan,
   claimOutboxTx,
@@ -216,6 +217,7 @@ const RUNTIME_DDL = [
      active_until INTEGER,
      acked_epoch INTEGER,
      attempts INTEGER NOT NULL,
+     consecutive_failures INTEGER NOT NULL,
      next_attempt_at INTEGER NOT NULL,
      delivery TEXT NOT NULL,
      ack_ref TEXT,
@@ -446,11 +448,22 @@ export type RuntimeDurability = {
   checkpointFullfsync: number | null
 }
 
+const OUTBOX_OPEN_COLUMNS = `event_id, claim_epoch, acked_epoch, attempts, consecutive_failures,
+  next_attempt_at, delivery, ack_ref, error_json, active_owner, active_epoch, active_until`
+
 type OutboxDeliveryRow = {
   event_id: string
   claim_epoch: number
   acked_epoch: number | null
+  attempts: number
+  consecutive_failures: number
+  next_attempt_at: number
   delivery: string
+  ack_ref: string | null
+  error_json: string | null
+  active_owner: string | null
+  active_epoch: number | null
+  active_until: number | null
 }
 
 type MetaRow = {
@@ -2364,6 +2377,7 @@ export class RuntimeStateDatabase {
       )
       if (records.length === 0) return
       const eventIds: string[] = []
+      const bodies = new Map<string, unknown>()
       for (const record of records) {
         const value = this.parseJson<{ sessionId?: unknown }>(
           record.value_json,
@@ -2371,12 +2385,15 @@ export class RuntimeStateDatabase {
         )
         if (value.sessionId !== sessionId) continue
         eventIds.push(record.record_id.slice('outbox:'.length))
+        bodies.set(record.record_id.slice('outbox:'.length), value)
       }
       const deliveries = this.outboxDeliveries(eventIds)
       for (const eventId of eventIds) {
         const row = deliveries.get(eventId)
         if (!row) integrity('outbox delivery row is missing')
-        this.assertOutboxAck(row)
+        const body = bodies.get(eventId)
+        if (!body) integrity('outbox delivery names an unknown event')
+        assertStoredOutbox(body, row)
       }
       const last = records[records.length - 1]
       if (!last || records.length < PROOF_PAGE) return
@@ -2389,7 +2406,7 @@ export class RuntimeStateDatabase {
     let after = ''
     for (;;) {
       const rows = this.all<OutboxDeliveryRow>(
-        `SELECT event_id, claim_epoch, acked_epoch, delivery
+        `SELECT ${OUTBOX_OPEN_COLUMNS}
            FROM runtime_outbox_delivery
           WHERE session_id = ? AND event_id > ?
           ORDER BY event_id
@@ -2405,7 +2422,7 @@ export class RuntimeStateDatabase {
         if (!head) integrity('outbox delivery names an unknown event')
         const value = this.parseJson<{ sessionId?: unknown }>(head, 'record body cannot be decoded')
         if (value.sessionId !== sessionId) integrity('outbox delivery names an unknown event')
-        this.assertOutboxAck(row)
+        assertStoredOutbox(value, row)
       }
       const last = rows[rows.length - 1]
       if (!last || rows.length < PROOF_PAGE) return
@@ -2416,7 +2433,7 @@ export class RuntimeStateDatabase {
   private outboxDeliveries(eventIds: readonly string[]): Map<string, OutboxDeliveryRow> {
     if (eventIds.length === 0) return new Map()
     const rows = this.all<OutboxDeliveryRow>(
-      `SELECT event_id, claim_epoch, acked_epoch, delivery
+      `SELECT ${OUTBOX_OPEN_COLUMNS}
          FROM runtime_outbox_delivery
         WHERE event_id IN (SELECT value FROM json_each(?))`,
       JSON.stringify(eventIds),
@@ -2435,19 +2452,6 @@ export class RuntimeStateDatabase {
       JSON.stringify(recordIds),
     )
     return new Map(rows.map((row) => [row.record_id, row.value_json]))
-  }
-
-  private assertOutboxAck(row: OutboxDeliveryRow): void {
-    if (row.delivery !== 'acked') return
-    if (
-      row.acked_epoch === null ||
-      !Number.isSafeInteger(row.acked_epoch) ||
-      row.acked_epoch < 1 ||
-      !Number.isSafeInteger(row.claim_epoch) ||
-      row.claim_epoch < 1 ||
-      row.acked_epoch > row.claim_epoch
-    )
-      integrity('outbox acknowledgement has no claim epoch')
   }
 
   private writeCommit(input: WriteCommitInput): { receipt: StateCommitReceipt; verified: VerifiedSession } {

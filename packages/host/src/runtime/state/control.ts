@@ -38,6 +38,7 @@ import type {
   StateCommitReceipt,
   UsageFact,
 } from '@agnes/extension-api/runtime'
+import { validateRuntime } from '@agnes/protocol/runtime'
 import { canonicalJson } from './canonical-json.js'
 import { noteJsonParse, profiling } from './profile.js'
 import {
@@ -529,8 +530,9 @@ type DeliveryRow = {
   active_until: number | null
   acked_epoch: number | null
   attempts: number
+  consecutive_failures: number
   next_attempt_at: number
-  delivery: OutboxRecord['delivery']
+  delivery: string
   ack_ref: string | null
   error_json: string | null
   last_owner: string | null
@@ -651,8 +653,8 @@ function insertOutboxDelivery(
   ports.run(
     `INSERT INTO runtime_outbox_delivery (
        event_id, session_id, destination, claim_epoch, active_owner, active_epoch, active_until,
-       acked_epoch, attempts, next_attempt_at, delivery, ack_ref, error_json, last_owner
-     ) VALUES (?, ?, ?, 0, NULL, NULL, NULL, NULL, 0, ?, 'pending', NULL, NULL, NULL)`,
+       acked_epoch, attempts, consecutive_failures, next_attempt_at, delivery, ack_ref, error_json, last_owner
+     ) VALUES (?, ?, ?, 0, NULL, NULL, NULL, NULL, 0, 0, ?, 'pending', NULL, NULL, NULL)`,
     eventId,
     sessionId,
     destination,
@@ -681,9 +683,11 @@ function outboxValue(
     fingerprint: digestOf(payloadValue),
     delivery: 'pending',
     attempts: 0,
+    consecutiveFailures: 0,
     nextAttemptAt: stamp,
     claim: null,
     ackRef: null,
+    lastError: null,
     sessionId,
     sourceReceiptId: receiptId,
   }
@@ -1035,6 +1039,19 @@ function claimIsCurrent(
   return true
 }
 
+function deliveryError(raw: string | null): RuntimeError | null {
+  if (raw === null) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    integrity('outbox error cannot be decoded')
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+    integrity('outbox error cannot be decoded')
+  return parsed as RuntimeError
+}
+
 function assembleOutbox(stored: StoredOutbox, row: DeliveryRow): OutboxRecord {
   const claim =
     row.delivery === 'claimed' &&
@@ -1047,7 +1064,7 @@ function assembleOutbox(stored: StoredOutbox, row: DeliveryRow): OutboxRecord {
           until: new Date(row.active_until).toISOString(),
         }
       : null
-  return {
+  const record = {
     eventId: stored.eventId,
     sourceAuthorityId: stored.sourceAuthorityId,
     sourceCommitId: stored.sourceCommitId,
@@ -1055,16 +1072,89 @@ function assembleOutbox(stored: StoredOutbox, row: DeliveryRow): OutboxRecord {
     typeId: stored.typeId,
     payload: stored.payload,
     fingerprint: stored.fingerprint,
-    delivery: row.delivery,
     attempts: row.attempts,
+    consecutiveFailures: row.consecutive_failures,
     nextAttemptAt: new Date(row.next_attempt_at).toISOString(),
     claim,
     ackRef: row.ack_ref,
   }
+  const lastError = deliveryError(row.error_json)
+  if (row.delivery === 'dead') {
+    if (lastError === null) integrity('outbox dead letter has no error')
+    return { ...record, delivery: 'dead', lastError }
+  }
+  if (row.delivery !== 'pending' && row.delivery !== 'claimed' && row.delivery !== 'acked')
+    integrity('outbox delivery state is unknown')
+  return { ...record, delivery: row.delivery, lastError }
+}
+
+export function assertStoredOutbox(
+  stored: unknown,
+  row: {
+    event_id: string
+    delivery: string
+    attempts: number
+    consecutive_failures: number
+    next_attempt_at: number
+    active_owner: string | null
+    active_epoch: number | null
+    active_until: number | null
+    ack_ref: string | null
+    error_json: string | null
+    claim_epoch: number
+    acked_epoch: number | null
+  },
+): void {
+  if (row.delivery === 'acked') {
+    if (
+      row.acked_epoch === null ||
+      !Number.isSafeInteger(row.acked_epoch) ||
+      row.acked_epoch < 1 ||
+      !Number.isSafeInteger(row.claim_epoch) ||
+      row.claim_epoch < 1 ||
+      row.acked_epoch > row.claim_epoch
+    )
+      integrity('outbox acknowledgement has no claim epoch')
+  }
+  if (
+    !Number.isSafeInteger(row.attempts) ||
+    row.attempts < 0 ||
+    !Number.isSafeInteger(row.consecutive_failures) ||
+    row.consecutive_failures < 0 ||
+    row.attempts !== row.consecutive_failures
+  )
+    integrity('outbox failure count does not match its attempts')
+  if (row.delivery === 'dead') {
+    if (row.consecutive_failures < OUTBOX_DEAD_AFTER)
+      integrity('outbox dead letter is below the failure threshold')
+  } else if (row.consecutive_failures >= OUTBOX_DEAD_AFTER)
+    integrity('outbox failure count passed the dead-letter threshold')
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored))
+    integrity('outbox record does not match its schema')
+  const body = stored as StoredOutbox
+  if (body.eventId !== row.event_id) integrity('outbox record does not match its schema')
+  const record = assembleOutbox(body, {
+    event_id: row.event_id,
+    session_id: '',
+    destination: body.destination,
+    claim_epoch: row.claim_epoch,
+    active_owner: row.active_owner,
+    active_epoch: row.active_epoch,
+    active_until: row.active_until,
+    acked_epoch: row.acked_epoch,
+    attempts: row.attempts,
+    consecutive_failures: row.consecutive_failures,
+    next_attempt_at: row.next_attempt_at,
+    delivery: row.delivery,
+    ack_ref: row.ack_ref,
+    error_json: row.error_json,
+    last_owner: null,
+  })
+  if (!validateRuntime('OutboxRecord', record).ok) integrity('outbox record does not match its schema')
 }
 
 const DELIVERY_COLUMNS = `event_id, session_id, destination, claim_epoch, active_owner, active_epoch, active_until,
-  acked_epoch, attempts, next_attempt_at, delivery, ack_ref, error_json, last_owner`
+  acked_epoch, attempts, consecutive_failures, next_attempt_at, delivery, ack_ref, error_json, last_owner`
 
 function loadDelivery(ports: ControlPorts, eventId: string): DeliveryRow | undefined {
   return ports.get<DeliveryRow>(
@@ -2300,7 +2390,8 @@ export async function ackOutboxTx(
   const ackRef = stableId('ack', `${row.event_id}\0${request.requestId}`)
   ports.run(
     `UPDATE runtime_outbox_delivery
-     SET delivery = 'acked', acked_epoch = ?, ack_ref = ?, active_owner = NULL, active_epoch = NULL, active_until = NULL
+     SET delivery = 'acked', acked_epoch = ?, ack_ref = ?, active_owner = NULL, active_epoch = NULL,
+         active_until = NULL, error_json = NULL
      WHERE event_id = ?`,
     request.claim.epoch,
     ackRef,
@@ -2324,16 +2415,18 @@ export async function failOutboxTx(
     refuse('conflict', 'claim_epoch', 'outbox claim epoch does not match')
   await ports.requireSession(row.session_id)
   const attempts = row.attempts + 1
-  const dead = attempts >= OUTBOX_DEAD_AFTER
+  const consecutiveFailures = row.consecutive_failures + 1
+  const dead = consecutiveFailures >= OUTBOX_DEAD_AFTER
   const delay = Math.min(OUTBOX_BACKOFF_CAP_MS, 1_000 * 2 ** (attempts - 1))
   const nextAt = ports.now() + delay
   ports.run(
     `UPDATE runtime_outbox_delivery
-     SET delivery = ?, attempts = ?, next_attempt_at = ?, active_owner = NULL, active_epoch = NULL,
-         active_until = NULL, error_json = ?, last_owner = ?
+     SET delivery = ?, attempts = ?, consecutive_failures = ?, next_attempt_at = ?, active_owner = NULL,
+         active_epoch = NULL, active_until = NULL, error_json = ?, last_owner = ?
      WHERE event_id = ?`,
     dead ? 'dead' : 'pending',
     attempts,
+    consecutiveFailures,
     nextAt,
     canonicalJson(request.error),
     row.active_owner,
