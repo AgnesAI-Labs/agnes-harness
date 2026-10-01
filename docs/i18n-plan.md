@@ -175,7 +175,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | `#appearance-settings-pane` | 设置与通用 | 配色、皮肤、字号。语言开关已完成，不要重写那一组 `data-i18n` |
 | `#plugin-settings-pane` | 管理与资源 | 插件页标题、恢复模式、安装和搜索 |
 | `#resource-settings-pane` | 管理与资源 | 技能与 MCP 页的标题和工具条 |
-| `#computer-use-settings-pane` | 诊断与 Computer Use | Computer Use 页的标题、状态卡和按钮。诊断线未认领前，其他人不要改这一行 |
+| `#computer-use-settings-pane` | 诊断与 Computer Use（yuan） | Computer Use 页的标题、状态卡和按钮。其他人不要改这一行 |
 
 只改自己的那一行。不要把整个模板重新换行或格式化。
 
@@ -190,7 +190,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | `packages/web/public/index.html` | Web 壳 | |
 | `packages/web/public/admin.html`、`resources.html` | 管理与资源 | `lang="en"` 已落地，只迁正文 |
 | `packages/web-server/src/server.ts` | 管理与资源，只迁两句「后台暂时不可用」 | 注释不动 |
-| `packages/web/src/computer-use-state.ts`、`settings-computer-use.tsx` | 诊断与 Computer Use | 模板行见上表 |
+| `packages/web/src/computer-use-state.ts`、`settings-computer-use.tsx` | 诊断与 Computer Use（yuan） | 模板行见上表 |
 | `packages/cli-tui/src/locale.ts` 和 `packages/cli/src` | CLI | |
 
 `app.ts` 里的 locale 回调、`appearance.ts` 里的语言单选已经接好。Web 壳和设置线改这些文件时保留这段接线。
@@ -207,7 +207,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | Web 壳 | zzl | 进行中（2026-10-01） |
 | 设置与通用 | zzl | 进行中（2026-10-01） |
 | 管理与资源 | swx | 进行中（2026-10-01） |
-| 诊断与 Computer Use | | 未开始 |
+| 诊断与 Computer Use | yuan | 进行中（2026-10-01） |
 | CLI | zzl | 进行中（2026-10-01） |
 | 错误码收口 | | 未开始 |
 | 收尾核对 | | 未开始 |
