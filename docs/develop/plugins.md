@@ -106,7 +106,7 @@ A value published by `ctx.provide('name', value)` belongs to the current Context
 
 The [full-stack tutorial](fullstack.md) uses `ctx.services.register()` and `agnes.clientDescriptors` on the same trusted Cordis row. It does not turn `ctx.provide()` into a remote method or bypass restrictions with `ctx.extension().registerService()`.
 
-Current source exposes all 17 hook types through `registerHook` and routes ordinary third-party backends through `agnes.plugins` rows. Legacy `agnes.extensions` is no longer an ordinary third-party backend entry. Built-in compatibility rules differ from third-party authoring rules. Check current source, package preview, and actual row state for registration and authorization.
+Current source exposes all 16 hook types through `registerHook` and routes ordinary third-party backends through `agnes.plugins` rows. Legacy `agnes.extensions` is no longer an ordinary third-party backend entry. Built-in compatibility rules differ from third-party authoring rules. Check current source, package preview, and actual row state for registration and authorization.
 
 <a id="前后端生命周期"></a>
 

@@ -19,7 +19,6 @@ const valid: { [E in HookEvent]: HookReturnMap[E] } = {
     additionalContext: 'note',
   },
   before_request: { patch: { maxTokens: 10, samplingParams: { temperature: 0 }, metadata: { test: true } } },
-  before_provider_headers: { headers: { 'X-Ext-Test': 'value' } },
   request_error: undefined,
   tool_call: { allow: false, reason: 'refused' },
   tool_result: {
@@ -181,12 +180,6 @@ describe('author hook return boundary', () => {
       expect(() => authorHookReturn(event, null)).toThrow()
     }
   })
-
-  it('does not allow default headers to be overwritten through an extension header return', () => {
-    expect(() =>
-      authorHookReturn('before_provider_headers', { headers: { Authorization: 'secret' } }),
-    ).toThrow('invalid author hook return')
-  })
 })
 
 describe('dispatch to author validation to core18 context composition', () => {
@@ -225,8 +218,7 @@ describe('dispatch to author validation to core18 context composition', () => {
     expect(result.kind).toBe('ok')
     expect(seen).toEqual(['first'])
     expect(applied.sections[0]?.source).toBe('agnes/one')
-    const extra = applied.sections.find((section) => section.id === 'additional-context')
-    expect(new TextEncoder().encode(extra?.text).length).toBe(8190)
+    expect(new TextEncoder().encode(applied.additionalContext).length).toBe(8190)
     expect(applied.overflow).toEqual([{ ext: 'agnes/one', bytes: 9000 }])
   })
 

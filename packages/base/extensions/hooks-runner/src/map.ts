@@ -141,7 +141,6 @@ export function translateReturn<E extends HookEvent>(
     case 'shutdown':
       return observeReturn(event, blocked)
     case 'before_request':
-    case 'before_provider_headers':
       if (blocked) throw new Error(`hook result cannot block ${event}`)
       return {} as HookReturnMap[E]
   }

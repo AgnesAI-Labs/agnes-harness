@@ -19,11 +19,11 @@ const BARE_REF = /^secret:\/\/[a-z0-9-]+\/[a-z0-9._-]+$/i
 
 // Shared alternation for the two "name: value" / "name": "value" lookbehind rules below.
 const NAMES =
-  'api[_-]?key|token|secret|password|passwd|pwd|passphrase|credentials?|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|secret[_-]?(?:access[_-]?)?key'
+  'api[_-]?key|token|secret|password|passwd|pwd|passphrase|credentials?|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|secret[_-]?(?:access[_-]?)?key|cookie|[_-]key'
 // Up to 40 identifier characters may precede a name (`DB_PASSWORD`, `STRIPE_SECRET_KEY`,
-// `githubToken`). The name must still sit right before the `:`/`=`, so `passwordless=` or
-// `tokenizer:` never match. `\b` alone cannot do this: `_` is a word character, so there is no
-// boundary inside `DB_PASSWORD`.
+// `githubToken`, `AGNES_KEY`). The name must still sit right before the `:`/`=`, so
+// `passwordless=`, `tokenizer:`, `cookieConsent:` or `hotkey:` never match. `\b` alone cannot do
+// this: `_` is a word character, so there is no boundary inside `DB_PASSWORD`.
 const PREFIX = '[A-Za-z0-9_-]{0,40}'
 
 // Built via concatenation so the literal PEM header/footer text never appears contiguously in this
@@ -49,6 +49,8 @@ const EXTRA = [
   { pattern: String.raw`\bxox[baprs]-[A-Za-z0-9-]{12,}` },
   { pattern: String.raw`\bAIza[0-9A-Za-z_-]{20,}` },
   { pattern: `${PEM_BEGIN}[\\s\\S]*?${PEM_END}` },
+  // A (Set-)Cookie header's whole `;`-joined value, not just the first pair the next rule stops at.
+  { pattern: String.raw`(?<=\bcookie\s{0,16}:\s{0,16})[^\s"'<>][^\r\n"'<>]*`, flags: 'i' },
   { pattern: String.raw`(?<=\b${PREFIX}(?:${NAMES})\s{0,16}[:=]\s{0,16}["']?)[^"'\s,;}]+`, flags: 'i' },
   { pattern: String.raw`(?<="${PREFIX}(?:${NAMES})"\s{0,16}:\s{0,16}")(?:\\.|[^"\\])+`, flags: 'i' },
   // The password of any `scheme://user:password@` URL in free text (`postgres://admin:pw@db`,
@@ -62,9 +64,11 @@ const EXTRA = [
 
 const RULES = { secrets: true, paths: false as const, pii: false, custom: EXTRA }
 
-// A bare token in a URL fragment (the Web WS credential lives only in `location.hash`) is not
-// caught by any secret-shaped regex above, so it is stripped separately: find the URL run, then
-// locate `#` with a plain (linear) String.indexOf instead of putting it in the regex.
+// Neither a bare token in a URL fragment (the Web WS credential lives only in `location.hash`) nor
+// a query value (`?ticket=`, `?code=`, `X-Amz-Signature=`) carries a name or shape the rules above
+// can rely on, so every http(s)/ws(s) URL run loses both: each query value (a segment without `=`
+// whole) and the fragment are replaced, keeping scheme, host, path and parameter names. Find the
+// URL run, then locate `?`/`#` with plain (linear) String.indexOf/split instead of in the regex.
 //
 // An earlier version matched `(https?:\/\/[^\s"'<>#]+)#[^\s"'<>]*` directly: excluding `#` from the
 // greedy class means that when a run has no `#` at all (e.g. several comma-joined URLs — a comma is
@@ -72,23 +76,30 @@ const RULES = { secrets: true, paths: false as const, pii: false, custom: EXTRA 
 // the run before giving up — O(n^2) (measured: 5000 comma-joined URLs, ~219 KB, took ~1.7s). This
 // version's greedy class has nothing required after it, so a match can never fail once started —
 // linear, no backtracking. The tradeoff (accepted): a comma/semicolon-joined run that does contain a
-// `#` is treated as one run, so everything up to that first `#` is kept and the rest replaced,
-// rather than only the specific URL that owned the fragment — over-redaction, not under-redaction.
-const URL_RUN = /https?:\/\/[^\s"'<>]+/g
+// `?` or `#` is treated as one run, so everything after that first `?`/`#` is replaced, rather than
+// only the part of the specific URL that owned it — over-redaction, not under-redaction.
+const URL_RUN = /(?:https?|wss?):\/\/[^\s"'<>]+/gi
 
-function stripUrlFragment(match: string): string {
+const redactQueryPair = (pair: string): string =>
+  pair.includes('=') ? `${pair.slice(0, pair.indexOf('=') + 1)}${REDACTED}` : pair && REDACTED
+
+function stripUrlSecrets(match: string): string {
   const hashIndex = match.indexOf('#')
-  return hashIndex < 0 ? match : `${match.slice(0, hashIndex)}#${REDACTED}`
+  const url = hashIndex < 0 ? match : match.slice(0, hashIndex)
+  const queryIndex = url.indexOf('?')
+  const [path, query] = queryIndex < 0 ? [url] : [url.slice(0, queryIndex), url.slice(queryIndex + 1)]
+  const kept = query === undefined ? path : `${path}?${query.split('&').map(redactQueryPair).join('&')}`
+  return hashIndex < 0 ? kept : `${kept}#${REDACTED}`
 }
 
 /**
  * Runs the shared secrets waterfall, the diagnostics-specific EXTRA lookbehind rules, and URL
- * fragment stripping. Never throws: any internal failure (e.g. a pathological input triggering an
- * engine-level error) redacts the whole string rather than letting the error escape to the caller.
+ * query/fragment stripping. Never throws: any internal failure (e.g. a pathological input triggering
+ * an engine-level error) redacts the whole string rather than letting the error escape to the caller.
  */
 export function redactDiagnosticText(text: string): string {
   try {
-    return redact(text, RULES).replace(URL_RUN, stripUrlFragment)
+    return redact(text, RULES).replace(URL_RUN, stripUrlSecrets)
   } catch {
     return REDACTED
   }

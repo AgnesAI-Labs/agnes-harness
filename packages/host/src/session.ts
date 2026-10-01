@@ -9,7 +9,7 @@ import {
   type SessionWorkspaceLifecycle,
   type WorkspaceInvocationPort,
 } from '@agnes/core'
-import type { Actor } from '@agnes/protocol'
+import type { Actor, SessionStart } from '@agnes/protocol'
 import type { FencedFs } from './adapters/fs.js'
 import { materializeRoutes, pinPresetRoutes } from './assemble/routes.js'
 import type { Assembled } from './assemble.js'
@@ -43,6 +43,8 @@ export type CreateSessionOptions = {
   parent?: { key: string; boundarySeq: Seq }
   /** See core's SessionOptions: a new session opens without `session_start`. In-process only (import). */
   skipSessionStartHooks?: boolean
+  /** See core's SessionOptions: where an imported ledger came from. In-process only (import). */
+  imported?: SessionStart['imported']
   /**
    * Called when opening this session had to close out work a dead process left in flight, and only
    * then. Opening a session that ended cleanly does not call it and writes nothing to the ledger, so
@@ -379,6 +381,7 @@ export async function createSession(
     ...(opts.parent ? { parent: opts.parent } : {}),
     ...(opts.lane ? { lane: opts.lane } : {}),
     ...(opts.skipSessionStartHooks ? { skipSessionStartHooks: true } : {}),
+    ...(opts.imported ? { imported: opts.imported } : {}),
     ...(workspace
       ? {
           workspaceRuntime: workspace.runtime,

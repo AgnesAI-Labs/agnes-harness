@@ -1,5 +1,5 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { classifyPiError } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
 import { AMBIENT_CREDENTIAL_APIS } from '../src/adapters/pi/wire.js'
@@ -120,13 +120,22 @@ describe('timeouts and cancellation', () => {
   // The total deadline is set far out of reach, so only the first-token one can end this. With both
   // in range the two are indistinguishable - the message is chosen from whether anything arrived,
   // not from which timer fired - and a case that cannot tell them apart tests neither.
-  it('a stream that never speaks fails on the first-token deadline', async () => {
-    expect(
-      await drain(adapter({ streamImpl: hang }), { timeoutMs: { firstToken: 20, total: 60_000 } }),
-    ).toEqual([
-      { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'first token timeout', retryable: true },
-    ])
-  })
+  it.each([undefined, 'start', 'text_start', 'thinking_start', 'toolcall_start', 'text_delta'])(
+    'a stream with only %s and no output fails on the first-token deadline',
+    async (type) => {
+      const silent: StreamImpl = () =>
+        (async function* () {
+          if (type) yield { type, contentIndex: 0, delta: '', partial: msg('') } as never
+          await new Promise<never>(() => {})
+        })()
+      const out = await drain(adapter({ streamImpl: silent }), {
+        timeoutMs: { firstToken: 20, total: 60_000 },
+      })
+      expect(out.filter((event) => event.type !== 'text_delta')).toEqual([
+        { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'first token timeout', retryable: true },
+      ])
+    },
+  )
 
   // And once it has spoken, the first-token deadline is spent. A model that thinks for longer than
   // that between tokens is answering, not hanging, and must not be cut off by the deadline that
@@ -145,18 +154,40 @@ describe('timeouts and cancellation', () => {
   })
 
   // Once a stream has spoken the first-token deadline is spent, and only the total one is left. A
-  // model that emits one token and then stops is otherwise a turn that never ends.
+  // model that emits one token and then stops is otherwise a turn that never ends. The timeout is
+  // this adapter's own error, so it carries what the HTTP response already said about who answered.
   it('a stream that speaks once and then stops fails on the total deadline', async () => {
-    const stall: StreamImpl = () =>
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(null, { headers: { 'x-request-id': 'req-stall', 'set-cookie': 'sid=never-recorded' } }),
+    )
+    const stall: StreamImpl = (_model, _context, options) =>
       (async function* () {
+        await options?.fetch?.('https://gw.invalid/chat/completions', { method: 'POST', body: '{}' })
         yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
         await new Promise<never>(() => {})
       })()
-    const out = await drain(adapter({ streamImpl: stall }), { timeoutMs: { firstToken: 20, total: 60 } })
-    expect(out).toEqual([
-      { type: 'text_delta', delta: 'a' },
-      { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'total timeout', retryable: true },
-    ])
+    try {
+      const out = await drain(adapter({ streamImpl: stall }), { timeoutMs: { firstToken: 20, total: 60 } })
+      expect(out).toEqual([
+        { type: 'text_delta', delta: 'a' },
+        {
+          type: 'error',
+          reason: 'error',
+          code: 'TIMEOUT',
+          message: 'total timeout',
+          retryable: true,
+          response: {
+            status: 200,
+            headers: { 'x-request-id': 'req-stall' },
+            headerNames: ['set-cookie', 'x-request-id'],
+          },
+        },
+      ])
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('a caller abort ends the stream as ABORTED rather than as a timeout', async () => {

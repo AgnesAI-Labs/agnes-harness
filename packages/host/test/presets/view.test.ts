@@ -10,6 +10,7 @@ describe('toPresetView', () => {
       model: {
         route: { primary: 'default' },
         timeout_ms: 120000,
+        max_tokens: 32768,
         retry: { max_attempts: 3, base_delay_ms: 500 },
       },
       budget: { preflight: 'count', per_request_cap: 4000, on_exceed: 'quote', max_steps: 80 },
@@ -35,6 +36,7 @@ describe('toPresetView', () => {
         thinking: {},
         retry: { maxAttempts: 3, baseDelayMs: 500 },
         timeoutMs: 120000,
+        maxTokens: 32768,
       },
       budget: { preflight: 'count', perRequestCap: 4000, onExceed: 'quote', maxSteps: 80 },
       approval: { onTimeout: 'rejected', timeoutMs: 1000, onUnavailable: 'park', pendingTtlMs: 5000 },

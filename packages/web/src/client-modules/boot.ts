@@ -22,9 +22,10 @@ import {
   SlotsProvider,
   ThemeService,
 } from '@agnes/web-client'
+import type { AntdRoot } from '@agnes/web-ui'
+import { createAntdRoot } from '@agnes/web-ui'
 import { BuiltinWebUnitRegistry } from '@agnes/web-units'
 import { createElement } from 'react'
-import { createRoot, type Root } from 'react-dom/client'
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -108,6 +109,7 @@ export async function startClientModules(options: {
   sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> } | undefined
   transcriptContainer?: HTMLElement | undefined
   transcript?: {
+    nodeHost?: 'react'
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
   }
@@ -156,13 +158,13 @@ export async function startClientModules(options: {
   })
 
   // workbench.panel 挂载点：宿主划定的容器 + React root（WC8）。
-  const panelRoots: Root[] = []
+  const panelRoots: AntdRoot[] = []
   const panelContainer = options.panelContainer
   if (panelContainer) {
     const host = document.createElement('div')
     host.setAttribute('data-agnes-slot-mount', 'workbench.panel')
     panelContainer.appendChild(host)
-    const root = createRoot(host)
+    const root = createAntdRoot(host)
     panelRoots.push(root)
     root.render(
       createElement(
@@ -197,6 +199,7 @@ export async function startClientModules(options: {
       const emptyState = mountEmptyStateRegion(registry, children.emptyState, { session, locale })
       const transcript = mountTranscriptRegion(registry, children.transcript, {
         ...options.transcript,
+        ...(options.claim ? { claim: options.claim } : {}),
         newContentButton: children.newContentButton,
         session,
         resources,
@@ -214,7 +217,7 @@ export async function startClientModules(options: {
         ['@agnes/web-conversation-feedback', CONVERSATION_CHILD_SLOTS.feedback, children.feedback],
       ] as const
       for (const [packageId, slot, container] of childUnits) {
-        const root = createRoot(container)
+        const root = createAntdRoot(container)
         root.render(
           createElement(
             SlotsProvider,
@@ -307,6 +310,7 @@ export async function startClientModules(options: {
     !conversation && options.transcriptContainer
       ? mountTranscriptRegion(registry, options.transcriptContainer, {
           ...options.transcript,
+          ...(options.claim ? { claim: options.claim } : {}),
           session,
           resources,
         })

@@ -5,7 +5,7 @@ export type DiagnosticsInclude = { conversation: boolean; logs: boolean; system:
 
 export type DiagnosticsWarning = {
   source: string
-  reason: 'unavailable' | 'truncated' | 'limit' | 'timeout' | 'failed'
+  reason: 'unavailable' | 'truncated' | 'limit' | 'timeout' | 'failed' | 'imported'
   detail?: string
 }
 

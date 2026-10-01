@@ -135,7 +135,7 @@ describe('redactDiagnosticText (string patterns)', () => {
   it('strips a URL fragment (the WS credential lives only in location.hash)', () => {
     const result = redactDiagnosticText('open http://127.0.0.1:4177/?s=1#abcDEF123')
     expect(result).not.toContain('abcDEF123')
-    expect(result).toContain('http://127.0.0.1:4177/?s=1#')
+    expect(result).toBe(`open http://127.0.0.1:4177/?s=${REDACTED}#${REDACTED}`)
   })
 
   it('strips a fragment from a URL embedded in a longer sentence', () => {
@@ -237,11 +237,40 @@ describe('redactDiagnosticText (common secret spellings)', () => {
     expect(JSON.stringify(out)).not.toContain(V)
   })
 
+  it('redacts Cookie headers, cookie pairs and *_KEY assignments', () => {
+    const texts = [
+      `Cookie: sid=${V}`,
+      `Cookie: theme=dark; sid=${V}`,
+      `Set-Cookie: session=${V}; HttpOnly`,
+      `{"cookie":"sid=${V}"}`,
+      `AGNES_KEY=${V}`,
+      `export OPENAI-KEY: ${V}`,
+    ]
+    expect(leaks(texts)).toEqual([])
+    expect(redactDiagnosticText(`Cookie: theme=dark; sid=${V}`)).toBe(`Cookie: ${REDACTED}`)
+  })
+
+  it('redacts every query value of an http(s) or ws(s) URL in free text, keeping parameter names', () => {
+    const texts = [
+      `GET https://h.example/download?ticket=${V}`,
+      `https://h.example/cb?state=x&code=${V}`,
+      `https://b.s3.example/k?X-Amz-Date=1&X-Amz-Signature=${V}`,
+      `wss://h.example/ws?t=${V}`,
+      `https://h.example/p?${V}`,
+    ]
+    expect(leaks(texts)).toEqual([])
+    expect(redactDiagnosticText(`see https://h.example/cb?state=x&code=${V}#frag now`)).toBe(
+      `see https://h.example/cb?state=${REDACTED}&code=${REDACTED}#${REDACTED} now`,
+    )
+  })
+
   it('leaves near-miss names untouched in text', () => {
     for (const text of [
       'maxTokens: 5',
       'inputTokens=3',
       'sessionKey: k',
+      'hotkey: ctrl+k',
+      'cookieConsent: true',
       'tokenizer: bpe',
       'secretName: foo',
       'passwordless: true',
@@ -262,6 +291,8 @@ describe('redactDiagnosticText (common secret spellings)', () => {
     ['repeated scheme://u: with no @', 'ab://u:'.repeat(30_000)],
     ['repeated full userinfo URLs', 'http://u:p@h '.repeat(16_000)],
     ['max user and pass runs with no @', `ab://${'c'.repeat(128)}:${'x'.repeat(256)} `.repeat(500)],
+    ['one URL with 50k query pairs', `https://h.example/p?${'a=b&'.repeat(50_000)}`],
+    ['200k cookie-name words', 'cookie'.repeat(33_000)],
   ])('redacts %s in under 200ms (bounded lookbehind classes)', (_name, text) => {
     const start = performance.now()
     redactDiagnosticText(text)

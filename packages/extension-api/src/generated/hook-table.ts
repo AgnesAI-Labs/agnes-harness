@@ -7,7 +7,6 @@ export const HOOK_TABLE = Object.freeze({
   before_step: Object.freeze({"mode":"serial","category":"directive","failPolicy":"closed","timeoutMs":1000,"replayOnResume":false}),
   context: Object.freeze({"mode":"waterfall","category":"transform","failPolicy":"closed","timeoutMs":1500,"replayOnResume":false}),
   before_request: Object.freeze({"mode":"waterfall","category":"transform","failPolicy":"closed","timeoutMs":1500,"replayOnResume":false}),
-  before_provider_headers: Object.freeze({"mode":"waterfall","category":"transform","failPolicy":"closed","timeoutMs":500,"replayOnResume":false}),
   request_error: Object.freeze({"mode":"parallel","category":"observe","failPolicy":"open","timeoutMs":500,"replayOnResume":false}),
   tool_call: Object.freeze({"mode":"serial","category":"directive","failPolicy":"closed","timeoutMs":2000,"replayOnResume":false}),
   tool_result: Object.freeze({"mode":"waterfall","category":"transform","failPolicy":"open","timeoutMs":2000,"replayOnResume":false}),

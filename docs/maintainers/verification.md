@@ -32,7 +32,7 @@ pnpm gen:check
 pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWorkers=1
 ```
 
-`pnpm test` runs the complete suite. Retain skips, platform prerequisites, and failures in the results for that revision. A total pass count must not hide unverified areas.
+`pnpm test:all` runs the complete suite; `pnpm test` runs only the fast tier and `pnpm test:heavy` only the real-process and large-data tier (`*.e2e.test.ts`, `*.slow.test.ts`). Retain skips, platform prerequisites, and failures in the results for that revision. A total pass count must not hide unverified areas.
 
 The CLI startup test still gates successful boot and session creation. On shared CI runners, its elapsed time is reported in the job summary rather than used as a pass/fail threshold. To enforce the 300 ms target on a controlled performance machine, set `AGH_ENFORCE_BOOT_BUDGET=1` and run `pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1`.
 

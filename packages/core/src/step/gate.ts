@@ -174,8 +174,8 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
     )
     return { phase: 'checkpoint' }
   }
-  // Built once, reused for whichever of the two 'completed' exits below is taken: both are this
-  // turn's own ending, not a fresh request, so the model/disclosure pair an after-core Operation
+  // Built once, reused for every 'completed' exit below: each is this turn's own ending,
+  // not a fresh request, so the model/disclosure pair an after-core Operation
   // reads describes the turn that is about to close rather than one about to be sent.
   const { route, model } = resolveModel(s, 'primary')
   // `s.turn` is populated for the whole time a turn is open, and `stopGate` only ever runs mid-turn
@@ -215,14 +215,13 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
     { turn: op.meta.turn, round: history.length + 1, history },
     verdict,
   )
-  const rd = s.ev('repair/decision', {
-    round: history.length + 1,
-    decision,
-    verdictSeq: s.lastSeq + 1,
-  })
+  const repairEvents = (verdictSeq: Seq): EventInput[] => [
+    signal,
+    s.ev('repair/decision', { round: history.length + 1, decision, verdictSeq }),
+  ]
   if (decision === 'complete') {
     await runSlot(s, 'after-core', verifiedAfterCoreCtx)
-    await s.endTurn('completed', { events: [signal, rd] })
+    await s.endTurn('completed', { events: repairEvents })
     return { phase: 'terminal', reason: 'completed' }
   }
   if (decision === 'park') {
@@ -274,20 +273,39 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
     )
     if (typeof v === 'object') {
       await s.endTurn('parked', {
-        events: [signal, rd, s.ev('approval/asked', { ...finalAsked, pending: v })],
+        events: (seq) => [...repairEvents(seq), s.ev('approval/asked', { ...finalAsked, pending: v })],
       })
       return { phase: 'terminal', reason: 'parked' }
     }
     const decided = s.ev('approval/decided', { requestId, verdict: v, via: 'sync' })
     if (!v.startsWith('allowed')) {
-      await s.endTurn('blocked', { events: [signal, rd, s.ev('approval/asked', finalAsked), decided] })
+      await s.endTurn('blocked', {
+        events: (seq) => [...repairEvents(seq), s.ev('approval/asked', finalAsked), decided],
+      })
       return { phase: 'terminal', reason: 'blocked' }
     }
-    await s.transition(
-      [signal, rd, s.ev('approval/asked', finalAsked), decided],
-      withPhase(op, { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: op.meta.triggerSeq }),
-    )
-    return { phase: 'checkpoint' }
+    // The model has already proposed completion. Approval accepts this verdict's evidence,
+    // not another inference over the same history (which would ask the identical question again).
+    // Close this turn atomically with the decision; future turns still run their own verifier.
+    await runSlot(s, 'after-core', verifiedAfterCoreCtx)
+    await s.endTurn('completed', {
+      events: (seq) => {
+        // A steer received while approval/after-core awaited must not be stranded when this
+        // turn closes. Preserve it as a new turn, with fresh verification and its original trust.
+        const inbox = s.latest('inbox') as Inbox | undefined
+        const pending = inbox?.items.some((item) => item.target === 'next-step')
+          ? [
+              inboxEvent(s.lane, s.d.actor, {
+                items: inbox.items.map((item) =>
+                  item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
+                ),
+              }),
+            ]
+          : []
+        return [...repairEvents(seq), s.ev('approval/asked', finalAsked), decided, ...pending]
+      },
+    })
+    return { phase: 'terminal', reason: 'completed' }
   }
   const prev = (s.latest('budget.state') as BudgetState | undefined) ?? {
     slot: 'primary',
@@ -300,7 +318,7 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
       ? [s.ev('budget.state', { ...prev, escalate: true }, { register: 'budget.state' })]
       : []
   await s.transition(
-    [signal, rd, ...extra],
+    (seq) => [...repairEvents(seq), ...extra],
     withPhase(op, { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: op.meta.triggerSeq }),
   )
   return { phase: 'checkpoint' }

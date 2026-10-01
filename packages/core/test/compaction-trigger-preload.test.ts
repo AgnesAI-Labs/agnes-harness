@@ -14,16 +14,14 @@ const SKILL = 'LOOP SKILL BODY'
 function preloader(prompts: string[]): RuntimePromptPreloader {
   return ({ prompt }) => {
     prompts.push(prompt)
-    return prompt.includes('LOOP-SKILL')
-      ? { section: { id: 'skill:loop', order: 500, text: SKILL, source: 'host' }, suppressTools: ['shell'] }
-      : undefined
+    return prompt.includes('LOOP-SKILL') ? { key: 'skill:loop@r1', note: SKILL } : undefined
   }
 }
 
 const toolNames = (request: RequestBody | undefined) => (request?.tools ?? []).map((tool) => tool.name)
 
 describe('the current prompt once compaction has masked the trigger', () => {
-  it('keeps the preloaded skill section and suppressed tools for every later step of the turn', async () => {
+  it('restores a masked Skill note and keeps tools available for every step', async () => {
     const provider = fakeProvider([
       toolTurn('read', { path: 'a' }),
       toolTurn('read', { path: 'b' }),
@@ -81,12 +79,12 @@ describe('the current prompt once compaction has masked the trigger', () => {
     expect(main).toHaveLength(4)
     const [beforeCompaction] = main
     for (const request of main) {
-      expect(request.system).toContain(SKILL)
-      expect(toolNames(request)).not.toContain('shell')
+      expect(JSON.stringify(request.messages)).toContain(SKILL)
+      expect(toolNames(request)).toContain('shell')
       expect(request.system).toBe(beforeCompaction?.system)
       expect(toolNames(request)).toEqual(toolNames(beforeCompaction))
     }
-    expect(prompts.every((prompt) => prompt === 'use LOOP-SKILL')).toBe(true)
+    expect(prompts).toEqual(['use LOOP-SKILL'])
   })
 
   it('still reads no prompt for a turn a decided approval opened', async () => {

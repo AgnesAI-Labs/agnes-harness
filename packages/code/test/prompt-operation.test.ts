@@ -75,18 +75,25 @@ describe('the prompt operation', () => {
     for (const s of sections) expect(s.source).toBe('@agnes/code')
   })
 
-  it('states the platform, the date and the transcript in prompt text; the model and cwd in the tail runtime context', () => {
+  it('states stable platform and transcript guidance in prompt text; volatile facts in the tail runtime context', () => {
     const c = createPromptOperation(deps).contribute?.(
       ctxFor({ cwd: '/other/place', model: 'some-model-9', now: Date.parse('2027-01-02T00:00:00Z') }),
     )
     const text = (c?.promptSections ?? []).map((s) => s.text).join('\n')
     expect(text).toContain('darwin-arm64')
-    expect(text).toContain('2027-01-02')
-    expect(text).toContain('agnes:local:demo:cli:workspace:abcd')
+    expect(text).not.toContain('2027-01-02')
+    expect(text).not.toContain('agnes:local:demo:cli:workspace:abcd')
     expect(text).not.toContain('some-model-9')
     expect(text).not.toContain('/other/place')
     expect(text).not.toContain('{{')
-    expect(c?.runtimeContext).toMatchObject({ environment: { model: 'some-model-9', cwd: '/other/place' } })
+    expect(c?.runtimeContext).toMatchObject({
+      environment: {
+        model: 'some-model-9',
+        cwd: '/other/place',
+        date: '2027-01-02',
+        sessionKey: 'agnes:local:demo:cli:workspace:abcd',
+      },
+    })
   })
 
   it('reads the clock on every call rather than capturing it once', () => {
@@ -94,19 +101,12 @@ describe('the prompt operation', () => {
     let now = Date.parse('2026-09-09T00:00:00Z')
     const ctx = ctxFor({})
     ;(ctx.session as unknown as { d: { clock: () => number } }).d.clock = () => now
-    const first =
-      op
-        .contribute?.(ctx)
-        ?.promptSections?.map((s) => s.text)
-        .join('\n') ?? ''
+    const first = op.contribute?.(ctx)
     now = Date.parse('2026-12-25T00:00:00Z')
-    const second =
-      op
-        .contribute?.(ctx)
-        ?.promptSections?.map((s) => s.text)
-        .join('\n') ?? ''
-    expect(first).toContain('2026-09-09')
-    expect(second).toContain('2026-12-25')
+    const second = op.contribute?.(ctx)
+    expect(first?.promptSections).toEqual(second?.promptSections)
+    expect(first?.runtimeContext).toMatchObject({ environment: { date: '2026-09-09' } })
+    expect(second?.runtimeContext).toMatchObject({ environment: { date: '2026-12-25' } })
   })
 
   it('states that the offered tool list is complete in the tail runtime context, not as a prompt section', () => {

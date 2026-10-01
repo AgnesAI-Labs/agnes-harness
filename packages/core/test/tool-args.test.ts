@@ -3,7 +3,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { noopHooks } from '../src/step/session.js'
-import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
+import { fakeProvider, type Script, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
 
@@ -17,7 +17,7 @@ const parameters = Type.Object(
   { additionalProperties: false },
 )
 const good = { path: 'file', count: 1, mode: 'read' }
-async function check(args: unknown, schema = parameters) {
+async function check(args: unknown, schema: ToolDef['parameters'] = parameters, scripts?: Script[]) {
   const reached: string[] = []
   const registry = new ToolRegistry()
   const def: ToolDef = {
@@ -54,7 +54,7 @@ async function check(args: unknown, schema = parameters) {
       },
     },
   })
-  const provider = fakeProvider([toolTurn('checked', args), textTurn('handled')])
+  const provider = fakeProvider(scripts ?? [toolTurn('checked', args), textTurn('handled')])
   const { session, log } = await openSession({
     provider,
     registry,
@@ -74,6 +74,7 @@ async function check(args: unknown, schema = parameters) {
   return {
     reached,
     result: (await log.scan({ type: 'tool/result', toSeq: log.lastSeq }))[0]?.data,
+    results: (await log.scan({ type: 'tool/result', toSeq: log.lastSeq })).map((e) => e.data),
     toolEffects: (await log.scan({ type: 'effect/intent', toSeq: log.lastSeq })).filter(
       (e) => (e.data as { kind: string }).kind === 'tool',
     ),
@@ -115,5 +116,24 @@ describe('tool argument boundary', () => {
     expect(out.reached).toEqual([])
     expect(out.toolEffects).toEqual([])
     expect(out.result).toMatchObject({ isError: true, code: 'TOOL_ARGS_INVALID' })
+  })
+  it('names a missing content parameter so the next call can repair it before execution', async () => {
+    const schema = Type.Object(
+      { path: Type.String(), content: Type.String() },
+      { additionalProperties: false },
+    )
+    const missing = { path: 'synthetic.html' }
+    const complete = { ...missing, content: '<html>complete</html>' }
+    const out = await check(missing, schema, [
+      toolTurn('checked', missing),
+      toolTurn('checked', complete),
+      textTurn('handled'),
+    ])
+    expect(out.results).toMatchObject([{ isError: true, code: 'TOOL_ARGS_INVALID' }, { isError: false }])
+    const feedback = JSON.stringify(out.provider.requests[1]?.messages)
+    expect(feedback).toContain('/content: missing required parameter')
+    expect(feedback).toContain('Retry with complete arguments')
+    expect(out.reached).toEqual(['hook', 'authorize', 'approval', 'execute'])
+    expect(out.toolEffects).toHaveLength(1)
   })
 })

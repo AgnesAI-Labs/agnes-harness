@@ -2,7 +2,7 @@ import type { VerifierSeam, VerifierVerdict } from '@agnes/core'
 import type { SeamFactory } from '../../../src/seam-init.js'
 
 export type VerifyInput = {
-  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean }>
+  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean; isReadOnly?: boolean }>
   deviations: number
   recentToolKeys: string[]
   surfaceTailHashes: string[]
@@ -32,8 +32,13 @@ export const verifierT0: SeamFactory<VerifierSeam> = async (ctx) => {
         // Longest run of an identical (tool, args) key at the tail, not just anywhere in the
         // window: a model that repeats after trying something else in between is not stuck the
         // same way one that repeats back-to-back is.
-        let run = 1
-        for (let i = 1; i < keys.length; i++) run = keys[i] === keys[i - 1] ? run + 1 : 1
+        // A read breaks the run; filtering it out would join nonconsecutive writes. Older
+        // callers without aligned policy metadata retain conservative repeat detection.
+        let run = 0
+        for (let i = 0; i < keys.length; i++) {
+          if (x.toolCalls.length === keys.length && x.toolCalls[i]?.isReadOnly === true) run = 0
+          else run = i > 0 && keys[i] === keys[i - 1] ? run + 1 : 1
+        }
         if (keys.length >= repeatThreshold && run >= repeatThreshold) revise.push(`repeated_write:${run}`)
         const h = x.surfaceTailHashes
         if (

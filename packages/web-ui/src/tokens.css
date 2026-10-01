@@ -12,15 +12,17 @@
    - 禁止用 ConfigProvider 运行时主题切色（zeroRuntime 静态 CSS 下无效）。
    - prefixCls 保持默认 ant-，本文件不与 CSS 重新编译绑定。
 
-   ⚠ 变量名核对项（A0-4）：--ant-* 名称集合以安装后 zeroRuntime 实际产出
-   的 antd.css 为准；本文件的映射是标准 cssVar 命名的子集。漏映射的
-   --ant-* 保持 antd 默认值（CSS 变量 fallback 语义），不会报错，只观感
-   漂移——安装后逐项核对并在此补全，然后在执行记录里记核对结果。
+   桥接当前使用的 Button/Modal/Select/Switch/Tabs 的全局语义变量；组件私有
+   --ant-*-* 变量继续由 zeroRuntime CSS 自身定义，不在这里覆盖。
    ═══════════════════════════════════════════════════════════════════════ */
 
 :root {
   /* Brand / 链接 */
   --ant-color-primary: var(--agnes-brand-primary);
+  --ant-color-primary-hover: var(--agnes-brand-primary);
+  --ant-color-primary-active: var(--agnes-brand-primary);
+  --ant-color-primary-border: var(--agnes-brand-primary);
+  --ant-color-primary-border-hover: var(--agnes-brand-primary);
   --ant-color-primary-bg: var(--agnes-brand-emphasis-soft);
   --ant-color-link: var(--agnes-brand-primary);
 
@@ -29,15 +31,29 @@
   --ant-color-text-secondary: var(--agnes-text-secondary);
   --ant-color-text-tertiary: var(--agnes-text-tertiary);
   --ant-color-text-disabled: var(--agnes-text-disabled);
+  --ant-color-text-heading: var(--agnes-text-primary);
+  --ant-color-text-label: var(--agnes-text-secondary);
+  --ant-color-text-description: var(--agnes-text-tertiary);
+  --ant-color-text-placeholder: var(--agnes-text-tertiary);
+  --ant-color-text-light-solid: var(--agnes-text-inverse);
+  --ant-color-icon: var(--agnes-text-tertiary);
+  --ant-color-icon-hover: var(--agnes-text-primary);
 
   /* 背景层级 */
   --ant-color-bg-layout: var(--agnes-bg-page);
   --ant-color-bg-container: var(--agnes-bg-app-content);
   --ant-color-bg-elevated: var(--agnes-bg-popover);
+  --ant-color-bg-text-hover: var(--agnes-bg-hover);
+  --ant-color-bg-text-active: var(--agnes-bg-selected);
+  --ant-color-bg-container-disabled: var(--agnes-bg-card);
+  --ant-color-bg-mask: var(--agnes-bg-scrim);
+  --ant-color-fill-content-hover: var(--agnes-bg-hover);
 
   /* 边框（antd border 比 border-secondary 深；agnes line-primary 重于 secondary） */
   --ant-color-border: var(--agnes-line-primary);
-  --ant-color-border-secondary: var(--agnes-line-secondary);
+  --ant-color-border-secondary: var(--agnes-line-primary);
+  --ant-color-split: var(--agnes-line-primary);
+  --ant-control-outline: var(--agnes-brand-focus-ring);
 
   /* 状态 */
   --ant-color-error: var(--agnes-status-danger-text);

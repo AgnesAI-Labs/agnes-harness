@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/hooks.json",
-  "title": "HookMap: the seventeen events, their five-tuple table, and their payload/return shapes",
+  "title": "HookMap: the sixteen events, their five-tuple table, and their payload/return shapes",
   "x-agnes-hook-table": {
     "session_start": {
       "mode": "parallel",
@@ -36,13 +36,6 @@
       "category": "transform",
       "failPolicy": "closed",
       "timeoutMs": 1500,
-      "replayOnResume": false
-    },
-    "before_provider_headers": {
-      "mode": "waterfall",
-      "category": "transform",
-      "failPolicy": "closed",
-      "timeoutMs": 500,
       "replayOnResume": false
     },
     "request_error": {
@@ -129,7 +122,6 @@
     "before_step": ["BeforeStepPayload", "BeforeStepReturn"],
     "context": ["ContextPayload", "ContextReturn"],
     "before_request": ["BeforeRequestPayload", "BeforeRequestReturn"],
-    "before_provider_headers": ["BeforeProviderHeadersPayload", "BeforeProviderHeadersReturn"],
     "request_error": ["RequestErrorPayload", "RequestErrorReturn"],
     "tool_call": ["ToolCallPayload", "ToolCallReturn"],
     "tool_result": ["ToolResultPayload", "ToolResultReturn"],
@@ -161,7 +153,6 @@
         "before_step",
         "context",
         "before_request",
-        "before_provider_headers",
         "request_error",
         "tool_call",
         "tool_result",
@@ -368,27 +359,6 @@
             "maxTokens": { "type": "integer", "minimum": 1 },
             "metadata": { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } }
           }
-        }
-      }
-    },
-
-    "BeforeProviderHeadersPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["route", "headers"],
-      "properties": {
-        "route": { "type": "string" },
-        "headers": { "type": "object", "additionalProperties": { "type": "string" } }
-      }
-    },
-    "BeforeProviderHeadersReturn": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "headers": {
-          "type": "object",
-          "propertyNames": { "pattern": "^X-Ext-" },
-          "additionalProperties": { "type": "string" }
         }
       }
     },

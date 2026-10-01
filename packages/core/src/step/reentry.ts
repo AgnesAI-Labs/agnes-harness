@@ -1,5 +1,5 @@
 import type { ToolResult } from '@agnes/extension-api'
-import { type JsonValue, type ThinkingLevel, validateAgainst } from '@agnes/protocol'
+import type { JsonValue, ThinkingLevel } from '@agnes/protocol'
 import { type NestedToolLease, NestedToolSchedulingError } from '../effects/scheduler.js'
 import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
@@ -16,6 +16,7 @@ import type {
   SessionImpl,
   SlotOperation,
 } from './session.js'
+import { toolArgumentError } from './tool-args.js'
 import { approveAndExecute, refuse } from './tools.js'
 
 /** The six names a `{ replace: name }` Operation may stand in for. Closed, not a bare string. */
@@ -61,14 +62,9 @@ export async function invokeTool(
   const toolUseId = s.d.ids.toolUseId(ordinal)
   const def = t.snapshot.byName.get(name)
   if (!def) throw Object.assign(new Error(`unknown tool ${name}`), { code: 'TOOL_NOT_FOUND' })
-  let valid = false
-  try {
-    valid = validateAgainst(def.parameters, args).ok
-  } catch {
-    // A malformed schema is a refusal, never permission to invoke the classifier.
-  }
-  if (!valid)
-    throw Object.assign(new Error('tool arguments do not match the registered schema'), {
+  const argumentError = toolArgumentError(def.parameters, args)
+  if (argumentError)
+    throw Object.assign(new Error(argumentError), {
       code: 'TOOL_ARGS_INVALID',
     })
   const policy = resolveValidatedToolCallPolicy(def, args as JsonValue)

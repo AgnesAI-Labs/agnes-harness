@@ -1,8 +1,13 @@
-import { validateAgainst } from '@agnes/protocol'
 import { scanAll } from '../log/scan-pages.js'
+import {
+  hasAuthenticToolPolicyHash,
+  hasTrustedToolCallProvenance,
+  type PersistedToolPolicyFields,
+} from '../registry/tool-policy.js'
 import { canonicalJson, sha256Hex } from '../request/hash.js'
 import type { Event, Seq } from '../types.js'
 import type { SessionImpl } from './session.js'
+import { toolArgumentError } from './tool-args.js'
 
 /**
  * What core hands the verifier seam as `input`. The shape is defined by base's loop-hygiene
@@ -11,7 +16,7 @@ import type { SessionImpl } from './session.js'
  * below is projected from the ledger — an invented one would read as a real check result.
  */
 export type CoreVerifyInput = {
-  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean }>
+  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean; isReadOnly: boolean }>
   deviations: number
   recentToolKeys: string[]
   surfaceTailHashes: string[]
@@ -51,21 +56,16 @@ async function scanWindow(s: SessionImpl, fromSeq: Seq): Promise<Window> {
   return w
 }
 
-/**
- * The dispatch's own judgment, recomputed against the same snapshot approveAndExecute validated
- * against. A call naming a tool the snapshot does not know is refused as TOOL_NOT_FOUND at dispatch
- * — there is no schema its arguments could violate, and reporting one would fail every such turn on
- * a check that is about malformed arguments. A schema that cannot be interpreted reads as invalid,
- * the same refusal approveAndExecute makes of it.
- */
-function schemaOk(s: SessionImpl, name: string, args: unknown): boolean {
-  const def = s.turn?.snapshot.byName.get(name)
-  if (!def) return true
-  try {
-    return validateAgainst(def.parameters, args).ok
-  } catch {
-    return false
-  }
+/** Missing or untrusted policy is never evidence that a call was read-only. Do not rerun a
+ * classifier or consult mutable metadata: the ledger records the policy used at dispatch. */
+function readOnlyCall(e: Event | undefined): boolean {
+  if (!e || !hasTrustedToolCallProvenance(e)) return false
+  const policy = e.data as PersistedToolPolicyFields
+  return (
+    hasAuthenticToolPolicyHash(policy) &&
+    policy.resolvedPolicy?.isReadOnly === true &&
+    policy.resolvedPolicy.isDestructive === false
+  )
 }
 
 /** The repeated-write key verifierT0 compares: (tool, JCS(args)), one per call in order. */
@@ -99,7 +99,10 @@ function assemble(s: SessionImpl, w: Window): CoreVerifyInput {
   const toolCalls = w.calls.map((e) => {
     const d = e.data as { name?: unknown; args?: unknown }
     const name = String(d.name)
-    return { name, args: d.args, schemaOk: schemaOk(s, name, d.args) }
+    const def = s.turn?.snapshot.byName.get(name)
+    // An unknown tool has no schema to violate; malformed registered schemas fail closed.
+    const schemaOk = !def || toolArgumentError(def.parameters, d.args) === undefined
+    return { name, args: d.args, schemaOk, isReadOnly: readOnlyCall(e) }
   })
   const hashes = w.messages.map((e) => sha256Hex(messageText(e)))
   const last = w.messages[w.messages.length - 1]
@@ -123,15 +126,16 @@ function assemble(s: SessionImpl, w: Window): CoreVerifyInput {
  */
 export async function toolVerifyInput(
   s: SessionImpl,
-  call: { name: string; args: unknown },
+  call: { name: string; args: unknown; toolUseId: string },
   argsSchemaOk: boolean,
 ): Promise<CoreVerifyInput> {
   const startSeq = s.state.openStep.get(s.lane)?.startSeq ?? s.lastSeq
   const w = await scanWindow(s, startSeq)
   const input = assemble(s, w)
+  const row = w.calls.find((e) => (e.data as { toolUseId?: string }).toolUseId === call.toolUseId)
   return {
     ...input,
-    toolCalls: [{ name: call.name, args: call.args, schemaOk: argsSchemaOk }],
+    toolCalls: [{ name: call.name, args: call.args, schemaOk: argsSchemaOk, isReadOnly: readOnlyCall(row) }],
     recentToolKeys: [toolKey(call.name, call.args)],
   }
 }

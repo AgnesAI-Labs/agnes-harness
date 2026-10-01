@@ -30,6 +30,8 @@ The default interactive flow shows the tool and available decisions when needed.
 
 `approvals.mode` accepts `manual`, `smart`, and `off`. TUI `/yolo` skips remaining approvals in the current session and cannot be undone in that session; it does not remove other permission or sandbox constraints. Do not make skipped approvals a beginner example or automation default.
 
+The default verifier distinguishes repeated writes from read-only calls using the policy recorded for each call. Read-only polling does not trigger `repeated_write`; missing or unverifiable policy remains conservative, and the separate no-progress check still applies. MCP tools must advertise `readOnlyHint: true` to be classified as read-only. When an interactive verifier approval is allowed during the current run, AGH accepts the proposed completion and ends that turn. It does not ask the model to finish again or waive verification of future turns. Additional instructions queued while approval is pending are retained for a new turn, with their original author and trust.
+
 A request to edit files is not permission for arbitrary plugin execution. Plugins should accurately declare read-only/destructive behavior, open-world access, replayability, and approval requirements. Metadata must match actual effects.
 
 <a id="平台与进程"></a>

@@ -42,7 +42,6 @@ describe('HookDispatch table-driven scheduling', () => {
     ['before_step', 1000, true],
     ['context', 1500, true],
     ['before_request', 1500, true],
-    ['before_provider_headers', 500, true],
     ['request_error', 500, false],
     ['tool_call', 2000, true],
     ['tool_result', 2000, false],

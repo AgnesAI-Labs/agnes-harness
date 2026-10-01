@@ -31,6 +31,10 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | Origin/Host mismatch | Match `AGNES_WEB_ORIGIN` exactly; do not mix localhost and 127.0.0.1. Explicitly stop an old instance with incompatible configuration |
 | Page asks for a token / guide asks you to copy one | Check for mixed old builds or instructions; current local Web prints a normal URL |
 | Missing provider / invalid route/model | Run config or Web settings, test and save, then choose from the current catalog; new defaults do not change existing sessions |
+| `TOOL_ARGS_INVALID` | Read the parameter paths in the error and retry with complete arguments matching the tool schema. `write` requires both `path` and `content`; refused calls do not write files |
+| Output ends with `max_tokens` / `OUTPUT_LIMIT` | The model response reached its output allowance; partial text is retained, unfinished tool calls are discarded, and the turn stops without automatic retries. Ask to continue with smaller calls, or configure the preset's `model.max_tokens` within the provider's supported range. This is separate from an input context overflow |
+| `RATE_LIMIT` / HTTP 429 | The model service refused the request with a rate-limit error. Retry later; if persistent, check the account's service limits or contact the provider. This does not establish an input-context or output-token overflow |
+| Generic backend failure after reading a file | Preserve the diagnostic ID and match it to the daemon audit record. The generic message alone does not establish a token overflow |
 | `SANDBOX_UNAVAILABLE` | On Linux, check actual bwrap execution and user namespaces; on macOS, check system sandbox availability. Preserve refusal when unavailable |
 | Plugin installed but no tools | Inspect trusted, desired, actual, row errors, dependencies, and manifest. A legacy `agnes.extensions` declaration alone is not a current ordinary backend entry |
 | Frontend v2, old or unavailable backend | Check package anchor, web row, services ceiling/allow-list, current session, and runtime revision |

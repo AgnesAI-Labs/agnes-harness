@@ -7,7 +7,7 @@ import type {
   Model,
   ProviderStreamOptions,
 } from '@earendil-works/pi-ai'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   API_KEY_CREDENTIAL_REFS,
   API_KEY_PROVIDER_REGISTRY,
@@ -279,7 +279,7 @@ describe('API-key provider registry', () => {
     })
   })
 
-  it('marks only the Agnes models that read an image on the live gateway as image-capable', async () => {
+  it('preserves verified Agnes modalities and sends each model output allowance on the wire', async () => {
     const adapter = await getApiKeyProvider('agnes-ai')?.createAdapter()
     const inputs = Object.fromEntries(
       (adapter?.models('agnes-ai') ?? []).map((model) => [model.id, model.input]),
@@ -292,6 +292,40 @@ describe('API-key provider registry', () => {
       'agnes-2.5-flash': ['text', 'image'],
       'agnes-2.0-flash': ['text', 'image'],
     })
+    if (!adapter) throw new Error('missing Agnes adapter')
+    adapter.bindCredential('agnes-ai', 'fixture-output-limit-key')
+    const bodies: Array<Record<string, unknown>> = []
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      bodies.push((await new Request(input, init).json()) as Record<string, unknown>)
+      return new Response(
+        'data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      )
+    })
+    try {
+      for (const model of Object.keys(inputs)) {
+        expect(adapter.models('agnes-ai').find((entry) => entry.id === model)?.maxTokens).toBe(65536)
+        for (const maxTokens of [undefined, 512, 32768]) {
+          const events = await collect(
+            adapter.stream(
+              'agnes-ai',
+              fakeRequest({
+                route: 'agnes-ai',
+                model,
+                ...(maxTokens === undefined ? {} : { sampling: { maxTokens } }),
+              }),
+              streamOptions(),
+            ),
+          )
+          expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
+          expect(bodies.at(-1)?.model).toBe(model)
+          expect(bodies.at(-1)?.max_tokens).toBe(maxTokens ?? 65536)
+          expect(bodies.at(-1)?.max_completion_tokens).toBeUndefined()
+        }
+      }
+    } finally {
+      fetch.mockRestore()
+    }
   })
 
   it('fails closed when a requested thinking level is not supported by the selected model', async () => {

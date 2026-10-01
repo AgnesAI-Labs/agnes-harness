@@ -41,6 +41,9 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
       catalogRevision: event.catalogRevision,
       toolCount: event.toolCount,
       observedAt: observedAt(),
+      ...(event.skippedToolCount
+        ? { skippedToolCount: event.skippedToolCount, skippedTools: [...(event.skippedTools ?? [])] }
+        : {}),
     }
   if (event.state === 'unavailable') {
     const code =
@@ -58,8 +61,8 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
       observedAt: observedAt(),
       lastSafeError: {
         code,
-        // SafeError.message has a 256-char protocol limit; an arbitrary error's own message can be longer.
-        message: String(event.error).slice(0, 256),
+        // SafeError.message is 1..256 chars; an arbitrary error's own message can be longer or empty.
+        message: String(event.error).slice(0, 256) || 'MCP connection failed',
       },
     }
   }
@@ -279,12 +282,9 @@ function catalogPage(
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > tools.length)
     throw new TypeError('invalid MCP tool cursor')
   const slice = tools.slice(offset, offset + PAGE_SIZE)
-  // A remote server's raw inputSchema was never re-checked against the protocol's own narrower
-  // McpInputSchema shape (only against register.ts's own tool-parameter rules); this pagination
-  // response is protocol-typed, so a tool whose schema does not fit is skipped here rather than
-  // corrupting or failing the whole page - the model-facing tool call path is unaffected either way.
-  // The cursor still advances by the raw slice, not the filtered count, so a dropped tool is skipped
-  // exactly once rather than making the next page re-attempt (and re-drop) it.
+  // Catalog validation already skips every tool outside the protocol `McpTool` shape, so this filter
+  // drops nothing today; it stays as a defence because the page is protocol-typed. The cursor still
+  // advances by the raw slice, not the filtered count, so a dropped tool is skipped exactly once.
   const items = slice.filter((tool): tool is McpTool => validateResourceControlData('McpTool', tool).ok)
   return Object.freeze({
     serverId,

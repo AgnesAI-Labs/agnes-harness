@@ -88,7 +88,9 @@ describe.skipIf(!windows)('native detached process ownership', () => {
   })
   it('close releases ownership without killing the process', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agnes-detached-close-'))
-    cleanup.push(() => rm(root, { recursive: true, force: true }))
+    // The released child still has this directory as its working directory until it exits, a moment
+    // after it writes the file; Windows refuses to remove the directory until then.
+    cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
     const child = launch("setTimeout(()=>require('node:fs').writeFileSync('done','alive'),300)", [], root)
     child.close()
     child.close()

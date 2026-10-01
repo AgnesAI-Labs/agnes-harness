@@ -625,7 +625,7 @@ describe('who may call ctx.extension()', () => {
 })
 
 describe('fixed rules', () => {
-  it('opens tools, all 17 hook events (via registerHook) and events; keeps slots/services/projections/resources refused', async () => {
+  it('opens tools, all 16 hook events (via registerHook) and events; keeps slots/services/projections/resources refused', async () => {
     const t = setup()
     t.host.activate(t.activation)
     const codes: Record<string, string> = {}
@@ -642,14 +642,12 @@ describe('fixed rules', () => {
       // `on` stays the simplified observe-only entry: non-observe events are still refused there.
       attempt('tool_call', () => agnes.on('tool_call' as never, () => undefined as never))
       attempt('context', () => agnes.on('context' as never, () => undefined as never))
-      attempt('before_provider_headers', () =>
-        agnes.on('before_provider_headers' as never, (() => {}) as never),
-      )
       attempt('compact', () => agnes.on('compact', () => {}))
-      // registerHook opens every one of the 17 events, transform/intercept-category included -
+      // registerHook opens every one of the 16 events, transform/intercept-category included -
       // the same events `on` above just refused.
       attempt('registerHook:tool_call', () => api.registerHook?.('tool_call', () => ({ allow: true })))
       attempt('registerHook:context', () => api.registerHook?.('context', () => ({})))
+      // A removed event name is refused like any unknown one, not silently accepted.
       attempt('registerHook:before_provider_headers', () =>
         api.registerHook?.('before_provider_headers', () => ({})),
       )
@@ -661,11 +659,10 @@ describe('fixed rules', () => {
     expect(codes).toEqual({
       tool_call: 'E_CAPABILITY_UNDECLARED',
       context: 'E_CAPABILITY_UNDECLARED',
-      before_provider_headers: 'E_CAPABILITY_UNDECLARED',
       compact: 'allowed',
       'registerHook:tool_call': 'allowed',
       'registerHook:context': 'allowed',
-      'registerHook:before_provider_headers': 'allowed',
+      'registerHook:before_provider_headers': 'E_CAPABILITY_UNDECLARED',
       registerSlot: 'E_CAPABILITY_UNDECLARED',
       registerService: 'E_CAPABILITY_UNDECLARED',
       registerProjection: 'E_CAPABILITY_UNDECLARED',

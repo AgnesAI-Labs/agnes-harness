@@ -9,6 +9,7 @@ export function verifyResults(needs) {
     static: 'success',
     check: docsOnly === 'true' ? 'skipped' : 'success',
     'windows-check-result': docsOnly === 'true' ? 'skipped' : 'success',
+    heavy: docsOnly === 'true' ? 'skipped' : 'success',
     'runtime-package': docsOnly === 'true' ? 'skipped' : 'success',
     sea: docsOnly === 'true' ? 'skipped' : 'success',
   }

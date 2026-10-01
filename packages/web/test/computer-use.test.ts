@@ -103,7 +103,7 @@ describe('Computer Use status', () => {
       )
       await controller.refreshOperation()
       expect(wait).toHaveBeenCalledTimes(3)
-      expect(wait).toHaveBeenCalledWith(17)
+      expect(wait).toHaveBeenCalledWith(17, expect.any(AbortSignal))
       expect(call).toHaveBeenCalledTimes(8)
       const operationCalls = call.mock.calls.filter(([method]) => method.endsWith('operation.status'))
       expect(operationCalls).toHaveLength(4)
@@ -682,5 +682,334 @@ describe('Computer Use status', () => {
       false,
     )
     expect(document.body.textContent).not.toContain(secret)
+  })
+})
+
+describe('Computer Use action ownership regressions', () => {
+  const ready = {
+    schemaVersion: 1,
+    status: 'ready',
+    admission: { state: 'ready', reason: 'macos-verified-driver' },
+    runtime: { state: 'idle', startAttempted: false, activeSessions: 0 },
+    blockers: [],
+    driver: { platform: 'darwin', version: '0.28.1', publisher: 'test' },
+  }
+  const granted = {
+    schemaVersion: 1,
+    status: 'granted',
+    admission: { state: 'ready', reason: 'macos-verified-driver' },
+    probe: {
+      state: 'passed',
+      reason: 'macos-tcc-permissions-granted',
+      accessibility: true,
+      screenRecording: true,
+    },
+  }
+  function deferred() {
+    let resolve!: (value: unknown) => void
+    const promise = new Promise((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+
+  it('refuses a duplicate grant even through the action API', async () => {
+    const reply = deferred()
+    const call = vi.fn().mockReturnValue(reply.promise)
+    const controller = createComputerUseStatusController({ call })
+    const first = controller.grantPermissions()
+    const second = controller.grantPermissions()
+    const requests = call.mock.calls.length
+    reply.resolve(granted)
+    await Promise.all([first, second])
+    expect(requests).toBe(1)
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('已授权')
+  })
+
+  it('preserves a newer pending grant across a status refresh', async () => {
+    const reply = deferred()
+    const call = vi.fn(async (method: string) => {
+      if (method.endsWith('permissions.grant')) return reply.promise
+      if (method.endsWith('permissions.status'))
+        return {
+          ...granted,
+          status: 'required',
+          probe: {
+            state: 'passed',
+            reason: 'macos-tcc-permissions-missing',
+            accessibility: false,
+            screenRecording: false,
+          },
+        }
+      return ready
+    })
+    const controller = createComputerUseStatusController({ call: call as ComputerUseStatusClient['call'] })
+    const granting = controller.grantPermissions()
+    await controller.refresh()
+    reply.resolve(granted)
+    await granting
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('已授权')
+    expect((document.getElementById('computer-use-refresh') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('keeps doctor disabled across status refresh until its own request settles', async () => {
+    const reply = deferred()
+    const call = vi.fn(async (method: string) => {
+      if (method.endsWith('doctor')) return reply.promise
+      if (method.endsWith('permissions.status')) return granted
+      return ready
+    })
+    const controller = createComputerUseStatusController({ call: call as ComputerUseStatusClient['call'] })
+    await controller.refresh()
+    const checking = controller.doctor()
+    await controller.refresh()
+    const disabledWhileChecking = (document.getElementById('computer-use-doctor-run') as HTMLButtonElement)
+      .disabled
+    reply.resolve({
+      schemaVersion: 1,
+      status: 'ready',
+      admission: ready.admission,
+      checks: { state: 'passed', reason: 'macos-driver-health-and-identity-verified' },
+    })
+    await checking
+    expect(disabledWhileChecking).toBe(true)
+    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('检查通过')
+  })
+
+  it('does not let refresh overtake an unresolved start and permit another mutation', async () => {
+    const reply = deferred()
+    const call = vi.fn(async (method: string) => {
+      if (method.endsWith('operation.start')) return reply.promise
+      if (method.endsWith('operation.status')) return { status: 'not-found' }
+      if (method.endsWith('permissions.status')) return granted
+      return ready
+    })
+    const controller = createComputerUseStatusController({ call: call as ComputerUseStatusClient['call'] })
+    await controller.refresh()
+    const starting = controller.update()
+    await controller.refreshOperation()
+    const second = controller.restart()
+    const starts = call.mock.calls.filter(([method]) => method.endsWith('operation.start')).length
+    reply.resolve({
+      status: 'found',
+      schemaVersion: 1,
+      startedAtMs: 1,
+      updatedAtMs: 2,
+      operationId: 'cu-update',
+      kind: 'update',
+      state: 'succeeded',
+      phase: 'complete',
+      outcome: 'already-current',
+    })
+    await Promise.all([starting, second])
+    expect(starts).toBe(1)
+    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('操作完成')
+  })
+
+  it('does not claim a rejected start was never executed or permit an immediate replay', async () => {
+    const call = vi.fn(async (method: string) => {
+      if (method.endsWith('operation.start')) throw new Error('private-host-path')
+      if (method.endsWith('permissions.status')) return granted
+      return ready
+    })
+    const controller = createComputerUseStatusController({ call: call as ComputerUseStatusClient['call'] })
+    await controller.refresh()
+    await controller.update()
+    await controller.update()
+    expect(call.mock.calls.filter(([method]) => method.endsWith('operation.start'))).toHaveLength(1)
+    expect(document.getElementById('computer-use-operation-summary')?.textContent).toContain('无法确认')
+    expect(document.body.textContent).not.toContain('private-host-path')
+    expect((document.getElementById('computer-use-operation-refresh') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+  })
+})
+
+describe('Computer Use pane retirement boundary', () => {
+  const ready = {
+    schemaVersion: 1,
+    status: 'ready',
+    admission: { state: 'ready', reason: 'windows-verified-driver' },
+    runtime: { state: 'idle', startAttempted: false, activeSessions: 0 },
+    blockers: [],
+    driver: { platform: 'win32', version: '0.28.1', publisher: 'synthetic' },
+  }
+  const permission = {
+    schemaVersion: 1,
+    status: 'not-required',
+    admission: ready.admission,
+    probe: { state: 'passed', reason: 'windows-no-os-grant-required' },
+  }
+  const operation = (state = 'running') => ({
+    schemaVersion: 1,
+    startedAtMs: 1,
+    updatedAtMs: 2,
+    status: 'found',
+    operationId: 'cu-retired',
+    kind: 'update',
+    state,
+    phase: state === 'running' ? 'installing' : 'complete',
+    ...(state === 'succeeded' ? { outcome: 'already-current' } : {}),
+  })
+
+  it.each([
+    ['status', 'refresh'],
+    ['permissions.status', 'refresh'],
+    ['permissions.grant', 'grantPermissions'],
+    ['doctor', 'doctor'],
+    ['operation.start', 'update'],
+    ['operation.status', 'update'],
+    ['operation.cancel', 'cancelOperation'],
+  ] as const)(
+    'does not write a replacement pane from retired %s replies or finally',
+    async (route, action) => {
+      let release!: (value: unknown) => void
+      const oldReply = new Promise((resolve) => {
+        release = resolve
+      })
+      let replaced = false
+      const call = vi.fn(async (method: string) => {
+        if (replaced) {
+          if (method.endsWith('operation.start')) return operation('succeeded')
+          if (method.endsWith('permissions.status')) return permission
+          return ready
+        }
+        if (method === `_agnes/v1/computerUse.${route}`) return oldReply
+        if (method.endsWith('permissions.status')) return permission
+        if (method.endsWith('operation.start') || method.endsWith('operation.status')) return operation()
+        return ready
+      })
+      const controller = createComputerUseStatusController(
+        { call: call as ComputerUseStatusClient['call'] },
+        document,
+        { maxAttempts: 1, wait: async () => undefined },
+      )
+      if (action === 'update' || action === 'cancelOperation') await controller.refresh()
+      let starting = Promise.resolve()
+      if (action === 'cancelOperation') starting = controller.update()
+      if (action === 'cancelOperation')
+        await vi.waitFor(() =>
+          expect(
+            (document.getElementById('computer-use-operation-cancel') as HTMLButtonElement).disabled,
+          ).toBe(false),
+        )
+      const oldAction = controller[action]()
+      await vi.waitFor(() =>
+        expect(call).toHaveBeenCalledWith(`_agnes/v1/computerUse.${route}`, expect.anything()),
+      )
+      replaced = true
+      const oldRefreshes = call.mock.calls.filter(([method]) => method.endsWith('computerUse.status')).length
+      const markup = document.body.innerHTML
+      document.body.innerHTML = markup
+      await vi.waitFor(() =>
+        expect(
+          call.mock.calls.filter(([method]) => method.endsWith('computerUse.status')).length,
+        ).toBeGreaterThan(oldRefreshes),
+      )
+      await vi.waitFor(() =>
+        expect((document.getElementById('computer-use-refresh') as HTMLButtonElement).disabled).toBe(false),
+      )
+      expect(document.getElementById('computer-use-state')?.textContent).toBe('可用')
+      const finalBeforeOldReply = document.body.textContent
+      const controlsBeforeOldReply = [...document.querySelectorAll('button')].map((button) => [
+        button.id,
+        button.disabled,
+        button.hidden,
+      ])
+      release(
+        route.startsWith('operation.')
+          ? operation('succeeded')
+          : route === 'status'
+            ? {
+                schemaVersion: 1,
+                status: 'blocked',
+                admission: { state: 'blocked', reason: 'runtime-unavailable' },
+                runtime: { state: 'not-started', startAttempted: false },
+                blockers: ['feature-disabled'],
+              }
+            : route === 'doctor'
+              ? {
+                  schemaVersion: 1,
+                  status: 'ready',
+                  admission: ready.admission,
+                  checks: { state: 'passed', reason: 'windows-driver-health-and-identity-verified' },
+                }
+              : {
+                  schemaVersion: 1,
+                  status: 'granted',
+                  admission: { state: 'ready', reason: 'macos-verified-driver' },
+                  probe: {
+                    state: 'passed',
+                    reason: 'macos-tcc-permissions-granted',
+                    accessibility: true,
+                    screenRecording: true,
+                  },
+                },
+      )
+      await Promise.all([oldAction, starting])
+      expect(document.body.textContent).toBe(finalBeforeOldReply)
+      expect(
+        [...document.querySelectorAll('button')].map((button) => [button.id, button.disabled, button.hidden]),
+      ).toEqual(controlsBeforeOldReply)
+      call.mockClear()
+      await controller.update()
+      expect(call.mock.calls.filter(([method]) => method.endsWith('operation.start'))).toHaveLength(1)
+      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('操作完成')
+    },
+  )
+
+  it('retains a hidden pane owner, releases its timer on removal, and delegates remounted buttons once', async () => {
+    vi.useFakeTimers()
+    const scope = document.createElement('section')
+    scope.innerHTML = document.body.innerHTML
+    document.body.replaceChildren(scope)
+    const call = vi.fn(async (method: string) => {
+      if (method.endsWith('permissions.status')) return permission
+      if (method.endsWith('operation.start') || method.endsWith('operation.status')) return operation()
+      return ready
+    })
+    const controller = createComputerUseStatusController({ call: call as ComputerUseStatusClient['call'] })
+    await controller.refresh()
+    const starting = controller.update()
+    await vi.advanceTimersByTimeAsync(0)
+    scope.hidden = true
+    await vi.advanceTimersByTimeAsync(500)
+    expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.status', { operationId: 'cu-retired' })
+    const markup = scope.outerHTML
+    scope.remove()
+    await vi.advanceTimersByTimeAsync(0)
+    await starting
+    expect(vi.getTimerCount()).toBe(0)
+    const count = call.mock.calls.length
+    await Promise.all([
+      controller.refresh(),
+      controller.grantPermissions(),
+      controller.doctor(),
+      controller.install(),
+      controller.refreshOperation(),
+      controller.cancelOperation(),
+    ])
+    expect(call).toHaveBeenCalledTimes(count)
+    expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
+    document.body.innerHTML = markup
+    await vi.advanceTimersByTimeAsync(0)
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('可用')
+    call.mockClear()
+    document.getElementById('computer-use-refresh')?.click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(call).toHaveBeenCalledTimes(2)
+    const state = document.getElementById('computer-use-state')
+    const refresh = document.getElementById('computer-use-refresh')
+    await controller.refresh()
+    expect(document.getElementById('computer-use-state')).toBe(state)
+    expect(document.getElementById('computer-use-refresh')).toBe(refresh)
+    controller.dispose()
+    controller.dispose()
+    call.mockClear()
+    document.getElementById('computer-use-refresh')?.click()
+    document.body.innerHTML = markup
+    await vi.advanceTimersByTimeAsync(0)
+    expect(call).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 })

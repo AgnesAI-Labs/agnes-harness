@@ -1,5 +1,5 @@
 import type { HookContext, Logger, PlatformFacts } from '@agnes/extension-api'
-import type { Actor, ApprovalMode, Provider } from '@agnes/protocol'
+import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
 import { KernelChildren } from './child/factory.js'
 import { hasChildControl } from './child/store.js'
 import { isActiveChildState } from './child/types.js'
@@ -157,6 +157,8 @@ export type SessionOptions = {
    * other by sequence number. A resumed session ignores this and gets its hooks as always.
    */
   skipSessionStartHooks?: boolean
+  /** Written into a new session's session/start; an importer's record of where the ledger came from. */
+  imported?: SessionStart['imported']
   delegation?: {
     kind: 'fork' | 'spawn'
     creationId: string
@@ -467,6 +469,7 @@ export class Kernel {
       clock: this.clock,
       actor: so.actor,
       resolvedProfileHash: so.resolvedProfileHash,
+      ...(so.imported ? { imported: so.imported } : {}),
       cwd: so.cwd,
       netFetch: this.o.netFetch,
       ...(this.o.publicFetch ? { publicFetch: this.o.publicFetch } : {}),

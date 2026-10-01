@@ -15,6 +15,7 @@ import type {
   RequestBody,
   RequestMediaHeader,
   ResolvedToolCallPolicy,
+  SessionStart,
   ThinkingLevel,
   UISpan,
   UITurn,
@@ -45,7 +46,7 @@ import type { InvariantRegistry } from '../invariants/registry.js'
 import type { CoreDiagName } from '../kernel.js'
 import { scanAll, scanPages } from '../log/scan-pages.js'
 import type { SessionLogImpl, Timers } from '../log/session-log.js'
-import type { ScanQuery } from '../log/storage.js'
+import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -85,7 +86,13 @@ import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/too
 import type { PromptSection } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
-import type { CurrentRuntimeLookup, RuntimePromptPreloader } from '../runtime/current.js'
+import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
+import type { RequestBody as MintedRequestBody } from '../request/mint.js'
+import type {
+  CurrentRuntimeLookup,
+  RuntimePromptPreload,
+  RuntimePromptPreloader,
+} from '../runtime/current.js'
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
@@ -259,7 +266,7 @@ export type HookPort = {
     proposedReason: string
     verifier?: VerifierVerdict
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
-  context(sections: PromptSection[]): Promise<PromptSection[]>
+  context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
   beforeStep(p: { turn: number; step: number; depth: number }): Promise<{ block?: boolean; reason?: string }>
   toolResult?(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']>
@@ -277,7 +284,7 @@ export type BeforeCompactHookSelection =
 export const noopHooks: HookPort = {
   toolCall: async () => ({ allow: true }),
   turnStopping: async () => ({ action: 'stop' }),
-  context: async (s) => s,
+  context: async (s) => ({ sections: s, additionalContext: '' }),
   beforeRequest: async (o) => o,
   beforeStep: async () => ({}),
 }
@@ -386,6 +393,8 @@ export type SessionDeps = {
   clock: Clock
   actor: Actor
   resolvedProfileHash: string | null
+  /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
+  imported?: SessionStart['imported']
   cwd: string
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
@@ -428,7 +437,13 @@ export type QuietGate = {
 /** What one turn holds in memory. It is lost on a kill; everything durable is on the ledger. */
 export type TurnMemory = {
   snapshot: RegistrySnapshot
+  /** Context-hook output is frozen for identical assembly inputs within this turn. */
+  prefix?: { key: string; sections: PromptSection[]; additionalContext: string }
+  /** A null result means this turn already tried the Host-owned Skill preloader. */
+  preload?: RuntimePromptPreload | null
   nonce: string
+  /** Prefix of the most recent primary request after all request hooks have run. */
+  lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>
   lastHeader: RequestHeaderData | null
   lastHeaderSeq: Seq | null
   ordinal: number
@@ -497,16 +512,37 @@ export class SessionImpl {
    */
   readonly sessionAllows = new Set<string>()
   readonly preview = new PreviewHub()
-  /**
-   * Wrapped-untrusted-envelope memoization, shared by every derivation this session makes for its
-   * whole process lifetime — not scoped to a turn, because the guarantee it exists for (a node's
-   * envelope id never changes once minted) has to survive the turn that minted it. Empty again
-   * after a process restart: a cold rebuild has no record of which turn originally wrapped a given
-   * node, so the first post-restart derivation re-wraps history once under whichever nonce that
-   * resume's first turn mints. That is a bounded, one-time cost, not the steady-state failure mode
-   * this fixes — see the spec's B1 for the failure mode itself.
-   */
+  /** Wrapping memo is optional; the durable header epochs determine historical envelope ids. */
   readonly envelopeCache: EnvelopeCache = createEnvelopeCache()
+  readonly envelopeEpochs: EnvelopeEpochs = []
+  private envelopeEpochsReady: Promise<void> | undefined
+  async ensureEnvelopeEpochs(): Promise<void> {
+    if (!this.envelopeEpochsReady) {
+      this.envelopeEpochsReady = (async () => {
+        if (this.lastSeq < 1) return
+        for await (const page of scanPages((query) => this.d.log.scan(query), {
+          fromSeq: 1,
+          toSeq: this.lastSeq,
+          type: 'request/header',
+          lane: this.lane,
+        })) {
+          for (const row of page) {
+            const nonce = (row.data as { envelopeNonce?: unknown }).envelopeNonce
+            if (typeof nonce !== 'string')
+              throw new CoreError('E_RELATION', 'request header lacks envelope nonce')
+            recordHeader(this.envelopeEpochs, row.seq, nonce)
+          }
+        }
+      })()
+    }
+    await this.envelopeEpochsReady
+  }
+  envelopeNonceFor(nodeSeq: number): string | undefined {
+    return nonceFor(this.envelopeEpochs, nodeSeq)
+  }
+  recordEnvelopeHeader(headerSeq: number, nonce: string): void {
+    recordHeader(this.envelopeEpochs, headerSeq, nonce)
+  }
   private grantsRestored = false
   private async restoreGrants(): Promise<void> {
     if (this.grantsRestored) return
@@ -629,6 +665,7 @@ export class SessionImpl {
           resolvedProfileHash: this.d.resolvedProfileHash,
           preset: this.preset.name,
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
+          ...(this.d.imported ? { imported: this.d.imported } : {}),
         },
       },
     ])
@@ -723,6 +760,9 @@ export class SessionImpl {
    * a compare-and-set on the op.state cell the phase was read from. Two writers cannot both advance
    * from the same phase, and a crash between them is impossible because there is no between.
    *
+   * An event factory runs inside the commit lock with the batch start sequence, so related
+   * evidence and inbox changes can be built without racing an enqueue.
+   *
    * The CAS seq is captured **before** the queue, not inside it: read inside, it names whatever the
    * cell holds once the lock is free, so a transition built on a phase another transition has
    * already superseded would be written with a fresh, matching seq and would succeed. Read outside,
@@ -736,12 +776,18 @@ export class SessionImpl {
    * the two sites that used to predict their own seqs need and could not safely guess outside.
    */
   transition(
-    events: EventInput[],
+    events: EventInput[] | ((nextSeq: Seq) => EventInput[]),
     next: OpStateObj | null | ((cur: OpStateObj | null, nextSeq: Seq) => OpStateObj | null),
     opts: { refineCaller?: boolean } = {},
   ): Promise<Seq[]> {
     const expected = this.opSeq()
-    const step = { events, next: typeof next === 'function' ? next : () => next }
+    const step: ChainStep = {
+      events: typeof events === 'function' ? [] : events,
+      next: (cur, nextSeq) => {
+        if (typeof events === 'function') step.events.push(...events(nextSeq))
+        return typeof next === 'function' ? next(cur, nextSeq) : next
+      },
+    }
     // No extra promise hop: the caller resumes on the same tick it always has.
     return this.commitChain([step], typeof next === 'function' ? undefined : expected, opts, (seqs) => seqs)
   }
@@ -806,19 +852,18 @@ export class SessionImpl {
     extra: {
       error?: { code: string; message: string }
       lastAssistantSeq?: Seq | null
-      events?: EventInput[]
+      events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
     const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
+    const events = extra.events
+    const end = this.ev('turn/end', {
+      reason,
+      lastAssistantSeq: last,
+      ...(extra.error ? { error: extra.error } : {}),
+    })
     const seqs = await this.transition(
-      [
-        ...(extra.events ?? []),
-        this.ev('turn/end', {
-          reason,
-          lastAssistantSeq: last,
-          ...(extra.error ? { error: extra.error } : {}),
-        }),
-      ],
+      typeof events === 'function' ? (seq) => [...events(seq), end] : [...(events ?? []), end],
       null,
     )
     this.turn = null
@@ -1018,7 +1063,7 @@ export class SessionImpl {
       const rows = await this.d.log.scan({
         type: INBOX_BUDGET_EVENT,
         order: 'desc',
-        limit: 500,
+        limit: SCAN_PAGE_MAX,
         ...(toSeq === undefined ? {} : { toSeq }),
       })
       for (const event of rows) {
@@ -1030,7 +1075,7 @@ export class SessionImpl {
           throw new CoreError('E_RELATION', `duplicate budget override for inbox item ${itemId}`)
         found = data.creditsCap
       }
-      if (rows.length < 500) return found
+      if (rows.length < SCAN_PAGE_MAX) return found
       const oldest = rows.at(-1)
       if (!oldest || oldest.seq <= 1) return found
       toSeq = (oldest.seq - 1) as Seq
@@ -1046,7 +1091,7 @@ export class SessionImpl {
         toSeq: this.lastSeq,
         type: TURN_BUDGET_EVENT,
         order: 'asc',
-        limit: 500,
+        limit: SCAN_PAGE_MAX,
       })
       for (const event of rows) {
         const data = event.data as Partial<TurnBudgetOverride> | null
@@ -1062,7 +1107,7 @@ export class SessionImpl {
           throw new CoreError('E_RELATION', `duplicate budget override for turn ${op.meta.turn}`)
         found = data.creditsCap
       }
-      if (rows.length < 500) return found
+      if (rows.length < SCAN_PAGE_MAX) return found
       const newest = rows.at(-1)
       if (!newest || newest.seq >= this.lastSeq) return found
       fromSeq = (newest.seq + 1) as Seq
@@ -1941,7 +1986,7 @@ export class SessionImpl {
     const events: Event[] = []
     let fromSeq = 1
     while (fromSeq <= cut) {
-      const page = await this.d.log.scan({ fromSeq, toSeq: cut, limit: 500 })
+      const page = await this.d.log.scan({ fromSeq, toSeq: cut, limit: SCAN_PAGE_MAX })
       if (page.length === 0)
         throw new CoreError('E_STORAGE_FAULT', 'UI projection scan ended before its captured cut', {
           fromSeq,

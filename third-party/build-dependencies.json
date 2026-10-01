@@ -26,7 +26,13 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react",
       "purpose": "Type declarations for React 18 used by the web workbench and the web-client module author API.",
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": [
+        "packages/resource-control-web",
+        "packages/web",
+        "packages/web-client",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "@types/react-dom",
@@ -72,15 +78,6 @@
       "purpose": "SDK browser checks, the Web client bundle and the isolated hooks-runner bundle.",
       "rationale": "Provides one fast bundler for browser compatibility and deterministic self-contained runtime artifacts.",
       "consumers": ["packages/base", "packages/cli", "packages/sdk", "packages/web"]
-    },
-    {
-      "name": "react",
-      "version": "18.3.1",
-      "license": "MIT",
-      "source": "https://github.com/facebook/react",
-      "purpose": "UI runtime for the web workbench and the in-page client module host; bundled into /vendor/* shared-singleton chunks.",
-      "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
     },
     {
       "name": "react-dom",

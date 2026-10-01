@@ -627,8 +627,8 @@ function emit(s: Json, ctx: EmitCtx): string {
         // because TypeBox's Type.Record compiles a patterned key to `patternProperties` alone,
         // which by itself constrains nothing: a key that does not match simply falls through to the
         // absent additionalProperties and is accepted. Measured on 0.34.33 — without the closing
-        // option, `{'X-Agnes-Session': 'x'}` passes a Record keyed `^X-Ext-`. With it, the key is
-        // rejected, which is what the schema says and what ajv does for propertyNames.
+        // option, a key that does not match the pattern passes. With it, such a key is rejected,
+        // which is what the schema says and what ajv does for propertyNames.
         const names = s.propertyNames as Json | undefined
         if (names !== undefined) {
           checkNoLeftoverKeys(s, ctx, 'object (keyed dict)', [

@@ -2,14 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { HOOK_EVENTS } from '../src/index.js'
 
 describe('hook event vocabulary', () => {
-  it('exposes all seventeen events in the specified order and prevents mutation', () => {
+  it('exposes all sixteen events in the specified order and prevents mutation', () => {
     expect([...HOOK_EVENTS]).toEqual([
       'session_start',
       'resources_discover',
       'before_step',
       'context',
       'before_request',
-      'before_provider_headers',
       'request_error',
       'tool_call',
       'tool_result',

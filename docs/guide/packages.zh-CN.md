@@ -1,4 +1,4 @@
-# 插件安装、信任、更新与清理
+# 插件安装、启用、更新与清理
 
 [English](packages.md) | 简体中文
 
@@ -25,11 +25,11 @@ AGH 默认提供三个官方助手插件。新建本地配置，以及已有配�
 | 阶段 | 你要确认什么 |
 | --- | --- |
 | 检查与安装 | 来源、版本、内容摘要与能力声明是否符合预期 |
-| 信任与启用 | 是否允许这一版代码在当前实例中提供能力 |
+| 审核与启用 | 是否允许这一版代码在当前实例中提供能力 |
 | 核对实际状态 | 相关后端行是否 ready，前端贡献是否在页面加载 |
 | 更新或移除 | 新版本是否生效，旧能力是否正确撤下 |
 
-安装成功默认仍为 untrusted、installed-disabled。`desired` 表示期望启用状态，`actual` 表示实际运行状态；分别查看它们，才能区分“已提出请求”和“已经可用”。
+安装成功后默认保持停用。AGH 仍会在内部记录审核通过的版本和能力范围，再进入激活流程。`desired` 表示期望启用状态，`actual` 表示实际运行状态；分别查看它们，才能区分“已提出请求”和“已经可用”。
 
 ## 安装后端示例
 
@@ -48,13 +48,13 @@ node packages/cli/dist/local/agnes.mjs package enable @agnes-examples/hot-tool-p
 node packages/cli/dist/local/agnes.mjs package status
 ```
 
-Web 对应“设置 → 插件 → 从来源安装 → 检查/安装 → 信任 → 启用”。包状态和逐行 actual 要一起看；存在服务依赖、浏览器未打开、策略拒绝或候选加载失败时，启用状态与实际可用状态可能不同。
+Web 对应“设置 → 插件 → 从来源安装 → 检查/安装 → 启用”。确认启用时会审核并绑定当前完整性摘要和能力摘要，校验成功后才继续激活；普通 Web 流程不再单独显示信任动作。已安装列表的开关只在插件实际运行时打开。服务依赖、策略拒绝或候选加载失败时，开关保持关闭，失败原因显示在当前行，可直接再次点击启用重试。
 
 ## 更新与回滚
 
 当前 shell `package` 没有 `update` 子命令；请在 Web 插件页选已安装包的“从新来源更新”，或先检查来源后用 TUI `/package update <id> <source> <integrity>` 提交操作（该命令不提供安装式交互确认），程序调用则用 Node SDK `client.packages.update`。
 
-可以用 `hot-service/v1` 与 `v2`，或 `client-panel/v1` 与 `v2` 演练。先安装、信任、启用 v1；更新时选择同 ID 的 v2 来源，核对新摘要和能力变化，按界面提示确认信任与激活。观察 actual 和界面/服务值，而不只看操作进度为 100%。
+可以用 `hot-service/v1` 与 `v2`，或 `client-panel/v1` 与 `v2` 演练。先安装并启用 v1；更新时选择同 ID 的 v2 来源，核对新摘要和能力变化，按界面提示完成审核与激活。观察 actual 和界面/服务值，而不只看操作进度为 100%。
 
 ```sh
 node packages/cli/dist/local/agnes.mjs package rollback PACKAGE_ID
@@ -74,7 +74,7 @@ node packages/cli/dist/local/agnes.mjs package cancel OPERATION_ID
 node packages/cli/dist/local/agnes.mjs packages pins inspect
 ```
 
-撤信任使用 Web 中相应动作或 Node SDK；shell 没有通用 `package untrust` 命令。禁用撤下能力，删除处理安装状态与自有文件；正在被使用的快照可能有 pin，不能手动删除引用中的目录。`packages pins release PIN_ID` 是针对核验过的孤儿 pin 的显式清理动作，不用它绕开运行安全门。已有隔离演示验证禁用后三个示例包均可删除；仍需以目标平台和最终发行构建复验，具体基线见[验证记录](../maintainers/verification.zh-CN.md)。
+撤信任保留在 Node SDK 中，供管理和恢复流程使用；普通 Web 页面不再显示这一动作，shell 也没有通用 `package untrust` 命令。禁用撤下能力，删除处理安装状态与自有文件；正在被使用的快照可能有 pin，不能手动删除引用中的目录。`packages pins release PIN_ID` 是针对核验过的孤儿 pin 的显式清理动作，不用它绕开运行安全门。已有隔离演示验证禁用后三个示例包均可删除；仍需以目标平台和最终发行构建复验，具体基线见[验证记录](../maintainers/verification.zh-CN.md)。
 
 取消是请求，收到回执后继续查 operation；部分有副作用操作不能当作从未发生。工具、事件监听、Cordis 服务与前端槽位应随所属 fiber 清理，外部业务数据不因插件卸载自动撤销。
 
@@ -82,4 +82,4 @@ node packages/cli/dist/local/agnes.mjs packages pins inspect
 
 Runtime target 带完整身份/修订信息。Host 已有受限活树事务和增量调和；合格变更可以复用未改变行，不能承诺任何插件都无中断热更新。依赖、身份变更、超时、事务补偿失败和污染树都可能触发拒绝或整体重建。浏览器再根据自己的名册更新和清理，Host active 不等于浏览器已加载。
 
-实现依据：[shell 命令](../../packages/cli/src/commands/package.ts)、[SDK](../../packages/sdk/src/package-admin.node.ts)、[Web 管理](../../packages/web/src/admin/plugins/admin.ts)、[EntryTree](../../packages/cordis-loader/src/entry-tree.ts)、[Host 发布](../../packages/host/src/runtime-target-publisher.ts)。
+实现依据：[shell 命令](../../packages/cli/src/commands/package.ts)、[SDK](../../packages/sdk/src/package-admin.node.ts)、[Web 管理](../../packages/web/src/admin/plugins/admin.tsx)、[EntryTree](../../packages/cordis-loader/src/entry-tree.ts)、[Host 发布](../../packages/host/src/runtime-target-publisher.ts)。

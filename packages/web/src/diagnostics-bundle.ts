@@ -5,17 +5,19 @@ import type {
   EventEnvelope,
   UITimeline,
 } from '@agnes/protocol'
+// 走诊断相关的子路径，而不是 @agnes/web-units 的包根 barrel：barrel 会连带导出整个 UI 组件树
+// (含 XMarkdown 的 CJS 构建)，而它的 CJS 里有 require('./DebugPanel.css')，在没有 CSS 加载器的
+// 环境里会直接抛语法错误。本模块只做收集、脱敏和打包，不需要 React。
 import {
   type BrowserLog,
-  buildZip,
   type DiagnosticsArtifact,
   type DiagnosticsBundle,
   type DiagnosticsInclude,
   type DiagnosticsWarning,
   type LogTail,
-  renderDiagnosticsViewer,
-  type ZipEntry,
-} from '@agnes/web-units'
+} from '@agnes/web-units/diagnostics-types'
+import { renderDiagnosticsViewer } from '@agnes/web-units/diagnostics-viewer'
+import { buildZip, type ZipEntry } from '@agnes/web-units/diagnostics-zip'
 import { redactDiagnostic, redactDiagnosticText } from './diagnostics-redact.js'
 
 export type RpcCall = (method: string, params: unknown, opts?: { signal?: AbortSignal }) => Promise<unknown>
@@ -24,6 +26,8 @@ export type CollectInput = {
   sessionId: string | null
   sessionTitle: string | null
   projection: UITimeline | undefined
+  /** Whether `projection` is a window with earlier history left unloaded (the Web's bounded opening). */
+  projectionHasEarlier: boolean
   browserLog: BrowserLog
   browser: Record<string, unknown>
   now: Date
@@ -50,6 +54,7 @@ const UNAVAILABLE = new Set<unknown>([
   'NOT_REGISTERED',
 ])
 const ARTIFACT_URI = /^artifact:\/\/([0-9a-f]{64})$/
+const IMPORT_SOURCES = new Set<unknown>(['claude-code', 'codex', 'pi', 'agnes'])
 const encoder = new TextEncoder()
 
 const abortError = () => new DOMException('Aborted', 'AbortError')
@@ -157,6 +162,9 @@ export async function collectDiagnostics(
   }
 
   const sessionId = input.sessionId
+  // The Web keeps showing the previous session's projection until the new one's first timeline
+  // lands; a projection built for another session never ships beside this session's ledger.
+  const projection = input.projection?.sessionId === sessionId ? input.projection : undefined
   const effective = { ...include, conversation: include.conversation && sessionId !== null }
   const [collected, apis, config] = await Promise.all([
     // Always read for bundle.version, but a failure only matters when logs or system were selected.
@@ -187,6 +195,14 @@ export async function collectDiagnostics(
       }
       read = true
       for (const event of page.events) {
+        // Only the source is named: the imported id and path would identify the original machine.
+        const start = event.seq === 1 && event.type === 'session/start' ? event.data : undefined
+        const imported = (start as { imported?: unknown } | null | undefined)?.imported
+        if (imported && typeof imported === 'object' && !Array.isArray(imported)) {
+          const { source } = imported as { source?: unknown }
+          const named = IMPORT_SOURCES.has(source) ? source : 'unknown'
+          warnings.push({ source: 'session', reason: 'imported', detail: `imported from ${named}` })
+        }
         const line = JSON.stringify(redactDiagnostic(event))
         bytes += encoder.encode(line).byteLength + 1
         if (bytes > limits.ledgerBytes) {
@@ -208,7 +224,13 @@ export async function collectDiagnostics(
     }
     if (read) ledger = { file: 'events.jsonl', count: lines.length, lastSeq: afterSeq, truncated }
   }
-  if (effective.conversation && !input.projection) warnings.push({ source: 'trace', reason: 'unavailable' })
+  if (effective.conversation) {
+    if (!projection) warnings.push({ source: 'trace', reason: 'unavailable' })
+    else if (input.projectionHasEarlier) {
+      const detail = `仅含已加载的最近 ${projection.nodes.length} 个节点，更早的历史未包含`
+      warnings.push({ source: 'trace', reason: 'truncated', detail })
+    }
+  }
   if (expired) warnings.push({ source: 'collect', reason: 'timeout' })
   if (signal.aborted) throw abortError()
 
@@ -229,9 +251,7 @@ export async function collectDiagnostics(
     sessionId,
     sessionTitle: input.sessionTitle,
     include: effective,
-    ...(effective.conversation && input.projection
-      ? { trace: omitInlineMedia(input.projection) as UITimeline }
-      : {}),
+    ...(effective.conversation && projection ? { trace: omitInlineMedia(projection) as UITimeline } : {}),
     ...(ledger ? { events: ledger } : {}),
     artifacts: [...artifacts.values()],
     ...(effective.logs

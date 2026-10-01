@@ -92,7 +92,7 @@ export const example = {
 
 [联动教程](fullstack.zh-CN.md)使用同一受信 Cordis 行上的 `ctx.services.register()` 和 `agnes.clientDescriptors`。它不把 `ctx.provide()` 伪装成远程方法，也不让 `ctx.extension().registerService()` 绕过限制。
 
-当前源码已开放 17 类 hook 的 `registerHook`，并收敛第三方后端插件到 `agnes.plugins` 行；旧 `agnes.extensions` 不能继续作为第三方普通后端入口。内置兼容清单与第三方作者入口的规则不同。具体注册和授权仍以当前源码、包预览与实际行状态为准。
+当前源码已开放 16 类 hook 的 `registerHook`，并收敛第三方后端插件到 `agnes.plugins` 行；旧 `agnes.extensions` 不能继续作为第三方普通后端入口。内置兼容清单与第三方作者入口的规则不同。具体注册和授权仍以当前源码、包预览与实际行状态为准。
 
 ## 前后端生命周期
 

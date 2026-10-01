@@ -45,7 +45,7 @@
       "required": ["name", "description", "parameters"],
       "properties": {
         "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
-        "description": { "type": "string", "maxLength": 8192 },
+        "description": { "type": "string", "maxLength": 4096 },
         "parameters": { "$ref": "#/$defs/JsonValue" }
       }
     },
@@ -257,6 +257,7 @@
       }
     },
     "Billing": { "$ref": "session-v1.json#/$defs/Billing" },
+    "ResponseMeta": { "$ref": "session-v1.json#/$defs/ResponseMeta" },
     "Timing": {
       "type": "object",
       "additionalProperties": false,
@@ -333,7 +334,8 @@
             "credits": { "type": "number", "minimum": 0 },
             "creditSource": { "enum": ["gateway", "estimated"] },
             "billing": { "$ref": "#/$defs/Billing" },
-            "timing": { "$ref": "#/$defs/Timing" }
+            "timing": { "$ref": "#/$defs/Timing" },
+            "response": { "$ref": "#/$defs/ResponseMeta" }
           }
         },
         {
@@ -356,7 +358,8 @@
             "message": { "type": "string", "maxLength": 4096 },
             "retryable": { "type": "boolean" },
             "retryAfterMs": { "type": "integer", "minimum": 0 },
-            "requestId": { "type": "string", "maxLength": 128 }
+            "requestId": { "type": "string", "maxLength": 128 },
+            "response": { "$ref": "#/$defs/ResponseMeta" }
           }
         },
         {

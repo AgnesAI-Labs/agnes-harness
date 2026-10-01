@@ -7,6 +7,8 @@ import type {
   ConfigTestResult,
 } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { renderRegion, SettingsAccounts, setSettingsSelectOptions, unmountRegion } from '@agnes/web-ui'
+import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 
@@ -110,9 +112,7 @@ function readElements(): SettingsElements {
   }
 }
 
-function option(label: string, value: string): HTMLOptionElement {
-  return Object.assign(document.createElement('option'), { textContent: label, value })
-}
+const option = (label: string, value: string) => ({ label, value })
 
 function errorText(error: unknown, secret: string): string {
   const message = configurationReason(error) ?? (error instanceof Error ? error.message : '配置请求失败')
@@ -136,6 +136,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   // The model pane is independently reconcilable. Resolve its list/button at the point of use;
   // keeping either reference here would make a reopened settings dialog target a detached pane.
   const accountList = () => optionalElement('config-accounts', 'div')
+  let renderedAccountList: HTMLElement | undefined
   const addAccount = () => optionalElement('config-add-account', 'button')
   // The account dialog itself belongs to the stable settings shell, so an in-flight edit survives
   // a model-pane replacement.
@@ -254,8 +255,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (accountName) accountName.disabled = !connected || busy || oauth.operation() !== undefined
     const currentAddAccount = addAccount()
     if (currentAddAccount) currentAddAccount.disabled = !connected || busy
-    for (const control of accountList()?.querySelectorAll('button') ?? [])
-      control.disabled = !connected || busy
+    renderAccounts()
     ui.baseUrl.disabled = !connected || busy || oauthSelected
     ui.apiKey.disabled = !connected || busy || oauthSelected
     ui.test.disabled =
@@ -270,14 +270,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   const renderModels = (models: readonly ConfigModel[] = tested?.models ?? []): void => {
     const previousModel = ui.models.value
-    ui.models.replaceChildren(
+    setSettingsSelectOptions(ui.models, [
       option(models.length ? '选择要保存的默认模型' : '先测试 Provider，再选择默认模型', ''),
-    )
-    for (const model of models) ui.models.append(option(`${model.name} · ${model.id}`, model.id))
+      ...models.map((model) => option(`${model.name} · ${model.id}`, model.id)),
+    ])
     const savedModel = models.some((model) => model.id === previousModel)
       ? previousModel
       : (savedProvider()?.model ?? (models.length === 1 ? models[0]?.id : undefined))
-    if (savedModel && models.some((model) => model.id === savedModel)) ui.models.value = savedModel
+    ui.models.value = savedModel && models.some((model) => model.id === savedModel) ? savedModel : ''
     updateButtons()
   }
 
@@ -298,32 +298,34 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   const renderProviders = (): void => {
     const savedProviderId = savedProvider()?.id
-    ui.provider.replaceChildren(option(providers.length ? '选择 Provider' : '无可用 Provider', ''))
-    for (const method of ['api-key', 'oauth']) {
-      const group = document.createElement('optgroup')
-      group.label = method === 'oauth' ? '订阅登录' : 'API Key'
-      for (const provider of providers) {
-        if (authMethods(provider).includes(method as 'api-key' | 'oauth'))
-          group.append(
-            option(
-              method === 'oauth' ? `${provider.label.replace(/\s*订阅$/, '')} · 订阅登录` : provider.label,
-              providerValue(provider, method),
-            ),
-          )
-      }
-      if (group.children.length) ui.provider.append(group)
-    }
+    const groups = (['api-key', 'oauth'] as const).map((method) => ({
+      label: method === 'oauth' ? '订阅登录' : 'API Key',
+      options: providers
+        .filter((provider) => authMethods(provider).includes(method))
+        .map((provider) =>
+          option(
+            method === 'oauth' ? `${provider.label.replace(/\s*订阅$/, '')} · 订阅登录` : provider.label,
+            providerValue(provider, method),
+          ),
+        ),
+    }))
+    setSettingsSelectOptions(
+      ui.provider,
+      [option(providers.length ? '选择 Provider' : '无可用 Provider', '')],
+      groups,
+    )
     if (savedProviderId && providers.some((provider) => provider.id === savedProviderId))
       ui.provider.value = savedProviderId
     else if (providers[0]) ui.provider.value = providers[0].id
     const selected = providers.find((provider) => provider.id === providerId())
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
-    ui.authMethod.replaceChildren(
-      ...methods.map((method) => option(method === 'oauth' ? '订阅登录' : 'API Key', method)),
+    setSettingsSelectOptions(
+      ui.authMethod,
+      methods.map((method) => option(method === 'oauth' ? '订阅登录' : 'API Key', method)),
     )
     const saved = savedProvider()
     const savedAuth = saved && 'authType' in saved ? saved.authType : undefined
-    if (savedAuth && methods.includes(savedAuth)) ui.authMethod.value = savedAuth
+    ui.authMethod.value = savedAuth && methods.includes(savedAuth) ? savedAuth : (methods[0] ?? 'api-key')
     if (selected) ui.provider.value = providerValue(selected, ui.authMethod.value)
     ui.authMethodField.hidden = methods.length < 2
     ui.baseUrl.value = savedProvider()?.baseUrl ?? selected?.baseUrl ?? ''
@@ -654,78 +656,28 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   }
   const renderAccounts = (): void => {
     const currentAccountList = accountList()
+    if (renderedAccountList && renderedAccountList !== currentAccountList) {
+      unmountRegion(renderedAccountList)
+      renderedAccountList = undefined
+    }
     if (!currentAccountList) return
-    currentAccountList.replaceChildren()
-    for (const row of configuration?.accounts ?? []) {
-      const item = document.createElement('div')
-      item.className = 'config-account'
-      item.dataset.selected = String(row.accountId === editingId)
-      item.dataset.credential = row.credentialConfigured ? 'configured' : 'missing'
-      const title = document.createElement('button')
-      title.type = 'button'
-      title.className = 'config-account-select'
-      title.setAttribute('aria-pressed', String(row.accountId === editingId))
-      title.textContent = row.label
-      title.addEventListener('click', () => editAccount(row.accountId))
-      const info = document.createElement('span')
-      info.className = 'config-account-meta'
-      const route = document.createElement('span')
-      route.textContent = `${row.providerId} · ${row.model}`
-      const state = document.createElement('span')
-      state.className = 'config-account-status'
-      state.dataset.tone = row.enabled ? 'success' : 'neutral'
-      state.textContent = row.enabled ? '已启用' : '已停用'
-      info.append(route, state)
-      if (configuration?.defaultAccountId === row.accountId) {
-        const defaultStatus = document.createElement('span')
-        defaultStatus.className = 'config-account-status'
-        defaultStatus.dataset.tone = 'brand'
-        defaultStatus.textContent = '默认'
-        info.append(defaultStatus)
-      }
-      const actions = document.createElement('div')
-      actions.className = 'config-account-actions'
-      const edit = document.createElement('button')
-      edit.type = 'button'
-      edit.textContent = '编辑'
-      edit.setAttribute('aria-label', `编辑 ${row.label}`)
-      edit.addEventListener('click', () => editAccount(row.accountId))
-      actions.append(edit)
-      for (const [action, label] of [
-        [row.enabled ? 'disable' : 'enable', row.enabled ? '停用' : '启用'],
-        ['default', '设为默认'],
-        ['remove', removingId === row.accountId ? '确认删除' : '删除'],
-      ] as const) {
-        if (action === 'default' && (!row.enabled || configuration?.defaultAccountId === row.accountId))
-          continue
-        // Make the default transfer explicit before disabling/removing its account.
-        if (
-          ['disable', 'remove'].includes(action) &&
-          configuration?.defaultAccountId === row.accountId &&
-          configuration.accounts?.some((other) => other.enabled && other.accountId !== row.accountId)
-        )
-          continue
-        const control = document.createElement('button')
-        control.type = 'button'
-        control.textContent = label
-        control.setAttribute('aria-label', `${label} ${row.label}`)
-        control.addEventListener('click', () => void accountAction(row, action))
-        actions.append(control)
-      }
-      if (removingId === row.accountId) {
-        const cancel = document.createElement('button')
-        cancel.type = 'button'
-        cancel.textContent = '取消删除'
-        cancel.addEventListener('click', () => {
+    renderedAccountList = currentAccountList
+    renderRegion(
+      currentAccountList,
+      createElement(SettingsAccounts, {
+        accounts: configuration?.accounts ?? [],
+        defaultAccountId: configuration?.defaultAccountId,
+        disabled: !connected || loadPhase === 'loading' || testPending || savePending,
+        editingId,
+        removingId,
+        onEdit: editAccount,
+        onAction: (row, action) => void accountAction(row, action),
+        onCancelRemove: () => {
           removingId = undefined
           renderAccounts()
-        })
-        actions.append(cancel)
-      }
-      item.append(title, info, actions)
-      currentAccountList.append(item)
-    }
-    updateButtons()
+        },
+      }),
+    )
   }
   optionalElement('account-dialog-close', 'button')?.addEventListener('click', () => {
     closeAccountDialog()
@@ -753,8 +705,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ui.baseUrl.value = selected?.baseUrl ?? ''
     ui.apiKey.value = ''
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
-    ui.authMethod.replaceChildren(
-      ...methods.map((method) => option(method === 'oauth' ? '订阅登录' : 'API Key', method)),
+    setSettingsSelectOptions(
+      ui.authMethod,
+      methods.map((method) => option(method === 'oauth' ? '订阅登录' : 'API Key', method)),
     )
     ui.authMethod.value = ui.provider.value.endsWith(':oauth') ? 'oauth' : (methods[0] ?? 'api-key')
     ui.authMethodField.hidden = methods.length < 2

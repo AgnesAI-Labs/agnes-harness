@@ -187,29 +187,73 @@ afterEach(() => {
 
 const declaredUrl = () => `http://127.0.0.1:${declaredPort}`
 
-const run = async (api: string, credential: string, baseUrl = declaredUrl()): Promise<WireEvent[]> => {
+const run = async (
+  api: string,
+  credential: string,
+  baseUrl = declaredUrl(),
+  cacheProbe = false,
+): Promise<WireEvent[]> => {
   const decl: ManualRoute = {
     route: 'gw',
     api,
     baseUrl,
     credentialRef: 'secret://agnes/gw',
-    models: [fakeModel({ id: 'm1', route: 'gw', api, baseUrl })],
+    models: [
+      fakeModel({
+        id: 'm1',
+        route: 'gw',
+        api,
+        baseUrl,
+        ...(cacheProbe ? { compat: { supportsLongCacheRetention: true } } : {}),
+      }),
+    ],
   }
   const adapter = new PiAdapter({ manualRoutes: [decl], maxRetries: 0, sleep: async () => {} })
   adapter.bindCredential('gw', credential)
   const out: WireEvent[] = []
-  for await (const event of adapter.stream('gw', fakeRequest({ route: 'gw', model: 'm1' }), {
-    signal: new AbortController().signal,
-    toolNames: [],
-    sessionKey: 'agnes:t:a:cli:dm:x',
-    timeoutMs: { firstToken: 2000, total: 8000 },
-  })) {
+  for await (const event of adapter.stream(
+    'gw',
+    fakeRequest({ route: 'gw', model: 'm1', ...(cacheProbe ? { system: 'stable system' } : {}) }),
+    {
+      signal: new AbortController().signal,
+      toolNames: [],
+      sessionKey: 'agnes:t:a:cli:dm:x',
+      timeoutMs: { firstToken: 2000, total: 8000 },
+    },
+  )) {
     out.push(event)
   }
   return out
 }
 
 describe('the request goes to the endpoint the route declared', () => {
+  it('ignores ambient long cache retention for Anthropic requests', async () => {
+    const previous = process.env.PI_CACHE_RETENTION
+    setEnv('PI_CACHE_RETENTION', 'long')
+    try {
+      await run('anthropic-messages', 'BOUND-KEY', declaredUrl(), true)
+      const anthropic = JSON.parse(hits[0]?.body ?? '{}')
+      expect(JSON.stringify(anthropic)).toContain('cache_control')
+      expect(JSON.stringify(anthropic)).not.toContain('"ttl":"1h"')
+    } finally {
+      setEnv('PI_CACHE_RETENTION', previous)
+    }
+  })
+
+  it('ignores ambient long cache retention for OpenAI-compatible requests', async () => {
+    const previous = process.env.PI_CACHE_RETENTION
+    setEnv('PI_CACHE_RETENTION', 'long')
+    try {
+      await run('openai-completions', 'BOUND-KEY', declaredUrl(), true)
+      expect(hits[0]).toMatchObject({ where: 'DECLARED', kind: 'request' })
+      const compatible = JSON.parse(hits[0]?.body ?? '{}')
+      expect(compatible).not.toHaveProperty('prompt_cache_key')
+      expect(compatible).not.toHaveProperty('prompt_cache_retention')
+    } finally {
+      setEnv('PI_CACHE_RETENTION', previous)
+    }
+  })
+
   for (const api of APIS) {
     it(`${api} contacts only the declared endpoint`, async () => {
       const credential = api === 'openai-codex-responses' ? codexKey() : 'BOUND-KEY'

@@ -18,6 +18,9 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
+import type { AntdRoot } from '@agnes/web-ui'
+import { createAntdRoot } from '@agnes/web-ui'
+import { ConversationUsage, DocumentPreview } from '@agnes/web-ui/assistant-ui'
 import {
   Approval,
   type ApprovalHandle,
@@ -55,21 +58,18 @@ import {
   type TranscriptDependencies,
   type TranscriptHandle,
 } from '@agnes/web-units'
-import { createElement, useLayoutEffect, useRef } from 'react'
+import { createElement, type ReactNode, useLayoutEffect, useMemo, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { createRoot, type Root } from 'react-dom/client'
+import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
-import {
-  createDocumentPreview,
-  type DocumentPreviewInput,
-  type DocumentPreviewKind,
-} from './document-preview.js'
+import type { DocumentPreviewInput, DocumentPreviewKind } from './document-preview.js'
 import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
 import { createPermissionPicker } from './permission-picker.js'
 import { isComposerSubmitShortcut, resizeComposer } from './presentation.js'
 import { bindSidebar } from './shell.js'
 import { createTimelineRenderer } from './timeline.js'
+import { TimelineNodeHost } from './timeline-node-host.js'
 import { createUsagePanel } from './usage.js'
 
 export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
@@ -86,6 +86,7 @@ const COMPOSER_DEPENDENCIES: ComposerDependencies = {
   createModelPicker,
   createPermissionPicker,
   createUsagePanel,
+  UsagePanel: ConversationUsage,
   isSubmitShortcut: isComposerSubmitShortcut,
   resize: resizeComposer,
 }
@@ -274,7 +275,7 @@ export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount
   const overlayHost = document.createElement('div')
   overlayHost.dataset.agnesDshShellOverlay = 'true'
   document.body.append(overlayHost)
-  const overlayRoot = createRoot(overlayHost)
+  const overlayRoot = createAntdRoot(overlayHost)
   flushSync(() => {
     overlayRoot.render(
       createElement(
@@ -339,6 +340,7 @@ function SidebarDshFrame({
 }
 
 export interface SettingsRegionOptions {
+  computerUse?: ReactNode
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
 }
@@ -363,15 +365,15 @@ export function mountSettingsPaneRegion(
     registry.declare(name, spec, 'web-shell')
   }
   const handle = { current: null as SettingsRegionHandle | null }
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(createElement(SettingsBuiltin, { ref: handle, options }))
   })
-  const dshRoots = new Map<string, Root>()
+  const dshRoots = new Map<string, AntdRoot>()
   const dshPaneSlots = new Map<SettingsPane, string[]>()
   const mountDshOutlet = (name: string, host: HTMLElement, pane?: SettingsPane): void => {
     if (dshRoots.has(name)) throw new Error(`settings DSH slot is mounted twice: ${name}`)
-    const dshRoot = createRoot(host)
+    const dshRoot = createAntdRoot(host)
     dshRoots.set(name, dshRoot)
     if (pane) dshPaneSlots.set(pane, [...(dshPaneSlots.get(pane) ?? []), name])
     flushSync(() => {
@@ -389,12 +391,12 @@ export function mountSettingsPaneRegion(
     if (!host) throw new Error(`settings shell is missing ${name}`)
     mountDshOutlet(name, host)
   }
-  const paneRoots = new Map<SettingsPane, Root>()
+  const paneRoots = new Map<SettingsPane, AntdRoot>()
   const removeBuiltin = new Map<SettingsPane, () => void>()
   for (const pane of Object.keys(PANE_IDS) as SettingsPane[]) {
     const slotHost = container.querySelector<HTMLElement>(`#${settingsPaneSlotHostId(pane)}`)
     if (!slotHost) throw new Error(`settings shell is missing ${settingsPaneSlotHostId(pane)}`)
-    const paneRoot = createRoot(slotHost)
+    const paneRoot = createAntdRoot(slotHost)
     paneRoots.set(pane, paneRoot)
     const remove = registry.register(
       {
@@ -403,7 +405,7 @@ export function mountSettingsPaneRegion(
         owner: SETTINGS_UNIT_OWNER[pane],
         priority: 0,
       },
-      () => createElement(SettingsPaneBuiltin, { pane }),
+      () => createElement(SettingsPaneBuiltin, { pane, computerUse: options.computerUse }),
     )
     removeBuiltin.set(pane, remove)
     flushSync(() => {
@@ -575,7 +577,7 @@ export function mountComposerRegion(
     },
     () => createElement(SlotOutlet, { name: 'conversation.composer.bar' }),
   )
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -653,49 +655,71 @@ function DocumentPreviewBuiltin({
   document: RightbarDocument | undefined
   resources?: ClientResourceService
 }): ReturnType<typeof createElement> {
-  const host = useRef<HTMLDivElement>(null)
+  const artifact = document?.artifact
+  const laneId = document?.laneId
+  const kind = document?.kind ?? 'text'
+  const request = useMemo(
+    () => (artifact && laneId ? { artifact, laneId, kind } : undefined),
+    [artifact, laneId, kind],
+  )
+  const [loaded, setLoaded] = useState<{
+    request: NonNullable<typeof request>
+    resources: ClientResourceService
+    input: DocumentPreviewInput
+  }>()
   useLayoutEffect(() => {
-    if (!host.current) return
-    const preview = createDocumentPreview(host.current, documentPreviewInput(document))
+    setLoaded(undefined)
+    if (!request || !resources) return
     let active = true
     let resource: Awaited<ReturnType<ClientResourceService['documents']['load']>> | undefined
-    if (document?.artifact && document.laneId && resources) {
-      void resources.documents
-        .load({ laneId: document.laneId, kind: document.kind, artifact: document.artifact })
-        .then((loaded) => {
-          if (!active) {
-            loaded.release()
-            return
-          }
-          resource = loaded
-          preview.update({
-            ...documentPreviewInput(document),
-            ...(loaded.content === undefined ? {} : { content: loaded.content }),
-            ...(loaded.url === undefined ? {} : { resourceUrl: loaded.url }),
-          })
+    void resources.documents
+      .load(request)
+      .then((value) => {
+        if (!active) {
+          value.release()
+          return
+        }
+        resource = value
+        setLoaded({
+          request,
+          resources,
+          input: {
+            kind: request.kind,
+            ...(value.content === undefined ? {} : { content: value.content }),
+            ...(value.url === undefined ? {} : { resourceUrl: value.url }),
+          },
         })
-        .catch((error: unknown) => {
-          if (!active) return
-          // A reclaimed screenshot says so in text; an image preview would only show its URL failure.
-          const reclaimed = error instanceof ClientResourceReclaimedError
-          preview.update({
-            kind: reclaimed ? 'text' : (document?.kind ?? 'text'),
-            title: document?.title ?? '文档预览',
-            content: reclaimed ? '截图已按保留策略清理' : '文档资源暂不可用',
-          })
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setLoaded({
+          request,
+          resources,
+          input: {
+            kind: 'text',
+            content:
+              error instanceof ClientResourceReclaimedError ? '截图已按保留策略清理' : '文档资源暂不可用',
+          },
         })
-    }
+      })
     return () => {
       active = false
       resource?.release()
-      preview.dispose()
     }
-  }, [document, resources])
-  return createElement('div', {
-    ref: host,
-    className: 'rightbar-document-preview',
-    'data-rightbar-document-preview': document?.id ?? 'empty',
-  })
+  }, [request, resources])
+  // A changed owner must never paint the previous resource while its replacement is loading.
+  const input =
+    loaded && loaded.request === request && loaded.resources === resources
+      ? { ...documentPreviewInput(document), ...loaded.input }
+      : documentPreviewInput(document)
+  return createElement(
+    'div',
+    {
+      className: 'rightbar-document-preview',
+      'data-rightbar-document-preview': document?.id ?? 'empty',
+    },
+    createElement(DocumentPreview, input),
+  )
 }
 
 function RightbarDocumentTab({
@@ -890,7 +914,7 @@ export function mountRightbarRegion(
       ),
     )
   }
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   const watchedSlots = [
     'rightbar',
     'rightbar.session',
@@ -947,7 +971,7 @@ export function mountTraceRegion(
     { name: TRACE_SLOT as string, id: 'builtin-trace', owner: '@agnes/web-trace', priority: 0 },
     () => createElement(Trace, { ref: handle, root: container, options }),
   )
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: TRACE_SLOT })))
   })
@@ -1004,7 +1028,7 @@ export function mountTopbarRegion(registry: SlotRegistry, container: HTMLElement
       }),
   )
   container.replaceChildren()
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -1080,7 +1104,7 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
     () => ApprovalDshFrame({ setHandle }),
   )
   container.replaceChildren()
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: APPROVAL_SLOT })),
@@ -1220,7 +1244,7 @@ export function mountConversationRegion(
       }),
   )
   container.replaceChildren()
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -1281,7 +1305,7 @@ export function mountSidebarRegion(
     { name: SIDEBAR_SLOT as string, id: 'builtin-sidebar', owner: '@agnes/web-sidebar', priority: 0 },
     () => createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'sidebar' as never })),
   )
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -1322,6 +1346,11 @@ export function mountTranscriptRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: {
+    /** Select the React host; callers that omit it retain the legacy renderer. */
+    nodeHost?: 'react'
+    /** XMarkdown is available only with the explicit React host probe. */
+    markdownRenderer?: 'legacy' | 'xmarkdown'
+    claim?: ClaimResolver
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
     session?: SessionService
@@ -1351,22 +1380,34 @@ export function mountTranscriptRegion(
       },
     },
     () =>
-      createElement(Transcript, {
-        ref: handle,
-        dependencies: {
-          ...TRANSCRIPT_DEPENDENCIES,
-          createRenderer(rendererOptions) {
-            return createTimelineRenderer({
-              ...rendererOptions,
-              registry,
-              ...(options.session ? { session: options.session } : {}),
-              ...(options.locale ? { locale: options.locale } : {}),
-              ...(options.resources ? { resources: options.resources } : {}),
-            })
-          },
-        },
-        ...options,
-      }),
+      options.nodeHost === 'react'
+        ? createElement(TimelineNodeHost, {
+            ref: handle,
+            registry,
+            ...(options.markdownRenderer ? { markdownRenderer: options.markdownRenderer } : {}),
+            ...(options.claim ? { claim: options.claim } : {}),
+            ...(options.newContentButton ? { newContentButton: options.newContentButton } : {}),
+            ...(options.onFork ? { onFork: options.onFork } : {}),
+            ...(options.session ? { session: options.session } : {}),
+            ...(options.locale ? { locale: options.locale } : {}),
+            ...(options.resources ? { resources: options.resources } : {}),
+          })
+        : createElement(Transcript, {
+            ref: handle,
+            dependencies: {
+              ...TRANSCRIPT_DEPENDENCIES,
+              createRenderer(rendererOptions) {
+                return createTimelineRenderer({
+                  ...rendererOptions,
+                  registry,
+                  ...(options.session ? { session: options.session } : {}),
+                  ...(options.locale ? { locale: options.locale } : {}),
+                  ...(options.resources ? { resources: options.resources } : {}),
+                })
+              },
+            },
+            ...options,
+          }),
   )
   const removeViewBuiltin = registry.register(
     {
@@ -1412,7 +1453,7 @@ export function mountTranscriptRegion(
     () => null,
   )
   container.replaceChildren()
-  const root = createRoot(container)
+  const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
@@ -1479,7 +1520,7 @@ export function mountEmptyStateRegion(
     EmptyStateBuiltin,
   )
   container.replaceChildren()
-  const root: Root = createRoot(container)
+  const root: AntdRoot = createAntdRoot(container)
   const providerProps = {
     registry,
     ...(services.session ? { session: services.session } : {}),

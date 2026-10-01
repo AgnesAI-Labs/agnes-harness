@@ -26,7 +26,7 @@ function fail(text: string): ToolResult {
 export const editTool = defineTool({
   name: 'edit',
   description:
-    'Apply exact text replacements to a file. Each oldText must occur exactly once in the current file content - include surrounding lines when a short string would match more than once - and the edits are applied in the order given.',
+    'Apply exact text replacements to a file. Each oldText must occur exactly once in the current file content - include surrounding lines when a short string would match more than once - and the edits are applied in the order given. Build large generated files incrementally: aim for at most 8 KiB of new content per call, preserve the rest of the file, and split larger additions across multiple calls.',
   parameters: EditParams,
   meta: {
     isReadOnly: false,

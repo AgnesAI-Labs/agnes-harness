@@ -9,6 +9,7 @@ import { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '../src/orchestrator/request-me
 import { ToolRegistry } from '../src/registry/tools.js'
 import { headerEquals, type RequestHeaderData } from '../src/request/derive.js'
 import { canonicalJson, sha256Hex } from '../src/request/hash.js'
+import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import { surfaceToolCalls } from '../src/step/inference.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
@@ -40,6 +41,62 @@ const readRegistry = () => {
   r.add(readTool(), { source: 'agnes/tools-core', trust: 'builtin' })
   return r
 }
+
+it('reuses context hooks within a turn and moves changed context to a tail note', async () => {
+  const { session, provider } = await primed(
+    [toolTurn('read', { path: 'a' }), toolTurn('read', { path: 'b' }), textTurn('done'), textTurn('next')],
+    readRegistry(),
+  )
+  let calls = 0
+  let contextText = 'first'
+  session.hooks = {
+    ...session.hooks,
+    context: async (sections) => {
+      calls++
+      return { sections, additionalContext: contextText }
+    },
+  }
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(1)
+  expect(provider.requests).toHaveLength(3)
+  const first = provider.requests[0]
+  const second = provider.requests[1]
+  if (!first || !second) throw new Error('missing request')
+  expect(second.system).toBe(first.system)
+  expect(first.messages.at(-1)?.content).toEqual([{ type: 'text', text: '[hook context]\nfirst' }])
+  contextText = 'second'
+  await session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(2)
+  const next = provider.requests[3]
+  if (!next) throw new Error('missing next-turn request')
+  expect(next.system).toBe(first.system)
+  expect(next.messages.at(-1)?.content).toEqual([{ type: 'text', text: '[hook context]\nsecond' }])
+})
+
+it('recomputes the context hook when the primary model changes mid-turn', async () => {
+  const { session } = await primed([toolTurn('read', { path: 'a' }), textTurn('done')], readRegistry())
+  let calls = 0
+  session.hooks = {
+    ...session.hooks,
+    beforeStep: async ({ step }) => {
+      if (step === 2) session.preset.model.id.primary = 'another-model'
+      return {}
+    },
+    context: async (sections) => {
+      calls++
+      return { sections, additionalContext: 'same' }
+    },
+  }
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(calls).toBe(2)
+})
 
 const mediaJpeg = Uint8Array.from([
   0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 8, 0, 8, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0, 0xff,
@@ -135,6 +192,27 @@ const imageModel: ModelRecord = {
 }
 
 describe('Inference segment', () => {
+  it('captures the post-hook primary prefix for later summary requests', async () => {
+    const registry = readRegistry()
+    const { session, provider } = await primed([toolTurn('read', { path: 'x' })], registry)
+    session.preset.model.maxTokens = 32768
+    session.hooks = {
+      ...session.hooks,
+      beforeRequest: async (out) => {
+        expect(out.request.maxTokens).toBe(32768)
+        return applyBeforeRequestPatches(out, [
+          { ext: 'test', patch: { maxTokens: 512, samplingParams: { temperature: 0.2 } } },
+        ])
+      },
+    }
+    await session.runInference()
+    const prefix = session.turn?.lastPrefix
+    expect(prefix?.samplingParams?.temperature).toBe(0.2)
+    expect(prefix?.sections[0]?.id).toBe('core:untrusted-envelope')
+    expect(prefix?.tools.map((tool) => tool.name)).toContain('read')
+    expect(provider.requests[0]?.sampling?.maxTokens).toBe(512)
+  })
+
   it('preflights surface artifacts and sends native images only to an image-capable primary model', async () => {
     const provider = fakeProvider([toolTurn('computer_use', {}), textTurn('done')])
     Object.assign(provider, { models: () => [primaryModel(['text', 'image'])] })
@@ -699,11 +777,14 @@ describe('Inference segment', () => {
       stopReason: 'end_turn',
     })
     // The stream's own usage row is what is billed, not the four-chars-a-token fallback.
-    expect((await log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data).toMatchObject({
+    const ledger = (await log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data
+    expect(ledger).toMatchObject({
       tokens: { input: 10, output: 5 },
       credits: 1,
       purpose: 'inference',
     })
+    // A provider that reported no response metadata leaves the row without any.
+    expect(ledger).not.toHaveProperty('response')
     expect((await log.scan({ type: 'effect/settled', limit: 5 }))[0]?.data).toMatchObject({ outcome: 'ok' })
     expect(session.pendingEffects()).toEqual([])
   })
@@ -964,24 +1045,50 @@ describe('Inference segment', () => {
     ])
   })
 
-  it('length-truncated output with tool calls discards the calls and feeds the model back', async () => {
-    const script: Script = [
-      sent(),
-      { type: 'toolcall_end', call: { toolUseId: '', name: 'read', args: {}, ordinal: 0 }, via: 'native' },
-      usage(),
-      { type: 'done', reason: 'length' },
-    ]
-    const { session, log } = await primed([script], readRegistry())
-    expect(await session.runInference()).toEqual({ phase: 'checkpoint' })
-    expect(await log.scan({ type: 'tool/call', limit: 10 })).toHaveLength(0)
-    expect(session.op()?.phase).toMatchObject({ kind: 'checkpoint', continuation: 'need_assistant' })
-    const notes = (await log.scan({ type: 'user/message', limit: 10 })).filter((e) => e.origin === 'system')
-    expect(notes).toHaveLength(1)
-    expect(notes[0]?.data).toMatchObject({ kind: 'runtime_context' })
-    expect((await log.scan({ type: 'assistant/message', limit: 5 }))[0]?.data).toMatchObject({
-      stopReason: 'max_tokens',
-    })
-  })
+  it.each([true, false])(
+    'ends truncated output without automatic retries (tool call: %s)',
+    async (withCall) => {
+      const script: Script = [
+        sent(),
+        { type: 'text_delta', delta: 'partial text' },
+        ...(withCall
+          ? [
+              {
+                type: 'toolcall_end',
+                call: { toolUseId: '', name: 'read', args: {}, ordinal: 0 },
+                via: 'native',
+              } as const,
+            ]
+          : []),
+        usage(),
+        { type: 'done', reason: 'length' },
+      ]
+      const { session, log, provider } = await primed([script, textTurn('continued')], readRegistry())
+      expect(await session.runInference()).toEqual({ phase: 'failure_drain' })
+      expect(await log.scan({ type: 'tool/call', limit: 10 })).toHaveLength(0)
+      expect(session.op()?.phase).toMatchObject({ kind: 'failure_drain', error: { code: 'OUTPUT_LIMIT' } })
+      const notes = (await log.scan({ type: 'user/message', limit: 10 })).filter((e) => e.origin === 'system')
+      expect(notes).toHaveLength(1)
+      expect(notes[0]?.data).toMatchObject({ kind: 'runtime_context' })
+      expect(JSON.stringify(notes[0]?.data)).toContain('build large files incrementally')
+      expect((await log.scan({ type: 'assistant/message', limit: 5 }))[0]?.data).toMatchObject({
+        stopReason: 'max_tokens',
+        content: [{ type: 'text', text: 'partial text' }],
+      })
+      const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome).toMatchObject({ reason: 'error', error: { code: 'OUTPUT_LIMIT' } })
+      expect(provider.calls).toBe(1)
+      expect(session.op()).toBeNull()
+      await session.enqueue('next-turn', {
+        actor,
+        content: [{ type: 'text', text: 'continue in smaller parts' }],
+      })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(provider.calls).toBe(2)
+    },
+  )
 
   it('a tool call decoded from text records a format deviation', async () => {
     const script: Script = [
@@ -1068,7 +1175,17 @@ describe('Inference segment', () => {
   it('retryable error waits and then succeeds; a non-retryable one drains', async () => {
     let now = 1_757_203_200_000
     const scripts: Script[] = [
-      [sent(), { type: 'error', reason: 'error', code: 'RATE_LIMIT', message: 'slow', retryable: true }],
+      [
+        sent(),
+        {
+          type: 'error',
+          reason: 'error',
+          code: 'RATE_LIMIT',
+          message: 'slow',
+          retryable: true,
+          response: { status: 429, headers: { 'retry-after': '5' }, headerNames: ['retry-after'] },
+        },
+      ],
       textTurn('ok'),
     ]
     const s = await openSession({ provider: fakeProvider(scripts), clock: () => now })
@@ -1082,6 +1199,7 @@ describe('Inference segment', () => {
     // The interrupted attempt is still billed, and its effect is settled rather than left pending.
     expect((await s.log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data).toMatchObject({
       interrupted: true,
+      response: { status: 429, headers: { 'retry-after': '5' }, headerNames: ['retry-after'] },
     })
     expect(s.session.pendingEffects()).toEqual([])
     // Not yet due: the segment refuses to spend a second attempt before notBefore.
@@ -1731,13 +1849,17 @@ it('persists reported request timing and restores the same usage details in UI p
         creditSource: 'estimated',
         timing: { ttftMs: 120, durationMs: 450 },
         billing: { usdMicros: 250, source: 'estimated', subscription: false },
+        response: { status: 200, id: 'resp-1', model: 'served-model', headerNames: ['x-litellm-call-id'] },
       },
       { type: 'done', reason: 'stop' },
     ],
   ])
   await session.runInference()
   const costs = await log.scan({ type: 'cost/ledger', limit: 10 })
-  expect(costs[0]?.data).toMatchObject({ timing: { ttftMs: 120, durationMs: 450 } })
+  expect(costs[0]?.data).toMatchObject({
+    timing: { ttftMs: 120, durationMs: 450 },
+    response: { status: 200, id: 'resp-1', model: 'served-model', headerNames: ['x-litellm-call-id'] },
+  })
   const timeline = await session.projectUI()
   expect(timeline.nodes.find((node) => node.kind === 'cost')).toMatchObject({
     tokens: { input: 10, output: 5, cacheRead: 20, reasoning: 2 },

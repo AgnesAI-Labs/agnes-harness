@@ -13,7 +13,7 @@ import {
   consumeAuxiliaryVisionDerivedText,
 } from './auxiliary-vision-derived-text.js'
 import { harnessSections, type Merged, type PromptSection } from './contribute.js'
-import { type EnvelopeCache, pruneEnvelopeCache } from './envelope-cache.js'
+import type { EnvelopeCache } from './envelope-cache.js'
 import { canonicalJson, sha256Hex, utf8 } from './hash.js'
 import { type LedgerRequest, mintFrom, type RequestBody, type RequestMessage } from './mint.js'
 
@@ -33,14 +33,18 @@ export type DeriveInput = {
   model: { slot: string; route: string; model: string; thinking?: ThinkingLevel }
   contract: ContractRef
   nonce: string
+  /** The first durable header after a node determines the nonce of its historical envelope. */
+  envelopeNonceFor: (nodeSeq: number) => string | undefined
   /**
-   * Memoized wrapped-envelope text, keyed by surface node seq. Owned by the caller (a session's
-   * lifetime, not a turn's) and mutated in place: a hit reuses the exact bytes a previous
-   * derivation produced for that node, a miss wraps under this call's nonce and is written back —
-   * see `envelope-cache.ts` for why that is what keeps already-sent history byte identical across
-   * turns instead of re-wrapping the whole surface under each new turn's nonce.
+   * Pure performance memo; historical identity comes from envelopeNonceFor, not this map.
    */
   envelopeCache: EnvelopeCache
+  /** Trusted tail notes are persisted with the request and deduplicated against visible history. */
+  notes?: ReadonlyArray<{
+    prefix: string
+    text: string
+    dedup: { kind: 'latest' } | { kind: 'present'; key: string }
+  }>
   /** Already preflighted with caller-supplied limits; this layer never selects images or invents caps. */
   media?: LedgerPreparedRequestMedia
   /** Canonical session identity supplied by the same owner that reads the ledger. */
@@ -55,7 +59,14 @@ export type DeriveInput = {
    * kind is the sub-range being summarized, not the whole session, and it is expected to carry
    * whatever untrusted tool results and prior summary node that range naturally includes.
    */
-  summaryPlan?: { system: string; instruction: string }
+  summaryPlan?: {
+    system?: string
+    instruction: string
+    /** Core-owned quotation appended after the ordinary instruction is scrubbed. */
+    quote?: { node: SurfaceNode; text: string }
+  }
+  /** The exact, already scrubbed prefix of a primary request sent in this turn. */
+  mintedPrefix?: Pick<RequestBody, 'sections' | 'tools'>
   /**
    * The tool uses the model asked for, each named by the assistant message that asked for it. It
    * is a second input rather than a surface kind because `tool/call` is not something the model
@@ -76,6 +87,7 @@ export type DeriveOutput = {
   header: RequestHeaderData
   media?: LedgerPreparedRequestMedia
   runtimeContext: { changed: boolean; event?: EventInput }
+  notes: EventInput[]
 }
 
 type RequestMediaAuthority = Readonly<{
@@ -556,7 +568,8 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
   // identical turn over turn: the node's underlying event is immutable once appended, so nothing
   // here can make a cached wrapping stale. A miss wraps under this call's nonce and is cached
   // below, so new content still rotates nonce with whichever turn first sends it.
-  const cached = envelopeCache.get(node.seq)
+  const memoKey = `${node.seq}\0${nonce}`
+  const cached = envelopeCache.get(memoKey)
   const produced: string[] = []
   // One region per wrapped block, numbered within the node, so no two envelopes in the request
   // carry the same id — see wrapUntrusted. The count and order are a function of the node's own
@@ -617,7 +630,7 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
     msg = { role: 'assistant', seq: node.seq, content }
   }
   // Locked in the first time this node is rendered, never again.
-  if (untrusted && !cached) envelopeCache.set(node.seq, produced)
+  if (untrusted && !cached) envelopeCache.set(memoKey, produced)
   return msg
 }
 
@@ -653,15 +666,29 @@ const SUMMARY_BRIDGE_TEXT =
  * between two turns must not hide the snapshot behind it, or an unchanged snapshot is sent twice.
  */
 export function lastRuntimeContextText(surface: readonly SurfaceNode[]): string | null {
+  return lastNoteText(surface, RUNTIME_CONTEXT_PREFIX)
+}
+
+function lastNoteText(surface: readonly SurfaceNode[], prefix: string): string | null {
   for (let i = surface.length - 1; i >= 0; i--) {
     const node = surface[i]
     if (node === undefined || node.kind !== 'user' || node.event.type !== 'user/message') continue
     const data = node.event.data as { kind?: unknown; content?: unknown }
     if (data.kind !== 'runtime_context') continue
     const text = textOf(blocksOf(data.content))
-    if (text.startsWith(RUNTIME_CONTEXT_PREFIX)) return text
+    if (text.startsWith(prefix)) return text
   }
   return null
+}
+
+function noteEvent(text: string): EventInput {
+  return {
+    type: 'user/message',
+    origin: 'system',
+    trust: 'trusted',
+    actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
+    data: { content: [{ type: 'text', text }], kind: 'runtime_context' },
+  }
 }
 
 /**
@@ -715,7 +742,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // A summary renders as an assistant message, and a replace may now end just before an assistant, so
   // a fixed user line keeps two assistant messages from meeting. Written by core, never from input.
   const messages = input.surface.flatMap((n, k) => {
-    const message = toMessage(n, input.nonce, input.envelopeCache)
+    const message = toMessage(n, input.envelopeNonceFor(n.seq) ?? input.nonce, input.envelopeCache)
     if (n.kind !== 'summary' || input.surface[k + 1]?.kind !== 'assistant') return [message]
     return [
       message,
@@ -750,10 +777,6 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     block.text += `\n<untrusted id="${id}" bytes="${utf8(body).length}">${body}</untrusted id="${id}">`
     auxiliaryVisionBindingHash = projection.bindingHash
   }
-  // Only a `turn` derivation's surface is the session's full current surface; a `summary`
-  // derivation's surface is a sub-range (see Task 3), and pruning against it would evict cached
-  // wrappings for history outside that range that the very next ordinary turn still needs.
-  if (input.kind === 'turn') pruneEnvelopeCache(input.envelopeCache, input.surface)
   // Attached after the messages are built, so a call whose assistant message is masked by a
   // summary is dropped along with it rather than re-attached to whatever now sits at that seq.
   // Every field is scrubbed: `name` and `args` are echoed straight back to the model, and
@@ -801,17 +824,42 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // scans at all.
   const changed = Object.keys(rc).length > 0 && runtimeContextText !== lastRuntimeContextText(input.surface)
   let event: EventInput | undefined
+  const notes: EventInput[] = []
   if (changed) {
-    event = {
-      type: 'user/message',
-      origin: 'system',
-      trust: 'trusted',
-      actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
-      data: { content: [{ type: 'text', text: runtimeContextText }], kind: 'runtime_context' },
-    }
+    event = noteEvent(runtimeContextText)
+    notes.push(event)
     // seq 0: the row has not been written yet, so it has no sequence. Storage assigns one when the
     // event above is appended, and the next derivation reads it off the surface like any other row.
     messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text: runtimeContextText }] })
+  }
+  if (input.kind === 'turn') {
+    const rank = (prefix: string) =>
+      prefix === '[hook context]\n' ? 0 : prefix === '[skill loaded]\n' ? 1 : 2
+    for (const note of [...(input.notes ?? [])].sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
+      const previous = lastNoteText(input.surface, note.prefix)
+      if (note.dedup.kind === 'present') {
+        const key = sanitize(note.dedup.key)
+        if (
+          input.surface.some((node) => {
+            if (node.kind !== 'user' || node.event.type !== 'user/message') return false
+            const data = node.event.data as { kind?: unknown; content?: unknown }
+            const text = textOf(blocksOf(data.content))
+            return (
+              data.kind === 'runtime_context' &&
+              text.startsWith(note.prefix) &&
+              text.slice(note.prefix.length).split('\n', 1)[0] === key
+            )
+          })
+        )
+          continue
+      }
+      const body = note.text ? note.text : previous ? '(none)' : ''
+      if (!body) continue
+      const rendered = sanitize(`${note.prefix}${body}`)
+      if (note.dedup.kind === 'latest' && rendered === previous) continue
+      notes.push(noteEvent(rendered))
+      messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text: rendered }] })
+    }
   }
   // Tool schemas are scrubbed in every field, `parameters` to the leaves. A `ToolDef` arrives
   // through `registerTool`, the same tier as a contributed prompt section — and a tool description
@@ -842,10 +890,39 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // same cached id an ordinary turn's derivation already minted for it (see envelope-cache.ts).
   // This closes what used to be recorded here as an open gap: the summary history was the one
   // request shape whose entire body was recycled untrusted content with no envelope around any of
-  // it. `instruction` is the one piece that is still a flat string — the trailing "please
-  // summarize" line the extension authored — and it is scrubbed like any other contributed text,
-  // on the exception list for nothing.
+  // it. The extension-authored instruction is scrubbed before Core appends any quoted trigger;
+  // only Core may add that quote's envelope after scrubbing, with a reserved negative block index
+  // so it cannot reuse the historical message's envelope id.
   const summary = input.kind === 'summary' ? input.summaryPlan : undefined
+  const quote = summary?.quote
+  if (quote && !input.surface.includes(quote.node))
+    throw new CoreError('E_ENVELOPE', 'summary quote must name a node in its own history')
+  const quotedTrigger = quote
+    ? quote.node.event.trust === 'untrusted'
+      ? wrapUntrusted(quote.node, input.envelopeNonceFor(quote.node.seq) ?? input.nonce, quote.text, -1)
+      : sanitize(quote.text)
+    : undefined
+  if (input.mintedPrefix && input.kind !== 'summary')
+    throw new CoreError('E_ENVELOPE', 'minted prefix belongs only to a summary request')
+  if (input.mintedPrefix) {
+    const scrubbed = (value: unknown): boolean => {
+      if (typeof value === 'string') return sanitize(value) === value
+      if (Array.isArray(value)) return value.every(scrubbed)
+      if (value && typeof value === 'object')
+        return Object.entries(value).every(([key, child]) => sanitize(key) === key && scrubbed(child))
+      return true
+    }
+    const { sections: prefixSections, tools: prefixTools } = input.mintedPrefix
+    if (
+      prefixSections[0]?.id !== UNTRUSTED_RULE_SECTION.id ||
+      prefixSections[0]?.text !== UNTRUSTED_RULE_SECTION.text ||
+      prefixSections[0]?.order !== UNTRUSTED_RULE_SECTION.order ||
+      prefixSections[0]?.source !== UNTRUSTED_RULE_SECTION.source ||
+      !prefixSections.slice(1).every(scrubbed) ||
+      !prefixTools.every(scrubbed)
+    )
+      throw new CoreError('E_ENVELOPE', 'minted prefix contains unsanitized text')
+  }
   // **Every string in a `RequestBody` is scrubbed, or is one of the exceptions named here.** The
   // recurring failure in this area has not been any single path; it is that the set of paths was
   // enumerated from memory, and a different one was forgotten each time. So the enumeration lives
@@ -888,19 +965,32 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   const body: RequestBody = {
     kind: input.kind,
     contractId,
-    sections: summary
-      ? [
-          UNTRUSTED_RULE_SECTION,
-          { id: 'summary:system', order: 1, text: sanitize(summary.system), source: 'core' },
-        ]
-      : sections,
+    sections: input.mintedPrefix
+      ? [...input.mintedPrefix.sections]
+      : summary
+        ? [
+            UNTRUSTED_RULE_SECTION,
+            { id: 'summary:system', order: 1, text: sanitize(summary.system ?? ''), source: 'core' },
+          ]
+        : sections,
     messages: summary
       ? [
           ...messages,
-          { role: 'user', seq: 0, content: [{ type: 'text', text: sanitize(summary.instruction) }] },
+          {
+            role: 'user',
+            seq: 0,
+            content: [
+              {
+                type: 'text',
+                text:
+                  sanitize(summary.instruction) +
+                  (quotedTrigger === undefined ? '' : ` 「${quotedTrigger}」`),
+              },
+            ],
+          },
         ]
       : messages,
-    tools,
+    tools: input.mintedPrefix ? [...input.mintedPrefix.tools] : tools,
     model,
     nonce: input.nonce,
     ...(input.model.thinking === undefined ? {} : { samplingParams: { thinking: input.model.thinking } }),
@@ -924,7 +1014,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     // Provider stamps normalise the canonical disclosure because Unicode spelling is not visible
     // to the model. Use the same bytes here or an NFD name, description or schema key makes the
     // dispatch receipt disagree with the request header even though both describe the same tools.
-    tool_schema_hash: sha256Hex(canonicalJson(tools).normalize('NFC')),
+    tool_schema_hash: sha256Hex(canonicalJson(body.tools).normalize('NFC')),
     parser_version: input.contract.parser_version,
     contract_id: contractId,
     model: model.model,
@@ -944,6 +1034,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     header,
     ...(input.media === undefined ? {} : { media: input.media }),
     runtimeContext: { changed, ...(event ? { event } : {}) },
+    notes,
   }
 }
 

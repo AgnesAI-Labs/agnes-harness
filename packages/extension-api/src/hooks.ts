@@ -68,7 +68,6 @@ export interface HookPayloadMap {
   before_request: Readonly<Omit<Wire.BeforeRequestPayload, 'request'>> & {
     readonly request: ReadonlyRequestView
   }
-  before_provider_headers: { readonly route: string; readonly headers: Readonly<Record<string, string>> }
   request_error: Readonly<Omit<Wire.RequestErrorPayload, 'code'>> & { readonly code: AiErrorCode }
   tool_call: Readonly<Omit<Wire.ToolCallPayload, 'meta'>> & { readonly meta: ToolMeta }
   tool_result: Readonly<Omit<Wire.ToolResultPayload, 'result' | 'enforcement'>> & {
@@ -111,7 +110,6 @@ export interface HookReturnMap {
       metadata?: Record<string, JsonValue>
     }
   }
-  before_provider_headers: { headers?: Record<string, string> }
   // biome-ignore lint/suspicious/noConfusingVoidType: observe handler return type
   request_error: void
   tool_call: { allow: true } | { allow: false; reason: string }

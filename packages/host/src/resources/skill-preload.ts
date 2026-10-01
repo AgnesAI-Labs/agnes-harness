@@ -7,7 +7,6 @@ const encoder = new TextEncoder()
 const MAX_SKILL_BYTES = 32 * 1024
 // ASCII directory names can be adjacent to CJK prose. Keep English name boundaries strict.
 const ASCII_NAME_CHAR = 'A-Za-z0-9._-'
-const LOADED_SKILL_SUPPRESSED_TOOLS = Object.freeze(['tool_search', 'skill_read'])
 
 /** Adds the Host-owned per-session workspace lease boundary to a resource generation snapshot. */
 export function bindSkillRuntimeToWorkspace(
@@ -27,7 +26,7 @@ export function bindSkillRuntimeToWorkspace(
 }
 
 function normalized(value: string): string {
-  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('en-US')
+  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ')
 }
 
 function escaped(value: string): string {
@@ -35,21 +34,26 @@ function escaped(value: string): string {
 }
 
 /**
- * This is deliberately lexical. A prompt may load one Skill only when it contains the complete
- * normalized name at a word boundary; semantic matching would turn a private resource into a
- * prompt-derived discovery channel.
+ * This is deliberately lexical. Only $name (case-sensitive) or a named Skill suffix opts into
+ * loading a body. Ordinary mentions leave discovery to the catalog and skill_read.
  */
 export function explicitlyMentionsSkill(prompt: string, name: string): boolean {
   const target = normalized(name)
   if (!target) return false
   const input = normalized(prompt)
-  // CJK prose does not have ASCII-style token delimiters: `使用语文老师技能` explicitly contains the
-  // complete configured name even though its leading character is a letter. The trailing side is
-  // still closed: punctuation, whitespace, end of text, or the explicit Skill suffix are allowed;
-  // a prefix such as `语文老` before `师` is refused. This is lexical equality, not semantic search.
-  if (/[^\p{ASCII}]/u.test(target))
-    return new RegExp(`${escaped(target)}(?=$|[\\s\\p{P}]|技能|skill)`, 'u').test(input)
-  return new RegExp(`(^|[^${ASCII_NAME_CHAR}])${escaped(target)}(?=$|[^${ASCII_NAME_CHAR}])`, 'u').test(input)
+  if (new RegExp(`(^|[^${ASCII_NAME_CHAR}])\\$${escaped(target)}(?=$|[^\\p{L}\\p{N}._-])`, 'u').test(input))
+    return true
+  const lowerTarget = target.toLocaleLowerCase('en-US')
+  const lowerInput = input.toLocaleLowerCase('en-US')
+  // A CJK name inside a longer CJK word is not an explicit mention. Allow a delimiter or the
+  // ordinary "用/使用" verb immediately before it; quoted names start after punctuation.
+  const leading = /[^\p{ASCII}]/u.test(target)
+    ? '(?:^|[^\\p{L}\\p{N}._-]|(?:请)?(?:使)?用)'
+    : `(^|[^${ASCII_NAME_CHAR}])`
+  return new RegExp(
+    `${leading}["'\x60「『“‘]?${escaped(lowerTarget)}["'\x60」』”’]?\\s*(?:技能|skill)(?=$|[^A-Za-z0-9_-])`,
+    'u',
+  ).test(lowerInput)
 }
 
 /**
@@ -89,19 +93,14 @@ export function createSkillPromptPreloader(
         const body = `resourceId: ${skill.resourceId}\nrevision: ${revision}\ndirectory: ${directory}\n\n${result.content}`
         if (encoder.encode(body).byteLength > MAX_SKILL_BYTES) return undefined
         return {
-          suppressTools: LOADED_SKILL_SUPPRESSED_TOOLS,
-          section: {
-            id: `skill-preload:${skill.resourceId}`,
-            order: 151,
-            source: 'runtime:skill-preload',
-            text:
-              `The user explicitly named the trusted Skill "${skill.name}". Host has already loaded it for this turn. ` +
-              'Do not search for it or read it again; directly carry out its instructions. ' +
-              'Workspace file search tools remain available if those instructions require them.\n' +
-              '<active_skill>\n' +
-              body +
-              '\n</active_skill>',
-          },
+          key: `${skill.resourceId}@${revision}`,
+          note:
+            `The user explicitly named the trusted Skill "${skill.name}". Host has already loaded it. ` +
+            'Do not search for it or read it again; directly carry out its instructions. ' +
+            'Workspace file search tools remain available if those instructions require them.\n' +
+            '<active_skill>\n' +
+            body +
+            '\n</active_skill>',
         }
       } catch {
         // Resource state and authorization are Host-owned. A failed lookup must never turn into a

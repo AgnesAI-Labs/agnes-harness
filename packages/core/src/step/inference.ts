@@ -1,5 +1,4 @@
-import type { RequestBody as WireBody } from '@agnes/protocol'
-import { type InferenceEvent, type JsonValue, type ModelRecord, validateAgainst } from '@agnes/protocol'
+import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { conservativeSerializedTokens } from '../child/credits.js'
 import {
   releaseTreeReservation,
@@ -30,7 +29,12 @@ import {
 import type { BudgetState } from '../reduce/shapes.js'
 import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { prepareAuxiliaryVisionDerivedText } from '../request/auxiliary-vision-derived-text.js'
-import type { ContextBreakdownDiag, ContextSectionSummary, Contribution } from '../request/contribute.js'
+import type {
+  ContextBreakdownDiag,
+  ContextSectionSummary,
+  Contribution,
+  Merged,
+} from '../request/contribute.js'
 import { mergeContributions } from '../request/contribute.js'
 import {
   type DeriveInput,
@@ -52,6 +56,7 @@ import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForMod
 import { type OpStateObj, type ToolCallState, withPhase } from './op-state.js'
 import { runCoreReplacement, runSlot } from './reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from './session.js'
+import { toolArgumentError } from './tool-args.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
 const reportedMediaWindows = new WeakMap<SessionImpl, Set<RequestMediaScanTruncation['reason']>>()
@@ -222,8 +227,8 @@ const OUTPUT_PROGRESS_MS = 5_000
 
 /**
  * Only Core reads the accepted prompt body. Extensions receive the deliberately reduced SurfaceNode view.
- * Read from the ledger row, not the surface: compaction may mask the trigger mid-turn, and the turn's
- * preloaded section and suppressed tools must not change when it does.
+ * Read from the ledger row, not the surface: compaction may mask the trigger mid-turn, but the
+ * turn's Host-selected Skill preload remains memoized and its note may be restored.
  */
 async function currentPromptText(s: SessionImpl, triggerSeq: number): Promise<string> {
   const [row] = await s.d.log.scan({
@@ -263,6 +268,64 @@ async function preloadRuntimeSection(
   }
 }
 
+/** Shared prompt assembly for a primary request and a cold compaction before its first send. */
+export async function assembleRequestPrefix(
+  s: SessionImpl,
+  ctx: OpContext,
+  triggerSeq: number,
+): Promise<{
+  merged: Merged
+  disclosed: DeriveInput['disclosed']
+  additionalContext: string
+  preloaded: RuntimePromptPreload | null
+}> {
+  const t = s.turn
+  if (!t) throw new CoreError('E_RELATION', 'request prefix outside an active turn')
+  const contribs: Contribution[] = [
+    { op: 'core', tools: [...ctx.disclosed] },
+    ...s.d.operations
+      .filter((o) => o.contribute)
+      .map((o) => ({ op: o.name, ...(o.contribute as NonNullable<typeof o.contribute>)(ctx) })),
+  ]
+  const merged = mergeContributions(contribs, t.snapshot)
+  for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)
+  if (t.preload === undefined) t.preload = (await preloadRuntimeSection(s, triggerSeq)) ?? null
+  const preloaded = t.preload
+  const permitted = new Set(ctx.disclosed)
+  merged.tools = merged.tools.filter((name) => permitted.has(name))
+  // Freeze context-hook output for identical assembly inputs within this turn. Current-prompt
+  // matching and the selected Skill body remain Host-private until their note lands.
+  const prefixKey = canonicalJson([
+    ctx.model.route,
+    ctx.model.model,
+    s.preset.name,
+    s.preset.disclosure,
+    t.snapshot.hash,
+    sha256Hex(canonicalJson(merged.sections)),
+  ])
+  const hookContext =
+    t.prefix?.key === prefixKey
+      ? structuredClone({ sections: t.prefix.sections, additionalContext: t.prefix.additionalContext })
+      : await s.hooks.context(merged.sections)
+  if (t.prefix?.key !== prefixKey) t.prefix = { key: prefixKey, ...structuredClone(hookContext) }
+  merged.sections = hookContext.sections
+  if (
+    !s.computerUseAllowed({ route: ctx.model.route, model: ctx.model.model }) &&
+    t.snapshot.byName.has('computer_use')
+  )
+    merged.sections.push({
+      id: 'core:computer-use-model',
+      order: 111,
+      source: 'core',
+      text: 'Computer Use is configured but is not offered to this model: its capability record does not include image input. For desktop-control requests, explain that the user needs to select a model that supports images. This model restriction does not mean that the desktop driver is missing or broken.',
+    })
+  const disclosed = merged.tools.flatMap((name) => {
+    const def = t.snapshot.byName.get(name)
+    return def ? [def] : []
+  })
+  return { merged, disclosed, additionalContext: hookContext.additionalContext, preloaded }
+}
+
 /**
  * The route a slot names, and the model id that route is asked to run. They are two different
  * values: a route names an endpoint the assembly declared, a model id names what that endpoint
@@ -276,6 +339,12 @@ async function preloadRuntimeSection(
  * only answer available from a provider that publishes no models at all.
  */
 export function resolveModel(s: SessionImpl, slot: string): { route: string; model: string } {
+  if (
+    slot === 'compaction' &&
+    s.preset.model.route.compaction === undefined &&
+    s.preset.model.id.compaction === undefined
+  )
+    return resolveModel(s, 'primary')
   const route = s.preset.model.route[slot] ?? 'default'
   const pinned = s.preset.model.id[slot]
   if (pinned) return { route, model: pinned }
@@ -430,33 +499,11 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   // list it reads off `ctx` are already resolved, so an Operation here sees exactly what is about to
   // go out rather than having to recompute either one itself.
   await runSlot(s, 'before-inference', ctx)
-  const contribs: Contribution[] = [
-    { op: 'core', tools: coreTools },
-    ...s.d.operations
-      .filter((o) => o.contribute)
-      .map((o) => ({ op: o.name, ...(o.contribute as NonNullable<typeof o.contribute>)(ctx) })),
-  ]
-  const merged = mergeContributions(contribs, t.snapshot)
-  for (const c of merged.conflicts) await s.diag('contribute-conflict', c)
-  const permitted = new Set(coreTools)
-  const preloaded = await preloadRuntimeSection(s, op.meta.triggerSeq)
-  const suppressed = new Set(preloaded?.suppressTools ?? [])
-  merged.tools = merged.tools.filter((name) => permitted.has(name) && !suppressed.has(name))
-  // The Host-private body is appended only after extension context hooks finish. A hook may shape
-  // normal contributed context but must never observe raw current-prompt matching or a Skill body.
-  const hookSections = await s.hooks.context(merged.sections)
-  const sections = preloaded ? [...hookSections, preloaded.section] : hookSections
-  if (!computerUseAllowed && t.snapshot.byName.has('computer_use'))
-    sections.push({
-      id: 'core:computer-use-model',
-      order: 111,
-      source: 'core',
-      text: 'Computer Use is configured but is not offered to this model: its capability record does not include image input. For desktop-control requests, explain that the user needs to select a model that supports images. This model restriction does not mean that the desktop driver is missing or broken.',
-    })
-  const disclosed = merged.tools.flatMap((n) => {
-    const def = t.snapshot.byName.get(n)
-    return def ? [def] : []
-  })
+  const { merged, disclosed, additionalContext, preloaded } = await assembleRequestPrefix(
+    s,
+    ctx,
+    op.meta.triggerSeq,
+  )
   const surface = s.surface()
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
@@ -567,9 +614,10 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       })
     }
   }
+  await s.ensureEnvelopeEpochs()
   let out = deriveRequest({
     kind: 'turn',
-    merged: { ...merged, sections },
+    merged,
     harnessEntries: [...s.state.registers.harnessEntries.values()].map((c) => c.value),
     surface,
     disclosed,
@@ -581,11 +629,38 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     },
     contract,
     nonce: t.nonce,
+    envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
+    notes: [
+      { prefix: '[hook context]\n', text: additionalContext, dedup: { kind: 'latest' } },
+      ...(preloaded
+        ? [
+            {
+              prefix: '[skill loaded]\n',
+              text: `${preloaded.key}\n${preloaded.note}`,
+              dedup: { kind: 'present' as const, key: preloaded.key },
+            },
+          ]
+        : []),
+    ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
   })
+  if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
+    const { request, derivedHash } = remintRequestWithMaxTokens(
+      out.request,
+      out.media,
+      s.preset.model.maxTokens,
+    )
+    out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
+  }
   out = await s.hooks.beforeRequest(out, slot, attempt)
+  const mintedPrefix = {
+    sections: out.request.sections,
+    tools: out.request.tools,
+    model: out.request.model,
+    ...(out.request.samplingParams ? { samplingParams: out.request.samplingParams } : {}),
+  }
   // Cheap and unconditional: section text never leaves process memory (to-provider.ts flattens it
   // away before the wire body exists), so this is the only point that can ever record what the
   // request's system prefix was actually made of. Written every turn, not deduplicated against the
@@ -725,7 +800,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       // Only when the deny path did not already write it: that path carries the count in its own
       // transaction, and a second copy here would record one recount as two.
       ...(cal.event && !cal.deny ? [cal.event] : []),
-      ...(out.runtimeContext.event ? [out.runtimeContext.event] : []),
+      ...out.notes,
       ...(headerEvent ? [headerEvent] : []),
       effect.intent,
     ]
@@ -748,6 +823,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     if (writesHeader) {
       t.lastHeader = header
       t.lastHeaderSeq = transitionSeqs[headerIndex] ?? null
+      if (t.lastHeaderSeq !== null) s.recordEnvelopeHeader(t.lastHeaderSeq, header.envelopeNonce)
     }
     const effectIntentSeq = transitionSeqs[intentIndex]
     if (t.lastHeaderSeq === null || effectIntentSeq === undefined)
@@ -995,6 +1071,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
               sourceEventSeqs: [headerSeq, effectIntentSeq],
             }),
           ])
+          t.lastPrefix = mintedPrefix
           sentWritten = true
         } else if (!sentWritten && ev.type !== 'error') {
           error = {
@@ -1071,6 +1148,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       cacheRead: 0,
       cacheWrite: 0,
     }
+    // What answered, as the provider's HTTP response said: recorded on every exit, failures included.
+    const response = usage?.response ?? error?.response
     const spend = {
       purpose: 'inference' as const,
       effectId: effect.effectId,
@@ -1080,6 +1159,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       model: target.model,
       ...(usage?.billing ? { billing: usage.billing } : {}),
       ...(usage?.timing ? { timing: usage.timing } : {}),
+      ...(response ? { response } : {}),
     }
     const cost = (interrupted: boolean): EventInput =>
       s.ev('cost/ledger', { ...spend, ...(interrupted ? { interrupted: true } : {}) })
@@ -1217,17 +1297,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         else if (!offered.has(c.name))
           refusal = { code: 'TOOL_NOT_DISCLOSED', text: 'tool was not disclosed in this request' }
         else {
-          let valid = false
-          try {
-            valid = validateAgainst(def.parameters, c.args).ok
-          } catch {
-            // A malformed schema is an argument refusal, never permission to invoke a classifier.
-          }
-          if (!valid)
-            refusal = {
-              code: 'TOOL_ARGS_INVALID',
-              text: 'tool arguments do not match the registered schema',
-            }
+          const argsError = toolArgumentError(def.parameters, c.args)
+          if (argsError) refusal = { code: 'TOOL_ARGS_INVALID', text: argsError }
           else {
             try {
               policy = resolveValidatedToolCallPolicy(def, c.args as JsonValue)
@@ -1280,14 +1351,14 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         }
       }
     events.push(...refusedCalls, ...deviations, cost(false), effect.settle(effectOutcome({})))
-    if ((truncated && calls.length) || unparsed)
+    if (truncated || unparsed)
       events.push(
         s.ev('user/message', {
           content: [
             {
               type: 'text',
               text: truncated
-                ? 'Output was truncated; tool calls were discarded. Continue.'
+                ? 'Output limit reached; this turn stopped and its unfinished tool calls were discarded. Continue with smaller tool calls and build large files incrementally, or configure a higher request output allowance.'
                 : 'INVALID_TOOL_CALL_FORMAT: a tool call was emitted as text and was not executed.',
             },
           ],
@@ -1318,16 +1389,26 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           )
         : withPhase(
             base,
-            {
-              kind: 'checkpoint',
-              continuation: (truncated && calls.length) || unparsed ? 'need_assistant' : 'may_finish',
-              triggerSeq: op.meta.triggerSeq,
-            },
+            truncated
+              ? {
+                  kind: 'failure_drain',
+                  error: {
+                    code: 'OUTPUT_LIMIT',
+                    message:
+                      'Model output limit reached. Use smaller requests or increase model.max_tokens before continuing.',
+                  },
+                  provenance: { kind: 'inference' },
+                }
+              : {
+                  kind: 'checkpoint',
+                  continuation: unparsed ? 'need_assistant' : 'may_finish',
+                  triggerSeq: op.meta.triggerSeq,
+                },
             { latestAssistantSeq: assistantSeq },
           )
     })
     await record(false)
-    return { phase: planned.length ? 'tools' : 'checkpoint' }
+    return { phase: planned.length ? 'tools' : truncated ? 'failure_drain' : 'checkpoint' }
   } finally {
     s.ac.signal.removeEventListener('abort', onSessionAbort)
   }

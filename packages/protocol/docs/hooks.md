@@ -9,7 +9,6 @@ Generated from schema/hooks.json by tools/gen-docs.ts. Do not edit by hand.
 | `before_step` | serial | directive | closed | 1000 | no |
 | `context` | waterfall | transform | closed | 1500 | no |
 | `before_request` | waterfall | transform | closed | 1500 | no |
-| `before_provider_headers` | waterfall | transform | closed | 500 | no |
 | `request_error` | parallel | observe | open | 500 | no |
 | `tool_call` | serial | directive | closed | 2000 | no |
 | `tool_result` | waterfall | transform | open | 2000 | no |
@@ -31,7 +30,6 @@ Generated from schema/hooks.json by tools/gen-docs.ts. Do not edit by hand.
 | `before_step` | `turn`, `step`, `depth`, `budget` | `block?`, `reason?` |
 | `context` | `sections`, `surfaceDigest` | `sections?`, `additionalContext?` |
 | `before_request` | `request`, `slot`, `model`, `attempt` | `patch?` |
-| `before_provider_headers` | `route`, `headers` | `headers?` |
 | `request_error` | `code`, `message`, `attempt`, `retryable` | `void` |
 | `tool_call` | `toolUseId`, `name`, `args`, `meta`, `actor`, `taint`, `resolvedPolicy?`, `executionDomain?`, `definitionFingerprint?`, `policyHash?` | `allow` \| `allow`, `reason` |
 | `tool_result` | `toolUseId`, `name`, `args`, `result`, `enforcement` | `result?` |

@@ -190,7 +190,7 @@ describe('the provider completes the usage event', () => {
     expect(usageOf(events).billing).toEqual({ usdMicros: 7, source: 'gateway', subscription: true })
   })
 
-  it('replaces an invalid runtime billing object with a safe catalogue estimate', async () => {
+  it('replaces an invalid runtime billing object with a safe catalogue estimate and drops invalid response metadata', async () => {
     const events = await run({
       models: priced({ input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }),
       pricing: { creditsPerUsd: 1 },
@@ -200,6 +200,7 @@ describe('the provider completes the usage event', () => {
           tokens: tokens(1_000_000, 0),
           creditSource: 'gateway',
           billing: { usdMicros: 1, source: 'gateway', subscription: true, rawCredits: 99 },
+          response: { status: 200, headers: { 'Set-Cookie': 'sid=1' } },
         } as unknown as Extract<InferenceEvent, { type: 'usage' }>,
         { type: 'done', reason: 'stop' },
       ],
@@ -209,6 +210,7 @@ describe('the provider completes the usage event', () => {
       source: 'estimated',
       subscription: false,
     })
+    expect(usageOf(events)).not.toHaveProperty('response')
   })
 
   // A stream that produced no delta has no first token, so ttftMs is absent rather than 0 - a 0 here

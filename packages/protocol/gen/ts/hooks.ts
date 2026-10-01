@@ -13,7 +13,7 @@ export const HooksSchema = Type.Module({
   "ToolMeta": Type.Object({ "isReadOnly": Type.Boolean(), "isDestructive": Type.Boolean(), "isConcurrencySafe": Type.Boolean(), "isOpenWorld": Type.Boolean(), "replay": Type.Union([Type.Literal('safe'), Type.Literal('never'), Type.Literal('idempotent')]), "costHint": Type.Union([Type.Null(), Type.Object({ "credits": Type.Optional(Type.Number({ minimum: 0 })), "wallMs": Type.Optional(Type.Integer({ minimum: 0 })) }, { additionalProperties: false })]), "deferLoading": Type.Union([Type.Boolean(), Type.Null()]), "requiresApproval": Type.Union([Type.Union([Type.Literal('never'), Type.Literal('destructive'), Type.Literal('always')]), Type.Null()]) }, { additionalProperties: false }),
   "ResolvedToolCallPolicy": Type.Object({ "isReadOnly": Type.Boolean(), "isDestructive": Type.Boolean(), "isConcurrencySafe": Type.Optional(Type.Boolean()), "isOpenWorld": Type.Optional(Type.Boolean()), "replay": Type.Union([Type.Literal('safe'), Type.Literal('never'), Type.Literal('idempotent')]), "requiresApproval": Type.Union([Type.Literal('never'), Type.Literal('destructive'), Type.Literal('always')]), "approvalScopes": Type.Array(Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$" }), { maxItems: 16, uniqueItems: true }), "policyVersion": Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$" }) }, { additionalProperties: false }),
   "ExecutionDomain": Type.Union([Type.Literal('workspace'), Type.Literal('host-computer-use')]),
-  "HookEvent": Type.Union([Type.Literal('session_start'), Type.Literal('resources_discover'), Type.Literal('before_step'), Type.Literal('context'), Type.Literal('before_request'), Type.Literal('before_provider_headers'), Type.Literal('request_error'), Type.Literal('tool_call'), Type.Literal('tool_result'), Type.Literal('turn_stopping'), Type.Literal('approval_request'), Type.Literal('before_compact'), Type.Literal('compact'), Type.Literal('subagent_start'), Type.Literal('subagent_end'), Type.Literal('format_deviation'), Type.Literal('shutdown')]),
+  "HookEvent": Type.Union([Type.Literal('session_start'), Type.Literal('resources_discover'), Type.Literal('before_step'), Type.Literal('context'), Type.Literal('before_request'), Type.Literal('request_error'), Type.Literal('tool_call'), Type.Literal('tool_result'), Type.Literal('turn_stopping'), Type.Literal('approval_request'), Type.Literal('before_compact'), Type.Literal('compact'), Type.Literal('subagent_start'), Type.Literal('subagent_end'), Type.Literal('format_deviation'), Type.Literal('shutdown')]),
   "PromptSection": Type.Object({ "id": Type.String({ maxLength: 64 }), "order": Type.Integer({ minimum: 0 }), "text": Type.String({ maxLength: 65536 }) }, { additionalProperties: false }),
   "ResourceEntry": Type.Object({ "id": Type.String({ maxLength: 128 }), "kind": Type.Union([Type.Literal('skill'), Type.Literal('mcp'), Type.Literal('kb'), Type.Literal('datasource'), Type.Literal('model')]), "name": Type.String({ maxLength: 256 }), "description": Type.String({ maxLength: 2048 }), "schema": Type.Optional(JsonValue) }, { additionalProperties: false }),
   "SurfaceDigest": Type.Object({ "nodes": Type.Integer({ minimum: 0 }), "tokensEstimate": Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
@@ -29,8 +29,6 @@ export const HooksSchema = Type.Module({
   "ContextReturn": Type.Object({ "sections": Type.Optional(Type.Array(Type.Ref('PromptSection'))), "additionalContext": Type.Optional(Type.String({ maxLength: 8192 })) }, { additionalProperties: false }),
   "BeforeRequestPayload": Type.Object({ "request": JsonValue, "slot": Type.String(), "model": Type.String(), "attempt": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
   "BeforeRequestReturn": Type.Object({ "patch": Type.Optional(Type.Object({ "samplingParams": Type.Optional(Type.Record(Type.String(), JsonValue)), "maxTokens": Type.Optional(Type.Integer({ minimum: 1 })), "metadata": Type.Optional(Type.Record(Type.String(), JsonValue)) }, { additionalProperties: false })) }, { additionalProperties: false }),
-  "BeforeProviderHeadersPayload": Type.Object({ "route": Type.String(), "headers": Type.Record(Type.String(), Type.String()) }, { additionalProperties: false }),
-  "BeforeProviderHeadersReturn": Type.Object({ "headers": Type.Optional(Type.Record(Type.String({ pattern: '^X-Ext-' }), Type.String(), { additionalProperties: false })) }, { additionalProperties: false }),
   "RequestErrorPayload": Type.Object({ "code": Type.String(), "message": Type.String(), "attempt": Type.Integer(), "retryable": Type.Boolean() }, { additionalProperties: false }),
   "RequestErrorReturn": Type.Null(),
   "ToolCallPayload": Type.Intersect([Type.Object({ "toolUseId": Type.String(), "name": Type.String(), "args": JsonValue, "meta": Type.Ref('ToolMeta'), "actor": Type.Ref('Actor'), "taint": Type.Boolean(), "resolvedPolicy": Type.Optional(Type.Ref('ResolvedToolCallPolicy')), "executionDomain": Type.Optional(Type.Ref('ExecutionDomain')), "definitionFingerprint": Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })), "policyHash": Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })) }, { additionalProperties: false }), Type.Union([Type.Not(Type.Union([Type.Object({ "resolvedPolicy": Type.Unknown() }), Type.Object({ "executionDomain": Type.Unknown() }), Type.Object({ "definitionFingerprint": Type.Unknown() }), Type.Object({ "policyHash": Type.Unknown() })])), Type.Object({ "resolvedPolicy": Type.Unknown(), "executionDomain": Type.Unknown(), "definitionFingerprint": Type.Unknown(), "policyHash": Type.Unknown() })])]),
@@ -103,10 +101,6 @@ export const BeforeRequestPayload = HooksSchema.Import('BeforeRequestPayload')
 export type BeforeRequestPayload = Static<typeof BeforeRequestPayload>
 export const BeforeRequestReturn = HooksSchema.Import('BeforeRequestReturn')
 export type BeforeRequestReturn = Static<typeof BeforeRequestReturn>
-export const BeforeProviderHeadersPayload = HooksSchema.Import('BeforeProviderHeadersPayload')
-export type BeforeProviderHeadersPayload = Static<typeof BeforeProviderHeadersPayload>
-export const BeforeProviderHeadersReturn = HooksSchema.Import('BeforeProviderHeadersReturn')
-export type BeforeProviderHeadersReturn = Static<typeof BeforeProviderHeadersReturn>
 export const RequestErrorPayload = HooksSchema.Import('RequestErrorPayload')
 export type RequestErrorPayload = Static<typeof RequestErrorPayload>
 export const RequestErrorReturn = HooksSchema.Import('RequestErrorReturn')
@@ -185,13 +179,6 @@ export const X_AGNES_HOOK_TABLE = {
     "category": "transform",
     "failPolicy": "closed",
     "timeoutMs": 1500,
-    "replayOnResume": false
-  },
-  "before_provider_headers": {
-    "mode": "waterfall",
-    "category": "transform",
-    "failPolicy": "closed",
-    "timeoutMs": 500,
     "replayOnResume": false
   },
   "request_error": {
@@ -292,10 +279,6 @@ export const X_AGNES_HOOK_IO = {
   "before_request": [
     "BeforeRequestPayload",
     "BeforeRequestReturn"
-  ],
-  "before_provider_headers": [
-    "BeforeProviderHeadersPayload",
-    "BeforeProviderHeadersReturn"
   ],
   "request_error": [
     "RequestErrorPayload",
