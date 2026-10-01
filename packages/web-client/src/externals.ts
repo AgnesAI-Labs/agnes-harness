@@ -9,6 +9,8 @@ export const externals = [
   'react-dom/client',
   '@agnes/cordis',
   '@agnes/web-client',
+  '@agnes/web-ui/assistant-ui',
+  'antd',
 ] as const
 
 export type ExternalSpecifier = (typeof externals)[number]

@@ -207,7 +207,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 Web Plugins parity: row-scoped client services and stable web-unit contracts. Exact.
   // CU-ARTIFACT-RETENTION-GC-INDEX C8: measured 1714, exact, no spare (+9). ClientResourceReclaimedError
   // thrown on a 410 artifact_reclaimed read.
-  'packages/web-client/src': 1714,
+  // Plugin externals now list antd and @agnes/web-ui/assistant-ui, matching the page import map.
+  // Measured 1716, exact, no spare (+2).
+  'packages/web-client/src': 1716,
   'packages/web-slots/src': 605,
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
   'packages/web-ui/src': 4706,
