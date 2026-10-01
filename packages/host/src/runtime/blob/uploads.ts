@@ -55,8 +55,6 @@ export function checked<K extends keyof RuntimeWireTypes>(name: K, value: unknow
   return result.value
 }
 
-export const sha256 = (bytes: Uint8Array): Wire.Digest => createHash('sha256').update(bytes).digest('hex')
-
 const SCOPE_KEYS = ['installationId', 'runtimeId', 'workspaceId', 'sessionId', 'runId', 'actionId'] as const
 
 /** True when `inner` names the same scope as `outer` or one nested inside it. */
@@ -198,6 +196,13 @@ function storedBytes(store: BlobStore, uploadId: Wire.Id, start: number, end: nu
   return out
 }
 
+function* uploadChunks(store: BlobStore, uploadId: Wire.Id): Generator<Uint8Array> {
+  const rows = store.db
+    .prepare('SELECT bytes FROM upload_chunks WHERE upload_id = ? ORDER BY at')
+    .iterate(uploadId) as Iterable<{ bytes: Uint8Array }>
+  for (const row of rows) yield row.bytes
+}
+
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   return left.byteLength === right.byteLength && Buffer.compare(left, right) === 0
 }
@@ -259,13 +264,23 @@ async function seal(store: BlobStore, uploadId: Wire.Id): Promise<Wire.UploadRes
   if (row?.result) return JSON.parse(row.result) as Wire.UploadResult
   const { session } = uploading(row)
   if (session.receivedBytes !== session.expectedBytes) refuse('invalid_request', 'upload is incomplete')
-  const bytes = storedBytes(store, uploadId, 0, session.expectedBytes)
-  const digest = sha256(bytes)
+  // Chunks are disjoint and gap-free (writeChunk refuses both), so in offset order they are the upload.
+  // One pass hashes and a second writes, so at most one chunk is in memory at a time.
+  const hash = createHash('sha256')
+  let total = 0
+  for (const chunk of uploadChunks(store, uploadId)) {
+    hash.update(chunk)
+    total += chunk.byteLength
+  }
+  if (total !== session.expectedBytes) refuse('integrity', 'upload chunks do not add up to its size')
+  const digest = hash.digest('hex')
   if (session.expectedDigest !== null && session.expectedDigest !== digest)
     refuse('integrity', 'upload bytes do not match the expected digest')
-  // ponytail: the whole upload is held in memory for the private CAS writer; a streaming writer is
-  // needed before uploads near the 1 GiB limit are routine.
-  await createPrivateArtifactStore(store.dataDir, createPlatform().os).put(digest, bytes)
+  await createPrivateArtifactStore(store.dataDir, createPlatform().os).putChunks(
+    digest,
+    session.expectedBytes,
+    uploadChunks(store, uploadId),
+  )
   return store.transaction(() => {
     const current = loadUpload(store, uploadId)
     if (current?.result) return JSON.parse(current.result) as Wire.UploadResult

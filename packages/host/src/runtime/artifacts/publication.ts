@@ -88,6 +88,7 @@ export type ArtifactsStore = {
   readonly authorityId: Wire.Id
   readonly now: () => number
   transaction<T>(body: () => T): T
+  close(): void
 }
 
 /** The publication store is its own file, never shared with the selected blob service. */
@@ -107,11 +108,26 @@ export function openArtifactsStore(options: {
     db.close()
     throw error
   }
+  let closed = false
+  const live = () => {
+    if (closed) refuse('blocked', 'artifacts service is closed')
+    return db
+  }
   return {
-    db,
+    // Every read and transaction goes through `live`, so a call after close is refused with a stable
+    // code instead of failing on the closed database.
+    get db() {
+      return live()
+    },
     authorityId: options.authorityId,
     now: options.now ?? (() => Date.now()),
+    close() {
+      if (closed) return
+      closed = true
+      db.close()
+    },
     transaction(body) {
+      live()
       db.exec('BEGIN IMMEDIATE')
       try {
         const result = body()

@@ -526,7 +526,7 @@ describe('default artifacts publication', () => {
 })
 
 describe('default artifacts assembly', () => {
-  it('reads bytes through the blob service the container selected', async () => {
+  it('reads bytes through the blob service the container selected, and nothing after close', async () => {
     const { artifacts, blob, reads } = await world()
     const reserved = ok(await artifacts.reserve({ request: reserveRequest('pub-1'), owner: owner() }, ctx()))
     ok(
@@ -543,6 +543,19 @@ describe('default artifacts assembly', () => {
     const stream = ok(await artifacts.artifactAccess.openStream(ref, ctx()))
     for await (const _ of stream.chunks);
     expect((await stream.ended).ok).toBe(true)
+    expect(reads.count).toBe(2)
+
+    // Close is idempotent; afterwards every call is refused with one stable code and reads no bytes.
+    artifacts.close()
+    artifacts.close()
+    expect(refused(await artifacts.artifactAccess.describe(ref, ctx()))).toBe('blocked')
+    expect(refused(await artifacts.artifactAccess.readRange({ ...ref, offset: 0, length: 1 }, ctx()))).toBe(
+      'blocked',
+    )
+    expect(refused(await artifacts.artifactAccess.openStream(ref, ctx()))).toBe('blocked')
+    expect(
+      refused(await artifacts.reserve({ request: reserveRequest('pub-2'), owner: owner() }, ctx())),
+    ).toBe('blocked')
     expect(reads.count).toBe(2)
   })
 

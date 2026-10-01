@@ -81,10 +81,13 @@ it('publishes a 1 GiB artifact and serves it in ranges and pull streams of at mo
     wide.close()
 
     // Generated and hashed one 8 MiB chunk at a time; the test never holds the whole content.
+    const peakBefore = process.resourceUsage().maxRSS
     const written = createHash('sha256')
     const source = await upload(blob, DECK, { chunk: (_, bytes) => void written.update(bytes) })
     const digest = written.digest('hex')
     expect(source).toMatchObject({ bytes: SIZE, digest, status: 'sealed' })
+    // Seal streams the stored chunks too, so the process peak (in KiB) grows far less than 1 GiB.
+    expect((process.resourceUsage().maxRSS - peakBefore) * 1024).toBeLessThan(512 * MIB)
     expect(
       ok(await artifacts.publish({ request: publishRequest('deck', source, 'Deck'), owner: owner() }, ctx())),
     ).toMatchObject({ state: 'ready', blob: { bytes: SIZE, digest } })

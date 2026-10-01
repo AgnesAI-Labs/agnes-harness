@@ -129,8 +129,19 @@ function fileStream(
 export function createBlobService(options: BlobServiceOptions): BlobService {
   const store: BlobStore = openBlobStore(options)
   const verified = new Set<string>()
+  let closed = false
+  const live = () => {
+    if (closed) refuse('blocked', 'blob service is closed')
+  }
+  /** A call after close is refused with a stable code instead of failing on the closed database. */
+  const call = <T>(context: CallContext, body: () => T | Promise<T>) =>
+    run(context, () => {
+      live()
+      return body()
+    })
 
   const authorize = (context: CallContext, ref: Wire.BlobRef) => {
+    live()
     if (!options.authorizeRead) refuse('blocked', 'no trusted read delegation is configured')
     if (!options.authorizeRead(context, ref)) refuse('permission_denied', 'caller may not read this blob')
     resolvePin(store, ref)
@@ -165,7 +176,7 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
 
   const blobRead: BlobReadPort = {
     readRange: (request, context) =>
-      run(context, async (): Promise<ByteRangeResult> => {
+      call(context, async (): Promise<ByteRangeResult> => {
         const { ref, offset, length } = parse('BlobReadRangeRequest', request)
         authorize(context, ref)
         if (offset >= ref.bytes) refuse('range_not_satisfiable', 'range starts at or past the end')
@@ -179,7 +190,7 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
         }
       }),
     openRead: (request, context) =>
-      run(context, async () => {
+      call(context, async () => {
         const { ref, offset } = parse('BlobOpenReadRequest', request)
         authorize(context, ref)
         if (offset > ref.bytes) refuse('range_not_satisfiable', 'stream starts past the end')
@@ -189,14 +200,21 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
 
   return Object.freeze({
     binding: options.binding,
-    stage: (request, context) => run(context, () => stage(store, request, context)),
-    promote: (request, context) => run(context, () => promote(store, request)),
-    pin: (request, context) => run(context, () => pin(store, request)),
-    unpin: (request, context) => run(context, () => unpin(store, request)),
-    gc: (request, context) => run(context, () => gc(store, request, context)),
-    inspect: (request, context) => run(context, () => inspect(store, request)),
+    stage: (request, context) => call(context, () => stage(store, request, context)),
+    promote: (request, context) => call(context, () => promote(store, request)),
+    pin: (request, context) => call(context, () => pin(store, request)),
+    unpin: (request, context) => call(context, () => unpin(store, request)),
+    gc: (request, context) => call(context, () => gc(store, request, context)),
+    inspect: (request, context) => call(context, () => inspect(store, request)),
     blobRead,
-    openWriter: (uploadId, context) => openUploadWriter(store, uploadId, context),
-    close: () => store.db.close(),
+    openWriter: (uploadId, context) =>
+      closed
+        ? { ok: false, error: blobError('blocked', 'blob service is closed') }
+        : openUploadWriter(store, uploadId, context),
+    close: () => {
+      if (closed) return
+      closed = true
+      store.db.close()
+    },
   })
 }

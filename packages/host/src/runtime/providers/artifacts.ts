@@ -123,7 +123,7 @@ export function createArtifactsService(options: ArtifactsServiceOptions): Outcom
       },
       artifactAccess,
       pendingEvents: () => pendingEvents(store),
-      close: () => store.db.close(),
+      close: () => store.close(),
     }),
   }
 }

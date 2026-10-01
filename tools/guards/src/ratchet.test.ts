@@ -2552,7 +2552,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default blob and artifacts services: uploads, pins and gc in one SQLite store, publication,
   // grants and download tickets in another, reads through the selected blob service.
   // Re-measured with this guard's countLines(): 52711, exact cap, no spare.
-  'packages/host/src': 52711,
+  // Seal streams stored chunks into the private store, and closed services refuse with one code.
+  // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
+  'packages/host/src': 52783,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

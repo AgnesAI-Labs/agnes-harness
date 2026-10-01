@@ -371,7 +371,7 @@ describe('default blob service reads', () => {
     )
   })
 
-  it('streams to the end, ends empty at the end, refuses past it and cancels idempotently', async () => {
+  it('streams to the end, ends empty at the end, refuses past it, cancels idempotently and stops at close', async () => {
     const blob = open(await fresh(), trusted)
     const bytes = new Uint8Array(MIB + MIB / 2).map((_, index) => index % 251)
     const ref = await pinned(blob, bytes)
@@ -395,6 +395,19 @@ describe('default blob service reads', () => {
     await partial.close()
     expect((await iterator.next()).done).toBe(true)
     expect(refused(await partial.ended)).toBe('cancelled')
+
+    // Close is idempotent; afterwards an open stream and every call are refused with one stable code.
+    const reading = ok(await blob.blobRead.openRead({ ref, offset: 0 }, ctx()))
+    const pending = reading.chunks[Symbol.asyncIterator]()
+    expect((await pending.next()).value?.byteLength).toBe(MIB)
+    blob.close()
+    blob.close()
+    expect((await pending.next()).done).toBe(true)
+    expect(refused(await reading.ended)).toBe('blocked')
+    expect(refused(await blob.blobRead.readRange({ ref, offset: 0, length: 1 }, ctx()))).toBe('blocked')
+    expect(refused(await blob.blobRead.openRead({ ref, offset: 0 }, ctx()))).toBe('blocked')
+    expect(refused(await blob.inspect({ ref: { kind: 'blob', value: ref } }, ctx()))).toBe('blocked')
+    expect(refused(blob.openWriter('upload-p', ctx()))).toBe('blocked')
   })
 
   it('reports changed content bytes as an integrity failure', async () => {
