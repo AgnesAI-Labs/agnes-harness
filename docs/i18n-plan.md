@@ -105,7 +105,16 @@ const label = service.t('composer.send')
 
 `useState` 的初值、文件顶层常量、事件回调里缓存的句子，都不算渲染时取词。
 
-静态 HTML 和 `dangerouslySetInnerHTML` 使用 `data-i18n`（文本）与 `data-i18n-aria`（`aria-label`）。`applyLocaleText` 在两处调用：
+`getSnapshot()` 现在只返回语言字符串。从 `en` 切到 `zh-CN` 时订阅方会重绘。同一种语言下再次 `register`，快照不变，React 不会重绘。内置目录必须在首次渲染之前注册。插件运行中换目录不在本期；要做的话，快照里得带上目录版本，不能只订语言字符串。
+
+静态 HTML 和 `dangerouslySetInnerHTML` 使用这些标记：
+
+- `data-i18n`：元素的文本。只能标在没有子元素的节点上。标在含 SVG 的按钮上会把图标清掉。
+- `data-i18n-aria`：`aria-label`。
+- `data-i18n-placeholder`：`placeholder`。
+- `data-i18n-title`：`title`。
+
+后两个属性现有的 `applyLocaleText` 还没填，和语言开关的缺陷一起补。`applyLocaleText` 在两处调用：
 
 - locale 变化时（已有 `agnes:locale-changed`）。
 - 这段 HTML 每次被提交进文档之后。设置页会在重开或热替换时用模板盖掉已经回填的 DOM，所以拥有这段模板的组件要在提交后再次回填。
@@ -129,6 +138,18 @@ const label = service.t('composer.send')
 | diagnostics | 诊断 | |
 
 Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都保留英文。
+
+### 6.4 底座里还要修的行为
+
+这些是 `c3fbcb1` 已经接上、但切换时会错的路径。由语言底座的负责人改，不重新设计 `LocaleService`。
+
+写入 `agnes-locale` 失败时，本次选择仍然生效。`writeLocalePreference` 吞掉异常之后，`agnes:locale-changed` 的处理函数又从 `localStorage` 读取。存储里还是旧值，新语言会被写回去。同页切换要用这次选中的值更新 `LocaleService` 和 `lang`。只有别的文档发出的 `storage` 事件才重新读存储。存储被清空时按未设置处理，回到英文。
+
+`theme-boot.ts` 在主题、皮肤或系统主题重绘时也会读 `agnes-locale` 并设置 `lang`。这次写入若失败，随后改主题会把 `lang` 设回旧值。语言事件带上本次选择；主题重绘不要用一份更旧的存储值覆盖它。
+
+`bind(namespace)` 在本目录没有 key 时会调用全局 `t()`。后注册的目录可以用同一个 key 盖住先注册的宿主句子。各线的 key 必须带自己的前缀，例如 `shell.`、`settings.`、`admin.`。不要用 `save`、`title` 这种裸 key。本期不改 `bind` 的查找顺序。
+
+终端里的中文按现有 `displayWidth` 计两列。C1 的窄屏测试要覆盖中文句子、换行和 ANSI，不能只测英文。
 
 ## 7. 单分支协作
 
@@ -182,7 +203,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 线条 | 负责人 | 状态 |
 | --- | --- | --- |
-| 语言底座 | yuan | 已完成（2026-10-01，`c3fbcb1`） |
+| 语言底座 | yuan | 已完成（2026-10-01，`c3fbcb1`）。第 6.4 节的缺陷未修 |
 | Web 壳 | zzl | 进行中（2026-10-01） |
 | 设置与通用 | zzl | 进行中（2026-10-01） |
 | 管理与资源 | swx | 进行中（2026-10-01） |
@@ -238,7 +259,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| C1 | TUI 文案收进字典，默认改为英文 | `packages/cli-tui/src`。`resolveLocale` 在 `AGNES_LOCALE` 未设置时返回 `en`，不再看 `LANG` | 未开始 |
+| C1 | TUI 文案收进字典，默认改为英文 | `packages/cli-tui/src`。`resolveLocale` 在 `AGNES_LOCALE` 未设置时返回 `en`，不再看 `LANG`。窄屏用 `displayWidth` 断言中文宽度 | 未开始 |
 | C2 | 帮助、引导、工作区选择、资源命令里的用户句 | `packages/cli/src` 的 `usage()`、`doctor`、引导；`packages/cli/launch/workspace-picker.ts`；`packages/resource-control-cli/src/resources.ts` | 未开始 |
 | C3 | 把 CLI 解析出的 locale 传给 SDK | `packages/sdk/src/text.ts` 已有的两句，跟 TUI 使用同一个 locale | 未开始 |
 
@@ -260,7 +281,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 状态 |
 | --- | --- | --- |
-| F1 | Web 未设置 `agnes-locale` 时是英文；CLI 未设置 `AGNES_LOCALE` 时是英文，中文 `LANG` 不会把它切走 | 未开始 |
+| F1 | Web 未设置 `agnes-locale` 时是英文；CLI 未设置 `AGNES_LOCALE` 时是英文，中文 `LANG` 不会把它切走。存储写失败后本次语言仍在，改主题不会把它盖回旧值 | 未开始 |
 | F2 | 第 9 节全部「已完成」。第 10 节之外，不再有渲染给用户的硬编码中文或硬编码英文用户句 | 未开始 |
 | F3 | 每个目录文件都有 key 成对测试；抽查第 6.3 节的术语 | 未开始 |
 
@@ -284,3 +305,13 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 - 不改模型提示词，不改协议 schema，不改 `preset.locale`。
 
 收尾时用第 9 节的文件清单核对，不用「源码里中文字符总数必须下降」做门禁。那个总数包含注释，界面迁完也不会变成 0，只改注释也会被误判成回归。
+
+行数上限是另一件事。`tools/guards/ratchet.json` 按目录计源码行，超限会让 `tools/guards/src/ratchet.test.ts` 失败。和这次迁移直接相关、而且已经偏紧的键是：
+
+| 键 | 当前上限 |
+| --- | --- |
+| `packages/web-client/src` | 1714 |
+| `packages/web/src` | 13124 |
+| `packages/web/src/app` | 1827 |
+
+某个目录加了文案文件或把句子搬进渲染之后超限，就在同一次提交里按实测行数改这个上限，并写明增加了多少行。不要放宽扫描范围，也不要为了留下余量把上限改得比实测更高。`packages/web-ui/src`、`packages/web-units/src`、`packages/cli-tui/src` 也有上限，改到它们时同样处理。
