@@ -9,7 +9,6 @@ export const topbarLocaleCatalog: LocaleCatalog = {
     'topbar.connection.closed': 'Backend connection closed',
     'topbar.defaultTitle': 'New session',
     'topbar.defaultStatus': 'Ready',
-    'topbar.disconnect': 'Disconnect',
   },
   'zh-CN': {
     'topbar.connection.connecting': '正在连接后台',
@@ -18,6 +17,5 @@ export const topbarLocaleCatalog: LocaleCatalog = {
     'topbar.connection.closed': '后台连接已关闭',
     'topbar.defaultTitle': '新会话',
     'topbar.defaultStatus': '准备任务',
-    'topbar.disconnect': '断开连接',
   },
 }

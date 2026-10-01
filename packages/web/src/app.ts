@@ -561,6 +561,8 @@ function clearSessionRecovery(): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
+  // 顶栏只在异常时显示连接状态，判据走 body 属性，样式不必再猜 #connection 的 data-state。
+  document.body.dataset.connection = value
   topbarRuntime.setConnectionState(value)
   settings.setConnected(connected)
   renderControls()
@@ -1770,13 +1772,6 @@ function submitComposer(): void {
       }
     })
 }
-topbarRuntime.onDisconnect(() =>
-  run(async () => {
-    intentionalClose = true
-    reconnect.cancel()
-    await client.close()
-  }),
-)
 const diagnostics = createDiagnosticsDialog({
   call: (method, params) => client.call(method, params),
   context: () => ({

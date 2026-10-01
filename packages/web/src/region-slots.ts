@@ -1023,7 +1023,6 @@ export function mountTopbarRegion(
   locale: LocaleService,
 ): TopbarRegionMount {
   const handle = { current: null as TopbarHandle | null }
-  const disconnectListeners = new Set<() => void>()
   let resolveReady!: () => void
   const ready = new Promise<void>((resolve) => {
     resolveReady = resolve
@@ -1045,7 +1044,6 @@ export function mountTopbarRegion(
     () =>
       createElement(Topbar, {
         ref: setHandle,
-        disconnectListeners,
         translate: (key, vars) => locale.t(key, vars),
       }),
   )
@@ -1075,14 +1073,9 @@ export function mountTopbarRegion(
       connectionState = value
       handle.current?.setConnectionState(value)
     },
-    onDisconnect(listener) {
-      disconnectListeners.add(listener)
-      return () => disconnectListeners.delete(listener)
-    },
     dispose() {
       if (disposed) return
       disposed = true
-      disconnectListeners.clear()
       root.unmount()
       removeBuiltin()
     },

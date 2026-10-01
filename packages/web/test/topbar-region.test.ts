@@ -29,7 +29,10 @@ describe('rendered topbar region', () => {
     expect(topbar?.querySelector('#task-title')?.textContent).toBe('New session')
     expect(topbar?.querySelector('#status')?.textContent).toBe('Ready')
     expect(topbar?.querySelector('#connection')?.textContent).toBe('Connecting to the backend')
-    expect(topbar?.querySelector('#disconnect')).toBeInstanceOf(HTMLButtonElement)
+    // 「断开连接」按钮已移除：主动断开没有恢复路径（SDK 的 isClosed 一旦置真就锁死，
+    // 且不会启动自动重连），留一个点了只能靠重启后台恢复的按钮是净损失。掉线仍由
+    // 自动重连和 #reconnect-notice 里的「重试连接」处理。
+    expect(topbar?.querySelector('#disconnect')).toBeNull()
 
     const toggle = topbar?.querySelector<HTMLButtonElement>('#sidebar-toggle')
     toggle?.click()

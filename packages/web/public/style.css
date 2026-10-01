@@ -1209,9 +1209,10 @@ main {
 .connection-group:has(#connection[data-state="closed"])::before {
   background: currentcolor;
 }
-#disconnect .icon {
-  width: 0.9375rem;
-  height: 0.9375rem;
+/* 连接正常是默认态，常驻一行「已连接」没有信息量；只有中断和已关闭才值得占位置。
+   恢复路径本来就在 #reconnect-notice 里，顶栏只负责把状态本身说清楚。 */
+body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .connection-group {
+  display: none;
 }
 #notice,
 #reconnect-notice {
@@ -2913,8 +2914,8 @@ body {
   .connection-group {
     gap: var(--s8);
   }
-  /* 只有 #connection 需要隐藏；#disconnect 里没有任何 .button-label 元素，
-     原先那条 `#disconnect .button-label` 选择器匹配不到东西。 */
+  /* 窄屏只留一个状态点：文字仍对屏幕阅读器可见，视觉上的原因说明交给
+     #reconnect-notice。「断开连接」按钮已移除，不再需要为它单独放宽触控尺寸。 */
   #connection {
     position: absolute;
     width: 1px;
@@ -2923,13 +2924,6 @@ body {
     clip: rect(0 0 0 0);
     white-space: nowrap;
     clip-path: inset(50%);
-  }
-  #disconnect {
-    width: 2.75rem;
-    min-width: 2.75rem;
-    height: 2.75rem;
-    min-height: 2.75rem;
-    padding: 0;
   }
   button,
   input,
@@ -3120,12 +3114,6 @@ body {
   gap: 0.125rem;
 }
 
-.quiet-disconnect {
-  width: 2rem;
-  min-width: 2rem;
-  height: 2rem;
-  min-height: 2rem;
-}
 /* hero 品牌标：用客户端 AgnesMark 位图（与侧栏品牌位同一资源）代替原来的 "AGH" 文字占位。
    mask 靠 background 显色，所以这里必须显式给 currentColor —— 上面那条基础规则里的
    background: transparent 是在"文字标"时代写的，会盖掉 .agnes-mark 的着色。 */

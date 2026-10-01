@@ -1,11 +1,4 @@
-import {
-  createElement,
-  type ForwardedRef,
-  forwardRef,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-} from 'react'
+import { createElement, type ForwardedRef, forwardRef, useImperativeHandle, useRef } from 'react'
 import type { Translate } from './locales/index.js'
 
 export type TopbarConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed'
@@ -22,28 +15,23 @@ const SIDEBAR_TOGGLE_ICON_PATHS = [
   'M16.4516 4.58065C16.4516 4.45594 16.3361 4.35484 16.1935 4.35484H3.80645C3.66393 4.35484 3.54839 4.45594 3.54839 4.58065V15.4194C3.54839 15.5441 3.66393 15.6452 3.80645 15.6452H16.1935C16.3361 15.6452 16.4516 15.5441 16.4516 15.4194V4.58065ZM18 15.4194C18 16.2923 17.1912 17 16.1935 17H3.80645C2.80878 17 2 16.2923 2 15.4194V4.58065C2 3.70768 2.80878 3 3.80645 3H16.1935C17.1912 3 18 3.70768 18 4.58065V15.4194Z',
   'M8.45161 16.3226H6.90322L6.90323 3.67742H8.45161L8.45161 16.3226Z',
 ]
-const DISCONNECT_ICON_PATH = 'M12 3v9M7.05 5.05a8 8 0 1 0 9.9 0'
-
 export interface TopbarHandle {
   setTaskTitle(title: string): void
   setStatus(text: string, state?: string): void
   setConnectionState(value: TopbarConnectionState): void
-  onDisconnect(listener: () => void): () => void
 }
 
 interface TopbarProps {
-  disconnectListeners: Set<() => void>
   translate: Translate
 }
 
 export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
-  { disconnectListeners, translate: t }: TopbarProps,
+  { translate: t }: TopbarProps,
   ref: ForwardedRef<TopbarHandle>,
 ) {
   const taskTitle = useRef<HTMLHeadingElement>(null)
   const status = useRef<HTMLSpanElement>(null)
   const connection = useRef<HTMLSpanElement>(null)
-  const disconnect = useRef<HTMLButtonElement>(null)
 
   useImperativeHandle(
     ref,
@@ -61,23 +49,9 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
         connection.current.dataset.state = value
         connection.current.textContent = t(CONNECTION_LABEL_KEYS[value])
       },
-      onDisconnect(listener) {
-        disconnectListeners.add(listener)
-        return () => disconnectListeners.delete(listener)
-      },
     }),
-    [disconnectListeners],
+    [t],
   )
-
-  useLayoutEffect(() => {
-    const button = disconnect.current
-    if (!button) return
-    const onClick = () => {
-      for (const listener of disconnectListeners) listener()
-    }
-    button.addEventListener('click', onClick)
-    return () => button.removeEventListener('click', onClick)
-  }, [disconnectListeners])
 
   return createElement(
     'div',
@@ -129,22 +103,6 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
           'data-state': 'connecting',
         },
         t(CONNECTION_LABEL_KEYS.connecting),
-      ),
-      createElement(
-        'button',
-        {
-          ref: disconnect,
-          id: 'disconnect',
-          className: 'icon-button quiet-disconnect',
-          type: 'button',
-          'aria-label': t('topbar.disconnect'),
-          title: t('topbar.disconnect'),
-        },
-        createElement(
-          'svg',
-          { className: 'icon', 'data-agnes-region': 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
-          createElement('path', { d: DISCONNECT_ICON_PATH }),
-        ),
       ),
     ),
   )
