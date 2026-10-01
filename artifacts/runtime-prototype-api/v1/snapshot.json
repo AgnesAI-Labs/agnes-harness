@@ -1264,7 +1264,7 @@
       },
       {
         "path": "tools/runtime-prototype/compile.ts",
-        "sha256": "84b0a587cf911d929ac506ccc582145a09af29601e418fc6f275f32083260f04"
+        "sha256": "7e7e40cd3aadd8e74b2188f49678f6ea908b2a2ba567f045a8cb4d44298f5ca4"
       },
       {
         "path": "tools/runtime-prototype/files.ts",
@@ -1275,9 +1275,9 @@
         "sha256": "2864921b0cc2534242ba820e4a152963dbf26ef50d7a2d7ecec3b957339801eb"
       }
     ],
-    "inputDigest": "6c360fd6d01173a85757310e546a1f97d234d22f97f589558b72f6297a0f9d40",
+    "inputDigest": "1a7908fa80d304289d59bfa8f3df5936188ad22522a3cc1ea195ac3be085a480",
     "diagnostics": [],
-    "reportDigest": "1558c98328ada7264a9a2186a0aca810da8356519f565a91deb94a5003bbb4f2"
+    "reportDigest": "0be9abc1fa023a1e92be6a3e8bb2ae80a614e3338c519b23fbc19c0936907552"
   },
-  "snapshotDigest": "3e2a3b0cdcef55c678c55fecadcdbbe910867c6c5141ffb006277f996091ab7e"
+  "snapshotDigest": "4c8bbd011f6c2a516d048642c215d9a14057a5ab1f61f01ecacf1a9e69890639"
 }

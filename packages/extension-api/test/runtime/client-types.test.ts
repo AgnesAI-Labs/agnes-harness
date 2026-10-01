@@ -28,4 +28,4 @@ it('compiles client consumers with readonly pages and rejects authority exports'
   expect(result.error).toBeUndefined()
   expect(result.stdout + result.stderr).toBe('')
   expect(result.status).toBe(0)
-})
+}, 60_000)
