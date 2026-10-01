@@ -19,10 +19,22 @@ describe('author API consistency', () => {
     expect(Object.keys(api).sort()).toEqual(surface.runtimeExports)
     expect(surface.apiVersion).toBe(api.API_VERSION)
     expect(Object.keys(testkit).sort()).toEqual([
+      'ASSERTION_STATUSES',
+      'FAILURE_CODES',
+      'FIXTURE_MARKS',
       'NEGATIVE_ACTIONS',
+      'QUALIFICATIONS',
+      'RUNTIME_INBOX_FIXTURE',
+      'SCENARIOS',
       'TRANSPORT_CONTRACT_CASES',
+      'createConformanceHarness',
+      'createRuntimeInboxFixture',
+      'createTestServiceContainer',
       'defineFixture',
+      'discoverContracts',
+      'judgeReport',
       'projectionFixture',
+      'serializeReport',
       'serviceFixture',
     ])
     expect(releaseProblems(input)).toEqual([])

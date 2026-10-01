@@ -1359,7 +1359,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
-  'packages/extension-api/testkit': 246,
+  // Conformance testkit: evidence, discovery, test service container and inbox fixture. Measured 907, exact, no spare.
+  'packages/extension-api/testkit': 907,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
