@@ -246,7 +246,10 @@ const SidebarBuiltin = forwardRef<
       !(backdrop instanceof HTMLButtonElement)
     )
       return
-    const controller = dependencies.bindSidebar(window.matchMedia('(max-width: 720px)'))
+    // 断点必须与 style.css 的移动抽屉媒体查询一致（`.sidebar-backdrop` 所在的那个
+    // `@media (max-width: …)`）。两者不一致时，中间那段宽度里 JS 走桌面折叠分支、
+    // CSS 却已把侧栏移出视口，按钮点了没有任何反应。回归由 sidebar-breakpoint.test.ts 兜住。
+    const controller = dependencies.bindSidebar(window.matchMedia('(max-width: 900px)'))
     shell.current = controller
     return () => {
       controller.dispose()
