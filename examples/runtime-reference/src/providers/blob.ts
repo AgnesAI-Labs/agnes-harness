@@ -7,6 +7,7 @@ import type {
   CallContext,
   Outcome,
 } from '@agnes/extension-api/runtime'
+import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import {
   RuntimeClientTransportPolicy,
@@ -69,7 +70,8 @@ export type BlobStoreOptions = Readonly<{
 
 /**
  * Objects live in SQLite as 1 MiB pieces, each with the SHA-256 it had when written, so a damaged or
- * missing piece is found at the read that needs it. A pin names the object a reference may read.
+ * missing piece is found at the read that needs it. A pin names the object a reference may read and
+ * the owner it was taken for; a sealed upload names the object it promotes to.
  */
 const TABLES = `
 CREATE TABLE IF NOT EXISTS objects (
@@ -87,10 +89,17 @@ CREATE TABLE IF NOT EXISTS pieces (
 );
 CREATE TABLE IF NOT EXISTS pins (
   pin_id TEXT PRIMARY KEY,
+  blob_id TEXT NOT NULL,
+  owner TEXT
+);
+CREATE TABLE IF NOT EXISTS uploads (
+  upload_id TEXT PRIMARY KEY,
+  reservation_id TEXT NOT NULL,
   blob_id TEXT NOT NULL
 );`
 
 type ObjectRow = { digest: string; size: number; media_type: string }
+type Described = Readonly<{ authorityId: Wire.Id; digest: string; bytes: number; mediaType: string }>
 
 export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
   const authorityId = options.authorityId ?? 'reference-blob'
@@ -105,24 +114,31 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
     if (!open) refuse('blocked', 'blob store is closed')
   }
 
-  /** The reference must name a live pin of exactly this object, and every stored byte must be there. */
-  function authorize(context: CallContext, ref: Wire.BlobRef) {
-    live()
-    if (!options.authorizeRead) refuse('blocked', 'no read authorization is configured')
-    if (!options.authorizeRead(context, ref)) refuse('permission_denied', 'caller may not read this blob')
+  /** Whether a reference describes exactly this stored object of this store. */
+  const describes = (row: ObjectRow | undefined, ref: Described): row is ObjectRow =>
+    row !== undefined &&
+    ref.authorityId === authorityId &&
+    row.digest === ref.digest &&
+    row.size === ref.bytes &&
+    row.media_type === ref.mediaType
+
+  /** The object a reference names through a live pin of exactly that object. */
+  function pinned(ref: Wire.BlobRef): ObjectRow {
     const row = db
       .prepare(
         'SELECT o.digest, o.size, o.media_type FROM pins p JOIN objects o ON o.blob_id = p.blob_id WHERE p.pin_id = ? AND p.blob_id = ?',
       )
       .get(ref.pinId, ref.blobId) as ObjectRow | undefined
-    if (
-      !row ||
-      ref.authorityId !== authorityId ||
-      row.digest !== ref.digest ||
-      row.size !== ref.bytes ||
-      row.media_type !== ref.mediaType
-    )
-      refuse('not_found', 'no such pinned blob')
+    if (!describes(row, ref)) refuse('not_found', 'no such pinned blob')
+    return row
+  }
+
+  /** The reference must name a live pin of exactly this object, and every stored byte must be there. */
+  function authorize(context: CallContext, ref: Wire.BlobRef) {
+    live()
+    if (!options.authorizeRead) refuse('blocked', 'no read authorization is configured')
+    if (!options.authorizeRead(context, ref)) refuse('permission_denied', 'caller may not read this blob')
+    pinned(ref)
     const stored = db
       .prepare('SELECT COALESCE(SUM(length(data)), 0) AS bytes FROM pieces WHERE blob_id = ?')
       .get(ref.blobId) as { bytes: number }
@@ -207,6 +223,29 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
       }),
   }
 
+  /** Stores bytes as one object and runs `link` to name it, in one transaction. */
+  function store(blobId: Wire.Id, bytes: Uint8Array, mediaType: string, link: () => void) {
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      db.prepare('INSERT INTO objects (blob_id, digest, size, media_type) VALUES (?, ?, ?, ?)').run(
+        blobId,
+        sha256(bytes),
+        bytes.byteLength,
+        mediaType,
+      )
+      const insert = db.prepare('INSERT INTO pieces (blob_id, seq, data, sha) VALUES (?, ?, ?, ?)')
+      for (let seq = 0; seq * PIECE_BYTES < bytes.byteLength; seq++) {
+        const data = bytes.subarray(seq * PIECE_BYTES, (seq + 1) * PIECE_BYTES)
+        insert.run(blobId, seq, data, sha256(data))
+      }
+      link()
+      db.exec('COMMIT')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   return {
     blobRead,
 
@@ -224,27 +263,86 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
         mediaType,
         pinId: randomUUID(),
       })
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        db.prepare('INSERT INTO objects (blob_id, digest, size, media_type) VALUES (?, ?, ?, ?)').run(
-          ref.blobId,
-          ref.digest,
-          ref.bytes,
-          ref.mediaType,
-        )
-        const insert = db.prepare('INSERT INTO pieces (blob_id, seq, data, sha) VALUES (?, ?, ?, ?)')
-        for (let seq = 0; seq * PIECE_BYTES < bytes.byteLength; seq++) {
-          const data = bytes.subarray(seq * PIECE_BYTES, (seq + 1) * PIECE_BYTES)
-          insert.run(ref.blobId, seq, data, sha256(data))
-        }
-        db.prepare('INSERT INTO pins (pin_id, blob_id) VALUES (?, ?)').run(ref.pinId, ref.blobId)
-        db.exec('COMMIT')
-      } catch (error) {
-        db.exec('ROLLBACK')
-        throw error
-      }
+      store(ref.blobId, bytes, mediaType, () =>
+        db.prepare('INSERT INTO pins (pin_id, blob_id) VALUES (?, ?)').run(ref.pinId, ref.blobId),
+      )
       return ref
     },
+
+    /** Test write entry: stores bytes as a sealed upload, standing in for stage, write and seal. */
+    upload(bytes: Uint8Array, mediaType = 'application/octet-stream'): Wire.UploadRef {
+      live()
+      const upload = parse('UploadRef', {
+        authorityId,
+        uploadId: randomUUID(),
+        reservationId: randomUUID(),
+        digest: sha256(bytes),
+        bytes: bytes.byteLength,
+        mediaType,
+        status: 'sealed',
+      })
+      const blobId = randomUUID()
+      store(blobId, bytes, mediaType, () =>
+        db
+          .prepare('INSERT INTO uploads (upload_id, reservation_id, blob_id) VALUES (?, ?, ?)')
+          .run(upload.uploadId, upload.reservationId, blobId),
+      )
+      return upload
+    },
+
+    /** Promotes a sealed upload to the object it stored; promoting it again returns the same reference. */
+    promote: (request: unknown, context: CallContext) =>
+      attempt(context, (): Wire.StagedBlobRef => {
+        const { upload, expectedDigest } = parse('BlobPromoteRequest', request)
+        live()
+        const row = db
+          .prepare(
+            'SELECT u.blob_id, o.digest, o.size, o.media_type FROM uploads u JOIN objects o ON o.blob_id = u.blob_id WHERE u.upload_id = ? AND u.reservation_id = ?',
+          )
+          .get(upload.uploadId, upload.reservationId) as (ObjectRow & { blob_id: string }) | undefined
+        if (!describes(row, upload)) refuse('not_found', 'no such sealed upload')
+        if (expectedDigest !== row.digest) refuse('integrity', 'upload digest differs from the expected one')
+        const { reservationId, digest, bytes, mediaType } = upload
+        return { authorityId, blobId: row.blob_id, digest, bytes, mediaType, reservationId }
+      }),
+
+    /** Pins a staged object for one owner; the same owner gets the same pin back. */
+    pin: (request: unknown, context: CallContext) =>
+      attempt(context, (): Wire.BlobRef => {
+        const { stagedBlob, ownerRef } = parse('BlobPinRequest', request)
+        live()
+        const row = db
+          .prepare('SELECT digest, size, media_type FROM objects WHERE blob_id = ?')
+          .get(stagedBlob.blobId) as ObjectRow | undefined
+        if (!describes(row, stagedBlob)) refuse('not_found', 'no such staged blob')
+        const owner = jcs(ownerRef)
+        const held = db
+          .prepare('SELECT pin_id FROM pins WHERE blob_id = ? AND owner = ?')
+          .get(stagedBlob.blobId, owner) as { pin_id: string } | undefined
+        const pinId = held?.pin_id ?? randomUUID()
+        if (!held)
+          db.prepare('INSERT INTO pins (pin_id, blob_id, owner) VALUES (?, ?, ?)').run(
+            pinId,
+            stagedBlob.blobId,
+            owner,
+          )
+        const { blobId, digest, bytes, mediaType } = stagedBlob
+        return { authorityId, blobId, digest, bytes, mediaType, pinId }
+      }),
+
+    /** Reports a pinned reference with the owners of every pin on its object; nothing else is inspected. */
+    inspect: (request: unknown, context: CallContext) =>
+      attempt(context, (): Wire.BlobInspectResult => {
+        const { ref } = parse('BlobInspectRequest', request)
+        live()
+        if (ref.kind !== 'blob') refuse('operation_not_supported', 'only pinned blobs are inspected')
+        const row = pinned(ref.value)
+        const owners = db
+          .prepare('SELECT owner FROM pins WHERE blob_id = ? AND owner IS NOT NULL ORDER BY owner')
+          .all(ref.value.blobId) as { owner: string }[]
+        const ownerRefs = owners.map((item) => JSON.parse(item.owner) as Wire.PublicRef)
+        return { status: 'pinned', bytes: row.size, digest: row.digest, ownerRefs }
+      }),
 
     close() {
       if (!open) return

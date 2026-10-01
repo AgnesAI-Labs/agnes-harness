@@ -118,6 +118,25 @@ describe('reference blob store', () => {
     store = openBlobStore(path, { authorizeRead: () => true })
     expect(must(await store.blobRead.readRange({ ref, offset: 0, length: 9 }, ctx())).digest).toBe(sha(bytes))
   })
+
+  it('promotes a sealed upload, pins it once per owner and reports the pin', async () => {
+    const bytes = bytesOf(PIECE_BYTES + 3)
+    const upload = store.upload(bytes, 'text/plain')
+    const wrong = { upload, expectedDigest: sha(bytesOf(1)) }
+    expect(refused(await store.promote(wrong, ctx()))).toBe('integrity')
+    const stagedBlob = must(await store.promote({ upload, expectedDigest: upload.digest }, ctx()))
+    const ownerRef = { kind: 'artifact', value: { artifactId: 'artifact-1', version: 1 } } as const
+    const pinned = must(await store.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))
+    expect(must(await store.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))).toEqual(pinned)
+    expect(must(await store.inspect({ ref: { kind: 'blob', value: pinned } }, ctx()))).toEqual({
+      status: 'pinned',
+      bytes: bytes.byteLength,
+      digest: sha(bytes),
+      ownerRefs: [ownerRef],
+    })
+    const tail = must(await store.blobRead.readRange({ ref: pinned, offset: PIECE_BYTES, length: 9 }, ctx()))
+    expect(tail.bytes).toEqual(bytes.subarray(PIECE_BYTES))
+  })
 })
 
 describe('reference blob: conformance', () => {
@@ -159,6 +178,20 @@ describe('reference blob: conformance', () => {
     }))
     expect(report.assertions.filter((item) => item.status === 'failed').map((item) => item.scenario)).toEqual(
       ['recover'],
+    )
+    expect(report.status).toBe('failed')
+  })
+
+  it('fails deny when a selection asking a feature the binding does not declare is accepted', async () => {
+    const report = await runContract((port) => ({
+      ...port,
+      deny: async (context) => {
+        const seen = await port.deny(context)
+        return { ...seen, selection: seen.selection.map((code, index) => (index === 1 ? 'selected' : code)) }
+      },
+    }))
+    expect(report.assertions.filter((item) => item.status === 'failed').map((item) => item.scenario)).toEqual(
+      ['deny'],
     )
     expect(report.status).toBe('failed')
   })

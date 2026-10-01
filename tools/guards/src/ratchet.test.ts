@@ -1371,7 +1371,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
   // Config registration records the requested provider id. Measured 1515, exact, no spare.
   // Shared blob and artifact access suites with their scenario registration. Measured 2338, exact, no spare.
-  'packages/extension-api/testkit': 2338,
+  // Blob selection refusals through the test service container. Measured 2378, exact, no spare.
+  'packages/extension-api/testkit': 2378,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

@@ -605,14 +605,35 @@ describe('default artifacts assembly', () => {
 })
 
 /**
- * The shared suite lives outside this package's build, so it is loaded by URL, as the conformance
- * runner loads binders. Only the parts used here are typed.
+ * The shared suite and the reference blob provider live outside this package's build, so they are
+ * loaded by URL, as the conformance runner loads binders. Only the parts used here are typed.
  */
 type ArtifactsSuite = {
   ARTIFACT_READER: { principalRef: string; authorizationRef: string; scope: ScopeRef }
   artifactsContractPort(subject: object): unknown
   registerArtifactsContract(harness: ConformanceHarness, binding: object): void
 }
+type ReferenceBlob = {
+  BLOB_PROVIDER: { id: string }
+  openBlobStore(
+    path: string,
+    options: { authorizeRead(context: CallContext): boolean },
+  ): Omit<SelectedBlobActions, 'binding'> & {
+    blobRead: BlobReadPort
+    upload(bytes: Uint8Array, mediaType: string): Wire.UploadRef
+    close(): void
+  }
+}
+
+/** One blob service under the default artifacts service: its selected binding, ports and upload entry. */
+type BlobSide = {
+  binding: Wire.BindingRef
+  blobRead: BlobReadPort
+  actions: SelectedBlobActions
+  upload(bytes: Uint8Array, id: string): Promise<Wire.UploadRef>
+  close(): void
+}
+type OpenBlob = (dataDir: string, readable: (context: CallContext) => boolean) => BlobSide
 
 const BUILD: BuildIdentity = {
   codeSha: 'host-test',
@@ -623,170 +644,213 @@ const BUILD: BuildIdentity = {
   sdkDigest: 'host-test-sdk-digest',
   platform: 'host-test-platform',
 }
+const MEDIA_TYPE = 'application/octet-stream'
 const fileDigest = (path: string) =>
   createHash('sha256')
     .update(readFileSync(new URL(path, import.meta.url)))
     .digest('hex')
 
+/**
+ * Runs the shared artifacts suite against the default artifacts service, assembled through a test
+ * service container over the blob service `openBlob` opens, and returns each scenario's status.
+ */
+async function artifactsConformance(providerId: string, openBlob: OpenBlob) {
+  const suite = (await import(
+    new URL('../../../extension-api/testkit/runtime/contracts/artifacts.ts', import.meta.url).href
+  )) as ArtifactsSuite
+  const reader = suite.ARTIFACT_READER
+  const dataDir = await mkdtemp(join(tmpdir(), 'agh-artifacts-'))
+  dirs.push(dataDir)
+  const readable = (context: CallContext) => context.authorizationRef === reader.authorizationRef
+  let clock = Date.parse('2026-10-01T00:00:00.000Z')
+  let reads = 0
+  const assemble = () => {
+    const blob = openBlob(dataDir, readable)
+    const counted: BlobReadPort = {
+      readRange: (request, context) => {
+        reads += 1
+        return blob.blobRead.readRange(request, context)
+      },
+      openRead: (request, context) => {
+        reads += 1
+        return blob.blobRead.openRead(request, context)
+      },
+    }
+    const container = createTestServiceContainer()
+    container.register({ requirement: BLOB_REQUIREMENT, binding: blob.binding, blobRead: counted })
+    const artifacts = ok(
+      createArtifactsService({
+        dataDir,
+        authorityId: 'artifacts-authority',
+        dependencies: container.dependencies,
+        blobActions: blob.actions,
+        authorize: readable,
+        ticketKey: { version: 'key-1', key: new Uint8Array(32).fill(7) },
+        now: () => clock,
+      }),
+    )
+    return { blob, artifacts, live: true }
+  }
+  let world = assemble()
+  const shut = () => {
+    if (!world.live) return
+    world.artifacts.close()
+    world.blob.close()
+    world.live = false
+  }
+  const writer = ctx({ scope: reader.scope })
+  const latest = new Map<string, number>()
+  const grants = new Map<string, Wire.ArtifactAccessGrantValue>()
+  const key = (ref: Wire.ArtifactRef) => `${ref.artifactId}@${ref.version}`
+  let published = 0
+  const binding: TestServiceBinding = {
+    requirement: {
+      contract: 'agh.artifacts',
+      major: 1,
+      logicalName: 'conformance',
+      features: ['artifact-access.v1'],
+      scope: 'runtime',
+      optional: false,
+    },
+    binding: {
+      bindingId: `artifacts-${providerId}`,
+      contract: 'agh.artifacts',
+      logicalName: 'conformance',
+      providerId,
+    },
+    artifactAccess: world.artifacts.artifactAccess,
+  }
+  const port = suite.artifactsContractPort({
+    binding,
+    access: (): ArtifactAccessPort => world.artifacts.artifactAccess,
+    async publish(bytes: Uint8Array, artifactId?: string): Promise<Wire.ArtifactRef> {
+      published += 1
+      const id = `conformance-${published}`
+      const prior =
+        artifactId === undefined ? {} : { artifactId, expectedLatestVersion: latest.get(artifactId) }
+      const reserved = ok(
+        await world.artifacts.reserve({ request: reserveRequest(id, prior), owner: owner() }, writer),
+      )
+      const upload = await world.blob.upload(bytes, id)
+      const request = publishRequest(id, upload, { mediaType: MEDIA_TYPE })
+      ok(await world.artifacts.publish({ request, owner: owner() }, writer))
+      const ref = { artifactId: reserved.artifactId, version: reserved.version }
+      latest.set(ref.artifactId, ref.version)
+      const grant = ok(
+        await world.artifacts.grant(
+          {
+            request: {
+              requestId: `grant-${id}`,
+              artifactRef: ref,
+              granteePrincipalRef: reader.principalRef,
+              scope: reader.scope,
+              permissions: ['read', 'download'],
+              expiresAt: null,
+            },
+            owner: owner(),
+            sourceAuthorizationRef: 'policy-1',
+          },
+          writer,
+        ),
+      )
+      grants.set(key(ref), grant)
+      return ref
+    },
+    async revoke(ref: Wire.ArtifactRef) {
+      ok(await world.artifacts.revoke({ artifactRef: ref, reason: 'conformance' }, writer))
+    },
+    async revokeGrant(ref: Wire.ArtifactRef) {
+      const grant = grants.get(key(ref))
+      if (!grant) throw new Error('no grant was recorded for this version')
+      const request = {
+        requestId: `revoke-${grant.grantId}`,
+        grantId: grant.grantId,
+        expectedRevision: grant.revision,
+        reason: 'conformance',
+      }
+      ok(await world.artifacts.revokeGrant({ request, owner: owner() }, writer))
+    },
+    now: () => clock,
+    advance(ms: number) {
+      clock += ms
+    },
+    blobReads: () => reads,
+    async reopen() {
+      shut()
+      world = assemble()
+    },
+    close: async () => shut(),
+    remains: () => existsSync(join(dataDir, 'artifacts', 'artifacts-service.db')),
+    locations: [dataDir, realpathSync(dataDir)],
+    ticketTtlMs: null,
+  })
+  const harness = createConformanceHarness()
+  suite.registerArtifactsContract(harness, {
+    providerId,
+    recipe: 'packages/host/src/runtime/providers/artifacts.ts',
+    command: 'host-artifacts-conformance',
+    build: BUILD,
+    providerDigest: fileDigest('../../src/runtime/providers/artifacts.ts'),
+    configDigest: canonicalJsonDigest({ authorityId: 'artifacts-authority' }),
+    releaseSetDigest: fileDigest('../../package.json'),
+    port,
+  })
+  try {
+    const report = await harness.run({
+      contracts: ['agh.artifacts'],
+      providers: [providerId],
+      command: 'host-artifacts-conformance',
+      clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
+    })
+    return report.assertions.map((item) => [item.scenario, item.status])
+  } finally {
+    shut()
+  }
+}
+
 describe('default artifacts service: conformance', () => {
   it('passes the shared artifacts suite in all six scenarios over the default blob service', async () => {
-    const suite = (await import(
-      new URL('../../../extension-api/testkit/runtime/contracts/artifacts.ts', import.meta.url).href
-    )) as ArtifactsSuite
-    const reader = suite.ARTIFACT_READER
-    const dataDir = await mkdtemp(join(tmpdir(), 'agh-artifacts-'))
-    dirs.push(dataDir)
-    const readable = (context: CallContext) => context.authorizationRef === reader.authorizationRef
-    let clock = Date.parse('2026-10-01T00:00:00.000Z')
-    let reads = 0
-    const assemble = () => {
+    const statuses = await artifactsConformance('default', (dataDir, readable) => {
       const blob = createBlobService({
         dataDir,
         authorityId: 'blob-authority',
         binding: BLOB_BINDING,
         authorizeRead: readable,
       })
-      const counted: BlobReadPort = {
-        readRange: (request, context) => {
-          reads += 1
-          return blob.blobRead.readRange(request, context)
-        },
-        openRead: (request, context) => {
-          reads += 1
-          return blob.blobRead.openRead(request, context)
-        },
+      return {
+        binding: BLOB_BINDING,
+        blobRead: blob.blobRead,
+        actions: blob,
+        upload: (bytes, id) => sealedUpload(blob, `upload-${id}`, bytes, MEDIA_TYPE),
+        close: () => blob.close(),
       }
-      const container = createTestServiceContainer()
-      container.register({ requirement: BLOB_REQUIREMENT, binding: BLOB_BINDING, blobRead: counted })
-      const artifacts = ok(
-        createArtifactsService({
-          dataDir,
-          authorityId: 'artifacts-authority',
-          dependencies: container.dependencies,
-          blobActions: blob,
-          authorize: readable,
-          ticketKey: { version: 'key-1', key: new Uint8Array(32).fill(7) },
-          now: () => clock,
-        }),
-      )
-      return { blob, artifacts, live: true }
-    }
-    let world = assemble()
-    const shut = () => {
-      if (!world.live) return
-      world.artifacts.close()
-      world.blob.close()
-      world.live = false
-    }
-    const writer = ctx({ scope: reader.scope })
-    const latest = new Map<string, number>()
-    const grants = new Map<string, Wire.ArtifactAccessGrantValue>()
-    const key = (ref: Wire.ArtifactRef) => `${ref.artifactId}@${ref.version}`
-    let published = 0
-    const binding: TestServiceBinding = {
-      requirement: {
-        contract: 'agh.artifacts',
-        major: 1,
-        logicalName: 'conformance',
-        features: ['artifact-access.v1'],
-        scope: 'runtime',
-        optional: false,
-      },
-      binding: {
-        bindingId: 'artifacts-default',
-        contract: 'agh.artifacts',
-        logicalName: 'conformance',
-        providerId: 'default',
-      },
-      artifactAccess: world.artifacts.artifactAccess,
-    }
-    const port = suite.artifactsContractPort({
-      binding,
-      access: (): ArtifactAccessPort => world.artifacts.artifactAccess,
-      async publish(bytes: Uint8Array, artifactId?: string): Promise<Wire.ArtifactRef> {
-        published += 1
-        const id = `conformance-${published}`
-        const prior =
-          artifactId === undefined ? {} : { artifactId, expectedLatestVersion: latest.get(artifactId) }
-        const reserved = ok(
-          await world.artifacts.reserve({ request: reserveRequest(id, prior), owner: owner() }, writer),
-        )
-        const upload = await sealedUpload(world.blob, `upload-${id}`, bytes, 'application/octet-stream')
-        const request = publishRequest(id, upload, { mediaType: 'application/octet-stream' })
-        ok(await world.artifacts.publish({ request, owner: owner() }, writer))
-        const ref = { artifactId: reserved.artifactId, version: reserved.version }
-        latest.set(ref.artifactId, ref.version)
-        const grant = ok(
-          await world.artifacts.grant(
-            {
-              request: {
-                requestId: `grant-${id}`,
-                artifactRef: ref,
-                granteePrincipalRef: reader.principalRef,
-                scope: reader.scope,
-                permissions: ['read', 'download'],
-                expiresAt: null,
-              },
-              owner: owner(),
-              sourceAuthorizationRef: 'policy-1',
-            },
-            writer,
-          ),
-        )
-        grants.set(key(ref), grant)
-        return ref
-      },
-      async revoke(ref: Wire.ArtifactRef) {
-        ok(await world.artifacts.revoke({ artifactRef: ref, reason: 'conformance' }, writer))
-      },
-      async revokeGrant(ref: Wire.ArtifactRef) {
-        const grant = grants.get(key(ref))
-        if (!grant) throw new Error('no grant was recorded for this version')
-        const request = {
-          requestId: `revoke-${grant.grantId}`,
-          grantId: grant.grantId,
-          expectedRevision: grant.revision,
-          reason: 'conformance',
-        }
-        ok(await world.artifacts.revokeGrant({ request, owner: owner() }, writer))
-      },
-      now: () => clock,
-      advance(ms: number) {
-        clock += ms
-      },
-      blobReads: () => reads,
-      async reopen() {
-        shut()
-        world = assemble()
-      },
-      close: async () => shut(),
-      remains: () => existsSync(join(dataDir, 'artifacts', 'artifacts-service.db')),
-      locations: [dataDir, realpathSync(dataDir)],
-      ticketTtlMs: null,
     })
-    const harness = createConformanceHarness()
-    suite.registerArtifactsContract(harness, {
-      providerId: 'default',
-      recipe: 'packages/host/src/runtime/providers/artifacts.ts',
-      command: 'host-artifacts-conformance',
-      build: BUILD,
-      providerDigest: fileDigest('../../src/runtime/providers/artifacts.ts'),
-      configDigest: canonicalJsonDigest({ authorityId: 'artifacts-authority' }),
-      releaseSetDigest: fileDigest('../../package.json'),
-      port,
-    })
-    try {
-      const report = await harness.run({
-        contracts: ['agh.artifacts'],
-        providers: ['default'],
-        command: 'host-artifacts-conformance',
-        clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
+    expect(statuses).toEqual(SCENARIOS.map((scenario) => [scenario, 'passed']))
+  })
+
+  it('passes the shared artifacts suite in all six scenarios over the reference blob service', async () => {
+    const reference = (await import(
+      new URL('../../../../examples/runtime-reference/src/providers/blob.ts', import.meta.url).href
+    )) as ReferenceBlob
+    const binding = {
+      bindingId: 'reference-blob',
+      contract: 'agh.blob',
+      logicalName: BLOB_REQUIREMENT.logicalName,
+      providerId: reference.BLOB_PROVIDER.id,
+    }
+    const statuses = await artifactsConformance('default-over-reference-blob', (dataDir, readable) => {
+      const blob = reference.openBlobStore(join(dataDir, 'reference-blob.sqlite'), {
+        authorizeRead: readable,
       })
-      expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
-        SCENARIOS.map((scenario) => [scenario, 'passed']),
-      )
-    } finally {
-      shut()
-    }
+      const { promote, pin, inspect } = blob
+      return {
+        binding,
+        blobRead: blob.blobRead,
+        actions: { binding, promote, pin, inspect },
+        upload: async (bytes) => blob.upload(bytes, MEDIA_TYPE),
+        close: () => blob.close(),
+      }
+    })
+    expect(statuses).toEqual(SCENARIOS.map((scenario) => [scenario, 'passed']))
   })
 })

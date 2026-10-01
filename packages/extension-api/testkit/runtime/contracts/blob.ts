@@ -9,12 +9,19 @@ import type {
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import {
+  RuntimeAuthorityTransferAPI,
   RuntimeClientTransportPolicy,
   RuntimeErrorDetails,
   RuntimeServiceCatalog,
 } from '@agnes/protocol/runtime'
 import { type BuildIdentity, type ReuseLifecycle, SCENARIOS, type ScenarioName } from '../evidence.js'
-import type { AssertionInput, CaseContext, ConformanceHarness, TestServiceBinding } from '../harness.js'
+import {
+  type AssertionInput,
+  type CaseContext,
+  type ConformanceHarness,
+  createTestServiceContainer,
+  type TestServiceBinding,
+} from '../harness.js'
 
 const CONTRACT = 'agh.blob'
 const HEX = /^[a-f0-9]{64}$/
@@ -218,7 +225,10 @@ export interface BlobObservations {
   /**
    * A stranger's range and stream; six malformed or oversized ranges; a range at the end and a stream
    * past it; a range and a stream of an object whose stored bytes were cut short; a stream whose read
-   * authorization is revoked after the first chunk.
+   * authorization is revoked after the first chunk. `selection` is what a consumer gets selecting the
+   * offered binding in a fresh test service container: as offered, then asking a feature the binding
+   * does not declare, another contract and another major, then registered without its read port, with
+   * a port missing `openRead`, and once the container is closed.
    */
   readonly deny: {
     readonly unauthorized: readonly (RangeFact | StreamFact)[]
@@ -226,6 +236,7 @@ export interface BlobObservations {
     readonly pastEnd: readonly (RangeFact | StreamFact)[]
     readonly short: readonly (RangeFact | StreamFact)[]
     readonly revoked: StreamFact
+    readonly selection: readonly string[]
   }
   /**
    * A range and a stream opened with an aborted signal; a stream cancelled twice and closed after its
@@ -313,12 +324,25 @@ export function blobContractPort(subject: BlobSubject): BlobContractPort {
       const shortRef = await subject.seed(short)
       await subject.corrupt(shortRef, short.subarray(0, 5))
       const revokedRef = await subject.seed(content(MIB * 2, 5))
+      const offered = subject.binding
+      const { requirement } = offered
+      const features = [...requirement.features, RuntimeAuthorityTransferAPI.feature]
+      const partial = { readRange: subject.read().readRange } as BlobReadPort
       return {
         unauthorized: [await range(ref, 0, 1, stranger), await stream(ref, 0, {}, stranger)],
         bounds,
         pastEnd: [await range(ref, small.byteLength, 1), await stream(ref, small.byteLength + 1)],
         short: [await range(shortRef, 0, short.byteLength), await stream(shortRef, 0)],
         revoked: await stream(revokedRef, 0, { interrupt: async () => subject.gate.revoke(revokedRef) }),
+        selection: [
+          await selectRead(offered),
+          await selectRead(offered, { ...requirement, features }),
+          await selectRead(offered, { ...requirement, contract: 'agh.artifacts' }),
+          await selectRead(offered, { ...requirement, major: requirement.major + 1 }),
+          await selectRead({ requirement, binding: offered.binding }),
+          await selectRead({ ...offered, blobRead: partial }),
+          await selectRead(offered, requirement, true),
+        ],
       }
     },
     async cancel() {
@@ -375,6 +399,22 @@ export function selected(
   return chosen.ok && chosen.value.binding.providerId === providerId && chosen.value[port] !== undefined
 }
 
+/**
+ * Selects `asked` from a fresh test service container holding `offered`, closed first when `closed`:
+ * the container's refusal code, `operation_not_supported` when the selection lacks a read method, as a
+ * consuming assembly refuses it, or `selected`.
+ */
+async function selectRead(offered: TestServiceBinding, asked = offered.requirement, closed = false) {
+  const container = createTestServiceContainer()
+  container.register(offered)
+  if (closed) await container.dependencies.close()
+  const chosen = container.dependencies.get(asked)
+  if (!chosen.ok) return chosen.error.detailCode
+  const port = chosen.value.blobRead
+  const complete = typeof port?.readRange === 'function' && typeof port.openRead === 'function'
+  return complete ? 'selected' : 'operation_not_supported'
+}
+
 const malformed = (fact: RangeFact) =>
   'refused' in fact && ['invalid_input', 'quota'].includes(refusalClass(fact.refused) ?? '')
 
@@ -412,7 +452,14 @@ const JUDGE: Judge<BlobObservations> = {
     same(seen.pastEnd, [{ refused: 'range_not_satisfiable' }, { refused: 'range_not_satisfiable' }]) &&
     same(seen.short[0], { refused: 'integrity' }) &&
     (same(seen.short[1], { refused: 'integrity' }) || endedWith(seen.short[1], 'integrity')) &&
-    interrupted(seen.revoked, (detail) => refusalClass(detail) === 'denied'),
+    interrupted(seen.revoked, (detail) => refusalClass(detail) === 'denied') &&
+    same(seen.selection, [
+      'selected',
+      ...Array(3).fill('service_not_registered'),
+      'operation_not_supported',
+      'operation_not_supported',
+      'service_container_closed',
+    ]),
   cancel: (seen) =>
     same(seen.aborted, [{ refused: 'cancelled' }, { refused: 'cancelled' }]) &&
     interrupted(seen.cancelled, (detail) => detail === 'cancelled') &&
@@ -430,7 +477,9 @@ const JUDGE: Judge<BlobObservations> = {
     return same(seen.before, expected) && same(seen.after, expected) && streamed(seen.stream, object, 0)
   },
   dispose: (seen) =>
-    seen.refusals.length === 2 && seen.refusals.every((code) => code !== null) && seen.remains,
+    seen.refusals.length === 2 &&
+    seen.refusals.every((code) => code !== null && refusalClass(code) !== undefined) &&
+    seen.remains,
 }
 
 const FEATURES: Record<ScenarioName, readonly string[]> = {
