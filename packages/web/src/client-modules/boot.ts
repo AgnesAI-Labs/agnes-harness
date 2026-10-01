@@ -37,6 +37,7 @@ import {
   syncLocaleRadios,
 } from '../locale-preference.js'
 import { COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog } from '../locales/computer-use.js'
+import { SERVER_ERROR_LOCALE_NAMESPACE, serverErrorCatalog } from '../locales/server-errors.js'
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -156,6 +157,7 @@ export async function startClientModules(options: {
   locale.register(COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog)
   locale.register('@agnes/web-diagnostics', diagnosticsCatalog)
   locale.register('@agnes/web-trace', traceCatalog)
+  locale.register(SERVER_ERROR_LOCALE_NAMESPACE, serverErrorCatalog)
   const commands = new CommandService(ctx, options.authorizeCommand)
 
   const registry = (ctx as unknown as { slots: SlotRegistry }).slots

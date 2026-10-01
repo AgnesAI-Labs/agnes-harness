@@ -1782,7 +1782,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
-  'packages/daemon/src': 26501,
+  // English safeMessage replacements wrap a few server sentences. Measured 26516, exact, no spare (+15).
+  'packages/daemon/src': 26516,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2030,7 +2031,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // Computer Use copy catalog and locale-aware status text. Measured 13587, exact, no spare.
   // Diagnostics dialog and trace/diagnostics catalog registration. Measured 13622, exact, no spare (+35).
-  'packages/web/src': 13622,
+  // Server error catalog for stable codes. Measured 13697, exact, no spare (+75).
+  'packages/web/src': 13697,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

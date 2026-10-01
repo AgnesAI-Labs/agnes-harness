@@ -294,7 +294,12 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | 源码注释、`console` 日志、`packages/cli/tools/build-local.ts` | 不做 |
 | `packages/web/public/style.css`、web-ui 的 tokens、`REGISTRY.md` | 已核实为注释或文档，不做 |
 | `packages/web-admin-frame` | 删除计划内，不单独做国际化 |
-| extension-api 的中文 | 先视为注释。E1 若发现用户可见句子，再补进 E2 |
+| extension-api 的中文 | 先视为注释。E1 抽查后仍是注释，不改 |
+| daemon `config.ts`、`supervisor.ts` 里的中文 | 注释，不改 |
+| worker-runtime `commands.ts`、`mcp-server-rows.ts`、`mcp-row-runtime.ts` | 注释，不改 |
+| package-manager `client-assets.ts`、sandbox-remote `seam.ts` | 注释，不改 |
+| resource-control-runtime `mcp.ts`、resource-control-worker `skill-bootstrap.ts` | 注释，不改 |
+| host `skill-preload.ts` 里的「技能」，base `mcp-search` 里的「技能」 | 用来识别用户说法，不是展示句，不改 |
 
 ## 11. 怎样算一条做完
 
@@ -312,7 +317,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | --- | --- |
 | `packages/web-client/src` | 1745 |
 | `packages/web-ui/src` | 4732 |
-| `packages/web/src` | 13622 |
+| `packages/web/src` | 13697 |
 | `packages/web-units/src` | 5234 |
 | `packages/web/src/app` | 1838 |
 

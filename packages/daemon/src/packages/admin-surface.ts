@@ -155,7 +155,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         url.origin !== options.origin ||
         url.search
       ) {
-        error(response, 403, 'E_ADMIN_ORIGIN', '管理请求来源无效')
+        error(response, 403, 'E_ADMIN_ORIGIN', 'The admin request origin is not valid.')
         return true
       }
       const action = url.pathname.slice(PREFIX.length)
@@ -176,7 +176,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           readOnly,
         }
         if (!validatePackageAdminData('PackageAdminContext', context).ok) {
-          error(response, 502, 'E_ADMIN_RESPONSE', '后台返回的数据无法确认')
+          error(response, 502, 'E_ADMIN_RESPONSE', 'The backend response could not be confirmed.')
           return true
         }
         reply(response, 200, context)
@@ -186,17 +186,22 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         try {
           const surfaces = [...((await options.surfaceLinks?.()) ?? [])]
           if (surfaces.length > 256 || surfaces.some((value) => !validSurfaceLink(value))) {
-            error(response, 502, 'E_ADMIN_RESPONSE', '后台返回的数据无法确认')
+            error(response, 502, 'E_ADMIN_RESPONSE', 'The backend response could not be confirmed.')
             return true
           }
           reply(response, 200, { surfaces })
         } catch {
-          error(response, 502, 'E_ADMIN_BACKEND', '操作未确认，请查询状态或重新连接后台')
+          error(
+            response,
+            502,
+            'E_ADMIN_BACKEND',
+            'The operation was not confirmed. Check its status or reconnect to the backend.',
+          )
         }
         return true
       }
       if (request.method !== 'POST' || !Object.hasOwn(ACTIONS, action)) {
-        error(response, 404, 'E_ADMIN_ROUTE', '管理操作不存在')
+        error(response, 404, 'E_ADMIN_ROUTE', 'The admin operation does not exist.')
         return true
       }
       const name = action as AdminSurfaceAction
@@ -204,26 +209,31 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       try {
         const body = await readBody(request)
         if (!record(body) || !validatePackageAdminCall(method, 'params', body).ok) {
-          error(response, 400, 'E_ADMIN_REQUEST', '管理参数无效')
+          error(response, 400, 'E_ADMIN_REQUEST', 'The admin parameters are not valid.')
           return true
         }
         if (body.profile !== options.profile || ('clientId' in body && body.clientId !== options.clientId)) {
-          error(response, 403, 'E_ADMIN_SCOPE', '管理请求不属于当前配置')
+          error(response, 403, 'E_ADMIN_SCOPE', 'The admin request does not belong to this profile.')
           return true
         }
         if (readOnly && PACKAGE_ADMIN_METHODS[method].administration.execution !== 'read') {
-          error(response, 409, 'E_ADMIN_READ_ONLY', '当前为只读恢复模式')
+          error(response, 409, 'E_ADMIN_READ_ONLY', 'The admin surface is in read-only recovery mode.')
           return true
         }
         const result = await options.invoke(name, body)
         if (!validatePackageAdminCall(method, 'result', result).ok) {
-          error(response, 502, 'E_ADMIN_RESPONSE', '后台返回的数据无法确认')
+          error(response, 502, 'E_ADMIN_RESPONSE', 'The backend response could not be confirmed.')
           return true
         }
         reply(response, 200, result)
       } catch {
         // Only validated DTOs may contain backend detail. Exceptions can contain local paths or secrets.
-        error(response, 502, 'E_ADMIN_BACKEND', '操作未确认，请查询状态或重新连接后台')
+        error(
+          response,
+          502,
+          'E_ADMIN_BACKEND',
+          'The operation was not confirmed. Check its status or reconnect to the backend.',
+        )
       }
       return true
     },

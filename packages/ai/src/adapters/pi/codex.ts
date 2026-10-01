@@ -39,7 +39,7 @@ type SubscriptionSpec = Readonly<{
 const SPECS: readonly SubscriptionSpec[] = [
   {
     id: 'openai-codex',
-    displayName: 'OpenAI Codex · ChatGPT 订阅',
+    displayName: 'OpenAI Codex · ChatGPT subscription',
     primaryApi: 'openai-codex-responses',
     baseUrl: 'https://chatgpt.com/backend-api',
     loginMethods: ['browser', 'device_code'],
@@ -57,7 +57,7 @@ const SPECS: readonly SubscriptionSpec[] = [
   },
   {
     id: 'github-copilot',
-    displayName: 'GitHub Copilot 订阅',
+    displayName: 'GitHub Copilot subscription',
     primaryApi: 'openai-responses',
     baseUrl: 'https://api.individual.githubcopilot.com',
     loginMethods: ['device_code'],
@@ -66,7 +66,7 @@ const SPECS: readonly SubscriptionSpec[] = [
   },
   {
     id: 'kimi-coding',
-    displayName: 'Kimi Code 订阅',
+    displayName: 'Kimi Code subscription',
     primaryApi: 'anthropic-messages',
     baseUrl: 'https://api.kimi.com/coding',
     loginMethods: ['device_code'],

@@ -228,8 +228,8 @@ export function createCodexLogin(deps: CodexLoginDependencies) {
             url: parsed.href,
             message:
               event.type === 'device_code'
-                ? `在登录页面输入验证码：${event.userCode.slice(0, 128)}`
-                : `在浏览器完成 ${selectedProvider.displayName} 登录。`,
+                ? `Enter this code on the login page: ${event.userCode.slice(0, 128)}`
+                : `Finish ${selectedProvider.displayName} login in the browser.`,
           })
         },
       }
