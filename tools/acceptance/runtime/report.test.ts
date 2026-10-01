@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { judgeReport as judgeFromKit } from '../../../packages/extension-api/testkit/index.js'
+import { judgeReport as judgeFromKit, SCENARIOS } from '../../../packages/extension-api/testkit/index.js'
 import { SAMPLE_CLOCK, sampleAssertion, sampleDraft } from './fixtures.js'
 import { judgeReport, mergeReports, serializeReport, writeReport } from './report.js'
 import { main, parseConformanceArgs, runConformance } from './run-conformance.js'
@@ -165,5 +165,38 @@ describe('conformance report entry', () => {
     expect(runner.match(/new Date\(/g)).toEqual(['new Date('])
     expect(runner).not.toMatch(/Date\.now/)
     expect(runner).toMatch(/pathToFileURL/)
+  })
+
+  it('passes the config contract for the default provider and the reference provider', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'conformance-config-'))
+    const clock = {
+      startedAt: '2026-10-01T00:00:00.000Z',
+      finishedAt: '2026-10-01T00:00:01.000Z',
+    } as const
+    try {
+      for (const providers of [['reference'], ['default', 'reference']] as const) {
+        const run = await runConformance({
+          contracts: ['agh.config'],
+          providers: [...providers],
+          command: 'conformance',
+          clock,
+          reportPath: join(directory, `${providers.join('-')}.json`),
+        })
+        expect(run.report.status).toBe('passed')
+        expect(run.report.failures).toEqual([])
+        expect(run.report.assertions.length).toBeGreaterThan(0)
+        for (const providerId of providers) {
+          const rows = run.report.assertions.filter(
+            (item) => item.contract === 'agh.config' && item.providerId === providerId,
+          )
+          expect(rows.length).toBe(SCENARIOS.length * 2)
+          expect(new Set(rows.map((item) => item.scenario))).toEqual(new Set(SCENARIOS))
+          expect(rows.every((item) => item.status === 'passed')).toBe(true)
+          expect(rows.every((item) => item.perImplementation === true && item.gate === null)).toBe(true)
+        }
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })
