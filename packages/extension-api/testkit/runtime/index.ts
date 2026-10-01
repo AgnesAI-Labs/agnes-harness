@@ -54,3 +54,9 @@ export {
 } from './harness.js'
 export type { RestrictedFixture } from './legacy-compatibility.js'
 export { faultPoint, LEGACY_FIXTURES } from './legacy-compatibility.js'
+
+export type { AuditContractAssertion, AuditContractDriver, AuditContractInstance, AuditConformanceBinding } from './contracts/audit.js'
+export { registerAuditContract, runAuditContractScenario } from './contracts/audit.js'
+
+export type { IdentityContractFixture, IdentityCredentialCase } from './contracts/identity.js'
+export { IDENTITY_CREDENTIAL_CASES, registerIdentityContract, runIdentityContractCase } from './contracts/identity.js'

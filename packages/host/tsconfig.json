@@ -8,9 +8,15 @@
   "include": ["**/*.ts", "src/computer-use/computer-use-driver-lock.json"],
   "exclude": ["dist", "node_modules"],
   "references": [
-    { "path": "../cordis" },
-    { "path": "../plugin-runtime" },
-    { "path": "../system-node" },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../system-node"
+    },
     {
       "path": "../resource-control-runtime"
     },
@@ -19,6 +25,21 @@
     },
     {
       "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../../examples/runtime-reference"
+    },
+    {
+      "path": "../core/tsconfig.runtime.json"
+    },
+    {
+      "path": "../core/tsconfig.tests.json"
     }
   ]
 }

@@ -50,6 +50,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../../packages/system-node
 
   packages/ai:
     dependencies:

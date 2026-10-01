@@ -4,7 +4,20 @@
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "test/**/*.compile.ts"],
   "exclude": ["dist", "node_modules", "**/*.test.ts"],
-  "references": [{ "path": "../../packages/extension-api" }, { "path": "../../packages/protocol" }]
+  "references": [
+    {
+      "path": "../../packages/extension-api"
+    },
+    {
+      "path": "../../packages/protocol"
+    },
+    {
+      "path": "../../packages/system-node"
+    },
+    {
+      "path": "../../packages/core/tsconfig.runtime.json"
+    }
+  ]
 }
