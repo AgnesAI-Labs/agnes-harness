@@ -6,6 +6,8 @@ export * from './admin-text.js'
 export type { AntdRoot } from './antd-root.js'
 export { createAntdRoot } from './antd-root.js'
 export * from './confirm.js'
+export { WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from './locales/index.js'
+export type { LocaleCatalog, LocaleDictionary, Translate } from './locales/index.js'
 export * from './diagnostics-dialog.js'
 export * from './popover.js'
 export {

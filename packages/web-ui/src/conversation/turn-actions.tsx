@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { fallbackT, type Translate } from '../locales/index.js'
 
 export interface ConversationTurnFeedback {
   clear(): void
@@ -18,19 +19,24 @@ export interface ConversationTurnActionsProps {
   turn: UITurn
   finalText: string
   settled: boolean
+  /** Locale-bound translate injected by the host; render-time lookup only. */
+  t?: Translate
+  /** Current locale tag for date formatting; defaults to en-US. */
+  localeTag?: string
   onFork?: (turn: UITurn) => Promise<void>
   /** The legacy bridge may supply its existing disclosure binding. */
   bindAutoDismiss?: (element: HTMLDetailsElement) => void
   feedbackRef?: Ref<ConversationTurnFeedback>
 }
 
-const durationLabel = (ms?: number): string | undefined => {
+const durationLabel = (ms: number | undefined, t: Translate): string | undefined => {
   if (ms === undefined) return undefined
-  if (ms < 1000) return `${ms} 毫秒`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} 秒`
-  return `${Math.floor(ms / 60_000)} 分 ${Math.round((ms % 60_000) / 1000)} 秒`
+  if (ms < 1000) return t('turn.duration.ms', { n: ms })
+  if (ms < 60_000) return t('turn.duration.s', { n: (ms / 1000).toFixed(ms < 10_000 ? 1 : 0) })
+  return t('turn.duration.minSec', { min: Math.floor(ms / 60_000), sec: Math.round((ms % 60_000) / 1000) })
 }
-const sourceLabel = (source: 'gateway' | 'estimated') => (source === 'estimated' ? '估算' : '网关记录')
+const sourceLabel = (source: 'gateway' | 'estimated', t: Translate) =>
+  t(source === 'estimated' ? 'cost.source.estimated' : 'cost.source.gateway')
 const latestModel = (turn: UITurn): string | undefined => {
   if (turn.finalModel !== undefined) return turn.finalModel
   for (let i = turn.usage.calls.length - 1; i >= 0; i--) {
@@ -107,6 +113,8 @@ export function ConversationTurnActions({
   turn,
   finalText,
   settled,
+  t = fallbackT,
+  localeTag = 'en-US',
   onFork,
   bindAutoDismiss,
   feedbackRef,
@@ -193,14 +201,14 @@ export function ConversationTurnActions({
     const valid = () => mounted.current && currentId.current === id && epoch.current === generation
     const fallback = () => {
       const copied = legacyCopy(finalText, doc)
-      if (valid()) report(copied ? '已复制' : '复制失败', copied ? 1600 : undefined)
+      if (valid()) report(copied ? t('turnactions.copied') : t('turnactions.copyFailed'), copied ? 1600 : undefined)
     }
     const clipboard = doc.defaultView?.navigator.clipboard
     if (!clipboard?.writeText) return fallback()
     try {
       void Promise.resolve(clipboard.writeText(finalText)).then(
         () => {
-          if (valid()) report('已复制', 1600)
+          if (valid()) report(t('turnactions.copied'), 1600)
         },
         () => {
           if (valid()) fallback()
@@ -223,7 +231,7 @@ export function ConversationTurnActions({
       void Promise.resolve(onFork(turn))
         .then(undefined, () => {
           if (mounted.current && currentId.current === id && epoch.current === generation)
-            report('分支失败，请重试。')
+            report(t('turnactions.forkFailed'))
         })
         .finally(() => {
           if (pending.current?.token === token) {
@@ -235,42 +243,45 @@ export function ConversationTurnActions({
     } catch {
       pending.current = undefined
       setPendingId(undefined)
-      report('分支失败，请重试。')
+      report(t('turnactions.forkFailed'))
     }
   }
 
   const facts = [
-    turn.inherited ? '继承历史' : undefined,
+    turn.inherited ? t('turnactions.inherited') : undefined,
     turn.endedAt
-      ? new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(
+      ? new Intl.DateTimeFormat(localeTag, { hour: '2-digit', minute: '2-digit' }).format(
           new Date(turn.endedAt),
         )
       : undefined,
     latestModel(turn),
   ].filter(Boolean)
   const { totals, cost, credits, billingComplete } = turn.usage
-  const duration = durationLabel(turn.durationMs)
+  const duration = durationLabel(turn.durationMs, t)
   const rows: Array<[string, string]> = [
-    ['输入 Token', totals.input.toLocaleString()],
-    ['输出 Token', totals.output.toLocaleString()],
-    ['缓存读取 / 写入', `${totals.cacheRead.toLocaleString()} / ${totals.cacheWrite.toLocaleString()}`],
+    [t('turnactions.rows.tokensIn'), totals.input.toLocaleString()],
+    [t('turnactions.rows.tokensOut'), totals.output.toLocaleString()],
+    [
+      t('turnactions.rows.cache'),
+      `${totals.cacheRead.toLocaleString()} / ${totals.cacheWrite.toLocaleString()}`,
+    ],
     ...(cost
       ? [
           [
-            '费用',
-            `$${(cost.usdMicros / 1e6).toFixed(6)} · ${sourceLabel(cost.source)}${cost.subscription ? ' · 订阅' : ''}${billingComplete ? '' : ' · 已知部分'}`,
+            t('turnactions.rows.cost'),
+            `$${(cost.usdMicros / 1e6).toFixed(6)} · ${sourceLabel(cost.source, t)}${cost.subscription ? t('turnactions.subscription') : ''}${billingComplete ? '' : t('turnactions.billingPartial')}`,
           ] as [string, string],
         ]
       : []),
     ...(credits
       ? [
           [
-            '额度',
-            `${credits.amount.toFixed(8).replace(/\.?0+$/, '')} credits · ${sourceLabel(credits.source)}${credits.complete ? '' : ' · 部分'}`,
+            t('turnactions.rows.credits'),
+            `${credits.amount.toFixed(8).replace(/\.?0+$/, '')} credits · ${sourceLabel(credits.source, t)}${credits.complete ? '' : t('turnactions.creditsPartial')}`,
           ] as [string, string],
         ]
       : []),
-    ...(duration ? [['用时', duration] as [string, string]] : []),
+    ...(duration ? [[t('turnactions.rows.duration'), duration] as [string, string]] : []),
   ]
 
   return (
@@ -278,8 +289,8 @@ export function ConversationTurnActions({
       <button
         type="button"
         className="turn-action"
-        aria-label="复制回答"
-        title="复制回答"
+        aria-label={t('turnactions.copy')}
+        title={t('turnactions.copy')}
         hidden={!settled}
         disabled={!finalText}
         onClick={copy}
@@ -294,8 +305,8 @@ export function ConversationTurnActions({
       <button
         type="button"
         className="turn-action"
-        aria-label="分支到新聊天"
-        title="分支到新聊天"
+        aria-label={t('turnactions.fork')}
+        title={t('turnactions.fork')}
         hidden={!settled || !turn.forkable}
         disabled={pendingId === turn.id || !turn.forkable || !onFork}
         onClick={fork}
@@ -311,7 +322,7 @@ export function ConversationTurnActions({
             positionUsage(summary.current, usage.current)
         }}
       >
-        <summary ref={summary} className="turn-meta" aria-label="查看本轮用量与调用明细">
+        <summary ref={summary} className="turn-meta" aria-label={t('turnactions.metaAria')}>
           {settled ? facts.join(' · ') : ''}
         </summary>
         <dl ref={usage} className="turn-usage-grid">

@@ -3,6 +3,7 @@ import { useThread } from '@assistant-ui/react'
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { ConversationCost } from './cost.js'
+import type { Translate } from '../locales/index.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
 
@@ -11,6 +12,9 @@ type ToolNode = Extract<UINode, { kind: 'tool' }>
 type CostNode = Extract<UINode, { kind: 'cost' }>
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
+/** 组件未拿到宿主注入时的兜底：显示 key 本身，让漏接线在界面上可见。 */
+const fallbackT: Translate = (key) => key
+
 export interface ConversationMarkdownState {
   nodeId: string
   streaming: boolean
@@ -18,6 +22,8 @@ export interface ConversationMarkdownState {
 }
 
 export interface ConversationMessagesProps {
+  /** Locale-bound translate injected by the host; called during render, never cached. */
+  t: Translate
   turns?: readonly UITurn[]
   /** Optional snapshot gate when a host supplies turns and messages through separate subscriptions. */
   visibleNodeIds?: readonly string[]
@@ -30,39 +36,42 @@ export interface ConversationMessagesProps {
   renderNode?: (node: UINode, native: ReactNode) => ReactNode
 }
 
-const approvalLabels: Record<ApprovalNode['state'], string> = {
-  pending: '需要你确认',
-  decided: '审批已处理',
-  expired: '审批已过期',
+const approvalLabelKeys: Record<ApprovalNode['state'], string> = {
+  pending: 'timeline.approval.pending',
+  decided: 'timeline.approval.decided',
+  expired: 'timeline.approval.expired',
 }
-const verdictLabels: Record<string, string> = {
-  'allowed-once': '仅允许这次',
-  'allowed-session': '本会话允许',
-  'allowed-permanent': '对此配置始终允许',
-  rejected: '已拒绝',
-  cancelled: '已取消',
+const verdictLabelKeys: Record<string, string> = {
+  'allowed-once': 'timeline.decision.allowedOnce',
+  'allowed-session': 'timeline.decision.allowedSession',
+  'allowed-permanent': 'timeline.decision.allowedPermanent',
+  rejected: 'timeline.decision.rejected',
+  cancelled: 'timeline.decision.cancelled',
 }
-const toolLabels: Record<ToolNode['status'], string> = {
-  planned: '等待执行',
-  awaiting_approval: '等待审批',
-  running: '正在执行',
-  completed: '执行完成',
-  failed: '执行失败',
-  cancelled: '已取消',
+const toolLabelKeys: Record<ToolNode['status'], string> = {
+  planned: 'tool.status.planned',
+  awaiting_approval: 'tool.status.awaitingApproval',
+  running: 'tool.status.running',
+  completed: 'tool.status.completed',
+  failed: 'tool.status.failed',
+  cancelled: 'tool.status.cancelled',
 }
-const approvalStatus = (node: ApprovalNode) =>
+const approvalStatus = (node: ApprovalNode, t: Translate) =>
   node.state === 'decided' && node.decision
-    ? (verdictLabels[node.decision.verdict] ?? approvalLabels.decided)
-    : approvalLabels[node.state]
+    ? (() => {
+        const key = verdictLabelKeys[node.decision.verdict]
+        return key === undefined ? t(approvalLabelKeys.decided) : t(key)
+      })()
+    : t(approvalLabelKeys[node.state])
 
-function UserMessage({ node }: { node: Extract<UINode, { kind: 'user' }> }) {
+function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: Translate }) {
   const value = node.content
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
   return (
     <>
-      <p className="node-label">你</p>
+      <p className="node-label">{t('timeline.userLabel')}</p>
       <div className="node-body">{value}</div>
     </>
   )
@@ -74,12 +83,14 @@ function AssistantMessage({
   renderMarkdown,
   hideThinking = false,
   thinkingHost,
+  t,
 }: {
   node: AssistantNode
   state: ConversationMarkdownState
   renderMarkdown?: ConversationMessagesProps['renderMarkdown']
   hideThinking?: boolean
   thinkingHost?: RefObject<HTMLDivElement> | undefined
+  t: Translate
 }) {
   const active = Boolean(node.thinking?.trim()) && state.streaming && node.text.trim() === ''
   const wasActive = useRef(active)
@@ -95,13 +106,15 @@ function AssistantMessage({
     if (disclosure.current) disclosure.current.open = initiallyActive.current
   }, [])
   const body =
-    node.lostChars !== undefined && !node.text ? `_输出中断，至少 ${node.lostChars} 字未保存_` : node.text
+    node.lostChars !== undefined && !node.text
+      ? t('timeline.lostOutput', { count: node.lostChars })
+      : node.text
   return (
     <>
       <p className="node-label">Agnes</p>
       {!hideThinking && (
         <details ref={disclosure} className="thinking" hidden={!shownThinking}>
-          <summary>深度思考</summary>
+          <summary>{t('timeline.thinkingSummary')}</summary>
           <div ref={thinkingHost} className="thinking-content markdown">
             {renderMarkdown ? renderMarkdown(node.thinking ?? '', 'thinking', state) : node.thinking}
           </div>
@@ -118,10 +131,12 @@ export function ConversationToolCard({
   node,
   icon,
   onExpandedChange,
+  t = fallbackT,
 }: {
   node: ToolNode
   icon?: ReactNode
   onExpandedChange?: (expanded: boolean) => void
+  t?: Translate
 }) {
   const [expanded, setExpanded] = useState(false)
   const cardHost = useRef<HTMLDivElement>(null)
@@ -135,12 +150,13 @@ export function ConversationToolCard({
   const remainder = summary.startsWith(node.name) ? summary.slice(node.name.length).trim() : summary
   const meaningful =
     summary && summary !== node.name && remainder && !remainder.startsWith('{') && !remainder.startsWith('[')
+  const statusLabel = t(toolLabelKeys[node.status])
   const nextDetail = [
-    `工具：${node.name}`,
-    `状态：${toolLabels[node.status]}`,
-    ...(node.argsPreview ? ['', '执行参数', node.argsPreview] : []),
+    t('tool.detail.header', { name: node.name }),
+    t('tool.detail.status', { status: statusLabel }),
+    ...(node.argsPreview ? ['', t('tool.detail.args'), node.argsPreview] : []),
     ...(node.resultPreview
-      ? ['', node.status === 'failed' ? '错误详情' : '执行结果', node.resultPreview]
+      ? ['', node.status === 'failed' ? t('tool.detail.error') : t('tool.detail.result'), node.resultPreview]
       : []),
   ].join('\n')
   const detail = useInteractionSnapshot(detailHost, nextDetail)
@@ -155,7 +171,7 @@ export function ConversationToolCard({
         <div className="tool-meta">
           {icon}
           <span className="tool-name">{node.name}</span>
-          <span className="tool-status">{toolLabels[node.status]}</span>
+          <span className="tool-status">{statusLabel}</span>
         </div>
         <button
           type="button"
@@ -167,7 +183,7 @@ export function ConversationToolCard({
             flushSync(() => setExpanded(next))
           }}
         >
-          {expanded ? '收起详情' : '查看详情'}
+          {expanded ? t('tool.detail.collapse') : t('tool.detail.expand')}
         </button>
       </div>
       <div className="tool-summary" hidden={!meaningful}>
@@ -202,9 +218,10 @@ function nativeContent(
   turnStatus?: UITurn['status'],
   thinkingHost?: RefObject<HTMLDivElement>,
 ): ReactNode {
+  const t = props.t ?? fallbackT
   switch (node.kind) {
     case 'user':
-      return <UserMessage node={node} />
+      return <UserMessage node={node} t={t} />
     case 'assistant':
       return (
         <AssistantMessage
@@ -213,44 +230,49 @@ function nativeContent(
           renderMarkdown={props.renderMarkdown}
           hideThinking={hideThinking}
           thinkingHost={thinkingHost}
+          t={t}
         />
       )
     case 'tool':
-      return props.renderTool ? props.renderTool(node) : <ConversationToolCard node={node} />
+      return props.renderTool ? props.renderTool(node) : <ConversationToolCard node={node} t={t} />
     case 'approval':
       return (
         <>
           <div className="approval-head">
-            <span className="node-label">审批</span>
-            <span className="tool-status">{approvalStatus(node)}</span>
+            <span className="node-label">{t('timeline.approvalTitle')}</span>
+            <span className="tool-status">{approvalStatus(node, t)}</span>
           </div>
           <div className="approval-summary">{node.summary}</div>
         </>
       )
     case 'cost':
-      return props.renderCost ? props.renderCost(node) : <ConversationCost node={node} />
+      return props.renderCost ? props.renderCost(node) : <ConversationCost node={node} t={t} />
     case 'artifact':
       return (
         <>
-          <p className="node-label">产物</p>
+          <p className="node-label">{t('timeline.artifactLabel')}</p>
           <div className="node-body">{node.name}</div>
         </>
       )
     case 'compaction':
       return (
         <>
-          <p className="node-label">上下文整理</p>
-          <div className="node-body">{node.summary ?? `已整理上下文（范围：${node.range.join('–')}）`}</div>
+          <p className="node-label">{t('timeline.compactionLabel')}</p>
+          <div className="node-body">
+            {node.summary ?? t('timeline.compactionFallback', { range: node.range.join('–') })}
+          </div>
         </>
       )
     case 'slot':
-      return props.renderSlot ? props.renderSlot(node) : <div data-slot-state="empty">此卡片的插件未就绪</div>
+      return props.renderSlot ? props.renderSlot(node) : <div data-slot-state="empty">{t('slot.notReady')}</div>
     case 'contribute-conflict':
       return (
         <>
-          <p className="node-label">上下文配置冲突</p>
+          <p className="node-label">{t('timeline.conflictLabel')}</p>
           <div className="node-body">
-            {node.key}：{node.ops.join('、')}
+            {node.key}
+            {t('timeline.conflictJoiner')}
+            {node.ops.join(t('timeline.conflictOpsJoiner'))}
           </div>
         </>
       )
@@ -294,10 +316,16 @@ function Message({
         ? { 'data-streaming': String(markdownState(node, turnStatus).streaming) }
         : {})}
       {...(node.kind === 'tool'
-        ? { 'data-status': node.status, 'aria-label': `工具 ${node.name}：${toolLabels[node.status]}` }
+        ? {
+            'data-status': node.status,
+            'aria-label': props.t('tool.card.aria', {
+              name: node.name,
+              status: props.t(toolLabelKeys[node.status]),
+            }),
+          }
         : {})}
       {...(node.kind === 'approval'
-        ? { 'data-state': node.state, 'aria-label': `审批：${approvalStatus(node)}` }
+        ? { 'data-state': node.state, 'aria-label': approvalStatus(node, props.t) }
         : {})}
       {...(node.kind === 'contribute-conflict' ? { role: 'note' } : {})}
     >
@@ -306,12 +334,12 @@ function Message({
   )
 }
 
-const turnStatus: Record<UITurn['status'], string> = {
-  running: '正在执行',
-  waiting: '等待处理',
-  completed: '已完成',
-  failed: '执行失败',
-  cancelled: '已取消',
+const TURN_STATUS_KEYS: Record<UITurn['status'], string> = {
+  running: 'turn.status.running',
+  waiting: 'turn.status.waiting',
+  completed: 'turn.status.completed',
+  failed: 'turn.status.failed',
+  cancelled: 'turn.status.cancelled',
 }
 
 function Turn({
@@ -366,27 +394,34 @@ function Turn({
   const latestStreaming = others
     .filter((node): node is AssistantNode => node.kind === 'assistant' && node.streaming === true)
     .sort((a, b) => b.seq - a.seq)[0]
-  let status = turnStatus[turn.status]
+  let status = props.t(TURN_STATUS_KEYS[turn.status])
   if (processActive) {
-    if (pendingApproval || awaitingToolApproval) status = '等待审批'
-    else if (turn.status === 'waiting') status = '等待处理'
-    else if (runningTool) status = '正在执行工具'
-    else if (latestStreaming?.text.trim()) status = '正在回复'
-    else if (latestStreaming?.thinking?.trim()) status = '正在思考'
-    else status = '正在准备回复'
+    if (pendingApproval || awaitingToolApproval) status = props.t('turn.status.awaitingApproval')
+    else if (turn.status === 'waiting') status = props.t(TURN_STATUS_KEYS.waiting)
+    else if (runningTool) status = props.t('turn.status.runningTool')
+    else if (latestStreaming?.text.trim()) status = props.t('turn.status.replying')
+    else if (latestStreaming?.thinking?.trim()) status = props.t('turn.status.thinking')
+    else status = props.t('turn.status.preparing')
   }
   const startedAt = Date.parse(turn.startedAt)
   const duration =
     active && Number.isFinite(startedAt)
-      ? `${Math.floor(Math.max(0, now - startedAt) / 1000)} 秒`
+      ? props.t('turn.duration.s', { n: Math.floor(Math.max(0, now - startedAt) / 1000) })
       : turn.durationMs === undefined
         ? undefined
         : turn.durationMs < 1000
-          ? `${turn.durationMs} 毫秒`
+          ? props.t('turn.duration.ms', { n: turn.durationMs })
           : turn.durationMs < 60_000
-            ? `${(turn.durationMs / 1000).toFixed(turn.durationMs < 10_000 ? 1 : 0)} 秒`
-            : `${Math.floor(turn.durationMs / 60_000)} 分 ${Math.round((turn.durationMs % 60_000) / 1000)} 秒`
-  const statusText = `${status}${duration ? ` · 用时 ${duration}` : ''}`
+            ? props.t('turn.duration.s', {
+                n: (turn.durationMs / 1000).toFixed(turn.durationMs < 10_000 ? 1 : 0),
+              })
+            : props.t('turn.duration.minSec', {
+                min: Math.floor(turn.durationMs / 60_000),
+                sec: Math.round((turn.durationMs % 60_000) / 1000),
+              })
+  const statusText = duration
+    ? `${status}${props.t('turn.elapsedSuffix', { duration })}`
+    : status
   const finalNode = members.find((node) => node.id === turn.finalAssistantId)
   const finalText = finalNode?.kind === 'assistant' ? finalNode.text : ''
   const finalThinking = finalNode?.kind === 'assistant' ? finalNode.thinking?.trim() : undefined
@@ -448,7 +483,7 @@ function Turn({
           {finalThinking && thinkingFinalId === turn.finalAssistantId && (
             <div className="turn-process-body">
               <details className="thinking">
-                <summary>深度思考</summary>
+                <summary>{props.t('timeline.thinkingSummary')}</summary>
                 <div className="thinking-content markdown">
                   {props.renderMarkdown
                     ? props.renderMarkdown(finalThinking, 'thinking', {
