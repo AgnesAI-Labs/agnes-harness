@@ -24,8 +24,8 @@ export const RuntimeSchemaRefs = freeze({
   },
   "SimplePromptPayload": {
     "typeId": "agh.sdk/simple-loop-instructions@1",
-    "revision": 1,
-    "digest": "88aba2439668b0423a1cb43f4aab5232e8acf83de45f926250ac2e94d5e12b38"
+    "revision": 2,
+    "digest": "2c68acefd4b1c1b1f2a9d5a08b73550096712a0a1bdfe49df37bdbab18b7ad8d"
   },
   "SimpleLoopOutput": {
     "typeId": "agh.sdk/simple-loop-output@1",
@@ -59,23 +59,23 @@ export const RuntimeSchemaRefs = freeze({
   },
   "ToolResult": {
     "typeId": "agh.tools/result@1",
-    "revision": 1,
-    "digest": "d41f2b6213d878a4e4e07368bbc80b6e7304dda1c10ad95900efef0d4e40574a"
+    "revision": 2,
+    "digest": "ace5ea77b690e419b18b3eaac58371b7ed9c9453da1abc077cfe229c3ffa326f"
   },
   "ToolModelResult": {
     "typeId": "agh.tools/model-result@1",
-    "revision": 1,
-    "digest": "2a780cd1362d26c20200ecb729779c1d2e851d3f2c08b980a19d8d313cf851b5"
+    "revision": 2,
+    "digest": "89fe22d4c797976f693021e8584ac80bd1096d9ef21776d21e81139c960084f8"
   },
   "SimpleStepView": {
     "typeId": "agh.sdk/simple-step-view@1",
-    "revision": 1,
-    "digest": "17f373b6d56a14e1c1c25a6010032de06e23c560e96189d86c5ae607c721df34"
+    "revision": 2,
+    "digest": "4f9343b645c8ab7e07b3e8cd6be6aa7aacdabe0a451c2300173fe35f026cdc1d"
   },
   "SimpleObservation": {
     "typeId": "agh.sdk/simple-observation@1",
-    "revision": 1,
-    "digest": "56458a766b6de772e05f93ad53393f663dbdc3febc7219f70a169c10304a6d70"
+    "revision": 2,
+    "digest": "4f31a0bcbdbd929d45a48ab12b0b66ceefb9f07e6849dd4dfe239177b17828e3"
   },
   "SimpleDecisionObservation": {
     "typeId": "agh.sdk/simple-decision-observation@1",
@@ -96,6 +96,66 @@ export const RuntimeSchemaRefs = freeze({
     "typeId": "agh.network/http-headers@1",
     "revision": 1,
     "digest": "abb7fd3ae47a5ef439ce579b57dc8b8debbd0a5ce7ded494450ed92d2d43f936"
+  },
+  "ClientModuleCredentialBinding": {
+    "typeId": "agh.transport/module-credential-binding@1",
+    "revision": 1,
+    "digest": "201d62750007f10ba46a89a4cbb445a2d1c82cddb5612829acd0df0e703e56ef"
+  },
+  "TransportAuthenticationEvidence": {
+    "typeId": "agh.identity/transport-evidence@1",
+    "revision": 1,
+    "digest": "1ebc4a62d579bc1b1d0ecee617ab27f685125ab8483fe3f227b561f81666a909"
+  },
+  "TransportCredentialEnvelope": {
+    "typeId": "agh.identity/transport-credential@1",
+    "revision": 1,
+    "digest": "738f12544b5f0391981bb39f7f34030f81fd5305853f407cc55584a011a7e668"
+  },
+  "TransportEvidenceProof": {
+    "typeId": "agh.identity/transport-proof@1",
+    "revision": 1,
+    "digest": "2d8d77049d11168d7a7eed78c5faab1fcc973731bedcc4282b8cbae63043be63"
+  },
+  "ArtifactContentDescriptor": {
+    "typeId": "agh.artifacts/content-descriptor@1",
+    "revision": 1,
+    "digest": "a743dfe953caebd2b79d25e3404aca873258108c56d69157fbb449593824c76c"
+  },
+  "ArtifactAccessGrantValue": {
+    "typeId": "agh.artifacts/access-grant@1",
+    "revision": 1,
+    "digest": "57263631cab60f81dd9931f6e7599a8753ab82a574d36f905f5b8c681199e836"
+  },
+  "ArtifactRedeemDownloadRequest": {
+    "typeId": "agh.artifacts/redeem-download-request@1",
+    "revision": 1,
+    "digest": "342aa76aee3a9dec58317a9ba30ee3763e4799dd1f1919d969ccea3173cda6c3"
+  },
+  "ArtifactDownloadPresentation": {
+    "typeId": "agh.artifacts/download-presentation@1",
+    "revision": 1,
+    "digest": "27110220d16938df10c0fd12002565fd6b9f7d8ceb425b554090dedac2a08ff9"
+  },
+  "ArtifactDownloadMetadata": {
+    "typeId": "agh.artifacts/download-metadata@1",
+    "revision": 1,
+    "digest": "e4da1d57c21757dd34b75a13eaf2de4ba5b81cd54b692113da3de99d7b416925"
+  },
+  "LegacyArtifactMappingValue": {
+    "typeId": "agh.artifacts/legacy-mapping@1",
+    "revision": 1,
+    "digest": "fe2ce3aea45b6065b1316c90000902a81b4351652a39ad2ecc60d4216146702d"
+  },
+  "ApprovalAnswer": {
+    "typeId": "agh.interaction/approval-answer@1",
+    "revision": 1,
+    "digest": "9ec6aa6d8d5f8d24f5faeb7440651fe0d45493667e6917ec946c1e9751f31f60"
+  },
+  "CommandRuntimeAcceptanceResult": {
+    "typeId": "agh.domain/command-runtime-acceptance-result@1",
+    "revision": 1,
+    "digest": "ebd9e9b26695e2988d9ec99070b7a04cefb2f2580ebc4ed09b9e092fc93b6b36"
   }
 } as const)
 export const RuntimeMethodSchemaRefs = freeze({
@@ -225,37 +285,37 @@ export const RuntimeMethodSchemaRefs = freeze({
     "view": {
       "input": {
         "typeId": "agh.context/view.request@1",
-        "revision": 1,
-        "digest": "4afc9112fa80c51086292513ccc45350fd8e6374a6010f89be9f27589b2e0606"
+        "revision": 2,
+        "digest": "c5ef6b8db71f0db14b4c7523495bbe34e641fd0adcfe680283c1f48197dc8c81"
       },
       "output": {
         "typeId": "agh.context/view.response@1",
-        "revision": 1,
-        "digest": "f7d07c3da21ae1a26396d3b6b12bc0819f85d622ab7e5af451b071de8fdd794e"
+        "revision": 2,
+        "digest": "1f097d5c7c399fab7ee23c8080c7f55bd5b0b48447e8eef7b3291becb779bd8e"
       }
     },
     "prepareView": {
       "input": {
         "typeId": "agh.context/prepareView.request@1",
-        "revision": 1,
-        "digest": "1ff20cc34575954a2f0d12a1b1665ae82f78f6bed9752f36383270a57c0d9764"
+        "revision": 2,
+        "digest": "3f9451de767f1c7255ac0b72b3c37ad73a2d12c644a758eea788f933b71471c4"
       },
       "output": {
         "typeId": "agh.context/prepareView.response@1",
-        "revision": 1,
-        "digest": "f7d07c3da21ae1a26396d3b6b12bc0819f85d622ab7e5af451b071de8fdd794e"
+        "revision": 2,
+        "digest": "1f097d5c7c399fab7ee23c8080c7f55bd5b0b48447e8eef7b3291becb779bd8e"
       }
     },
     "refresh": {
       "input": {
         "typeId": "agh.context/refresh.request@1",
-        "revision": 1,
-        "digest": "d1d44f11fdb82f79533efe7eafa0700c73e684daf5d6ad64fc9ace7af3fbf313"
+        "revision": 2,
+        "digest": "60b9a61d3483afc6a23608bae5b2c8c2d9d3dd9a8fdd1107dfd22549d14b533f"
       },
       "output": {
         "typeId": "agh.context/refresh.response@1",
-        "revision": 1,
-        "digest": "0a118c383039c1777cfcb95eaf3f417fe0db4b49acbfda86ffb97b7f778c56d9"
+        "revision": 2,
+        "digest": "4c0b6016bbac12594de429bc918426d366bf942508db434d17e2297764f20a53"
       }
     },
     "authorityFence": {
@@ -359,44 +419,44 @@ export const RuntimeMethodSchemaRefs = freeze({
     "plan": {
       "input": {
         "typeId": "agh.compaction/plan.request@1",
-        "revision": 1,
-        "digest": "5efb8bda7a91a6f1cf76ae86522ac3b5e2298e2ae9c0c67a74a222cf4708df79"
+        "revision": 2,
+        "digest": "9c0161cad2613cc391131a66457901a30ed46c0e36208de794661248f27f1289"
       },
       "output": {
         "typeId": "agh.compaction/plan.response@1",
-        "revision": 1,
-        "digest": "ac93e97c87c59b79d9ed19fcccdf6281187304a1ac2255b9486ed0fbf5fd7e73"
+        "revision": 2,
+        "digest": "d9e28333f69bebc277313f826fc167a21618206220edb8f756e28ec9c38d5138"
       }
     },
     "preparePlan": {
       "input": {
         "typeId": "agh.compaction/preparePlan.request@1",
-        "revision": 1,
-        "digest": "aef62ecbdbfd702374fbd2bb6da2ef16b40519b0ab553c7e3e05c65764cdc7f8"
+        "revision": 2,
+        "digest": "d042d22c6b5a039b7883a616db7cc191503c05ad09fd9230f74eb51cb9a8a394"
       },
       "output": {
         "typeId": "agh.compaction/preparePlan.response@1",
-        "revision": 1,
-        "digest": "ac93e97c87c59b79d9ed19fcccdf6281187304a1ac2255b9486ed0fbf5fd7e73"
+        "revision": 2,
+        "digest": "d9e28333f69bebc277313f826fc167a21618206220edb8f756e28ec9c38d5138"
       }
     },
     "execute": {
       "input": {
         "typeId": "agh.compaction/execute.request@1",
-        "revision": 1,
-        "digest": "fa5a0233baab05fd5ddc7b2ed9e07108fcbeea0227f87176cbf889d40c7f38b4"
+        "revision": 2,
+        "digest": "c99b15fd671a2ad32bd9fc1950e72c9a2a96bc4e1ce8d22722c073eb0d40c5dc"
       },
       "output": {
         "typeId": "agh.compaction/execute.response@1",
-        "revision": 1,
-        "digest": "48cc71b12b04d1ed0c7ad18aa2a69c57a6a52783e32cf09cf39e9199393d6de1"
+        "revision": 2,
+        "digest": "e636e1ee76208fb182480020690b36da398cb6f1bdf848d6c6b8593be730e0e4"
       }
     },
     "apply": {
       "input": {
         "typeId": "agh.compaction/apply.request@1",
-        "revision": 1,
-        "digest": "bfe5b2ef687a79b6c58b893ecb54e9fea0780c8f7022a3c4aa4ffcf064b4a396"
+        "revision": 2,
+        "digest": "a7123e8db78edaede995947aa9dfff8481ff18bd5992379ce99f08e01744a119"
       },
       "output": {
         "typeId": "agh.compaction/apply.response@1",
@@ -412,8 +472,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.compaction/expand.response@1",
-        "revision": 1,
-        "digest": "a7a1eb4f77b22c61598d0355d337bbc2eb7d3f7dc445d22e14ed1e9f7f0939c3"
+        "revision": 2,
+        "digest": "f02e85efe05b87e3bd85e33792080a3808d4b068eb50c20ee247be28e09a36a5"
       }
     },
     "authorityFence": {
@@ -517,8 +577,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "prepare": {
       "input": {
         "typeId": "agh.model/prepare.request@1",
-        "revision": 1,
-        "digest": "4c3128ba3d285775084fe164941918fe58d7dc43118d1b43229add7e18bbad72"
+        "revision": 2,
+        "digest": "ed7cd1500864b2b22834d4a7520f3ba6009669fbdb8f297d035d49754e3d921f"
       },
       "output": {
         "typeId": "agh.model/prepare.response@1",
@@ -529,8 +589,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "prepareRequest": {
       "input": {
         "typeId": "agh.model/prepareRequest.request@1",
-        "revision": 1,
-        "digest": "2333ce62d12a57dcae6afa03c830a034fb29e893e0671b16a995bdad2a4adb9c"
+        "revision": 2,
+        "digest": "d33b7dec5c950ba8ca4fe33a5a38bdb7d86aa45a7adc040164b610422d71fdbf"
       },
       "output": {
         "typeId": "agh.model/prepareRequest.response@1",
@@ -761,13 +821,13 @@ export const RuntimeMethodSchemaRefs = freeze({
     "prepare": {
       "input": {
         "typeId": "agh.media/prepare.request@1",
-        "revision": 1,
-        "digest": "ae69ed333611b6c49fdddb62852f23bae00949bd9590c4342ea9a65715abbcc8"
+        "revision": 2,
+        "digest": "43cd7a648fc74e9bec85ff65bccf75fcbfe10a88d2022b04a8e18e8da7e06d12"
       },
       "output": {
         "typeId": "agh.media/prepare.response@1",
-        "revision": 1,
-        "digest": "4ea00c97d2503a6f0e33606c99dc9ca3efcc5b49f1ace9894a3db7ec40f4cc65"
+        "revision": 2,
+        "digest": "0a04739d812686c0785abc3b3a90f34f78163af414276c0bae04d959be8127f9"
       }
     },
     "authorityFence": {
@@ -998,8 +1058,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.resources/list.response@1",
-        "revision": 1,
-        "digest": "97e2b48d1fdd262e93c5d32156e8bc50a1520b8de120985f16c761d5493fd65e"
+        "revision": 2,
+        "digest": "86ba89aa8389cc709bcd1d85143339e509dcac89afe5ca2cff9dec22b13c4d9e"
       }
     },
     "describe": {
@@ -1010,15 +1070,15 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.resources/describe.response@1",
-        "revision": 1,
-        "digest": "94f65d7bb5996bfac064c75dfa6988b258b33ef6fc574b8d54c597a4b1bb49fb"
+        "revision": 2,
+        "digest": "4286028b76def79f1eb6b3ebf947d952788bdee7ea0116338d458c07ccf8bd5b"
       }
     },
     "register": {
       "input": {
         "typeId": "agh.resources/register.request@1",
-        "revision": 1,
-        "digest": "e5fc3ea35f4b68ea48ba2318c7d3ad76be3c2e4aa7913644c863a037221a4fb0"
+        "revision": 2,
+        "digest": "2ec03bd8a9c2b6bdaf4bdea1a6f6509c622d50d68c974f26c4e646f3d0a96cc2"
       },
       "output": {
         "typeId": "agh.resources/register.response@1",
@@ -1041,8 +1101,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "retain": {
       "input": {
         "typeId": "agh.resources/retain.request@1",
-        "revision": 1,
-        "digest": "c4170eaef4efd91c8166c14e8db7cc7589318a36fc92a06128b0807e886d9a8f"
+        "revision": 2,
+        "digest": "e113b3b16d3aaf1223b8ec0f78b9dbdb9b61e4963a033c7c5278182d92b9430d"
       },
       "output": {
         "typeId": "agh.resources/retain.response@1",
@@ -1386,8 +1446,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.tools/invoke.response@1",
-        "revision": 1,
-        "digest": "d41f2b6213d878a4e4e07368bbc80b6e7304dda1c10ad95900efef0d4e40574a"
+        "revision": 2,
+        "digest": "ace5ea77b690e419b18b3eaac58371b7ed9c9453da1abc077cfe229c3ffa326f"
       }
     },
     "cancel": {
@@ -1515,8 +1575,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "remember": {
       "input": {
         "typeId": "agh.memory/remember.request@1",
-        "revision": 1,
-        "digest": "3d6b5afb2a060d5e478d6abcb5f1b21c0530fe4af6b9d7ed55515e91e65a65b8"
+        "revision": 2,
+        "digest": "f5f556a552a1ce3e8ebaf4d73dc8ebfae32a2f72475be1de9f3f0194db4fe135"
       },
       "output": {
         "typeId": "agh.memory/remember.response@1",
@@ -1532,8 +1592,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.memory/forget.response@1",
-        "revision": 1,
-        "digest": "fbd59c6d168988582aa76d81d7942ef7fba173c063246cd475973aa0ebe42a2a"
+        "revision": 2,
+        "digest": "b9c667bb02ea4a7de496ed8d4c31aff87b159b32f5a55a42569a0020ee53b567"
       }
     },
     "get": {
@@ -1544,8 +1604,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.memory/get.response@1",
-        "revision": 1,
-        "digest": "c7cf7f97174c7fb48f76166204c9100076752a842893cacd0f74b1471bcac776"
+        "revision": 2,
+        "digest": "14e371fd35e19e74399d28ae4307398ece23d0acd7ec88fcac65b5bd16e33978"
       }
     },
     "authorityFence": {
@@ -1654,8 +1714,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.retrieval/search.response@1",
-        "revision": 1,
-        "digest": "58a6f97019a63518c27f3864a43e841549355cf71233e9bcf1910c59917658a1"
+        "revision": 2,
+        "digest": "32a2b3fe73d448d5e76b4048cc459398cb4765e8fb2b8a8ff638faca56fbb873"
       }
     },
     "searchRemote": {
@@ -1666,8 +1726,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.retrieval/searchRemote.response@1",
-        "revision": 1,
-        "digest": "b249e96fb2066ecaddc7716d5d59847bdb6f283ba7dede54872bdcfdbd0c13a3"
+        "revision": 2,
+        "digest": "2a8e176e6317ba7b6c377a99edb0eca637cfed23ddcf013137904c9d63f61c9d"
       }
     },
     "authorityFence": {
@@ -2003,13 +2063,13 @@ export const RuntimeMethodSchemaRefs = freeze({
     "evaluate": {
       "input": {
         "typeId": "agh.policy/evaluate.request@1",
-        "revision": 1,
-        "digest": "9645c647517e9e6d206f883a8a2d9fe4e57835592abeba0ae977943ebe7b4805"
+        "revision": 2,
+        "digest": "9478c788fa590d5c491a8400afa4f181c25b1f5971b5f81e7e905d490880e034"
       },
       "output": {
         "typeId": "agh.policy/evaluate.response@1",
-        "revision": 1,
-        "digest": "624a7d67bfe1e608e1f355d67fb7bf12cb608fe86a583557d0aa5fed11e6cc5b"
+        "revision": 2,
+        "digest": "5629493829cfdbab449b6a7a132293f4b81a1c82c3565b6d65fc8cda64100590"
       }
     },
     "listGrants": {
@@ -3087,13 +3147,13 @@ export const RuntimeMethodSchemaRefs = freeze({
     "request": {
       "input": {
         "typeId": "agh.interaction/request.request@1",
-        "revision": 1,
-        "digest": "832521dc8fb551d89d0f5d665d7fa196097ffbae363d17284d94107a082ef01d"
+        "revision": 2,
+        "digest": "d8127dd98147c1de2db4b4b561a746987817eae85d02418d8a90f9f59597ebc4"
       },
       "output": {
         "typeId": "agh.interaction/request.response@1",
-        "revision": 1,
-        "digest": "8d982caa7914aa07ce08f4f5a848da77fa3958f07b559ef66c2d39948e3dc7c9"
+        "revision": 2,
+        "digest": "7088a1976345431f62eac608ce327920a76de6a893026a0ac6ff982ed0c8f759"
       }
     },
     "respond": {
@@ -3104,32 +3164,32 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.interaction/respond.response@1",
-        "revision": 1,
-        "digest": "5dea3564a265452b996bf031ccd2fb1e920145130428630c8d2d076a272d671d"
+        "revision": 2,
+        "digest": "8b213d930c397458602ecadc43393e82ec469148e05ec3beba58d85272c4a7bb"
       }
     },
     "expire": {
       "input": {
         "typeId": "agh.interaction/expire.request@1",
-        "revision": 1,
-        "digest": "fcff8c76447f0cb243ba7ba233f8dbbd9c9e288eb97e73c6963086eec7ef731d"
+        "revision": 2,
+        "digest": "29b43b28e7b14d922639f1fa84b590062db099a2451489252f6335c6ac817b51"
       },
       "output": {
         "typeId": "agh.interaction/expire.response@1",
-        "revision": 1,
-        "digest": "8d982caa7914aa07ce08f4f5a848da77fa3958f07b559ef66c2d39948e3dc7c9"
+        "revision": 2,
+        "digest": "7088a1976345431f62eac608ce327920a76de6a893026a0ac6ff982ed0c8f759"
       }
     },
     "cancel": {
       "input": {
         "typeId": "agh.interaction/cancel.request@1",
-        "revision": 1,
-        "digest": "8bc53f05a5caf772dd4e5c685b3bf1163a45728fc0088fe824db906bb2451708"
+        "revision": 2,
+        "digest": "7b687a9e432136ded37a83c468830821f5cf27aa222105a4028957f9ce2cae7b"
       },
       "output": {
         "typeId": "agh.interaction/cancel.response@1",
-        "revision": 1,
-        "digest": "8d982caa7914aa07ce08f4f5a848da77fa3958f07b559ef66c2d39948e3dc7c9"
+        "revision": 2,
+        "digest": "7088a1976345431f62eac608ce327920a76de6a893026a0ac6ff982ed0c8f759"
       }
     },
     "read": {
@@ -3140,8 +3200,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.interaction/read.response@1",
-        "revision": 1,
-        "digest": "8d982caa7914aa07ce08f4f5a848da77fa3958f07b559ef66c2d39948e3dc7c9"
+        "revision": 2,
+        "digest": "7088a1976345431f62eac608ce327920a76de6a893026a0ac6ff982ed0c8f759"
       }
     },
     "pending": {
@@ -3152,8 +3212,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.interaction/pending.response@1",
-        "revision": 1,
-        "digest": "13eca68391e371c2c95c304a7657021c54d2e9e354d504139484d913bbf69945"
+        "revision": 2,
+        "digest": "a9746b9a0b9ab612fd746857a522336cc911e595a835f109308cf3819c0626da"
       }
     },
     "responseStatus": {
@@ -3164,8 +3224,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.interaction/responseStatus.response@1",
-        "revision": 1,
-        "digest": "5dea3564a265452b996bf031ccd2fb1e920145130428630c8d2d076a272d671d"
+        "revision": 2,
+        "digest": "8b213d930c397458602ecadc43393e82ec469148e05ec3beba58d85272c4a7bb"
       }
     },
     "acceptResponse": {
@@ -3176,20 +3236,20 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.interaction/acceptResponse.response@1",
-        "revision": 1,
-        "digest": "5dea3564a265452b996bf031ccd2fb1e920145130428630c8d2d076a272d671d"
+        "revision": 2,
+        "digest": "8b213d930c397458602ecadc43393e82ec469148e05ec3beba58d85272c4a7bb"
       }
     },
     "respondApproval": {
       "input": {
         "typeId": "agh.interaction/respondApproval.request@1",
-        "revision": 1,
-        "digest": "ea9ff7937302537e25fbc0d82e0574af9ae9eb3bb4a33b78b9f66ea31592634b"
+        "revision": 2,
+        "digest": "81cc1e2040e97632a5d0467a100b54cec8c5bbe2e28bafc217d1ca16c5a459e3"
       },
       "output": {
         "typeId": "agh.interaction/respondApproval.response@1",
-        "revision": 1,
-        "digest": "5dea3564a265452b996bf031ccd2fb1e920145130428630c8d2d076a272d671d"
+        "revision": 2,
+        "digest": "8b213d930c397458602ecadc43393e82ec469148e05ec3beba58d85272c4a7bb"
       }
     },
     "formLink": {
@@ -3492,8 +3552,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.supervisor/inspect.response@1",
-        "revision": 1,
-        "digest": "5c18bbdc3972b45b46ddb2250e9f83b6736d6c3eba44ce5fe6f52c68e1848af3"
+        "revision": 2,
+        "digest": "d1def92081d5fc5bca747cff7b2f6281ebaa085bdca9818a17a367cfc06f1d63"
       }
     },
     "serviceCommandStatus": {
@@ -3540,8 +3600,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.supervisor/submitConversation.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "cancelConversation": {
@@ -3552,8 +3612,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.supervisor/cancelConversation.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "conversationCommandStatus": {
@@ -3564,8 +3624,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.supervisor/conversationCommandStatus.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "readSessionControl": {
@@ -4206,8 +4266,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.jobs/acceptCreateDefinition.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "acceptUpdateDefinition": {
@@ -4218,8 +4278,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.jobs/acceptUpdateDefinition.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "acceptCancelDefinition": {
@@ -4230,8 +4290,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.jobs/acceptCancelDefinition.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "clientCommandStatus": {
@@ -4242,8 +4302,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.jobs/clientCommandStatus.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "authorityFence": {
@@ -4347,49 +4407,85 @@ export const RuntimeMethodSchemaRefs = freeze({
     "reserve": {
       "input": {
         "typeId": "agh.artifacts/reserve.request@1",
-        "revision": 1,
-        "digest": "f75b97c8cc52ec9ca97b8c6054cac65764d49a825ac01488a0f049e3da90f77b"
+        "revision": 2,
+        "digest": "b21b2ff0c503820368416b9f2959fa729249d298c3d853aa3754b3b747b2ae25"
       },
       "output": {
         "typeId": "agh.artifacts/reserve.response@1",
-        "revision": 1,
-        "digest": "2b8b8f32e20601b14cfc07e8228ac1243057504e88956e0f6faf4f3bf8975ccb"
+        "revision": 2,
+        "digest": "9171a270cca08d98c9b7de1ce4093cfe07995e6e68cc73f78b7b41e424bfed62"
       }
     },
     "publish": {
       "input": {
         "typeId": "agh.artifacts/publish.request@1",
-        "revision": 1,
-        "digest": "250446de8fe52eaa799f479be87720e5b325bb022de34b8514528195bac5c45e"
+        "revision": 2,
+        "digest": "b846d0417776b34f0ce93048167933b4f312727f893ccf1f45ff3201d5d5e155"
       },
       "output": {
         "typeId": "agh.artifacts/publish.response@1",
-        "revision": 1,
-        "digest": "2b8b8f32e20601b14cfc07e8228ac1243057504e88956e0f6faf4f3bf8975ccb"
+        "revision": 2,
+        "digest": "9171a270cca08d98c9b7de1ce4093cfe07995e6e68cc73f78b7b41e424bfed62"
       }
     },
     "revoke": {
       "input": {
         "typeId": "agh.artifacts/revoke.request@1",
-        "revision": 1,
-        "digest": "3d08454bd39c441177780a23a88b298771372bb49f106c330605914de205722b"
+        "revision": 2,
+        "digest": "a01331a036df851cafef3b300a29770dcaa8b7f9408f7981f79d5d3baf1c7296"
       },
       "output": {
         "typeId": "agh.artifacts/revoke.response@1",
-        "revision": 1,
-        "digest": "2b8b8f32e20601b14cfc07e8228ac1243057504e88956e0f6faf4f3bf8975ccb"
+        "revision": 2,
+        "digest": "9171a270cca08d98c9b7de1ce4093cfe07995e6e68cc73f78b7b41e424bfed62"
       }
     },
     "query": {
       "input": {
         "typeId": "agh.artifacts/query.request@1",
-        "revision": 1,
-        "digest": "d61f4d7050aa20b206a739c6458d8bcebc0f1409253e050fdf5a3a5035fc57b1"
+        "revision": 2,
+        "digest": "ef827a55398535ac79e6f612eed4d8c4a8274008482fb816be47f293c67f5dff"
       },
       "output": {
         "typeId": "agh.artifacts/query.response@1",
+        "revision": 2,
+        "digest": "e4916c42776731836615dcd422e75f084707111791c1427afdeb970a27765d07"
+      }
+    },
+    "fail": {
+      "input": {
+        "typeId": "agh.artifacts/fail.request@1",
         "revision": 1,
-        "digest": "7716150cc531680d0583c16312bc1870c189448f738e1ee1fbbf3f35e6d0eee5"
+        "digest": "85bbdf18d1401feca97ca1f7e81e0962a1cae9cceed1b184aecbc0eb2382eb22"
+      },
+      "output": {
+        "typeId": "agh.artifacts/fail.response@1",
+        "revision": 2,
+        "digest": "9171a270cca08d98c9b7de1ce4093cfe07995e6e68cc73f78b7b41e424bfed62"
+      }
+    },
+    "grant": {
+      "input": {
+        "typeId": "agh.artifacts/grant.request@1",
+        "revision": 1,
+        "digest": "bc12dc24cc4d57fdf57c4bff8b82dda93c4403f274ab34f0fbc40c495f73245d"
+      },
+      "output": {
+        "typeId": "agh.artifacts/grant.response@1",
+        "revision": 1,
+        "digest": "57263631cab60f81dd9931f6e7599a8753ab82a574d36f905f5b8c681199e836"
+      }
+    },
+    "revokeGrant": {
+      "input": {
+        "typeId": "agh.artifacts/revokeGrant.request@1",
+        "revision": 1,
+        "digest": "a40d869759beab4399cbc4de55880e9936c8ec258c68d96d6faa338013677969"
+      },
+      "output": {
+        "typeId": "agh.artifacts/revokeGrant.response@1",
+        "revision": 1,
+        "digest": "57263631cab60f81dd9931f6e7599a8753ab82a574d36f905f5b8c681199e836"
       }
     },
     "authorityFence": {
@@ -4517,8 +4613,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "pin": {
       "input": {
         "typeId": "agh.blob/pin.request@1",
-        "revision": 1,
-        "digest": "3af99c659aefd52874473e75b7ca56bbcc5aeca9680aa6ee02d395638727e111"
+        "revision": 2,
+        "digest": "108e050145c2f45050001eea22a278341875b1aa398f5cf66503dc75e16c29cf"
       },
       "output": {
         "typeId": "agh.blob/pin.response@1",
@@ -4546,20 +4642,20 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.blob/gc.response@1",
-        "revision": 1,
-        "digest": "f47f2fb75ce9b917ffe5eb0878e85b8ff0c5e258f85208c18ea703d0e5125a6c"
+        "revision": 2,
+        "digest": "25c19a73e93d8076dda61b15f4f895ef9b1d99ec87227fbe07a971b95a19fba6"
       }
     },
     "inspect": {
       "input": {
         "typeId": "agh.blob/inspect.request@1",
-        "revision": 1,
-        "digest": "e336833f634a1787a5dad91fd225872667be599340d805315298753875c9fe88"
+        "revision": 2,
+        "digest": "6d725767b9e28153bacf557140aa789d562d636909999438d6f825242d9c82f7"
       },
       "output": {
         "typeId": "agh.blob/inspect.response@1",
-        "revision": 1,
-        "digest": "46063bf451b2f578f8f2700f761c2e22ea7839426ce7c80c1f365852987eb078"
+        "revision": 2,
+        "digest": "7bb4e5ead8701c25166b3130d1332faa57c219590de29127b143cfdf8f99bbce"
       }
     },
     "authorityFence": {
@@ -5199,8 +5295,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "append": {
       "input": {
         "typeId": "agh.audit/append.request@1",
-        "revision": 1,
-        "digest": "0c0be3a16754d61b12802024d8108570ba2db95fc3f837106fa071bcebde88b9"
+        "revision": 2,
+        "digest": "53c965b796897cc516ec8194fbf16ce000d3d658e91c90e9b3eea3024c571007"
       },
       "output": {
         "typeId": "agh.audit/append.response@1",
@@ -5448,20 +5544,20 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.events/subscribe.response@1",
-        "revision": 1,
-        "digest": "e0a419937c1ffe610e89381a03219c2b32804713304a3a3ebfd97a5d11fa3932"
+        "revision": 2,
+        "digest": "c154d0683822602de5982a4568cd814fd761a1cfc2a79e1c2e9bdf7214f58f2b"
       }
     },
     "publish": {
       "input": {
         "typeId": "agh.events/publish.request@1",
-        "revision": 1,
-        "digest": "8670ad6b63fca2672b09c61167c246e9f8d45ea9955e5f53e5b61e4181e507aa"
+        "revision": 2,
+        "digest": "dd1bfef40ea4e76327662c73df06e4b3df6db19ecbbad17d8ee67c3736d937cd"
       },
       "output": {
         "typeId": "agh.events/publish.response@1",
-        "revision": 1,
-        "digest": "f640141397de7e03f7d17cc86f69dc5ec340224c97a577b064445e03be180e92"
+        "revision": 2,
+        "digest": "25f5f39bf862cca140428d4262ce8d340b58d54d622f8def053ab3b10c34816a"
       }
     },
     "authorityFence": {
@@ -5565,37 +5661,37 @@ export const RuntimeMethodSchemaRefs = freeze({
     "snapshot": {
       "input": {
         "typeId": "agh.projection/snapshot.request@1",
-        "revision": 1,
-        "digest": "3d8333f88d33140f35fcf8f0b8186cc25d9b83f8da98b4a03e52490341607f92"
+        "revision": 2,
+        "digest": "f0b8e82c8603393731298b360c07aba115d295b5a2789a9f4c428ea3e4878538"
       },
       "output": {
         "typeId": "agh.projection/snapshot.response@1",
-        "revision": 1,
-        "digest": "7722bc67bdf91902e6a1051fb4154b939269c2b7f4557c6c50171445085fea0e"
+        "revision": 2,
+        "digest": "4f0f62b590a18a021400174b39f7345928a282e98e30e6e2a538f9b56201c490"
       }
     },
     "changes": {
       "input": {
         "typeId": "agh.projection/changes.request@1",
-        "revision": 1,
-        "digest": "c0f15a5bba8ab7a909d4f3914bacfad95c211e5c1190bb231df9991964676adf"
+        "revision": 2,
+        "digest": "b7b634ce0a40f2c67b132cb16e536f5c5f290ec30386cac78e13392860a0cd18"
       },
       "output": {
         "typeId": "agh.projection/changes.response@1",
-        "revision": 1,
-        "digest": "853d16914cb4c9ba58c3a7c5f10dbcc68aacbfb284672362cb1d37c691f8f5d7"
+        "revision": 2,
+        "digest": "f48653e83edcfc72429e3dbabcf5e5360a744bf771b61fa3318d41ed3bd5e8ac"
       }
     },
     "command": {
       "input": {
         "typeId": "agh.projection/command.request@1",
-        "revision": 1,
-        "digest": "26e9e24c7ca2064e7a4e37d7f7d2e701dda5a0ecf6aaeb46e5c730287a0b5248"
+        "revision": 2,
+        "digest": "72d8a731f3ad0c671ca3faf25be8bf5614ed5ab7342e943d4abb320303d47d30"
       },
       "output": {
         "typeId": "agh.projection/command.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "openConversation": {
@@ -5606,8 +5702,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/openConversation.response@1",
-        "revision": 1,
-        "digest": "68985cbc150728926ddb62f72086084f142bf2534e87ba16f714845090e7140a"
+        "revision": 2,
+        "digest": "a553feb01c0378d8d99c3ea2cf3aaa9babff34df82b228f4e636724b1eda183d"
       }
     },
     "conversationHistory": {
@@ -5618,20 +5714,20 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/conversationHistory.response@1",
-        "revision": 1,
-        "digest": "68985cbc150728926ddb62f72086084f142bf2534e87ba16f714845090e7140a"
+        "revision": 2,
+        "digest": "a553feb01c0378d8d99c3ea2cf3aaa9babff34df82b228f4e636724b1eda183d"
       }
     },
     "acceptCommand": {
       "input": {
         "typeId": "agh.projection/acceptCommand.request@1",
-        "revision": 1,
-        "digest": "26e9e24c7ca2064e7a4e37d7f7d2e701dda5a0ecf6aaeb46e5c730287a0b5248"
+        "revision": 2,
+        "digest": "72d8a731f3ad0c671ca3faf25be8bf5614ed5ab7342e943d4abb320303d47d30"
       },
       "output": {
         "typeId": "agh.projection/acceptCommand.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "commandStatus": {
@@ -5642,8 +5738,20 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/commandStatus.response@1",
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
+      }
+    },
+    "listConversations": {
+      "input": {
+        "typeId": "agh.projection/listConversations.request@1",
         "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "digest": "3eb1e43554b238192b5ba7f17324c0046a2a9a228c4c3d695c281406ac227c56"
+      },
+      "output": {
+        "typeId": "agh.projection/listConversations.response@1",
+        "revision": 1,
+        "digest": "212c3b53bba1635da190f3c3208637f4717f41e1e4f54df49519c967a820d508"
       }
     },
     "authorityFence": {
@@ -5752,8 +5860,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/handshake.response@1",
-        "revision": 1,
-        "digest": "d3fefe84e19f551e426fd1c8317ac9afa181edfb91138327741ef59827448353"
+        "revision": 2,
+        "digest": "3308c7f51a798499456253ce65df166980d6b4ff178a48cb66d2503325527771"
       }
     },
     "connect": {
@@ -5764,20 +5872,20 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/connect.response@1",
-        "revision": 1,
-        "digest": "d3fefe84e19f551e426fd1c8317ac9afa181edfb91138327741ef59827448353"
+        "revision": 2,
+        "digest": "3308c7f51a798499456253ce65df166980d6b4ff178a48cb66d2503325527771"
       }
     },
     "command": {
       "input": {
         "typeId": "agh.transport/command.request@1",
-        "revision": 1,
-        "digest": "26e9e24c7ca2064e7a4e37d7f7d2e701dda5a0ecf6aaeb46e5c730287a0b5248"
+        "revision": 2,
+        "digest": "72d8a731f3ad0c671ca3faf25be8bf5614ed5ab7342e943d4abb320303d47d30"
       },
       "output": {
         "typeId": "agh.transport/command.response@1",
-        "revision": 1,
-        "digest": "26039a8c084463655346aabe95e727a4ebabbafded561bd3e6056efe25a67345"
+        "revision": 2,
+        "digest": "929d381b5dd6e3eb47cb01f4f2b01a3da679ffbd4721ebeb349451dfde5b8821"
       }
     },
     "bootstrap": {
@@ -5788,32 +5896,32 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/bootstrap.response@1",
-        "revision": 1,
-        "digest": "d1ab9030608a86bbb53bbe71e4604d503e185907c36ebec61010543f8b442935"
+        "revision": 2,
+        "digest": "61ef9ed99a358ae647aa04df9a1a9cb799135e98fd6c3874b432358e4f2b34fe"
       }
     },
     "clientQuery": {
       "input": {
         "typeId": "agh.transport/clientQuery.request@1",
-        "revision": 1,
-        "digest": "d0fc239e4020508e1afc9d092c0a6038debf64eedf2741d95ea0280d32fbb0ee"
+        "revision": 2,
+        "digest": "3aba19dc3450cadcf2ab573af7184374c64ca3af27f4912206d3ce39684bab54"
       },
       "output": {
         "typeId": "agh.transport/clientQuery.response@1",
-        "revision": 1,
-        "digest": "01de74d6df9d4c585159eac0bebd58c8128e9d41b93d94434b4e134aa0782c03"
+        "revision": 2,
+        "digest": "db7fc3f8b8a4e2895120e5e3b4315d9ff86b5e6e44159aadc581e570fb18b353"
       }
     },
     "clientCommand": {
       "input": {
         "typeId": "agh.transport/clientCommand.request@1",
-        "revision": 1,
-        "digest": "0cd6f47cd73935d581c6bed5fc38a3f29fce1c03a7f6978f95dfaf8204af2b4f"
+        "revision": 2,
+        "digest": "8b4896a06b682248a8d282ed8444ca875fae46a9376a6a250f7c99288e78313c"
       },
       "output": {
         "typeId": "agh.transport/clientCommand.response@1",
-        "revision": 1,
-        "digest": "74552adfa5c7a7fab7dc25208e5aec7cf8e863cb0626edfba492ddbd6e4e7a23"
+        "revision": 2,
+        "digest": "e4d3a5b4d6bec3b3d4658cbb20f38183be476182775ea149ae1ad2dbab139b53"
       }
     },
     "catalogPage": {
@@ -5824,20 +5932,20 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/catalogPage.response@1",
-        "revision": 1,
-        "digest": "0a759941f4e83ecd085be64f172d0d42a50a65431cf8c65f8beea453a12bc06a"
+        "revision": 2,
+        "digest": "8dacd168d85595d5fc945aa80fb709f87690d2152f0fb19ff588ce518cc3ec23"
       }
     },
     "subscribe": {
       "input": {
         "typeId": "agh.transport/subscribe.request@1",
-        "revision": 1,
-        "digest": "40363786e051134bda916a4be23a2d7a62819540414b191f1714ce74ed88870c"
+        "revision": 2,
+        "digest": "5effa6de7440ea5af26e3ec587a0abc6c89cbc1006b04467e8677b0962aa9c52"
       },
       "output": {
         "typeId": "agh.transport/subscribe.response@1",
-        "revision": 1,
-        "digest": "25d661a0fcdfec608b985874a86bec20914bed9c2e7e40b27c693c22051c89c4"
+        "revision": 2,
+        "digest": "91ffee529a18762c833601aa58567441c305bf61c111416972c1ecd4289d01fb"
       }
     },
     "readSubscription": {
@@ -5848,8 +5956,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/readSubscription.response@1",
-        "revision": 1,
-        "digest": "06be034bde4bebb60640b5c313efbe5c80ab639c9d43eb66d4f23b7e270798b8"
+        "revision": 2,
+        "digest": "f028bee399e3362f5ab687310172b4c5f9e4dd71595e7230c3641c07195f5e44"
       }
     },
     "closeSubscription": {
@@ -5862,6 +5970,30 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.transport/closeSubscription.response@1",
         "revision": 1,
         "digest": "ee43f1e03ebe470c499febafcadf28a6e4cdf1d024e0db9fac9aee1ab7b9aef7"
+      }
+    },
+    "catalogStatus": {
+      "input": {
+        "typeId": "agh.transport/catalogStatus.request@1",
+        "revision": 1,
+        "digest": "925db2d3538409b10a9c435b964fac61a96377d13f2cbc0fe41aadb6b54f61aa"
+      },
+      "output": {
+        "typeId": "agh.transport/catalogStatus.response@1",
+        "revision": 1,
+        "digest": "e397a671265839b8f7f551e150b804a6bcfbab35816ea38341e48048db6325ba"
+      }
+    },
+    "streamStatus": {
+      "input": {
+        "typeId": "agh.transport/streamStatus.request@1",
+        "revision": 1,
+        "digest": "c9655d3cf73680e046d2fef9c29423ea493440e5473d8b7ac177e335b0f2c538"
+      },
+      "output": {
+        "typeId": "agh.transport/streamStatus.response@1",
+        "revision": 1,
+        "digest": "391dd0d9bc67a9db594952a0853ad72e016023fd970cb23dd738c6ccad371190"
       }
     },
     "authorityFence": {
@@ -5965,8 +6097,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "send": {
       "input": {
         "typeId": "agh.channel/send.request@1",
-        "revision": 1,
-        "digest": "066ad9831837ba8a39929df3852228b8bb833b84565097b84ec647d27e802b3e"
+        "revision": 2,
+        "digest": "ce9116918346f97ff0b4ea46a9d343e266b1d7641674e0ae474a9dc1ecfd1100"
       },
       "output": {
         "typeId": "agh.channel/send.response@1",
@@ -6712,8 +6844,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.assembly/drain.response@1",
-        "revision": 1,
-        "digest": "9ffd36f72442faaaf9de7524c675828eddcd4bb2707edf336fd6e3031057c98c"
+        "revision": 2,
+        "digest": "6c15841415322f38ef1155a27e8a7289f2f6f2981905cdf78697e2f2a6930c10"
       }
     },
     "authorityFence": {
@@ -7411,8 +7543,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "commitControl": {
       "input": {
         "typeId": "agh.state/commitControl.request@1",
-        "revision": 1,
-        "digest": "0ef3ded789a902451835390d3e7320a6baed098a406dd387653a986fc1fe9675"
+        "revision": 2,
+        "digest": "070faf98aa947dda8877675cc1a03cee07fae80825ba30c0f99ebf7334e6fb11"
       },
       "output": {
         "typeId": "agh.state/commitControl.response@1",
@@ -7507,8 +7639,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "acceptInbox": {
       "input": {
         "typeId": "agh.state/acceptInbox.request@1",
-        "revision": 1,
-        "digest": "7d4ed8992e84bded8ffd8f150086c8b9b5296cc603fc74815e016662c9b178bb"
+        "revision": 2,
+        "digest": "152539e288aab20270463a2c67518d010e7e3b1a1cd42b28cff558d463c75cf4"
       },
       "output": {
         "typeId": "agh.state/acceptInbox.response@1",
@@ -7560,8 +7692,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.state/claimOutbox.response@1",
-        "revision": 1,
-        "digest": "b99cee5c4144155ad5ab810ec025c7514d5dc5f01caca3939fbe68346b0d55b0"
+        "revision": 2,
+        "digest": "6dc5a51cfe465b171839073118c72941725e8f573815999bf693e9115ffdd40b"
       }
     },
     "ackOutbox": {
@@ -7754,6 +7886,30 @@ export const RuntimeMethodSchemaRefs = freeze({
         "typeId": "agh.state/cancelAdmission.response@1",
         "revision": 1,
         "digest": "8c3dcea5b56382d396774dd64fc9f71c93781d9d26937ed6e3b2cf2155b40d06"
+      }
+    },
+    "deadLetters": {
+      "input": {
+        "typeId": "agh.state/deadLetters.request@1",
+        "revision": 1,
+        "digest": "afa27bcf387072ca95e569a21fb86356cf934f5769b02fddd7200a19a02449af"
+      },
+      "output": {
+        "typeId": "agh.state/deadLetters.response@1",
+        "revision": 1,
+        "digest": "2f9042a6bb8ae9fca20b3dd8d145ab6724f6bf47b128c09f4002c4219628134b"
+      }
+    },
+    "redriveOutbox": {
+      "input": {
+        "typeId": "agh.state/redriveOutbox.request@1",
+        "revision": 1,
+        "digest": "133be127af395208f818701ce7babec270eed78dbec868b0f23520dcab18179a"
+      },
+      "output": {
+        "typeId": "agh.state/redriveOutbox.response@1",
+        "revision": 1,
+        "digest": "bf249264fbdb1aeb9dd2e5689d6ab0d6358e802545b6a95984c354e626fc509f"
       }
     },
     "authorityFence": {

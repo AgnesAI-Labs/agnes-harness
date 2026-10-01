@@ -16,10 +16,12 @@ export function validateRuntime<K extends keyof RuntimeWireTypes>(name: K, value
 }
 export {
   MAX_AUTHOR_INLINE_BYTES,
+  RuntimeApprovalIntentPolicy,
   RuntimeAuthorCapabilities,
   RuntimeAuthorCodecPolicy,
   RuntimeAuthorityTransferAPI,
   RuntimeConfigurationSchemas,
+  RuntimeEventsOutboxAPI,
   RuntimeHttpHeaderPolicy,
   RuntimeInterceptorPolicy,
   RuntimeServiceCatalog,

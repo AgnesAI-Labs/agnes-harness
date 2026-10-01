@@ -184,7 +184,7 @@ export function validateRuntimeValue<T>(schema: TSchema, value: unknown): Valida
 `
     Object.assign(artifacts, generateFullRuntimeArtifacts(join(pkg, 'schema/runtime')))
     artifacts['src/runtime/index.ts'] =
-      `${header}export * from './public.js'\nexport * from './client-transport.js'\nexport { canonicalJsonDigest } from './jcs-digest.js'\nexport { boundedCanonicalJson, utf8ByteLength } from '../../../protocol-validation/src/byte-budget.js'\nexport { validateControlledHttpHeaders } from './codec-policy.js'\nexport { validateOwnedAuthorSchemaSource } from './author-schema-source.js'\nexport type { GeneratedAuthorSchemaSource } from './author-schema-source.js'\n`
+      `${header}export * from './public.js'\nexport * from './artifacts.js'\nexport * from './client-transport.js'\nexport * from './client-interaction-contract.js'\nexport { canonicalJsonDigest } from './jcs-digest.js'\nexport { boundedCanonicalJson, utf8ByteLength } from '../../../protocol-validation/src/byte-budget.js'\nexport { validateControlledHttpHeaders } from './codec-policy.js'\nexport { validateOwnedAuthorSchemaSource } from './author-schema-source.js'\nexport type { GeneratedAuthorSchemaSource } from './author-schema-source.js'\n`
     const metadata = JSON.parse(readFileSync(join(pkg, 'schema/runtime/local-api.json'), 'utf8')) as {
       'x-author-overrides'?: string[]
     }

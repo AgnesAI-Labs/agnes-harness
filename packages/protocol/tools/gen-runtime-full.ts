@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 import { generateClientTransportArtifacts } from './gen-client-transport.js'
 import { generateModule, type JsonSchemaDoc } from './gen-core.js'
+import { generateRuntimeArtifactArtifacts } from './gen-runtime-artifacts.js'
 import { normalizeRuntimeCatalog } from './gen-runtime-catalog.js'
 import { loadRuntimeSchemaGraph } from './gen-runtime-graph.js'
 import { emitRuntimeReferences } from './gen-runtime-refs.js'
@@ -260,17 +261,78 @@ export function generateFullRuntimeArtifacts(directory: string): Record<string, 
     )
       throw new Error('Local authority transfer signature disagrees with template')
   }
+  const outbox = publicDocument['x-events-outbox-api'] as Json | undefined
+  if (outbox) {
+    const declaration = localMetadata['x-local-api'].runtime.EventsOutboxControl
+    const methods = outbox.methods as Record<string, { input: string; output: string }>
+    const signatures =
+      typeof declaration === 'string'
+        ? [
+            ...declaration.matchAll(
+              /(\w+)\(request: Wire\.(\w+), context: CallContext\): Promise<Outcome<Wire\.(\w+)>>;/g,
+            ),
+          ]
+        : []
+    if (
+      !['BoundService', 'ServiceProvider'].every((name) =>
+        /readonly eventsOutbox\?: EventsOutboxControl;/.test(
+          localMetadata['x-local-api'].runtime[name] ?? '',
+        ),
+      ) ||
+      signatures.length !== Object.keys(methods).length ||
+      signatures.some(
+        ([, method, input, output]) =>
+          !method || methods[method]?.input !== input || methods[method]?.output !== output,
+      )
+    )
+      throw new Error('Local events outbox signature disagrees with owner template')
+  }
   const local = generateLocalAPI(localMetadata, new Set(names), catalog)
+  const approval = publicDocument['x-approval-intent-policy'] as Json | undefined
+  const approvalFields = [
+    'actionRef',
+    'inputDigest',
+    'policyDecisionRef',
+    'scope',
+    'allowedResponders',
+    'allowedGrantScopes',
+    'expiresAt',
+    'risk',
+  ]
+  const approvalProperties = document.$defs?.ApprovalRequest?.properties as Json | undefined
+  if (
+    !approval ||
+    Object.keys(approval).sort().join(',') !==
+      'algorithm,answerSchema,defaultAllowedGrantScopes,fields,riskMutableByHook,setFields,setOrder' ||
+    approval.algorithm !== 'jcs-sha256' ||
+    approval.answerSchema !== 'ApprovalAnswer' ||
+    approval.riskMutableByHook !== false ||
+    approval.setOrder !== 'utf8' ||
+    !Array.isArray(approval.fields) ||
+    approval.fields.length !== approvalFields.length ||
+    !approval.fields.every((field, index) => field === approvalFields[index]) ||
+    !Array.isArray(approval.setFields) ||
+    approval.setFields.length !== 2 ||
+    approval.setFields[0] !== 'allowedResponders' ||
+    approval.setFields[1] !== 'allowedGrantScopes' ||
+    !Array.isArray(approval.defaultAllowedGrantScopes) ||
+    approval.defaultAllowedGrantScopes.length !== 1 ||
+    approval.defaultAllowedGrantScopes[0] !== 'once' ||
+    !approvalFields.every((name) => approvalProperties && Object.hasOwn(approvalProperties, name))
+  )
+    throw new Error('invalid approval intent binding policy')
   const metadataTables: Record<string, unknown> = {
     RuntimeServiceCatalog: catalog,
     RuntimeConfigurationSchemas: configurationNames,
     RuntimeAuthorityTransferAPI: publicDocument['x-authority-transfer-api'],
+    RuntimeEventsOutboxAPI: publicDocument['x-events-outbox-api'],
   }
   for (const [key, name] of Object.entries({
     'x-author-capabilities': 'RuntimeAuthorCapabilities',
     'x-interceptor-policy': 'RuntimeInterceptorPolicy',
     'x-author-codec-policy': 'RuntimeAuthorCodecPolicy',
     'x-http-header-policy': 'RuntimeHttpHeaderPolicy',
+    'x-approval-intent-policy': 'RuntimeApprovalIntentPolicy',
   })) {
     if (publicDocument[key] !== undefined) metadataTables[name] = publicDocument[key]
   }
@@ -305,11 +367,13 @@ export function generateFullRuntimeArtifacts(directory: string): Record<string, 
   )
     throw new Error('invalid HTTP header policy')
   const outputs: Record<string, string> = {
+    ...generateRuntimeArtifactArtifacts(publicDocument, document),
     ...generateClientTransportArtifacts(
       publicDocument,
       localMetadata as unknown as Json,
       catalog,
       new Set(names),
+      document,
     ),
     ...generateRuntimeWireModules(document, localMetadata['x-page-api']),
     'gen/ts/runtime-schema-refs.ts': emitRuntimeReferences(document, publicDocument),
@@ -318,9 +382,13 @@ export function generateFullRuntimeArtifacts(directory: string): Record<string, 
       header +
       Object.entries(metadataTables)
         .map(([name, value]) =>
-          ['RuntimeAuthorCodecPolicy', 'RuntimeHttpHeaderPolicy', 'RuntimeAuthorityTransferAPI'].includes(
-            name,
-          )
+          [
+            'RuntimeAuthorCodecPolicy',
+            'RuntimeHttpHeaderPolicy',
+            'RuntimeAuthorityTransferAPI',
+            'RuntimeEventsOutboxAPI',
+            'RuntimeApprovalIntentPolicy',
+          ].includes(name)
             ? `export const ${name} = ${frozenLiteral(value)}\n`
             : `export const ${name} = ${JSON.stringify(value, null, 2)} as const\n`,
         )

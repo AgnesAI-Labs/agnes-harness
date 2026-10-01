@@ -4,18 +4,33 @@ import { resolve } from 'node:path'
 import type { Ajv2020 as Ajv2020Class } from 'ajv/dist/2020.js'
 import { describe, expect, it } from 'vitest'
 import { jcs } from '../../src/jcs.js'
-import type { ClientJsonOperation } from '../../src/runtime/index.js'
+import type { ClientJsonOperation, ClientWelcome, JsonValue } from '../../src/runtime/index.js'
 import {
+  canonicalJsonDigest,
+  clientCommandQuotaClass,
+  decodeClientBinaryMetadata,
+  encodeClientBinaryMetadata,
   RuntimeClientOperations,
   RuntimeClientTransportPolicy,
+  RuntimeClientTransportWire,
   RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
   validateClientBinaryRequest,
+  validateClientBootstrap,
   validateClientCatalogPage,
   validateClientOperationInput,
+  validateClientQueryRequest,
   validateClientReply,
+  validateClientStreamStatus,
+  validateClientTransportFrame,
+  validateClientTransportReplyFrame,
+  validateClientTransportRequestFrame,
+  validateClientTransportResult,
+  validateIdentityTransportRequest,
   validateRuntime,
 } from '../../src/runtime/index.js'
 import {
+  APPROVED_CLIENT_OPERATIONS,
   generateClientTransportArtifacts,
   validateClientOperations,
 } from '../../tools/gen-client-transport.js'
@@ -84,8 +99,13 @@ const operations = Object.entries(RuntimeClientOperations).filter(
 )
 
 describe('client transport static contract', () => {
-  it('matches all 34 public JSON methods, both binary methods and local navigation', () => {
-    expect(operations).toHaveLength(34)
+  it('matches the approved complete public operation set and real Local surface', () => {
+    const approved = APPROVED_CLIENT_OPERATIONS.filter(
+      (name) =>
+        name !== 'conversation.list' ||
+        /\blist\s*\(/.test(local['x-local-api'].client.ShellConversationClient),
+    )
+    expect(Object.keys(RuntimeClientOperations).sort()).toEqual([...approved].sort())
     expect(Object.values(RuntimeClientOperations).filter((entry) => entry.kind === 'binary')).toHaveLength(2)
     expect(Object.values(RuntimeClientOperations).filter((entry) => entry.kind === 'local')).toHaveLength(1)
     expect(
@@ -101,11 +121,15 @@ describe('client transport static contract', () => {
     const oracle = ajv.compile({ $defs: definitions, $ref: `#/$defs/${entry.input}` })
     expect(oracle(input), JSON.stringify(oracle.errors)).toBe(true)
     expect(validateClientOperationInput(operation as ClientJsonOperation, input).ok).toBe(true)
+    if (operation === 'transport.catalogStatus' || operation === 'transport.streamStatus')
+      (input as { header: typeof header }).header = header
     const request = { header, call: { operation, input } }
     const reply = {
       header,
       reply: { operation, value: sample(definitions[entry.output] as Record<string, unknown>) },
     }
+    if (operation === 'transport.streamStatus')
+      (reply.reply.value as { streamId: string }).streamId = (input as { streamId: string }).streamId
     const parsed = validateRuntime(
       entry.kind === 'query' ? 'ClientQueryRequest' : 'ClientCommandRequest',
       request,
@@ -190,7 +214,14 @@ describe('client transport static contract', () => {
       if (!operation) throw new Error('missing navigation fixture')
       operation[field] = field === 'hostFields' ? [] : 'forged'
       expect(
-        () => generateClientTransportArtifacts(doc, local, catalog, new Set(Object.keys(definitions))),
+        () =>
+          generateClientTransportArtifacts(
+            doc,
+            local,
+            catalog,
+            new Set(Object.keys(definitions)),
+            graph.document,
+          ),
         field,
       ).toThrow()
     }
@@ -297,12 +328,382 @@ describe('client transport static contract', () => {
       const doc = structuredClone(graph.publicDocument)
       change(doc)
       expect(() =>
-        generateClientTransportArtifacts(doc, local, catalog, new Set(Object.keys(definitions))),
+        generateClientTransportArtifacts(
+          doc,
+          local,
+          catalog,
+          new Set(Object.keys(definitions)),
+          graph.document,
+        ),
       ).toThrow()
     }
     expect(catalog['agh.artifacts']).toBeDefined()
     expect(RuntimeMethodSchemaRefs['agh.transport'].handshake).toBeDefined()
     expect(RuntimeMethodSchemaRefs['agh.transport'].connect).toBeDefined()
     expect(RuntimeMethodSchemaRefs['agh.transport'].command).toBeDefined()
+  })
+
+  it('shares physical routes with declared owner methods and rejects metadata drift', () => {
+    expect(RuntimeClientTransportWire.routes.clientCommand.path).toBe('/api/runtime/client/clientCommand')
+    expect(RuntimeClientTransportWire.routes.download.path).toBe('/api/runtime/artifact/download/{ticketId}')
+    for (const mutate of [
+      (doc: typeof graph.publicDocument) => {
+        ;(
+          doc['x-client-transport-wire'] as { routes: { clientQuery: Record<string, unknown> } }
+        ).routes.clientQuery.backendMethod = 'commit'
+      },
+      (doc: typeof graph.publicDocument) => {
+        ;(
+          doc['x-client-transport-wire'] as { routes: { openStream: Record<string, unknown> } }
+        ).routes.openStream.responseMime = 'application/json'
+      },
+      (doc: typeof graph.publicDocument) => {
+        ;(doc['x-identity-transport-schemas'] as Record<string, unknown>).hostOnlyEvidence = false
+      },
+      (doc: typeof graph.publicDocument) => {
+        ;(doc['x-client-operations'] as { 'permission.revokeGrant': { quotaClass: string } })[
+          'permission.revokeGrant'
+        ].quotaClass = 'work'
+      },
+      (doc: typeof graph.publicDocument) => {
+        ;(doc['x-client-operations'] as { 'control.submit': { controlPredicate: { equals: string } } })[
+          'control.submit'
+        ].controlPredicate.equals = 'prompt'
+      },
+    ]) {
+      const doc = structuredClone(graph.publicDocument)
+      mutate(doc)
+      expect(() =>
+        generateClientTransportArtifacts(
+          doc,
+          local,
+          catalog,
+          new Set(Object.keys(definitions)),
+          graph.document,
+        ),
+      ).toThrow()
+    }
+  })
+
+  it('validates websocket calls and catalog signals without accepting arbitrary remote authority', () => {
+    const request = { header, call: { operation: 'interaction.read', input: 'interaction' } }
+    expect(validateRuntime('ClientTransportRequestFrame', { kind: 'query', request }).ok).toBe(true)
+    expect(validateRuntime('ClientTransportRequestFrame', { kind: 'command', request }).ok).toBe(false)
+    expect(
+      validateRuntime('ClientTransportRequestFrame', { kind: 'query', request, ownerToken: 'forged' }).ok,
+    ).toBe(false)
+    const status = { catalogRevision: 2, mode: 'reload-required', reasonCode: 'catalog_changed' }
+    expect(validateRuntime('ClientTransportFrame', { kind: 'catalog-changed', header, status }).ok).toBe(true)
+    expect(
+      validateRuntime('ClientTransportFrame', {
+        kind: 'catalog-changed',
+        header,
+        status: { ...status, catalogRevision: -0 },
+      }).ok,
+    ).toBe(false)
+  })
+
+  it('enforces the implicit welcome page and strict usable header fields', () => {
+    const welcome = sample(definitions.ClientWelcome as Record<string, unknown>) as unknown as ClientWelcome
+    welcome.modules = []
+    welcome.domainSchemas = []
+    const accepted = { welcome, catalogPage: { nextCursor: null, complete: true } }
+    expect(validateClientBootstrap(accepted).ok).toBe(true)
+    expect(validateClientBootstrap({ ...accepted, welcome: { ...welcome, clientInstanceId: '' } }).ok).toBe(
+      false,
+    )
+    expect(validateClientBootstrap({ ...accepted, welcome: { ...welcome, catalogRevision: -0 } }).ok).toBe(
+      false,
+    )
+    const refs = Array.from({ length: 101 }, (_, i) => ({
+      typeId: `demo/schema${i}@1`,
+      revision: 1,
+      digest: 'a'.repeat(64),
+    }))
+    expect(validateClientBootstrap({ ...accepted, welcome: { ...welcome, domainSchemas: refs } }).ok).toBe(
+      false,
+    )
+    expect(
+      validateClientBootstrap({ ...accepted, catalogPage: { nextCursor: null, complete: false } }).ok,
+    ).toBe(false)
+  })
+
+  it('classifies only fixed cancellation and revocation commands into the control channel', () => {
+    for (const name of [
+      'conversation.cancel',
+      'jobs.cancel',
+      'jobs.cancelDefinition',
+      'permission.revokeGrant',
+    ] as const) {
+      const entry = RuntimeClientOperations[name]
+      const result = clientCommandQuotaClass({
+        header,
+        call: { operation: name, input: sample(definitions[entry.input] as Record<string, unknown>) },
+      })
+      expect(result).toEqual({ ok: true, value: 'control' })
+    }
+    const input = {
+      sessionId: 'session',
+      requestId: 'request',
+      expectedRevision: null,
+      command: { kind: 'cancel', runId: 'run', reason: 'stop' },
+    }
+    expect(clientCommandQuotaClass({ header, call: { operation: 'control.submit', input } })).toEqual({
+      ok: true,
+      value: 'control',
+    })
+    expect(
+      clientCommandQuotaClass({
+        header,
+        call: { operation: 'control.submit', input: { ...input, command: { kind: 'prompt', content: [] } } },
+      }),
+    ).toEqual({ ok: true, value: 'work' })
+    expect(
+      clientCommandQuotaClass({
+        header,
+        call: { operation: 'control.submit', input: { ...input, command: { kind: 'admin' } } },
+      }).ok,
+    ).toBe(false)
+    expect(RuntimeClientTransportPolicy.controlMaxConcurrentPerWorkspace).toBe(32)
+    expect(RuntimeClientTransportPolicy.controlMaxRequestsPerPrincipalPerMinute).toBe(120)
+  })
+
+  it('decodes schema-locked ephemeral credentials and proofs while rejecting forged reference bytes', () => {
+    const credential = { kind: 'bearer', token: 'synthetic-test-token' }
+    const evidence = {
+      bindingId: 'binding',
+      ingressId: 'ingress',
+      requestNonce: 'nonce',
+      receivedAt: '2026-10-01T00:00:00.000Z',
+      transport: 'websocket',
+      method: 'GET',
+      path: '/api/runtime/client/stream',
+      origin: null,
+      authority: 'localhost',
+      peerLoopback: true,
+      tls: false,
+      channelBinding: 'a'.repeat(64),
+      proof: { kind: 'in-process', issuerBindingId: 'binding' },
+    }
+    const inline = (
+      name: 'TransportCredentialEnvelope' | 'TransportAuthenticationEvidence',
+      value: JsonValue,
+    ) => ({
+      kind: 'inline',
+      schema: RuntimeSchemaRefs[name],
+      value,
+      bytes: new TextEncoder().encode(jcs(value)).length,
+      digest: canonicalJsonDigest(value),
+    })
+    const request = {
+      credentialEnvelope: inline('TransportCredentialEnvelope', credential),
+      transportEvidence: inline('TransportAuthenticationEvidence', evidence),
+    }
+    expect(validateIdentityTransportRequest(request).ok).toBe(true)
+    expect(
+      validateIdentityTransportRequest({
+        ...request,
+        credentialEnvelope: { ...request.credentialEnvelope, bytes: 0 },
+      }).ok,
+    ).toBe(false)
+    expect(
+      validateIdentityTransportRequest({
+        ...request,
+        transportEvidence: inline('TransportAuthenticationEvidence', { ...evidence, transport: 'ws' }),
+      }).ok,
+    ).toBe(false)
+    expect(
+      validateIdentityTransportRequest({
+        ...request,
+        credentialEnvelope: inline('TransportCredentialEnvelope', { ...credential, actor: 'self-reported' }),
+      }).ok,
+    ).toBe(false)
+  })
+
+  it('checks every schema-declared owner error in real HTTP and WS replies while preserving opaque data', () => {
+    const reserved = {
+      code: 'denied',
+      detailCode: 'revoked',
+      message: 'revoked',
+      diagnosticId: 'diagnostic',
+      retryAdvice: { kind: 'never' },
+    }
+    const malformed = { ...reserved, code: 'conflict' }
+    for (const operation of ['jobs.commandStatus', 'interaction.responseStatus', 'control.status'] as const) {
+      const entry = RuntimeClientOperations[operation]
+      const request = {
+        header,
+        call: { operation, input: sample(definitions[entry.input] as Record<string, unknown>) },
+      }
+      const body = sample(definitions[entry.output] as Record<string, unknown>) as Record<string, unknown>
+      if (entry.output === 'CommandHandle') body.status = 'failed'
+      const replyFor = (error: unknown) => ({ header, reply: { operation, value: { ...body, error } } })
+      // Both variants retain valid structural shapes; only reserved semantic classification differs.
+      const good = replyFor(reserved)
+      expect(validateRuntime('ClientQueryReply', good).ok).toBe(true)
+      expect(validateClientReply(request as never, good).ok).toBe(true)
+      const bad = replyFor(malformed)
+      expect(validateRuntime('ClientQueryReply', bad).ok).toBe(true)
+      expect(validateClientReply(request as never, bad).ok).toBe(false)
+      expect(validateClientTransportResult(request as never, { ok: true, value: bad }).ok).toBe(false)
+      expect(validateClientTransportFrame(header, { kind: 'reply', result: bad }).ok).toBe(false)
+      expect(validateClientTransportReplyFrame(request as never, { kind: 'reply', result: bad }).ok).toBe(
+        false,
+      )
+    }
+    const entry = RuntimeClientOperations['jobs.commandStatus']
+    const request = {
+      header,
+      call: {
+        operation: 'jobs.commandStatus' as const,
+        input: sample(definitions[entry.input] as Record<string, unknown>),
+      },
+    }
+    const body = sample(definitions.CommandHandle as Record<string, unknown>) as Record<string, unknown>
+    const opaque = { error: malformed, nested: { code: 'conflict', detailCode: 'revoked' } }
+    const result = {
+      kind: 'inline',
+      schema: { typeId: 'example/opaque@1', revision: 1, digest: 'a'.repeat(64) },
+      value: opaque,
+      bytes: new TextEncoder().encode(jcs(opaque)).length,
+      digest: canonicalJsonDigest(opaque),
+    }
+    const reply = {
+      header,
+      reply: {
+        operation: 'jobs.commandStatus',
+        value: { ...body, status: 'succeeded', completion: 'domain-commit', result, error: null },
+      },
+    }
+    expect(validateRuntime('ClientQueryReply', reply).ok).toBe(true)
+    expect(validateClientReply(request as never, reply).ok).toBe(true)
+    expect(validateClientTransportResult(request as never, { ok: true, value: reply }).ok).toBe(true)
+    expect(validateClientTransportFrame(header, { kind: 'reply', result: reply }).ok).toBe(true)
+  })
+
+  it('provides browser-readable canonical metadata and real terminal interval summaries', () => {
+    const metadata = { offset: 1, totalBytes: 3, bytes: 2, digest: 'a'.repeat(64) }
+    const encoded = encodeClientBinaryMetadata('range', metadata)
+    expect(encoded.ok).toBe(true)
+    if (!encoded.ok) throw new Error('invalid fixture')
+    expect(decodeClientBinaryMetadata('range', encoded.value)).toEqual({ ok: true, value: metadata })
+    expect(decodeClientBinaryMetadata('range', `${encoded.value}=`).ok).toBe(false)
+    expect(decodeClientBinaryMetadata('range', 'x'.repeat(12000)).ok).toBe(false)
+    expect(decodeClientBinaryMetadata('range', btoa(JSON.stringify(metadata))).ok).toBe(false)
+    const request = { header, streamId: 'stream' }
+    const status = {
+      streamId: 'stream',
+      state: 'succeeded',
+      bytes: 2,
+      summary: { bytes: 2, digest: 'a'.repeat(64) },
+      error: null,
+    }
+    expect(validateClientStreamStatus(request, status).ok).toBe(true)
+    expect(validateClientStreamStatus(request, { ...status, bytes: 3 }).ok).toBe(false)
+    expect(validateClientStreamStatus(request, { ...status, streamId: 'another' }).ok).toBe(false)
+    expect(
+      validateClientStreamStatus(request, {
+        streamId: 'stream',
+        state: 'unknown',
+        bytes: null,
+        summary: null,
+        error: null,
+      }).ok,
+    ).toBe(true)
+
+    const call = { header, call: { operation: 'transport.streamStatus' as const, input: request } }
+    const revoked = {
+      code: 'denied',
+      detailCode: 'revoked',
+      message: 'revoked',
+      diagnosticId: 'diagnostic',
+      retryAdvice: { kind: 'never' },
+    }
+    for (const state of ['failed', 'cancelled']) {
+      const terminal = { streamId: 'stream', state, bytes: 0, summary: null, error: revoked }
+      const reply = { header, reply: { operation: 'transport.streamStatus', value: terminal } }
+      expect(validateClientStreamStatus(request, terminal).ok).toBe(true)
+      expect(validateClientTransportResult(call, { ok: true, value: reply }).ok).toBe(true)
+      expect(validateClientTransportReplyFrame(call, { kind: 'reply', result: reply }).ok).toBe(true)
+      const bad = { ...terminal, error: { ...revoked, code: 'conflict' } }
+      const badReply = { ...reply, reply: { ...reply.reply, value: bad } }
+      expect(validateClientStreamStatus(request, bad).ok).toBe(false)
+      expect(validateClientTransportResult(call, { ok: true, value: badReply }).ok).toBe(false)
+      expect(validateClientTransportReplyFrame(call, { kind: 'reply', result: badReply }).ok).toBe(false)
+      expect(
+        validateClientStreamStatus(request, {
+          ...terminal,
+          error: { ...revoked, detailCode: 'vendor_future_detail' },
+        }).ok,
+      ).toBe(true)
+    }
+  })
+
+  it('rejects management header drift through HTTP and websocket query wrappers', () => {
+    const good = {
+      header,
+      call: { operation: 'transport.streamStatus' as const, input: { header, streamId: 'stream' } },
+    }
+    expect(validateClientQueryRequest(good).ok).toBe(true)
+    expect(validateClientTransportRequestFrame({ kind: 'query', request: good }).ok).toBe(true)
+    const drift = {
+      ...good,
+      call: {
+        ...good.call,
+        input: { ...good.call.input, header: { ...header, clientInstanceId: 'forged' } },
+      },
+    }
+    expect(validateClientQueryRequest(drift).ok).toBe(false)
+    expect(validateClientTransportRequestFrame({ kind: 'query', request: drift }).ok).toBe(false)
+    expect(validateClientTransportRequestFrame({ kind: 'command', request: good }).ok).toBe(false)
+    const status = { streamId: 'other-stream', state: 'unknown', bytes: null, summary: null, error: null }
+    expect(
+      validateClientReply(good, { header, reply: { operation: 'transport.streamStatus', value: status } }).ok,
+    ).toBe(false)
+  })
+
+  it('checks the unique error map in actual HTTP and websocket failure consumers', () => {
+    const request = { header, call: { operation: 'interaction.read' as const, input: 'interaction' } }
+    const error = {
+      code: 'denied',
+      detailCode: 'revoked',
+      message: 'revoked',
+      retryAdvice: { kind: 'never' },
+      safeDetail: null,
+      diagnosticId: 'diagnostic',
+    }
+    expect(validateClientTransportResult(request, { ok: false, error }).ok).toBe(true)
+    expect(validateClientTransportFrame(header, { kind: 'error', header, error }).ok).toBe(true)
+    const misclassified = { ...error, code: 'conflict' }
+    expect(validateClientTransportResult(request, { ok: false, error: misclassified }).ok).toBe(false)
+    expect(validateClientTransportFrame(header, { kind: 'error', header, error: misclassified }).ok).toBe(
+      false,
+    )
+    expect(
+      validateClientTransportResult(request, {
+        ok: false,
+        error: { ...error, detailCode: 'vendor-new-detail' },
+      }).ok,
+    ).toBe(true)
+    expect(
+      validateClientTransportFrame(header, {
+        kind: 'error',
+        header: { ...header, negotiatedSession: 'old' },
+        error,
+      }).ok,
+    ).toBe(false)
+  })
+
+  it('matches websocket reply operation with the registered original call', () => {
+    const request = { header, call: { operation: 'interaction.read' as const, input: 'interaction' } }
+    const value = sample(definitions.InteractionRecord as Record<string, unknown>)
+    const result = { header, reply: { operation: 'interaction.read', value } }
+    expect(validateClientTransportReplyFrame(request, { kind: 'reply', result }).ok).toBe(true)
+    expect(
+      validateClientTransportReplyFrame(request, {
+        kind: 'reply',
+        result: { ...result, reply: { operation: 'approval.read', value } },
+      }).ok,
+    ).toBe(false)
   })
 })

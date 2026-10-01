@@ -7,7 +7,7 @@ import { normalizeRuntimeCatalog } from './gen-runtime-catalog.js'
 export { runtimeSchemaDocument } from '../src/runtime/schema-document.js'
 
 type Json = Record<string, unknown>
-type SchemaReference = { typeId: string; revision: 1; digest: string }
+type SchemaReference = { typeId: string; revision: number; digest: string }
 type MethodReferences = Record<string, Record<string, { input: SchemaReference; output: SchemaReference }>>
 
 export function generateRuntimeReferences(
@@ -17,6 +17,19 @@ export function generateRuntimeReferences(
   RuntimeSchemaRefs: Record<string, SchemaReference>
   RuntimeMethodSchemaRefs: MethodReferences
 } {
+  const revisions = metadata['x-schema-revisions'] === undefined ? {} : metadata['x-schema-revisions']
+  if (!revisions || typeof revisions !== 'object' || Array.isArray(revisions))
+    throw new Error('invalid runtime schema revisions')
+  for (const [definition, revision] of Object.entries(revisions)) {
+    if (
+      !Object.hasOwn(graph.$defs ?? {}, definition) ||
+      typeof revision !== 'number' ||
+      !Number.isSafeInteger(revision) ||
+      revision < 1 ||
+      Object.is(revision, -0)
+    )
+      throw new Error(`invalid runtime schema revision ${definition}`)
+  }
   const identities = new Map<string, SchemaReference>()
   const digests = new Map<string, string>()
   const reference = (definition: unknown, typeId: unknown): SchemaReference => {
@@ -31,7 +44,8 @@ export function generateRuntimeReferences(
         .digest('hex')
       digests.set(definition, digest)
     }
-    const ref: SchemaReference = { typeId, revision: 1, digest }
+    const revision = (revisions as Record<string, number>)[definition] ?? 1
+    const ref: SchemaReference = { typeId, revision, digest }
     const previous = identities.get(typeId)
     if (previous && (previous.revision !== ref.revision || previous.digest !== ref.digest))
       throw new Error(`conflicting runtime schema identity ${typeId}`)

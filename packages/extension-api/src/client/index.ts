@@ -1,6 +1,7 @@
 // generated from schema/runtime by tools/gen-runtime.ts — do not edit
 
 export type {
+  ApprovalAnswer,
   ApprovalGrantBindingInput,
   ApprovalGrantListResult,
   ApprovalGrantRecord,
@@ -12,6 +13,7 @@ export type {
   ArtifactViewRef,
   AuthorizedViewScope,
   BlobRef,
+  ChannelArtifactAttachment,
   ClientArtifactOpenStreamRequest,
   ClientArtifactRangeMetadata,
   ClientArtifactReadRangeRequest,
@@ -40,7 +42,10 @@ export type {
   ClientTransportFrame,
   ClientWelcome,
   CommandHandle,
+  CommandRuntimeAcceptanceResult,
   ConfigValue,
+  ConversationListRequest,
+  ConversationSummary,
   Cursor,
   DataRef,
   Digest,
@@ -55,6 +60,7 @@ export type {
   DomainObjectRef,
   DomainQuery,
   DomainTimelineEntry,
+  DomainViewChange,
   FormattedView,
   Id,
   IMRendererEncodeChannel,
@@ -78,6 +84,7 @@ export type {
   LocaleClientFormatNumberRequest,
   NegotiatedClientCapabilities,
   Page,
+  PageConversationSummary,
   PermissionClientRevokeGrantRequest,
   ProjectionChange,
   ProjectionChanges,

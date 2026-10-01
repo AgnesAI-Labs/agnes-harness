@@ -67,6 +67,8 @@ describe('public Runtime payloads', () => {
   it('accepts a complete approval title and rejects a missing title', () => {
     const request = {
       kind: 'approval',
+      risk: 'destructive',
+      intentDigest: 'b'.repeat(64),
       title: 'Approve execution',
       body: 'A bounded action',
       actionRef: 'action',

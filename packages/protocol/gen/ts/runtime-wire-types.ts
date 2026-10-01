@@ -130,6 +130,7 @@ export interface RuntimeWireTypes {
   ToolExecutionConstraints: Schemas.ToolExecutionConstraints
   ResourceRef: Schemas.ResourceRef
   ToolDefinition: Schemas.ToolDefinition
+  ArtifactVersion: Schemas.ArtifactVersion
   ArtifactRef: Schemas.ArtifactRef
   Revision: Schemas.Revision
   DomainObjectRef: Schemas.DomainObjectRef
@@ -147,8 +148,11 @@ export interface RuntimeWireTypes {
   SessionRef: Schemas.SessionRef
   RunRef: Schemas.RunRef
   InteractionRef: Schemas.InteractionRef
+  PublicBlobReference: Schemas.PublicBlobReference
   UploadSession: Schemas.UploadSession
+  PublicUploadReference: Schemas.PublicUploadReference
   StagedBlobRef: Schemas.StagedBlobRef
+  PublicStagedBlobReference: Schemas.PublicStagedBlobReference
   PublicRef: Schemas.PublicRef
   ApprovalGrantEvidence: Schemas.ApprovalGrantEvidence
   ReceiptPointer: Schemas.ReceiptPointer
@@ -238,6 +242,9 @@ export interface RuntimeWireTypes {
   QuestionField: Schemas.QuestionField
   QuestionRequest: Schemas.QuestionRequest
   InteractionRequest: Schemas.InteractionRequest
+  ApprovalAnswerSchemaRef: Schemas.ApprovalAnswerSchemaRef
+  ApprovalAnswer: Schemas.ApprovalAnswer
+  ApprovalAnswerDataRef: Schemas.ApprovalAnswerDataRef
   InteractionRecord: Schemas.InteractionRecord
   ModelOutput: Schemas.ModelOutput
   ProviderResponseEvidence: Schemas.ProviderResponseEvidence
@@ -401,6 +408,13 @@ export interface RuntimeWireTypes {
   AuthorityDirectoryReadResult: Schemas.AuthorityDirectoryReadResult
   AuthorityPublication: Schemas.AuthorityPublication
   AuthorizedViewScope: Schemas.AuthorizedViewScope
+  ArtifactTitle: Schemas.ArtifactTitle
+  ArtifactMediaType: Schemas.ArtifactMediaType
+  ArtifactReservedView: Schemas.ArtifactReservedView
+  ArtifactPendingPublishView: Schemas.ArtifactPendingPublishView
+  ArtifactReadyView: Schemas.ArtifactReadyView
+  ArtifactFailedView: Schemas.ArtifactFailedView
+  ArtifactRevokedView: Schemas.ArtifactRevokedView
   ArtifactViewRef: Schemas.ArtifactViewRef
   ViewActionBase: Schemas.ViewActionBase
   ViewAction: Schemas.ViewAction
@@ -408,12 +422,16 @@ export interface RuntimeWireTypes {
   DomainEventIntent: Schemas.DomainEventIntent
   DomainQuery: Schemas.DomainQuery
   ProjectionSnapshot: Schemas.ProjectionSnapshot
+  DomainViewChange: Schemas.DomainViewChange
   ProjectionChange: Schemas.ProjectionChange
   ProjectionChanges: Schemas.ProjectionChanges
   DomainDispatch: Schemas.DomainDispatch
   DomainActionRef: Schemas.DomainActionRef
   DomainCommandFrame: Schemas.DomainCommandFrame
   DomainCommandPlan: Schemas.DomainCommandPlan
+  CommandRuntimeAcceptanceSchemaRef: Schemas.CommandRuntimeAcceptanceSchemaRef
+  CommandRuntimeAcceptanceResult: Schemas.CommandRuntimeAcceptanceResult
+  CommandRuntimeAcceptanceDataRef: Schemas.CommandRuntimeAcceptanceDataRef
   CommandHandle: Schemas.CommandHandle
   TextPart: Schemas.TextPart
   FormattedView: Schemas.FormattedView
@@ -475,6 +493,7 @@ export interface RuntimeWireTypes {
   BillingEntry: Schemas.BillingEntry
   UploadRef: Schemas.UploadRef
   UploadResult: Schemas.UploadResult
+  ArtifactSource: Schemas.ArtifactSource
   ArtifactReservation: Schemas.ArtifactReservation
   DomainEventRecord: Schemas.DomainEventRecord
   AuditAppend: Schemas.AuditAppend
@@ -485,6 +504,7 @@ export interface RuntimeWireTypes {
   Readiness: Schemas.Readiness
   AssemblyGraph: Schemas.AssemblyGraph
   ChannelDestination: Schemas.ChannelDestination
+  ChannelArtifactAttachment: Schemas.ChannelArtifactAttachment
   ChannelMessage: Schemas.ChannelMessage
   ChannelDelivery: Schemas.ChannelDelivery
   AuthenticatedCallback: Schemas.AuthenticatedCallback
@@ -745,6 +765,7 @@ export interface RuntimeWireTypes {
   BlobUnpinResult: Schemas.BlobUnpinResult
   BlobGcRequest: Schemas.BlobGcRequest
   BlobGcResult: Schemas.BlobGcResult
+  BlobInspectReference: Schemas.BlobInspectReference
   BlobInspectRequest: Schemas.BlobInspectRequest
   BlobInspectResult: Schemas.BlobInspectResult
   BudgetReserveRequest: Schemas.BudgetReserveRequest
@@ -865,7 +886,14 @@ export interface RuntimeWireTypes {
   BlobReadRangeRequest: Schemas.BlobReadRangeRequest
   BlobOpenReadRequest: Schemas.BlobOpenReadRequest
   ClientCallHeader: Schemas.ClientCallHeader
+  ClientCatalogStatusRequest: Schemas.ClientCatalogStatusRequest
+  ClientArtifactStreamStatusRequest: Schemas.ClientArtifactStreamStatusRequest
+  ConversationListRequest: Schemas.ConversationListRequest
   ClientQueryCall: Schemas.ClientQueryCall
+  ClientCatalogStatusResult: Schemas.ClientCatalogStatusResult
+  ClientArtifactStreamStatusResult: Schemas.ClientArtifactStreamStatusResult
+  ConversationSummary: Schemas.ConversationSummary
+  PageConversationSummary: Schemas.PageConversationSummary
   ClientQueryValue: Schemas.ClientQueryValue
   ClientQueryRequest: Schemas.ClientQueryRequest
   ClientQueryReply: Schemas.ClientQueryReply
@@ -898,6 +926,28 @@ export interface RuntimeWireTypes {
   ClientArtifactRangeMetadata: Schemas.ClientArtifactRangeMetadata
   ClientArtifactStreamMetadata: Schemas.ClientArtifactStreamMetadata
   ClientTransportFrame: Schemas.ClientTransportFrame
+  ClientModuleCredentialBinding: Schemas.ClientModuleCredentialBinding
+  ClientTransportRequestFrame: Schemas.ClientTransportRequestFrame
+  TransportEvidenceProof: Schemas.TransportEvidenceProof
+  TransportAuthenticationEvidence: Schemas.TransportAuthenticationEvidence
+  TransportCredentialEnvelope: Schemas.TransportCredentialEnvelope
+  ArtifactContentDescriptor: Schemas.ArtifactContentDescriptor
+  ArtifactsFailRequest: Schemas.ArtifactsFailRequest
+  ArtifactAccessGrantValue: Schemas.ArtifactAccessGrantValue
+  ArtifactsGrantRequest: Schemas.ArtifactsGrantRequest
+  ArtifactsRevokeGrantRequest: Schemas.ArtifactsRevokeGrantRequest
+  ArtifactRedeemDownloadRequest: Schemas.ArtifactRedeemDownloadRequest
+  ArtifactDownloadPresentation: Schemas.ArtifactDownloadPresentation
+  ArtifactDownloadMetadata: Schemas.ArtifactDownloadMetadata
+  LegacyArtifactRef: Schemas.LegacyArtifactRef
+  LegacyArtifactMappingValue: Schemas.LegacyArtifactMappingValue
+  OutboxDeliveryKey: Schemas.OutboxDeliveryKey
+  OutboxDeadLettersRequest: Schemas.OutboxDeadLettersRequest
+  OutboxDeadLetterItem: Schemas.OutboxDeadLetterItem
+  PageOutboxDeadLetterItem: Schemas.PageOutboxDeadLetterItem
+  OutboxRedriveRequest: Schemas.OutboxRedriveRequest
+  OutboxRedriveResult: Schemas.OutboxRedriveResult
+  OutboxRedriveRecord: Schemas.OutboxRedriveRecord
   RuntimeEmptyAuthorConfig: Schemas.RuntimeEmptyAuthorConfig
   RuntimePluginManifest: Schemas.RuntimePluginManifest
   RuntimeSimpleLoopCheckpoint: Schemas.RuntimeSimpleLoopCheckpoint

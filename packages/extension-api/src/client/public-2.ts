@@ -3,6 +3,7 @@ import type * as Wire from '@agnes/protocol/runtime'
 import type { Outcome } from '../runtime/public-api.js'
 
 export interface ShellConversationClient {
+  list(request: Wire.ConversationListRequest): Promise<Outcome<Wire.PageConversationSummary>>
   create(
     input: Wire.ShellConversationClientCreateRequest,
   ): Promise<Outcome<Wire.ShellConversationClientCreateResult>>
@@ -75,5 +76,12 @@ export interface ArtifactClient {
 export type ByteRangeResult = import('../runtime/public-api.js').ByteRangeResult
 
 export type ByteReadStream = import('../runtime/public-api.js').ByteReadStream
+
+export interface ClientTransportClient {
+  catalogStatus(request: Wire.ClientCatalogStatusRequest): Promise<Outcome<Wire.ClientCatalogStatusResult>>
+  streamStatus(
+    request: Wire.ClientArtifactStreamStatusRequest,
+  ): Promise<Outcome<Wire.ClientArtifactStreamStatusResult>>
+}
 
 export type DomainView<T = Wire.JsonValue> = Omit<Wire.DomainView, 'data'> & { data: T }
