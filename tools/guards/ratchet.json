@@ -84,7 +84,7 @@
   "packages/cli/src/commands/package": 160,
   "packages/cli/src/tui/package-admin": 106,
   "packages/cli/src/tui/package-controller": 58,
-  "packages/extension-api/testkit": 1388,
+  "packages/extension-api/testkit": 1403,
   "packages/host/src/configuration": 1202,
   "packages/host/src/configuration-lock": 39,
   "packages/daemon/src/supervisor/configuration": 45,

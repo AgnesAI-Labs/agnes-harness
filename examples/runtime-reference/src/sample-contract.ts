@@ -4,6 +4,8 @@ import {
   type AssertionInput,
   type BuildIdentity,
   type CaseRegistration,
+  type EvidenceReuse,
+  type ReuseLifecycle,
   SCENARIOS,
 } from '@agnes/extension-api/testkit'
 import { type NoteStore, openNoteStore, refuseNote } from './sample-provider.js'
@@ -21,18 +23,14 @@ const build: BuildIdentity = {
   platform: 'sample-platform',
 }
 
-const reuse: AssertionInput['reuse'] = {
+const reuse: EvidenceReuse = {
   scope: 'workspace',
   methodKind: 'compute',
   lifecycle: 'call',
   undeclaredConnection: false,
 }
 
-function row(
-  id: string,
-  lifecycle: AssertionInput['reuse']['lifecycle'],
-  status: AssertionInput['status'],
-): AssertionInput {
+function row(id: string, lifecycle: ReuseLifecycle, status: AssertionInput['status']): AssertionInput {
   return {
     id,
     providerDigest: 'sample-note-digest',

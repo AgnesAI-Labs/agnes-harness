@@ -13,10 +13,12 @@ import {
   type AssertionStatus,
   type BuildIdentity,
   type ConformanceReport,
+  type EvidenceReuse,
   type FailureCode,
   FIXTURE_MARKS,
   type FixtureMark,
   type GateKind,
+  type GateObservation,
   judgeReport,
   PROVIDER_ABSENT,
   QUALIFICATIONS,
@@ -72,9 +74,9 @@ export interface AssertionInput {
   readonly attachmentDigest: string | null
   readonly fixture: FixtureMark | null
   readonly sharedEvidenceId: string | null
-  readonly reuse: AssertionRecord['reuse']
-  readonly perImplementation: boolean
-  readonly gate: AssertionRecord['gate']
+  readonly reuse?: EvidenceReuse
+  readonly perImplementation?: boolean
+  readonly gate?: GateObservation | null
 }
 
 export interface CaseContext {
@@ -268,7 +270,7 @@ const ABSENT_BUILD: BuildIdentity = {
   platform: 'absent',
 }
 
-const ABSENT_REUSE: AssertionRecord['reuse'] = {
+const ABSENT_REUSE: EvidenceReuse = {
   scope: 'unregistered',
   methodKind: 'unregistered',
   lifecycle: 'call',

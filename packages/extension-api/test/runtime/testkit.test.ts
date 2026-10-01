@@ -228,6 +228,7 @@ describe('conformance evidence', () => {
 
   it('refuses reuse when scope, method kind, lifecycle, or a private connection differ', () => {
     const base = assertion({ id: 'base' })
+    if (base.reuse === undefined) throw new Error('reuse')
     const cited = (overrides: Partial<AssertionRecord>) =>
       assertion({ id: 'cited', sharedEvidenceId: 'base', qualification: 'advertised', ...overrides })
     expect(
@@ -253,6 +254,23 @@ describe('conformance evidence', () => {
       detail: 'shared evidence cited cannot reuse per-implementation base',
     })
     expect(judgeReport(draft([base, cited({})])).status).toBe('passed')
+  })
+
+  it('defaults omitted reuse, per-implementation, and gate', () => {
+    const legacy = (({
+      reuse: _reuse,
+      perImplementation: _perImplementation,
+      gate: _gate,
+      ...rest
+    }: AssertionRecord) => rest)(assertion())
+    const judged = judgeReport(draft([legacy]))
+    expect(judged.status).toBe('passed')
+    expect(judged.failures).toEqual([])
+    expect(judged.assertions[0]).toMatchObject({
+      reuse: { scope: 'run', methodKind: 'compute', lifecycle: 'call', undeclaredConnection: false },
+      perImplementation: false,
+      gate: null,
+    })
   })
 
   it('keeps catalog gates missing until required evidence exists', () => {
