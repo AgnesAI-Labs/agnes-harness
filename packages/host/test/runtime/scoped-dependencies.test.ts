@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs'
 import type {
   ArtifactAccessPort,
+  BlobReadPort,
   CallContext,
+  ClientCommandIngressPort,
   EventsOutboxControl,
+  MethodHandler,
   Outcome,
   ScopeRef,
   ServiceRequirement,
@@ -901,5 +904,158 @@ describe('host scoped dependencies', () => {
     expect(new AssemblyRefusal('owner_missing', 'selected provider owner is missing').code).toBe(
       'owner_missing',
     )
+  })
+
+  it('exposes the same service keys and shared refusals as the test container', async () => {
+    const unused = async () => {
+      throw new Error('not called')
+    }
+    const eventsOutbox: EventsOutboxControl = { deadLetters: unused, redriveOutbox: unused }
+    const artifactAccess: ArtifactAccessPort = {
+      describe: unused,
+      openDownload: unused,
+      readRange: unused,
+      redeemDownload: unused,
+      openStream: unused,
+    }
+    const blobRead: BlobReadPort = { readRange: unused, openRead: unused }
+    const clientIngress: ClientCommandIngressPort = { accept: unused }
+    const clientCommand: MethodHandler = unused
+    const query = async () => providerFailure('from-query')
+    const compute = async () => providerFailure('from-compute')
+    const binding = {
+      bindingId: 'binding-loop',
+      contract: 'agh.loop',
+      logicalName: 'loop',
+      providerId: 'owner-1',
+    }
+    const requirement = wire('runtime', ['read'])
+
+    function provided(ports: {
+      query?: HostSelectedProvider['query']
+      compute?: HostSelectedProvider['compute']
+      eventsOutbox?: EventsOutboxControl
+      artifactAccess?: ArtifactAccessPort
+      blobRead?: BlobReadPort
+      clientIngress?: ClientCommandIngressPort
+      clientCommand?: MethodHandler
+    }) {
+      return {
+        ...(ports.query !== undefined ? { query: ports.query } : {}),
+        ...(ports.compute !== undefined ? { compute: ports.compute } : {}),
+        ...(ports.eventsOutbox !== undefined ? { eventsOutbox: ports.eventsOutbox } : {}),
+        ...(ports.artifactAccess !== undefined ? { artifactAccess: ports.artifactAccess } : {}),
+        ...(ports.blobRead !== undefined ? { blobRead: ports.blobRead } : {}),
+        ...(ports.clientIngress !== undefined ? { clientIngress: ports.clientIngress } : {}),
+        ...(ports.clientCommand !== undefined ? { clientCommand: ports.clientCommand } : {}),
+      }
+    }
+
+    async function project(ports: Parameters<typeof provided>[0]) {
+      const extras = provided(ports)
+      const host = createHostScopedDependencies([grant({ permissions: [] })])
+      await host.publish({
+        generationId: 'shape',
+        providers: [selected({ permissions: [], features: ['read'], binding, ...extras })],
+      })
+      const testContainer = createTestServiceContainer()
+      testContainer.register({ requirement, binding, ...extras })
+      return { host, testContainer }
+    }
+
+    function keysOf(value: object): string[] {
+      return Object.keys(value).sort()
+    }
+
+    function refusalOf(result: Outcome<unknown>): { code: string; detailCode: string; diagnosticId: string } {
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected a refusal')
+      return {
+        code: result.error.code,
+        detailCode: result.error.detailCode,
+        diagnosticId: result.error.diagnosticId,
+      }
+    }
+
+    const full = await project({
+      query,
+      compute,
+      eventsOutbox,
+      artifactAccess,
+      blobRead,
+      clientIngress,
+      clientCommand,
+    })
+    const hostFull = full.host.dependencies.get(requirement)
+    const testFull = full.testContainer.dependencies.get(requirement)
+    expect(hostFull.ok && testFull.ok).toBe(true)
+    if (!hostFull.ok || !testFull.ok) return
+    expect(keysOf(hostFull.value)).toEqual(keysOf(testFull.value))
+    expect(keysOf(hostFull.value)).toEqual([
+      'artifactAccess',
+      'binding',
+      'blobRead',
+      'clientCommand',
+      'clientIngress',
+      'compute',
+      'eventsOutbox',
+      'query',
+    ])
+    expect(hostFull.value.eventsOutbox).toBe(eventsOutbox)
+    expect(testFull.value.eventsOutbox).toBe(eventsOutbox)
+    expect(hostFull.value.artifactAccess).toBe(artifactAccess)
+    expect(testFull.value.artifactAccess).toBe(artifactAccess)
+
+    const bare = await project({})
+    const hostBare = bare.host.dependencies.get(requirement)
+    const testBare = bare.testContainer.dependencies.get(requirement)
+    expect(hostBare.ok && testBare.ok).toBe(true)
+    if (!hostBare.ok || !testBare.ok) return
+    expect(keysOf(hostBare.value)).toEqual(['binding', 'compute', 'query'])
+    expect(keysOf(testBare.value)).toEqual(keysOf(hostBare.value))
+    for (const name of ['eventsOutbox', 'artifactAccess', 'blobRead', 'clientIngress', 'clientCommand']) {
+      expect(Object.hasOwn(hostBare.value, name)).toBe(false)
+      expect(Object.hasOwn(testBare.value, name)).toBe(false)
+    }
+    const hostMethod = await hostBare.value.query({} as never, contextFor('runtime'))
+    const testMethod = await testBare.value.query({} as never, contextFor('runtime'))
+    const hostRefusal = refusalOf(hostMethod)
+    const testRefusal = refusalOf(testMethod)
+    expect(hostRefusal.code).toBe(testRefusal.code)
+    expect(hostRefusal.detailCode).toBe('method_unavailable')
+    expect(testRefusal.detailCode).toBe(hostRefusal.detailCode)
+    expect(hostRefusal.diagnosticId).toBe('host-scoped-dependencies')
+    expect(testRefusal.diagnosticId).toBe('test-service-container')
+
+    const missingRequirement = wire('runtime', ['read'], 'other')
+    const hostMissing = refusalOf(bare.host.dependencies.get(missingRequirement))
+    const testMissing = refusalOf(bare.testContainer.dependencies.get(missingRequirement))
+    expect(hostMissing.code).toBe('incompatible')
+    expect(hostMissing.code).toBe(testMissing.code)
+    expect(hostMissing.detailCode).toBe('service_not_registered')
+    expect(testMissing.detailCode).toBe(hostMissing.detailCode)
+
+    const hostOpened = await bare.host.dependencies.openScope(scopeRef('session'), contextFor('runtime'))
+    const testOpened = await bare.testContainer.dependencies.openScope(
+      scopeRef('session'),
+      contextFor('runtime'),
+    )
+    expect(hostOpened.ok && testOpened.ok).toBe(true)
+    if (!hostOpened.ok || !testOpened.ok) return
+    const hostScope = refusalOf(hostOpened.value.get(requirement))
+    const testScope = refusalOf(testOpened.value.get(requirement))
+    expect(hostScope.code).toBe('incompatible')
+    expect(hostScope.code).toBe(testScope.code)
+    expect(hostScope.detailCode).toBe('service_scope_mismatch')
+    expect(testScope.detailCode).toBe(hostScope.detailCode)
+
+    await bare.host.dependencies.close()
+    await bare.testContainer.dependencies.close()
+    const hostClosed = refusalOf(bare.host.dependencies.get(requirement))
+    const testClosed = refusalOf(bare.testContainer.dependencies.get(requirement))
+    expect(hostClosed.code).toBe('denied')
+    expect(hostClosed.code).toBe(testClosed.code)
+    expect(hostClosed.detailCode).toBe('service_container_closed')
+    expect(testClosed.detailCode).toBe(hostClosed.detailCode)
   })
 })
