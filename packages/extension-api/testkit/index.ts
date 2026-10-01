@@ -51,7 +51,44 @@ export function defineFixture(fixture: ExtensionFixture): ExtensionFixture {
 }
 export { projectionFixture } from './fixtures/projections.js'
 export { serviceFixture } from './fixtures/services.js'
-
+export type {
+  AssertionInput,
+  AssertionRecord,
+  AssertionStatus,
+  BuildIdentity,
+  CaseContext,
+  CaseRegistration,
+  ConformanceHarness,
+  ConformanceReport,
+  ConformanceRunRequest,
+  DiscoveredContract,
+  FailureCode,
+  FixtureMark,
+  InjectedClock,
+  Qualification,
+  ReportDraft,
+  ReportFailure,
+  RuntimeInboxAcceptance,
+  RuntimeInboxFixture,
+  RuntimeInboxNotice,
+  ScenarioName,
+  TestServiceBinding,
+  TestServiceContainer,
+} from './runtime/index.js'
+export {
+  ASSERTION_STATUSES,
+  createConformanceHarness,
+  createRuntimeInboxFixture,
+  createTestServiceContainer,
+  discoverContracts,
+  FAILURE_CODES,
+  FIXTURE_MARKS,
+  judgeReport,
+  QUALIFICATIONS,
+  RUNTIME_INBOX_FIXTURE,
+  SCENARIOS,
+  serializeReport,
+} from './runtime/index.js'
 export {
   TRANSPORT_CONTRACT_CASES,
   type TransportContractCase,

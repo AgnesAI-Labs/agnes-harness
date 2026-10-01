@@ -1361,7 +1361,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
-  'packages/extension-api/testkit': 246,
+  // Conformance testkit: evidence, discovery, test service container and inbox fixture. Measured 907, exact, no spare.
+  'packages/extension-api/testkit': 907,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2506,7 +2507,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
-  'packages/host/src': 38101,
+  // Legacy profile and preset documents convert field by field.
+  // Explicit dag-code selection and community contract references sit beside them.
+  // A replaceable config source pins admitted snapshots and resolves layered documents.
+  // A pinned read names one revision and does not ask the source for a newer snapshot.
+  // Measured 43759, exact, no spare.
+  'packages/host/src': 43759,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

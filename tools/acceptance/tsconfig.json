@@ -4,12 +4,21 @@
     "rootDir": ".",
     "outDir": "dist"
   },
+  "references": [
+    {
+      "path": "../../packages/extension-api"
+    }
+  ],
   "include": [
     "runtime/ast.ts",
     "runtime/baseline-inventory.test.ts",
     "runtime/git-at.ts",
     "runtime/inventory.ts",
     "runtime/record-baseline-inventory.ts",
+    "runtime/report.ts",
+    "runtime/report.test.ts",
+    "runtime/fixtures.ts",
+    "runtime/run-conformance.ts",
     "runtime/sources.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"]
