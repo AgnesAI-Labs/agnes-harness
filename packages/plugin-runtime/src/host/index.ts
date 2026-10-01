@@ -67,6 +67,37 @@ export {
 } from '../row-mount.js'
 export type { RowOrigin, RowOriginLookup } from '../row-origin.js'
 export type {
+  AssemblyPlan,
+  AssemblyProvider,
+  AuthorizedPorts,
+  CloseResult,
+  DrainResult,
+  GenerationView,
+  HooksRunnerAttachment,
+  HooksRunnerStatus,
+  LegacyContributionInput,
+  NormalizedLegacy,
+  ObserverDelivery,
+  ObserverMount,
+  ObserverResult,
+  ServiceRequirement,
+} from '../runtime/cordis-adapter.js'
+export {
+  AssemblyRefusal,
+  admitLoopHooks,
+  FixedCordisAssembly,
+  HOOKS_RUNNER_EVENTS,
+  HOOKS_RUNNER_ROW_ID,
+  normalizeLegacyContribution,
+  OBSERVER_LOG_COUNT,
+  OBSERVER_LOG_LIMIT,
+  PUBLIC_HOOK_EVENTS,
+  SharedResourceBroker,
+  TOOL_CONTROL_METHODS,
+} from '../runtime/cordis-adapter.js'
+export type { RuntimeScope } from '../runtime/scope-tree.js'
+export { isRuntimeScope, longScopeCapturesShort, scopeRank } from '../runtime/scope-tree.js'
+export type {
   CanonicalJsonValue,
   DeepReadonly,
   McpResourceBootstrap,
