@@ -99,3 +99,34 @@ Use `client.resources.operation.get({ profile, operationId })` to wait for succe
 | ACP provenance and deviations | [UPSTREAM](../../packages/protocol/schema/acp/UPSTREAM.md), [DEVIATIONS](../../packages/protocol/schema/acp/DEVIATIONS.md) |
 
 Generated types are under [gen/ts](../../packages/protocol/gen/ts). Passing schema validation establishes shape. Implementations still verify cross-object relationships, authorization, transactions, and execution.
+
+## Runtime author schema CLI (source build preview)
+
+The workspace currently exposes Runtime author APIs through `@agnes/extension-api/runtime` and schemas through `@agnes/protocol/runtime`. The protocol package is still private; these commands describe a source build preview. Runtime integration and I/O acceptance are not complete.
+
+From the repository root, after installing workspace dependencies:
+
+```sh
+pnpm --filter @agnes/protocol build:schema-cli
+node packages/protocol/dist/schema-cli/agnes-schema.mjs generate \
+  --package ./my-plugin \
+  --sources ./my-plugin/schema-sources.json \
+  --locked-schemas ./my-plugin/schema-lock.json \
+  --out ./src/generated/schemas
+```
+
+Supply an existing plugin directory with `package.json`; its `name` owns the schemas. The required `--sources` file contains the `schemaSources` JSON array, rather than the whole plugin manifest. For example:
+
+```json
+[
+  { "name": "Message", "typeId": "@example/plugin/message@1", "revision": 1, "source": "./schemas/message.json" }
+]
+```
+
+The example assumes `package.json` has `name: "@example/plugin"`. Each `source` is a `./` JSON path inside that package. `--package`, `--sources` and `--locked-schemas` resolve from the command's working directory; `--out` resolves inside `--package` and must name a dedicated generated directory. An existing directory containing unrelated files is rejected.
+
+`--locked-schemas` is also required: use `[]` when no dependency schemas are referenced. Dependency entries identify a declared dependency or peer dependency by package ID, version, package/manifest digests, absolute package root and schema source file digests. The generator reads local files; it does not install dependencies, fetch schemas or execute plugin entries.
+
+This example writes `Message.ts`, exporting `MessageSchema` and the readonly `MessageValue` type, plus `schema-sources.generated.json`. Re-run the same command with `--check` to verify the generated output without writing; missing or changed output fails.
+
+Import the generated module from your plugin code. `MessageSchema.parse(unknown)` validates and returns an `Outcome<MessageValue>` with a copied, frozen value on success. `MessageSchema.encode(value)` returns an `Outcome<DataRef>` containing canonical JSON, schema identity, digest and byte count. Encoding only produces inline data up to **64 KiB of canonical JSON UTF-8 bytes**; oversized values fail with a quota error. It does not create Blob references or perform I/O. See the [CLI source](../../packages/protocol/tools/gen-author-schema.ts) and [codec](../../packages/extension-api/src/runtime/authoring-schema-core.ts) for the current contract.
