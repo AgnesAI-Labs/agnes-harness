@@ -22,7 +22,10 @@ export function readWebComposerMemory(): ComposerMemory | undefined {
 }
 
 export function rememberWebComposer(update: ComposerMemory): void {
-  const next = mergeComposerMemory(readWebComposerMemory(), update)
+  const next = mergeComposerMemory(readWebComposerMemory(), {
+    ...update,
+    ...(update.model ? { model: { route: update.model.route, id: update.model.id } } : {}),
+  })
   try {
     localStorage.setItem(WEB_COMPOSER_MEMORY_KEY, JSON.stringify(next))
   } catch {

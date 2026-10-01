@@ -72,18 +72,49 @@ export function lastCacheHint(s: SessionImpl): { cacheRead: number; input: numbe
   return last ? { cacheRead: last.cacheRead, input: last.input } : undefined
 }
 
-/**
- * The real context window for the model a slot resolved to, read from the same `ModelRecord` the
- * provider publishes for that route. Falls back to the default only when the provider throws or
- * the id is not in its catalogue — never when a record exists but happens not to carry the field,
- * since the schema makes `contextWindow` required on every published record.
- */
-export function contextWindowFor(s: SessionImpl, route: string, model: string): number {
+function modelCapacityFor(s: SessionImpl, route: string, model: string): number {
   try {
-    const rec = s.d.provider.models().find((m) => m.route === route && m.id === model)
-    return rec?.contextWindow ?? CONTEXT_WINDOW_DEFAULT
+    return (
+      s.d.provider.models().find((m) => m.route === route && m.id === model)?.contextWindow ??
+      CONTEXT_WINDOW_DEFAULT
+    )
   } catch {
     return CONTEXT_WINDOW_DEFAULT
+  }
+}
+
+/** The slot's saved window, or the capacity advertised by its provider. */
+export function contextWindowFor(s: SessionImpl, route: string, model: string, slot = 'primary'): number {
+  const effectiveSlot =
+    slot === 'compaction' && !s.preset.model.route.compaction && !s.preset.model.id.compaction
+      ? 'primary'
+      : slot
+  const selected = resolveModel(s, effectiveSlot)
+  const window =
+    selected.route === route && selected.model === model
+      ? s.preset.model.contextWindow?.[effectiveSlot]
+      : undefined
+  return window ?? modelCapacityFor(s, route, model)
+}
+
+/** Fit the preset policy to a reduced session window without changing the saved preset. */
+export function compactionSettingsFor(s: SessionImpl, contextWindow: number) {
+  const configured = s.preset.compaction
+  if (!Number.isFinite(configured.reserveTokens) || configured.reserveTokens < 0)
+    throw new CoreError('E_ENVELOPE', 'compaction reserveTokens must be nonnegative')
+  const target = resolveModel(s, 'primary')
+  const scale = Math.min(1, contextWindow / modelCapacityFor(s, target.route, target.model))
+  const scaledReserve = Math.floor(configured.reserveTokens * scale)
+  // A catalogue can itself be smaller than the preset's reserve. Leave room for history then too.
+  const reserveTokens = scaledReserve < contextWindow ? scaledReserve : Math.floor(contextWindow / 4)
+  if (scale === 1 && reserveTokens === configured.reserveTokens) return configured
+  return {
+    reserveTokens,
+    // Keep a suffix below the trigger and leave room for the new summary and the next request.
+    keepRecentTokens: Math.min(
+      Math.floor(configured.keepRecentTokens * scale),
+      Math.floor((contextWindow - reserveTokens) / 2),
+    ),
   }
 }
 
@@ -438,12 +469,14 @@ export async function checkpointRoutine(s: SessionImpl): Promise<StepOutcome> {
   }
   if (s.preset.compaction.enabled && ph.thresholdCheckedSeq !== ph.triggerSeq) {
     const { route, model } = resolveModel(s, 'primary')
+    const contextWindow = contextWindowFor(s, route, model)
+    const { reserveTokens } = compactionSettingsFor(s, contextWindow)
     const cache = lastCacheHint(s)
     if (
       s.compaction.shouldCompact({
         contextTokens: compactionTriggerTokens(s),
-        contextWindow: contextWindowFor(s, route, model),
-        reserveTokens: s.preset.compaction.reserveTokens,
+        contextWindow,
+        reserveTokens,
         ...(cache ? { cache } : {}),
       })
     ) {

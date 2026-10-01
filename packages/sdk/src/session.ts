@@ -503,7 +503,8 @@ export class Session {
     slot: SlotName
     route: string
     model: string
-    thinking?: ThinkingLevel
+    thinking?: ThinkingLevel | null
+    contextWindow?: number | null
   }): Promise<EffectiveFromResult> {
     return this.client.call<EffectiveFromResult>('_agnes/v1/session.setModel', { sessionId: this.id, ...sel })
   }

@@ -287,6 +287,39 @@ function twoRouteHostOptions(
 }
 
 describe('replaySwitchesOnOpen', () => {
+  it('snapshots defaults for new sessions and preserves them when the configured defaults change', async () => {
+    const dataDir = scratch()
+    const provider = (contextWindow: number, thinking: 'high' | 'low') =>
+      new ScriptedProvider({
+        models: [
+          {
+            ...modelRecord('gw', 'm1'),
+            reasoning: true,
+            thinkingLevelMap: { high: 'high', low: 'low' },
+            defaultSettings: { thinking, contextWindow },
+          },
+          modelRecord('alt', 'm2'),
+        ],
+        scripts: [],
+      })
+    const first = await createTestHost(twoRouteHostOptions(dataDir, provider(4096, 'high')))
+    const original = await first.host.createSession({ cwd: dataDir, key: 'defaults-original' })
+    expect(original.preset.model.thinking.primary).toBe('high')
+    expect(original.preset.model.contextWindow?.primary).toBe(4096)
+    await first.host.close()
+    const second = await createTestHost(twoRouteHostOptions(dataDir, provider(6144, 'low')))
+    try {
+      const restored = await second.host.createSession({ cwd: dataDir, key: 'defaults-original' })
+      expect(restored.preset.model.thinking.primary).toBe('high')
+      expect(restored.preset.model.contextWindow?.primary).toBe(4096)
+      const fresh = await second.host.createSession({ cwd: dataDir, key: 'defaults-new' })
+      expect(fresh.preset.model.thinking.primary).toBe('low')
+      expect(fresh.preset.model.contextWindow?.primary).toBe(6144)
+    } finally {
+      await second.host.close()
+    }
+  })
+
   // Two Hosts and a reopen, and the file's first session open: 2 to 6 s on the Windows runner.
   it('reopening a session with a recorded model switch lands on the switched model, not the preset default', async () => {
     const dataDir = scratch()
@@ -347,7 +380,7 @@ describe('replaySwitchesOnOpen', () => {
       })
     const first = await createTestHost(twoRouteHostOptions(dataDir, provider()))
     const s1 = await first.host.createSession({ cwd: dataDir })
-    await s1.setModel({ slot: 'primary', route: 'alt', model: 'm2', thinking: 'high' })
+    await s1.setModel({ slot: 'primary', route: 'alt', model: 'm2', thinking: 'high', contextWindow: 4096 })
     // A second switch on the same slot, re-issuing the same route/model but omitting `thinking` -
     // the effective thinking level is still 'high' in memory, and the ledger's `to` for this call
     // must record that too, or the replay below (which trusts the single latest row per slot as
@@ -361,6 +394,7 @@ describe('replaySwitchesOnOpen', () => {
       expect(reopened.preset.model.route.primary).toBe('alt')
       expect(reopened.preset.model.id.primary).toBe('m2')
       expect(reopened.preset.model.thinking.primary).toBe('high')
+      expect(reopened.preset.model.contextWindow?.primary).toBe(4096)
     } finally {
       await second.host.close()
     }
@@ -402,51 +436,103 @@ describe('replaySwitchesOnOpen', () => {
     }
   })
 
-  it('a later preset switch wins over an earlier model switch on reopen, without writing a new model-switch', async () => {
-    const dataDir = scratch()
-    const coding: PresetDoc = { ...TWO_SLOT_PRESET, name: 'coding' }
-    const options = (provider: NonNullable<TestHostOptions['provider']>): TestHostOptions => ({
-      ...twoRouteHostOptions(dataDir, provider),
-      allowed: ['standard', 'coding'],
-      presets: { standard: TWO_SLOT_PRESET, coding },
-      profileInputs: {
-        user: {
-          name: 'local-dev',
-          presets: { default: 'standard', allowed: ['standard', 'coding'] },
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: TWO_ROUTES },
+  it.each([
+    ['coding', false],
+    ['standard', false],
+    ['coding', true],
+    ['standard', true],
+  ] as const)(
+    'restores the latest %s preset and its later model settings (override: %s)',
+    async (latestPreset, modelAfterPreset) => {
+      const dataDir = scratch()
+      const coding: PresetDoc = {
+        ...TWO_SLOT_PRESET,
+        name: 'coding',
+        model: { route: { primary: 'gw', escalation: 'alt' }, thinking: { primary: 'low' } },
+      }
+      const options = (provider: NonNullable<TestHostOptions['provider']>): TestHostOptions => ({
+        ...twoRouteHostOptions(dataDir, provider),
+        allowed: ['standard', 'coding'],
+        presets: { standard: TWO_SLOT_PRESET, coding },
+        profileInputs: {
+          user: {
+            name: 'local-dev',
+            presets: { default: 'standard', allowed: ['standard', 'coding'] },
+            provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: TWO_ROUTES },
+          },
         },
-      },
-    })
-    const provider = () =>
-      new ScriptedProvider({ models: [modelRecord('gw', 'm1'), modelRecord('alt', 'm2')], scripts: [] })
-    const first = await createTestHost(options(provider()))
-    const s1 = await first.host.createSession({ cwd: dataDir })
-    await s1.setModel({ slot: 'primary', route: 'alt', model: 'm2' })
-    const resolved = first.host.validatePresetSwitch('coding')
-    await s1.setPreset({
-      ...resolved.view,
-      model: {
-        ...resolved.view.model,
-        route: { primary: 'gw', escalation: 'alt' },
-        id: { primary: 'm1', escalation: 'm2' },
-      },
-    })
-    expect(s1.preset.model.route.primary).toBe('gw')
-    expect(s1.preset.model.id.primary).toBe('m1')
-    const key = s1.key
-    const before = (await s1.scan({ type: 'x/core/model-switch', limit: 20 })).length
-    await first.host.close()
-    const second = await createTestHost(options(provider()))
-    const reopened = await second.host.createSession({ cwd: dataDir, key })
-    try {
-      expect(reopened.preset.name).toBe('coding')
-      expect(reopened.preset.model.route.primary).toBe('gw')
-      expect(reopened.preset.model.id.primary).toBe('m1')
-      expect((await reopened.scan({ type: 'x/core/model-switch', limit: 20 })).length).toBe(before)
-    } finally {
-      await second.host.close()
-    }
-  })
+      })
+      const provider = () =>
+        new ScriptedProvider({
+          models: [
+            {
+              ...modelRecord('gw', 'm1'),
+              reasoning: true,
+              thinkingLevelMap: { low: 'low', high: 'high' },
+              defaultSettings: { thinking: 'high', contextWindow: 4096 },
+            },
+            modelRecord('alt', 'm2'),
+          ],
+          scripts: [],
+        })
+      const first = await createTestHost(options(provider()))
+      const s1 = await first.host.createSession({ cwd: dataDir })
+      expect(s1.preset.model.thinking.primary).toBe('high')
+      expect(s1.preset.model.contextWindow?.primary).toBe(4096)
+      await s1.setModel({ slot: 'primary', route: 'alt', model: 'm2' })
+      const resolved = first.host.validatePresetSwitch('coding')
+      await s1.setPreset({
+        ...resolved.view,
+        model: {
+          ...resolved.view.model,
+          route: { primary: 'gw', escalation: 'alt' },
+          id: { primary: 'm1', escalation: 'm2' },
+        },
+      })
+      if (latestPreset === 'standard') {
+        const originalPreset = first.host.validatePresetSwitch('standard')
+        await s1.setPreset({
+          ...originalPreset.view,
+          model: {
+            ...originalPreset.view.model,
+            route: { primary: 'gw', escalation: 'alt' },
+            id: { primary: 'm1', escalation: 'm2' },
+          },
+        })
+      }
+      expect(s1.preset.model.route.primary).toBe('gw')
+      expect(s1.preset.model.id.primary).toBe('m1')
+      if (modelAfterPreset)
+        await s1.setModel({
+          slot: 'primary',
+          route: 'gw',
+          model: 'm1',
+          thinking: 'high',
+          contextWindow: 6144,
+        })
+      const key = s1.key
+      const before = (await s1.scan({ type: 'x/core/model-switch', limit: 20 })).length
+      const presetsBefore = (await s1.scan({ type: 'x/core/preset-switch', limit: 20 })).length
+      await first.host.close()
+      const second = await createTestHost(options(provider()))
+      const reopened = await second.host.createSession({ cwd: dataDir, key })
+      try {
+        expect(reopened.preset.name).toBe(latestPreset)
+        expect(reopened.preset.model.route.primary).toBe('gw')
+        expect(reopened.preset.model.id.primary).toBe('m1')
+        expect(reopened.preset.model.thinking.primary).toBe(
+          modelAfterPreset ? 'high' : latestPreset === 'coding' ? 'low' : undefined,
+        )
+        expect(reopened.preset.model.contextWindow?.primary).toBe(modelAfterPreset ? 6144 : undefined)
+        const restoredContext = (await reopened.projectUI()).usage?.context
+        expect(restoredContext?.window).toBe(modelAfterPreset ? 6144 : 8192)
+        expect((await reopened.scan({ type: 'x/core/model-switch', limit: 20 })).length).toBe(before)
+        expect((await reopened.scan({ type: 'x/core/preset-switch', limit: 20 })).length).toBe(presetsBefore)
+      } finally {
+        await second.host.close()
+      }
+    },
+  )
 
   it('reopening still restores a quiet slot after 200 later switches on another slot', async () => {
     const dataDir = scratch()
@@ -577,7 +663,7 @@ describe('setModel end to end through a real assembly', () => {
       await parent.run({ until: 'turn-end', signal: new AbortController().signal })
       const [completed] = await parent.scan({ type: 'turn/end', order: 'desc', limit: 1 })
       if (!completed) throw new Error('missing completed turn')
-      await parent.setModel({ slot: 'primary', route: b.route, model: b.model })
+      await parent.setModel({ slot: 'primary', route: b.route, model: b.model, contextWindow: 4096 })
 
       const child = await first.host.createSession({
         cwd: dataDir,
@@ -585,6 +671,7 @@ describe('setModel end to end through a real assembly', () => {
         parent: { key: parent.key, boundarySeq: completed.seq },
       })
       expect(child.preset.model.id.primary).toBe(b.model)
+      expect(child.preset.model.contextWindow?.primary).toBe(4096)
       const childKey = child.key
       await first.host.close()
       firstOpen = false
@@ -596,6 +683,7 @@ describe('setModel end to end through a real assembly', () => {
         preset: parent.preset.name,
       })
       expect(reopened.preset.model.id.primary).toBe(b.model)
+      expect(reopened.preset.model.contextWindow?.primary).toBe(4096)
       await reopened.enqueue('next-turn', {
         content: [{ type: 'text', text: 'continue on the branch' }],
         actor: reopened.d.actor,

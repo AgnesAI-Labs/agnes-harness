@@ -394,25 +394,41 @@ export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> 
  */
 export async function setModel(
   s: SessionImpl,
-  sel: { slot: string; route: string; model: string; thinking?: ThinkingLevel },
+  sel: {
+    slot: string
+    route: string
+    model: string
+    thinking?: ThinkingLevel | null
+    contextWindow?: number | null
+  },
 ): Promise<Seq> {
   return s.locked(async () => {
     const modelUnknown = (message: string, x?: Record<string, unknown>) =>
       new CoreError('E_MODEL_UNKNOWN', message, { slot: sel.slot, route: sel.route, model: sel.model, ...x })
     const known = s.d.provider.models().find((m) => m.route === sel.route && m.id === sel.model)
     if (!known) throw modelUnknown(`${sel.route}/${sel.model} is not in the provider's sealed catalogue`)
-    if (sel.thinking !== undefined) {
+    if (sel.thinking !== undefined && sel.thinking !== null) {
       assertThinking(sel.thinking)
       if (!known.reasoning || (known.thinkingLevelMap && !(sel.thinking in known.thinkingLevelMap)))
         throw modelUnknown(`${sel.route}/${sel.model} does not support thinking level '${sel.thinking}'`, {
           thinking: sel.thinking,
         })
     }
+    if (
+      sel.contextWindow !== undefined &&
+      sel.contextWindow !== null &&
+      (!Number.isSafeInteger(sel.contextWindow) ||
+        sel.contextWindow < 1 ||
+        sel.contextWindow > known.contextWindow)
+    )
+      throw modelUnknown('context window exceeds the selected model capacity')
     const priorThinking = s.preset.model.thinking[sel.slot]
+    const priorWindow = s.preset.model.contextWindow?.[sel.slot]
     const from = {
       route: s.preset.model.route[sel.slot] ?? 'default',
       model: s.preset.model.id[sel.slot] ?? null,
       ...(priorThinking === undefined ? {} : { thinking: priorThinking }),
+      ...(priorWindow === undefined ? {} : { contextWindow: priorWindow }),
     }
     // `to` is a full state snapshot, not a diff: the effective thinking level after this call is
     // whatever was explicitly passed, else whatever the slot already carried — but only if the NEW
@@ -429,11 +445,24 @@ export async function setModel(
       priorThinking !== undefined &&
       known.reasoning &&
       (!known.thinkingLevelMap || priorThinking in known.thinkingLevelMap)
-    const effectiveThinking = sel.thinking ?? (thinkingCarriesForward ? priorThinking : undefined)
+    const sameModel = from.route === sel.route && from.model === sel.model
+    const effectiveThinking =
+      sel.thinking === null
+        ? undefined
+        : (sel.thinking ??
+          (thinkingCarriesForward ? priorThinking : sameModel ? undefined : known.defaultSettings?.thinking))
+    const contextWindow =
+      sel.contextWindow === null
+        ? known.contextWindow
+        : (sel.contextWindow ??
+          (sameModel && priorWindow !== undefined
+            ? priorWindow
+            : (known.defaultSettings?.contextWindow ?? known.contextWindow)))
     const to = {
       route: sel.route,
       model: sel.model,
       ...(effectiveThinking === undefined ? {} : { thinking: effectiveThinking }),
+      contextWindow,
     }
     const r = await s.d.log.append([
       s.ev('x/core/model-switch', { slot: sel.slot, from, to }, { ignorable: true }),
@@ -448,6 +477,7 @@ export async function setModel(
         // value out of memory when the new model can't honor it — leaving the key alone on omission
         // (the old conditional-spread pattern) would never clear it, only ever add or overwrite it.
         thinking: { ...s.preset.model.thinking, [sel.slot]: effectiveThinking },
+        contextWindow: { ...s.preset.model.contextWindow, [sel.slot]: contextWindow },
       },
     }
     return r.firstSeq

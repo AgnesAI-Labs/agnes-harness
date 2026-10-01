@@ -50,6 +50,10 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 
 现行配置服务支持账号列表、每账号 route 和默认账号，账号路由可能为 `account-...`。选择界面返回的 route/model，不假设所有 DeepSeek 账号共享同一路由。Provider/模型能力来自目录和合同，保存时还校验所选项；修改默认值不追溯改写旧会话。
 
+Web 账户设置可为所选模型保存 `defaultSettings`：`thinking` 只能选择已安装 adapter 声明的档位，`contextWindow` 必须是模型目录容量以内的正安全整数。新会话保存这些默认值的快照，会话中的后续修改单独持久化，重开与分叉后仍保留；修改账户默认值不会覆盖它们。上下文窗口控制 Harness 的用量统计和压缩预算，与 `model.max_tokens` 分开，不能扩大 Provider 的实际容量。窗口越小，越早触发压缩，预设的预留量、近期记录保留量和摘要额度也会按比例缩小。模型目录容量本身容纳不下预设预留量时，也会相应缩小这些预算。
+
+API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`、`contextWindow`。同一模型下省略字段会保留会话当前值；`thinking: null` 恢复 Provider 自动思考，`contextWindow: null` 恢复目录容量。`_agnes/v1/config.save` 和 OAuth `commit` 接收 `defaultSettings`，省略时保留已保存默认值，传 `{}` 清除。配置与模型列表接口返回能力和默认值，会话用量投影返回当前生效配置。
+
 凭据形式为 `secret://namespace/name`；文件/env/vault adapter 是不同部署面。不要将演示配置里的假 token 复制到真实服务，也不要在 browser `publicConfig`、工具输出或环境 dump 中暴露真实值。
 
 包导出的 [preset 定义](../../packages/protocol/schema/preset.json) 可用正安全整数配置 `model.max_tokens`，例如 `model: { max_tokens: 32768 }`。它设置主模型单次请求的输出额度，与模型目录容量分开；省略时沿用 Provider 默认值。请求 hook 可覆盖它，任务树预算仍可压低额度，应使用所选 Provider 支持的值。该字段属于 preset 定义，不属于 profile 的 `presets` 选择字段或 profile 顶层 `model` 字段。现有会话保留创建时解析的 preset。

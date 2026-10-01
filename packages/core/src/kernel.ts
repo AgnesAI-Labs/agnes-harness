@@ -391,7 +391,21 @@ export class Kernel {
         lane,
         modelSelections: Object.entries(preset.model.id).flatMap(([slot, model]) => {
           const route = preset.model.route[slot]
-          return model && route ? [{ slot, route, model }] : []
+          return model && route
+            ? [
+                {
+                  slot,
+                  route,
+                  model,
+                  ...(preset.model.thinking[slot] === undefined
+                    ? {}
+                    : { thinking: preset.model.thinking[slot] }),
+                  ...(preset.model.contextWindow?.[slot] === undefined
+                    ? {}
+                    : { contextWindow: preset.model.contextWindow[slot] }),
+                },
+              ]
+            : []
         }),
         ...(so.delegation ? { delegation: so.delegation } : {}),
       })

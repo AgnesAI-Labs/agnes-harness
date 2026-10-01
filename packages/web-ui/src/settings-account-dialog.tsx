@@ -69,6 +69,22 @@ export function SettingsAccountDialog() {
                 <span>测试连接</span>
               </Button>
             </div>
+            <Field className="form-field" label="默认思考强度">
+              <SettingsOptionSelect id="config-thinking" />
+            </Field>
+            <Field className="form-field" label="默认上下文窗口（tokens）">
+              <input
+                id="config-context-window"
+                type="number"
+                min={1}
+                step={1}
+                placeholder="自动（模型目录默认值）"
+                aria-describedby="config-model-settings-hint config-error"
+              />
+            </Field>
+            <p id="config-model-settings-hint" className="field-hint">
+              新会话继承这些默认值；已有会话保留自己的配置。
+            </p>
             <p id="config-state" aria-live="polite" />
             <Button id="config-retry" className="secondary-button compact" htmlType="button" hidden>
               重试读取配置

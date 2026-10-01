@@ -849,7 +849,7 @@ describe('setModel', () => {
     expect(rows[0]?.data).toEqual({
       slot: 'primary',
       from: { route: 'default', model: null },
-      to: { route: 'r', model: 'm' },
+      to: { route: 'r', model: 'm', contextWindow: 8192 },
     })
   })
 
@@ -870,14 +870,29 @@ describe('setModel', () => {
       models: () => [{ ...modelRecord('r', 'm'), reasoning: true, thinkingLevelMap: { high: 'high' } }],
     })
     const { session, log } = await openSession({ provider })
-    await session.setModel({ slot: 'primary', route: 'r', model: 'm', thinking: 'high' })
+    await session.setModel({ slot: 'primary', route: 'r', model: 'm', thinking: 'high', contextWindow: 4096 })
     expect(session.preset.model.thinking.primary).toBe('high')
+    expect(session.preset.model.contextWindow?.primary).toBe(4096)
     const rows = await log.scan({ type: 'x/core/model-switch', limit: 5 })
     expect(rows[0]?.data).toEqual({
       slot: 'primary',
       from: { route: 'default', model: null },
-      to: { route: 'r', model: 'm', thinking: 'high' },
+      to: { route: 'r', model: 'm', thinking: 'high', contextWindow: 4096 },
     })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(provider.requests[0]?.sampling?.thinking).toBe('high')
+    const usage = (await session.projectUI()).usage
+    expect(usage?.context.window).toBe(4096)
+    expect(usage?.model.settings).toEqual({ thinking: 'high', contextWindow: 4096 })
+    for (const contextWindow of [0, 1.5, 8193]) {
+      await expect(
+        session.setModel({ slot: 'primary', route: 'r', model: 'm', contextWindow }),
+      ).rejects.toMatchObject({ code: 'E_MODEL_UNKNOWN' })
+    }
+    await session.setModel({ slot: 'primary', route: 'r', model: 'm', thinking: null, contextWindow: null })
+    expect(session.preset.model.thinking.primary).toBeUndefined()
+    expect(session.preset.model.contextWindow?.primary).toBe(8192)
   })
 
   it('omitting thinking leaves the slot at whatever level it already had', async () => {

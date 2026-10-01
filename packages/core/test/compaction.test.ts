@@ -1385,12 +1385,18 @@ describe('routing a summary that is unavailable', () => {
   async function toolHistory(
     summaryScripts: Script[],
     windows: { primary?: number; compaction?: number } = {},
+    primaryInputTokens?: number,
   ) {
+    const completed = textTurn('read all three').map((event) =>
+      event.type === 'usage' && primaryInputTokens !== undefined
+        ? { ...event, tokens: { ...event.tokens, input: primaryInputTokens } }
+        : event,
+    )
     const provider = fakeProvider([
       toolTurn('read', { path: 'a' }),
       toolTurn('read', { path: 'b' }),
       toolTurn('read', { path: 'c' }),
-      textTurn('read all three'),
+      completed,
       ...summaryScripts,
       textTurn('after'),
     ])
@@ -1630,7 +1636,7 @@ describe('routing a summary that is unavailable', () => {
   })
 
   it('elides a first transient threshold failure once the window has less than half the reserve left', async () => {
-    const h = await toolHistory([failure(true)], { primary: 5000 })
+    const h = await toolHistory([failure(true)], { primary: 5000 }, 4500)
     await h.enter('threshold')
     await expectElided(h, /RATE_LIMIT/, true)
   })

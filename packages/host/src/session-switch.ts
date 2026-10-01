@@ -38,7 +38,13 @@ export function validatePresetSwitch(profile: ResolvedProfile, a: Assembled, nam
 export function validateModelSwitch(
   profile: ResolvedProfile,
   a: Assembled,
-  sel: { slot: string; route: string; model: string; thinking?: ThinkingLevel },
+  sel: {
+    slot: string
+    route: string
+    model: string
+    thinking?: ThinkingLevel | null
+    contextWindow?: number | null
+  },
 ): void {
   const declared =
     (profile.provider.routes ?? []).some((route) => route.route === sel.route) ||
@@ -55,6 +61,7 @@ export function validateModelSwitch(
     )
   if (
     sel.thinking !== undefined &&
+    sel.thinking !== null &&
     (!record.reasoning || (record.thinkingLevelMap && !(sel.thinking in record.thinkingLevelMap)))
   )
     throw new HostError(
@@ -62,6 +69,14 @@ export function validateModelSwitch(
       `the requested model does not support thinking level '${sel.thinking}'`,
       { detail: { slot: sel.slot, route: sel.route, model: sel.model, thinking: sel.thinking } },
     )
+  if (
+    sel.contextWindow !== undefined &&
+    sel.contextWindow !== null &&
+    (!Number.isSafeInteger(sel.contextWindow) ||
+      sel.contextWindow < 1 ||
+      sel.contextWindow > record.contextWindow)
+  )
+    throw new HostError('E_MODEL_UNSUPPORTED', 'context window exceeds the selected model capacity')
 }
 
 /**
@@ -69,16 +84,14 @@ export function validateModelSwitch(
  * to whoever asked for it. core's `setPreset`/`setModel` take effect in memory only and write an
  * ignorable audit event - nothing about them survives a fresh process opening the same ledger except
  * that audit trail, so this is the one place that trail gets read back and turned into live state
- * again. A session that was never switched scans two empty result sets and applies nothing; a
- * session that is already live and already agrees with what it last recorded (the common case -
- * `createSession` called again for a session that never left memory) applies nothing either, per the
- * comparisons below. Only a genuine fresh open that disagrees with its own ledger does real work.
+ * again. The last preset establishes the baseline; only model switches after it can override that
+ * view. Applying the recovered views in memory never writes another switch event.
  *
  * Wired into `createSession` alone, not repeated by daemon or sdk: resuming the last switch is part
  * of what "open this session" means, not a separate recovery command a caller has to remember to
  * issue.
  */
-type ModelTo = { route: string; model: string; thinking?: ThinkingLevel }
+type ModelTo = { route: string; model: string; thinking?: ThinkingLevel; contextWindow?: number }
 
 const MODEL_SWITCH_PAGE = 200
 
@@ -91,26 +104,25 @@ export async function replaySwitchesOnOpen(
   const lastPresetRow = presetRows[0]
   const lastPreset = lastPresetRow?.data as { to: string } | undefined
   const lastPresetSeq = lastPresetRow?.seq
-  // Guarded by "does the live session already agree", not just "was there ever a switch row": a
-  // cache hit on an already-open session (Kernel.session() returns the existing instance rather than
-  // a fresh one whenever createSession is called again for a key still live) would otherwise re-run
-  // setPreset/setModel and write a redundant audit row on every single createSession call for a busy
-  // session, not only on a genuine cross-process resume.
-  if (lastPreset && session.preset.name !== lastPreset.to) {
+  const latestPerSlot = await latestModelSwitchPerSlot(session)
+  // Finish scanning before updating the recovered view.
+  // Names can agree while session/start has restored older model settings. A later preset always
+  // supersedes that initial snapshot, even after switching away and back to the original name.
+  if (lastPreset) {
     const resolved = validatePresetSwitch(profile, a, lastPreset.to)
     applyPresetInMemory(session, pinPresetRoutes(resolved.view, materializeRoutes(resolved.view, profile)))
   }
   // Latest switch per slot across the whole ledger, not a 200-row window: a busy slot must not
   // push a quiet slot's last switch out of the restore set. Model rows at or before the last
   // preset are already superseded by that preset's view.
-  const latestPerSlot = await latestModelSwitchPerSlot(session)
   for (const [slot, rec] of latestPerSlot) {
     if (lastPresetSeq !== undefined && rec.seq <= lastPresetSeq) continue
     const to = rec.to
     if (
       session.preset.model.route[slot] === to.route &&
       session.preset.model.id[slot] === to.model &&
-      session.preset.model.thinking[slot] === to.thinking
+      session.preset.model.thinking[slot] === to.thinking &&
+      session.preset.model.contextWindow?.[slot] === to.contextWindow
     )
       continue
     // Restore the durable selection even when its account was removed. Opening history must
@@ -156,6 +168,7 @@ function applyModelInMemory(session: HostSession, slot: string, to: ModelTo): vo
       route: { ...session.preset.model.route, [slot]: to.route },
       id: { ...session.preset.model.id, [slot]: to.model },
       thinking: { ...session.preset.model.thinking, [slot]: to.thinking },
+      contextWindow: { ...session.preset.model.contextWindow, [slot]: to.contextWindow },
     },
   }
   applyPresetInMemory(session, view)

@@ -98,7 +98,7 @@ describe('model.json', () => {
       $defs: Record<string, unknown>
     }
     const names = Object.keys(m.$defs)
-    expect(names).toHaveLength(25)
+    expect(names).toHaveLength(26)
     for (const shipped of [
       'JsonValue',
       'ContentBlock',
@@ -107,6 +107,7 @@ describe('model.json', () => {
       'ResponseMeta',
       'SlotName',
       'ThinkingLevel',
+      'ModelSettings',
       'AiErrorCode',
       'DecodeRule',
       'Sha256',

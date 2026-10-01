@@ -1130,13 +1130,15 @@ export function registerAgnes(
       slot: string
       route: string
       model: string
-      thinking?: ThinkingLevel
+      thinking?: ThinkingLevel | null
+      contextWindow?: number | null
     }
     const sel = {
       slot: p.slot,
       route: p.route,
       model: p.model,
       ...(p.thinking === undefined ? {} : { thinking: p.thinking }),
+      ...(p.contextWindow === undefined ? {} : { contextWindow: p.contextWindow }),
     }
     requireOwner('session.setModel', p.sessionId, c)
     try {
@@ -1730,6 +1732,8 @@ export function registerAgnes(
             id: model.id,
             ...(model.reasoning === undefined ? {} : { reasoning: model.reasoning }),
             ...(model.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: model.thinkingLevelMap }),
+            contextWindow: model.contextWindow,
+            ...(model.defaultSettings === undefined ? {} : { defaultSettings: model.defaultSettings }),
           })),
         ),
       },
