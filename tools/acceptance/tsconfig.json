@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": [
+    "runtime/ast.ts",
+    "runtime/baseline-inventory.test.ts",
+    "runtime/git-at.ts",
+    "runtime/inventory.ts",
+    "runtime/record-baseline-inventory.ts",
+    "runtime/sources.ts"
+  ],
+  "exclude": ["dist", "runtime/prototype/**"]
+}

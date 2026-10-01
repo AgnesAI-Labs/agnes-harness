@@ -71,6 +71,12 @@
       "formatter": {
         "enabled": false
       }
+    },
+    {
+      "includes": ["artifacts/runtime-baseline/inventory.json"],
+      "formatter": {
+        "enabled": false
+      }
     }
   ]
 }
