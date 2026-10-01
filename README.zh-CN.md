@@ -29,7 +29,7 @@
   <img src="docs/assets/readme/hero.gif" alt="AGH 在真实项目中工作：Agent 读取退款规则与订单数据，运行命令前请求审批，实际验证结果，给出可核对的表格，并在轨迹视图中记录每一步" width="100%" />
 </p>
 
-<p align="center"><sub>本地实例中的一次真实运行：读代码、运行命令前先审批、验证、作答、留痕。使用 Agnes AI <code>agnes-3.0-flash</code> 录制，不同模型的输出会有差异。</sub></p>
+<p align="center"><sub>读代码、运行命令前先审批、验证、作答，每一步都留痕。</sub></p>
 
 <details>
 <summary><kbd>目录</kbd></summary>

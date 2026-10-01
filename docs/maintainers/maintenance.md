@@ -63,4 +63,4 @@ Keep role metaphors separate from implementation claims. Solid outlines denote e
 
 ## README demo media
 
-The banner, animations, and screenshots in [`docs/assets/readme/`](../assets/readme/) are recordings of a real local instance, not mockups. Record with an isolated `AGH_HOME`, a synthetic workspace, and a configured model; keep credentials, personal paths, and customer data out of every frame. Check each answer shown on screen for correctness before using a take, and keep captions within what the guides and [known limitations](../reference/limitations.md) state. Refresh the media when the interface or a demonstrated flow changes.
+Record the banner, animations, and screenshots in [`docs/assets/readme/`](../assets/readme/) from a local instance using an isolated `AGH_HOME`, a synthetic workspace, and a configured model; keep credentials, personal paths, and customer data out of every frame. Check each answer shown on screen for correctness before using a take, and keep captions within what the guides and [known limitations](../reference/limitations.md) state. Refresh the media when the interface or a demonstrated flow changes.

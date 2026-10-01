@@ -29,7 +29,7 @@ Taking AI into a real deployment is rarely about the model alone. It is about th
   <img src="docs/assets/readme/hero.gif" alt="AGH working in a real project: the agent reads the refund rules and order data, asks for approval before running a command, verifies the result, returns a checkable table, and records every step in the trajectory view" width="100%" />
 </p>
 
-<p align="center"><sub>A real run in a local instance: read the code, ask before running a command, verify, answer, record. Recorded with Agnes AI <code>agnes-3.0-flash</code>; output varies by model. The Web interface currently ships in Chinese, so captions are bilingual.</sub></p>
+<p align="center"><sub>Read the code, ask before running a command, verify, answer, and record every step. The Web interface currently ships in Chinese, so captions are bilingual.</sub></p>
 
 <details>
 <summary><kbd>Contents</kbd></summary>
