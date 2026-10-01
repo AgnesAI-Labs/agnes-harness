@@ -8,6 +8,7 @@ import type {
   ServiceRequirement,
 } from '@agnes/extension-api/runtime'
 import { RuntimeServiceCatalog } from '@agnes/protocol/runtime'
+import { createRestrictedEffectsFixture, type RestrictedEffectsFixture } from './effects.js'
 import {
   type AssertionRecord,
   type AssertionStatus,
@@ -87,6 +88,7 @@ export interface CaseContext {
   readonly clock: InjectedClock
   readonly container: TestServiceContainer
   readonly inbox: RuntimeInboxFixture
+  readonly effects: RestrictedEffectsFixture
 }
 
 export interface CaseRegistration {
@@ -109,6 +111,7 @@ export interface TestServiceBinding {
   readonly binding: BindingRef
   readonly query?: BoundService['query']
   readonly compute?: BoundService['compute']
+  readonly eventsOutbox?: NonNullable<BoundService['eventsOutbox']>
   readonly artifactAccess?: NonNullable<BoundService['artifactAccess']>
   readonly blobRead?: NonNullable<BoundService['blobRead']>
   readonly clientIngress?: NonNullable<BoundService['clientIngress']>
@@ -173,6 +176,7 @@ function project(binding: TestServiceBinding): BoundService {
     binding: binding.binding,
     query: binding.query ?? (async () => unavailable('query')),
     compute: binding.compute ?? (async () => unavailable('compute')),
+    ...(binding.eventsOutbox !== undefined ? { eventsOutbox: binding.eventsOutbox } : {}),
     ...(binding.artifactAccess !== undefined ? { artifactAccess: binding.artifactAccess } : {}),
     ...(binding.blobRead !== undefined ? { blobRead: binding.blobRead } : {}),
     ...(binding.clientIngress !== undefined ? { clientIngress: binding.clientIngress } : {}),
@@ -248,6 +252,7 @@ export interface ConformanceHarness {
   readonly kind: 'conformance-harness'
   readonly container: TestServiceContainer
   readonly inbox: RuntimeInboxFixture
+  readonly effects: RestrictedEffectsFixture
   registerCase(registration: CaseRegistration): void
   run(request: ConformanceRunRequest): Promise<ConformanceReport>
 }
@@ -344,11 +349,13 @@ function refusalAssertion(
 export function createConformanceHarness(): ConformanceHarness {
   const container = createTestServiceContainer()
   const inbox = createRuntimeInboxFixture()
+  const effects = createRestrictedEffectsFixture()
   const cases: CaseRegistration[] = []
   return {
     kind: 'conformance-harness',
     container,
     inbox,
+    effects,
     registerCase(registration) {
       if (!knownScenario(registration.scenario) || !knownQualification(registration.qualification)) {
         throw new Error('case scenario or qualification is not recognized')
@@ -375,6 +382,7 @@ export function createConformanceHarness(): ConformanceHarness {
           clock: request.clock,
           container,
           inbox,
+          effects,
         })
         if (input.fixture !== null && !(FIXTURE_MARKS as readonly string[]).includes(input.fixture)) {
           throw new Error('case fixture mark is not recognized')

@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs'
 import type {
   ArtifactAccessPort,
   CallContext,
+  DataRef,
+  EffectStreamHandle,
+  EventsOutboxControl,
   ScopedDependencies,
   ScopeRef,
   ServiceRequirement,
@@ -12,6 +15,7 @@ import {
   type BuildIdentity,
   CATALOG_GATES,
   createConformanceHarness,
+  createRestrictedEffectsFixture,
   createRuntimeInboxFixture,
   createTestServiceContainer,
   discoverContracts,
@@ -21,6 +25,7 @@ import {
   LEGACY_FIXTURES,
   PROVIDER_ABSENT,
   providerFileForContract,
+  RESTRICTED_EFFECTS_FIXTURE,
   type ReportDraft,
   SCENARIOS,
   serializeReport,
@@ -599,6 +604,156 @@ describe('test service container', () => {
     expect(rooted.ok).toBe(false)
     if (!rooted.ok)
       expect(rooted.error).toMatchObject({ code: 'denied', detailCode: 'service_container_closed' })
+  })
+
+  it('forwards eventsOutbox only when the binding registers it', () => {
+    const container = createTestServiceContainer()
+    const binding = {
+      bindingId: 'binding-1',
+      contract: 'agh.loop',
+      logicalName: 'loop',
+      providerId: 'reference',
+    }
+    const eventsOutbox: EventsOutboxControl = {
+      async deadLetters() {
+        throw new Error('not called')
+      },
+      async redriveOutbox() {
+        throw new Error('not called')
+      },
+    }
+    container.register({ requirement: requirement('workspace', ['read']), binding })
+    const without = container.dependencies.get(requirement('workspace', ['read']))
+    expect(without.ok).toBe(true)
+    if (!without.ok) return
+    expect(Object.hasOwn(without.value, 'eventsOutbox')).toBe(false)
+    container.register({
+      requirement: requirement('workspace', ['read'], 'with-outbox'),
+      binding: { ...binding, bindingId: 'binding-2', logicalName: 'with-outbox' },
+      eventsOutbox,
+    })
+    const withPort = container.dependencies.get(requirement('workspace', ['read'], 'with-outbox'))
+    expect(withPort.ok).toBe(true)
+    if (!withPort.ok) return
+    expect(Object.hasOwn(withPort.value, 'eventsOutbox')).toBe(true)
+    expect(withPort.value.eventsOutbox).toBe(eventsOutbox)
+    expect(Object.hasOwn(withPort.value, 'artifactAccess')).toBe(false)
+  })
+})
+
+describe('restricted effects fixture', () => {
+  const inputRef: DataRef = {
+    kind: 'inline',
+    schema: { typeId: 'demo/input@1', revision: 1, digest: 'a'.repeat(64) },
+    value: null,
+    digest: 'b'.repeat(64),
+    bytes: 4,
+  }
+  const stream: EffectStreamHandle = {
+    streamId: 'stream-1',
+    chunks: (async function* () {})(),
+    ended: Promise.resolve({
+      streamId: 'stream-1',
+      lastSeq: 0,
+      status: 'completed',
+      externalRequests: [],
+      usage: [],
+    }),
+    async cancel() {},
+    async close() {},
+  }
+
+  it('forwards a registered port and operation, refuses the rest, and records both', async () => {
+    const peer = createRestrictedEffectsFixture()
+    const context = contextFor(workspaceScope)
+    const uploaded: number[] = []
+    peer.allow({
+      port: 'invoke',
+      operation: 'blob.write',
+      handle: async () => ({ ok: true, value: inputRef }),
+    })
+    peer.allow({
+      port: 'stream',
+      operation: 'blob.read',
+      handle: async () => ({ ok: true, value: stream }),
+    })
+    peer.allow({
+      port: 'upload',
+      operation: 'blob.write',
+      handle: async (_request, source) => {
+        for await (const chunk of source) uploaded.push(...chunk)
+        return { ok: true, value: inputRef }
+      },
+    })
+    expect(() =>
+      peer.allow({
+        port: 'upload',
+        operation: 'blob.write',
+        handle: async () => ({ ok: true, value: inputRef }),
+      }),
+    ).toThrow(/effect already registered/)
+    expect(() =>
+      peer.allow({
+        port: 'invoke',
+        operation: '',
+        handle: async () => ({ ok: true, value: inputRef }),
+      }),
+    ).toThrow(/effect operation is empty/)
+
+    const invoked = await peer.ports.invoke({ operation: 'blob.write', input: inputRef }, context)
+    expect(invoked).toEqual({ ok: true, value: inputRef })
+    const wrongPort = await peer.ports.stream({ operation: 'blob.write', input: inputRef }, context)
+    expect(wrongPort.ok).toBe(false)
+    if (wrongPort.ok) return
+    expect(wrongPort.error.detailCode).toBe('operation_not_supported')
+    const sealed = await peer.ports.upload(
+      { operation: 'blob.seal', input: inputRef },
+      (async function* () {
+        yield new Uint8Array([9])
+      })(),
+      context,
+    )
+    expect(sealed).toMatchObject({
+      ok: false,
+      error: {
+        code: 'incompatible',
+        detailCode: 'operation_not_supported',
+        message: 'upload blob.seal is not registered',
+        retryAdvice: { kind: 'never' },
+        diagnosticId: 'restricted-effects',
+      },
+    })
+    const streamed = await peer.ports.stream({ operation: 'blob.read', input: inputRef }, context)
+    expect(streamed).toEqual({ ok: true, value: stream })
+    const missingStream = await peer.ports.stream({ operation: 'blob.missing', input: inputRef }, context)
+    expect(missingStream.ok).toBe(false)
+    if (missingStream.ok) return
+    expect(missingStream.error.detailCode).toBe('operation_not_supported')
+
+    const sent = await peer.ports.upload(
+      { operation: 'blob.write', input: inputRef },
+      (async function* () {
+        yield new Uint8Array([1, 2])
+        yield new Uint8Array([3])
+      })(),
+      context,
+    )
+    expect(sent).toEqual({ ok: true, value: inputRef })
+    expect(uploaded).toEqual([1, 2, 3])
+    expect(peer.calls()).toEqual([
+      { port: 'invoke', operation: 'blob.write' },
+      { port: 'stream', operation: 'blob.write' },
+      { port: 'upload', operation: 'blob.seal' },
+      { port: 'stream', operation: 'blob.read' },
+      { port: 'stream', operation: 'blob.missing' },
+      { port: 'upload', operation: 'blob.write' },
+    ])
+    expect(peer.mark).toBe(RESTRICTED_EFFECTS_FIXTURE)
+    const marked = judgeReport(draft([assertion({ fixture: peer.mark })]))
+    expect(marked.status).toBe('passed')
+    expect(marked.assertions[0]?.fixture).toBe('restricted-effects')
+    const harness = createConformanceHarness()
+    expect(harness.effects.mark).toBe(RESTRICTED_EFFECTS_FIXTURE)
   })
 })
 

@@ -1,4 +1,11 @@
 export type {
+  RestrictedEffectCall,
+  RestrictedEffectGrant,
+  RestrictedEffectPort,
+  RestrictedEffectsFixture,
+} from './effects.js'
+export { createRestrictedEffectsFixture, RESTRICTED_EFFECTS_FIXTURE } from './effects.js'
+export type {
   AssertionRecord,
   AssertionStatus,
   BuildIdentity,

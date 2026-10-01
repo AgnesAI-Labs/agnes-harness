@@ -1367,7 +1367,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with those gaps on the config-case base. Measured 1388, exact, no spare.
   // Omitted reuse, per-implementation and gate take defaults. Measured 1332, exact, no spare.
   // Re-measured with those defaults on the config-case base. Measured 1403, exact, no spare.
-  'packages/extension-api/testkit': 1403,
+  // Restricted effects peer and the events outbox projection. Measured 1442, exact, no spare.
+  // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
+  'packages/extension-api/testkit': 1513,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
