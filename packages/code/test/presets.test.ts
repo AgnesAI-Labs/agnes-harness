@@ -207,7 +207,7 @@ describe('standard.yaml', () => {
     expect(doc.mcp).toEqual({ defer: true })
     expect(doc.sandbox).toEqual({ level: 'L0', required: false, on_unavailable: 'allow' })
     // Spend ceiling for one request. Widening it costs money silently; nothing else asserts it.
-    expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: 80 })
+    expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
     // `isolation: worktree` is what keeps a subagent's writes off the operator's checkout. `none`
     // parses just as well and is a containment change, so the value is pinned, not just the key.
     expect(doc.subagent).toEqual({ max_depth: 1, max_fan_out: 4, isolation: 'worktree' })
@@ -358,8 +358,8 @@ describe('claw', () => {
     expect((doc.approval as Record<string, unknown>).command_policy).toBeUndefined()
   })
 
-  it('raises the step ceiling and subagent depth for unattended runs', () => {
-    expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: 200 })
+  it('removes the step ceiling and raises subagent depth for unattended runs', () => {
+    expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
     expect(doc.subagent).toEqual({ max_depth: 2, max_fan_out: 4 })
     expect(doc.surfaces).toEqual(['daemon', 'sdk'])
     // No cli and no acp: both are somebody sitting in front of the run, which is what this recipe

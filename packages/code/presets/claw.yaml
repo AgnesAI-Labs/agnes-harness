@@ -17,9 +17,8 @@ approval: { on_unavailable: park }
 # the platform cannot provide L1. An unattended run has no operator to notice that the isolation it
 # assumed is not there.
 sandbox: { level: L1, required: true }
-# A long run is the reason this recipe exists, so the step ceiling is raised - and the per-request
-# spend ceiling is not, because a longer run is not a licence for a more expensive single request.
-budget: { per_request_cap: 4000, max_steps: 200 }
+# Long tasks have no cumulative step ceiling; the per-request spend ceiling still applies.
+budget: { per_request_cap: 4000, max_steps: null }
 subagent: { max_depth: 2, max_fan_out: 4 }
 # There is no operator to prompt, so an extension asking for input is declined rather than left
 # hanging until the turn's deadline.

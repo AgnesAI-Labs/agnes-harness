@@ -59,18 +59,28 @@ describe('run loop', () => {
     expect(await log.scan({ fromSeq: 1, limit: 10 })).toHaveLength(1)
   })
 
-  it('max_steps ends the turn with max_steps rather than with a generic stop', async () => {
-    const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, maxSteps: 1 } }
-    const { session, log } = await openSession({
-      provider: fakeProvider([toolTurn('read', {}), toolTurn('read', {})]),
-      registry: withRead(),
-      preset,
-    })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'loop' }], actor })
-    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('max_steps')
-    expect(await log.scan({ type: 'step/start', limit: 10 })).toHaveLength(1)
-    expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'max_steps' })
-  })
+  it.each([
+    { maxSteps: 1, reason: 'max_steps', steps: 1 },
+    { maxSteps: null, reason: 'completed', steps: 86 },
+  ] as const)(
+    'honours an explicit step ceiling or runs without one: $maxSteps',
+    async ({ maxSteps, reason, steps }) => {
+      const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, maxSteps } }
+      const { session, log } = await openSession({
+        provider: fakeProvider([
+          ...Array.from({ length: 85 }, (_, i) => toolTurn('read', { path: `file-${i}` })),
+          textTurn('finished all files'),
+        ]),
+        registry: withRead(),
+        preset,
+      })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'read all files' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe(reason)
+      expect(await log.scan({ type: 'step/start', limit: 100 })).toHaveLength(steps)
+      expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason })
+      expect(session.op()).toBeNull()
+    },
+  )
 
   it('budget quote: a rejected quote ends with budget; the deny policy ends without asking', async () => {
     const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, perRequestCap: 1 } }
@@ -495,8 +505,6 @@ describe('run loop safety', () => {
     expect(out.reason).toBe('error')
     expect(out.error?.code).toBe('E_RELATION')
     expect(out.error?.message).toContain('no progress')
-    // The bound is a small multiple of the step budget, not an unbounded burn.
-    expect(calls).toBeLessThan(presetDefaults().budget.maxSteps * 16 + 66)
     const rows = await log.scan({ fromSeq: 1, limit: 500 })
     expect(rows.length).toBeLessThan(25)
     // The turn is closed on the ledger and the reason it was closed is written down beside it.

@@ -101,6 +101,7 @@ async function prompt(session: HostSession, value: string) {
 
 type ToolResult = {
   name?: string
+  code?: string
   isError?: boolean
   content?: Array<{ type: string; text?: string }>
 }
@@ -322,8 +323,11 @@ describe('subagents in a workspace-bound Host session', () => {
       // Refused exactly as the parent's identical write is, under the same enforcement posture.
       expect(parentWrite?.isError).toBe(true)
       expect(outsideWrite?.isError).toBe(true)
+      expect(textOf(parentWrite)).toContain('write failed before writing:')
+      expect(textOf(parentWrite)).toContain('E_FS_DENIED')
+      expect(textOf(outsideWrite)).toBe(textOf(parentWrite))
+      expect(outsideWrite?.code).toBe(parentWrite?.code)
       expect(outsideWrite).toMatchObject({
-        code: (parentWrite as { code?: string }).code,
         enforcement: (parentWrite as { enforcement?: unknown }).enforcement,
       })
       expect(outsideWrite).toMatchObject({ enforcement: { level: 'full' } })

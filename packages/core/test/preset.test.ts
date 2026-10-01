@@ -27,7 +27,7 @@ describe('preset view', () => {
       preflight: 'estimate',
       perRequestCap: null,
       onExceed: 'quote',
-      maxSteps: 50,
+      maxSteps: null,
     })
     expect(d.approval).toEqual({
       onTimeout: 'rejected',
@@ -171,6 +171,7 @@ describe('preset view', () => {
     expect(v.budget.perRequestCap).toBeNull()
     expect(v.budget.maxSteps).toBe(0)
     expect(v.compaction.enabled).toBe(false)
+    expect(readPreset({ budget: { max_steps: null } }, 'unlimited').budget.maxSteps).toBeNull()
     // Only an absent key falls back. A null written where a number belongs is passed through for
     // the host validator to have already rejected, not quietly turned into the default — asserting
     // it on per_request_cap alone proves nothing, because its default is null.
@@ -180,7 +181,7 @@ describe('preset view', () => {
 
   it('ignores a camelCase key, so a mis-spelled document keeps the default instead of half-applying', () => {
     const v = readPreset({ budget: { maxSteps: 80 } }, 'typo')
-    expect(v.budget.maxSteps).toBe(50)
+    expect(v.budget.maxSteps).toBeNull()
   })
 
   it('survives a document whose branch is a scalar instead of an object', () => {
