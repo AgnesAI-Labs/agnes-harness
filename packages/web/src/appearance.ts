@@ -1,5 +1,6 @@
 import { renderRegion } from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
+import { applyLocaleText, isUiLocale, syncLocaleRadios, type UiLocale } from './locale-preference.js'
 import { readSkinCache } from './skin.js'
 import {
   applyFontScale,
@@ -23,28 +24,42 @@ export type AppearanceController = {
 
 const THEME_INPUT = 'input[name="agnes-theme"]'
 const FONT_SCALE_INPUT = 'input[name="agnes-font-scale"]'
+const LOCALE_INPUT = 'input[name="agnes-locale"]'
+
+export type AppearanceLocale = {
+  current(): UiLocale
+  /** 写入偏好并切换语言。文案回填由本模块在调用之后完成。 */
+  select(locale: UiLocale): void
+  text(key: string): string
+}
 
 /**
  * 把设置对话框「通用」分页的单选组接到偏好上。
  *
  * 变更即时生效；写存储失败只损失持久化，不回滚已应用的外观。
- * 两个组各自独立，互不影响。
+ * 配色、字号和语言各自独立，互不影响。
  */
 export function bindAppearance(options: {
   scope: ParentNode
   root: ThemeRoot & FontScaleRoot
   storage: Pick<Storage, 'getItem' | 'setItem'>
   prefersDark?: () => boolean
+  locale?: AppearanceLocale
 }): AppearanceController {
   const prefersDark = options.prefersDark ?? (() => systemPrefersDark(globalThis))
   const themeInputs = [...options.scope.querySelectorAll<HTMLInputElement>(THEME_INPUT)]
   const fontScaleInputs = [...options.scope.querySelectorAll<HTMLInputElement>(FONT_SCALE_INPUT)]
+  const localeInputs = [...options.scope.querySelectorAll<HTMLInputElement>(LOCALE_INPUT)]
 
   const sync = (): void => {
     const theme = readThemePreference(options.storage)
     for (const input of themeInputs) input.checked = input.value === theme
     const scale = readFontScale(options.storage)
     for (const input of fontScaleInputs) input.checked = input.value === scale
+    if (options.locale) {
+      syncLocaleRadios(options.scope, options.locale.current())
+      applyLocaleText(options.scope, options.locale.text)
+    }
   }
 
   for (const input of themeInputs) {
@@ -63,6 +78,14 @@ export function bindAppearance(options: {
       if (!input.checked || !isFontScale(input.value)) return
       writeFontScale(options.storage, input.value)
       applyFontScale(options.root, input.value)
+    })
+  }
+
+  for (const input of localeInputs) {
+    input.addEventListener('change', () => {
+      if (!input.checked || !isUiLocale(input.value) || !options.locale) return
+      options.locale.select(input.value)
+      applyLocaleText(options.scope, options.locale.text)
     })
   }
 

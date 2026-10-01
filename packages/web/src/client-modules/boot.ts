@@ -26,6 +26,14 @@ import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
 import { BuiltinWebUnitRegistry } from '@agnes/web-units'
 import { createElement } from 'react'
+import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '../locale-catalog.js'
+import {
+  applyDocumentLocale,
+  applyLocaleText,
+  LOCALE_STORAGE_KEY,
+  readLocalePreference,
+  syncLocaleRadios,
+} from '../locale-preference.js'
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -138,7 +146,10 @@ export async function startClientModules(options: {
   const theme = new ThemeService(ctx, resolveTheme(pref, prefersDark.matches))
   const session = new SessionService(ctx, undefined, options.agnes)
   const resources = new ClientResourceService(ctx, options.agnes, session)
-  const locale = new LocaleService(ctx, document.documentElement.lang || 'zh-CN')
+  const storedLocale = readLocalePreference(safeThemeStorage())
+  applyDocumentLocale(document.documentElement, storedLocale)
+  const locale = new LocaleService(ctx, storedLocale)
+  locale.register(WEB_LOCALE_NAMESPACE, webLocaleCatalog)
   const commands = new CommandService(ctx, options.authorizeCommand)
 
   const registry = (ctx as unknown as { slots: SlotRegistry }).slots
@@ -156,6 +167,17 @@ export async function startClientModules(options: {
   window.addEventListener('agnes:theme-changed', () => {
     theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
   })
+  const applyStoredLocale = (): void => {
+    const next = readLocalePreference(safeThemeStorage())
+    applyDocumentLocale(document.documentElement, next)
+    locale.setLocale(next)
+    syncLocaleRadios(document, next)
+    applyLocaleText(document, (key) => locale.t(key))
+  }
+  window.addEventListener('storage', (event) => {
+    if (event.key === LOCALE_STORAGE_KEY) applyStoredLocale()
+  })
+  window.addEventListener('agnes:locale-changed', applyStoredLocale)
 
   // workbench.panel 挂载点：宿主划定的容器 + React root（WC8）。
   const panelRoots: AntdRoot[] = []

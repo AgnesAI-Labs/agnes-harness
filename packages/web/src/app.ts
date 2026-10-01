@@ -34,6 +34,7 @@ import {
   findApproval,
   type LiveProjection,
 } from './live-projection.js'
+import { applyDocumentLocale, readLocalePreference, writeLocalePreference } from './locale-preference.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
 import { type PermissionMode, permissionLabel, yoloEnabled } from './permission-picker.js'
@@ -1434,10 +1435,21 @@ addEventListener('focus', () => {
       if (!element('archived-settings-pane', 'section').hidden) await sessionActions.loadArchived()
     })
 })
+const appearanceStorage = safeThemeStorage(window)
 const appearance = bindAppearance({
   scope: document,
   root: document.documentElement,
-  storage: safeThemeStorage(window),
+  storage: appearanceStorage,
+  locale: {
+    current: () => readLocalePreference(appearanceStorage),
+    select: (value) => {
+      writeLocalePreference(appearanceStorage, value)
+      applyDocumentLocale(document.documentElement, value)
+      clientModules.locale.setLocale(value)
+      window.dispatchEvent(new CustomEvent('agnes:locale-changed'))
+    },
+    text: (key) => clientModules.locale.t(key),
+  },
 })
 /**
  * 皮肤选择。清单来自 `config.get()` 报出的 profile——daemon 只接受它自己那一个 profile，
@@ -1446,7 +1458,6 @@ const appearance = bindAppearance({
  */
 /** 最近一次拉到的清单，供选中时取样式表与 token；清单变了会整体替换。 */
 let skinRoster: SkinRosterEntry[] = []
-const appearanceStorage = safeThemeStorage(window)
 /** 回落到 `cssUrl` 时的同源取数器；只接受 `/skins/` 下的路径（见 `fetchSkinCss`）。 */
 const skinCssOptions = { fetcher: (input: string) => fetch(input), origin: location.origin }
 /** 每次显式选择 +1：让在途的对账不能把用户刚做的选择覆盖回去。 */

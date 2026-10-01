@@ -1,3 +1,4 @@
+import { applyDocumentLocale, LOCALE_STORAGE_KEY, readLocalePreference } from './locale-preference.js'
 import {
   applySkinTokens,
   readSkinCache,
@@ -64,6 +65,7 @@ const paint = (): void => {
   applyTheme(document.documentElement, mode)
   // 字号同样在首帧前定好，避免先按 100% 排一次版再跳。
   applyFontScale(document.documentElement, readFontScale(storage))
+  applyDocumentLocale(document.documentElement, readLocalePreference(storage))
   paintSkin(mode)
 }
 
@@ -75,9 +77,11 @@ watchSystemTheme(window, paint)
 // 同源的其他文档改了偏好或换了皮肤时同步（设置对话框里嵌的 admin / resources iframe）。
 // storage 事件只在「其他」文档触发，所以这里不会与自身写入形成回环。
 window.addEventListener('storage', (event) => {
-  if (event.key !== THEME_STORAGE_KEY && event.key !== SKIN_STORAGE_KEY) return
+  if (event.key !== THEME_STORAGE_KEY && event.key !== SKIN_STORAGE_KEY && event.key !== LOCALE_STORAGE_KEY)
+    return
   paint()
 })
 
 // Same-document preference changes do not emit a storage event. Repaint skin tokens too.
 window.addEventListener('agnes:theme-changed', paint)
+window.addEventListener('agnes:locale-changed', paint)

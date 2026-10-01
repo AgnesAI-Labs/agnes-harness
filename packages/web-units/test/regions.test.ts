@@ -47,6 +47,23 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-save')?.getAttribute('form')).toBe('config-form')
   })
 
+  it('renders the appearance language switch in English', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    roots.push(root)
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'appearance' })))
+    const english = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')
+    const chinese = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="zh-CN"]')
+    expect(english).toBeInstanceOf(HTMLInputElement)
+    expect(english?.checked).toBe(true)
+    expect(chinese?.checked).toBe(false)
+    expect(host.querySelector('[data-i18n="settings.appearance.language"]')?.textContent).toBe('Language')
+    expect(
+      host.querySelector('[data-i18n-aria="settings.appearance.language"]')?.getAttribute('aria-label'),
+    ).toBe('Language')
+  })
+
   it('keeps the conversation child contract in the web-units package', () => {
     const host = document.createElement('div')
     document.body.append(host)
