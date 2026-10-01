@@ -2505,7 +2505,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
-  'packages/host/src': 38101,
+  // Legacy profile and preset documents convert field by field.
+  // Explicit dag-code selection and community contract references sit beside them.
+  // A replaceable config source pins admitted snapshots and resolves layered documents.
+  // A pinned read names one revision and does not ask the source for a newer snapshot.
+  // Measured 43759, exact, no spare.
+  'packages/host/src': 43759,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
