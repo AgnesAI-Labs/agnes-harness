@@ -69,11 +69,15 @@ export interface RunConformanceOptions {
 }
 
 async function loadConfigBinder(href: string): Promise<{
-  bindConfigContract: (harness: ConformanceHarness, command: string) => Promise<void>
+  bindConfigContract: (harness: ConformanceHarness, command: string, providerId: string) => Promise<void>
 }> {
   return (await import(href)) as {
-    bindConfigContract: (harness: ConformanceHarness, command: string) => Promise<void>
+    bindConfigContract: (harness: ConformanceHarness, command: string, providerId: string) => Promise<void>
   }
+}
+
+function configProviderIds(providers: readonly string[]): readonly string[] {
+  return providers.filter((providerId) => providerId === 'default' || providerId === 'agh.default/config')
 }
 
 async function registerRequestedContracts(
@@ -81,10 +85,13 @@ async function registerRequestedContracts(
   options: RunConformanceOptions,
 ): Promise<void> {
   const selected = options.contracts === 'all' || options.contracts.includes('agh.config')
-  if (!selected || !options.providers.includes('default')) return
+  const providerIds = configProviderIds(options.providers)
+  if (!selected || providerIds.length === 0) return
   const href = new URL('./platform/config-conformance.ts', import.meta.url).href
   const binder = await loadConfigBinder(href)
-  await binder.bindConfigContract(harness, options.command)
+  for (const providerId of providerIds) {
+    await binder.bindConfigContract(harness, options.command, providerId)
+  }
 }
 
 export async function runConformance(options: RunConformanceOptions): Promise<{

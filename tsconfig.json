@@ -138,6 +138,9 @@
     },
     {
       "path": "packages/sandbox-remote"
+    },
+    {
+      "path": "examples/runtime-reference"
     }
   ]
 }
