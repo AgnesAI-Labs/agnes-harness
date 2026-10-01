@@ -439,11 +439,17 @@ describe('UI libraries stay in the component layer', () => {
   })
 })
 
-describe('plugin external list still to align', () => {
-  // packages/web-client/src/externals.ts still lists the earlier six specifiers. It does not yet
-  // externalize antd or @agnes/web-ui/assistant-ui. Replace this item with an assertion once that
-  // module matches the page import map.
-  it.todo('plugin externals match the page import map, including antd and assistant-ui')
+describe('plugin external list', () => {
+  it('matches the page import map, including antd and assistant-ui', () => {
+    const list = assignedStrings(read('packages/web-client/src/externals.ts'), 'externals = [')
+    expect(list, 'externals').toBeDefined()
+    expect(sameMembers(list ?? [], PLATFORM_EXTERNALS)).toBe(true)
+  })
+
+  it('rejects a plugin external list that drops assistant-ui', () => {
+    const short = PLATFORM_EXTERNALS.filter((name) => name !== '@agnes/web-ui/assistant-ui')
+    expect(sameMembers(short, PLATFORM_EXTERNALS)).toBe(false)
+  })
 
   // A full browser pass would load all three pages and check one React, one assistant-ui, and no
   // CSP or asset failure. This file only reads the build scripts and the pages.
