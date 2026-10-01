@@ -1363,7 +1363,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
   // Conformance testkit: evidence, discovery, test service container and inbox fixture. Measured 907, exact, no spare.
   // Default config file and fetch cases register six scenarios. Measured 978, exact, no spare.
-  'packages/extension-api/testkit': 978,
+  // Qualification gaps, shared-evidence matching and restricted legacy fixtures. Measured 1317, exact, no spare.
+  // Re-measured with those gaps on the config-case base. Measured 1388, exact, no spare.
+  'packages/extension-api/testkit': 1388,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

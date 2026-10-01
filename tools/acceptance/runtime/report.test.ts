@@ -108,7 +108,11 @@ describe('conformance report entry', () => {
         reportPath: join(directory, 'all.json'),
       })
       expect(run.report.status).toBe('failed')
-      expect(run.report.failures).toEqual([{ code: 'empty-run', detail: 'zero assertions' }])
+      expect(run.report.failures.some((failure) => failure.code === 'empty-run')).toBe(false)
+      expect(run.report.failures).toContainEqual({
+        code: 'missing-evidence',
+        detail: 'required agh.loop missing examples/runtime-reference/src/providers/loop.ts',
+      })
       expect(run.report.startedAt).toBe(SAMPLE_CLOCK.startedAt)
       const stored = JSON.parse(readFileSync(run.reportPath, 'utf8')) as { startedAt: string; status: string }
       expect(stored).toMatchObject({ startedAt: SAMPLE_CLOCK.startedAt, status: 'failed' })

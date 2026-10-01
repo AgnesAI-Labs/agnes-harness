@@ -6,6 +6,55 @@ export const ASSERTION_STATUSES = ['passed', 'failed', 'skipped'] as const
 export type AssertionStatus = (typeof ASSERTION_STATUSES)[number]
 export const FIXTURE_MARKS = ['runtime-inbox', 'test-service-container'] as const
 export type FixtureMark = (typeof FIXTURE_MARKS)[number]
+export const REUSE_LIFECYCLES = ['call', 'cancel', 'recover', 'dispose'] as const
+export type ReuseLifecycle = (typeof REUSE_LIFECYCLES)[number]
+export const PROVIDER_ABSENT = 'provider-absent'
+export const GATE_KINDS = [
+  'shared-authority',
+  'remote-call',
+  'common-rules',
+  'declared-features',
+  'named-code-graph',
+  'unsupported-combination',
+  'full-stack',
+  'restart-continue',
+  'parallel-wait',
+  'document-clients',
+  'authority-migration',
+  'isolated-releases',
+  'revoke-basics',
+  'repair-tree',
+  'public-package',
+] as const
+export type GateKind = (typeof GATE_KINDS)[number]
+export const CATALOG_GATES = [
+  'common-rules',
+  'declared-features',
+  'named-code-graph',
+  'unsupported-combination',
+  'full-stack',
+  'restart-continue',
+  'parallel-wait',
+  'document-clients',
+  'authority-migration',
+  'isolated-releases',
+  'revoke-basics',
+  'repair-tree',
+  'public-package',
+] as const satisfies readonly GateKind[]
+
+export interface EvidenceReuse {
+  readonly scope: string
+  readonly methodKind: string
+  readonly lifecycle: ReuseLifecycle
+  readonly undeclaredConnection: boolean
+}
+
+export interface GateObservation {
+  readonly kind: GateKind
+  readonly declared: boolean
+  readonly observed: 'accepted' | 'refused'
+}
 
 export interface BuildIdentity {
   readonly codeSha: string
@@ -37,6 +86,9 @@ export interface AssertionRecord {
   readonly attachmentDigest: string | null
   readonly fixture: FixtureMark | null
   readonly sharedEvidenceId: string | null
+  readonly reuse: EvidenceReuse
+  readonly perImplementation: boolean
+  readonly gate: GateObservation | null
 }
 
 export const FAILURE_CODES = ['missing-evidence', 'mixed-version', 'empty-run'] as const
@@ -55,6 +107,7 @@ export interface ReportDraft {
   readonly startedAt: string
   readonly finishedAt: string
   readonly assertions: readonly AssertionRecord[]
+  readonly enforceCatalogGates?: boolean
 }
 
 export interface ConformanceReport extends ReportDraft {
@@ -139,7 +192,14 @@ function readAssertion(value: unknown): ReadAssertion {
   if (value.fixture !== null && !member(FIXTURE_MARKS, value.fixture)) missing.push('fixture')
   if (value.sharedEvidenceId !== null && text(value.sharedEvidenceId) === null)
     missing.push('sharedEvidenceId')
-  if (missing.length > 0 || build === null) return { assertion: null, missing }
+  const reuse = readReuse(value.reuse)
+  if (reuse === null) missing.push('reuse')
+  if (typeof value.perImplementation !== 'boolean') missing.push('perImplementation')
+  const gate = readGate(value.gate)
+  if (gate === undefined) missing.push('gate')
+  if (missing.length > 0 || build === null || reuse === null || gate === undefined) {
+    return { assertion: null, missing }
+  }
   const assertion: AssertionRecord = {
     id: text(value.id) as string,
     contract: text(value.contract) as string,
@@ -168,8 +228,28 @@ function readAssertion(value: unknown): ReadAssertion {
     attachmentDigest: value.attachmentDigest === null ? null : (text(value.attachmentDigest) as string),
     fixture: value.fixture === null ? null : (value.fixture as FixtureMark),
     sharedEvidenceId: value.sharedEvidenceId === null ? null : (text(value.sharedEvidenceId) as string),
+    reuse,
+    perImplementation: value.perImplementation as boolean,
+    gate,
   }
   return { assertion, missing: [] }
+}
+
+function readReuse(value: unknown): EvidenceReuse | null {
+  if (!isRecord(value)) return null
+  const scope = text(value.scope)
+  const methodKind = text(value.methodKind)
+  if (scope === null || methodKind === null || !member(REUSE_LIFECYCLES, value.lifecycle)) return null
+  if (typeof value.undeclaredConnection !== 'boolean') return null
+  return { scope, methodKind, lifecycle: value.lifecycle, undeclaredConnection: value.undeclaredConnection }
+}
+
+function readGate(value: unknown): GateObservation | null | undefined {
+  if (value === null) return null
+  if (!isRecord(value) || !member(GATE_KINDS, value.kind)) return undefined
+  if (typeof value.declared !== 'boolean') return undefined
+  if (value.observed !== 'accepted' && value.observed !== 'refused') return undefined
+  return { kind: value.kind, declared: value.declared, observed: value.observed }
 }
 
 function versionKey(assertion: AssertionRecord): string {
@@ -192,6 +272,45 @@ function emptyDetail(assertions: readonly AssertionRecord[]): string | null {
 
 function push(failures: ReportFailure[], code: FailureCode, detail: string) {
   failures.push({ code, detail })
+}
+
+function reuseFailure(assertion: AssertionRecord, rows: readonly AssertionRecord[]): string | null {
+  if (assertion.sharedEvidenceId === null) return null
+  const cited = assertion.sharedEvidenceId
+  const shared = rows.find((item) => item.id === cited)
+  if (assertion.perImplementation || shared?.perImplementation === true) {
+    return `shared evidence ${assertion.id} cannot reuse per-implementation ${cited}`
+  }
+  if (assertion.reuse.undeclaredConnection || shared?.reuse.undeclaredConnection === true) {
+    return `shared evidence ${assertion.id} undeclared connection ${cited}`
+  }
+  const same =
+    shared !== undefined &&
+    shared.build.sdkDigest === assertion.build.sdkDigest &&
+    shared.build.sdkVersion === assertion.build.sdkVersion &&
+    shared.status === 'passed' &&
+    shared.qualification !== 'not-advertised' &&
+    shared.reuse.scope === assertion.reuse.scope &&
+    shared.reuse.methodKind === assertion.reuse.methodKind &&
+    shared.reuse.lifecycle === assertion.reuse.lifecycle
+  return same ? null : `shared evidence ${assertion.id} missing ${cited}`
+}
+
+function gateSatisfied(kind: GateKind, assertion: AssertionRecord): boolean {
+  const gate = assertion.gate
+  if (gate === null || gate.kind !== kind || assertion.status !== 'passed') return false
+  if (kind === 'unsupported-combination') {
+    return gate.observed === 'refused' && assertion.qualification === 'required'
+  }
+  if (kind === 'shared-authority' || kind === 'remote-call') return false
+  return gate.declared && gate.observed === 'accepted' && assertion.qualification === 'required'
+}
+
+function deploymentSatisfied(kind: 'shared-authority' | 'remote-call', assertion: AssertionRecord): boolean {
+  const gate = assertion.gate
+  if (gate === null || gate.kind !== kind || assertion.status !== 'passed') return false
+  if (!gate.declared && gate.observed === 'refused') return true
+  return gate.declared && gate.observed === 'accepted' && assertion.qualification !== 'not-advertised'
 }
 
 export function judgeReport(draft: ReportDraft): ConformanceReport {
@@ -228,20 +347,45 @@ export function judgeReport(draft: ReportDraft): ConformanceReport {
         `required ${assertion.contract} ${assertion.scenario} ${assertion.id} skipped`,
       )
     }
-    if (assertion.sharedEvidenceId === null) continue
-    const shared = assertions.find((item) => item.id === assertion.sharedEvidenceId)
-    const sameSdk =
-      shared !== undefined &&
-      shared.build.sdkDigest === assertion.build.sdkDigest &&
-      shared.build.sdkVersion === assertion.build.sdkVersion &&
-      shared.status === 'passed' &&
-      shared.qualification !== 'not-advertised'
-    if (!sameSdk) {
-      push(
-        failures,
-        'missing-evidence',
-        `shared evidence ${assertion.id} missing ${assertion.sharedEvidenceId}`,
-      )
+    if (
+      assertion.providerDigest === PROVIDER_ABSENT &&
+      assertion.qualification === 'required' &&
+      assertion.status === 'failed'
+    ) {
+      push(failures, 'missing-evidence', `required ${assertion.contract} missing ${assertion.recipe}`)
+    }
+    const gate = assertion.gate
+    if (
+      gate !== null &&
+      (gate.kind === 'shared-authority' || gate.kind === 'remote-call') &&
+      !gate.declared &&
+      gate.observed === 'accepted'
+    ) {
+      push(failures, 'missing-evidence', `undeclared ${gate.kind} recorded as accepted`)
+    }
+    if (
+      gate?.declared === true &&
+      assertion.qualification === 'not-advertised' &&
+      gate.observed === 'accepted'
+    ) {
+      push(failures, 'missing-evidence', `declared ${gate.kind} recorded as not-advertised`)
+    }
+    if (gate !== null && gate.kind === 'unsupported-combination' && gate.observed === 'accepted') {
+      push(failures, 'missing-evidence', 'unsupported-combination recorded as accepted')
+    }
+    const reuse = reuseFailure(assertion, assertions)
+    if (reuse !== null) push(failures, 'missing-evidence', reuse)
+  }
+  if (draft.enforceCatalogGates === true) {
+    for (const kind of CATALOG_GATES) {
+      if (!assertions.some((item) => gateSatisfied(kind, item))) {
+        push(failures, 'missing-evidence', `required ${kind} missing evidence`)
+      }
+    }
+    for (const kind of ['shared-authority', 'remote-call'] as const) {
+      if (!assertions.some((item) => deploymentSatisfied(kind, item))) {
+        push(failures, 'missing-evidence', `required ${kind} missing evidence`)
+      }
     }
   }
   failures.sort((left, right) => compare(left.code, right.code) || compare(left.detail, right.detail))

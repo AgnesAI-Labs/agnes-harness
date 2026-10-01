@@ -20,9 +20,13 @@ describe('author API consistency', () => {
     expect(surface.apiVersion).toBe(api.API_VERSION)
     expect(Object.keys(testkit).sort()).toEqual([
       'ASSERTION_STATUSES',
+      'CATALOG_GATES',
       'FAILURE_CODES',
       'FIXTURE_MARKS',
+      'GATE_KINDS',
+      'LEGACY_FIXTURES',
       'NEGATIVE_ACTIONS',
+      'PROVIDER_ABSENT',
       'QUALIFICATIONS',
       'RUNTIME_INBOX_FIXTURE',
       'SCENARIOS',
@@ -32,8 +36,10 @@ describe('author API consistency', () => {
       'createTestServiceContainer',
       'defineFixture',
       'discoverContracts',
+      'faultPoint',
       'judgeReport',
       'projectionFixture',
+      'providerFileForContract',
       'serializeReport',
       'serviceFixture',
     ])

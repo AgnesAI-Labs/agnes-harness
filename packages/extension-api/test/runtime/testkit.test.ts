@@ -10,11 +10,17 @@ import {
   type AssertionInput,
   type AssertionRecord,
   type BuildIdentity,
+  CATALOG_GATES,
   createConformanceHarness,
   createRuntimeInboxFixture,
   createTestServiceContainer,
   discoverContracts,
+  faultPoint,
+  type GateKind,
   judgeReport,
+  LEGACY_FIXTURES,
+  PROVIDER_ABSENT,
+  providerFileForContract,
   type ReportDraft,
   SCENARIOS,
   serializeReport,
@@ -58,6 +64,9 @@ function assertion(overrides: Partial<AssertionRecord> = {}): AssertionRecord {
     attachmentDigest: null,
     fixture: null,
     sharedEvidenceId: null,
+    reuse: { scope: 'run', methodKind: 'compute', lifecycle: 'call', undeclaredConnection: false },
+    perImplementation: false,
+    gate: null,
     ...overrides,
   }
 }
@@ -90,6 +99,9 @@ function input(overrides: Partial<AssertionInput> = {}): AssertionInput {
     attachmentDigest: null,
     fixture: null,
     sharedEvidenceId: null,
+    reuse: { scope: 'run', methodKind: 'compute', lifecycle: 'call', undeclaredConnection: false },
+    perImplementation: false,
+    gate: null,
     ...overrides,
   }
 }
@@ -214,6 +226,107 @@ describe('conformance evidence', () => {
     })
   })
 
+  it('refuses reuse when scope, method kind, lifecycle, or a private connection differ', () => {
+    const base = assertion({ id: 'base' })
+    const cited = (overrides: Partial<AssertionRecord>) =>
+      assertion({ id: 'cited', sharedEvidenceId: 'base', qualification: 'advertised', ...overrides })
+    expect(
+      judgeReport(draft([base, cited({ reuse: { ...base.reuse, scope: 'session' } })])).failures,
+    ).toContainEqual({
+      code: 'missing-evidence',
+      detail: 'shared evidence cited missing base',
+    })
+    expect(
+      judgeReport(draft([base, cited({ reuse: { ...base.reuse, methodKind: 'effect' } })])).failures,
+    ).toContainEqual({ code: 'missing-evidence', detail: 'shared evidence cited missing base' })
+    expect(
+      judgeReport(draft([base, cited({ reuse: { ...base.reuse, lifecycle: 'cancel' } })])).failures,
+    ).toContainEqual({ code: 'missing-evidence', detail: 'shared evidence cited missing base' })
+    expect(
+      judgeReport(draft([base, cited({ reuse: { ...base.reuse, undeclaredConnection: true } })])).failures,
+    ).toContainEqual({
+      code: 'missing-evidence',
+      detail: 'shared evidence cited undeclared connection base',
+    })
+    expect(judgeReport(draft([base, cited({ perImplementation: true })])).failures).toContainEqual({
+      code: 'missing-evidence',
+      detail: 'shared evidence cited cannot reuse per-implementation base',
+    })
+    expect(judgeReport(draft([base, cited({})])).status).toBe('passed')
+  })
+
+  it('keeps catalog gates missing until required evidence exists', () => {
+    const gates = (): AssertionRecord[] => [
+      ...CATALOG_GATES.map((kind) =>
+        assertion({
+          id: `gate-${kind}`,
+          qualification: 'required',
+          status: 'passed',
+          gate: {
+            kind,
+            declared: true,
+            observed: kind === 'unsupported-combination' ? 'refused' : 'accepted',
+          },
+        }),
+      ),
+      assertion({
+        id: 'deployment-shared-authority',
+        qualification: 'not-advertised',
+        status: 'passed',
+        gate: { kind: 'shared-authority', declared: false, observed: 'refused' },
+      }),
+      assertion({
+        id: 'deployment-remote-call',
+        qualification: 'not-advertised',
+        status: 'passed',
+        gate: { kind: 'remote-call', declared: false, observed: 'refused' },
+      }),
+    ]
+    expect(judgeReport(draft(gates(), { enforceCatalogGates: true })).status).toBe('passed')
+    const refusedGraph = gates().map((item) =>
+      item.gate?.kind === 'named-code-graph'
+        ? assertion({
+            id: item.id,
+            qualification: 'not-advertised',
+            status: 'passed',
+            gate: { kind: 'named-code-graph', declared: false, observed: 'refused' },
+          })
+        : item,
+    )
+    expect(judgeReport(draft(refusedGraph, { enforceCatalogGates: true })).failures).toContainEqual({
+      code: 'missing-evidence',
+      detail: 'required named-code-graph missing evidence',
+    })
+    const fakePass = gates().map((item) =>
+      item.gate?.kind === 'unsupported-combination'
+        ? assertion({
+            id: item.id,
+            gate: { kind: 'unsupported-combination' as GateKind, declared: true, observed: 'accepted' },
+          })
+        : item,
+    )
+    const fake = judgeReport(draft(fakePass, { enforceCatalogGates: true }))
+    expect(fake.failures).toContainEqual({
+      code: 'missing-evidence',
+      detail: 'unsupported-combination recorded as accepted',
+    })
+    expect(fake.status).toBe('failed')
+    const acceptedDeployment = gates().map((item) =>
+      item.id === 'deployment-shared-authority'
+        ? assertion({
+            id: item.id,
+            qualification: 'not-advertised',
+            status: 'passed',
+            gate: { kind: 'shared-authority', declared: false, observed: 'accepted' },
+          })
+        : item,
+    )
+    expect(judgeReport(draft(acceptedDeployment, { enforceCatalogGates: true })).failures).toContainEqual({
+      code: 'missing-evidence',
+      detail: 'undeclared shared-authority recorded as accepted',
+    })
+  })
+
   it('rejects an empty run for zero rows, skips, not-advertised rows, and a mix', () => {
     expect(judgeReport(draft([])).failures).toEqual([{ code: 'empty-run', detail: 'zero assertions' }])
     expect(judgeReport(draft([], { command: '' })).failures).toEqual([
@@ -267,9 +380,11 @@ describe('conformance evidence', () => {
       'status',
       'unknownContracts',
     ])
-    const row = parsed.assertions[0]
+    const row = parsed.assertions[0] as
+      | { build: Record<string, unknown>; features: string[]; reuse?: Record<string, unknown> }
+      | undefined
     expect(row).toBeDefined()
-    if (row === undefined) return
+    if (row === undefined || row.reuse === undefined) return
     expect(Object.keys(row)).toEqual([
       'attachmentDigest',
       'build',
@@ -280,12 +395,15 @@ describe('conformance evidence', () => {
       'features',
       'finishedAt',
       'fixture',
+      'gate',
       'id',
+      'perImplementation',
       'providerDigest',
       'providerId',
       'qualification',
       'recipe',
       'releaseSetDigest',
+      'reuse',
       'scenario',
       'sharedEvidenceId',
       'startedAt',
@@ -301,6 +419,7 @@ describe('conformance evidence', () => {
       'specVersion',
     ])
     expect(row.features).toEqual(['write', 'read'])
+    expect(Object.keys(row.reuse)).toEqual(['lifecycle', 'methodKind', 'scope', 'undeclaredConnection'])
     const moved = judgeReport(
       draft([assertion({ startedAt: '2026-10-01T00:00:02.000Z' })], {
         startedAt: '2026-10-01T00:00:02.000Z',
@@ -513,8 +632,36 @@ describe('conformance harness', () => {
       clock,
     })
     expect(empty.status).toBe('failed')
-    expect(empty.failures).toEqual([{ code: 'empty-run', detail: 'zero assertions' }])
-    expect(empty.assertions).toEqual([])
+    expect(empty.failures.some((failure) => failure.code === 'empty-run')).toBe(false)
+    expect(
+      empty.assertions.some(
+        (item) => item.qualification === 'not-advertised' && item.providerDigest === PROVIDER_ABSENT,
+      ),
+    ).toBe(false)
+    for (const item of discoverContracts()) {
+      expect(empty.failures).toContainEqual({
+        code: 'missing-evidence',
+        detail: `required ${item.contract} missing ${providerFileForContract(item.contract)}`,
+      })
+    }
+    expect(empty.failures).toContainEqual({
+      code: 'missing-evidence',
+      detail: 'required common-rules missing evidence',
+    })
+    expect(empty.failures).not.toContainEqual({
+      code: 'missing-evidence',
+      detail: 'required shared-authority missing evidence',
+    })
+    expect(empty.failures).not.toContainEqual({
+      code: 'missing-evidence',
+      detail: 'undeclared remote-call recorded as accepted',
+    })
+    const refused = empty.assertions.find((item) => item.id === 'gate:shared-authority')
+    expect(refused).toMatchObject({
+      qualification: 'not-advertised',
+      status: 'passed',
+      gate: { kind: 'shared-authority', declared: false, observed: 'refused' },
+    })
     expect(empty.contracts).toEqual(discoverContracts().map((item) => item.contract))
     const harness = createConformanceHarness()
     harness.registerCase({
@@ -530,8 +677,21 @@ describe('conformance harness', () => {
       command: 'conformance',
       clock,
     })
-    expect(report.status).toBe('passed')
-    expect(report.assertions.map((item) => item.contract)).toEqual(['agh.loop'])
+    expect(report.status).toBe('failed')
+    expect(report.assertions.map((item) => item.contract)).toEqual(['agh.loop', 'agh.context'])
+    expect(report.assertions[0]?.status).toBe('passed')
+    expect(report.assertions[1]).toMatchObject({
+      qualification: 'required',
+      status: 'failed',
+      providerDigest: PROVIDER_ABSENT,
+      recipe: providerFileForContract('agh.context'),
+    })
+    expect(report.failures).toEqual([
+      {
+        code: 'missing-evidence',
+        detail: `required agh.context missing ${providerFileForContract('agh.context')}`,
+      },
+    ])
     expect(report.assertions[0]).toMatchObject({
       fixture: 'runtime-inbox',
       startedAt: clock.startedAt,
@@ -550,9 +710,38 @@ describe('conformance harness', () => {
   })
 })
 
+describe('restricted legacy fixtures', () => {
+  it('keeps fault points and does not treat structure as behavior', () => {
+    expect(LEGACY_FIXTURES.map((item) => item.name)).toEqual([
+      'session-facts',
+      'default-approval',
+      'operation-context',
+      'legacy-tool-result',
+      'nested-code-bridge',
+      'quality-gate',
+      'builtin-seams',
+      'tool-directory',
+      'session-control',
+      'acp-stdio',
+      'profile-preset-fields',
+      'hook-visibility',
+      'command-admission',
+      'acp-stdio-child',
+      'profile-preset-migration',
+    ])
+    expect(LEGACY_FIXTURES.every((item) => item.callsDefaultProvider === false)).toBe(true)
+    expect(LEGACY_FIXTURES.every((item) => item.structuralAssertionIsEquivalence === false)).toBe(true)
+    expect(faultPoint('acp-stdio-child', 'kill-child')).toBe('kill-child')
+    expect(() => faultPoint('profile-preset-migration', 'missing')).toThrow(/unknown fault point/)
+    const fields = JSON.stringify(LEGACY_FIXTURES.find((item) => item.name === 'profile-preset-fields'))
+    expect(fields).toContain('max_steps')
+    expect(fields).toContain('completion_gate')
+  })
+})
+
 describe('conformance library clock', () => {
   it('does not read a clock or a host implementation', () => {
-    for (const name of ['evidence.ts', 'fixtures.ts', 'harness.ts', 'index.ts']) {
+    for (const name of ['evidence.ts', 'fixtures.ts', 'harness.ts', 'index.ts', 'legacy-compatibility.ts']) {
       const source = readFileSync(new URL(`../../testkit/runtime/${name}`, import.meta.url), 'utf8')
       expect(source).not.toMatch(/Date\.now|new Date/)
       expect(source).not.toMatch(/@agnes\/(core|host|daemon)|cordis/)
