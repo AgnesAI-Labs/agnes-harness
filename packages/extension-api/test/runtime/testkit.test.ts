@@ -347,6 +347,9 @@ describe('test service container', () => {
       async openDownload() {
         throw new Error('not called')
       },
+      async redeemDownload() {
+        throw new Error('not called')
+      },
       async readRange() {
         throw new Error('not called')
       },
