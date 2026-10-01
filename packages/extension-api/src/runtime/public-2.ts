@@ -262,6 +262,10 @@ export interface ArtifactAccessPort {
     input: Wire.ArtifactClientReadRangeRequest,
     context: CallContext,
   ): Promise<Outcome<ByteRangeResult>>
+  redeemDownload(
+    request: Wire.ArtifactRedeemDownloadRequest,
+    context: CallContext,
+  ): Promise<Outcome<ArtifactDownloadDelivery>>
   openStream(
     input: Wire.ArtifactClientOpenStreamRequest,
     context: CallContext,
@@ -270,6 +274,22 @@ export interface ArtifactAccessPort {
 
 export interface ClientCommandIngressPort {
   accept(request: Wire.ClientCommandRequest, context: CallContext): Promise<Outcome<Wire.ClientCommandReply>>
+}
+
+export interface ArtifactDownloadDelivery {
+  readonly metadata: Wire.ArtifactDownloadPresentation
+  readonly stream: ByteReadStream
+}
+
+export interface EventsOutboxControl {
+  deadLetters(
+    request: Wire.OutboxDeadLettersRequest,
+    context: CallContext,
+  ): Promise<Outcome<Wire.PageOutboxDeadLetterItem>>
+  redriveOutbox(
+    request: Wire.OutboxRedriveRequest,
+    context: CallContext,
+  ): Promise<Outcome<Wire.OutboxRedriveResult>>
 }
 
 export interface InteractionAdmissionControl {

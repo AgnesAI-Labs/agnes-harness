@@ -1783,7 +1783,7 @@
           "$ref": "prototype.json#/$defs/Id"
         },
         "version": {
-          "$ref": "prototype.json#/$defs/UInt53"
+          "$ref": "#/$defs/ArtifactVersion"
         }
       }
     },
@@ -2497,43 +2497,13 @@
           }
         },
         {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "value"],
-          "properties": {
-            "kind": {
-              "const": "blob"
-            },
-            "value": {
-              "$ref": "prototype.json#/$defs/BlobRef"
-            }
-          }
+          "$ref": "#/$defs/PublicBlobReference"
         },
         {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "value"],
-          "properties": {
-            "kind": {
-              "const": "upload"
-            },
-            "value": {
-              "$ref": "#/$defs/UploadSession"
-            }
-          }
+          "$ref": "#/$defs/PublicUploadReference"
         },
         {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "value"],
-          "properties": {
-            "kind": {
-              "const": "staged-blob"
-            },
-            "value": {
-              "$ref": "#/$defs/StagedBlobRef"
-            }
-          }
+          "$ref": "#/$defs/PublicStagedBlobReference"
         },
         {
           "type": "object",
@@ -6295,7 +6265,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["interactionId", "responseId", "expectedVersion", "decision", "actionDigest"],
+          "required": ["interactionId", "responseId", "expectedVersion", "decision", "intentDigest"],
           "properties": {
             "interactionId": {
               "$ref": "prototype.json#/$defs/Id"
@@ -6309,9 +6279,6 @@
             "decision": {
               "const": "approve"
             },
-            "actionDigest": {
-              "$ref": "prototype.json#/$defs/Digest"
-            },
             "grantScope": {
               "anyOf": [
                 {
@@ -6324,13 +6291,16 @@
                   "const": "permanent"
                 }
               ]
+            },
+            "intentDigest": {
+              "$ref": "prototype.json#/$defs/Digest"
             }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["interactionId", "responseId", "expectedVersion", "decision", "actionDigest"],
+          "required": ["interactionId", "responseId", "expectedVersion", "decision", "intentDigest"],
           "properties": {
             "interactionId": {
               "$ref": "prototype.json#/$defs/Id"
@@ -6344,7 +6314,7 @@
             "decision": {
               "const": "deny"
             },
-            "actionDigest": {
+            "intentDigest": {
               "$ref": "prototype.json#/$defs/Digest"
             }
           }
@@ -11531,7 +11501,65 @@
               "$ref": "#/$defs/InteractionRequest"
             },
             "version": {
-              "$ref": "prototype.json#/$defs/UInt53"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "$ref": "prototype.json#/$defs/Timestamp"
+            },
+            "updatedAt": {
+              "$ref": "prototype.json#/$defs/Timestamp"
+            },
+            "status": {
+              "const": "pending"
+            },
+            "terminationReason": {
+              "type": "null"
+            },
+            "resolution": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "interactionId",
+            "owner",
+            "request",
+            "version",
+            "createdAt",
+            "updatedAt",
+            "status",
+            "terminationReason",
+            "resolution"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "interactionId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "owner": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "runId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                },
+                "actionId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                }
+              },
+              "required": ["runId", "actionId"]
+            },
+            "request": {
+              "$ref": "prototype.json#/$defs/ApprovalRequest"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
             "createdAt": {
               "$ref": "prototype.json#/$defs/Timestamp"
@@ -11543,15 +11571,109 @@
               "const": "answered"
             },
             "terminationReason": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 8192
+              "type": "null"
+            },
+            "resolution": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "responseId": {
+                  "$ref": "prototype.json#/$defs/Id"
                 },
-                {
-                  "type": "null"
+                "actorRef": {
+                  "$ref": "prototype.json#/$defs/Id"
+                },
+                "answer": {
+                  "$ref": "#/$defs/ApprovalAnswerDataRef"
+                },
+                "committedAt": {
+                  "$ref": "prototype.json#/$defs/Timestamp"
+                },
+                "evidence": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["kind", "authenticationRef"],
+                      "properties": {
+                        "kind": {
+                          "const": "human"
+                        },
+                        "authenticationRef": {
+                          "$ref": "prototype.json#/$defs/DataRef"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["kind", "policyDecisionRef"],
+                      "properties": {
+                        "kind": {
+                          "const": "system"
+                        },
+                        "policyDecisionRef": {
+                          "$ref": "prototype.json#/$defs/DataRef"
+                        }
+                      }
+                    }
+                  ]
                 }
-              ]
+              },
+              "required": ["responseId", "actorRef", "answer", "committedAt", "evidence"]
+            }
+          },
+          "required": [
+            "interactionId",
+            "owner",
+            "request",
+            "version",
+            "createdAt",
+            "updatedAt",
+            "status",
+            "terminationReason",
+            "resolution"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "interactionId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "owner": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "runId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                },
+                "actionId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                }
+              },
+              "required": ["runId", "actionId"]
+            },
+            "request": {
+              "$ref": "#/$defs/QuestionRequest"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "$ref": "prototype.json#/$defs/Timestamp"
+            },
+            "updatedAt": {
+              "$ref": "prototype.json#/$defs/Timestamp"
+            },
+            "status": {
+              "const": "answered"
+            },
+            "terminationReason": {
+              "type": "null"
             },
             "resolution": {
               "type": "object",
@@ -11639,7 +11761,9 @@
               "$ref": "#/$defs/InteractionRequest"
             },
             "version": {
-              "$ref": "prototype.json#/$defs/UInt53"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
             "createdAt": {
               "$ref": "prototype.json#/$defs/Timestamp"
@@ -11648,18 +11772,12 @@
               "$ref": "prototype.json#/$defs/Timestamp"
             },
             "status": {
-              "enum": ["pending", "cancelled", "expired"]
+              "enum": ["cancelled", "expired"]
             },
             "terminationReason": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 8192
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "type": "string",
+              "minLength": 1,
+              "x-max-utf8-bytes": 8192
             },
             "resolution": {
               "type": "null"
@@ -18691,6 +18809,11 @@
         },
         "acknowledgement": {
           "$ref": "prototype.json#/$defs/DataRef"
+        },
+        "inboxSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -18700,7 +18823,8 @@
         "fingerprint",
         "receivedAt",
         "appliedCommitId",
-        "acknowledgement"
+        "acknowledgement",
+        "inboxSeq"
       ]
     },
     "MaintenanceEnvelopeJsonValue": {
@@ -19857,42 +19981,23 @@
       ]
     },
     "ArtifactViewRef": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "artifactId": {
-          "type": "string"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactReservedView"
         },
-        "version": {
-          "type": "number"
+        {
+          "$ref": "#/$defs/ArtifactPendingPublishView"
         },
-        "title": {
-          "type": "string"
+        {
+          "$ref": "#/$defs/ArtifactReadyView"
         },
-        "mime": {
-          "type": "string"
+        {
+          "$ref": "#/$defs/ArtifactFailedView"
         },
-        "size": {
-          "type": "number"
-        },
-        "status": {
-          "anyOf": [
-            {
-              "const": "pending-publish"
-            },
-            {
-              "const": "ready"
-            },
-            {
-              "const": "failed"
-            },
-            {
-              "const": "revoked"
-            }
-          ]
+        {
+          "$ref": "#/$defs/ArtifactRevokedView"
         }
-      },
-      "required": ["artifactId", "version", "title", "mime", "size", "status"]
+      ]
     },
     "ViewActionBase": {
       "type": "object",
@@ -20323,7 +20428,9 @@
           ]
         },
         "limit": {
-          "type": "number"
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
         }
       },
       "required": ["domainType", "query", "scope", "cursor", "limit"]
@@ -20343,7 +20450,7 @@
           "type": "string"
         },
         "projectionRevision": {
-          "type": "number"
+          "$ref": "prototype.json#/$defs/UInt53"
         },
         "nextPageCursor": {
           "anyOf": [
@@ -20362,53 +20469,8 @@
       "required": ["items", "cursor", "projectionRevision", "nextPageCursor", "complete"]
     },
     "ProjectionChange": {
-      "anyOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "kind": {
-              "const": "upsert"
-            },
-            "view": {
-              "$ref": "#/$defs/DomainView"
-            }
-          },
-          "required": ["kind", "view"]
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "kind": {
-              "const": "remove"
-            },
-            "viewId": {
-              "type": "string"
-            },
-            "revision": {
-              "type": "number"
-            },
-            "reason": {
-              "type": "string"
-            }
-          },
-          "required": ["kind", "viewId", "revision", "reason"]
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "kind": {
-              "const": "reset"
-            },
-            "snapshot": {
-              "$ref": "#/$defs/ProjectionSnapshot"
-            }
-          },
-          "required": ["kind", "snapshot"]
-        }
-      ]
+      "$ref": "#/$defs/DomainViewChange",
+      "deprecated": true
     },
     "ProjectionChanges": {
       "type": "object",
@@ -20417,7 +20479,7 @@
         "changes": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ProjectionChange"
+            "$ref": "#/$defs/DomainViewChange"
           },
           "maxItems": 10000
         },
@@ -20537,6 +20599,9 @@
         },
         "context": {
           "$ref": "prototype.json#/$defs/CallContextWire"
+        },
+        "commandSchema": {
+          "$ref": "prototype.json#/$defs/SchemaRef"
         }
       },
       "required": [
@@ -20549,7 +20614,8 @@
         "expectedRevision",
         "sourceView",
         "observedAt",
-        "context"
+        "context",
+        "commandSchema"
       ]
     },
     "DomainCommandPlan": {
@@ -20583,62 +20649,288 @@
       "required": ["expectedRevision", "state", "events", "dispatches", "result"]
     },
     "CommandHandle": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "commandId": {
-          "type": "string"
-        },
-        "requestId": {
-          "type": "string"
-        },
-        "revision": {
-          "type": "number"
-        },
-        "status": {
-          "anyOf": [
-            {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commandId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "completion": {
+              "enum": ["domain-commit", "runtime-accepted"]
+            },
+            "status": {
               "const": "accepted"
             },
-            {
+            "result": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          },
+          "required": ["commandId", "requestId", "revision", "completion", "status", "result", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commandId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "completion": {
+              "enum": ["domain-commit", "runtime-accepted"]
+            },
+            "status": {
               "const": "running"
             },
-            {
+            "result": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          },
+          "required": ["commandId", "requestId", "revision", "completion", "status", "result", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commandId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "completion": {
+              "const": "domain-commit"
+            },
+            "status": {
               "const": "succeeded"
             },
-            {
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/DataRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "type": "null"
+            }
+          },
+          "required": ["commandId", "requestId", "revision", "completion", "status", "result", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commandId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "completion": {
+              "const": "runtime-accepted"
+            },
+            "status": {
+              "const": "succeeded"
+            },
+            "result": {
+              "$ref": "#/$defs/CommandRuntimeAcceptanceDataRef"
+            },
+            "error": {
+              "type": "null"
+            }
+          },
+          "required": ["commandId", "requestId", "revision", "completion", "status", "result", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commandId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "completion": {
+              "enum": ["domain-commit", "runtime-accepted"]
+            },
+            "status": {
               "const": "failed"
             },
-            {
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/DataRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "$ref": "prototype.json#/$defs/RuntimeError"
+            }
+          },
+          "required": ["commandId", "requestId", "revision", "completion", "status", "result", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commandId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "completion": {
+              "enum": ["domain-commit", "runtime-accepted"]
+            },
+            "status": {
               "const": "cancelled"
             },
-            {
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/DataRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/RuntimeError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["commandId", "requestId", "revision", "completion", "status", "result", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commandId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "completion": {
+              "enum": ["domain-commit", "runtime-accepted"]
+            },
+            "status": {
               "const": "unknown_effect"
-            }
-          ]
-        },
-        "result": {
-          "anyOf": [
-            {
-              "$ref": "prototype.json#/$defs/DataRef"
             },
-            {
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/DataRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/RuntimeError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["commandId", "requestId", "revision", "completion", "status", "result", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "status": {
+              "const": "not-accepted"
+            },
+            "commandId": {
+              "type": "null"
+            },
+            "revision": {
+              "type": "null"
+            },
+            "completion": {
+              "type": "null"
+            },
+            "result": {
+              "type": "null"
+            },
+            "error": {
               "type": "null"
             }
-          ]
-        },
-        "error": {
-          "anyOf": [
-            {
-              "$ref": "prototype.json#/$defs/RuntimeError"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          },
+          "required": ["requestId", "status", "commandId", "revision", "completion", "result", "error"]
         }
-      },
-      "required": ["commandId", "requestId", "revision", "status", "result", "error"]
+      ]
     },
     "TextPart": {
       "anyOf": [
@@ -21269,53 +21561,84 @@
       ]
     },
     "InteractionResponseStatus": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "interactionId": {
-          "$ref": "prototype.json#/$defs/Id"
-        },
-        "responseId": {
-          "$ref": "prototype.json#/$defs/Id"
-        },
-        "status": {
-          "anyOf": [
-            {
-              "const": "accepted"
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "interactionId": {
+              "$ref": "prototype.json#/$defs/Id"
             },
-            {
-              "const": "applied"
+            "responseId": {
+              "$ref": "prototype.json#/$defs/Id"
             },
-            {
-              "const": "rejected"
+            "status": {
+              "anyOf": [
+                {
+                  "const": "accepted"
+                },
+                {
+                  "const": "applied"
+                },
+                {
+                  "const": "rejected"
+                }
+              ]
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InteractionRecord"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/RuntimeError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
-          ]
+          },
+          "required": ["interactionId", "responseId", "status", "version", "result", "error"]
         },
-        "version": {
-          "$ref": "prototype.json#/$defs/UInt53"
-        },
-        "result": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/InteractionRecord"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "responseId": {
+              "$ref": "prototype.json#/$defs/Id"
             },
-            {
+            "status": {
+              "const": "not-accepted"
+            },
+            "interactionId": {
+              "type": "null"
+            },
+            "version": {
+              "type": "null"
+            },
+            "result": {
+              "type": "null"
+            },
+            "error": {
               "type": "null"
             }
-          ]
-        },
-        "error": {
-          "anyOf": [
-            {
-              "$ref": "prototype.json#/$defs/RuntimeError"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          },
+          "required": ["responseId", "status", "interactionId", "version", "result", "error"]
         }
-      },
-      "required": ["interactionId", "responseId", "status", "version", "result", "error"]
+      ]
     },
     "InteractionFormLink": {
       "type": "object",
@@ -21350,7 +21673,7 @@
           "$ref": "prototype.json#/$defs/Id"
         },
         "version": {
-          "$ref": "prototype.json#/$defs/UInt53"
+          "$ref": "#/$defs/ArtifactVersion"
         },
         "grantRevision": {
           "$ref": "prototype.json#/$defs/UInt53"
@@ -21415,7 +21738,8 @@
           "type": "string"
         },
         "ownerToken": {
-          "type": "string"
+          "type": "string",
+          "description": "Opaque public renderer generation handle; never an authentication credential or remote authorization proof."
         },
         "authorApiMajor": {
           "type": "number"
@@ -21555,23 +21879,23 @@
       "additionalProperties": false,
       "properties": {
         "negotiatedSession": {
-          "type": "string"
+          "$ref": "prototype.json#/$defs/Id"
         },
         "wireVersion": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "major": {
-              "type": "number"
+              "$ref": "prototype.json#/$defs/UInt53"
             },
             "minor": {
-              "type": "number"
+              "$ref": "prototype.json#/$defs/UInt53"
             }
           },
           "required": ["major", "minor"]
         },
         "catalogRevision": {
-          "type": "number"
+          "$ref": "prototype.json#/$defs/UInt53"
         },
         "capabilities": {
           "$ref": "#/$defs/NegotiatedClientCapabilities"
@@ -21581,14 +21905,14 @@
           "items": {
             "$ref": "prototype.json#/$defs/SchemaRef"
           },
-          "maxItems": 10000
+          "maxItems": 128
         },
         "modules": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/ClientModule"
           },
-          "maxItems": 10000
+          "maxItems": 128
         },
         "mode": {
           "anyOf": [
@@ -21613,15 +21937,17 @@
             "additionalProperties": false,
             "properties": {
               "code": {
-                "type": "string"
+                "$ref": "prototype.json#/$defs/Id"
               },
               "message": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "x-max-utf8-bytes": 1024
               },
               "moduleId": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "$ref": "prototype.json#/$defs/Id"
                   },
                   {
                     "type": "null"
@@ -21631,7 +21957,10 @@
             },
             "required": ["code", "message", "moduleId"]
           },
-          "maxItems": 10000
+          "maxItems": 128
+        },
+        "clientInstanceId": {
+          "$ref": "prototype.json#/$defs/Id"
         }
       },
       "required": [
@@ -21642,8 +21971,10 @@
         "domainSchemas",
         "modules",
         "mode",
-        "reasons"
-      ]
+        "reasons",
+        "clientInstanceId"
+      ],
+      "x-max-canonical-json-bytes": 1048576
     },
     "DomainCommandRequest": {
       "type": "object",
@@ -21672,6 +22003,9 @@
         },
         "expectedRevision": {
           "type": "number"
+        },
+        "commandSchema": {
+          "$ref": "prototype.json#/$defs/SchemaRef"
         }
       },
       "required": [
@@ -21682,7 +22016,8 @@
         "action",
         "input",
         "requestId",
-        "expectedRevision"
+        "expectedRevision",
+        "commandSchema"
       ]
     },
     "PluginAuthorMetadata": {
@@ -24161,133 +24496,482 @@
       "required": ["upload", "retention"]
     },
     "ArtifactReservation": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "publicationId": {
-          "$ref": "prototype.json#/$defs/Id"
-        },
-        "artifactId": {
-          "$ref": "prototype.json#/$defs/Id"
-        },
-        "version": {
-          "$ref": "prototype.json#/$defs/UInt53"
-        },
-        "revision": {
-          "$ref": "#/$defs/Revision"
-        },
-        "schema": {
-          "$ref": "prototype.json#/$defs/SchemaRef"
-        },
-        "kind": {
-          "$ref": "prototype.json#/$defs/TypeId"
-        },
-        "title": {
-          "type": "string"
-        },
-        "mediaType": {
-          "type": "string"
-        },
-        "ownerAction": {
+      "anyOf": [
+        {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "run": {
-              "$ref": "#/$defs/RunRef"
-            },
-            "actionId": {
+            "publicationId": {
               "$ref": "prototype.json#/$defs/Id"
-            }
-          },
-          "required": ["run", "actionId"]
-        },
-        "state": {
-          "anyOf": [
-            {
+            },
+            "artifactId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "version": {
+              "$ref": "#/$defs/ArtifactVersion"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "schema": {
+              "$ref": "prototype.json#/$defs/SchemaRef"
+            },
+            "kind": {
+              "$ref": "prototype.json#/$defs/TypeId"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactTitle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mediaType": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactMediaType"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownerAction": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "run": {
+                  "$ref": "#/$defs/RunRef"
+                },
+                "actionId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                }
+              },
+              "required": ["run", "actionId"]
+            },
+            "state": {
               "const": "reserved"
             },
-            {
-              "const": "pending-publish"
-            },
-            {
-              "const": "ready"
-            },
-            {
-              "const": "revoked"
-            },
-            {
-              "const": "failed"
-            }
-          ]
-        },
-        "source": {
-          "anyOf": [
-            {
+            "source": {
               "type": "null"
             },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "kind": {
-                  "const": "upload"
-                },
-                "upload": {
-                  "$ref": "#/$defs/UploadRef"
-                }
-              },
-              "required": ["kind", "upload"]
+            "pinId": {
+              "type": "null"
             },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "kind": {
-                  "const": "blob"
-                },
-                "blob": {
-                  "$ref": "prototype.json#/$defs/BlobRef"
-                }
-              },
-              "required": ["kind", "blob"]
+            "failureRef": {
+              "type": "null"
+            },
+            "blob": {
+              "type": "null"
             }
+          },
+          "required": [
+            "publicationId",
+            "artifactId",
+            "version",
+            "revision",
+            "schema",
+            "kind",
+            "title",
+            "mediaType",
+            "ownerAction",
+            "state",
+            "source",
+            "pinId",
+            "failureRef",
+            "blob"
           ]
         },
-        "pinId": {
-          "anyOf": [
-            {
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publicationId": {
               "$ref": "prototype.json#/$defs/Id"
             },
-            {
+            "artifactId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "version": {
+              "$ref": "#/$defs/ArtifactVersion"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "schema": {
+              "$ref": "prototype.json#/$defs/SchemaRef"
+            },
+            "kind": {
+              "$ref": "prototype.json#/$defs/TypeId"
+            },
+            "title": {
+              "$ref": "#/$defs/ArtifactTitle"
+            },
+            "mediaType": {
+              "$ref": "#/$defs/ArtifactMediaType"
+            },
+            "ownerAction": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "run": {
+                  "$ref": "#/$defs/RunRef"
+                },
+                "actionId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                }
+              },
+              "required": ["run", "actionId"]
+            },
+            "state": {
+              "const": "pending-publish"
+            },
+            "source": {
+              "$ref": "#/$defs/ArtifactSource"
+            },
+            "pinId": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/Id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureRef": {
               "type": "null"
+            },
+            "blob": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/BlobRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
+          },
+          "required": [
+            "publicationId",
+            "artifactId",
+            "version",
+            "revision",
+            "schema",
+            "kind",
+            "title",
+            "mediaType",
+            "ownerAction",
+            "state",
+            "source",
+            "pinId",
+            "failureRef",
+            "blob"
           ]
         },
-        "failureRef": {
-          "anyOf": [
-            {
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publicationId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "artifactId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "version": {
+              "$ref": "#/$defs/ArtifactVersion"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "schema": {
+              "$ref": "prototype.json#/$defs/SchemaRef"
+            },
+            "kind": {
+              "$ref": "prototype.json#/$defs/TypeId"
+            },
+            "title": {
+              "$ref": "#/$defs/ArtifactTitle"
+            },
+            "mediaType": {
+              "$ref": "#/$defs/ArtifactMediaType"
+            },
+            "ownerAction": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "run": {
+                  "$ref": "#/$defs/RunRef"
+                },
+                "actionId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                }
+              },
+              "required": ["run", "actionId"]
+            },
+            "state": {
+              "const": "ready"
+            },
+            "source": {
+              "$ref": "#/$defs/ArtifactSource"
+            },
+            "pinId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "failureRef": {
+              "type": "null"
+            },
+            "blob": {
+              "$ref": "prototype.json#/$defs/BlobRef"
+            }
+          },
+          "required": [
+            "publicationId",
+            "artifactId",
+            "version",
+            "revision",
+            "schema",
+            "kind",
+            "title",
+            "mediaType",
+            "ownerAction",
+            "state",
+            "source",
+            "pinId",
+            "failureRef",
+            "blob"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publicationId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "artifactId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "version": {
+              "$ref": "#/$defs/ArtifactVersion"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "schema": {
+              "$ref": "prototype.json#/$defs/SchemaRef"
+            },
+            "kind": {
+              "$ref": "prototype.json#/$defs/TypeId"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactTitle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mediaType": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactMediaType"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownerAction": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "run": {
+                  "$ref": "#/$defs/RunRef"
+                },
+                "actionId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                }
+              },
+              "required": ["run", "actionId"]
+            },
+            "state": {
+              "const": "failed"
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactSource"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pinId": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/Id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureRef": {
               "$ref": "#/$defs/ReceiptPointer"
             },
-            {
-              "type": "null"
+            "blob": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/BlobRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
+          },
+          "required": [
+            "publicationId",
+            "artifactId",
+            "version",
+            "revision",
+            "schema",
+            "kind",
+            "title",
+            "mediaType",
+            "ownerAction",
+            "state",
+            "source",
+            "pinId",
+            "failureRef",
+            "blob"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publicationId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "artifactId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "version": {
+              "$ref": "#/$defs/ArtifactVersion"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "schema": {
+              "$ref": "prototype.json#/$defs/SchemaRef"
+            },
+            "kind": {
+              "$ref": "prototype.json#/$defs/TypeId"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactTitle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mediaType": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactMediaType"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownerAction": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "run": {
+                  "$ref": "#/$defs/RunRef"
+                },
+                "actionId": {
+                  "$ref": "prototype.json#/$defs/Id"
+                }
+              },
+              "required": ["run", "actionId"]
+            },
+            "state": {
+              "const": "revoked"
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactSource"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pinId": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/Id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureRef": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ReceiptPointer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "blob": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/BlobRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "publicationId",
+            "artifactId",
+            "version",
+            "revision",
+            "schema",
+            "kind",
+            "title",
+            "mediaType",
+            "ownerAction",
+            "state",
+            "source",
+            "pinId",
+            "failureRef",
+            "blob"
           ]
         }
-      },
-      "required": [
-        "publicationId",
-        "artifactId",
-        "version",
-        "revision",
-        "schema",
-        "kind",
-        "title",
-        "mediaType",
-        "ownerAction",
-        "state",
-        "source",
-        "pinId",
-        "failureRef"
       ]
     },
     "DomainEventRecord": {
@@ -24645,6 +25329,14 @@
         },
         "fullContentDigest": {
           "$ref": "prototype.json#/$defs/Digest"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChannelArtifactAttachment"
+          },
+          "maxItems": 32,
+          "uniqueItems": true
         }
       },
       "required": [
@@ -26140,9 +26832,12 @@
         },
         "expectedRevision": {
           "type": "number"
+        },
+        "commandSchema": {
+          "$ref": "prototype.json#/$defs/SchemaRef"
         }
       },
-      "required": ["action", "input", "requestId", "expectedRevision"]
+      "required": ["action", "input", "requestId", "expectedRevision", "commandSchema"]
     },
     "DomainCommandClientCommandStatusRequest": {
       "type": "string"
@@ -26647,7 +27342,7 @@
           "$ref": "prototype.json#/$defs/Id"
         },
         "version": {
-          "$ref": "prototype.json#/$defs/UInt53"
+          "$ref": "#/$defs/ArtifactVersion"
         },
         "disposition": {
           "anyOf": [
@@ -26670,7 +27365,7 @@
           "$ref": "prototype.json#/$defs/Id"
         },
         "version": {
-          "$ref": "prototype.json#/$defs/UInt53"
+          "$ref": "#/$defs/ArtifactVersion"
         },
         "offset": {
           "$ref": "prototype.json#/$defs/UInt53"
@@ -26689,7 +27384,7 @@
           "$ref": "prototype.json#/$defs/Id"
         },
         "version": {
-          "$ref": "prototype.json#/$defs/UInt53"
+          "$ref": "#/$defs/ArtifactVersion"
         },
         "offset": {
           "$ref": "prototype.json#/$defs/UInt53"
@@ -28666,33 +29361,37 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "$ref": "prototype.json#/$defs/Id"
-        },
         "expectedVersion": {
           "$ref": "#/$defs/Revision"
         },
         "reason": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "x-max-utf8-bytes": 8192
+        },
+        "interactionId": {
+          "$ref": "prototype.json#/$defs/Id"
         }
       },
-      "required": ["id", "expectedVersion", "reason"]
+      "required": ["interactionId", "expectedVersion", "reason"]
     },
     "InteractionCancelRequest": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "$ref": "prototype.json#/$defs/Id"
-        },
         "expectedVersion": {
           "$ref": "#/$defs/Revision"
         },
         "reason": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "x-max-utf8-bytes": 8192
+        },
+        "interactionId": {
+          "$ref": "prototype.json#/$defs/Id"
         }
       },
-      "required": ["id", "expectedVersion", "reason"]
+      "required": ["interactionId", "expectedVersion", "reason"]
     },
     "InteractionReadRequest": {
       "type": "object",
@@ -29485,26 +30184,116 @@
       "required": ["definition", "occurrences"]
     },
     "ArtifactsReserveRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "$ref": "prototype.json#/$defs/TypeId"
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publicationId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "kind": {
+              "$ref": "prototype.json#/$defs/TypeId"
+            },
+            "schema": {
+              "$ref": "prototype.json#/$defs/SchemaRef"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactTitle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mediaType": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactMediaType"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownerActionRef": {
+              "$ref": "prototype.json#/$defs/ActionRef"
+            },
+            "artifactId": {
+              "type": "null"
+            },
+            "expectedLatestVersion": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "publicationId",
+            "kind",
+            "schema",
+            "title",
+            "mediaType",
+            "ownerActionRef",
+            "artifactId",
+            "expectedLatestVersion"
+          ]
         },
-        "schema": {
-          "$ref": "prototype.json#/$defs/SchemaRef"
-        },
-        "title": {
-          "type": "string"
-        },
-        "mediaType": {
-          "type": "string"
-        },
-        "ownerActionRef": {
-          "$ref": "prototype.json#/$defs/ActionRef"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publicationId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "kind": {
+              "$ref": "prototype.json#/$defs/TypeId"
+            },
+            "schema": {
+              "$ref": "prototype.json#/$defs/SchemaRef"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactTitle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mediaType": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactMediaType"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownerActionRef": {
+              "$ref": "prototype.json#/$defs/ActionRef"
+            },
+            "artifactId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "expectedLatestVersion": {
+              "$ref": "#/$defs/ArtifactVersion"
+            }
+          },
+          "required": [
+            "publicationId",
+            "kind",
+            "schema",
+            "title",
+            "mediaType",
+            "ownerActionRef",
+            "artifactId",
+            "expectedLatestVersion"
+          ]
         }
-      },
-      "required": ["kind", "schema", "title", "mediaType", "ownerActionRef"]
+      ]
     },
     "ArtifactsPublishRequest": {
       "type": "object",
@@ -29514,40 +30303,19 @@
           "$ref": "prototype.json#/$defs/Id"
         },
         "source": {
-          "anyOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "kind": {
-                  "const": "upload"
-                },
-                "upload": {
-                  "$ref": "#/$defs/UploadRef"
-                }
-              },
-              "required": ["kind", "upload"]
-            },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "kind": {
-                  "const": "blob"
-                },
-                "blob": {
-                  "$ref": "prototype.json#/$defs/BlobRef"
-                }
-              },
-              "required": ["kind", "blob"]
-            }
-          ]
+          "$ref": "#/$defs/ArtifactSource"
         },
         "expectedRevision": {
           "$ref": "#/$defs/Revision"
+        },
+        "title": {
+          "$ref": "#/$defs/ArtifactTitle"
+        },
+        "mediaType": {
+          "$ref": "#/$defs/ArtifactMediaType"
         }
       },
-      "required": ["publicationId", "source", "expectedRevision"]
+      "required": ["publicationId", "source", "expectedRevision", "title", "mediaType"]
     },
     "ArtifactsRevokeRequest": {
       "type": "object",
@@ -29719,56 +30487,159 @@
       "additionalProperties": false,
       "properties": {
         "ref": {
-          "$ref": "#/$defs/PublicRef"
+          "$ref": "#/$defs/BlobInspectReference"
         }
       },
       "required": ["ref"]
     },
     "BlobInspectResult": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "status": {
-          "anyOf": [
-            {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
               "const": "uploading"
             },
-            {
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "digest": {
+              "type": "null"
+            },
+            "ownerRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PublicRef"
+              },
+              "maxItems": 10000
+            }
+          },
+          "required": ["status", "bytes", "digest", "ownerRefs"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
               "const": "sealed"
             },
-            {
-              "const": "staged"
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
             },
-            {
-              "const": "pinned"
-            },
-            {
-              "const": "deleted"
-            }
-          ]
-        },
-        "bytes": {
-          "$ref": "prototype.json#/$defs/UInt53"
-        },
-        "digest": {
-          "anyOf": [
-            {
+            "digest": {
               "$ref": "prototype.json#/$defs/Digest"
             },
-            {
-              "type": "null"
+            "ownerRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PublicRef"
+              },
+              "maxItems": 10000
             }
-          ]
-        },
-        "ownerRefs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/PublicRef"
           },
-          "maxItems": 10000
+          "required": ["status", "bytes", "digest", "ownerRefs"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "aborted"
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "digest": {
+              "type": "null"
+            },
+            "ownerRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PublicRef"
+              },
+              "maxItems": 10000
+            }
+          },
+          "required": ["status", "bytes", "digest", "ownerRefs"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "staged"
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "digest": {
+              "$ref": "prototype.json#/$defs/Digest"
+            },
+            "ownerRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PublicRef"
+              },
+              "maxItems": 10000
+            }
+          },
+          "required": ["status", "bytes", "digest", "ownerRefs"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "pinned"
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "digest": {
+              "$ref": "prototype.json#/$defs/Digest"
+            },
+            "ownerRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PublicRef"
+              },
+              "maxItems": 10000
+            }
+          },
+          "required": ["status", "bytes", "digest", "ownerRefs"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "deleted"
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "digest": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/Digest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownerRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PublicRef"
+              },
+              "maxItems": 10000
+            }
+          },
+          "required": ["status", "bytes", "digest", "ownerRefs"]
         }
-      },
-      "required": ["status", "bytes", "digest", "ownerRefs"]
+      ]
     },
     "BudgetReserveRequest": {
       "type": "object",
@@ -30306,7 +31177,7 @@
           "$ref": "#/$defs/PageDomainEventRecord"
         },
         "resyncRequired": {
-          "type": "boolean"
+          "const": false
         }
       },
       "required": ["page", "resyncRequired"]
@@ -30323,9 +31194,20 @@
         },
         "causationRef": {
           "$ref": "#/$defs/PublicRef"
+        },
+        "typeId": {
+          "$ref": "prototype.json#/$defs/TypeId"
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "x-max-utf8-bytes": 8192
+        },
+        "aggregate": {
+          "$ref": "#/$defs/DomainObjectRef"
         }
       },
-      "required": ["domainSchema", "payload", "causationRef"]
+      "required": ["domainSchema", "payload", "causationRef", "typeId", "idempotencyKey", "aggregate"]
     },
     "EventsPublishResult": {
       "type": "object",
@@ -30348,7 +31230,9 @@
           "type": "string"
         },
         "limit": {
-          "type": "number"
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
         }
       },
       "required": ["query", "afterCursor", "limit"]
@@ -31931,7 +32815,7 @@
           "$ref": "prototype.json#/$defs/Id"
         },
         "version": {
-          "$ref": "prototype.json#/$defs/UInt53"
+          "$ref": "#/$defs/ArtifactVersion"
         }
       },
       "required": ["artifactId", "version"]
@@ -32234,6 +33118,45 @@
             }
           },
           "required": ["operation", "input"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "transport.catalogStatus"
+            },
+            "input": {
+              "$ref": "#/$defs/ClientCatalogStatusRequest"
+            }
+          },
+          "required": ["operation", "input"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "transport.streamStatus"
+            },
+            "input": {
+              "$ref": "#/$defs/ClientArtifactStreamStatusRequest"
+            }
+          },
+          "required": ["operation", "input"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "conversation.list"
+            },
+            "input": {
+              "$ref": "#/$defs/ConversationListRequest"
+            }
+          },
+          "required": ["operation", "input"]
         }
       ]
     },
@@ -32469,6 +33392,45 @@
             },
             "value": {
               "$ref": "#/$defs/ArtifactViewRef"
+            }
+          },
+          "required": ["operation", "value"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "transport.catalogStatus"
+            },
+            "value": {
+              "$ref": "#/$defs/ClientCatalogStatusResult"
+            }
+          },
+          "required": ["operation", "value"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "transport.streamStatus"
+            },
+            "value": {
+              "$ref": "#/$defs/ClientArtifactStreamStatusResult"
+            }
+          },
+          "required": ["operation", "value"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "conversation.list"
+            },
+            "value": {
+              "$ref": "#/$defs/PageConversationSummary"
             }
           },
           "required": ["operation", "value"]
@@ -34310,9 +35272,1549 @@
             }
           },
           "required": ["kind", "header", "frame"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "catalog-changed"
+            },
+            "header": {
+              "$ref": "#/$defs/ClientCallHeader"
+            },
+            "status": {
+              "$ref": "#/$defs/ClientCatalogStatusResult"
+            }
+          },
+          "required": ["kind", "header", "status"]
         }
       ],
       "x-max-canonical-json-bytes": 1048576
+    },
+    "ClientArtifactStreamStatusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "$ref": "#/$defs/ClientCallHeader"
+        },
+        "streamId": {
+          "$ref": "prototype.json#/$defs/Id"
+        }
+      },
+      "required": ["header", "streamId"]
+    },
+    "ClientArtifactStreamStatusResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streamId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "state": {
+              "const": "streaming"
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "summary": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          },
+          "required": ["streamId", "state", "bytes", "summary", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streamId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "state": {
+              "const": "succeeded"
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "summary": {
+              "$ref": "#/$defs/ArtifactReadStreamEndResult"
+            },
+            "error": {
+              "type": "null"
+            }
+          },
+          "required": ["streamId", "state", "bytes", "summary", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streamId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "state": {
+              "anyOf": [
+                {
+                  "const": "failed"
+                },
+                {
+                  "const": "cancelled"
+                }
+              ]
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "summary": {
+              "type": "null"
+            },
+            "error": {
+              "$ref": "prototype.json#/$defs/RuntimeError"
+            }
+          },
+          "required": ["streamId", "state", "bytes", "summary", "error"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streamId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "state": {
+              "const": "unknown"
+            },
+            "bytes": {
+              "type": "null"
+            },
+            "summary": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          },
+          "required": ["streamId", "state", "bytes", "summary", "error"]
+        }
+      ]
+    },
+    "ClientCatalogStatusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "$ref": "#/$defs/ClientCallHeader"
+        }
+      },
+      "required": ["header"]
+    },
+    "ClientCatalogStatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "catalogRevision": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "const": "compatible"
+            },
+            {
+              "const": "degraded"
+            },
+            {
+              "const": "reload-required"
+            }
+          ]
+        },
+        "reasonCode": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["catalogRevision", "mode", "reasonCode"]
+    },
+    "ClientModuleCredentialBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "principalRef": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "tenantRef": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "authRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "credentialRevision": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "negotiatedSession": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "clientInstanceId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "moduleId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "packageDigest": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "assetDigest": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "moduleGeneration": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "ownerRef": {
+          "$ref": "prototype.json#/$defs/OwnerRef"
+        },
+        "catalogRevision": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "expiresAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "channelBinding": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "x-max-utf8-bytes": 128
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "allowedActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DomainActionRef"
+          },
+          "maxItems": 256
+        },
+        "moduleReady": {
+          "const": true
+        }
+      },
+      "required": [
+        "principalRef",
+        "tenantRef",
+        "authRevision",
+        "credentialRevision",
+        "negotiatedSession",
+        "clientInstanceId",
+        "moduleId",
+        "packageDigest",
+        "assetDigest",
+        "moduleGeneration",
+        "ownerRef",
+        "catalogRevision",
+        "expiresAt",
+        "channelBinding",
+        "operations",
+        "allowedActions",
+        "moduleReady"
+      ]
+    },
+    "ClientTransportRequestFrame": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "query"
+            },
+            "request": {
+              "$ref": "#/$defs/ClientQueryRequest"
+            }
+          },
+          "required": ["kind", "request"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "command"
+            },
+            "request": {
+              "$ref": "#/$defs/ClientCommandRequest"
+            }
+          },
+          "required": ["kind", "request"]
+        }
+      ],
+      "x-max-canonical-json-bytes": 1048576
+    },
+    "TransportAuthenticationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bindingId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "ingressId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "requestNonce": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "receivedAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "transport": {
+          "anyOf": [
+            {
+              "const": "http"
+            },
+            {
+              "const": "websocket"
+            }
+          ]
+        },
+        "method": {
+          "anyOf": [
+            {
+              "const": "GET"
+            },
+            {
+              "const": "POST"
+            }
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "x-max-utf8-bytes": 2048
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "x-max-utf8-bytes": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authority": {
+          "type": "string",
+          "minLength": 1,
+          "x-max-utf8-bytes": 512
+        },
+        "peerLoopback": {
+          "type": "boolean"
+        },
+        "tls": {
+          "type": "boolean"
+        },
+        "channelBinding": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "proof": {
+          "$ref": "#/$defs/TransportEvidenceProof"
+        }
+      },
+      "required": [
+        "bindingId",
+        "ingressId",
+        "requestNonce",
+        "receivedAt",
+        "transport",
+        "method",
+        "path",
+        "origin",
+        "authority",
+        "peerLoopback",
+        "tls",
+        "channelBinding",
+        "proof"
+      ]
+    },
+    "TransportCredentialEnvelope": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "bearer"
+            },
+            "token": {
+              "type": "string",
+              "minLength": 1,
+              "x-max-utf8-bytes": 8192
+            }
+          },
+          "required": ["kind", "token"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "session-cookie"
+            },
+            "token": {
+              "type": "string",
+              "minLength": 1,
+              "x-max-utf8-bytes": 8192
+            }
+          },
+          "required": ["kind", "token"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "module-session"
+            },
+            "token": {
+              "type": "string",
+              "minLength": 1,
+              "x-max-utf8-bytes": 8192
+            }
+          },
+          "required": ["kind", "token"]
+        }
+      ]
+    },
+    "TransportEvidenceProof": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "in-process"
+            },
+            "issuerBindingId": {
+              "$ref": "prototype.json#/$defs/Id"
+            }
+          },
+          "required": ["kind", "issuerBindingId"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "signed"
+            },
+            "issuerBindingId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "keyId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "expiresAt": {
+              "$ref": "prototype.json#/$defs/Timestamp"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 1,
+              "x-max-utf8-bytes": 1024
+            }
+          },
+          "required": ["kind", "issuerBindingId", "keyId", "expiresAt", "signature"]
+        }
+      ]
+    },
+    "ArtifactVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "ArtifactTitle": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+      "x-max-utf8-bytes": 1024
+    },
+    "ArtifactMediaType": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9!#$&^_.+\\-]*/[a-z0-9][a-z0-9!#$&^_.+\\-]*$",
+      "x-max-utf8-bytes": 255
+    },
+    "ArtifactContentDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/ArtifactTitle"
+        },
+        "mediaType": {
+          "$ref": "#/$defs/ArtifactMediaType"
+        },
+        "bytes": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "digest": {
+          "$ref": "prototype.json#/$defs/Digest"
+        }
+      },
+      "required": ["title", "mediaType", "bytes", "digest"]
+    },
+    "ArtifactSource": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "upload"
+            },
+            "upload": {
+              "$ref": "#/$defs/UploadRef"
+            }
+          },
+          "required": ["kind", "upload"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "blob"
+            },
+            "blob": {
+              "$ref": "prototype.json#/$defs/BlobRef"
+            }
+          },
+          "required": ["kind", "blob"]
+        }
+      ]
+    },
+    "ArtifactsFailRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "publicationId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "failureRef": {
+          "$ref": "#/$defs/ReceiptPointer"
+        }
+      },
+      "required": ["publicationId", "expectedRevision", "failureRef"]
+    },
+    "ArtifactAccessGrantValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "grantId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "granteePrincipalRef": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "scope": {
+          "$ref": "prototype.json#/$defs/ScopeRef"
+        },
+        "permissions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              {
+                "const": "read"
+              },
+              {
+                "const": "download"
+              }
+            ]
+          }
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/Timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "const": "active"
+            },
+            {
+              "const": "revoked"
+            }
+          ]
+        },
+        "sourceAuthorizationRef": {
+          "$ref": "prototype.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "grantId",
+        "artifact",
+        "granteePrincipalRef",
+        "scope",
+        "permissions",
+        "expiresAt",
+        "revision",
+        "status",
+        "sourceAuthorizationRef"
+      ]
+    },
+    "ArtifactsGrantRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "artifactRef": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "granteePrincipalRef": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "scope": {
+          "$ref": "prototype.json#/$defs/ScopeRef"
+        },
+        "permissions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              {
+                "const": "read"
+              },
+              {
+                "const": "download"
+              }
+            ]
+          }
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/Timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["requestId", "artifactRef", "granteePrincipalRef", "scope", "permissions", "expiresAt"]
+    },
+    "ArtifactsRevokeGrantRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "grantId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": ["requestId", "grantId", "expectedRevision", "reason"]
+    },
+    "ArtifactRedeemDownloadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ticketId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
+          "minLength": 43,
+          "maxLength": 43
+        },
+        "offset": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        }
+      },
+      "required": ["ticketId", "nonce", "offset"]
+    },
+    "ArtifactReadyView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "version": {
+          "$ref": "#/$defs/ArtifactVersion"
+        },
+        "title": {
+          "$ref": "#/$defs/ArtifactTitle"
+        },
+        "mime": {
+          "$ref": "#/$defs/ArtifactMediaType"
+        },
+        "size": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "status": {
+          "const": "ready"
+        }
+      },
+      "required": ["artifactId", "version", "title", "mime", "size", "status"]
+    },
+    "ArtifactDownloadPresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ArtifactReadyView"
+        },
+        "disposition": {
+          "anyOf": [
+            {
+              "const": "inline"
+            },
+            {
+              "const": "attachment"
+            }
+          ]
+        },
+        "expiresAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "grantRevision": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        }
+      },
+      "required": ["artifact", "disposition", "expiresAt", "grantRevision"]
+    },
+    "ArtifactDownloadMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stream": {
+          "$ref": "#/$defs/ClientArtifactStreamMetadata"
+        },
+        "download": {
+          "$ref": "#/$defs/ArtifactDownloadPresentation"
+        }
+      },
+      "required": ["stream", "download"]
+    },
+    "LegacyArtifactRef": {
+      "$ref": "https://agnes.ai/schema/session-v1.json#/$defs/ArtifactRef"
+    },
+    "LegacyArtifactMappingValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "legacy": {
+          "$ref": "#/$defs/LegacyArtifactRef"
+        },
+        "sessionId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "laneId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "ownerPrincipalRef": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "blob": {
+          "$ref": "prototype.json#/$defs/BlobRef"
+        },
+        "migrationId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "sourceEvidenceRef": {
+          "$ref": "prototype.json#/$defs/DomainReference"
+        }
+      },
+      "required": [
+        "legacy",
+        "sessionId",
+        "laneId",
+        "ownerPrincipalRef",
+        "artifact",
+        "blob",
+        "migrationId",
+        "sourceEvidenceRef"
+      ]
+    },
+    "ArtifactReservedView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "version": {
+          "$ref": "#/$defs/ArtifactVersion"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactTitle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactMediaType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "type": "null"
+        },
+        "status": {
+          "const": "reserved"
+        }
+      },
+      "required": ["artifactId", "version", "title", "mime", "size", "status"]
+    },
+    "ArtifactPendingPublishView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "version": {
+          "$ref": "#/$defs/ArtifactVersion"
+        },
+        "title": {
+          "$ref": "#/$defs/ArtifactTitle"
+        },
+        "mime": {
+          "$ref": "#/$defs/ArtifactMediaType"
+        },
+        "size": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "status": {
+          "const": "pending-publish"
+        }
+      },
+      "required": ["artifactId", "version", "title", "mime", "size", "status"]
+    },
+    "ArtifactFailedView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "version": {
+          "$ref": "#/$defs/ArtifactVersion"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactTitle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactMediaType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "const": "failed"
+        }
+      },
+      "required": ["artifactId", "version", "title", "mime", "size", "status"]
+    },
+    "ArtifactRevokedView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "version": {
+          "$ref": "#/$defs/ArtifactVersion"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactTitle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactMediaType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "const": "revoked"
+        }
+      },
+      "required": ["artifactId", "version", "title", "mime", "size", "status"]
+    },
+    "PublicBlobReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {
+          "const": "blob"
+        },
+        "value": {
+          "$ref": "prototype.json#/$defs/BlobRef"
+        }
+      }
+    },
+    "PublicUploadReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {
+          "const": "upload"
+        },
+        "value": {
+          "$ref": "#/$defs/UploadSession"
+        }
+      }
+    },
+    "PublicStagedBlobReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {
+          "const": "staged-blob"
+        },
+        "value": {
+          "$ref": "#/$defs/StagedBlobRef"
+        }
+      }
+    },
+    "BlobInspectReference": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicBlobReference"
+        },
+        {
+          "$ref": "#/$defs/PublicUploadReference"
+        },
+        {
+          "$ref": "#/$defs/PublicStagedBlobReference"
+        }
+      ]
+    },
+    "ApprovalAnswer": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "decision": {
+              "const": "approve"
+            },
+            "intentDigest": {
+              "$ref": "prototype.json#/$defs/Digest"
+            },
+            "grantScope": {
+              "enum": ["once", "session", "permanent"]
+            }
+          },
+          "required": ["decision", "intentDigest", "grantScope"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "decision": {
+              "const": "deny"
+            },
+            "intentDigest": {
+              "$ref": "prototype.json#/$defs/Digest"
+            }
+          },
+          "required": ["decision", "intentDigest"]
+        }
+      ]
+    },
+    "ApprovalAnswerSchemaRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "typeId": {
+          "const": "agh.interaction/approval-answer@1"
+        },
+        "revision": {
+          "const": 1
+        },
+        "digest": {
+          "$ref": "prototype.json#/$defs/Digest"
+        }
+      },
+      "required": ["typeId", "revision", "digest"]
+    },
+    "ApprovalAnswerDataRef": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "schema", "value", "digest", "bytes"],
+          "properties": {
+            "kind": {
+              "const": "inline"
+            },
+            "schema": {
+              "$ref": "#/$defs/ApprovalAnswerSchemaRef"
+            },
+            "value": {
+              "$ref": "#/$defs/ApprovalAnswer"
+            },
+            "digest": {
+              "$ref": "prototype.json#/$defs/Digest"
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "schema", "blob"],
+          "properties": {
+            "kind": {
+              "const": "blob"
+            },
+            "schema": {
+              "$ref": "#/$defs/ApprovalAnswerSchemaRef"
+            },
+            "blob": {
+              "$ref": "prototype.json#/$defs/BlobRef"
+            }
+          }
+        }
+      ]
+    },
+    "DomainViewChange": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "upsert"
+            },
+            "view": {
+              "$ref": "#/$defs/DomainView"
+            }
+          },
+          "required": ["kind", "view"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "remove"
+            },
+            "viewId": {
+              "type": "string"
+            },
+            "revision": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "viewId", "revision", "reason"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "reset"
+            },
+            "snapshot": {
+              "$ref": "#/$defs/ProjectionSnapshot"
+            }
+          },
+          "required": ["kind", "snapshot"]
+        }
+      ]
+    },
+    "CommandRuntimeAcceptanceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/DataRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deliveries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "deliveryId": {
+                "$ref": "prototype.json#/$defs/Id"
+              },
+              "runtimeRef": {
+                "$ref": "#/$defs/PublicRef"
+              }
+            },
+            "required": ["deliveryId", "runtimeRef"]
+          },
+          "maxItems": 10000
+        }
+      },
+      "required": ["value", "deliveries"]
+    },
+    "CommandRuntimeAcceptanceDataRef": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "schema", "value", "digest", "bytes"],
+          "properties": {
+            "kind": {
+              "const": "inline"
+            },
+            "schema": {
+              "$ref": "#/$defs/CommandRuntimeAcceptanceSchemaRef"
+            },
+            "value": {
+              "$ref": "#/$defs/CommandRuntimeAcceptanceResult"
+            },
+            "digest": {
+              "$ref": "prototype.json#/$defs/Digest"
+            },
+            "bytes": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "schema", "blob"],
+          "properties": {
+            "kind": {
+              "const": "blob"
+            },
+            "schema": {
+              "$ref": "#/$defs/CommandRuntimeAcceptanceSchemaRef"
+            },
+            "blob": {
+              "$ref": "prototype.json#/$defs/BlobRef"
+            }
+          }
+        }
+      ]
+    },
+    "ChannelArtifactAttachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "version": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "disposition": {
+          "const": "attachment"
+        }
+      },
+      "required": ["artifactId", "version", "disposition"]
+    },
+    "ConversationListRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["installationId", "runtimeId", "workspaceId", "kind"],
+          "properties": {
+            "installationId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "runtimeId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "workspaceId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "kind": {
+              "const": "workspace"
+            }
+          }
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-max-utf8-bytes": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        }
+      },
+      "required": ["scope", "text", "cursor", "limit"]
+    },
+    "ConversationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "workspaceId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "x-max-utf8-bytes": 8192
+        },
+        "updatedAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "revision": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        }
+      },
+      "required": ["sessionId", "workspaceId", "title", "updatedAt", "revision"]
+    },
+    "PageConversationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConversationSummary"
+          },
+          "maxItems": 128
+        },
+        "snapshot": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": ["items", "snapshot", "nextCursor", "complete"]
+    },
+    "OutboxDeliveryKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceAuthorityId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "eventId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "destination": {
+          "$ref": "prototype.json#/$defs/Id"
+        }
+      },
+      "required": ["sourceAuthorityId", "eventId", "destination"]
+    },
+    "OutboxDeadLettersRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "$ref": "prototype.json#/$defs/ScopeRef"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": ["scope", "destination", "cursor", "limit"]
+    },
+    "OutboxDeadLetterItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "delivery": {
+          "$ref": "#/$defs/OutboxDeliveryKey"
+        },
+        "outbox": {
+          "$ref": "prototype.json#/$defs/OutboxRecord"
+        },
+        "owner": {
+          "$ref": "#/$defs/RecordOwner"
+        },
+        "deliveryRevision": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "deadAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        }
+      },
+      "required": ["delivery", "outbox", "owner", "deliveryRevision", "deadAt"]
+    },
+    "PageOutboxDeadLetterItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OutboxDeadLetterItem"
+          },
+          "maxItems": 500
+        },
+        "snapshot": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": ["items", "snapshot", "nextCursor", "complete"]
+    },
+    "OutboxRedriveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "scope": {
+          "$ref": "prototype.json#/$defs/ScopeRef"
+        },
+        "delivery": {
+          "$ref": "#/$defs/OutboxDeliveryKey"
+        },
+        "expectedDeliveryRevision": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "x-max-utf8-bytes": 8192
+        }
+      },
+      "required": ["requestId", "scope", "delivery", "expectedDeliveryRevision", "reason"]
+    },
+    "OutboxRedriveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "delivery": {
+          "$ref": "#/$defs/OutboxDeliveryKey"
+        },
+        "state": {
+          "const": "pending"
+        },
+        "deliveryRevision": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        }
+      },
+      "required": ["delivery", "state", "deliveryRevision"]
+    },
+    "OutboxRedriveRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "$ref": "#/$defs/RecordOwner"
+        },
+        "request": {
+          "$ref": "#/$defs/OutboxRedriveRequest"
+        },
+        "actorRef": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "fingerprint": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "acceptedAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "authorizationRef": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "result": {
+          "$ref": "#/$defs/OutboxRedriveResult"
+        }
+      },
+      "required": ["owner", "request", "actorRef", "fingerprint", "acceptedAt", "authorizationRef", "result"]
+    },
+    "CommandRuntimeAcceptanceSchemaRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "typeId": {
+          "const": "agh.domain/command-runtime-acceptance-result@1"
+        },
+        "revision": {
+          "const": 1
+        },
+        "digest": {
+          "$ref": "prototype.json#/$defs/Digest"
+        }
+      },
+      "required": ["typeId", "revision", "digest"]
     }
   },
   "x-service-catalog": {
@@ -35168,7 +37670,8 @@
           "output": "CommandHandle",
           "inputTypeId": "agh.supervisor/submitConversation.request@1",
           "outputTypeId": "agh.supervisor/submitConversation.response@1",
-          "sameAttemptBrokerAllowed": false
+          "sameAttemptBrokerAllowed": false,
+          "completion": "runtime-accepted"
         },
         "cancelConversation": {
           "kind": "control",
@@ -35176,7 +37679,8 @@
           "output": "CommandHandle",
           "inputTypeId": "agh.supervisor/cancelConversation.request@1",
           "outputTypeId": "agh.supervisor/cancelConversation.response@1",
-          "sameAttemptBrokerAllowed": false
+          "sameAttemptBrokerAllowed": false,
+          "completion": "runtime-accepted"
         },
         "conversationCommandStatus": {
           "kind": "query",
@@ -35431,7 +37935,8 @@
           "output": "CommandHandle",
           "inputTypeId": "agh.jobs/acceptCreateDefinition.request@1",
           "outputTypeId": "agh.jobs/acceptCreateDefinition.response@1",
-          "sameAttemptBrokerAllowed": false
+          "sameAttemptBrokerAllowed": false,
+          "completion": "domain-commit"
         },
         "acceptUpdateDefinition": {
           "kind": "control",
@@ -35439,7 +37944,8 @@
           "output": "CommandHandle",
           "inputTypeId": "agh.jobs/acceptUpdateDefinition.request@1",
           "outputTypeId": "agh.jobs/acceptUpdateDefinition.response@1",
-          "sameAttemptBrokerAllowed": false
+          "sameAttemptBrokerAllowed": false,
+          "completion": "domain-commit"
         },
         "acceptCancelDefinition": {
           "kind": "control",
@@ -35447,7 +37953,8 @@
           "output": "CommandHandle",
           "inputTypeId": "agh.jobs/acceptCancelDefinition.request@1",
           "outputTypeId": "agh.jobs/acceptCancelDefinition.response@1",
-          "sameAttemptBrokerAllowed": false
+          "sameAttemptBrokerAllowed": false,
+          "completion": "runtime-accepted"
         },
         "clientCommandStatus": {
           "kind": "query",
@@ -35468,7 +37975,8 @@
           "output": "ArtifactReservation",
           "inputTypeId": "agh.artifacts/reserve.request@1",
           "outputTypeId": "agh.artifacts/reserve.response@1",
-          "sameAttemptBrokerAllowed": false
+          "sameAttemptBrokerAllowed": false,
+          "requiredFeature": "artifact-publication.v1"
         },
         "publish": {
           "kind": "action",
@@ -35476,7 +37984,8 @@
           "output": "ArtifactReservation",
           "inputTypeId": "agh.artifacts/publish.request@1",
           "outputTypeId": "agh.artifacts/publish.response@1",
-          "sameAttemptBrokerAllowed": false
+          "sameAttemptBrokerAllowed": false,
+          "requiredFeature": "artifact-publication.v1"
         },
         "revoke": {
           "kind": "action",
@@ -35532,6 +38041,41 @@
           "localMethod": "followDownload",
           "sameAttemptBrokerAllowed": false,
           "clientOnly": true
+        },
+        "fail": {
+          "kind": "action",
+          "input": "ArtifactsFailRequest",
+          "output": "ArtifactReservation",
+          "inputTypeId": "agh.artifacts/fail.request@1",
+          "outputTypeId": "agh.artifacts/fail.response@1",
+          "requiredFeature": "artifact-publication.v1",
+          "sameAttemptBrokerAllowed": false
+        },
+        "grant": {
+          "kind": "action",
+          "input": "ArtifactsGrantRequest",
+          "output": "ArtifactAccessGrantValue",
+          "inputTypeId": "agh.artifacts/grant.request@1",
+          "outputTypeId": "agh.artifacts/grant.response@1",
+          "requiredFeature": "artifact-publication.v1",
+          "sameAttemptBrokerAllowed": false
+        },
+        "revokeGrant": {
+          "kind": "action",
+          "input": "ArtifactsRevokeGrantRequest",
+          "output": "ArtifactAccessGrantValue",
+          "inputTypeId": "agh.artifacts/revokeGrant.request@1",
+          "outputTypeId": "agh.artifacts/revokeGrant.response@1",
+          "requiredFeature": "artifact-publication.v1",
+          "sameAttemptBrokerAllowed": false
+        },
+        "redeemDownload": {
+          "local": true,
+          "localInterface": "ArtifactAccessPort",
+          "localMethod": "redeemDownload",
+          "kind": "query",
+          "requiredFeature": "artifact-ticket.v1",
+          "sameAttemptBrokerAllowed": false
         }
       }
     },
@@ -35841,6 +38385,15 @@
           "inputTypeId": "agh.projection/commandStatus.request@1",
           "outputTypeId": "agh.projection/commandStatus.response@1",
           "sameAttemptBrokerAllowed": false
+        },
+        "listConversations": {
+          "kind": "query",
+          "input": "ConversationListRequest",
+          "output": "PageConversationSummary",
+          "inputTypeId": "agh.projection/listConversations.request@1",
+          "outputTypeId": "agh.projection/listConversations.response@1",
+          "sameAttemptBrokerAllowed": false,
+          "requiredFeature": "client-transport-wire.v2"
         }
       }
     },
@@ -35878,7 +38431,7 @@
           "inputTypeId": "agh.transport/bootstrap.request@1",
           "outputTypeId": "agh.transport/bootstrap.response@1",
           "sameAttemptBrokerAllowed": false,
-          "requiredFeature": "client-transport.v1"
+          "requiredFeature": "client-transport-wire.v2"
         },
         "clientQuery": {
           "kind": "query",
@@ -35887,7 +38440,7 @@
           "inputTypeId": "agh.transport/clientQuery.request@1",
           "outputTypeId": "agh.transport/clientQuery.response@1",
           "sameAttemptBrokerAllowed": false,
-          "requiredFeature": "client-transport.v1"
+          "requiredFeature": "client-transport-wire.v2"
         },
         "clientCommand": {
           "kind": "ingress",
@@ -35896,7 +38449,7 @@
           "inputTypeId": "agh.transport/clientCommand.request@1",
           "outputTypeId": "agh.transport/clientCommand.response@1",
           "sameAttemptBrokerAllowed": false,
-          "requiredFeature": "client-transport.v1"
+          "requiredFeature": "client-transport-wire.v2"
         },
         "catalogPage": {
           "kind": "query",
@@ -35905,7 +38458,7 @@
           "inputTypeId": "agh.transport/catalogPage.request@1",
           "outputTypeId": "agh.transport/catalogPage.response@1",
           "sameAttemptBrokerAllowed": false,
-          "requiredFeature": "client-transport.v1"
+          "requiredFeature": "client-transport-wire.v2"
         },
         "subscribe": {
           "kind": "query",
@@ -35914,7 +38467,7 @@
           "inputTypeId": "agh.transport/subscribe.request@1",
           "outputTypeId": "agh.transport/subscribe.response@1",
           "sameAttemptBrokerAllowed": false,
-          "requiredFeature": "client-transport.v1"
+          "requiredFeature": "client-transport-wire.v2"
         },
         "readSubscription": {
           "kind": "query",
@@ -35923,7 +38476,7 @@
           "inputTypeId": "agh.transport/readSubscription.request@1",
           "outputTypeId": "agh.transport/readSubscription.response@1",
           "sameAttemptBrokerAllowed": false,
-          "requiredFeature": "client-transport.v1"
+          "requiredFeature": "client-transport-wire.v2"
         },
         "closeSubscription": {
           "kind": "control",
@@ -35932,7 +38485,25 @@
           "inputTypeId": "agh.transport/closeSubscription.request@1",
           "outputTypeId": "agh.transport/closeSubscription.response@1",
           "sameAttemptBrokerAllowed": false,
-          "requiredFeature": "client-transport.v1"
+          "requiredFeature": "client-transport-wire.v2"
+        },
+        "catalogStatus": {
+          "kind": "query",
+          "input": "ClientCatalogStatusRequest",
+          "output": "ClientCatalogStatusResult",
+          "inputTypeId": "agh.transport/catalogStatus.request@1",
+          "outputTypeId": "agh.transport/catalogStatus.response@1",
+          "sameAttemptBrokerAllowed": false,
+          "requiredFeature": "client-transport-wire.v2"
+        },
+        "streamStatus": {
+          "kind": "query",
+          "input": "ClientArtifactStreamStatusRequest",
+          "output": "ClientArtifactStreamStatusResult",
+          "inputTypeId": "agh.transport/streamStatus.request@1",
+          "outputTypeId": "agh.transport/streamStatus.response@1",
+          "sameAttemptBrokerAllowed": false,
+          "requiredFeature": "client-transport-wire.v2"
         }
       }
     },
@@ -36766,7 +39337,19 @@
     "SimpleDecisionObservation": "agh.sdk/simple-decision-observation@1",
     "SimpleModelRequest": "agh.sdk/simple-model-request@1",
     "SimpleStepDecision": "agh.sdk/simple-step-decision@1",
-    "ControlledHttpHeaders": "agh.network/http-headers@1"
+    "ControlledHttpHeaders": "agh.network/http-headers@1",
+    "ClientModuleCredentialBinding": "agh.transport/module-credential-binding@1",
+    "TransportAuthenticationEvidence": "agh.identity/transport-evidence@1",
+    "TransportCredentialEnvelope": "agh.identity/transport-credential@1",
+    "TransportEvidenceProof": "agh.identity/transport-proof@1",
+    "ArtifactContentDescriptor": "agh.artifacts/content-descriptor@1",
+    "ArtifactAccessGrantValue": "agh.artifacts/access-grant@1",
+    "ArtifactRedeemDownloadRequest": "agh.artifacts/redeem-download-request@1",
+    "ArtifactDownloadPresentation": "agh.artifacts/download-presentation@1",
+    "ArtifactDownloadMetadata": "agh.artifacts/download-metadata@1",
+    "LegacyArtifactMappingValue": "agh.artifacts/legacy-mapping@1",
+    "ApprovalAnswer": "agh.interaction/approval-answer@1",
+    "CommandRuntimeAcceptanceResult": "agh.domain/command-runtime-acceptance-result@1"
   },
   "x-author-capabilities": {
     "rawToolResult": {
@@ -36847,7 +39430,7 @@
     "approval_request": {
       "category": "transform",
       "readFields": ["/request"],
-      "writeFields": ["/request/risk", "/request/context", "/request/summary"]
+      "writeFields": ["/request/context", "/request/summary"]
     },
     "before_compact": {
       "category": "transform",
@@ -37014,9 +39597,10 @@
       "backendContract": "agh.supervisor",
       "backendMethod": "createConversation",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "identityField": "requestId",
-      "statusOperation": "conversation.status"
+      "statusOperation": "conversation.status",
+      "quotaClass": "work"
     },
     "conversation.open": {
       "localInterface": "ShellConversationClient",
@@ -37027,7 +39611,7 @@
       "backendContract": "agh.projection",
       "backendMethod": "openConversation",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "conversation.history": {
       "localInterface": "ShellConversationClient",
@@ -37038,7 +39622,7 @@
       "backendContract": "agh.projection",
       "backendMethod": "conversationHistory",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "conversation.submit": {
       "localInterface": "ShellConversationClient",
@@ -37049,9 +39633,10 @@
       "backendContract": "agh.supervisor",
       "backendMethod": "submitConversation",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "identityField": "requestId",
-      "statusOperation": "conversation.status"
+      "statusOperation": "conversation.status",
+      "quotaClass": "work"
     },
     "conversation.cancel": {
       "localInterface": "ShellConversationClient",
@@ -37062,9 +39647,10 @@
       "backendContract": "agh.supervisor",
       "backendMethod": "cancelConversation",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "identityField": "requestId",
-      "statusOperation": "conversation.status"
+      "statusOperation": "conversation.status",
+      "quotaClass": "control"
     },
     "conversation.status": {
       "localInterface": "ShellConversationClient",
@@ -37075,7 +39661,7 @@
       "backendContract": "agh.supervisor",
       "backendMethod": "conversationCommandStatus",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "domain.query": {
       "localInterface": "ShellDomainClient",
@@ -37086,7 +39672,7 @@
       "backendContract": "agh.projection",
       "backendMethod": "snapshot",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "domain.submit": {
       "localInterface": "DomainCommandClient",
@@ -37097,12 +39683,13 @@
       "backendContract": "agh.projection",
       "backendMethod": "acceptCommand",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "backendInput": "DomainCommandRequest",
       "hostFields": ["negotiatedSession", "clientInstanceId", "catalogRevision", "ownerToken"],
       "transform": "domain-command",
       "identityField": "requestId",
-      "statusOperation": "domain.commandStatus"
+      "statusOperation": "domain.commandStatus",
+      "quotaClass": "work"
     },
     "domain.commandStatus": {
       "localInterface": "DomainCommandClient",
@@ -37113,7 +39700,7 @@
       "backendContract": "agh.projection",
       "backendMethod": "commandStatus",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "control.read": {
       "localInterface": "SessionControlClient",
@@ -37124,7 +39711,7 @@
       "backendContract": "agh.supervisor",
       "backendMethod": "readSessionControl",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "control.submit": {
       "localInterface": "SessionControlClient",
@@ -37135,9 +39722,14 @@
       "backendContract": "agh.supervisor",
       "backendMethod": "submitSessionControl",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "identityField": "requestId",
-      "statusOperation": "control.status"
+      "statusOperation": "control.status",
+      "quotaClass": "conditional-control",
+      "controlPredicate": {
+        "field": "command.kind",
+        "equals": "cancel"
+      }
     },
     "control.status": {
       "localInterface": "SessionControlClient",
@@ -37148,7 +39740,7 @@
       "backendContract": "agh.supervisor",
       "backendMethod": "sessionControlStatus",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "budget.read": {
       "localInterface": "SessionBudgetClient",
@@ -37159,7 +39751,7 @@
       "backendContract": "agh.budget",
       "backendMethod": "readSessionBudget",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "permission.listGrants": {
       "localInterface": "PermissionClient",
@@ -37170,7 +39762,7 @@
       "backendContract": "agh.policy",
       "backendMethod": "listGrants",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "permission.revokeGrant": {
       "localInterface": "PermissionClient",
@@ -37181,8 +39773,9 @@
       "backendContract": "agh.policy",
       "backendMethod": "revokeGrant",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
-      "identityField": "requestId"
+      "requiredFeature": "client-transport-wire.v2",
+      "identityField": "requestId",
+      "quotaClass": "control"
     },
     "jobs.enqueue": {
       "localInterface": "SessionJobsClient",
@@ -37193,8 +39786,9 @@
       "backendContract": "agh.jobs",
       "backendMethod": "enqueueClientJob",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
-      "identityField": "requestId"
+      "requiredFeature": "client-transport-wire.v2",
+      "identityField": "requestId",
+      "quotaClass": "work"
     },
     "jobs.poll": {
       "localInterface": "SessionJobsClient",
@@ -37205,7 +39799,7 @@
       "backendContract": "agh.jobs",
       "backendMethod": "pollClientJob",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "jobs.cancel": {
       "localInterface": "SessionJobsClient",
@@ -37216,8 +39810,9 @@
       "backendContract": "agh.jobs",
       "backendMethod": "cancelClientJob",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
-      "identityField": "requestId"
+      "requiredFeature": "client-transport-wire.v2",
+      "identityField": "requestId",
+      "quotaClass": "control"
     },
     "jobs.create": {
       "localInterface": "SessionJobsClient",
@@ -37228,9 +39823,10 @@
       "backendContract": "agh.jobs",
       "backendMethod": "acceptCreateDefinition",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "identityField": "requestId",
-      "statusOperation": "jobs.commandStatus"
+      "statusOperation": "jobs.commandStatus",
+      "quotaClass": "work"
     },
     "jobs.update": {
       "localInterface": "SessionJobsClient",
@@ -37241,9 +39837,10 @@
       "backendContract": "agh.jobs",
       "backendMethod": "acceptUpdateDefinition",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "identityField": "requestId",
-      "statusOperation": "jobs.commandStatus"
+      "statusOperation": "jobs.commandStatus",
+      "quotaClass": "work"
     },
     "jobs.inspect": {
       "localInterface": "SessionJobsClient",
@@ -37254,7 +39851,7 @@
       "backendContract": "agh.jobs",
       "backendMethod": "inspect",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "backendInput": "JobsInspectRequest",
       "backendOutput": "JobsInspectResult",
       "transform": "equivalent-payload"
@@ -37268,9 +39865,10 @@
       "backendContract": "agh.jobs",
       "backendMethod": "acceptCancelDefinition",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "identityField": "requestId",
-      "statusOperation": "jobs.commandStatus"
+      "statusOperation": "jobs.commandStatus",
+      "quotaClass": "control"
     },
     "jobs.commandStatus": {
       "localInterface": "SessionJobsClient",
@@ -37281,7 +39879,7 @@
       "backendContract": "agh.jobs",
       "backendMethod": "clientCommandStatus",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "interaction.pending": {
       "localInterface": "InteractionClient",
@@ -37292,7 +39890,7 @@
       "backendContract": "agh.interaction",
       "backendMethod": "pending",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "interaction.read": {
       "localInterface": "InteractionClient",
@@ -37303,7 +39901,7 @@
       "backendContract": "agh.interaction",
       "backendMethod": "read",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "interaction.respond": {
       "localInterface": "InteractionClient",
@@ -37314,10 +39912,11 @@
       "backendContract": "agh.interaction",
       "backendMethod": "acceptResponse",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "expectedInteractionKind": "question",
       "identityField": "responseId",
-      "statusOperation": "interaction.responseStatus"
+      "statusOperation": "interaction.responseStatus",
+      "quotaClass": "work"
     },
     "interaction.formLink": {
       "localInterface": "InteractionClient",
@@ -37328,10 +39927,11 @@
       "backendContract": "agh.interaction",
       "backendMethod": "formLink",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "backendInput": "InteractionFormLinkRequest",
       "wrapField": "input",
-      "hostFields": ["requestId"]
+      "hostFields": ["requestId"],
+      "quotaClass": "work"
     },
     "interaction.responseStatus": {
       "localInterface": "InteractionClient",
@@ -37342,7 +39942,7 @@
       "backendContract": "agh.interaction",
       "backendMethod": "responseStatus",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1"
+      "requiredFeature": "client-transport-wire.v2"
     },
     "approval.read": {
       "localInterface": "ApprovalClient",
@@ -37353,7 +39953,7 @@
       "backendContract": "agh.interaction",
       "backendMethod": "read",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "expectedInteractionKind": "approval"
     },
     "approval.respond": {
@@ -37365,10 +39965,11 @@
       "backendContract": "agh.interaction",
       "backendMethod": "respondApproval",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "expectedInteractionKind": "approval",
       "identityField": "responseId",
-      "statusOperation": "approval.responseStatus"
+      "statusOperation": "approval.responseStatus",
+      "quotaClass": "work"
     },
     "approval.formLink": {
       "localInterface": "ApprovalClient",
@@ -37379,11 +39980,12 @@
       "backendContract": "agh.interaction",
       "backendMethod": "formLink",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "backendInput": "InteractionFormLinkRequest",
       "wrapField": "input",
       "hostFields": ["requestId"],
-      "expectedInteractionKind": "approval"
+      "expectedInteractionKind": "approval",
+      "quotaClass": "work"
     },
     "approval.responseStatus": {
       "localInterface": "ApprovalClient",
@@ -37394,7 +39996,7 @@
       "backendContract": "agh.interaction",
       "backendMethod": "responseStatus",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "expectedInteractionKind": "approval"
     },
     "artifact.describe": {
@@ -37406,7 +40008,7 @@
       "backendContract": "agh.artifacts",
       "backendMethod": "describe",
       "backendKind": "query",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "backendLocalInterface": "ArtifactAccessPort",
       "requiredBackendFeature": "artifact-access.v1"
     },
@@ -37419,12 +40021,13 @@
       "backendContract": "agh.artifacts",
       "backendMethod": "openDownload",
       "backendKind": "control",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "backendLocalInterface": "ArtifactAccessPort",
       "requiredBackendFeature": "artifact-access.v1",
       "backendInput": "ArtifactOpenDownloadRequest",
       "wrapField": "input",
-      "hostFields": ["requestId"]
+      "hostFields": ["requestId"],
+      "quotaClass": "work"
     },
     "artifact.readRange": {
       "localInterface": "ArtifactClient",
@@ -37436,7 +40039,7 @@
       "backendMethod": "readRange",
       "backendKind": "query",
       "backendLocalInterface": "ArtifactAccessPort",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "requiredBackendFeature": "artifact-access.v1"
     },
     "artifact.openStream": {
@@ -37449,7 +40052,7 @@
       "backendMethod": "openStream",
       "backendKind": "query",
       "backendLocalInterface": "ArtifactAccessPort",
-      "requiredFeature": "client-transport.v1",
+      "requiredFeature": "client-transport-wire.v2",
       "requiredBackendFeature": "artifact-access.v1"
     },
     "artifact.followDownload": {
@@ -37458,6 +40061,39 @@
       "kind": "local",
       "input": "ArtifactDownloadTicket",
       "output": "void"
+    },
+    "transport.catalogStatus": {
+      "localInterface": "ClientTransportClient",
+      "localMethod": "catalogStatus",
+      "kind": "query",
+      "input": "ClientCatalogStatusRequest",
+      "output": "ClientCatalogStatusResult",
+      "backendContract": "agh.transport",
+      "backendMethod": "catalogStatus",
+      "backendKind": "query",
+      "requiredFeature": "client-transport-wire.v2"
+    },
+    "transport.streamStatus": {
+      "localInterface": "ClientTransportClient",
+      "localMethod": "streamStatus",
+      "kind": "query",
+      "input": "ClientArtifactStreamStatusRequest",
+      "output": "ClientArtifactStreamStatusResult",
+      "backendContract": "agh.transport",
+      "backendMethod": "streamStatus",
+      "backendKind": "query",
+      "requiredFeature": "client-transport-wire.v2"
+    },
+    "conversation.list": {
+      "localInterface": "ShellConversationClient",
+      "localMethod": "list",
+      "kind": "query",
+      "input": "ConversationListRequest",
+      "output": "PageConversationSummary",
+      "backendContract": "agh.projection",
+      "backendMethod": "listConversations",
+      "backendKind": "query",
+      "requiredFeature": "client-transport-wire.v2"
     }
   },
   "x-client-transport-policy": {
@@ -37473,6 +40109,506 @@
     "maxRangeBytes": 1048576,
     "maxArtifactBytes": 1073741824,
     "downloadTicketTtlMs": 300000,
-    "eof": "clamp"
+    "eof": "clamp",
+    "controlMaxConcurrentPerWorkspace": 32,
+    "controlMaxRequestsPerPrincipalPerMinute": 120,
+    "controlWindowMs": 60000,
+    "streamStatusRetentionMs": 300000,
+    "maxStreamsPerWorkspace": 256,
+    "maxBinaryMetadataBytes": 8192
+  },
+  "x-schema-revisions": {
+    "ApprovalRequest": 2,
+    "ApprovalRespondRequest": 2,
+    "ArtifactClientOpenDownloadRequest": 2,
+    "ArtifactClientOpenStreamRequest": 2,
+    "ArtifactClientReadRangeRequest": 2,
+    "ArtifactDescribeInput": 2,
+    "ArtifactDownloadTicket": 2,
+    "ArtifactOpenDownloadRequest": 2,
+    "ArtifactRef": 2,
+    "ArtifactReservation": 2,
+    "ArtifactViewRef": 2,
+    "ArtifactsPublishRequest": 2,
+    "ArtifactsQueryRequest": 2,
+    "ArtifactsReserveRequest": 2,
+    "ArtifactsRevokeRequest": 2,
+    "AssemblyDrainResult": 2,
+    "AuditAppend": 2,
+    "AuthorizationPreparation": 2,
+    "BlobGcResult": 2,
+    "BlobInspectRequest": 2,
+    "BlobInspectResult": 2,
+    "BlobPinRequest": 2,
+    "ChannelMessage": 2,
+    "ClaimOutboxResult": 2,
+    "ClientArtifactOpenStreamRequest": 2,
+    "ClientArtifactReadRangeRequest": 2,
+    "ClientBootstrapAccepted": 2,
+    "ClientBootstrapResult": 2,
+    "ClientCatalogPageResult": 2,
+    "ClientCommandCall": 2,
+    "ClientCommandReply": 2,
+    "ClientCommandRequest": 2,
+    "ClientCommandValue": 2,
+    "ClientConversationSnapshot": 2,
+    "ClientConversationSubscriptionFrame": 2,
+    "ClientDomainSnapshot": 2,
+    "ClientDomainSubscriptionFrame": 2,
+    "ClientInteractionChange": 2,
+    "ClientInteractionsSnapshot": 2,
+    "ClientInteractionsSubscriptionFrame": 2,
+    "ClientModule": 2,
+    "ClientQueryCall": 2,
+    "ClientQueryReply": 2,
+    "ClientQueryRequest": 2,
+    "ClientQueryValue": 2,
+    "ClientReadSubscriptionResult": 2,
+    "ClientSubscribeRequest": 2,
+    "ClientSubscribeResult": 2,
+    "ClientSubscriptionFrame": 2,
+    "ClientTransportFrame": 2,
+    "ClientWelcome": 2,
+    "CommandHandle": 2,
+    "CommitControlRequest": 2,
+    "CompactionApplyRequest": 2,
+    "CompactionExecuteRequest": 2,
+    "CompactionExpandResult": 2,
+    "CompactionPlan": 2,
+    "CompactionPlanRequest": 2,
+    "CompactionPreparePlanRequest": 2,
+    "CompactionResult": 2,
+    "ContextItem": 2,
+    "ContextPrepareViewRequest": 2,
+    "ContextRefreshRequest": 2,
+    "ContextRefreshResult": 2,
+    "ContextView": 2,
+    "ContextViewRequest": 2,
+    "DeletionReceipt": 2,
+    "DomainCommandClientSubmitRequest": 2,
+    "DomainCommandFrame": 2,
+    "DomainCommandRequest": 2,
+    "DomainEvent": 2,
+    "DomainEventRecord": 2,
+    "DomainQuery": 2,
+    "DomainReducerReduceRequest": 2,
+    "DomainSelectorSelectAuthorizedRequest": 2,
+    "DomainSelectorSelectAuthorizedResult": 2,
+    "DomainTimelineEntry": 2,
+    "DomainView": 2,
+    "EventsPublishRequest": 2,
+    "EventsPublishResult": 2,
+    "EventsSubscribeResult": 2,
+    "InboxRecord": 2,
+    "InteractionCancelRequest": 2,
+    "InteractionClientPendingResult": 2,
+    "InteractionExpireRequest": 2,
+    "InteractionRecord": 2,
+    "InteractionRequest": 2,
+    "InteractionResponseStatus": 2,
+    "MaintenanceStoreCommitRequest": 2,
+    "MediaPlan": 2,
+    "MemoryForgetResult": 2,
+    "MemoryGetResult": 2,
+    "MemoryItem": 2,
+    "MemoryRememberRequest": 2,
+    "ModelPrepareRequest": 2,
+    "ModelPrepareRequestRequest": 2,
+    "OutboxRecord": 2,
+    "PageContextItem": 2,
+    "PageDomainEventRecord": 2,
+    "PageInteractionRecord": 2,
+    "PageResourceDescriptor": 2,
+    "PageRetrievalHit": 2,
+    "PolicyDecision": 2,
+    "PolicyEvaluateRequest": 2,
+    "PreparedMedia": 2,
+    "PreparedModelRequest": 2,
+    "ProjectionChange": 2,
+    "ProjectionChanges": 2,
+    "ProjectionChangesRequest": 2,
+    "ProjectionSnapshot": 2,
+    "PublicRef": 2,
+    "Ref": 2,
+    "ResourceDescriptor": 2,
+    "ResourcesListResult": 2,
+    "ResourcesRegisterRequest": 2,
+    "ResourcesRetainRequest": 2,
+    "RetrievalHit": 2,
+    "RetrievalSearchRemoteResult": 2,
+    "RetrievalSearchResult": 2,
+    "RunTaintSourceRecordValue": 2,
+    "RuntimeControlCommand": 2,
+    "RuntimeConversationChange": 2,
+    "RuntimeConversationWindow": 2,
+    "ShellSnapshot": 2,
+    "SignalDelivery": 2,
+    "SimpleContextValue": 2,
+    "SimpleObservation": 2,
+    "SimplePromptPayload": 2,
+    "SimpleStepView": 2,
+    "StateStoreControlClaimOutboxResult": 2,
+    "StateStoreControlCommitControlRequest": 2,
+    "SupervisorInspectResult": 2,
+    "ToolModelResult": 2,
+    "ToolResult": 2,
+    "TrustedPolicyFacts": 2
+  },
+  "x-client-transport-wire": {
+    "feature": "client-transport-wire.v2",
+    "wireMajor": 2,
+    "jsonMime": "application/json",
+    "binaryMime": "application/octet-stream",
+    "metadataHeader": "X-Agh-Runtime-Metadata",
+    "metadataEncoding": "base64url-jcs",
+    "routes": {
+      "bootstrap": {
+        "method": "POST",
+        "path": "/api/runtime/client/bootstrap",
+        "contract": "agh.transport",
+        "backendMethod": "bootstrap",
+        "input": "ClientHello",
+        "output": "ClientBootstrapResult",
+        "responseMime": "application/json",
+        "quotaClass": "read"
+      },
+      "clientQuery": {
+        "method": "POST",
+        "path": "/api/runtime/client/clientQuery",
+        "contract": "agh.transport",
+        "backendMethod": "clientQuery",
+        "input": "ClientQueryRequest",
+        "output": "ClientQueryReply",
+        "responseMime": "application/json",
+        "quotaClass": "read"
+      },
+      "clientCommand": {
+        "method": "POST",
+        "path": "/api/runtime/client/clientCommand",
+        "contract": "agh.transport",
+        "backendMethod": "clientCommand",
+        "input": "ClientCommandRequest",
+        "output": "ClientCommandReply",
+        "responseMime": "application/json",
+        "quotaClass": "operation"
+      },
+      "catalogPage": {
+        "method": "POST",
+        "path": "/api/runtime/client/catalogPage",
+        "contract": "agh.transport",
+        "backendMethod": "catalogPage",
+        "input": "ClientCatalogPageRequest",
+        "output": "ClientCatalogPageResult",
+        "responseMime": "application/json",
+        "quotaClass": "read"
+      },
+      "subscribe": {
+        "method": "POST",
+        "path": "/api/runtime/client/subscribe",
+        "contract": "agh.transport",
+        "backendMethod": "subscribe",
+        "input": "ClientSubscribeRequest",
+        "output": "ClientSubscribeResult",
+        "responseMime": "application/json",
+        "quotaClass": "read"
+      },
+      "readSubscription": {
+        "method": "POST",
+        "path": "/api/runtime/client/readSubscription",
+        "contract": "agh.transport",
+        "backendMethod": "readSubscription",
+        "input": "ClientReadSubscriptionRequest",
+        "output": "ClientReadSubscriptionResult",
+        "responseMime": "application/json",
+        "quotaClass": "read"
+      },
+      "closeSubscription": {
+        "method": "POST",
+        "path": "/api/runtime/client/closeSubscription",
+        "contract": "agh.transport",
+        "backendMethod": "closeSubscription",
+        "input": "ClientCloseSubscriptionRequest",
+        "output": "ClientCloseSubscriptionResult",
+        "responseMime": "application/json",
+        "quotaClass": "control"
+      },
+      "catalogStatus": {
+        "method": "POST",
+        "path": "/api/runtime/client/catalogStatus",
+        "contract": "agh.transport",
+        "backendMethod": "catalogStatus",
+        "input": "ClientCatalogStatusRequest",
+        "output": "ClientCatalogStatusResult",
+        "responseMime": "application/json",
+        "quotaClass": "read"
+      },
+      "streamStatus": {
+        "method": "POST",
+        "path": "/api/runtime/client/streamStatus",
+        "contract": "agh.transport",
+        "backendMethod": "streamStatus",
+        "input": "ClientArtifactStreamStatusRequest",
+        "output": "ClientArtifactStreamStatusResult",
+        "responseMime": "application/json",
+        "quotaClass": "read"
+      },
+      "readRange": {
+        "method": "POST",
+        "path": "/api/runtime/artifact/readRange",
+        "operation": "artifact.readRange",
+        "input": "ClientArtifactReadRangeRequest",
+        "output": "ClientArtifactRangeMetadata",
+        "responseMime": "application/octet-stream",
+        "quotaClass": "read"
+      },
+      "openStream": {
+        "method": "POST",
+        "path": "/api/runtime/artifact/openStream",
+        "operation": "artifact.openStream",
+        "input": "ClientArtifactOpenStreamRequest",
+        "output": "ClientArtifactStreamMetadata",
+        "responseMime": "application/octet-stream",
+        "quotaClass": "read"
+      },
+      "download": {
+        "method": "GET",
+        "path": "/api/runtime/artifact/download/{ticketId}",
+        "operation": "artifact.redeemDownload",
+        "input": "ArtifactRedeemDownloadRequest",
+        "output": "ArtifactDownloadMetadata",
+        "responseMime": "application/octet-stream",
+        "quotaClass": "read",
+        "query": ["nonce"],
+        "range": "single-open-ended"
+      },
+      "websocket": {
+        "method": "GET",
+        "path": "/api/runtime/client/stream",
+        "subprotocol": "agh.runtime.client.v2",
+        "input": "ClientTransportRequestFrame",
+        "output": "ClientTransportFrame",
+        "responseMime": "application/json",
+        "quotaClass": "operation"
+      }
+    }
+  },
+  "x-identity-transport-schemas": {
+    "credentialEnvelope": "TransportCredentialEnvelope",
+    "transportEvidence": "TransportAuthenticationEvidence",
+    "proof": "TransportEvidenceProof",
+    "hostOnlyEvidence": true,
+    "credentialChannels": ["authorization-bearer", "httponly-cookie"],
+    "cookieName": "agh-runtime-credential",
+    "forbiddenCredentialLocations": ["url", "business-json"],
+    "downloadTicketNonceIsIdentity": false,
+    "publicOwnerToken": "non-secret-renderer-generation-handle",
+    "moduleBinding": "ClientModuleCredentialBinding",
+    "requiresVerifiedModuleLoad": true
+  },
+  "x-artifact-policy": {
+    "maxTitleBytes": 1024,
+    "maxMediaTypeBytes": 255,
+    "uploadReservationTtlMs": 86400000,
+    "downloadTicketTtlMs": 300000,
+    "publicationFeature": "artifact-publication.v1",
+    "ticketFeature": "artifact-ticket.v1",
+    "descriptor": "ArtifactContentDescriptor",
+    "reserve": {
+      "contract": "agh.artifacts",
+      "method": "reserve"
+    },
+    "publish": {
+      "contract": "agh.artifacts",
+      "method": "publish"
+    },
+    "uploadStates": ["uploading", "sealed", "aborted"],
+    "blobStates": ["staged", "pinned", "deleted"],
+    "publicationStates": ["reserved", "pending-publish", "ready", "failed", "revoked"],
+    "ticketRange": "open-ended",
+    "ticketSingleUse": false
+  },
+  "x-runtime-error-details": {
+    "invalid_request": {
+      "code": "invalid_input",
+      "httpStatus": 400,
+      "retryAdviceKinds": ["never"]
+    },
+    "not_found": {
+      "code": "invalid_input",
+      "httpStatus": 404,
+      "retryAdviceKinds": ["never"]
+    },
+    "range_not_satisfiable": {
+      "code": "invalid_input",
+      "httpStatus": 416,
+      "retryAdviceKinds": ["never"]
+    },
+    "authentication_required": {
+      "code": "denied",
+      "httpStatus": 401,
+      "retryAdviceKinds": ["never"]
+    },
+    "permission_denied": {
+      "code": "denied",
+      "httpStatus": 403,
+      "retryAdviceKinds": ["never"]
+    },
+    "revoked": {
+      "code": "denied",
+      "httpStatus": 403,
+      "retryAdviceKinds": ["never"]
+    },
+    "ticket_expired": {
+      "code": "denied",
+      "httpStatus": 403,
+      "retryAdviceKinds": ["never"]
+    },
+    "blocked": {
+      "code": "denied",
+      "httpStatus": 403,
+      "retryAdviceKinds": ["never"]
+    },
+    "operation_not_supported": {
+      "code": "incompatible",
+      "httpStatus": 409,
+      "retryAdviceKinds": ["never"]
+    },
+    "unsupported": {
+      "code": "incompatible",
+      "httpStatus": 409,
+      "retryAdviceKinds": ["never"]
+    },
+    "catalog_changed": {
+      "code": "conflict",
+      "httpStatus": 409,
+      "retryAdviceKinds": ["retry_read"]
+    },
+    "resync_required": {
+      "code": "conflict",
+      "httpStatus": 409,
+      "retryAdviceKinds": ["retry_read"]
+    },
+    "idempotency_conflict": {
+      "code": "conflict",
+      "httpStatus": 409,
+      "retryAdviceKinds": ["never"]
+    },
+    "revision_conflict": {
+      "code": "conflict",
+      "httpStatus": 409,
+      "retryAdviceKinds": ["never"]
+    },
+    "artifact_deleted": {
+      "code": "invalid_input",
+      "httpStatus": 410,
+      "retryAdviceKinds": ["never"]
+    },
+    "artifact_bytes": {
+      "code": "quota",
+      "httpStatus": 413,
+      "retryAdviceKinds": ["never"]
+    },
+    "rpc_json_bytes": {
+      "code": "quota",
+      "httpStatus": 413,
+      "retryAdviceKinds": ["never"]
+    },
+    "inline_data_bytes": {
+      "code": "quota",
+      "httpStatus": 413,
+      "retryAdviceKinds": ["never"]
+    },
+    "range_bytes": {
+      "code": "quota",
+      "httpStatus": 413,
+      "retryAdviceKinds": ["never"]
+    },
+    "rate_limit": {
+      "code": "quota",
+      "httpStatus": 429,
+      "retryAdviceKinds": ["retry_read"]
+    },
+    "control_concurrency": {
+      "code": "quota",
+      "httpStatus": 429,
+      "retryAdviceKinds": ["retry_read"]
+    },
+    "cancelled": {
+      "code": "cancelled",
+      "httpStatus": 409,
+      "retryAdviceKinds": ["never"]
+    },
+    "deadline_exceeded": {
+      "code": "timeout",
+      "httpStatus": 504,
+      "retryAdviceKinds": ["retry_read", "retry_same_action"]
+    },
+    "integrity": {
+      "code": "internal",
+      "httpStatus": 500,
+      "retryAdviceKinds": ["never"]
+    },
+    "backend_unavailable": {
+      "code": "retryable",
+      "httpStatus": 503,
+      "retryAdviceKinds": ["retry_read", "retry_same_action"]
+    },
+    "effect_unknown": {
+      "code": "unknown_effect",
+      "httpStatus": 503,
+      "retryAdviceKinds": ["reconcile"]
+    },
+    "internal_error": {
+      "code": "internal",
+      "httpStatus": 500,
+      "retryAdviceKinds": ["never"]
+    }
+  },
+  "x-runtime-error-http-defaults": {
+    "invalid_input": 400,
+    "denied": 403,
+    "incompatible": 409,
+    "quota": 413,
+    "cancelled": 409,
+    "timeout": 504,
+    "retryable": 503,
+    "unknown_effect": 503,
+    "conflict": 409,
+    "internal": 500
+  },
+  "x-events-outbox-api": {
+    "feature": "outbox-administration.v1",
+    "contracts": ["agh.state"],
+    "localInterface": "EventsOutboxControl",
+    "methods": {
+      "deadLetters": {
+        "kind": "query",
+        "input": "OutboxDeadLettersRequest",
+        "output": "PageOutboxDeadLetterItem"
+      },
+      "redriveOutbox": {
+        "kind": "control",
+        "input": "OutboxRedriveRequest",
+        "output": "OutboxRedriveResult"
+      }
+    }
+  },
+  "x-approval-intent-policy": {
+    "algorithm": "jcs-sha256",
+    "fields": [
+      "actionRef",
+      "inputDigest",
+      "policyDecisionRef",
+      "scope",
+      "allowedResponders",
+      "allowedGrantScopes",
+      "expiresAt",
+      "risk"
+    ],
+    "setFields": ["allowedResponders", "allowedGrantScopes"],
+    "setOrder": "utf8",
+    "defaultAllowedGrantScopes": ["once"],
+    "answerSchema": "ApprovalAnswer",
+    "riskMutableByHook": false
   }
 }

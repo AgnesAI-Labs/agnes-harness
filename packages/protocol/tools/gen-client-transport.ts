@@ -1,3 +1,4 @@
+import { clientErrorSlots, validateClientTransportWire } from './gen-client-transport-wire.js'
 import type { JsonSchemaDoc } from './gen-core.js'
 
 type Json = Record<string, unknown>
@@ -21,6 +22,8 @@ export type ClientOperation = {
   requiredFeature?: string
   requiredBackendFeature?: string
   expectedInteractionKind?: string
+  quotaClass?: 'work' | 'control' | 'conditional-control'
+  controlPredicate?: { field: 'command.kind'; equals: 'cancel' }
 }
 const object = (value: unknown): value is Json =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -45,7 +48,52 @@ const keys = new Set([
   'requiredFeature',
   'requiredBackendFeature',
   'expectedInteractionKind',
+  'quotaClass',
+  'controlPredicate',
 ])
+
+export const APPROVED_CLIENT_OPERATIONS = [
+  'conversation.create',
+  'conversation.open',
+  'conversation.history',
+  'conversation.submit',
+  'conversation.cancel',
+  'conversation.status',
+  'domain.query',
+  'domain.submit',
+  'domain.commandStatus',
+  'control.read',
+  'control.submit',
+  'control.status',
+  'budget.read',
+  'permission.listGrants',
+  'permission.revokeGrant',
+  'jobs.enqueue',
+  'jobs.poll',
+  'jobs.cancel',
+  'jobs.create',
+  'jobs.update',
+  'jobs.inspect',
+  'jobs.cancelDefinition',
+  'jobs.commandStatus',
+  'interaction.pending',
+  'interaction.read',
+  'interaction.respond',
+  'interaction.formLink',
+  'interaction.responseStatus',
+  'approval.read',
+  'approval.respond',
+  'approval.formLink',
+  'approval.responseStatus',
+  'artifact.describe',
+  'artifact.openDownload',
+  'artifact.readRange',
+  'artifact.openStream',
+  'artifact.followDownload',
+  'transport.catalogStatus',
+  'transport.streamStatus',
+  'conversation.list',
+] as const
 
 /** Verify the complete public client surface against its selected owner catalog and Local API. */
 export function validateClientOperations(
@@ -68,6 +116,24 @@ export function validateClientOperations(
     if (!object(value) || Object.keys(value).some((key) => !keys.has(key)))
       throw new Error(`invalid client operation ${name}`)
     const operation = value as unknown as ClientOperation
+    if (operation.kind !== 'local' && operation.requiredFeature !== 'client-transport-wire.v2')
+      throw new Error(`unnegotiated client wire operation ${name}`)
+    if (!(APPROVED_CLIENT_OPERATIONS as readonly string[]).includes(name))
+      throw new Error(`unapproved client operation ${name}`)
+    const controls = ['conversation.cancel', 'jobs.cancel', 'jobs.cancelDefinition', 'permission.revokeGrant']
+    if (operation.kind === 'command') {
+      const expected =
+        name === 'control.submit' ? 'conditional-control' : controls.includes(name) ? 'control' : 'work'
+      if (
+        operation.quotaClass !== expected ||
+        (name === 'control.submit'
+          ? JSON.stringify(operation.controlPredicate) !==
+            JSON.stringify({ field: 'command.kind', equals: 'cancel' })
+          : operation.controlPredicate !== undefined)
+      )
+        throw new Error(`invalid client control quota ${name}`)
+    } else if (operation.quotaClass !== undefined || operation.controlPredicate !== undefined)
+      throw new Error(`unexpected client control quota ${name}`)
     const identity = `${operation.localInterface}.${operation.localMethod}`
     const declaration = client[operation.localInterface]
     if (
@@ -185,9 +251,15 @@ export function validateClientOperations(
       }
     }
   }
-  if (counts.query !== 18 || counts.command !== 16 || counts.binary !== 2 || counts.local !== 1)
-    throw new Error('client operation surface is incomplete')
-  for (const name of new Set(Object.values(result).map((entry) => entry.localInterface))) {
+  for (const approved of APPROVED_CLIENT_OPERATIONS) {
+    if (approved === 'conversation.list' && !/\blist\s*\(/.test(String(client.ShellConversationClient)))
+      continue
+    if (!Object.hasOwn(result, approved)) throw new Error(`missing approved client operation ${approved}`)
+  }
+  for (const name of new Set([
+    ...Object.values(result).map((entry) => entry.localInterface),
+    'ClientTransportClient',
+  ])) {
     const declaration = client[name] as string
     const declared = [...declaration.matchAll(/\b(\w+)\s*\([^;{}]*\)\s*:/g)].map((match) => match[1])
     for (const method of declared) {
@@ -203,6 +275,7 @@ export function generateClientTransportArtifacts(
   local: Json,
   catalog: Json,
   wireNames: ReadonlySet<string>,
+  graph: JsonSchemaDoc = document,
 ): Record<string, string> {
   const operations = validateClientOperations(document, local, catalog, wireNames)
   const policy = document['x-client-transport-policy']
@@ -216,10 +289,16 @@ export function generateClientTransportArtifacts(
   )
     throw new Error('invalid client transport policy')
   const exact =
-    'defaultCatalogPageLimit,downloadTicketTtlMs,eof,maxArtifactBytes,maxBootstrapMessageUtf8Bytes,maxBootstrapRejectedBytes,maxCatalogPageLimit,maxJsonBytes,maxRangeBytes,maxReaderQueueBytes,maxReaderQueueFrames,maxSupportedProtocols,readerIdleTimeoutMs'
+    'controlMaxConcurrentPerWorkspace,controlMaxRequestsPerPrincipalPerMinute,controlWindowMs,defaultCatalogPageLimit,downloadTicketTtlMs,eof,maxArtifactBytes,maxBootstrapMessageUtf8Bytes,maxBootstrapRejectedBytes,maxCatalogPageLimit,maxBinaryMetadataBytes,maxJsonBytes,maxRangeBytes,maxReaderQueueBytes,maxReaderQueueFrames,maxSupportedProtocols,readerIdleTimeoutMs,streamStatusRetentionMs,maxStreamsPerWorkspace'
   if (
-    Object.keys(policy).sort().join(',') !== exact ||
-    (policy.defaultCatalogPageLimit as number) > (policy.maxCatalogPageLimit as number)
+    Object.keys(policy).sort().join(',') !== exact.split(',').sort().join(',') ||
+    (policy.defaultCatalogPageLimit as number) > (policy.maxCatalogPageLimit as number) ||
+    policy.controlMaxConcurrentPerWorkspace !== 32 ||
+    policy.controlMaxRequestsPerPrincipalPerMinute !== 120 ||
+    policy.controlWindowMs !== 60_000 ||
+    policy.streamStatusRetentionMs !== 300_000 ||
+    policy.maxStreamsPerWorkspace !== 256 ||
+    policy.maxBinaryMetadataBytes !== 8192
   )
     throw new Error('incomplete client transport policy')
   const rejected = document.$defs?.ClientBootstrapRejected
@@ -232,10 +311,30 @@ export function generateClientTransportArtifacts(
     props.supportedProtocols.maxItems !== policy.maxSupportedProtocols
   )
     throw new Error('client bootstrap policy differs from its schema')
+  const wire = validateClientTransportWire(document, catalog, wireNames)
   const json = Object.entries(operations).filter(([, operation]) =>
     ['query', 'command'].includes(operation.kind),
   )
+  const errorSlots = Object.fromEntries(
+    [...new Set([...json.map(([, operation]) => operation.output), 'ClientArtifactStreamStatusResult'])].map(
+      (name) => [name, clientErrorSlots(graph, name)],
+    ),
+  )
+  const clientNames = [...new Set(json.map(([, operation]) => operation.localInterface))].sort()
+  const consumer = `${header}import type { ${clientNames.join(', ')} } from '@agnes/extension-api/client'\nimport type { Outcome } from '@agnes/extension-api/runtime'\nimport type { ClientOperationTypes } from '@agnes/protocol/runtime'\nexport async function consumeGeneratedClientSurface(clients: { ${clientNames.map((name) => `${name}: ${name}`).join('; ')} }, inputs: { [K in keyof ClientOperationTypes]: ClientOperationTypes[K]['input'] }): Promise<void> {\n${json
+    .map(([name, operation]) => {
+      const input = `inputs['${name}']`
+      const args =
+        operation.localMethod === 'describe'
+          ? `${input}.artifactId, ${input}.version`
+          : operation.localMethod === 'formLink'
+            ? `${input}.interactionId, ${input}.expectedVersion`
+            : input
+      return `  const ${name.replaceAll('.', '_')}: Outcome<ClientOperationTypes['${name}']['output']> = await clients.${operation.localInterface}.${operation.localMethod}(${args}); void ${name.replaceAll('.', '_')}`
+    })
+    .join('\n')}\n}\n`
   return {
-    'gen/ts/runtime-client-transport.ts': `${header}import type * as Wire from './runtime-public.js'\nfunction freeze<T>(value: T): T { if (value !== null && typeof value === 'object') { for (const child of Object.values(value)) freeze(child); Object.freeze(value) } return value }\nexport const RuntimeClientOperations = freeze(${JSON.stringify(operations, null, 2)} as const)\nexport const RuntimeClientTransportPolicy = freeze(${JSON.stringify(policy, null, 2)} as const)\nexport interface ClientOperationTypes {\n${json.map(([name, operation]) => `  '${name}': { input: Wire.${operation.input}; output: Wire.${operation.output} }`).join('\n')}\n}\nexport type ClientJsonOperation = keyof ClientOperationTypes\n`,
+    '../extension-api/test/runtime/generated-client-transport.compile.ts': consumer,
+    'gen/ts/runtime-client-transport.ts': `${header}import type * as Wire from './runtime-public.js'\nfunction freeze<T>(value: T): T { if (value !== null && typeof value === 'object') { for (const child of Object.values(value)) freeze(child); Object.freeze(value) } return value }\nexport const RuntimeClientOperations = freeze(${JSON.stringify(operations, null, 2)} as const)\nexport const RuntimeClientTransportPolicy = freeze(${JSON.stringify(policy, null, 2)} as const)\nexport const RuntimeClientTransportWire = freeze(${JSON.stringify(wire, null, 2)} as const)\nexport const RuntimeClientErrorSlots = freeze(${JSON.stringify(errorSlots, null, 2)} as const)\nexport interface ClientOperationTypes {\n${json.map(([name, operation]) => `  '${name}': { input: Wire.${operation.input}; output: Wire.${operation.output} }`).join('\n')}\n}\nexport type ClientJsonOperation = keyof ClientOperationTypes\n`,
   }
 }

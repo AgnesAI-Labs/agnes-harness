@@ -215,6 +215,30 @@ describe('generated schema reference identities', () => {
     expect(methods).not.toHaveProperty('local')
   })
 
+  it('applies registered revisions consistently to official and method references', () => {
+    const refs = generateRuntimeReferences(graph, {
+      ...metadata,
+      'x-schema-revisions': { Root: 2, Child: 3 },
+    })
+    expect(refs.RuntimeSchemaRefs.Root?.revision).toBe(2)
+    expect(refs.RuntimeSchemaRefs.Root?.typeId).toBe('fixture/root@1')
+    expect(refs.RuntimeMethodSchemaRefs['fixture.loop']?.start?.input.revision).toBe(2)
+    expect(refs.RuntimeMethodSchemaRefs['fixture.loop']?.resume?.output.revision).toBe(3)
+    for (const revisions of [
+      [],
+      null,
+      { Missing: 2 },
+      { Root: 0 },
+      { Root: -0 },
+      { Root: 1.5 },
+      { Root: Number.MAX_SAFE_INTEGER + 1 },
+      { Root: '2' },
+    ])
+      expect(() =>
+        generateRuntimeReferences(graph, { ...metadata, 'x-schema-revisions': revisions }),
+      ).toThrow('invalid runtime schema revision')
+  })
+
   it('changes a digest only for changes in its reachable schema closure', () => {
     const original = generateRuntimeReferences(graph, metadata).RuntimeSchemaRefs.Root?.digest
     const unrelated = structuredClone(graph)
@@ -225,7 +249,7 @@ describe('generated schema reference identities', () => {
     expect(generateRuntimeReferences(reachable, metadata).RuntimeSchemaRefs.Root?.digest).not.toBe(original)
   })
 
-  it('rejects unresolved references, revision changes and conflicting type identities', () => {
+  it('rejects unresolved references, type major changes and conflicting identities', () => {
     expect(() => runtimeSchemaDocument({ $defs: { Root: { $ref: '#/$defs/Missing' } } }, 'Root')).toThrow(
       'unresolved digest definition Missing',
     )

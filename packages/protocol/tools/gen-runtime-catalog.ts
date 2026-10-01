@@ -51,6 +51,47 @@ export function normalizeBrokerCatalog(value: unknown): Json {
 /** Expand optional maintenance operations from their sole template authority. */
 export function normalizeRuntimeCatalog(metadata: JsonSchemaDoc, wireNames?: ReadonlySet<string>): Json {
   const catalog = normalizeBrokerCatalog(metadata['x-service-catalog'])
+  const outbox = metadata['x-events-outbox-api']
+  if (outbox !== undefined) {
+    if (
+      !object(outbox) ||
+      !exactKeys(outbox, ['feature', 'contracts', 'localInterface', 'methods']) ||
+      outbox.feature !== 'outbox-administration.v1' ||
+      outbox.localInterface !== 'EventsOutboxControl' ||
+      !Array.isArray(outbox.contracts) ||
+      outbox.contracts.length !== 1 ||
+      outbox.contracts[0] !== 'agh.state' ||
+      !object(outbox.methods) ||
+      !exactKeys(outbox.methods, ['deadLetters', 'redriveOutbox'])
+    )
+      throw new Error('invalid events outbox owner template')
+    const signatures = {
+      deadLetters: ['query', 'OutboxDeadLettersRequest', 'PageOutboxDeadLetterItem'],
+      redriveOutbox: ['control', 'OutboxRedriveRequest', 'OutboxRedriveResult'],
+    } as const
+    const owner = catalog['agh.state']
+    if (!object(owner) || !object(owner.methods)) throw new Error('missing outbox owner catalog')
+    for (const [method, expected] of Object.entries(signatures)) {
+      const raw = outbox.methods[method]
+      if (
+        !object(raw) ||
+        !exactKeys(raw, ['kind', 'input', 'output']) ||
+        raw.kind !== expected[0] ||
+        raw.input !== expected[1] ||
+        raw.output !== expected[2] ||
+        (wireNames && (!wireNames.has(expected[1]) || !wireNames.has(expected[2]))) ||
+        Object.hasOwn(owner.methods, method)
+      )
+        throw new Error(`invalid events outbox method ${method}`)
+      owner.methods[method] = {
+        ...raw,
+        inputTypeId: `agh.state/${method}.request@1`,
+        outputTypeId: `agh.state/${method}.response@1`,
+        requiredFeature: outbox.feature,
+        sameAttemptBrokerAllowed: false,
+      }
+    }
+  }
   const transfer = metadata['x-authority-transfer-api']
   if (transfer === undefined) return catalog
   if (

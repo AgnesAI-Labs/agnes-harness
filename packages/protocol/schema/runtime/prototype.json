@@ -445,7 +445,9 @@
         "scope",
         "allowedResponders",
         "expiresAt",
-        "idempotencyKey"
+        "idempotencyKey",
+        "risk",
+        "intentDigest"
       ],
       "properties": {
         "kind": {
@@ -501,6 +503,12 @@
         },
         "idempotencyKey": {
           "type": "string"
+        },
+        "risk": {
+          "enum": ["destructive", "always", "budget", "unknown"]
+        },
+        "intentDigest": {
+          "$ref": "#/$defs/Digest"
         }
       }
     },
@@ -1273,7 +1281,10 @@
         "occurredAt",
         "payload",
         "idempotencyKey",
-        "causation"
+        "causation",
+        "principalRef",
+        "correlationId",
+        "provenance"
       ],
       "properties": {
         "eventId": {
@@ -1318,6 +1329,22 @@
               "$ref": "#/$defs/Id"
             }
           }
+        },
+        "principalRef": {
+          "$ref": "#/$defs/Id"
+        },
+        "correlationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
         }
       }
     },
@@ -2040,100 +2067,197 @@
       }
     },
     "OutboxRecord": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "eventId",
-        "sourceAuthorityId",
-        "sourceCommitId",
-        "destination",
-        "typeId",
-        "payload",
-        "fingerprint",
-        "delivery",
-        "attempts",
-        "nextAttemptAt",
-        "claim",
-        "ackRef"
-      ],
-      "properties": {
-        "eventId": {
-          "$ref": "#/$defs/Id"
-        },
-        "sourceAuthorityId": {
-          "$ref": "#/$defs/Id"
-        },
-        "sourceCommitId": {
-          "$ref": "#/$defs/Id"
-        },
-        "destination": {
-          "$ref": "#/$defs/Id"
-        },
-        "typeId": {
-          "$ref": "#/$defs/TypeId"
-        },
-        "payload": {
-          "$ref": "#/$defs/DataRef"
-        },
-        "fingerprint": {
-          "$ref": "#/$defs/Digest"
-        },
-        "delivery": {
-          "anyOf": [
-            {
-              "const": "pending"
-            },
-            {
-              "const": "claimed"
-            },
-            {
-              "const": "acked"
-            },
-            {
-              "const": "dead"
-            }
-          ]
-        },
-        "attempts": {
-          "$ref": "#/$defs/UInt53"
-        },
-        "nextAttemptAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "claim": {
-          "anyOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["ownerId", "epoch", "until"],
-              "properties": {
-                "ownerId": {
-                  "$ref": "#/$defs/Id"
-                },
-                "epoch": {
-                  "$ref": "#/$defs/UInt53"
-                },
-                "until": {
-                  "$ref": "#/$defs/Timestamp"
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ackRef": {
-          "anyOf": [
-            {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "eventId",
+            "sourceAuthorityId",
+            "sourceCommitId",
+            "destination",
+            "typeId",
+            "payload",
+            "fingerprint",
+            "delivery",
+            "attempts",
+            "nextAttemptAt",
+            "claim",
+            "ackRef",
+            "consecutiveFailures",
+            "lastError"
+          ],
+          "properties": {
+            "eventId": {
               "$ref": "#/$defs/Id"
             },
-            {
-              "type": "null"
+            "sourceAuthorityId": {
+              "$ref": "#/$defs/Id"
+            },
+            "sourceCommitId": {
+              "$ref": "#/$defs/Id"
+            },
+            "destination": {
+              "$ref": "#/$defs/Id"
+            },
+            "typeId": {
+              "$ref": "#/$defs/TypeId"
+            },
+            "payload": {
+              "$ref": "#/$defs/DataRef"
+            },
+            "fingerprint": {
+              "$ref": "#/$defs/Digest"
+            },
+            "delivery": {
+              "enum": ["pending", "claimed", "acked"]
+            },
+            "attempts": {
+              "$ref": "#/$defs/UInt53"
+            },
+            "nextAttemptAt": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "claim": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["ownerId", "epoch", "until"],
+                  "properties": {
+                    "ownerId": {
+                      "$ref": "#/$defs/Id"
+                    },
+                    "epoch": {
+                      "$ref": "#/$defs/UInt53"
+                    },
+                    "until": {
+                      "$ref": "#/$defs/Timestamp"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ackRef": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "consecutiveFailures": {
+              "$ref": "#/$defs/UInt53"
+            },
+            "lastError": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RuntimeError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
-          ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "eventId",
+            "sourceAuthorityId",
+            "sourceCommitId",
+            "destination",
+            "typeId",
+            "payload",
+            "fingerprint",
+            "delivery",
+            "attempts",
+            "nextAttemptAt",
+            "claim",
+            "ackRef",
+            "consecutiveFailures",
+            "lastError"
+          ],
+          "properties": {
+            "eventId": {
+              "$ref": "#/$defs/Id"
+            },
+            "sourceAuthorityId": {
+              "$ref": "#/$defs/Id"
+            },
+            "sourceCommitId": {
+              "$ref": "#/$defs/Id"
+            },
+            "destination": {
+              "$ref": "#/$defs/Id"
+            },
+            "typeId": {
+              "$ref": "#/$defs/TypeId"
+            },
+            "payload": {
+              "$ref": "#/$defs/DataRef"
+            },
+            "fingerprint": {
+              "$ref": "#/$defs/Digest"
+            },
+            "delivery": {
+              "const": "dead"
+            },
+            "attempts": {
+              "$ref": "#/$defs/UInt53"
+            },
+            "nextAttemptAt": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "claim": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["ownerId", "epoch", "until"],
+                  "properties": {
+                    "ownerId": {
+                      "$ref": "#/$defs/Id"
+                    },
+                    "epoch": {
+                      "$ref": "#/$defs/UInt53"
+                    },
+                    "until": {
+                      "$ref": "#/$defs/Timestamp"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ackRef": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "consecutiveFailures": {
+              "$ref": "#/$defs/UInt53"
+            },
+            "lastError": {
+              "$ref": "#/$defs/RuntimeError"
+            }
+          }
         }
-      }
+      ]
     },
     "OwnerRef": {
       "type": "object",

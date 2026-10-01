@@ -11,9 +11,10 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.supervisor",
     "backendMethod": "createConversation",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "identityField": "requestId",
-    "statusOperation": "conversation.status"
+    "statusOperation": "conversation.status",
+    "quotaClass": "work"
   },
   "conversation.open": {
     "localInterface": "ShellConversationClient",
@@ -24,7 +25,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.projection",
     "backendMethod": "openConversation",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "conversation.history": {
     "localInterface": "ShellConversationClient",
@@ -35,7 +36,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.projection",
     "backendMethod": "conversationHistory",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "conversation.submit": {
     "localInterface": "ShellConversationClient",
@@ -46,9 +47,10 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.supervisor",
     "backendMethod": "submitConversation",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "identityField": "requestId",
-    "statusOperation": "conversation.status"
+    "statusOperation": "conversation.status",
+    "quotaClass": "work"
   },
   "conversation.cancel": {
     "localInterface": "ShellConversationClient",
@@ -59,9 +61,10 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.supervisor",
     "backendMethod": "cancelConversation",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "identityField": "requestId",
-    "statusOperation": "conversation.status"
+    "statusOperation": "conversation.status",
+    "quotaClass": "control"
   },
   "conversation.status": {
     "localInterface": "ShellConversationClient",
@@ -72,7 +75,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.supervisor",
     "backendMethod": "conversationCommandStatus",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "domain.query": {
     "localInterface": "ShellDomainClient",
@@ -83,7 +86,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.projection",
     "backendMethod": "snapshot",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "domain.submit": {
     "localInterface": "DomainCommandClient",
@@ -94,7 +97,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.projection",
     "backendMethod": "acceptCommand",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "backendInput": "DomainCommandRequest",
     "hostFields": [
       "negotiatedSession",
@@ -104,7 +107,8 @@ export const RuntimeClientOperations = freeze({
     ],
     "transform": "domain-command",
     "identityField": "requestId",
-    "statusOperation": "domain.commandStatus"
+    "statusOperation": "domain.commandStatus",
+    "quotaClass": "work"
   },
   "domain.commandStatus": {
     "localInterface": "DomainCommandClient",
@@ -115,7 +119,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.projection",
     "backendMethod": "commandStatus",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "control.read": {
     "localInterface": "SessionControlClient",
@@ -126,7 +130,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.supervisor",
     "backendMethod": "readSessionControl",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "control.submit": {
     "localInterface": "SessionControlClient",
@@ -137,9 +141,14 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.supervisor",
     "backendMethod": "submitSessionControl",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "identityField": "requestId",
-    "statusOperation": "control.status"
+    "statusOperation": "control.status",
+    "quotaClass": "conditional-control",
+    "controlPredicate": {
+      "field": "command.kind",
+      "equals": "cancel"
+    }
   },
   "control.status": {
     "localInterface": "SessionControlClient",
@@ -150,7 +159,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.supervisor",
     "backendMethod": "sessionControlStatus",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "budget.read": {
     "localInterface": "SessionBudgetClient",
@@ -161,7 +170,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.budget",
     "backendMethod": "readSessionBudget",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "permission.listGrants": {
     "localInterface": "PermissionClient",
@@ -172,7 +181,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.policy",
     "backendMethod": "listGrants",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "permission.revokeGrant": {
     "localInterface": "PermissionClient",
@@ -183,8 +192,9 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.policy",
     "backendMethod": "revokeGrant",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
-    "identityField": "requestId"
+    "requiredFeature": "client-transport-wire.v2",
+    "identityField": "requestId",
+    "quotaClass": "control"
   },
   "jobs.enqueue": {
     "localInterface": "SessionJobsClient",
@@ -195,8 +205,9 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.jobs",
     "backendMethod": "enqueueClientJob",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
-    "identityField": "requestId"
+    "requiredFeature": "client-transport-wire.v2",
+    "identityField": "requestId",
+    "quotaClass": "work"
   },
   "jobs.poll": {
     "localInterface": "SessionJobsClient",
@@ -207,7 +218,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.jobs",
     "backendMethod": "pollClientJob",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "jobs.cancel": {
     "localInterface": "SessionJobsClient",
@@ -218,8 +229,9 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.jobs",
     "backendMethod": "cancelClientJob",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
-    "identityField": "requestId"
+    "requiredFeature": "client-transport-wire.v2",
+    "identityField": "requestId",
+    "quotaClass": "control"
   },
   "jobs.create": {
     "localInterface": "SessionJobsClient",
@@ -230,9 +242,10 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.jobs",
     "backendMethod": "acceptCreateDefinition",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "identityField": "requestId",
-    "statusOperation": "jobs.commandStatus"
+    "statusOperation": "jobs.commandStatus",
+    "quotaClass": "work"
   },
   "jobs.update": {
     "localInterface": "SessionJobsClient",
@@ -243,9 +256,10 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.jobs",
     "backendMethod": "acceptUpdateDefinition",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "identityField": "requestId",
-    "statusOperation": "jobs.commandStatus"
+    "statusOperation": "jobs.commandStatus",
+    "quotaClass": "work"
   },
   "jobs.inspect": {
     "localInterface": "SessionJobsClient",
@@ -256,7 +270,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.jobs",
     "backendMethod": "inspect",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "backendInput": "JobsInspectRequest",
     "backendOutput": "JobsInspectResult",
     "transform": "equivalent-payload"
@@ -270,9 +284,10 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.jobs",
     "backendMethod": "acceptCancelDefinition",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "identityField": "requestId",
-    "statusOperation": "jobs.commandStatus"
+    "statusOperation": "jobs.commandStatus",
+    "quotaClass": "control"
   },
   "jobs.commandStatus": {
     "localInterface": "SessionJobsClient",
@@ -283,7 +298,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.jobs",
     "backendMethod": "clientCommandStatus",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "interaction.pending": {
     "localInterface": "InteractionClient",
@@ -294,7 +309,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "pending",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "interaction.read": {
     "localInterface": "InteractionClient",
@@ -305,7 +320,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "read",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "interaction.respond": {
     "localInterface": "InteractionClient",
@@ -316,10 +331,11 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "acceptResponse",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "expectedInteractionKind": "question",
     "identityField": "responseId",
-    "statusOperation": "interaction.responseStatus"
+    "statusOperation": "interaction.responseStatus",
+    "quotaClass": "work"
   },
   "interaction.formLink": {
     "localInterface": "InteractionClient",
@@ -330,12 +346,13 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "formLink",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "backendInput": "InteractionFormLinkRequest",
     "wrapField": "input",
     "hostFields": [
       "requestId"
-    ]
+    ],
+    "quotaClass": "work"
   },
   "interaction.responseStatus": {
     "localInterface": "InteractionClient",
@@ -346,7 +363,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "responseStatus",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1"
+    "requiredFeature": "client-transport-wire.v2"
   },
   "approval.read": {
     "localInterface": "ApprovalClient",
@@ -357,7 +374,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "read",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "expectedInteractionKind": "approval"
   },
   "approval.respond": {
@@ -369,10 +386,11 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "respondApproval",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "expectedInteractionKind": "approval",
     "identityField": "responseId",
-    "statusOperation": "approval.responseStatus"
+    "statusOperation": "approval.responseStatus",
+    "quotaClass": "work"
   },
   "approval.formLink": {
     "localInterface": "ApprovalClient",
@@ -383,13 +401,14 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "formLink",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "backendInput": "InteractionFormLinkRequest",
     "wrapField": "input",
     "hostFields": [
       "requestId"
     ],
-    "expectedInteractionKind": "approval"
+    "expectedInteractionKind": "approval",
+    "quotaClass": "work"
   },
   "approval.responseStatus": {
     "localInterface": "ApprovalClient",
@@ -400,7 +419,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.interaction",
     "backendMethod": "responseStatus",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "expectedInteractionKind": "approval"
   },
   "artifact.describe": {
@@ -412,7 +431,7 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.artifacts",
     "backendMethod": "describe",
     "backendKind": "query",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "backendLocalInterface": "ArtifactAccessPort",
     "requiredBackendFeature": "artifact-access.v1"
   },
@@ -425,14 +444,15 @@ export const RuntimeClientOperations = freeze({
     "backendContract": "agh.artifacts",
     "backendMethod": "openDownload",
     "backendKind": "control",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "backendLocalInterface": "ArtifactAccessPort",
     "requiredBackendFeature": "artifact-access.v1",
     "backendInput": "ArtifactOpenDownloadRequest",
     "wrapField": "input",
     "hostFields": [
       "requestId"
-    ]
+    ],
+    "quotaClass": "work"
   },
   "artifact.readRange": {
     "localInterface": "ArtifactClient",
@@ -444,7 +464,7 @@ export const RuntimeClientOperations = freeze({
     "backendMethod": "readRange",
     "backendKind": "query",
     "backendLocalInterface": "ArtifactAccessPort",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "requiredBackendFeature": "artifact-access.v1"
   },
   "artifact.openStream": {
@@ -457,7 +477,7 @@ export const RuntimeClientOperations = freeze({
     "backendMethod": "openStream",
     "backendKind": "query",
     "backendLocalInterface": "ArtifactAccessPort",
-    "requiredFeature": "client-transport.v1",
+    "requiredFeature": "client-transport-wire.v2",
     "requiredBackendFeature": "artifact-access.v1"
   },
   "artifact.followDownload": {
@@ -466,6 +486,39 @@ export const RuntimeClientOperations = freeze({
     "kind": "local",
     "input": "ArtifactDownloadTicket",
     "output": "void"
+  },
+  "transport.catalogStatus": {
+    "localInterface": "ClientTransportClient",
+    "localMethod": "catalogStatus",
+    "kind": "query",
+    "input": "ClientCatalogStatusRequest",
+    "output": "ClientCatalogStatusResult",
+    "backendContract": "agh.transport",
+    "backendMethod": "catalogStatus",
+    "backendKind": "query",
+    "requiredFeature": "client-transport-wire.v2"
+  },
+  "transport.streamStatus": {
+    "localInterface": "ClientTransportClient",
+    "localMethod": "streamStatus",
+    "kind": "query",
+    "input": "ClientArtifactStreamStatusRequest",
+    "output": "ClientArtifactStreamStatusResult",
+    "backendContract": "agh.transport",
+    "backendMethod": "streamStatus",
+    "backendKind": "query",
+    "requiredFeature": "client-transport-wire.v2"
+  },
+  "conversation.list": {
+    "localInterface": "ShellConversationClient",
+    "localMethod": "list",
+    "kind": "query",
+    "input": "ConversationListRequest",
+    "output": "PageConversationSummary",
+    "backendContract": "agh.projection",
+    "backendMethod": "listConversations",
+    "backendKind": "query",
+    "requiredFeature": "client-transport-wire.v2"
   }
 } as const)
 export const RuntimeClientTransportPolicy = freeze({
@@ -481,7 +534,193 @@ export const RuntimeClientTransportPolicy = freeze({
   "maxRangeBytes": 1048576,
   "maxArtifactBytes": 1073741824,
   "downloadTicketTtlMs": 300000,
-  "eof": "clamp"
+  "eof": "clamp",
+  "controlMaxConcurrentPerWorkspace": 32,
+  "controlMaxRequestsPerPrincipalPerMinute": 120,
+  "controlWindowMs": 60000,
+  "streamStatusRetentionMs": 300000,
+  "maxStreamsPerWorkspace": 256,
+  "maxBinaryMetadataBytes": 8192
+} as const)
+export const RuntimeClientTransportWire = freeze({
+  "feature": "client-transport-wire.v2",
+  "wireMajor": 2,
+  "jsonMime": "application/json",
+  "binaryMime": "application/octet-stream",
+  "metadataHeader": "X-Agh-Runtime-Metadata",
+  "metadataEncoding": "base64url-jcs",
+  "routes": {
+    "bootstrap": {
+      "method": "POST",
+      "path": "/api/runtime/client/bootstrap",
+      "contract": "agh.transport",
+      "backendMethod": "bootstrap",
+      "input": "ClientHello",
+      "output": "ClientBootstrapResult",
+      "responseMime": "application/json",
+      "quotaClass": "read"
+    },
+    "clientQuery": {
+      "method": "POST",
+      "path": "/api/runtime/client/clientQuery",
+      "contract": "agh.transport",
+      "backendMethod": "clientQuery",
+      "input": "ClientQueryRequest",
+      "output": "ClientQueryReply",
+      "responseMime": "application/json",
+      "quotaClass": "read"
+    },
+    "clientCommand": {
+      "method": "POST",
+      "path": "/api/runtime/client/clientCommand",
+      "contract": "agh.transport",
+      "backendMethod": "clientCommand",
+      "input": "ClientCommandRequest",
+      "output": "ClientCommandReply",
+      "responseMime": "application/json",
+      "quotaClass": "operation"
+    },
+    "catalogPage": {
+      "method": "POST",
+      "path": "/api/runtime/client/catalogPage",
+      "contract": "agh.transport",
+      "backendMethod": "catalogPage",
+      "input": "ClientCatalogPageRequest",
+      "output": "ClientCatalogPageResult",
+      "responseMime": "application/json",
+      "quotaClass": "read"
+    },
+    "subscribe": {
+      "method": "POST",
+      "path": "/api/runtime/client/subscribe",
+      "contract": "agh.transport",
+      "backendMethod": "subscribe",
+      "input": "ClientSubscribeRequest",
+      "output": "ClientSubscribeResult",
+      "responseMime": "application/json",
+      "quotaClass": "read"
+    },
+    "readSubscription": {
+      "method": "POST",
+      "path": "/api/runtime/client/readSubscription",
+      "contract": "agh.transport",
+      "backendMethod": "readSubscription",
+      "input": "ClientReadSubscriptionRequest",
+      "output": "ClientReadSubscriptionResult",
+      "responseMime": "application/json",
+      "quotaClass": "read"
+    },
+    "closeSubscription": {
+      "method": "POST",
+      "path": "/api/runtime/client/closeSubscription",
+      "contract": "agh.transport",
+      "backendMethod": "closeSubscription",
+      "input": "ClientCloseSubscriptionRequest",
+      "output": "ClientCloseSubscriptionResult",
+      "responseMime": "application/json",
+      "quotaClass": "control"
+    },
+    "catalogStatus": {
+      "method": "POST",
+      "path": "/api/runtime/client/catalogStatus",
+      "contract": "agh.transport",
+      "backendMethod": "catalogStatus",
+      "input": "ClientCatalogStatusRequest",
+      "output": "ClientCatalogStatusResult",
+      "responseMime": "application/json",
+      "quotaClass": "read"
+    },
+    "streamStatus": {
+      "method": "POST",
+      "path": "/api/runtime/client/streamStatus",
+      "contract": "agh.transport",
+      "backendMethod": "streamStatus",
+      "input": "ClientArtifactStreamStatusRequest",
+      "output": "ClientArtifactStreamStatusResult",
+      "responseMime": "application/json",
+      "quotaClass": "read"
+    },
+    "readRange": {
+      "method": "POST",
+      "path": "/api/runtime/artifact/readRange",
+      "operation": "artifact.readRange",
+      "input": "ClientArtifactReadRangeRequest",
+      "output": "ClientArtifactRangeMetadata",
+      "responseMime": "application/octet-stream",
+      "quotaClass": "read"
+    },
+    "openStream": {
+      "method": "POST",
+      "path": "/api/runtime/artifact/openStream",
+      "operation": "artifact.openStream",
+      "input": "ClientArtifactOpenStreamRequest",
+      "output": "ClientArtifactStreamMetadata",
+      "responseMime": "application/octet-stream",
+      "quotaClass": "read"
+    },
+    "download": {
+      "method": "GET",
+      "path": "/api/runtime/artifact/download/{ticketId}",
+      "operation": "artifact.redeemDownload",
+      "input": "ArtifactRedeemDownloadRequest",
+      "output": "ArtifactDownloadMetadata",
+      "responseMime": "application/octet-stream",
+      "quotaClass": "read",
+      "query": [
+        "nonce"
+      ],
+      "range": "single-open-ended"
+    },
+    "websocket": {
+      "method": "GET",
+      "path": "/api/runtime/client/stream",
+      "subprotocol": "agh.runtime.client.v2",
+      "input": "ClientTransportRequestFrame",
+      "output": "ClientTransportFrame",
+      "responseMime": "application/json",
+      "quotaClass": "operation"
+    }
+  }
+} as const)
+export const RuntimeClientErrorSlots = freeze({
+  "ShellConversationClientCreateResult": [],
+  "RuntimeConversationWindow": [],
+  "CommandHandle": [
+    [
+      "error"
+    ]
+  ],
+  "ProjectionSnapshot": [],
+  "SessionControlState": [],
+  "SessionControlResult": [
+    [
+      "error"
+    ]
+  ],
+  "SessionBudgetResult": [],
+  "ApprovalGrantListResult": [],
+  "ApprovalGrantRecord": [],
+  "SessionJobsClientEnqueueResult": [],
+  "JobStatus": [],
+  "SessionJobsClientCancelResult": [],
+  "SessionJobsClientInspectResult": [],
+  "InteractionClientPendingResult": [],
+  "InteractionRecord": [],
+  "InteractionResponseStatus": [
+    [
+      "error"
+    ]
+  ],
+  "InteractionFormLink": [],
+  "ArtifactViewRef": [],
+  "ArtifactDownloadTicket": [],
+  "ClientCatalogStatusResult": [],
+  "ClientArtifactStreamStatusResult": [
+    [
+      "error"
+    ]
+  ],
+  "PageConversationSummary": []
 } as const)
 export interface ClientOperationTypes {
   'conversation.create': { input: Wire.ShellConversationClientCreateRequest; output: Wire.ShellConversationClientCreateResult }
@@ -518,5 +757,8 @@ export interface ClientOperationTypes {
   'approval.responseStatus': { input: Wire.Id; output: Wire.InteractionResponseStatus }
   'artifact.describe': { input: Wire.ArtifactDescribeInput; output: Wire.ArtifactViewRef }
   'artifact.openDownload': { input: Wire.ArtifactClientOpenDownloadRequest; output: Wire.ArtifactDownloadTicket }
+  'transport.catalogStatus': { input: Wire.ClientCatalogStatusRequest; output: Wire.ClientCatalogStatusResult }
+  'transport.streamStatus': { input: Wire.ClientArtifactStreamStatusRequest; output: Wire.ClientArtifactStreamStatusResult }
+  'conversation.list': { input: Wire.ConversationListRequest; output: Wire.PageConversationSummary }
 }
 export type ClientJsonOperation = keyof ClientOperationTypes

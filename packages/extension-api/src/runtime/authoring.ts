@@ -7,6 +7,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { HOOK_TABLE } from '../generated/hook-table.js'
 import type { HookPayloadMap, HookReturnMap } from '../hooks.js'
+import { type ArtifactPublicationDeclaration, artifactPublicationDeclaration } from './artifact-authoring.js'
 import { assertAuthorSchema } from './authoring-schemas.js'
 import {
   assertEntry,
@@ -23,6 +24,7 @@ import {
 import type * as Local from './public-api.js'
 
 export { canonicalJsonDigest } from '@agnes/protocol/runtime'
+export type { ArtifactPublicationDeclaration } from './artifact-authoring.js'
 export { runtimeAuthorSchemas } from './authoring-schemas.js'
 
 export const standardHookCapabilities = Object.freeze({
@@ -217,6 +219,9 @@ export type SimpleLoopDefinition<C = EmptyAuthorConfig> = {
   ): SimpleReadonly<Wire.SimpleStepDecision>
 }
 export type ArtifactDraft = { title: string; mediaType: string; bytes: Uint8Array }
+export type ArtifactToolDeclaration<I, C = EmptyAuthorConfig> = ArtifactToolDefinition<I, C> & {
+  readonly publication: ArtifactPublicationDeclaration
+}
 export type ArtifactToolDefinition<I, C = EmptyAuthorConfig> = {
   id: string
   description: string
@@ -485,13 +490,13 @@ export function defineRoutingStrategy<C = EmptyAuthorConfig>(
 
 export function defineArtifactTool<I, C = EmptyAuthorConfig>(
   definition: ArtifactToolDefinition<I, C>,
-): ArtifactToolDefinition<I, C> {
+): ArtifactToolDeclaration<I, C> {
   assertFields(definition, ['id', 'description', 'input', 'config', 'render'])
   assertFunction(definition.render)
   schema(definition.input)
   if (typeof definition.description !== 'string' || definition.description.length === 0)
     declarationError('an artifact description is required')
-  return Object.freeze({ ...definition, ...base(definition) })
+  return Object.freeze({ ...definition, ...base(definition), publication: artifactPublicationDeclaration() })
 }
 
 export function defineDurableWorkflow<I, S, O = Wire.JsonValue, C = EmptyAuthorConfig>(

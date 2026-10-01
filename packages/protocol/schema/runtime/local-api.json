@@ -9,12 +9,12 @@
       "FactoryContext": "type FactoryContext = {\n    instanceId: Wire.Id;\n    scope: Wire.ScopeRef;\n    bindingId: Wire.Id;\n    signal: AbortSignal;\n};\n",
       "ProviderFactory": "interface ProviderFactory<T extends ProviderLifecycle> {\n    descriptor: Wire.ProviderDescriptor;\n    create(config: Wire.DataRef, dependencies: ScopedDependencies, context: FactoryContext): Promise<T>;\n}\n",
       "RuntimePluginDefinition": "type RuntimePluginDefinition = {\n    id: Wire.Id;\n    version: string;\n    runtimeApiMajor: Wire.UInt53;\n    providers: readonly ProviderFactory<PublicProviderInstance>[];\n    schemas: readonly Wire.SchemaRef[];\n    contracts?: readonly Wire.CommunityContractDefinition[];\n    interceptors?: readonly Wire.InterceptorRegistration[];\n    author?: Wire.PluginAuthorMetadata;\n};\n",
-      "BoundService": "interface BoundService {\n    readonly binding: Wire.BindingRef;\n    query(request: Wire.ServiceQuery, context: CallContext): Promise<Outcome<Wire.QueryReply>>;\n    compute(request: Wire.ServiceOperation, context: CallContext): Promise<Outcome<Wire.DataRef>>;\n    readonly artifactAccess?: ArtifactAccessPort;\n    readonly blobRead?: BlobReadPort;\n    readonly clientIngress?: ClientCommandIngressPort;\n    readonly clientCommand?: MethodHandler;\n}\n",
+      "BoundService": "interface BoundService {\n    readonly binding: Wire.BindingRef;\n    query(request: Wire.ServiceQuery, context: CallContext): Promise<Outcome<Wire.QueryReply>>;\n    compute(request: Wire.ServiceOperation, context: CallContext): Promise<Outcome<Wire.DataRef>>;\n    readonly eventsOutbox?: EventsOutboxControl;\n    readonly artifactAccess?: ArtifactAccessPort;\n    readonly blobRead?: BlobReadPort;\n    readonly clientIngress?: ClientCommandIngressPort;\n    readonly clientCommand?: MethodHandler;\n}\n",
       "QueryHandler": "type QueryHandler = (request: Wire.ServiceQuery, context: CallContext) => Promise<Outcome<Wire.QueryReply>>;\n",
       "MethodHandler": "type MethodHandler = (request: Wire.ServiceOperation, context: CallContext) => Promise<Outcome<Wire.DataRef>>;\n",
       "ActionHandlerScope": "type ActionHandlerScope = {\n    instanceId: Wire.Id;\n    actionId: Wire.Id;\n    runId: Wire.Id;\n    bindingId: Wire.Id;\n    scope: Wire.ScopeRef;\n    signal: AbortSignal;\n};\n",
       "ActionProviderFactory": "type ActionProviderFactory = {\n    kind: 'leaf' | 'composite';\n    recovery: Wire.RecoveryLevel;\n    stateCodec: Wire.StateCodecRef | null;\n    create(scope: ActionHandlerScope): Promise<ActionProvider>;\n};\n",
-      "ServiceProvider": "interface ServiceProvider extends ProviderLifecycle {\n    query?: (request: Wire.ServiceQuery, context: CallContext) => Promise<Outcome<Wire.QueryReply>>;\n    actions?: Readonly<Record<string, ActionProviderFactory>>;\n    compute?: MethodHandler;\n    control?: MethodHandler;\n    maintenance?: MethodHandler;\n    observe?: MethodHandler;\n    ingress?: (request: Wire.ServiceOperation, context: TrustedIngressContext) => Promise<Outcome<Wire.DataRef>>;\n    readonly artifactAccess?: ArtifactAccessPort;\n    readonly blobRead?: BlobReadPort;\n    readonly clientIngress?: ClientCommandIngressPort;\n}\n",
+      "ServiceProvider": "interface ServiceProvider extends ProviderLifecycle {\n    query?: (request: Wire.ServiceQuery, context: CallContext) => Promise<Outcome<Wire.QueryReply>>;\n    actions?: Readonly<Record<string, ActionProviderFactory>>;\n    compute?: MethodHandler;\n    control?: MethodHandler;\n    maintenance?: MethodHandler;\n    observe?: MethodHandler;\n    ingress?: (request: Wire.ServiceOperation, context: TrustedIngressContext) => Promise<Outcome<Wire.DataRef>>;\n    readonly eventsOutbox?: EventsOutboxControl;\n    readonly artifactAccess?: ArtifactAccessPort;\n    readonly blobRead?: BlobReadPort;\n    readonly clientIngress?: ClientCommandIngressPort;\n}\n",
       "PublicProviderInstance": "type PublicProviderInstance = LoopProvider | ActionProvider | ServiceProvider;\n",
       "LoopReadPorts": "interface LoopReadPorts {\n    query(request: Wire.ServiceQuery): Promise<Outcome<Wire.QueryReply>>;\n    compute(request: Wire.ServiceOperation): Promise<Outcome<Wire.DataRef>>;\n    resolveData(ref: Wire.DataRef): Promise<Outcome<Wire.JsonValue>>;\n    prepare(spec: Wire.ActionSpec): Outcome<Wire.PreparedAction>;\n}\n",
       "LoopProvider": "interface LoopProvider extends ProviderLifecycle {\n    start(frame: Wire.RunFrame, ports: LoopReadPorts): Promise<Wire.LoopTransition>;\n    resume(frame: Wire.RunFrame, ports: LoopReadPorts): Promise<Wire.LoopTransition>;\n}\n",
@@ -36,8 +36,10 @@
       "ByteRangeResult": "type ByteRangeResult = { bytes: Uint8Array; offset: Wire.UInt53; totalBytes: Wire.UInt53; digest: Wire.Digest };\n",
       "ByteReadStream": "interface ByteReadStream {\n    readonly chunks: AsyncIterable<Uint8Array>;\n    readonly ended: Promise<Outcome<Wire.ArtifactReadStreamEndResult>>;\n    cancel(reason: string): Promise<void>;\n    close(): Promise<void>;\n}\n",
       "BlobReadPort": "interface BlobReadPort { readRange(request: Wire.BlobReadRangeRequest, context: CallContext): Promise<Outcome<ByteRangeResult>>; openRead(request: Wire.BlobOpenReadRequest, context: CallContext): Promise<Outcome<ByteReadStream>>; }\n",
-      "ArtifactAccessPort": "interface ArtifactAccessPort { describe(input: Wire.ArtifactDescribeInput, context: CallContext): Promise<Outcome<Wire.ArtifactViewRef>>; openDownload(input: Wire.ArtifactOpenDownloadRequest, context: CallContext): Promise<Outcome<Wire.ArtifactDownloadTicket>>; readRange(input: Wire.ArtifactClientReadRangeRequest, context: CallContext): Promise<Outcome<ByteRangeResult>>; openStream(input: Wire.ArtifactClientOpenStreamRequest, context: CallContext): Promise<Outcome<ByteReadStream>>; }\n",
-      "ClientCommandIngressPort": "interface ClientCommandIngressPort { accept(request: Wire.ClientCommandRequest, context: CallContext): Promise<Outcome<Wire.ClientCommandReply>>; }\n"
+      "ArtifactAccessPort": "interface ArtifactAccessPort { describe(input: Wire.ArtifactDescribeInput, context: CallContext): Promise<Outcome<Wire.ArtifactViewRef>>; openDownload(input: Wire.ArtifactOpenDownloadRequest, context: CallContext): Promise<Outcome<Wire.ArtifactDownloadTicket>>; readRange(input: Wire.ArtifactClientReadRangeRequest, context: CallContext): Promise<Outcome<ByteRangeResult>>; redeemDownload(request: Wire.ArtifactRedeemDownloadRequest, context: CallContext): Promise<Outcome<ArtifactDownloadDelivery>>; openStream(input: Wire.ArtifactClientOpenStreamRequest, context: CallContext): Promise<Outcome<ByteReadStream>>; }\n",
+      "ClientCommandIngressPort": "interface ClientCommandIngressPort { accept(request: Wire.ClientCommandRequest, context: CallContext): Promise<Outcome<Wire.ClientCommandReply>>; }\n",
+      "ArtifactDownloadDelivery": "interface ArtifactDownloadDelivery {\n    readonly metadata: Wire.ArtifactDownloadPresentation;\n    readonly stream: ByteReadStream;\n}\n",
+      "EventsOutboxControl": "interface EventsOutboxControl {\n    deadLetters(request: Wire.OutboxDeadLettersRequest, context: CallContext): Promise<Outcome<Wire.PageOutboxDeadLetterItem>>;\n    redriveOutbox(request: Wire.OutboxRedriveRequest, context: CallContext): Promise<Outcome<Wire.OutboxRedriveResult>>;\n}\n"
     },
     "client": {
       "RendererContext": "interface RendererContext {\n    readonly clientInstanceId: string;\n    readonly ownerToken: string;\n    readonly signal: AbortSignal;\n    readonly capabilities: Wire.NegotiatedClientCapabilities;\n    readonly commands: DomainCommandClient;\n    readonly interactions: InteractionClient;\n    readonly artifacts: ArtifactClient;\n    readonly locale: LocaleClient;\n    onDispose(dispose: () => void | Promise<void>): void;\n}\n",
@@ -60,7 +62,7 @@
       "ClientContribution": "interface ClientContribution {\n    dispose(): Promise<void>;\n}\n",
       "ClientHost": "interface ClientHost {\n    readonly context: RendererContext;\n    readonly renderers: UIRegistry;\n    readonly presentation: ClientPresentation;\n    registerShell(factory: () => ShellProvider): Outcome<ClientContribution>;\n    observeCatalog(listener: (revision: number) => void): ClientContribution;\n}\n",
       "ClientEntry": "type ClientEntry = (host: ClientHost) => Promise<Outcome<ClientContribution>>;\n",
-      "ShellConversationClient": "interface ShellConversationClient {\n    create(input: Wire.ShellConversationClientCreateRequest): Promise<Outcome<Wire.ShellConversationClientCreateResult>>;\n    open(input: Wire.ShellConversationClientOpenRequest): Promise<Outcome<Wire.RuntimeConversationWindow>>;\n    history(input: Wire.ShellConversationClientHistoryRequest): Promise<Outcome<Wire.RuntimeConversationWindow>>;\n    submit(input: Wire.ShellConversationClientSubmitRequest): Promise<Outcome<Wire.CommandHandle>>;\n    cancel(input: Wire.ShellConversationClientCancelRequest): Promise<Outcome<Wire.CommandHandle>>;\n    status(requestId: Wire.ShellConversationClientStatusRequest): Promise<Outcome<Wire.CommandHandle>>;\n}\n",
+      "ShellConversationClient": "interface ShellConversationClient {\n    list(request: Wire.ConversationListRequest): Promise<Outcome<Wire.PageConversationSummary>>;\n    create(input: Wire.ShellConversationClientCreateRequest): Promise<Outcome<Wire.ShellConversationClientCreateResult>>;\n    open(input: Wire.ShellConversationClientOpenRequest): Promise<Outcome<Wire.RuntimeConversationWindow>>;\n    history(input: Wire.ShellConversationClientHistoryRequest): Promise<Outcome<Wire.RuntimeConversationWindow>>;\n    submit(input: Wire.ShellConversationClientSubmitRequest): Promise<Outcome<Wire.CommandHandle>>;\n    cancel(input: Wire.ShellConversationClientCancelRequest): Promise<Outcome<Wire.CommandHandle>>;\n    status(requestId: Wire.ShellConversationClientStatusRequest): Promise<Outcome<Wire.CommandHandle>>;\n}\n",
       "ShellDomainClient": "interface ShellDomainClient {\n    query(input: Wire.DomainQuery): Promise<Outcome<Wire.ProjectionSnapshot>>;\n}\n",
       "SessionControlClient": "interface SessionControlClient {\n    read(sessionId: Wire.Id): Promise<Outcome<Wire.SessionControlState>>;\n    submit(request: Wire.SessionControlRequest): Promise<Outcome<Wire.SessionControlResult>>;\n    status(input: Wire.SessionControlClientStatusRequest): Promise<Outcome<Wire.SessionControlResult>>;\n}\n",
       "SessionBudgetClient": "interface SessionBudgetClient {\n    read(input: Wire.SessionBudgetClientReadRequest): Promise<Outcome<Wire.SessionBudgetResult>>;\n}\n",
@@ -71,7 +73,8 @@
       "ArtifactReadStream": "type ArtifactReadStream = import(\"../runtime/public-api.js\").ByteReadStream;\n",
       "ArtifactClient": "interface ArtifactClient {\n    describe(artifactId: Wire.Id, version: Wire.UInt53): Promise<Outcome<Wire.ArtifactViewRef>>;\n    openDownload(request: Wire.ArtifactClientOpenDownloadRequest): Promise<Outcome<Wire.ArtifactDownloadTicket>>;\n    readRange(request: Wire.ArtifactClientReadRangeRequest): Promise<Outcome<import(\"../runtime/public-api.js\").ByteRangeResult>>;\n    openStream(request: Wire.ArtifactClientOpenStreamRequest): Promise<Outcome<ArtifactReadStream>>;\n    followDownload(ticket: Wire.ArtifactDownloadTicket): Outcome<void>;\n}\n",
       "ByteRangeResult": "type ByteRangeResult = import(\"../runtime/public-api.js\").ByteRangeResult;\n",
-      "ByteReadStream": "type ByteReadStream = import(\"../runtime/public-api.js\").ByteReadStream;\n"
+      "ByteReadStream": "type ByteReadStream = import(\"../runtime/public-api.js\").ByteReadStream;\n",
+      "ClientTransportClient": "interface ClientTransportClient {\n    catalogStatus(request: Wire.ClientCatalogStatusRequest): Promise<Outcome<Wire.ClientCatalogStatusResult>>;\n    streamStatus(request: Wire.ClientArtifactStreamStatusRequest): Promise<Outcome<Wire.ClientArtifactStreamStatusResult>>;\n}\n"
     }
   },
   "x-generic-api": {
@@ -226,7 +229,14 @@
     "ClientArtifactOpenStreamRequest",
     "ClientArtifactRangeMetadata",
     "ClientArtifactStreamMetadata",
-    "ClientTransportFrame"
+    "ClientTransportFrame",
+    "ApprovalAnswer",
+    "DomainViewChange",
+    "CommandRuntimeAcceptanceResult",
+    "ChannelArtifactAttachment",
+    "ConversationListRequest",
+    "ConversationSummary",
+    "PageConversationSummary"
   ],
   "x-page-api": {
     "base": "PageInteractionRecord",
@@ -242,7 +252,9 @@
       "PageFileEntry": "FileEntry",
       "PageUsageFact": "UsageFact",
       "PageDomainEventRecord": "DomainEventRecord",
-      "PagePackageLockEntry": "PackageLockEntry"
+      "PagePackageLockEntry": "PackageLockEntry",
+      "PageConversationSummary": "ConversationSummary",
+      "PageOutboxDeadLetterItem": "OutboxDeadLetterItem"
     }
   },
   "x-control-api": {

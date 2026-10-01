@@ -5,6 +5,7 @@ import type {
   BlobReadPort,
   ClientCommandIngressPort,
   EffectStreamHandle,
+  EventsOutboxControl,
 } from './public-api.js'
 
 export type Outcome<T> =
@@ -76,6 +77,7 @@ export interface BoundService {
   readonly binding: Wire.BindingRef
   query(request: Wire.ServiceQuery, context: CallContext): Promise<Outcome<Wire.QueryReply>>
   compute(request: Wire.ServiceOperation, context: CallContext): Promise<Outcome<Wire.DataRef>>
+  readonly eventsOutbox?: EventsOutboxControl
   readonly artifactAccess?: ArtifactAccessPort
   readonly blobRead?: BlobReadPort
   readonly clientIngress?: ClientCommandIngressPort
@@ -116,6 +118,7 @@ export interface ServiceProvider extends ProviderLifecycle {
   maintenance?: MethodHandler
   observe?: MethodHandler
   ingress?: (request: Wire.ServiceOperation, context: TrustedIngressContext) => Promise<Outcome<Wire.DataRef>>
+  readonly eventsOutbox?: EventsOutboxControl
   readonly artifactAccess?: ArtifactAccessPort
   readonly blobRead?: BlobReadPort
   readonly clientIngress?: ClientCommandIngressPort

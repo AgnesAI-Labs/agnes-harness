@@ -2580,7 +2580,8 @@ export const RuntimeServiceCatalog = {
         "output": "CommandHandle",
         "inputTypeId": "agh.supervisor/submitConversation.request@1",
         "outputTypeId": "agh.supervisor/submitConversation.response@1",
-        "sameAttemptBrokerAllowed": false
+        "sameAttemptBrokerAllowed": false,
+        "completion": "runtime-accepted"
       },
       "cancelConversation": {
         "kind": "control",
@@ -2588,7 +2589,8 @@ export const RuntimeServiceCatalog = {
         "output": "CommandHandle",
         "inputTypeId": "agh.supervisor/cancelConversation.request@1",
         "outputTypeId": "agh.supervisor/cancelConversation.response@1",
-        "sameAttemptBrokerAllowed": false
+        "sameAttemptBrokerAllowed": false,
+        "completion": "runtime-accepted"
       },
       "conversationCommandStatus": {
         "kind": "query",
@@ -3059,7 +3061,8 @@ export const RuntimeServiceCatalog = {
         "output": "CommandHandle",
         "inputTypeId": "agh.jobs/acceptCreateDefinition.request@1",
         "outputTypeId": "agh.jobs/acceptCreateDefinition.response@1",
-        "sameAttemptBrokerAllowed": false
+        "sameAttemptBrokerAllowed": false,
+        "completion": "domain-commit"
       },
       "acceptUpdateDefinition": {
         "kind": "control",
@@ -3067,7 +3070,8 @@ export const RuntimeServiceCatalog = {
         "output": "CommandHandle",
         "inputTypeId": "agh.jobs/acceptUpdateDefinition.request@1",
         "outputTypeId": "agh.jobs/acceptUpdateDefinition.response@1",
-        "sameAttemptBrokerAllowed": false
+        "sameAttemptBrokerAllowed": false,
+        "completion": "domain-commit"
       },
       "acceptCancelDefinition": {
         "kind": "control",
@@ -3075,7 +3079,8 @@ export const RuntimeServiceCatalog = {
         "output": "CommandHandle",
         "inputTypeId": "agh.jobs/acceptCancelDefinition.request@1",
         "outputTypeId": "agh.jobs/acceptCancelDefinition.response@1",
-        "sameAttemptBrokerAllowed": false
+        "sameAttemptBrokerAllowed": false,
+        "completion": "runtime-accepted"
       },
       "clientCommandStatus": {
         "kind": "query",
@@ -3168,7 +3173,8 @@ export const RuntimeServiceCatalog = {
         "output": "ArtifactReservation",
         "inputTypeId": "agh.artifacts/reserve.request@1",
         "outputTypeId": "agh.artifacts/reserve.response@1",
-        "sameAttemptBrokerAllowed": false
+        "sameAttemptBrokerAllowed": false,
+        "requiredFeature": "artifact-publication.v1"
       },
       "publish": {
         "kind": "action",
@@ -3176,7 +3182,8 @@ export const RuntimeServiceCatalog = {
         "output": "ArtifactReservation",
         "inputTypeId": "agh.artifacts/publish.request@1",
         "outputTypeId": "agh.artifacts/publish.response@1",
-        "sameAttemptBrokerAllowed": false
+        "sameAttemptBrokerAllowed": false,
+        "requiredFeature": "artifact-publication.v1"
       },
       "revoke": {
         "kind": "action",
@@ -3232,6 +3239,41 @@ export const RuntimeServiceCatalog = {
         "localMethod": "followDownload",
         "sameAttemptBrokerAllowed": false,
         "clientOnly": true
+      },
+      "fail": {
+        "kind": "action",
+        "input": "ArtifactsFailRequest",
+        "output": "ArtifactReservation",
+        "inputTypeId": "agh.artifacts/fail.request@1",
+        "outputTypeId": "agh.artifacts/fail.response@1",
+        "requiredFeature": "artifact-publication.v1",
+        "sameAttemptBrokerAllowed": false
+      },
+      "grant": {
+        "kind": "action",
+        "input": "ArtifactsGrantRequest",
+        "output": "ArtifactAccessGrantValue",
+        "inputTypeId": "agh.artifacts/grant.request@1",
+        "outputTypeId": "agh.artifacts/grant.response@1",
+        "requiredFeature": "artifact-publication.v1",
+        "sameAttemptBrokerAllowed": false
+      },
+      "revokeGrant": {
+        "kind": "action",
+        "input": "ArtifactsRevokeGrantRequest",
+        "output": "ArtifactAccessGrantValue",
+        "inputTypeId": "agh.artifacts/revokeGrant.request@1",
+        "outputTypeId": "agh.artifacts/revokeGrant.response@1",
+        "requiredFeature": "artifact-publication.v1",
+        "sameAttemptBrokerAllowed": false
+      },
+      "redeemDownload": {
+        "local": true,
+        "localInterface": "ArtifactAccessPort",
+        "localMethod": "redeemDownload",
+        "kind": "query",
+        "requiredFeature": "artifact-ticket.v1",
+        "sameAttemptBrokerAllowed": false
       },
       "authorityFence": {
         "kind": "maintenance",
@@ -4190,6 +4232,15 @@ export const RuntimeServiceCatalog = {
         "outputTypeId": "agh.projection/commandStatus.response@1",
         "sameAttemptBrokerAllowed": false
       },
+      "listConversations": {
+        "kind": "query",
+        "input": "ConversationListRequest",
+        "output": "PageConversationSummary",
+        "inputTypeId": "agh.projection/listConversations.request@1",
+        "outputTypeId": "agh.projection/listConversations.response@1",
+        "sameAttemptBrokerAllowed": false,
+        "requiredFeature": "client-transport-wire.v2"
+      },
       "authorityFence": {
         "kind": "maintenance",
         "input": "AuthorityTransferControlFenceRequest",
@@ -4298,7 +4349,7 @@ export const RuntimeServiceCatalog = {
         "inputTypeId": "agh.transport/bootstrap.request@1",
         "outputTypeId": "agh.transport/bootstrap.response@1",
         "sameAttemptBrokerAllowed": false,
-        "requiredFeature": "client-transport.v1"
+        "requiredFeature": "client-transport-wire.v2"
       },
       "clientQuery": {
         "kind": "query",
@@ -4307,7 +4358,7 @@ export const RuntimeServiceCatalog = {
         "inputTypeId": "agh.transport/clientQuery.request@1",
         "outputTypeId": "agh.transport/clientQuery.response@1",
         "sameAttemptBrokerAllowed": false,
-        "requiredFeature": "client-transport.v1"
+        "requiredFeature": "client-transport-wire.v2"
       },
       "clientCommand": {
         "kind": "ingress",
@@ -4316,7 +4367,7 @@ export const RuntimeServiceCatalog = {
         "inputTypeId": "agh.transport/clientCommand.request@1",
         "outputTypeId": "agh.transport/clientCommand.response@1",
         "sameAttemptBrokerAllowed": false,
-        "requiredFeature": "client-transport.v1"
+        "requiredFeature": "client-transport-wire.v2"
       },
       "catalogPage": {
         "kind": "query",
@@ -4325,7 +4376,7 @@ export const RuntimeServiceCatalog = {
         "inputTypeId": "agh.transport/catalogPage.request@1",
         "outputTypeId": "agh.transport/catalogPage.response@1",
         "sameAttemptBrokerAllowed": false,
-        "requiredFeature": "client-transport.v1"
+        "requiredFeature": "client-transport-wire.v2"
       },
       "subscribe": {
         "kind": "query",
@@ -4334,7 +4385,7 @@ export const RuntimeServiceCatalog = {
         "inputTypeId": "agh.transport/subscribe.request@1",
         "outputTypeId": "agh.transport/subscribe.response@1",
         "sameAttemptBrokerAllowed": false,
-        "requiredFeature": "client-transport.v1"
+        "requiredFeature": "client-transport-wire.v2"
       },
       "readSubscription": {
         "kind": "query",
@@ -4343,7 +4394,7 @@ export const RuntimeServiceCatalog = {
         "inputTypeId": "agh.transport/readSubscription.request@1",
         "outputTypeId": "agh.transport/readSubscription.response@1",
         "sameAttemptBrokerAllowed": false,
-        "requiredFeature": "client-transport.v1"
+        "requiredFeature": "client-transport-wire.v2"
       },
       "closeSubscription": {
         "kind": "control",
@@ -4352,7 +4403,25 @@ export const RuntimeServiceCatalog = {
         "inputTypeId": "agh.transport/closeSubscription.request@1",
         "outputTypeId": "agh.transport/closeSubscription.response@1",
         "sameAttemptBrokerAllowed": false,
-        "requiredFeature": "client-transport.v1"
+        "requiredFeature": "client-transport-wire.v2"
+      },
+      "catalogStatus": {
+        "kind": "query",
+        "input": "ClientCatalogStatusRequest",
+        "output": "ClientCatalogStatusResult",
+        "inputTypeId": "agh.transport/catalogStatus.request@1",
+        "outputTypeId": "agh.transport/catalogStatus.response@1",
+        "sameAttemptBrokerAllowed": false,
+        "requiredFeature": "client-transport-wire.v2"
+      },
+      "streamStatus": {
+        "kind": "query",
+        "input": "ClientArtifactStreamStatusRequest",
+        "output": "ClientArtifactStreamStatusResult",
+        "inputTypeId": "agh.transport/streamStatus.request@1",
+        "outputTypeId": "agh.transport/streamStatus.response@1",
+        "sameAttemptBrokerAllowed": false,
+        "requiredFeature": "client-transport-wire.v2"
       },
       "authorityFence": {
         "kind": "maintenance",
@@ -5732,6 +5801,24 @@ export const RuntimeServiceCatalog = {
         "outputTypeId": "agh.state/cancelAdmission.response@1",
         "sameAttemptBrokerAllowed": false
       },
+      "deadLetters": {
+        "kind": "query",
+        "input": "OutboxDeadLettersRequest",
+        "output": "PageOutboxDeadLetterItem",
+        "inputTypeId": "agh.state/deadLetters.request@1",
+        "outputTypeId": "agh.state/deadLetters.response@1",
+        "requiredFeature": "outbox-administration.v1",
+        "sameAttemptBrokerAllowed": false
+      },
+      "redriveOutbox": {
+        "kind": "control",
+        "input": "OutboxRedriveRequest",
+        "output": "OutboxRedriveResult",
+        "inputTypeId": "agh.state/redriveOutbox.request@1",
+        "outputTypeId": "agh.state/redriveOutbox.response@1",
+        "requiredFeature": "outbox-administration.v1",
+        "sameAttemptBrokerAllowed": false
+      },
       "authorityFence": {
         "kind": "maintenance",
         "input": "AuthorityTransferControlFenceRequest",
@@ -5968,6 +6055,7 @@ export const RuntimeConfigurationSchemas = [
   "RuntimeSimpleLoopCheckpoint"
 ] as const
 export const RuntimeAuthorityTransferAPI = Object.freeze({"feature": "authority-transfer.v1", "contracts": Object.freeze(["agh.agents", "agh.artifacts", "agh.assembly", "agh.audit", "agh.authority-directory", "agh.billing", "agh.blob", "agh.budget", "agh.channel", "agh.compaction", "agh.config", "agh.context", "agh.effects", "agh.embedding", "agh.events", "agh.exec", "agh.files", "agh.identity", "agh.integrity", "agh.interaction", "agh.jobs", "agh.loop", "agh.mcp", "agh.media", "agh.memory", "agh.migration", "agh.model", "agh.model-adapter", "agh.network", "agh.package-installer", "agh.package-resolver", "agh.package-source", "agh.policy", "agh.pricing", "agh.projection", "agh.recovery", "agh.resources", "agh.retrieval", "agh.routing", "agh.sandbox", "agh.scheduler", "agh.secrets", "agh.state", "agh.supervisor", "agh.tools", "agh.trace", "agh.transport", "agh.usage", "agh.workspace"] as const), "methods": Object.freeze({"fence": Object.freeze({"backendMethod": "authorityFence", "input": "AuthorityTransferControlFenceRequest", "output": "AuthorityFence"} as const), "export": Object.freeze({"backendMethod": "authorityExport", "input": "AuthorityTransferControlExportRequest", "output": "AuthorityExport"} as const), "exportPage": Object.freeze({"backendMethod": "authorityExportPage", "input": "AuthorityTransferControlExportPageRequest", "output": "AuthorityTransferControlExportPageResult"} as const), "import": Object.freeze({"backendMethod": "authorityImport", "input": "AuthorityTransferControlImportRequest", "output": "AuthorityTransferControlImportResult"} as const), "verify": Object.freeze({"backendMethod": "authorityVerify", "input": "AuthorityTransferControlVerifyRequest", "output": "MigrationValidation"} as const), "activate": Object.freeze({"backendMethod": "authorityActivate", "input": "AuthorityTransferControlActivateRequest", "output": "AuthorityTransferProbe"} as const), "abort": Object.freeze({"backendMethod": "authorityAbort", "input": "AuthorityTransferControlAbortRequest", "output": "AuthorityTransferProbe"} as const), "probe": Object.freeze({"backendMethod": "authorityProbe", "input": "AuthorityTransferControlProbeRequest", "output": "AuthorityTransferProbe"} as const)} as const)} as const)
+export const RuntimeEventsOutboxAPI = Object.freeze({"feature": "outbox-administration.v1", "contracts": Object.freeze(["agh.state"] as const), "localInterface": "EventsOutboxControl", "methods": Object.freeze({"deadLetters": Object.freeze({"kind": "query", "input": "OutboxDeadLettersRequest", "output": "PageOutboxDeadLetterItem"} as const), "redriveOutbox": Object.freeze({"kind": "control", "input": "OutboxRedriveRequest", "output": "OutboxRedriveResult"} as const)} as const)} as const)
 export const RuntimeAuthorCapabilities = {
   "rawToolResult": {
     "capability": "agh.hooks.raw-result.read",
@@ -6123,7 +6211,6 @@ export const RuntimeInterceptorPolicy = {
       "/request"
     ],
     "writeFields": [
-      "/request/risk",
       "/request/context",
       "/request/summary"
     ]
@@ -6152,4 +6239,5 @@ export const RuntimeInterceptorPolicy = {
 } as const
 export const RuntimeAuthorCodecPolicy = Object.freeze({"maxInlineBytes": 65536, "payload": Object.freeze({"maxCanonicalJsonBytes": 1048576, "maxDepth": 64, "maxMembers": 10000} as const)} as const)
 export const RuntimeHttpHeaderPolicy = Object.freeze({"request": Object.freeze(["accept", "accept-language", "cache-control", "content-type", "if-match", "if-modified-since", "if-none-match", "if-unmodified-since", "range", "user-agent", "x-request-id"] as const), "response": Object.freeze(["cache-control", "content-type", "content-length", "content-encoding", "content-range", "date", "etag", "last-modified", "location", "retry-after", "vary", "x-request-id"] as const)} as const)
+export const RuntimeApprovalIntentPolicy = Object.freeze({"algorithm": "jcs-sha256", "fields": Object.freeze(["actionRef", "inputDigest", "policyDecisionRef", "scope", "allowedResponders", "allowedGrantScopes", "expiresAt", "risk"] as const), "setFields": Object.freeze(["allowedResponders", "allowedGrantScopes"] as const), "setOrder": "utf8", "defaultAllowedGrantScopes": Object.freeze(["once"] as const), "answerSchema": "ApprovalAnswer", "riskMutableByHook": false} as const)
 export const MAX_AUTHOR_INLINE_BYTES = RuntimeAuthorCodecPolicy.maxInlineBytes

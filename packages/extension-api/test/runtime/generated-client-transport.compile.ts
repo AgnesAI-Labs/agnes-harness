@@ -1,7 +1,8 @@
-import './generated-client-transport.compile.js'
+// generated from runtime client metadata — do not edit
 import type {
   ApprovalClient,
   ArtifactClient,
+  ClientTransportClient,
   DomainCommandClient,
   InteractionClient,
   PermissionClient,
@@ -11,25 +12,13 @@ import type {
   ShellConversationClient,
   ShellDomainClient,
 } from '@agnes/extension-api/client'
-import type {
-  ArtifactAccessPort,
-  BlobReadPort,
-  CallContext,
-  ClientCommandIngressPort,
-  Outcome,
-} from '@agnes/extension-api/runtime'
-import type {
-  ArtifactOpenDownloadRequest,
-  ClientCommandReply,
-  ClientCommandRequest,
-  ClientOperationTypes,
-} from '@agnes/protocol/runtime'
-
-type Inputs = { [K in keyof ClientOperationTypes]: ClientOperationTypes[K]['input'] }
-export async function consumeEveryClientOperation(
+import type { Outcome } from '@agnes/extension-api/runtime'
+import type { ClientOperationTypes } from '@agnes/protocol/runtime'
+export async function consumeGeneratedClientSurface(
   clients: {
     ApprovalClient: ApprovalClient
     ArtifactClient: ArtifactClient
+    ClientTransportClient: ClientTransportClient
     DomainCommandClient: DomainCommandClient
     InteractionClient: InteractionClient
     PermissionClient: PermissionClient
@@ -39,7 +28,7 @@ export async function consumeEveryClientOperation(
     ShellConversationClient: ShellConversationClient
     ShellDomainClient: ShellDomainClient
   },
-  inputs: Inputs,
+  inputs: { [K in keyof ClientOperationTypes]: ClientOperationTypes[K]['input'] },
 ): Promise<void> {
   const conversation_create: Outcome<ClientOperationTypes['conversation.create']['output']> =
     await clients.ShellConversationClient.create(inputs['conversation.create'])
@@ -152,45 +141,13 @@ export async function consumeEveryClientOperation(
   const artifact_openDownload: Outcome<ClientOperationTypes['artifact.openDownload']['output']> =
     await clients.ArtifactClient.openDownload(inputs['artifact.openDownload'])
   void artifact_openDownload
-}
-export async function consumeQualifiedPorts(
-  artifact: ArtifactAccessPort,
-  blob: BlobReadPort,
-  ingress: ClientCommandIngressPort,
-  context: CallContext,
-  command: ClientCommandRequest,
-  download: ArtifactOpenDownloadRequest,
-) {
-  const result: Outcome<ClientCommandReply> = await ingress.accept(command, context)
-  await artifact.openDownload(download, context)
-  const ranged = await artifact.readRange(
-    { artifactId: 'artifact', version: 1, offset: 0, length: 1 },
-    context,
-  )
-  if (ranged.ok) {
-    const bytes: Uint8Array = ranged.value.bytes
-    void bytes
-  }
-  void blob
-  return result
-}
-export async function consumeOptionalOffset(client: ArtifactClient) {
-  return client.openStream({ artifactId: 'artifact', version: 1 })
-}
-
-// @ts-expect-error Host wrapper is not a client-facing business DTO.
-import type { ArtifactOpenDownloadRequest as LeakedHostWrapper } from '@agnes/extension-api/client'
-
-export type HostWrapperLeakMustFail = LeakedHostWrapper
-
-// @ts-expect-error Binary delivery cannot become a JSON command operation.
-const binaryCommand: ClientCommandRequest['call']['operation'] = 'artifact.readRange'
-void binaryCommand
-export function refuseMissingHostIdentity(artifact: ArtifactAccessPort, context: CallContext) {
-  // @ts-expect-error Backend control requires the Host identity wrapper.
-  return artifact.openDownload({ artifactId: 'artifact', version: 1, disposition: 'inline' }, context)
-}
-export function refuseFakeRuntimeAuthority(client: ArtifactClient) {
-  // @ts-expect-error Client navigation has no remote provider control capability.
-  return client.clientCommand
+  const transport_catalogStatus: Outcome<ClientOperationTypes['transport.catalogStatus']['output']> =
+    await clients.ClientTransportClient.catalogStatus(inputs['transport.catalogStatus'])
+  void transport_catalogStatus
+  const transport_streamStatus: Outcome<ClientOperationTypes['transport.streamStatus']['output']> =
+    await clients.ClientTransportClient.streamStatus(inputs['transport.streamStatus'])
+  void transport_streamStatus
+  const conversation_list: Outcome<ClientOperationTypes['conversation.list']['output']> =
+    await clients.ShellConversationClient.list(inputs['conversation.list'])
+  void conversation_list
 }

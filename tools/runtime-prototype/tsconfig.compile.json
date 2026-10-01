@@ -21,6 +21,9 @@
     "../../packages/extension-api/test/runtime/standard-hook-operations-consumer.compile.ts",
     "../../packages/extension-api/test/runtime/integrity-consumer.compile.ts",
     "../../packages/extension-api/test/runtime/contract-tail-consumer.compile.ts",
-    "../../packages/extension-api/test/runtime/client-transport-consumer.compile.ts"
+    "../../packages/extension-api/test/runtime/client-transport-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/generated-client-transport.compile.ts",
+    "../../packages/extension-api/test/runtime/artifact-consumer.compile.ts",
+    "../../packages/extension-api/test/runtime/interaction-event-consumer.compile.ts"
   ]
 }
