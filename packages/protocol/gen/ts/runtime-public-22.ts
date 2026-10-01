@@ -115,6 +115,15 @@ export const RuntimePublic22 = Type.Module({
   "OutboxRedriveRequest": Type.Object({ "requestId": Type.Ref('Id'), "scope": Type.Ref('ScopeRef'), "delivery": Type.Ref('OutboxDeliveryKey'), "expectedDeliveryRevision": Type.Ref('UInt53'), "reason": Object.assign(Type.String({ minLength: 1 }), {"x-max-utf8-bytes":8192}) }, { additionalProperties: false }),
   "OutboxRedriveResult": Type.Object({ "delivery": Type.Ref('OutboxDeliveryKey'), "state": Type.Literal('pending'), "deliveryRevision": Type.Ref('UInt53') }, { additionalProperties: false }),
   "OutboxRedriveRecord": Type.Object({ "owner": Type.Ref('RecordOwner'), "request": Type.Ref('OutboxRedriveRequest'), "actorRef": Type.Ref('Id'), "fingerprint": Type.Ref('Digest'), "acceptedAt": Type.Ref('Timestamp'), "authorizationRef": Type.Ref('Id'), "result": Type.Ref('OutboxRedriveResult') }, { additionalProperties: false }),
+  "Externalchannel_JwtCredential": Type.Object({ "kind": Type.Literal('jwt'), "token": Type.String({ maxLength: 8192 }) }, { additionalProperties: false }),
+  "Externalchannel_SourceAuthCredential": Type.Object({ "kind": Type.Literal('source-auth'), "timestamp": Type.Integer(), "signature": Type.String({ pattern: "^v0=[0-9a-f]{64}$" }), "nonce": Type.String({ pattern: "^[0-9a-f]{32}$" }) }, { additionalProperties: false }),
+  "Externalchannel_PortalIdentityCredential": Type.Object({ "kind": Type.Literal('portal-identity'), "token": Type.String({ maxLength: 8192 }) }, { additionalProperties: false }),
+  "Externalchannel_LocalCredential": Type.Object({ "kind": Type.Literal('local') }, { additionalProperties: false }),
+  "Externalchannel_SurfaceAuthCredential": Type.Object({ "kind": Type.Literal('surface'), "sourceId": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9-]{0,63}$" }), "source": Type.Ref('Externalchannel_SourceAuthCredential'), "subject": Type.Union([Type.Ref('Externalchannel_JwtCredential'), Type.Ref('Externalchannel_PortalIdentityCredential')]) }, { additionalProperties: false }),
+  "Externalchannel_Auth": Type.Union([Type.Ref('Externalchannel_JwtCredential'), Type.Ref('Externalchannel_SourceAuthCredential'), Type.Ref('Externalchannel_PortalIdentityCredential'), Type.Ref('Externalchannel_LocalCredential'), Type.Ref('Externalchannel_SurfaceAuthCredential')]),
+  "Externalagnes_v1_Auth": Type.Ref('Externalchannel_Auth'),
+  "LegacyIdentityCredentialEnvelope": Type.Ref('Externalagnes_v1_Auth'),
+  "LegacyIdentityTransportEvidence": Type.Object({ "bindingId": Type.Ref('Id'), "ingressId": Type.Ref('Id'), "connectionId": Type.Ref('Id'), "initializeDigest": Type.Ref('Digest'), "receivedAt": Type.Ref('Timestamp'), "channelBinding": Type.Ref('Digest'), "clientId": Type.String(), "transport": Type.Union([Type.Literal('local'), Type.Literal('rpc'), Type.Literal('websocket')]), "localGate": Type.Union([Type.Literal('none'), Type.Literal('local-peer'), Type.Literal('loopback-host-origin')]), "proof": Type.Ref('TransportEvidenceProof') }, { additionalProperties: false }),
   "RuntimeEmptyAuthorConfig": Type.Object({  }, { additionalProperties: false }),
 })
 
@@ -324,5 +333,23 @@ export const OutboxRedriveResult = RuntimePublic22.Import('OutboxRedriveResult')
 export type OutboxRedriveResult = Static<typeof OutboxRedriveResult>
 export const OutboxRedriveRecord = RuntimePublic22.Import('OutboxRedriveRecord')
 export type OutboxRedriveRecord = Static<typeof OutboxRedriveRecord>
+export const Externalchannel_JwtCredential = RuntimePublic22.Import('Externalchannel_JwtCredential')
+export type Externalchannel_JwtCredential = Static<typeof Externalchannel_JwtCredential>
+export const Externalchannel_SourceAuthCredential = RuntimePublic22.Import('Externalchannel_SourceAuthCredential')
+export type Externalchannel_SourceAuthCredential = Static<typeof Externalchannel_SourceAuthCredential>
+export const Externalchannel_PortalIdentityCredential = RuntimePublic22.Import('Externalchannel_PortalIdentityCredential')
+export type Externalchannel_PortalIdentityCredential = Static<typeof Externalchannel_PortalIdentityCredential>
+export const Externalchannel_LocalCredential = RuntimePublic22.Import('Externalchannel_LocalCredential')
+export type Externalchannel_LocalCredential = Static<typeof Externalchannel_LocalCredential>
+export const Externalchannel_SurfaceAuthCredential = RuntimePublic22.Import('Externalchannel_SurfaceAuthCredential')
+export type Externalchannel_SurfaceAuthCredential = Static<typeof Externalchannel_SurfaceAuthCredential>
+export const Externalchannel_Auth = RuntimePublic22.Import('Externalchannel_Auth')
+export type Externalchannel_Auth = Static<typeof Externalchannel_Auth>
+export const Externalagnes_v1_Auth = RuntimePublic22.Import('Externalagnes_v1_Auth')
+export type Externalagnes_v1_Auth = Static<typeof Externalagnes_v1_Auth>
+export const LegacyIdentityCredentialEnvelope = RuntimePublic22.Import('LegacyIdentityCredentialEnvelope')
+export type LegacyIdentityCredentialEnvelope = Static<typeof LegacyIdentityCredentialEnvelope>
+export const LegacyIdentityTransportEvidence = RuntimePublic22.Import('LegacyIdentityTransportEvidence')
+export type LegacyIdentityTransportEvidence = Static<typeof LegacyIdentityTransportEvidence>
 export const RuntimeEmptyAuthorConfig = RuntimePublic22.Import('RuntimeEmptyAuthorConfig')
 export type RuntimeEmptyAuthorConfig = Static<typeof RuntimeEmptyAuthorConfig>

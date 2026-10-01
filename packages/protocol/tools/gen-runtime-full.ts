@@ -16,6 +16,41 @@ const identifier = /^[A-Za-z_$][\w$]*$/
 export { normalizeBrokerCatalog } from './gen-runtime-catalog.js'
 export { loadRuntimeSchemaGraph } from './gen-runtime-graph.js'
 
+/** Legacy ingress codecs remain a separate ephemeral, Host-produced family. */
+export function validateLegacyIdentityMetadata(
+  metadata: JsonSchemaDoc,
+  wireNames: ReadonlySet<string>,
+): void {
+  const expected = {
+    credentialEnvelope: 'LegacyIdentityCredentialEnvelope',
+    transportEvidence: 'LegacyIdentityTransportEvidence',
+    proof: 'TransportEvidenceProof',
+    requiredFeature: 'identity-legacy-ingress.v1',
+    hostOnlyEvidence: true,
+    ephemeralOnly: true,
+    method: 'initialize',
+  }
+  const table = metadata['x-identity-legacy-schemas'] as Json | undefined
+  const ids = metadata['x-schema-ids'] as Json | undefined
+  const credential = metadata.$defs?.LegacyIdentityCredentialEnvelope as Json | undefined
+  if (
+    !table ||
+    Array.isArray(table) ||
+    Object.keys(table).sort().join(',') !== Object.keys(expected).sort().join(',') ||
+    Object.entries(expected).some(([key, value]) => table[key] !== value) ||
+    ![expected.credentialEnvelope, expected.transportEvidence, expected.proof].every((name) =>
+      wireNames.has(name),
+    ) ||
+    ids?.LegacyIdentityCredentialEnvelope !== 'agh.identity/legacy-credential@1' ||
+    ids?.LegacyIdentityTransportEvidence !== 'agh.identity/legacy-transport-evidence@1' ||
+    !credential ||
+    Object.keys(credential).sort().join(',') !== '$ref,x-secret' ||
+    credential.$ref !== 'https://agnes.ai/schema/agnes-v1.json#/$defs/Auth' ||
+    credential['x-secret'] !== true
+  )
+    throw new Error('invalid legacy identity schema metadata')
+}
+
 type LocalMetadata = {
   'x-local-api': { runtime: Record<string, string>; client: Record<string, string> }
   'x-generic-api'?: Record<string, { parameter: string; base: string; property: string }>
@@ -321,6 +356,7 @@ export function generateFullRuntimeArtifacts(directory: string): Record<string, 
     !approvalFields.every((name) => approvalProperties && Object.hasOwn(approvalProperties, name))
   )
     throw new Error('invalid approval intent binding policy')
+  validateLegacyIdentityMetadata(publicDocument, new Set(names))
   const metadataTables: Record<string, unknown> = {
     RuntimeServiceCatalog: catalog,
     RuntimeConfigurationSchemas: configurationNames,
@@ -333,6 +369,7 @@ export function generateFullRuntimeArtifacts(directory: string): Record<string, 
     'x-author-codec-policy': 'RuntimeAuthorCodecPolicy',
     'x-http-header-policy': 'RuntimeHttpHeaderPolicy',
     'x-approval-intent-policy': 'RuntimeApprovalIntentPolicy',
+    'x-identity-legacy-schemas': 'RuntimeIdentityLegacySchemas',
   })) {
     if (publicDocument[key] !== undefined) metadataTables[name] = publicDocument[key]
   }
@@ -388,6 +425,7 @@ export function generateFullRuntimeArtifacts(directory: string): Record<string, 
             'RuntimeAuthorityTransferAPI',
             'RuntimeEventsOutboxAPI',
             'RuntimeApprovalIntentPolicy',
+            'RuntimeIdentityLegacySchemas',
           ].includes(name)
             ? `export const ${name} = ${frozenLiteral(value)}\n`
             : `export const ${name} = ${JSON.stringify(value, null, 2)} as const\n`,

@@ -1238,8 +1238,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // tree: 2201, exact.
   // Runtime public schema exports and generated authority SPI: measured 2452, no spare allocation.
   // Bounded schema codecs and client transport validation: exact measured 2985, no spare.
-  // Reviewed interaction/artifact contracts and schema-driven transport validation: measured 3443 (+458), exact.
-  'packages/protocol/src': 3443,
+  // Reviewed runtime contracts plus the generated legacy identity metadata export: measured 3444 (+1), exact.
+  'packages/protocol/src': 3444,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
