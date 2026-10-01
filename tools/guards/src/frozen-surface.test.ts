@@ -520,6 +520,9 @@ const interfaceSample = `export interface StateStoreControl {
 }
 `
 
+// These cases read every package source file. The default timeout is too short on shared CI runners.
+const REPO_SCAN_TIMEOUT_MS = 30_000
+
 describe('public state methods follow the generated catalog', () => {
   it('matches the generated state interface and keeps batch writers off that set', () => {
     const catalogs = catalogFiles(root)
@@ -560,14 +563,18 @@ describe('public state methods follow the generated catalog', () => {
 })
 
 describe('other packages stay on the public state surface', () => {
-  it('does not call a host batch writer or name a state table', () => {
-    const batches = batchMethodNames(read(join(root, PROVIDER_REL)))
-    const tables = tableNames(stateSql(root))
-    expect(batches.length).toBeGreaterThan(0)
-    expect(tables.length).toBeGreaterThan(0)
-    const problems = bypassProblems(root)
-    expect(problems, problems.join('\n')).toEqual([])
-  })
+  it(
+    'does not call a host batch writer or name a state table',
+    () => {
+      const batches = batchMethodNames(read(join(root, PROVIDER_REL)))
+      const tables = tableNames(stateSql(root))
+      expect(batches.length).toBeGreaterThan(0)
+      expect(tables.length).toBeGreaterThan(0)
+      const problems = bypassProblems(root)
+      expect(problems, problems.join('\n')).toEqual([])
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  )
 
   it('rejects a batch call and a state-table read outside the default implementation', () => {
     withTemp(
@@ -641,10 +648,14 @@ describe('production assembly has one entry', () => {
 })
 
 describe('test fixtures stay out of product source', () => {
-  it('lets tests, examples, and the conformance driver import the public testkit', () => {
-    const problems = testkitProblems(root)
-    expect(problems, problems.join('\n')).toEqual([])
-  })
+  it(
+    'lets tests, examples, and the conformance driver import the public testkit',
+    () => {
+      const problems = testkitProblems(root)
+      expect(problems, problems.join('\n')).toEqual([])
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  )
 
   it('rejects a product import and allows an example and a conformance driver', () => {
     withTemp(
@@ -677,11 +688,15 @@ describe('test fixtures stay out of product source', () => {
 })
 
 describe('product packages do not depend on the reference package', () => {
-  it('keeps the reference package off product dependencies and imports', () => {
-    const problems = referenceProblems(root)
-    expect(referencePackageName(root)).not.toBe('')
-    expect(problems, problems.join('\n')).toEqual([])
-  })
+  it(
+    'keeps the reference package off product dependencies and imports',
+    () => {
+      const problems = referenceProblems(root)
+      expect(referencePackageName(root)).not.toBe('')
+      expect(problems, problems.join('\n')).toEqual([])
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  )
 
   it('rejects a dependency and a relative import of the reference package', () => {
     withTemp(
@@ -711,13 +726,17 @@ describe('product packages do not depend on the reference package', () => {
 })
 
 describe('sdk and daemon only type-import the extension api', () => {
-  it('has no value import in either package', () => {
-    const problems = [
-      ...extensionApiValueProblems(root, '@agnes/sdk'),
-      ...extensionApiValueProblems(root, '@agnes/daemon'),
-    ]
-    expect(problems, problems.join('\n')).toEqual([])
-  })
+  it(
+    'has no value import in either package',
+    () => {
+      const problems = [
+        ...extensionApiValueProblems(root, '@agnes/sdk'),
+        ...extensionApiValueProblems(root, '@agnes/daemon'),
+      ]
+      expect(problems, problems.join('\n')).toEqual([])
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  )
 
   it('rejects a value import and allows a type import', () => {
     withTemp(
