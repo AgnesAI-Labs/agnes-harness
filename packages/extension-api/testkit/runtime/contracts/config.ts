@@ -35,6 +35,7 @@ export interface ConfigConformanceBinding {
   readonly command: string
   readonly build: BuildIdentity
   readonly sources: readonly ConfigSourcePort[]
+  readonly providerId?: string
 }
 
 function complete(evidence: ConfigScenarioEvidence): boolean {
@@ -52,13 +53,14 @@ function complete(evidence: ConfigScenarioEvidence): boolean {
  * The reference package is not registered here.
  */
 export function registerConfigContract(harness: ConformanceHarness, binding: ConfigConformanceBinding): void {
+  const providerId = binding.providerId ?? 'default'
   for (const source of binding.sources) {
     for (const scenario of SCENARIOS) {
       harness.registerCase({
         contract: 'agh.config',
         scenario,
         qualification: 'required',
-        providerId: 'default',
+        providerId,
         async run(context): Promise<AssertionInput> {
           const evidence = await source[context.scenario]()
           return {

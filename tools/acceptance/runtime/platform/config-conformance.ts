@@ -466,12 +466,17 @@ function port(recipe: Recipe): ConfigSourcePort {
   }
 }
 
-export async function bindConfigContract(harness: ConformanceHarness, command: string): Promise<void> {
+export async function bindConfigContract(
+  harness: ConformanceHarness,
+  command: string,
+  providerId = 'default',
+): Promise<void> {
   assert.notEqual(command, '')
   const binding: ConfigConformanceBinding = {
     command,
     build: createBuild(),
     sources: [port('file'), port('fetch')],
+    providerId,
   }
   registerConfigContract(harness, binding)
 }
