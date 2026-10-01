@@ -1,32 +1,60 @@
 # Agnes Harness
 
-**A pluggable agent harness for Forward Deployed Engineering (FDE).**
+English | [简体中文](README.zh-CN.md)
+
+<p align="center">
+  <img src="docs/assets/readme/banner.png" alt="Agnes Harness, a pluggable agent harness for Forward Deployed Engineering. LLM is the brain, Jev is the cerebellum, Harness is the memory, MHS is the body." width="100%" />
+</p>
+
+<div align="center">
 
 ### Built for trust. Made for the real world.
 
 **Bring AI into real workflows. Turn each deployment into capabilities you can reuse.**
 
-Agnes Harness (AGH) connects models, tools, task state, and business interfaces. Start working through CLI and Web, integrate business systems with plugins, capture task methods in Skills, and combine them into your own agent application.
-
-English | [简体中文](README.zh-CN.md)
+<img src="https://img.shields.io/badge/status-developer%20preview%20(pre--alpha)-f59e0b" alt="Status: developer preview (pre-alpha)" />
+<img src="https://img.shields.io/badge/license-Apache--2.0-2F4F4F" alt="License: Apache-2.0" />
+<img src="https://img.shields.io/badge/node-%E2%89%A5%2024.10-339933" alt="Node.js 24.10 or later" />
+<img src="https://img.shields.io/badge/local%20checks-macOS-3b8fff" alt="Recorded local checks: macOS" />
 
 [Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS (coming soon)](docs/guide/mhs.md)
 
-Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0](LICENSE)
+</div>
 
-## Why AGH
+Taking AI into a real deployment is rarely about the model alone. It is about the customer's systems, the people who approve the work, and the details that differ at every site. Agnes Harness (AGH) connects models, tools, task state, and business interfaces: **put the differences into plugins, let the harness run and record the work, and carry what you validated into the next deployment.**
 
-From a business tool to a workbench for a particular role, AGH provides a shared runtime that you can build on throughout a deployment.
+<p align="center">
+  <img src="docs/assets/readme/hero.gif" alt="AGH working in a real project: the agent reads the refund rules and order data, asks for approval before running a command, verifies the result, returns a checkable table, and records every step in the trajectory view" width="100%" />
+</p>
 
-| What you want to build | What AGH provides | Explore |
-| --- | --- | --- |
-| **Business capabilities an agent can use** | Register tools through backend plugins or connect existing services through MCP, with inputs, calls, and results in the task flow | [Backend plugins](docs/develop/backend.md) · [MCP](docs/guide/mcp.md) |
-| **An interface that fits the work** | Add panels to the Web workbench and connect them to the backend through controlled service calls | [Frontend panels](docs/develop/frontend.md) · [Full-stack plugins](docs/develop/fullstack.md) |
-| **Experience you can reuse** | Capture task methods in Skills and package reusable business logic as plugins | [Skills](docs/guide/skills.md) · [Plugin lifecycle](docs/guide/packages.md) |
-| **Work that continues across entry points** | CLI, Web, and SDK share backend sessions for reading history, continuing tasks, and handling interruptions | [Sessions and recovery](docs/guide/sessions.md) |
-| **Authorization and results within the execution flow** | Package trust, tool approvals, execution constraints, and session records provide explicit points of control | [Security and trust](docs/guide/security.md) |
+<p align="center"><sub>A real run in a local instance: read the code, ask before running a command, verify, answer, record. Recorded with Agnes AI <code>agnes-3.0-flash</code>; output varies by model. The Web interface currently ships in Chinese, so captions are bilingual.</sub></p>
 
-AGH is built for Forward Deployed Engineering (FDE): working in users' environments to turn systems integration, a usable interface, and ongoing iteration into delivered software. **Put the differences into plugins. Let the harness handle execution. Reuse validated capabilities in the next deployment.** [Explore FDE and application scenarios →](docs/guide/why-agh.md)
+<details>
+<summary><kbd>Contents</kbd></summary>
+
+- [What AGH is, and what it is not](#what-agh-is-and-what-it-is-not)
+- [Architecture: brain, cerebellum, memory and body](#architecture)
+- [What AGH does for a deployment team](#what-agh-does-for-a-deployment-team)
+- [Who it is for](#who-it-is-for)
+- [Start from an example](#start-from-an-example)
+- [Run from source](#run-from-source)
+- [Current status](#current-status)
+- [FAQ](#faq)
+- [Follow AGH and bring your use case](#follow-agh-and-bring-your-use-case)
+- [License](#license)
+
+</details>
+
+## What AGH is, and what it is not
+
+AGH is built for Forward Deployed Engineering (FDE): working in users' environments to turn systems integration, a usable interface, and ongoing iteration into delivered software. Start through CLI and Web, integrate business systems with plugins, capture task methods in Skills, and combine them into your own agent application. [Explore FDE and application scenarios →](docs/guide/why-agh.md)
+
+What it is not, so you can choose the right trial:
+
+- **Not a hosted service.** AGH is a developer preview that you build from source and run in your own environment.
+- **Not a sandbox for arbitrary plugin code.** Ordinary backend plugins run as trusted in-process code; approvals and the command sandbox apply to the supported execution paths. See [security and trust](docs/guide/security.md).
+- **Not a certified device driver.** MHS device integration builds on MCP and is coming soon. No public MHS specification is open for certification, and device controllers keep real-time control and physical safety.
+- **Not finished.** APIs, configuration, and plugin interfaces are evolving and may change.
 
 <a id="architecture"></a>
 <a id="a-runtime-built-to-extend"></a>
@@ -55,11 +83,64 @@ FDE is a delivery approach; MHS is a device integration direction. Both build on
 | **Sandbox / execution constraints** | Tool authorization and applicable command, file, network, and process constraints | Software execution boundaries; device controllers retain motion control, interlocks, and emergency stops |
 | **Plugins** | Backend tools/services, Web panels, Skills, hooks, and MCP connections, organized with Cordis and package governance | An extension path for MCP-based device adapters and device-facing interfaces; adapters still require implementation and validation |
 
-Business connectors and workbenches are built through these extension paths for each deployment. The current repository has no verified general-purpose MHS adapter or end-to-end device example. Ordinary backend plugins run as trusted in-process code; sandbox constraints apply to the supported execution paths.
+Business connectors and workbenches are built through these extension paths for each deployment. The current repository has no verified general-purpose MHS adapter or end-to-end device example.
 
-Follow the actual request path and source ownership in the [architecture guide](docs/develop/architecture.md), explore the [source map](docs/develop/source-map.md), or read [security and trust](docs/guide/security.md).
+Follow the actual request path and source ownership in the [architecture guide](docs/develop/architecture.md), or explore the [source map](docs/develop/source-map.md).
 
-## Three examples to start building
+## What AGH does for a deployment team
+
+### 1. Every customer's systems are different
+
+The agent needs your order lookup, your knowledge base, your internal API. Writing that into the agent itself means forking it for every customer.
+
+In AGH, a business capability is a plugin: register a tool through a [backend plugin](docs/develop/backend.md) or connect an existing service through [MCP](docs/guide/mcp.md). Installing one shows its version, source, integrity digest, capability hash, and license before anything runs; enabling it binds and verifies those hashes. The agent can then call it, and every call keeps its inputs and structured output.
+
+<p align="center">
+  <img src="docs/assets/readme/plugins.gif" alt="Installing a plugin in the Web workbench: inspect the source, review integrity, capabilities and license, confirm enabling, then the agent calls the new demo_text_stats tool and its inputs and structured output are recorded" width="100%" />
+</p>
+
+### 2. Work starts on the Web and continues in the terminal
+
+The analyst starts a task in the browser; the engineer picks it up from a terminal. Copying context between tools loses history and decisions.
+
+CLI, Web, and SDK share the same backend sessions. Resume a Web session in the terminal with `/resume <id>` and the history, tool records, and results are already there; whatever you add in the terminal shows up in the Web thread. See [sessions and recovery](docs/guide/sessions.md).
+
+<p align="center">
+  <img src="docs/assets/readme/terminal.gif" alt="The terminal UI resumes a session started on the Web, shows its history, tool records and result table, answers a follow-up, and the same thread is up to date back on the Web" width="100%" />
+</p>
+
+### 3. "What did the AI change, and who approved it?"
+
+In a customer environment, a result is not enough: you need to show how it was produced.
+
+Running a command waits for your approval by default: allow once, allow for the session, or deny. The trajectory view keeps a timeline of model calls, tools, and approvals, step by step. Package trust, tool approvals, execution constraints, and session records give the integration explicit points of control. See [security and trust](docs/guide/security.md).
+
+<p align="center">
+  <img src="docs/assets/readme/trajectory.png" alt="The trajectory view: a timeline of input, model and tool activity, followed by step records that include the user request, file reads, the shell command and its approval record, and the final answer" width="100%" />
+</p>
+
+### 4. Each role needs its own screen
+
+A support lead and a warehouse operator do not want the same interface. Add [frontend panels](docs/develop/frontend.md) to the Web workbench and connect them to backend services through controlled calls with [full-stack plugins](docs/develop/fullstack.md).
+
+### 5. The next deployment should start from the last one
+
+Capture task methods in [Skills](docs/guide/skills.md) and package reusable business logic as plugins with a governed [lifecycle](docs/guide/packages.md): install, enable, update, roll back, and remove.
+
+### 6. The site also has devices
+
+From inspection to instrument coordination, field work connects device state, human judgment, and business workflows. AGH's device integration direction builds on MCP (Model Context Protocol) rather than a vendor-specific SDK, bringing state reads, action requests, and execution receipts into the same task flow. **MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](docs/guide/mhs.md)
+
+## Who it is for
+
+- **FDE and solution engineers** delivering agents into customer systems and workflows
+- **Plugin developers** packaging business tools, services, and interfaces for reuse
+- **Teams that need oversight**: approvals before commands, records of every step, and explicit package trust
+- **Field and lab teams** preparing for device scenarios as MHS integration opens up
+
+Not a fit yet if you need a hosted service, signed installers, or a production commitment today: AGH is a developer preview.
+
+## Start from an example
 
 The repository includes runnable examples for backend capabilities, custom interfaces, and full-stack integration. Each tutorial includes source code, steps, and expected results.
 
@@ -73,7 +154,7 @@ The repository includes runnable examples for backend capabilities, custom inter
 
 ## Run from source
 
-AGH is a **developer preview (pre-alpha)**, available through a source build. You need Node.js 24.10+, pnpm 10.34.5, and the native build tools for your platform. See [getting the source and installation](docs/guide/install.md). APIs, configuration, and plugin interfaces are evolving and may introduce breaking changes.
+AGH is a **developer preview (pre-alpha)**, available through a source build. You need Node.js 24.10+, pnpm 10.34.5, and the native build tools for your platform. See [getting the source and installation](docs/guide/install.md).
 
 Before running AGH, read [security and trust](docs/guide/security.md) and choose the working directory and permissions. From the source repository root:
 
@@ -97,11 +178,36 @@ Follow the [quickstart](docs/guide/quickstart.md) to inspect results, find the s
 
 The full documentation is available in [English](docs/README.md) and [简体中文](docs/README.zh-CN.md). Each page links to the same topic in the other language.
 
-## MHS: extending into the physical world
+## Current status
 
-AGH's device integration direction builds on MCP (Model Context Protocol) rather than a vendor-specific SDK, so integrations stay reusable across inspection, instrument coordination, and field operations. See [Architecture](#architecture) for how MHS fits the brain, cerebellum, memory, and body.
+| Area | State |
+| --- | --- |
+| Web workbench, CLI and terminal UI, SDK on shared sessions | Available in the developer preview |
+| Agent loop, tool approvals, trajectory records, recovery | Available |
+| Plugins: backend tools and services, Web panels, Skills, hooks, MCP | Available, with documented constraints |
+| Command sandbox and execution constraints | Platform-dependent |
+| Platforms | Recorded local checks on macOS with Node 24; Linux and Windows need separate acceptance |
+| Jev structured decisions | Planned |
+| MHS device integration (MCP-based) | Coming soon |
 
-**MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](docs/guide/mhs.md)
+Use [supported scope and known limitations](docs/reference/limitations.md) to choose your trial environment, and the [verification guide](docs/maintainers/verification.md) for reproducible checks and their scope.
+
+## FAQ
+
+**Can I use AGH in production?**
+Not yet. AGH is a developer preview without a public package release, installer, or upgrade commitment. Validate deployment, audit, and isolation requirements in your own environment.
+
+**Are plugins sandboxed?**
+Ordinary backend plugins run as trusted in-process code, so install only packages you trust. Approvals and the command sandbox apply to the supported execution paths; they do not isolate arbitrary plugin code.
+
+**Which models can I use?**
+Models connect through AI providers, and each provider's catalog determines the available capabilities. The demos on this page were recorded with Agnes AI `agnes-3.0-flash`; quality and tool selection vary by model.
+
+**Can MHS control devices today?**
+No. MHS documentation and examples are coming soon, built on MCP. Canceling an AGH task does not establish that a device stopped safely; device controllers keep interlocks and emergency stops.
+
+**Do you accept pull requests?**
+Code and documentation pull requests are currently limited to invited internal developers. Issues for bug reports and use-case suggestions are welcome; see the [feedback and development policy](CONTRIBUTING.md).
 
 ## Follow AGH and bring your use case
 
@@ -109,12 +215,9 @@ If you are exploring AI deployment in the field, **Star the project**, use **Wat
 
 - **Try it and give feedback:** Run an example and share your experience. Use Issues for ordinary bug reports and use-case suggestions.
 - **Build and reuse:** Develop plugins, connect tools, and create a workbench in your own project under the applicable licenses.
-- **Develop with the team:** Code and documentation pull requests are currently limited to invited internal developers. External PRs are not accepted for now. See the [feedback and development policy](CONTRIBUTING.md).
 
 Report vulnerabilities privately under the [security policy](SECURITY.md).
 
-## Status and license
-
-AGH is a developer preview. Use [supported scope and known limitations](docs/reference/limitations.md) to choose your trial environment, and the [verification guide](docs/maintainers/verification.md) for reproducible checks and their scope.
+## License
 
 Project-authored code is licensed under the [Apache License 2.0](LICENSE). Third-party components, adapted files, and some examples retain their own license terms; see [NOTICE](NOTICE) and [licensing details](docs/maintainers/provenance.md).

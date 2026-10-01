@@ -60,3 +60,7 @@ Check the actual source when changing steps or failure semantics. Report tests, 
 The README and architecture guide share [English](../assets/architecture.svg) and [Chinese](../assets/architecture.zh-CN.svg) SVG illustrations. [The renderer](../../tools/public-docs/render-architecture.mjs) owns one layout and both language dictionaries. Edit that source, then run `node tools/public-docs/render-architecture.mjs`; `node tools/public-docs/render-architecture.mjs --check` checks that both SVGs match the source. Inspect both rendered languages for text fit and readability at README width.
 
 Keep role metaphors separate from implementation claims. Solid outlines denote existing software paths; dashed outlines denote planned AGH integrations. Update availability against main's actual code and guides, then keep the README, architecture guide, and device direction aligned.
+
+## README demo media
+
+The banner, animations, and screenshots in [`docs/assets/readme/`](../assets/readme/) are recordings of a real local instance, not mockups. Record with an isolated `AGH_HOME`, a synthetic workspace, and a configured model; keep credentials, personal paths, and customer data out of every frame. Check each answer shown on screen for correctness before using a take, and keep captions within what the guides and [known limitations](../reference/limitations.md) state. Refresh the media when the interface or a demonstrated flow changes.
