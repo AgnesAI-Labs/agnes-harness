@@ -1,4 +1,4 @@
-import { type BuildIdentity, SCENARIOS, type ScenarioName } from '../evidence.js'
+import { type BuildIdentity, type ReuseLifecycle, SCENARIOS, type ScenarioName } from '../evidence.js'
 import type { AssertionInput, ConformanceHarness } from '../harness.js'
 
 const HEX = /^[a-f0-9]{64}$/
@@ -35,6 +35,7 @@ export interface ConfigConformanceBinding {
   readonly command: string
   readonly build: BuildIdentity
   readonly sources: readonly ConfigSourcePort[]
+  readonly providerId?: string
 }
 
 function complete(evidence: ConfigScenarioEvidence): boolean {
@@ -47,18 +48,24 @@ function complete(evidence: ConfigScenarioEvidence): boolean {
   )
 }
 
+function lifecycle(scenario: ScenarioName): ReuseLifecycle {
+  if (scenario === 'cancel' || scenario === 'recover' || scenario === 'dispose') return scenario
+  return 'call'
+}
+
 /**
  * Register select, normal, deny, cancel, recover, and dispose for each supplied source.
- * The reference package is not registered here.
+ * Callers supply the sources. This registrar does not import a provider implementation.
  */
 export function registerConfigContract(harness: ConformanceHarness, binding: ConfigConformanceBinding): void {
+  const providerId = binding.providerId ?? 'default'
   for (const source of binding.sources) {
     for (const scenario of SCENARIOS) {
       harness.registerCase({
         contract: 'agh.config',
         scenario,
         qualification: 'required',
-        providerId: 'default',
+        providerId,
         async run(context): Promise<AssertionInput> {
           const evidence = await source[context.scenario]()
           return {
@@ -75,6 +82,14 @@ export function registerConfigContract(harness: ConformanceHarness, binding: Con
             attachmentDigest: null,
             fixture: null,
             sharedEvidenceId: null,
+            reuse: {
+              scope: 'deployment',
+              methodKind: 'compute',
+              lifecycle: lifecycle(context.scenario),
+              undeclaredConnection: false,
+            },
+            perImplementation: true,
+            gate: null,
           }
         },
       })

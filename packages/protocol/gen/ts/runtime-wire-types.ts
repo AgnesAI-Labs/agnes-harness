@@ -948,6 +948,15 @@ export interface RuntimeWireTypes {
   OutboxRedriveRequest: Schemas.OutboxRedriveRequest
   OutboxRedriveResult: Schemas.OutboxRedriveResult
   OutboxRedriveRecord: Schemas.OutboxRedriveRecord
+  Externalchannel_JwtCredential: Schemas.Externalchannel_JwtCredential
+  Externalchannel_SourceAuthCredential: Schemas.Externalchannel_SourceAuthCredential
+  Externalchannel_PortalIdentityCredential: Schemas.Externalchannel_PortalIdentityCredential
+  Externalchannel_LocalCredential: Schemas.Externalchannel_LocalCredential
+  Externalchannel_SurfaceAuthCredential: Schemas.Externalchannel_SurfaceAuthCredential
+  Externalchannel_Auth: Schemas.Externalchannel_Auth
+  Externalagnes_v1_Auth: Schemas.Externalagnes_v1_Auth
+  LegacyIdentityCredentialEnvelope: Schemas.LegacyIdentityCredentialEnvelope
+  LegacyIdentityTransportEvidence: Schemas.LegacyIdentityTransportEvidence
   RuntimeEmptyAuthorConfig: Schemas.RuntimeEmptyAuthorConfig
   RuntimePluginManifest: Schemas.RuntimePluginManifest
   RuntimeSimpleLoopCheckpoint: Schemas.RuntimeSimpleLoopCheckpoint

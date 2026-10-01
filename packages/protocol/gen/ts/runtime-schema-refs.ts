@@ -156,6 +156,16 @@ export const RuntimeSchemaRefs = freeze({
     "typeId": "agh.domain/command-runtime-acceptance-result@1",
     "revision": 1,
     "digest": "ebd9e9b26695e2988d9ec99070b7a04cefb2f2580ebc4ed09b9e092fc93b6b36"
+  },
+  "LegacyIdentityCredentialEnvelope": {
+    "typeId": "agh.identity/legacy-credential@1",
+    "revision": 1,
+    "digest": "a02bcd806a9c7595003df4ebd0f31c87692a7426134fdb754663a4248f7315b0"
+  },
+  "LegacyIdentityTransportEvidence": {
+    "typeId": "agh.identity/legacy-transport-evidence@1",
+    "revision": 1,
+    "digest": "f77fa83bf34c029241371d5b1ed81ab3764069f4b145ce62c389810961fd8470"
   }
 } as const)
 export const RuntimeMethodSchemaRefs = freeze({

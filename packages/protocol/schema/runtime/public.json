@@ -36815,6 +36815,66 @@
         }
       },
       "required": ["typeId", "revision", "digest"]
+    },
+    "LegacyIdentityCredentialEnvelope": {
+      "$ref": "https://agnes.ai/schema/agnes-v1.json#/$defs/Auth",
+      "x-secret": true
+    },
+    "LegacyIdentityTransportEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bindingId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "ingressId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "connectionId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "initializeDigest": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "receivedAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "channelBinding": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "clientId": {
+          "type": "string"
+        },
+        "transport": {
+          "enum": [
+            "local",
+            "rpc",
+            "websocket"
+          ]
+        },
+        "localGate": {
+          "enum": [
+            "none",
+            "local-peer",
+            "loopback-host-origin"
+          ]
+        },
+        "proof": {
+          "$ref": "#/$defs/TransportEvidenceProof"
+        }
+      },
+      "required": [
+        "bindingId",
+        "ingressId",
+        "connectionId",
+        "initializeDigest",
+        "receivedAt",
+        "channelBinding",
+        "clientId",
+        "transport",
+        "localGate",
+        "proof"
+      ]
     }
   },
   "x-service-catalog": {
@@ -39349,7 +39409,9 @@
     "ArtifactDownloadMetadata": "agh.artifacts/download-metadata@1",
     "LegacyArtifactMappingValue": "agh.artifacts/legacy-mapping@1",
     "ApprovalAnswer": "agh.interaction/approval-answer@1",
-    "CommandRuntimeAcceptanceResult": "agh.domain/command-runtime-acceptance-result@1"
+    "CommandRuntimeAcceptanceResult": "agh.domain/command-runtime-acceptance-result@1",
+    "LegacyIdentityCredentialEnvelope": "agh.identity/legacy-credential@1",
+    "LegacyIdentityTransportEvidence": "agh.identity/legacy-transport-evidence@1"
   },
   "x-author-capabilities": {
     "rawToolResult": {
@@ -40610,5 +40672,14 @@
     "defaultAllowedGrantScopes": ["once"],
     "answerSchema": "ApprovalAnswer",
     "riskMutableByHook": false
+  },
+  "x-identity-legacy-schemas": {
+    "credentialEnvelope": "LegacyIdentityCredentialEnvelope",
+    "transportEvidence": "LegacyIdentityTransportEvidence",
+    "proof": "TransportEvidenceProof",
+    "requiredFeature": "identity-legacy-ingress.v1",
+    "hostOnlyEvidence": true,
+    "ephemeralOnly": true,
+    "method": "initialize"
   }
 }

@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { referenceConfigPorts } from '../../../../examples/runtime-reference/src/providers/config.ts'
 import {
   type ConfigConformanceBinding,
   type ConfigScenarioEvidence,
@@ -466,12 +467,32 @@ function port(recipe: Recipe): ConfigSourcePort {
   }
 }
 
-export async function bindConfigContract(harness: ConformanceHarness, command: string): Promise<void> {
+export async function bindConfigContract(
+  harness: ConformanceHarness,
+  command: string,
+  providerId = 'default',
+): Promise<void> {
   assert.notEqual(command, '')
   const binding: ConfigConformanceBinding = {
     command,
     build: createBuild(),
     sources: [port('file'), port('fetch')],
+    providerId,
+  }
+  registerConfigContract(harness, binding)
+}
+
+export async function bindReferenceConfigContract(
+  harness: ConformanceHarness,
+  command: string,
+  providerId = 'reference',
+): Promise<void> {
+  assert.notEqual(command, '')
+  const binding: ConfigConformanceBinding = {
+    command,
+    build: createBuild(),
+    sources: referenceConfigPorts(),
+    providerId,
   }
   registerConfigContract(harness, binding)
 }

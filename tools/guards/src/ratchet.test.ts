@@ -1240,8 +1240,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // tree: 2201, exact.
   // Runtime public schema exports and generated authority SPI: measured 2452, no spare allocation.
   // Bounded schema codecs and client transport validation: exact measured 2985, no spare.
-  // Reviewed interaction/artifact contracts and schema-driven transport validation: measured 3443 (+458), exact.
-  'packages/protocol/src': 3443,
+  // Reviewed runtime contracts plus the generated legacy identity metadata export: measured 3444 (+1), exact.
+  'packages/protocol/src': 3444,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1365,7 +1365,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
   // Conformance testkit: evidence, discovery, test service container and inbox fixture. Measured 907, exact, no spare.
   // Default config file and fetch cases register six scenarios. Measured 978, exact, no spare.
-  'packages/extension-api/testkit': 978,
+  // Qualification gaps, shared-evidence matching and restricted legacy fixtures. Measured 1317, exact, no spare.
+  // Re-measured with those gaps on the config-case base. Measured 1388, exact, no spare.
+  // Omitted reuse, per-implementation and gate take defaults. Measured 1332, exact, no spare.
+  // Re-measured with those defaults on the config-case base. Measured 1403, exact, no spare.
+  // Restricted effects peer and the events outbox projection. Measured 1442, exact, no spare.
+  // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
+  // Config registration records the requested provider id. Measured 1515, exact, no spare.
+  // Config evidence records deployment reuse for each scenario. Measured 1527, exact, no spare.
+  'packages/extension-api/testkit': 1527,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
