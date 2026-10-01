@@ -51,6 +51,55 @@ describe('runtime schema generation', () => {
     }
   })
 
+  it('preserves optional dictionary validators with referenced values and key limits', () => {
+    const schema = {
+      $defs: {
+        Token: { type: 'string', maxLength: 8 },
+        Skin: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            tokens: {
+              type: 'object',
+              propertyNames: { pattern: '^[a-z]+$' },
+              additionalProperties: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  light: { $ref: '#/$defs/Token' },
+                  dark: { $ref: '#/$defs/Token' },
+                },
+                required: ['light', 'dark'],
+              },
+              maxProperties: 2,
+            },
+          },
+        },
+      },
+      $ref: '#/$defs/Skin',
+    }
+    const source = generateModule(schema, 'Tokens')
+      .split('\n')
+      .filter((line) => !line.startsWith('import ') && !line.startsWith('export type '))
+      .join('\n')
+      .replaceAll('export const ', 'const ')
+    const generated = runInNewContext(`${source}\nSkin`, { Type })
+    const validate = new Ajv2020().compile(schema)
+    for (const [value, expected] of [
+      [{}, true],
+      [{ tokens: { accent: { light: 'white', dark: 'black' } } }, true],
+      [{ tokens: 'text' }, false],
+      [{ tokens: { accent: { light: 1, dark: 'black' } } }, false],
+      [{ tokens: { accent: { light: 'white' } } }, false],
+      [{ tokens: { 'bad key': { light: 'white', dark: 'black' } } }, false],
+      [{ tokens: { accent: { light: '123456789', dark: 'black' } } }, false],
+      [{ tokens: Object.fromEntries(['a', 'b', 'c'].map((key) => [key, { light: 'x', dark: 'y' }])) }, false],
+    ] as const) {
+      expect(validate(value)).toBe(expected)
+      expect(Value.Check(generated, value)).toBe(expected)
+    }
+  })
+
   it('resolves legacy schemas through named aliases without overriding Runtime definitions', () => {
     const { document } = loadRuntimeSchemaGraph(
       fileURLToPath(new URL('../../schema/runtime', import.meta.url)),

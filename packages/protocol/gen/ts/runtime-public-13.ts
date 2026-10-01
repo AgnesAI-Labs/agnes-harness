@@ -1,3 +1,4 @@
+import type { Page } from './runtime-public.js'
 // generated from schema by tools/gen.ts — do not edit
 import { Type, type Static } from '@sinclair/typebox'
 import { FormatRegistry } from '@sinclair/typebox'
@@ -29,6 +30,7 @@ export const RuntimePublic13 = Type.Module({
   "StateAuthorityRef": Type.Object({ "authorityId": Type.Ref('Id'), "tenantId": Type.Ref('Id'), "authorityEpoch": Type.Ref('UInt53') }, { additionalProperties: false }),
   "ScopeRef": Type.Union([Type.Object({ "installationId": Type.Ref('Id'), "kind": Type.Literal('installation') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "kind": Type.Literal('runtime') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "kind": Type.Literal('workspace') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "sessionId": Type.Ref('Id'), "kind": Type.Literal('session') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "sessionId": Type.Ref('Id'), "runId": Type.Ref('Id'), "kind": Type.Literal('run') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "sessionId": Type.Ref('Id'), "runId": Type.Ref('Id'), "kind": Type.Literal('action'), "actionId": Type.Ref('Id') }, { additionalProperties: false })]),
   "DomainReference": Type.Object({ "authorityId": Type.Ref('Id'), "recordId": Type.Ref('Id'), "recordRevision": Type.Ref('UInt53'), "schema": Type.Ref('SchemaRef'), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
+  "DispatchAtomicDomain": Type.Object({ "domainId": Type.Ref('Id'), "revision": Type.Ref('UInt53'), "stateAuthority": Type.Ref('StateAuthorityRef'), "budgetAuthority": Type.Ref('StateAuthorityRef'), "stateBinding": Type.Ref('BindingRef'), "budgetBinding": Type.Ref('BindingRef') }, { additionalProperties: false }),
   "Money": Type.Object({ "currency": Type.String(), "scale": Type.Literal(6), "units": Type.String() }, { additionalProperties: false }),
   "DomainEvent": Type.Object({ "eventId": Type.Ref('Id'), "typeId": Type.Ref('TypeId'), "schema": Type.Ref('SchemaRef'), "source": Type.Ref('BindingRef'), "scope": Type.Ref('ScopeRef'), "occurredAt": Type.Ref('Timestamp'), "payload": Type.Ref('DataRef'), "idempotencyKey": Type.String(), "causation": Type.Object({ "runId": Type.Optional(Type.Ref('Id')), "actionId": Type.Optional(Type.Ref('Id')), "attemptId": Type.Optional(Type.Ref('Id')), "commandId": Type.Optional(Type.Ref('Id')) }, { additionalProperties: false }) }, { additionalProperties: false }),
   "Scope": Type.Union([Type.Literal('installation'), Type.Literal('runtime'), Type.Literal('workspace'), Type.Literal('session'), Type.Literal('run'), Type.Literal('action')]),
@@ -63,7 +65,12 @@ export const RuntimePublic13 = Type.Module({
   "ChangeProposal": Type.Object({ "proposalId": Type.Ref('Id'), "requestId": Type.Ref('Id'), "revision": Type.Ref('Revision'), "requester": Type.Ref('Id'), "scope": Type.Ref('ScopeRef'), "status": Type.Union([Type.Literal('planning'), Type.Literal('awaiting-approval'), Type.Literal('approved'), Type.Literal('applying'), Type.Literal('applied'), Type.Literal('denied'), Type.Literal('cancelled'), Type.Literal('unknown')]), "plan": Type.Union([Type.Object({ "kind": Type.Literal('release'), "value": Type.Ref('ReleasePlan') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('resource'), "value": Type.Ref('ResourceChangePlan') }, { additionalProperties: false }), Type.Null()]), "planDigest": Type.Union([Type.Ref('Digest'), Type.Null()]), "interactionRef": Type.Union([Type.Ref('InteractionRef'), Type.Null()]), "resultRef": Type.Union([Type.Ref('ReceiptPointer'), Type.Null()]), "error": Type.Union([Type.Ref('RuntimeError'), Type.Null()]) }, { additionalProperties: false }),
   "ProviderBindingSnapshot": Type.Object({ "binding": Type.Ref('BindingRef'), "descriptor": Type.Ref('ProviderDescriptor'), "isolation": Type.Ref('IsolationMode'), "config": Type.Ref('DataRef'), "configDigest": Type.Ref('Digest'), "dependencies": Type.Array(Type.Ref('BindingRef'), { maxItems: 10000 }), "codecRefs": Type.Array(Type.Ref('StateCodecRef'), { maxItems: 10000 }), "schemaRefs": Type.Array(Type.Ref('SchemaRef'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "Cursor": Type.String(),
+  "AuthorityCheckpoint": Type.Object({ "authorityId": Type.Ref('Id'), "authorityEpoch": Type.Ref('UInt53'), "checkpointId": Type.Ref('Id'), "snapshotDigest": Type.Ref('Digest'), "recordCount": Type.Ref('UInt53'), "bridgeWatermarks": Type.Array(Type.Object({ "bridgeId": Type.Ref('Id'), "producedThrough": Type.Ref('UInt53'), "acceptedThrough": Type.Ref('UInt53') }, { additionalProperties: false }), { maxItems: 10000 }) }, { additionalProperties: false }),
   "MigrationReceipt": Type.Object({ "upgradeId": Type.Ref('Id'), "state": Type.Union([Type.Literal('planned'), Type.Literal('preparing'), Type.Literal('verified'), Type.Literal('cutting-over'), Type.Literal('committed'), Type.Literal('draining'), Type.Literal('completed'), Type.Literal('aborted'), Type.Literal('blocked')]), "checkpointRevision": Type.Ref('UInt53'), "cutoverId": Type.Union([Type.Ref('Id'), Type.Null()]), "commitRef": Type.Union([Type.Ref('Id'), Type.Null()]), "diagnosticIds": Type.Array(Type.Ref('Id'), { maxItems: 10000 }) }, { additionalProperties: false }),
+  "AuthorityFence": Type.Object({ "upgradeId": Type.Ref('Id'), "source": Type.Ref('StateAuthorityRef'), "fenceId": Type.Ref('Id'), "fenceEpoch": Type.Ref('UInt53'), "checkpoint": Type.Ref('AuthorityCheckpoint'), "writerCredentialsRevoked": Type.Boolean() }, { additionalProperties: false }),
+  "AuthorityRoute": Type.Object({ "logicalAuthorityId": Type.Ref('Id'), "tenantId": Type.Ref('Id'), "authorityEpoch": Type.Ref('UInt53'), "providerBinding": Type.Ref('BindingRef'), "locationRef": Type.Ref('Id'), "cohortDigest": Type.Ref('Digest'), "cutoverId": Type.Ref('Id'), "checkpoint": Type.Ref('AuthorityCheckpoint'), "previous": Type.Union([Type.Null(), Type.Object({ "authorityEpoch": Type.Ref('UInt53'), "locationRef": Type.Ref('Id'), "cutoverId": Type.Ref('Id') }, { additionalProperties: false })]) }, { additionalProperties: false }),
+  "JointDispatchMigrationMapping": Type.Object({ "domainId": Type.Ref('Id'), "from": Type.Ref('DispatchAtomicDomain'), "to": Type.Ref('DispatchAtomicDomain'), "cohortDigest": Type.Ref('Digest'), "validationRef": Type.Ref('DataRef') }, { additionalProperties: false }),
+  "AuthorityPublication": Type.Object({ "upgradeId": Type.Ref('Id'), "cutoverId": Type.Ref('Id'), "changes": Type.Array(Type.Object({ "expectedRevision": Type.Ref('UInt53'), "previous": Type.Ref('AuthorityRoute'), "next": Type.Ref('AuthorityRoute') }, { additionalProperties: false }), { minItems: 1, maxItems: 10000 }), "sourceFences": Type.Array(Type.Ref('AuthorityFence'), { maxItems: 10000 }), "validationRef": Type.Ref('DataRef'), "jointDispatchMappings": Type.Array(Type.Ref('JointDispatchMigrationMapping'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "DomainQuery": Type.Object({ "domainType": Type.String(), "query": Type.Ref('DataRef'), "scope": Type.Ref('ScopeRef'), "cursor": Type.Union([Type.String(), Type.Null()]), "limit": Type.Number() }, { additionalProperties: false }),
   "ProtocolRange": Type.Object({ "major": Type.Number(), "minMinor": Type.Number(), "maxMinor": Type.Number() }, { additionalProperties: false }),
   "ViewSchemaRange": Type.Object({ "typeId": Type.String(), "minRevision": Type.Number(), "maxRevision": Type.Number() }, { additionalProperties: false }),
@@ -143,7 +150,13 @@ export const RuntimePublic13 = Type.Module({
   "IMRendererEncodeResult": Type.Object({ "messages": Type.Array(Type.Object({ "text": Type.String(), "actionKeys": Type.Array(Type.String(), { maxItems: 10000 }), "partIndex": Type.Number(), "partCount": Type.Number() }, { additionalProperties: false }), { maxItems: 10000 }), "complete": Type.Boolean(), "requiresWebForm": Type.Boolean() }, { additionalProperties: false }),
   "IMRendererEncodeChannel": Type.Object({ "kind": Type.String(), "maxTextBytes": Type.Number(), "supportsButtons": Type.Boolean() }, { additionalProperties: false }),
   "TextRendererFormatContext": Type.Object({ "locale": Type.String(), "capabilities": Type.Ref('NegotiatedClientCapabilities') }, { additionalProperties: false }),
-  "RuntimeEmptyAuthorConfig": Type.Object({  }, { additionalProperties: false }),
+  "ControlledHttpHeaders": Object.assign(Type.Object({ "accept": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "accept-language": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "cache-control": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "content-encoding": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "content-length": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "content-range": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "content-type": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "date": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "etag": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "if-match": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "if-modified-since": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "if-none-match": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "if-unmodified-since": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "last-modified": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "location": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "range": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "retry-after": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "user-agent": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "vary": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})), "x-request-id": Type.Optional(Object.assign(Type.String({ maxLength: 8192, pattern: "^[^\\u0000-\\u001f\\u007f]*$" }), {"x-max-utf8-bytes":8192})) }, { additionalProperties: false, maxProperties: 32 }), {"x-max-canonical-json-bytes":65536}),
+  "AuthorityDirectoryCompareAndSwapRequest": Type.Object({ "transactionId": Type.Ref('Id'), "authority": Type.Ref('StateAuthorityRef'), "expectedWriterEpoch": Type.Ref('UInt53'), "publication": Type.Ref('AuthorityPublication') }, { additionalProperties: false }),
+  "AuthorityDirectoryCompareAndSwapResult": Type.Object({ "transactionId": Type.Ref('Id'), "cutoverId": Type.Ref('Id'), "routes": Type.Array(Type.Object({ "logicalAuthorityId": Type.Ref('Id'), "revision": Type.Ref('UInt53'), "authorityEpoch": Type.Ref('UInt53') }, { additionalProperties: false }), { minItems: 1, maxItems: 10000 }) }, { additionalProperties: false }),
+  "IntegrityCanonicalizeRequest": Type.Object({ "value": JsonValue }, { additionalProperties: false }),
+  "IntegrityCanonicalizeResult": Type.Object({ "canonical": Type.String(), "digest": Type.Ref('Digest'), "bytes": Type.Ref('UInt53') }, { additionalProperties: false }),
+  "LedgerIntegrityCheckpoint": Type.Object({ "lastSeq": Type.Ref('UInt53'), "legacyThroughSeq": Type.Ref('UInt53'), "headDigest": Type.Union([Type.Ref('Digest'), Type.Null()]) }, { additionalProperties: false }),
+  "LedgerIntegrityMetadata": Type.Object({ "mode": Type.Union([Type.Literal('anchor'), Type.Literal('chain')]), "previousDigest": Type.Union([Type.Ref('Digest'), Type.Null()]), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
 })
 
 export const Id = RuntimePublic13.Import('Id')
@@ -188,6 +201,8 @@ export const ScopeRef = RuntimePublic13.Import('ScopeRef')
 export type ScopeRef = Static<typeof ScopeRef>
 export const DomainReference = RuntimePublic13.Import('DomainReference')
 export type DomainReference = Static<typeof DomainReference>
+export const DispatchAtomicDomain = RuntimePublic13.Import('DispatchAtomicDomain')
+export type DispatchAtomicDomain = Static<typeof DispatchAtomicDomain>
 export const Money = RuntimePublic13.Import('Money')
 export type Money = Static<typeof Money>
 export const DomainEvent = RuntimePublic13.Import('DomainEvent')
@@ -256,8 +271,18 @@ export const ProviderBindingSnapshot = RuntimePublic13.Import('ProviderBindingSn
 export type ProviderBindingSnapshot = Static<typeof ProviderBindingSnapshot>
 export const Cursor = RuntimePublic13.Import('Cursor')
 export type Cursor = Static<typeof Cursor>
+export const AuthorityCheckpoint = RuntimePublic13.Import('AuthorityCheckpoint')
+export type AuthorityCheckpoint = Static<typeof AuthorityCheckpoint>
 export const MigrationReceipt = RuntimePublic13.Import('MigrationReceipt')
 export type MigrationReceipt = Static<typeof MigrationReceipt>
+export const AuthorityFence = RuntimePublic13.Import('AuthorityFence')
+export type AuthorityFence = Static<typeof AuthorityFence>
+export const AuthorityRoute = RuntimePublic13.Import('AuthorityRoute')
+export type AuthorityRoute = Static<typeof AuthorityRoute>
+export const JointDispatchMigrationMapping = RuntimePublic13.Import('JointDispatchMigrationMapping')
+export type JointDispatchMigrationMapping = Static<typeof JointDispatchMigrationMapping>
+export const AuthorityPublication = RuntimePublic13.Import('AuthorityPublication')
+export type AuthorityPublication = Static<typeof AuthorityPublication>
 export const DomainQuery = RuntimePublic13.Import('DomainQuery')
 export type DomainQuery = Static<typeof DomainQuery>
 export const ProtocolRange = RuntimePublic13.Import('ProtocolRange')
@@ -301,9 +326,9 @@ export type TraceRecordResult = Static<typeof TraceRecordResult>
 export const EventsSubscribeRequest = RuntimePublic13.Import('EventsSubscribeRequest')
 export type EventsSubscribeRequest = Static<typeof EventsSubscribeRequest>
 export const PageDomainEventRecord = RuntimePublic13.Import('PageDomainEventRecord')
-export type PageDomainEventRecord = Static<typeof PageDomainEventRecord>
+export type PageDomainEventRecord = Page<DomainEventRecord>
 export const EventsSubscribeResult = RuntimePublic13.Import('EventsSubscribeResult')
-export type EventsSubscribeResult = Static<typeof EventsSubscribeResult>
+export type EventsSubscribeResult = Omit<Static<typeof EventsSubscribeResult>, "page"> & { "page": PageDomainEventRecord }
 export const EventsPublishRequest = RuntimePublic13.Import('EventsPublishRequest')
 export type EventsPublishRequest = Static<typeof EventsPublishRequest>
 export const EventsPublishResult = RuntimePublic13.Import('EventsPublishResult')
@@ -319,9 +344,9 @@ export type ChannelCallbackResult = Static<typeof ChannelCallbackResult>
 export const PackageSourceDiscoverRequest = RuntimePublic13.Import('PackageSourceDiscoverRequest')
 export type PackageSourceDiscoverRequest = Static<typeof PackageSourceDiscoverRequest>
 export const PagePackageLockEntry = RuntimePublic13.Import('PagePackageLockEntry')
-export type PagePackageLockEntry = Static<typeof PagePackageLockEntry>
+export type PagePackageLockEntry = Page<PackageLockEntry>
 export const PackageSourceDiscoverResult = RuntimePublic13.Import('PackageSourceDiscoverResult')
-export type PackageSourceDiscoverResult = Static<typeof PackageSourceDiscoverResult>
+export type PackageSourceDiscoverResult = PagePackageLockEntry
 export const PackageSourceResolveMetadataRequest = RuntimePublic13.Import('PackageSourceResolveMetadataRequest')
 export type PackageSourceResolveMetadataRequest = Static<typeof PackageSourceResolveMetadataRequest>
 export const PackageSourceResolveMetadataResult = RuntimePublic13.Import('PackageSourceResolveMetadataResult')
@@ -416,5 +441,17 @@ export const IMRendererEncodeChannel = RuntimePublic13.Import('IMRendererEncodeC
 export type IMRendererEncodeChannel = Static<typeof IMRendererEncodeChannel>
 export const TextRendererFormatContext = RuntimePublic13.Import('TextRendererFormatContext')
 export type TextRendererFormatContext = Static<typeof TextRendererFormatContext>
-export const RuntimeEmptyAuthorConfig = RuntimePublic13.Import('RuntimeEmptyAuthorConfig')
-export type RuntimeEmptyAuthorConfig = Static<typeof RuntimeEmptyAuthorConfig>
+export const ControlledHttpHeaders = RuntimePublic13.Import('ControlledHttpHeaders')
+export type ControlledHttpHeaders = Static<typeof ControlledHttpHeaders>
+export const AuthorityDirectoryCompareAndSwapRequest = RuntimePublic13.Import('AuthorityDirectoryCompareAndSwapRequest')
+export type AuthorityDirectoryCompareAndSwapRequest = Static<typeof AuthorityDirectoryCompareAndSwapRequest>
+export const AuthorityDirectoryCompareAndSwapResult = RuntimePublic13.Import('AuthorityDirectoryCompareAndSwapResult')
+export type AuthorityDirectoryCompareAndSwapResult = Static<typeof AuthorityDirectoryCompareAndSwapResult>
+export const IntegrityCanonicalizeRequest = RuntimePublic13.Import('IntegrityCanonicalizeRequest')
+export type IntegrityCanonicalizeRequest = Static<typeof IntegrityCanonicalizeRequest>
+export const IntegrityCanonicalizeResult = RuntimePublic13.Import('IntegrityCanonicalizeResult')
+export type IntegrityCanonicalizeResult = Static<typeof IntegrityCanonicalizeResult>
+export const LedgerIntegrityCheckpoint = RuntimePublic13.Import('LedgerIntegrityCheckpoint')
+export type LedgerIntegrityCheckpoint = Static<typeof LedgerIntegrityCheckpoint>
+export const LedgerIntegrityMetadata = RuntimePublic13.Import('LedgerIntegrityMetadata')
+export type LedgerIntegrityMetadata = Static<typeof LedgerIntegrityMetadata>

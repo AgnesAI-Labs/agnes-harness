@@ -60,35 +60,20 @@ export interface ApprovalClient {
   responseStatus(responseId: Wire.Id): Promise<Outcome<Wire.InteractionResponseStatus>>
 }
 
-export interface ArtifactReadStream {
-  readonly chunks: AsyncIterable<Uint8Array>
-  readonly ended: Promise<Outcome<Wire.ArtifactReadStreamEndResult>>
-  cancel(reason: string): Promise<void>
-  close(): Promise<void>
-}
+export type ArtifactReadStream = import('../runtime/public-api.js').ByteReadStream
 
 export interface ArtifactClient {
   describe(artifactId: Wire.Id, version: Wire.UInt53): Promise<Outcome<Wire.ArtifactViewRef>>
   openDownload(request: Wire.ArtifactClientOpenDownloadRequest): Promise<Outcome<Wire.ArtifactDownloadTicket>>
-  readRange(request: {
-    artifactId: Wire.Id
-    version: Wire.UInt53
-    offset: Wire.UInt53
-    length: Wire.UInt53
-  }): Promise<
-    Outcome<{
-      bytes: Uint8Array
-      offset: Wire.UInt53
-      totalBytes: Wire.UInt53
-      digest: Wire.Digest
-    }>
-  >
-  openStream(request: {
-    artifactId: Wire.Id
-    version: Wire.UInt53
-    offset?: Wire.UInt53
-  }): Promise<Outcome<ArtifactReadStream>>
+  readRange(
+    request: Wire.ArtifactClientReadRangeRequest,
+  ): Promise<Outcome<import('../runtime/public-api.js').ByteRangeResult>>
+  openStream(request: Wire.ArtifactClientOpenStreamRequest): Promise<Outcome<ArtifactReadStream>>
   followDownload(ticket: Wire.ArtifactDownloadTicket): Outcome<void>
 }
+
+export type ByteRangeResult = import('../runtime/public-api.js').ByteRangeResult
+
+export type ByteReadStream = import('../runtime/public-api.js').ByteReadStream
 
 export type DomainView<T = Wire.JsonValue> = Omit<Wire.DomainView, 'data'> & { data: T }

@@ -1,5 +1,11 @@
 // generated from schema/runtime by tools/gen-runtime.ts — do not edit
 import type * as Wire from '@agnes/protocol/runtime'
+import type {
+  ArtifactAccessPort,
+  BlobReadPort,
+  ClientCommandIngressPort,
+  EffectStreamHandle,
+} from './public-api.js'
 
 export type Outcome<T> =
   | {
@@ -70,6 +76,10 @@ export interface BoundService {
   readonly binding: Wire.BindingRef
   query(request: Wire.ServiceQuery, context: CallContext): Promise<Outcome<Wire.QueryReply>>
   compute(request: Wire.ServiceOperation, context: CallContext): Promise<Outcome<Wire.DataRef>>
+  readonly artifactAccess?: ArtifactAccessPort
+  readonly blobRead?: BlobReadPort
+  readonly clientIngress?: ClientCommandIngressPort
+  readonly clientCommand?: MethodHandler
 }
 
 export type QueryHandler = (
@@ -106,6 +116,9 @@ export interface ServiceProvider extends ProviderLifecycle {
   maintenance?: MethodHandler
   observe?: MethodHandler
   ingress?: (request: Wire.ServiceOperation, context: TrustedIngressContext) => Promise<Outcome<Wire.DataRef>>
+  readonly artifactAccess?: ArtifactAccessPort
+  readonly blobRead?: BlobReadPort
+  readonly clientIngress?: ClientCommandIngressPort
 }
 
 export type PublicProviderInstance = LoopProvider | ActionProvider | ServiceProvider
@@ -157,11 +170,3 @@ export interface CompositeActionProvider extends ProviderLifecycle {
 }
 
 export type ActionProvider = LeafActionProvider | CompositeActionProvider
-
-export interface EffectStreamHandle {
-  readonly streamId: Wire.Id
-  readonly chunks: AsyncIterable<Wire.StreamChunk>
-  readonly ended: Promise<Wire.TransportEnd>
-  cancel(reason: string): Promise<void>
-  close(): Promise<void>
-}

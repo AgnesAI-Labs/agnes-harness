@@ -1,3 +1,4 @@
+import type { Page } from './runtime-public.js'
 // generated from schema by tools/gen.ts — do not edit
 import { Type, type Static } from '@sinclair/typebox'
 import { FormatRegistry } from '@sinclair/typebox'
@@ -213,13 +214,13 @@ export type ReceiptRef = Static<typeof ReceiptRef>
 export const ActionTimebox = RuntimePublic7.Import('ActionTimebox')
 export type ActionTimebox = Static<typeof ActionTimebox>
 export const PageSignal = RuntimePublic7.Import('PageSignal')
-export type PageSignal = Static<typeof PageSignal>
+export type PageSignal = Page<Signal>
 export const PageReceiptRef = RuntimePublic7.Import('PageReceiptRef')
-export type PageReceiptRef = Static<typeof PageReceiptRef>
+export type PageReceiptRef = Page<ReceiptRef>
 export const RunFrame = RuntimePublic7.Import('RunFrame')
-export type RunFrame = Static<typeof RunFrame>
+export type RunFrame = Omit<Static<typeof RunFrame>, "signals" | "receipts"> & { "signals": PageSignal; "receipts": PageReceiptRef }
 export const ActionFrame = RuntimePublic7.Import('ActionFrame')
-export type ActionFrame = Static<typeof ActionFrame>
+export type ActionFrame = Omit<Static<typeof ActionFrame>, "signals" | "receipts"> & { "signals": PageSignal; "receipts": PageReceiptRef }
 export const EffectResult = RuntimePublic7.Import('EffectResult')
 export type EffectResult = Static<typeof EffectResult>
 export const ReconcileResult = RuntimePublic7.Import('ReconcileResult')

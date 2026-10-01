@@ -15,8 +15,12 @@ export function validateRuntime<K extends keyof RuntimeWireTypes>(name: K, value
   return validateRuntimeValue<RuntimeWireTypes[K]>(schemas[name], value)
 }
 export {
+  MAX_AUTHOR_INLINE_BYTES,
   RuntimeAuthorCapabilities,
+  RuntimeAuthorCodecPolicy,
+  RuntimeAuthorityTransferAPI,
   RuntimeConfigurationSchemas,
+  RuntimeHttpHeaderPolicy,
   RuntimeInterceptorPolicy,
   RuntimeServiceCatalog,
 } from '../../gen/ts/runtime-catalog.js'

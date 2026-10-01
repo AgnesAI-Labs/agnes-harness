@@ -78,7 +78,7 @@
       "source": "https://github.com/evanw/esbuild",
       "purpose": "SDK browser checks, the Web client bundle and the isolated hooks-runner bundle.",
       "rationale": "Provides one fast bundler for browser compatibility and deterministic self-contained runtime artifacts.",
-      "consumers": ["packages/base", "packages/cli", "packages/sdk", "packages/web"]
+      "consumers": ["packages/base", "packages/cli", "packages/protocol", "packages/sdk", "packages/web"]
     },
     {
       "name": "react-dom",

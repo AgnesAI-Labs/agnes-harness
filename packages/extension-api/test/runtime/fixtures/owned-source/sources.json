@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Message",
+    "typeId": "@example/typed-plugin/message@1",
+    "revision": 1,
+    "source": "./schemas/message.json"
+  },
+  {
+    "name": "defineGeneratedAuthor",
+    "typeId": "@example/typed-plugin/collision@1",
+    "revision": 1,
+    "source": "./schemas/message.json"
+  }
+]

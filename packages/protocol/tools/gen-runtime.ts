@@ -163,28 +163,34 @@ export function writeRuntime(check: boolean): number {
     artifacts['src/runtime/validation.ts'] = `${header}import type { TSchema } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { type ValidationResult, validateAgainst } from '../../../protocol-validation/src/validate.js'
-import { jcs } from '../jcs.js'
+import { boundedCanonicalJson } from '../../../protocol-validation/src/byte-budget.js'
+import { RuntimeAuthorCodecPolicy } from '../../gen/ts/runtime-catalog.js'
 
 ${unsigned}
 export function validateRuntimeValue<T>(schema: TSchema, value: unknown): ValidationResult<T> {
-  try {
-    jcs(value)
-  } catch {
-    return { ok: false, errors: [{ path: '', message: 'invalid JSON wire value', code: 'TYPE' }] }
-  }
-  const result = validateAgainst<T>(schema, value)
-  if (result.ok && !validUInt53(schema, value))
+  const policy = RuntimeAuthorCodecPolicy.payload
+  const snapshot = boundedCanonicalJson(value, {
+    maxBytes: policy.maxCanonicalJsonBytes,
+    maxDepth: policy.maxDepth,
+    maxMembers: policy.maxMembers,
+  })
+  if (!snapshot.ok) return snapshot
+  const json = snapshot.value.json
+  const result = validateAgainst<T>(schema, json)
+  if (result.ok && !validUInt53(schema, json))
     return { ok: false, errors: [{ path: '', message: 'UInt53 rejects negative zero', code: 'RANGE' }] }
   return result
 }
 `
     Object.assign(artifacts, generateFullRuntimeArtifacts(join(pkg, 'schema/runtime')))
     artifacts['src/runtime/index.ts'] =
-      `${header}export * from './public.js'\nexport { canonicalJsonDigest } from './jcs-digest.js'\n`
+      `${header}export * from './public.js'\nexport * from './client-transport.js'\nexport { canonicalJsonDigest } from './jcs-digest.js'\nexport { boundedCanonicalJson, utf8ByteLength } from '../../../protocol-validation/src/byte-budget.js'\nexport { validateControlledHttpHeaders } from './codec-policy.js'\nexport { validateOwnedAuthorSchemaSource } from './author-schema-source.js'\nexport type { GeneratedAuthorSchemaSource } from './author-schema-source.js'\n`
     const metadata = JSON.parse(readFileSync(join(pkg, 'schema/runtime/local-api.json'), 'utf8')) as {
       'x-author-overrides'?: string[]
     }
     artifacts['../extension-api/src/runtime/index.ts'] += "export * from './authoring.js'\n"
+    artifacts['../extension-api/src/runtime/index.ts'] +=
+      "export { defineGeneratedAuthorSchema } from './authoring-source.js'\n"
     if (metadata['x-author-overrides']?.length)
       artifacts['../extension-api/src/runtime/index.ts'] +=
         `export type {\n${metadata['x-author-overrides'].map((name) => `  ${name},`).join('\n')}\n} from './authoring.js'\n`

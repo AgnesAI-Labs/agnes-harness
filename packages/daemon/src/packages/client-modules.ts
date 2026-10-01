@@ -65,7 +65,7 @@ type StoredDeclaration = Readonly<{
   extIds: readonly string[]
   services: readonly string[]
   backendRowId?: string
-  publicConfig?: Readonly<Record<string, unknown>>
+  publicConfig?: NonNullable<ClientContribution['publicConfig']>
 }>
 type PackageState = Readonly<{
   current?: string

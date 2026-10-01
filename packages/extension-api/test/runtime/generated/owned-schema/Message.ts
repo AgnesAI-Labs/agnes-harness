@@ -1,0 +1,5 @@
+// Generated from package JSON Schema sources; do not edit.
+import { defineGeneratedAuthorSchema as __createGeneratedSchema__ } from '@agnes/extension-api/runtime'
+type D_406578616d706c652f74797065642d706c7567696e_4d657373616765_4d657373616765 = { readonly "labels"?: ReadonlyArray<string>; readonly "message": string; }
+export type MessageValue = D_406578616d706c652f74797065642d706c7567696e_4d657373616765_4d657373616765
+export const MessageSchema = __createGeneratedSchema__<MessageValue>({"document":{"$defs":{"D_406578616d706c652f74797065642d706c7567696e_4d657373616765_4d657373616765":{"additionalProperties":false,"properties":{"labels":{"items":{"type":"string"},"type":"array"},"message":{"maxLength":100,"type":"string"}},"required":["message"],"type":"object"}},"$ref":"#/$defs/D_406578616d706c652f74797065642d706c7567696e_4d657373616765_4d657373616765","$schema":"https://json-schema.org/draft/2020-12/schema"},"name":"Message","ownerPackageId":"@example/typed-plugin","revision":1,"typeId":"@example/typed-plugin/message@1"})

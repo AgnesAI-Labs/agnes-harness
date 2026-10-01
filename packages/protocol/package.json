@@ -13,7 +13,9 @@
     "typecheck": "tsc -b",
     "gen": "tsx tools/gen.ts",
     "gen:check": "tsx tools/gen.ts --check",
-    "conformance": "tsx tools/conformance.ts"
+    "conformance": "tsx tools/conformance.ts",
+    "build:schema-cli": "node tools/build-author-schema-cli.mjs",
+    "prepack": "node tools/build-author-schema-cli.mjs"
   },
   "dependencies": {
     "@agnes/resource-control-contracts": "workspace:*",
@@ -22,7 +24,11 @@
   },
   "devDependencies": {
     "ajv": "8.20.0",
-    "ajv-formats": "3.0.1"
+    "ajv-formats": "3.0.1",
+    "esbuild": "0.28.2"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "bin": {
+    "agnes-schema": "./dist/schema-cli/agnes-schema.mjs"
+  }
 }

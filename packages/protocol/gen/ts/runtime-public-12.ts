@@ -1,3 +1,4 @@
+import type { Page } from './runtime-public.js'
 // generated from schema by tools/gen.ts — do not edit
 import { Type, type Static } from '@sinclair/typebox'
 import { FormatRegistry } from '@sinclair/typebox'
@@ -355,7 +356,7 @@ export type UsageMeasurement = Static<typeof UsageMeasurement>
 export const UploadRef = RuntimePublic12.Import('UploadRef')
 export type UploadRef = Static<typeof UploadRef>
 export const PageJobOccurrence = RuntimePublic12.Import('PageJobOccurrence')
-export type PageJobOccurrence = Static<typeof PageJobOccurrence>
+export type PageJobOccurrence = Page<JobOccurrence>
 export const RetrievalSearchRemoteResult = RuntimePublic12.Import('RetrievalSearchRemoteResult')
 export type RetrievalSearchRemoteResult = Static<typeof RetrievalSearchRemoteResult>
 export const EmbeddingEncodeRequest = RuntimePublic12.Import('EmbeddingEncodeRequest')
@@ -395,9 +396,9 @@ export type FilesWriteResult = Static<typeof FilesWriteResult>
 export const FilesListRequest = RuntimePublic12.Import('FilesListRequest')
 export type FilesListRequest = Static<typeof FilesListRequest>
 export const PageFileEntry = RuntimePublic12.Import('PageFileEntry')
-export type PageFileEntry = Static<typeof PageFileEntry>
+export type PageFileEntry = Page<FileEntry>
 export const FilesListResult = RuntimePublic12.Import('FilesListResult')
-export type FilesListResult = Static<typeof FilesListResult>
+export type FilesListResult = PageFileEntry
 export const FilesStatRequest = RuntimePublic12.Import('FilesStatRequest')
 export type FilesStatRequest = Static<typeof FilesStatRequest>
 export const SandboxCreateRequest = RuntimePublic12.Import('SandboxCreateRequest')
@@ -517,7 +518,7 @@ export type JobsCancelDetachedRequest = Static<typeof JobsCancelDetachedRequest>
 export const JobsInspectRequest = RuntimePublic12.Import('JobsInspectRequest')
 export type JobsInspectRequest = Static<typeof JobsInspectRequest>
 export const JobsInspectResult = RuntimePublic12.Import('JobsInspectResult')
-export type JobsInspectResult = Static<typeof JobsInspectResult>
+export type JobsInspectResult = Omit<Static<typeof JobsInspectResult>, "occurrences"> & { "occurrences": PageJobOccurrence }
 export const ArtifactsReserveRequest = RuntimePublic12.Import('ArtifactsReserveRequest')
 export type ArtifactsReserveRequest = Static<typeof ArtifactsReserveRequest>
 export const ArtifactsPublishRequest = RuntimePublic12.Import('ArtifactsPublishRequest')
@@ -567,9 +568,9 @@ export type UsageRecordResult = Static<typeof UsageRecordResult>
 export const UsageQueryRequest = RuntimePublic12.Import('UsageQueryRequest')
 export type UsageQueryRequest = Static<typeof UsageQueryRequest>
 export const PageUsageFact = RuntimePublic12.Import('PageUsageFact')
-export type PageUsageFact = Static<typeof PageUsageFact>
+export type PageUsageFact = Page<UsageFact>
 export const UsageQueryResult = RuntimePublic12.Import('UsageQueryResult')
-export type UsageQueryResult = Static<typeof UsageQueryResult>
+export type UsageQueryResult = PageUsageFact
 export const PricingQuoteRequest = RuntimePublic12.Import('PricingQuoteRequest')
 export type PricingQuoteRequest = Static<typeof PricingQuoteRequest>
 export const BillingPostRequest = RuntimePublic12.Import('BillingPostRequest')
