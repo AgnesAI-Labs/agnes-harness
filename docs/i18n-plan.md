@@ -196,7 +196,7 @@ daemon 里仍直接写中文的安装摘要和校验说明，改成 code 加英�
 | 语言底座 |  | 未开始 |
 | Web 壳 | zzl | 进行中 |
 | 设置与通用 | zzl | 进行中 |
-| 管理与资源 |  | 未开始 |
+| 管理与资源 | swx | 进行中（2026-10-01） |
 | 诊断与 Computer Use |  | 未开始 |
 | CLI | zzl | 进行中 |
 | 错误码收口 |  | 未开始 |
@@ -233,7 +233,7 @@ daemon 里仍直接写中文的安装摘要和校验说明，改成 code 加英�
 | 语言底座 | 17 文件 / +509 行 | | feat/i18n | 第一版已落地（c3fbcb1f），待评审合主干 |
 | Web 壳 | 约 600 处 | zzl | feat/i18n | 进行中（2026-10-01） |
 | 设置与通用 | 约 290 处 | zzl | feat/i18n | 进行中（2026-10-01） |
-| 管理与资源 | 约 540 处 | | | 未开始 |
+| 管理与资源 | 约 540 处 | swx | feat/i18n | 进行中（2026-10-01） |
 | 诊断与 Computer Use | 约 280 处 | | | 未开始 |
 | CLI | 字典 18 key 已有，余待迁 | zzl | feat/i18n | 进行中（2026-10-01） |
 | 错误码收口 | 盘点后定 | | | 未开始 |
@@ -267,7 +267,7 @@ daemon 里仍直接写中文的安装摘要和校验说明，改成 code 加英�
 
 | 步骤 | 内容 | 主要文件（约处数） | 完成于 / 署名 |
 | --- | --- | --- | --- |
-| A1 | 集中标签层先行 | `web-ui/src/admin-text.ts`（56）、`ui/state-lights.tsx`（11） | |
+| A1 | 集中标签层先行 | `web-ui/src/admin-text.ts`（56）、`ui/state-lights.tsx`（11） | 认领整条管理与资源线：swx（2026-10-01） |
 | A2 | 确认与对话框 | `admin-confirmation.tsx`（95）、`admin-dialogs.tsx`（13）、`admin-list.tsx`（27）、`admin-detail.tsx`（9） | |
 | A3 | 插件管理 | `web/src/admin/plugins/admin.tsx`（106）、`source-form.ts`（4） | |
 | A4 | 资源双站 | `resource-list.tsx`（37）、`resource-detail.tsx`（27）、`resource-control-web/src/admin.tsx`（75）、`skill-copy.ts`（7） | |
