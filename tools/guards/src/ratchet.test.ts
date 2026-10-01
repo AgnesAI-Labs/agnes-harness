@@ -931,7 +931,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
   // Domain command journal rules and the authorized projection with owner-issued cursors.
   // Measured 26066 (+588), exact, no spare.
-  'packages/core/src': 26066,
+  // Default projection provider: reader policy, incremental fold and the conversation window.
+  // Measured 26639 (+573), exact, no spare.
+  'packages/core/src': 26639,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1373,7 +1375,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
   // Config registration records the requested provider id. Measured 1515, exact, no spare.
   // Config evidence records deployment reuse for each scenario. Measured 1527, exact, no spare.
-  'packages/extension-api/testkit': 1527,
+  // Projection conformance suite with its fixture domain, Host checks and native conversation.
+  // Measured 2629 (+1102), exact, no spare.
+  'packages/extension-api/testkit': 2629,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

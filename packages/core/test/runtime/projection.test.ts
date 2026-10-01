@@ -1,7 +1,22 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
-import { createRuntimeInboxFixture, RUNTIME_INBOX_FIXTURE } from '@agnes/extension-api/testkit'
+import {
+  type BuildIdentity,
+  type ConformanceHarness,
+  createConformanceHarness,
+  createRuntimeInboxFixture,
+  RUNTIME_INBOX_FIXTURE,
+  SCENARIOS,
+  type TestServiceBinding,
+} from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
-import { canonicalJsonDigest, RuntimeSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import {
   createDomainCommands,
@@ -19,6 +34,12 @@ import {
   type ProjectionDelta,
   type ReaderGrant,
 } from '../../src/runtime/projection/domain.js'
+import {
+  createProjectionProvider,
+  type NativeConversation,
+  type ProjectionAccess,
+  type ProjectionDomain,
+} from '../../src/runtime/providers/projection.js'
 
 const schema = (typeId: string): Wire.SchemaRef => ({
   typeId,
@@ -717,5 +738,330 @@ describe('authorized domain projection', () => {
     expect(detail(await projection.snapshot(query({ cursor: first.nextPageCursor }), context()))).toBe(
       'resync_required',
     )
+  })
+})
+
+/** The shared suite lives outside this package's build, so it is loaded by URL. Only what is used is typed. */
+type SuiteFixture = {
+  domain: ProjectionDomain & { commandStateSchema: Wire.SchemaRef }
+  gate: ProjectionAccess & { revokeReader(principal: string): void; closeBoard(board: string): void }
+  native: NativeConversation & { say(sessionId: string, count: number): void }
+  turnOf(event: Wire.DomainEvent): string | null
+}
+type ProjectionSuite = {
+  createProjectionFixture(): SuiteFixture & { prepared(): number }
+  domainEvent(
+    eventId: string,
+    type: string,
+    sessionId: string,
+    payload: Record<string, string>,
+  ): Wire.DomainEvent
+  callContext(): CallContext
+  listQuery(sessionId: string, limit: number, cursor?: string | null): Wire.DomainQuery
+  renameRequest(viewId: string, viewRevision: number, requestId: string, expectedRevision: number): unknown
+  projectionContractPort(subject: object): Record<string, (context: unknown) => Promise<unknown>>
+  registerProjectionContract(harness: ConformanceHarness, binding: object): void
+}
+const loadSuite = async () =>
+  (await import(
+    new URL('../../../extension-api/testkit/runtime/contracts/projection.ts', import.meta.url).href
+  )) as ProjectionSuite
+
+const BUILD: BuildIdentity = {
+  codeSha: 'core-test',
+  buildDigest: 'core-test-build',
+  lockDigest: 'core-test-lock',
+  specVersion: 'core-test-spec',
+  sdkVersion: 'core-test-sdk',
+  sdkDigest: 'core-test-sdk-digest',
+  platform: 'core-test-platform',
+}
+const fileDigest = (path: string) =>
+  createHash('sha256')
+    .update(readFileSync(new URL(path, import.meta.url)))
+    .digest('hex')
+const NO_READS = {
+  query: async () => fail('unsupported', 'no selector reads in this test'),
+  resolveData: async () => fail('unsupported', 'no selector reads in this test'),
+}
+const PROJECTION_BINDING = {
+  bindingId: 'default-projection',
+  contract: 'agh.projection',
+  logicalName: 'tasks',
+  providerId: 'default',
+}
+
+/** The default provider over the copy-on-write store, which outlives every provider instance. */
+function defaultProjection(fixture: SuiteFixture, retainedRevisions?: number) {
+  const store = memoryStore()
+  let ids = 0
+  const open = () =>
+    createProjectionProvider({
+      binding: PROJECTION_BINDING,
+      reads: NO_READS,
+      domain: fixture.domain,
+      access: fixture.gate,
+      native: fixture.native,
+      turnOf: fixture.turnOf,
+      journal: async (after, limit) =>
+        store.db.events.filter((record) => record.sequence > after).slice(0, limit),
+      owner: {
+        namespace: 'conformance.tasks',
+        authorityId: 'conformance-authority',
+        aggregate: { typeId: 'conformance.tasks/board@1', id: 'board' },
+        source: PROJECTION_BINDING,
+        stateSchema: fixture.domain.commandStateSchema,
+        destination: 'runtime-inbox',
+        storage: store.storage,
+        clock: { now: () => '2026-10-01T00:00:00Z', newId: () => `default-${++ids}` },
+      },
+      ...(retainedRevisions === undefined ? {} : { retainedRevisions }),
+    })
+  let current = open()
+  const binding: TestServiceBinding = {
+    requirement: {
+      contract: 'agh.projection',
+      major: 1,
+      logicalName: 'tasks',
+      features: [],
+      scope: 'workspace',
+      optional: false,
+    },
+    binding: PROJECTION_BINDING,
+    query: (request, context) => current.query(request, context),
+  }
+  return {
+    store,
+    binding,
+    fixture,
+    service: () => current,
+    async append(events: readonly Wire.DomainEvent[]) {
+      await store.storage.transaction((tx) => {
+        for (const event of events) {
+          const sequence = tx.lastSequence() + 1
+          tx.putEvent({
+            event,
+            authorityId: 'conformance-authority',
+            sequence,
+            aggregate: {
+              authorityId: 'conformance-authority',
+              typeId: 'conformance.tasks/board@1',
+              id: 'board',
+              revision: sequence,
+            },
+            fingerprint: canonicalJsonDigest(event.eventId),
+          })
+        }
+      })
+      await current.refresh()
+    },
+    async reopen() {
+      current.close()
+      current = open()
+    },
+    async close() {
+      current.close()
+    },
+    remains: () => store.db.events.length > 0,
+  }
+}
+
+const CLOCK = { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' }
+
+describe('default projection provider: conformance', () => {
+  it('passes the shared projection suite in all six scenarios', async () => {
+    const suite = await loadSuite()
+    const subject = defaultProjection(suite.createProjectionFixture())
+    const harness = createConformanceHarness()
+    suite.registerProjectionContract(harness, {
+      providerId: 'default',
+      recipe: 'packages/core/src/runtime/providers/projection.ts',
+      command: 'core-projection-conformance',
+      build: BUILD,
+      providerDigest: fileDigest('../../src/runtime/providers/projection.ts'),
+      configDigest: canonicalJsonDigest({ retainedRevisions: 64 }),
+      releaseSetDigest: fileDigest('../../package.json'),
+      port: suite.projectionContractPort(subject),
+    })
+    const report = await harness.run({
+      contracts: ['agh.projection'],
+      providers: ['default'],
+      command: 'core-projection-conformance',
+      clock: CLOCK,
+    })
+    expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
+      SCENARIOS.map((scenario) => [scenario, 'passed']),
+    )
+  })
+})
+
+describe('default projection provider', () => {
+  async function provider(retainedRevisions?: number) {
+    const suite = await loadSuite()
+    const fixture = suite.createProjectionFixture()
+    const subject = defaultProjection(fixture, retainedRevisions)
+    let n = 0
+    const add = (taskId: string, type = 'added', board = 'open') =>
+      suite.domainEvent(`unit-${++n}`, type, 'unit', { taskId, board, title: taskId })
+    const read = async (limit = 10) => {
+      const page = await subject.service().snapshot(suite.listQuery('unit', limit), suite.callContext())
+      if (!page.ok) throw new Error(page.error.detailCode)
+      return page.value
+    }
+    return { suite, fixture, subject, add, read }
+  }
+
+  it('applies only the reader policy rules, then the read state schema check', async () => {
+    const { suite, fixture } = await provider()
+    const domain = (rules: ProjectionDomain['readerPolicy']['rules']) => ({
+      ...fixture.domain,
+      readerPolicy: { capability: fixture.domain.readerPolicy.capability, rules },
+    })
+    const bad =
+      (pointer: string, resourcePointer = '') =>
+      () =>
+        defaultProjection({ ...fixture, domain: domain([{ pointer, resourcePointer, operation: 'read' }]) })
+    expect(bad('/tasks/*x/title')).toThrow('not supported')
+    expect(bad('tasks/0')).toThrow('not supported')
+    expect(bad('/tasks/0/title', '/tasks/*/board')).toThrow('only bind array elements')
+    const whole = defaultProjection({
+      ...fixture,
+      domain: domain([{ pointer: '', resourcePointer: '/tasks/0/board', operation: 'read' }]),
+    })
+    await whole.append([
+      suite.domainEvent('w-1', 'added', 'unit', { taskId: 'w', board: 'open', title: 'w' }),
+    ])
+    // The whole private state carries fields the read state schema does not allow.
+    const refused = await whole.service().snapshot(suite.listQuery('unit', 10), suite.callContext())
+    expect(detail(refused)).toBe('integrity')
+    const none = defaultProjection({ ...fixture, domain: domain([]) })
+    await none.append([suite.domainEvent('n-1', 'added', 'unit', { taskId: 'n', board: 'open', title: 'n' })])
+    const empty = await none.service().snapshot(suite.listQuery('unit', 10), suite.callContext())
+    expect(empty).toMatchObject({ ok: true, value: { items: [] } })
+  })
+
+  it('folds a journal in sequence order, waits at a gap and ignores a repeated record', async () => {
+    const { subject, add, read } = await provider()
+    await subject.append([add('a'), add('b'), add('c')])
+    const [first, second, third] = subject.store.db.events.splice(0)
+    if (!first || !second || !third) throw new Error('three records')
+    subject.store.db.events.push(first, third)
+    await subject.reopen()
+    expect((await read()).items.map((view) => view.viewId)).toEqual(['a'])
+    // The record that filled the gap arrives twice; the repeat must not stop the fold.
+    subject.store.db.events.splice(1, 0, second, second)
+    const caught = await read()
+    expect(caught.items.map((view) => view.viewId)).toEqual(['a', 'b', 'c'])
+    expect(caught.projectionRevision).toBe(3)
+  })
+
+  it('stops before an event the reducer refuses, without passing it on a later read or a restart', async () => {
+    const { subject, add, read } = await provider()
+    await subject.append([add('a'), add('a', 'broken'), add('b')])
+    expect(await subject.service().refresh()).toMatchObject({ detailCode: 'invalid_request' })
+    expect((await read()).items.map((view) => view.viewId)).toEqual(['a'])
+    await subject.reopen()
+    expect((await read()).projectionRevision).toBe(1)
+  })
+
+  it('answers resync for a revision no longer kept and reset for a delta larger than its page', async () => {
+    const { suite, subject, add, read } = await provider(2)
+    await subject.append([add('a')])
+    const old = await read(1)
+    await subject.append([add('b'), add('c'), add('d')])
+    const stale = await subject
+      .service()
+      .changes({ query: suite.listQuery('unit', 1), afterCursor: old.cursor, limit: 1 }, suite.callContext())
+    expect(detail(stale)).toBe('resync_required')
+    const recent = await read(1)
+    await subject.append([add('e'), add('f')])
+    const reset = await subject
+      .service()
+      .changes(
+        { query: suite.listQuery('unit', 1), afterCursor: recent.cursor, limit: 1 },
+        suite.callContext(),
+      )
+    if (!reset.ok) throw new Error(reset.error.detailCode)
+    expect(reset.value.changes.map((change) => change.kind)).toEqual(['reset'])
+    expect(reset.value.hasMore).toBe(false)
+  })
+
+  it('serves command and acceptCommand from one journal', async () => {
+    const { suite, fixture, subject, add, read } = await provider()
+    await subject.append([add('a')])
+    const request = suite.renameRequest('a', (await read()).items[0]?.revision ?? 0, 'unit-rename', 0)
+    const command = await subject.service().command(request, suite.callContext())
+    expect(command).toMatchObject({ ok: true, value: { status: 'succeeded', completion: 'domain-commit' } })
+    expect(await subject.service().acceptCommand(request, suite.callContext())).toEqual(command)
+    expect(fixture.prepared()).toBe(1)
+    expect((await read()).items[0]?.data).toEqual({ title: 'a renamed' })
+  })
+
+  it('answers queries only with the method schemas and leaves listing unsupported', async () => {
+    const { suite, subject } = await provider()
+    const refs = RuntimeMethodSchemaRefs['agh.projection']
+    const ask = (method: string, schema: Wire.SchemaRef, value: Wire.JsonValue) =>
+      subject.binding.query?.(
+        { target: PROJECTION_BINDING, method, input: inline(schema, value) },
+        suite.callContext(),
+      ) ?? Promise.reject(new Error('no query entry'))
+    const listing = {
+      scope: {
+        kind: 'workspace',
+        installationId: 'conformance',
+        runtimeId: 'conformance',
+        workspaceId: 'conformance',
+      },
+      text: null,
+      cursor: null,
+      limit: 10,
+    }
+    expect(detail(await ask('command', refs.command.input, {}))).toBe('operation_not_supported')
+    expect(detail(await ask('snapshot', refs.changes.input, suite.listQuery('unit', 1)))).toBe(
+      'invalid_request',
+    )
+    expect(detail(await ask('listConversations', refs.listConversations.input, listing))).toBe('unsupported')
+    expect(await ask('snapshot', refs.snapshot.input, suite.listQuery('unit', 1))).toMatchObject({
+      ok: true,
+      value: { kind: 'value', output: { schema: refs.snapshot.output } },
+    })
+  })
+})
+
+describe('default projection provider: reader policy paths', () => {
+  it('copies a __proto__ key as plain data and never onto a prototype', async () => {
+    const suite = await loadSuite()
+    const fixture = suite.createProjectionFixture()
+    const state = JSON.parse('{"__proto__":{"polluted":"yes"},"ok":"open"}') as Wire.JsonValue
+    const subject = defaultProjection({
+      ...fixture,
+      domain: {
+        ...fixture.domain,
+        readerPolicy: {
+          capability: fixture.domain.readerPolicy.capability,
+          rules: [{ pointer: '/__proto__/polluted', resourcePointer: '/ok', operation: 'read' }],
+        },
+        reducer: { reduce: () => ({ ok: true, value: inline(fixture.domain.stateSchema, state) }) },
+        selector: {
+          async selectAuthorized(input) {
+            expect(input.state.kind === 'inline' && Object.getPrototypeOf(input.state.value)).toBe(
+              Object.prototype,
+            )
+            expect(JSON.stringify(input.state.kind === 'inline' ? input.state.value : null)).toBe(
+              '{"__proto__":{"polluted":"yes"}}',
+            )
+            return { ok: true, value: { items: [], pageState: null, complete: true } }
+          },
+        },
+        checkReadState: () => true,
+      },
+    })
+    await subject.append([
+      suite.domainEvent('p-1', 'added', 'unit', { taskId: 'p', board: 'open', title: 'p' }),
+    ])
+    expect(await subject.service().snapshot(suite.listQuery('unit', 1), suite.callContext())).toMatchObject({
+      ok: true,
+    })
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })
 })
