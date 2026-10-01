@@ -200,7 +200,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // `const prototype`, the two-line `if`). Re-measured: 1997, exact cap, no spare.
   // 2026-09-21 stage 2a: hooks-runner and privacy leave the resource-owned id list (-5 counted
   // lines, tightened to the exact measurement). Re-measured with this guard's countLines(): 1992.
-  'packages/plugin-runtime/src': 2024,
+  // Fixed Cordis generation assembly, one hook snapshot, and community contract binding.
+  // Re-measured with this guard's countLines(): 4117, exact cap, no spare.
+  'packages/plugin-runtime/src': 4117,
   'packages/cosmokit/src': 483,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.

@@ -1,6 +1,16 @@
 import { Context, type Fiber } from '@agnes/cordis'
 import { detectDependencyCycle, missingDependencies } from '../dependency-graph.js'
+import { AssemblyRefusal } from './assembly-refusal.js'
+import {
+  assertCommunityContracts,
+  type CommunityContractDefinition,
+  type CommunityContractRef,
+  type CommunityOperation,
+  isCommunityContractName,
+} from './community-contract.js'
 import { isRuntimeScope, longScopeCapturesShort, type RuntimeScope, scopeRank } from './scope-tree.js'
+
+export { AssemblyRefusal } from './assembly-refusal.js'
 
 const DIGEST = /^[a-f0-9]{64}$/u
 
@@ -154,20 +164,6 @@ export const HOOKS_RUNNER_EVENTS = Object.freeze([
   'approval_request',
 ] as const)
 
-export class AssemblyRefusal extends Error {
-  readonly detail: Readonly<Record<string, string>>
-
-  constructor(
-    readonly code: string,
-    message: string,
-    detail: Readonly<Record<string, string>> = {},
-  ) {
-    super(message)
-    this.name = 'AssemblyRefusal'
-    this.detail = Object.freeze({ ...detail })
-  }
-}
-
 export type ServiceRequirement = {
   readonly contract: string
   readonly major: number
@@ -176,6 +172,7 @@ export type ServiceRequirement = {
   readonly features: readonly string[]
   readonly optional: boolean
   readonly capture: 'instance' | 'factory'
+  readonly contractDefinition?: CommunityContractRef
 }
 
 export type ResourceOwner = {
@@ -200,6 +197,8 @@ export type AssemblyProvider = {
   readonly capabilities: readonly string[]
   readonly requires: readonly ServiceRequirement[]
   readonly owners?: readonly ResourceOwner[]
+  readonly contractDefinition?: CommunityContractRef
+  readonly operations?: readonly CommunityOperation[]
   create?(ports: AuthorizedPorts): void | Promise<void>
   ready?(ports: AuthorizedPorts): void | Promise<void>
   drain?(ports: AuthorizedPorts): void | Promise<void>
@@ -281,6 +280,7 @@ export type AssemblyPlan = {
   readonly observers?: readonly ObserverMount[]
   readonly renderers?: readonly { readonly id: string }[]
   readonly brokerKeys?: readonly string[]
+  readonly contracts?: readonly CommunityContractDefinition[]
 }
 
 export type GenerationView = {
@@ -299,6 +299,7 @@ export type GenerationView = {
   readonly controlMethods: readonly string[]
   readonly unknownActionIds: readonly string[]
   readonly resentActionIds: readonly string[]
+  readonly disabled: boolean
 }
 
 export type DrainResult = {
@@ -386,6 +387,7 @@ type Generation = {
   closeStarted: boolean
   drained: boolean
   forced: boolean
+  disabled: boolean
   byProvider: Map<string, Mounted>
   byCell: Map<string, LockedProvider>
 }
@@ -621,6 +623,7 @@ export class FixedCordisAssembly {
       if (!this.#broker.known(key))
         throw new AssemblyRefusal('unknown_resource', `unknown broker resource: ${key}`, { key })
     }
+    assertCommunityContracts(plan.contracts ?? [], plan.providers)
     const generation = this.#createGeneration(plan, locked, contributions, admission, brokerKeys)
     this.#generations.set(generation.id, generation)
     try {
@@ -664,7 +667,16 @@ export class FixedCordisAssembly {
       controlMethods: generation.controlMethods,
       unknownActionIds: Object.freeze([...generation.unknownActionIds]),
       resentActionIds: Object.freeze([]),
+      disabled: generation.disabled,
     })
+  }
+
+  disable(generationId: string): void {
+    const generation = this.#require(generationId)
+    if (generation.state !== 'ready') {
+      throw new AssemblyRefusal('closed', 'only a ready generation can be disabled', { generationId })
+    }
+    generation.disabled = true
   }
 
   pinRun(runId: string, generationId?: string): void {
@@ -673,6 +685,11 @@ export class FixedCordisAssembly {
     const generation = this.#require(id)
     if (generation.state !== 'ready')
       throw new AssemblyRefusal('closed', 'run cannot pin a generation that is not ready')
+    if (generation.disabled) {
+      throw new AssemblyRefusal('disabled', 'a disabled generation cannot accept a new binding', {
+        generationId: id,
+      })
+    }
     this.#runs.set(runId, id)
   }
 
@@ -681,9 +698,15 @@ export class FixedCordisAssembly {
   }
 
   invoke(runId: string, providerId: string): { generationId: string; packageDigest: string; token: string } {
-    const id = this.#runs.get(runId) ?? this.#published?.id
+    const pinned = this.#runs.get(runId)
+    const id = pinned ?? this.#published?.id
     if (!id) throw new AssemblyRefusal('unpublished', 'no generation for this run')
     const generation = this.#require(id)
+    if (!pinned && generation.disabled) {
+      throw new AssemblyRefusal('disabled', 'a disabled generation cannot accept a new binding', {
+        generationId: id,
+      })
+    }
     if (generation.state !== 'ready')
       throw new AssemblyRefusal('closed', 'generation is not accepting work', { generationId: id })
     const mounted = generation.byProvider.get(providerId)
@@ -809,6 +832,7 @@ export class FixedCordisAssembly {
     if (generation.state !== 'cold')
       throw new AssemblyRefusal('busy', 'only a cold generation can be rebuilt')
     generation.closeStarted = false
+    generation.disabled = false
     generation.context = new Context()
     generation.controller = new AbortController()
     generation.instances = []
@@ -975,7 +999,7 @@ export class FixedCordisAssembly {
           )
         }
         for (const feature of requirement.features) {
-          if (!target.provider.features.includes(feature)) {
+          if (!target.provider.features.includes(feature) && !isCommunityContractName(requirement.contract)) {
             throw new AssemblyRefusal('feature_missing', `provider is missing feature ${feature}`, {
               feature,
               providerId: target.providerId,
@@ -1094,6 +1118,7 @@ export class FixedCordisAssembly {
       closeStarted: false,
       drained: false,
       forced: false,
+      disabled: false,
       byProvider: new Map(),
       byCell: new Map(locked.map((item) => [item.cell, item])),
     }

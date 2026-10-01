@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { HOOK_TABLE } from '../../../../packages/extension-api/src/index.js'
 import {
+  communityDefinitionDigest,
   FixedCordisAssembly,
   HOOKS_RUNNER_EVENTS,
   HOOKS_RUNNER_ROW_ID,
@@ -176,5 +177,29 @@ assert.ok(draft)
 const validated = validateRuntime('EffectiveHookSnapshot', draft.snapshot)
 assert.equal(validated.ok, true, JSON.stringify(validated))
 assert.equal(canonicalJsonDigest(JSON.parse(JSON.stringify(draft.digestMaterial))), draft.snapshot.digest)
+
+const communityDefinition = {
+  contract: 'acme/goals',
+  major: 1,
+  ownerPackageId: 'acme',
+  scope: 'workspace' as const,
+  features: ['goals.v1'],
+  operations: [
+    {
+      method: 'list',
+      kind: 'query' as const,
+      inputSchema: { typeId: 'acme/goal@1', revision: 1, digest },
+      outputSchema: { typeId: 'acme/goal@1', revision: 1, digest },
+      requiredCapabilities: [],
+      retrySafety: 'read-only' as const,
+    },
+  ],
+}
+const communityValidated = validateRuntime('CommunityContractDefinition', communityDefinition)
+assert.equal(communityValidated.ok, true, JSON.stringify(communityValidated))
+assert.equal(
+  communityDefinitionDigest(communityDefinition),
+  canonicalJsonDigest(JSON.parse(JSON.stringify(communityDefinition))),
+)
 
 console.log('cordis assembly acceptance passed')

@@ -67,6 +67,14 @@ export {
 } from '../row-mount.js'
 export type { RowOrigin, RowOriginLookup } from '../row-origin.js'
 export type {
+  CommunityContractDefinition,
+  CommunityContractRef,
+  CommunityOperation,
+  ContractCapability,
+  ContractSchemaRef,
+} from '../runtime/community-contract.js'
+export { communityDefinitionDigest, isCommunityContractName } from '../runtime/community-contract.js'
+export type {
   AssemblyPlan,
   AssemblyProvider,
   AuthorizedPorts,
