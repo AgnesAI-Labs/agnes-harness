@@ -2,335 +2,285 @@
 
 范围：运行时用户可见文案。先做英文和简体中文。未选择语言时使用英文，可以切换。
 
-本文包含方案本身，以及多人同时推进时的分工和同步方式。文档站 `docs/` 已有成对的中英文页面，不进这套运行时机制。
+文档站 `docs/` 已有成对的中英文页面，不进这套运行时机制。
+
+协作只有一条分支：`feat/i18n`。所有人在这条分支上提交。不开个人分支，也不要先把底座合进 `main` 再分叉。
 
 ## 1. 目标
 
-- 用户打开 Web 或 TUI 时，默认看到英文。
-- 可以切换到简体中文。Web 记在本机浏览器，CLI 认 `AGNES_LOCALE`。
-- 固定界面文案和已知错误码随语言变化。
-- 模型提示词、用户自己的内容、仓库文档保持原样。
+- 用户打开 Web 时默认看到英文。语言记在本机浏览器，可在设置的「通用」里切到简体中文。
+- 用户打开 CLI / TUI 时默认看到英文。语言只认 `AGNES_LOCALE=en|zh-CN`。未设置时用英文，不再根据 `LANG` 选中文。
+- Web 和 CLI 各自保存语言。在网页里切换不会改变终端，设置 `AGNES_LOCALE` 也不会改变网页。
+- 固定界面文案和已知错误码随各自入口的语言变化。
+- 模型提示词、用户自己的内容、仓库文档、钩子环境里的 `preset.locale` 保持原样。
 
-## 2. 现状
+## 2. 已经落地的底座
 
-文档页已经按英文和简体中文成对维护。运行时有两套半成品，默认语言与本方案相反。
+`feat/i18n` 上的 `c3fbcb1` 已经完成语言底座，负责人是 yuan。不要重做，也不要把它恢复成「未开始」。
 
-Web 的 `LocaleService`（`packages/web-client/src/services.ts`）能注册字典、切换 locale、通知界面重绘。生产代码没有注册过字典，也没有语言开关。`t()` 只按 key 查字符串，不看当前语言。启动时用页面的 `lang`；`packages/web/public/index.html` 是 `zh-CN`，缺省也回落到 `zh-CN`（`packages/web/src/client-modules/boot.ts`）。
+已经生效的行为：
 
-CLI 的 `packages/cli-tui/src/locale.ts` 已有 `en` / `zh-CN` 和 `{name}` 插值，大约 18 个 key，覆盖审批、状态条和断线提示。`AGNES_LOCALE` 优先；否则 `LANG` 以 `zh` 开头就用中文。欢迎语、斜杠命令、工具卡片、用量面板仍是写死的中文。命令行帮助和报错几乎全是英文。
+- `LocaleService.register(namespace, catalog)` 接收 `{ en, 'zh-CN' }`。`t(key, vars)` 先查当前语言，没有再查英文，再没有就显示 key。插值是 `{name}`。未知 locale 回落 `en`。
+- 这是对外签名变化。旧的扁平字典 `register(namespace, { key: text })` 不再可用。
+- Web 未保存选择时用英文。选择写入 `localStorage` 的 `agnes-locale`。切换时设置 `document.documentElement.lang`，并派发 `agnes:locale-changed`。
+- `packages/web/public/index.html`、`admin.html`、`resources.html` 的 `<html lang>` 已是 `en`。`theme-boot.ts` 在首屏前按 `agnes-locale` 改 `lang`。它还不回填文案。
+- 设置「通用」里已有语言开关。文案在 `packages/web/src/locale-catalog.ts`，命名空间 `@agnes/web`。只有开关自己的句子会随语言变化。
+- 其余界面仍是原来的中文。这是并行迁移期间的正常状态。
 
-预设里的 `preset.locale` 会注入钩子环境变量 `AGNES_LOCALE`，默认 `en`。这是部署预设，和界面语言分开。第一期不跟着界面切换。
+底座文件后续只修缺陷，或按第 6 节追加 `register` 行：
 
-Web 生产源码里大约有一千条写死的简体中文用户文案。集中在设置页整段 HTML、轨迹面板、插件确认框、会话编排和 Computer Use 状态。现有测试大量断言这些中文，迁移时要一起改。
+- `packages/web-client/src/services.ts`
+- `packages/web/src/locale-preference.ts`
+- `packages/web/src/locale-catalog.ts`（只留给已有的语言开关 key）
+- `packages/web/src/client-modules/boot.ts`
+- `packages/web/src/theme-boot.ts`（W6 会加首屏回填，见第 8 节）
+- `packages/web/src/app.ts` 里已经接上的 locale 回调
+- `packages/web/src/appearance.ts` 里已经接上的语言单选
 
 ## 3. 做什么，不做什么
 
 | 范围 | 判断 | 原因 |
 | --- | --- | --- |
 | Web 固定文案：导航、会话、输入框、空状态、设置、插件、技能、MCP、诊断、Computer Use、按钮、占位符、`aria-label` | 做 | 用户直接看到 |
-| `packages/web/public/index.html` 里的静态壳 | 做 | 首屏文案在 JS 之外，`lang` 也在这里 |
-| CLI / TUI 界面文案、斜杠命令说明、引导、工作区选择 | 做 | 和 Web 同一批用户 |
-| 命令行 `--help`、`doctor`、用法错误 | 做，放在 TUI 之后 | 今天已经是英文，符合默认英文；补中文 |
-| 用户能看到的失败说明 | 做，放在最后 | 用稳定错误码在客户端翻译 |
+| `index.html`、`admin.html`、`resources.html` 的静态壳 | 做 | 首屏文案在 JS 之外 |
+| `packages/web-server/src/server.ts` 里两句管理页不可用提示 | 做 | 用户直接看到 |
+| CLI / TUI 界面、斜杠命令、引导、工作区选择、`resource-control-cli` 里给用户看的句子 | 做 | 和 Web 同一批用户 |
+| 命令行 `--help`、`doctor`、用法错误 | 做，放在 TUI 文案之后 | 今天已经是英文；补中文 |
+| 用户能看到的失败说明 | 做 | 客户端用稳定错误码翻译 |
 | 产品专名：Agnes Harness、Computer Use、MCP、Provider、API Key、Token | 两种语言都保留英文 | 和界面语言无关 |
-| 协议码、工具名、包名、路径、哈希、日志、堆栈 | 不翻译 | 是契约和诊断材料 |
+| 协议码、工具名、包名、路径、哈希、日志、堆栈、源码注释 | 不翻译 | 契约、诊断或给开发者看的说明 |
 | 模型系统提示词和内置工具 `description` | 第一期不翻译 | 见第 4 节 |
-| 用户消息、Skill 正文、插件自己的 `publicConfig` 文案 | 不在本期 | 作者内容；插件以后可以用现有的 `locale.register` |
+| 用户消息、Skill 正文、插件 `publicConfig`、`examples/` 里的示例文案 | 不在本期 | 作者内容。插件以后用第 6 节的 `register` |
 | `docs/` 成对 Markdown | 不进这套机制 | 已经按页面维护双语 |
+| `packages/channels/` 发给人的卡片、审批和命令回复 | 本期暂缓 | 见第 10 节 |
 
 ## 4. 提示词
 
-`packages/code/prompts/` 下的 persona、环境、编码准则，以及 `read` / `write` / `edit` / `shell` 等工具说明，都是给模型的英文指令。`packages/code/test/prompts.test.ts` 要求这些 Markdown 不含中日韩字符。把它们译成中文会改变模型行为，和界面换语言不是一件事。
+`packages/code/prompts/` 下的 persona、环境、编码准则，以及 `read` / `write` / `edit` / `shell` 等工具说明，都是给模型的英文指令。`packages/code/test/prompts.test.ts` 要求这些 Markdown 不含中日韩字符。把它们译成中文会改变模型行为。
 
 第一期保持英文。若以后希望界面切到中文时模型也用中文回答，只在运行时追加一句回复语言说明，不动现有提示词正文。
 
-技能安装审批里现在有直接写给操作者的中文摘要。那是界面文案，归到错误与审批展示，不归到提示词。
+技能安装审批里写给操作者的中文摘要是界面文案，归错误与审批展示，不归提示词。
 
 ## 5. 语言规则
 
-只支持 `en` 和 `zh-CN`。未知值回落英文。
+只支持 `en` 和 `zh-CN`。未知值回落英文。未保存过选择时用英文。
 
-未保存过选择时用英文。
+三套 locale 各管各的：
 
-- Web：选择写入本机 `localStorage`，和主题同一类偏好。切换后立刻改 `document.documentElement.lang` 并重绘。入口放在设置里的「通用」，和配色、字号放在一起。
-- CLI：继续认 `AGNES_LOCALE=en|zh-CN`，并在 TUI 里提供切换。未设置时用英文，不再根据 `LANG` 自动选中文。
+| 名字 | 谁在读 | 存在哪里 | 本期行为 |
+| --- | --- | --- | --- |
+| Web 界面语言 | 浏览器 | `localStorage` 的 `agnes-locale` | 未设置则英文。开关在设置「通用」 |
+| CLI 界面语言 | TUI 和命令行 | 进程环境变量 `AGNES_LOCALE` | 只接受 `en` 和 `zh-CN`。未设置则英文。C1 必须去掉「`LANG` 以 `zh` 开头就用中文」 |
+| 钩子 locale | 钩子子进程 | `preset.locale` 注入的 `AGNES_LOCALE`，默认 `en` | 不跟着 Web 或 CLI 的界面语言走。不改预设语义 |
 
-`preset.locale` 继续只服务钩子环境。
+`preset.locale` 的 schema 还接受 `zh`、`fr` 这类界面不支持的值。那只影响钩子环境。界面遇到这些值仍然回落英文。
 
 ## 6. 技术约定
 
-沿用现有包边界，不新建总包。
+沿用现有包边界，不新建总包。Web 和 CLI 各写各的目录。审批按钮这类少量重复句子，两处各写一份。
 
-- Web 修正 `LocaleService`：字典按 locale 存放。`t(key, vars)` 先查当前语言，没有再查英文，再没有就显示 key。现在没有生产代码调用 `register`，改签名的兼容成本低。
-- `web`、`web-ui`、`web-units`、`resource-control-web` 各自带目录。
-- CLI 继续扩展 `cli-tui` 的字典。
-- 审批按钮这类少量重复文案，两处各写一份。
+### 6.1 目录
 
-Key 用语义名，例如 `composer.send`、`settings.appearance.theme.dark`。插值沿用 `{name}`。中文不需要复数规则；英文计数也先放进句子，不引入 ICU。
+- Key 用语义名，例如 `composer.send`、`settings.appearance.theme.dark`。
+- 每一条 key 在同一次提交里同时有 `en` 和 `zh-CN`，而且都不是空串。
+- 插值沿用 `{name}`。缺变量时保留 `{name}`。中文不引入复数规则；英文计数写进句子，不引入 ICU。
+- 各线使用自己的目录文件，不要往 `locale-catalog.ts` 里追加新 key。那个文件只保留语言开关。
+- 新目录在 `packages/web/src/client-modules/boot.ts` 增加一行 `locale.register`。改这个文件之前先同步 `feat/i18n`，只加注册行。
+- `web-ui`、`web-units`、`resource-control-web` 的目录放在各自包内，由 boot 注册。
+- CLI 只扩展 `packages/cli-tui/src/locale.ts`。
 
-目录按命名空间拆开，例如 `shell`、`settings`、`admin`、`diagnostics`、`cli`。不要往同一个字典文件里加 key。
+同一 PR 里为新目录加上 key 成对测试：两种语言的 key 集合相同。不要留到收尾才补这道测试。
 
-渲染时取词。现在很多文案是模块加载时就写死的常量，例如会话状态对照表和设置页那一整段 HTML。语言切换后它们不会更新。静态节点用 `data-i18n`，在启动和切换时回填。`packages/web-units/src/settings.ts` 和 `index.html` 适合这种方式。
+### 6.2 切换后必须重绘
 
-费用和数字走 `Intl.NumberFormat`，随当前 locale 格式化。`packages/web-ui/src/conversation/cost-format.ts` 里的中文单位一起换掉。
+模块加载时算出的字符串，切换语言后不会变。两种写法：
 
-术语表（后续译文都照此）：
+React 组件在渲染时取词，并订阅 locale，这样切换会触发渲染：
 
-| 英文 | 简体中文 |
-| --- | --- |
-| session | 会话 |
-| workspace | 工作区 |
-| approval | 审批 |
-| plugin | 插件 |
-| skill | 技能 |
-| archive | 归档 |
-| account | 账户 |
-| trace | 轨迹 |
-| diagnostics | 诊断 |
+```ts
+const locale = useSyncExternalStore(service.subscribe, service.getSnapshot)
+const label = service.t('composer.send')
+```
+
+`useState` 的初值、文件顶层常量、事件回调里缓存的句子，都不算渲染时取词。
+
+静态 HTML 和 `dangerouslySetInnerHTML` 使用 `data-i18n`（文本）与 `data-i18n-aria`（`aria-label`）。`applyLocaleText` 在两处调用：
+
+- locale 变化时（已有 `agnes:locale-changed`）。
+- 这段 HTML 每次被提交进文档之后。设置页会在重开或热替换时用模板盖掉已经回填的 DOM，所以拥有这段模板的组件要在提交后再次回填。
+
+`theme-boot.ts` 是三个 HTML 页在绘制前都会执行的脚本。W6 把静态壳的回填放进这个文件，这样独立打开的 `admin.html` 和 `resources.html` 也会换语言。这个脚本不能引入 `@agnes/web-client` 的运行时代码，否则会把整份客户端打进阻塞式 `theme.js`。静态壳的目录保持为纯数据，跟现有的 `locale-catalog.ts` 一样只做类型导入。
+
+费用、整数和小数用 `Intl.NumberFormat`，locale 用当前的 `en` 或 `zh-CN`。`packages/web-ui/src/conversation/cost-format.ts` 里的中文单位改成目录中的句子，数字本身交给 `Intl`。日期若出现给用户看的格式，用 `Intl.DateTimeFormat`，不另写一套中文单位。
+
+### 6.3 术语
+
+| 英文 | 简体中文 | 用法 |
+| --- | --- | --- |
+| session | 会话 | 持久化的 session，以及用户说的「这次对话」。现有界面里的「任务」如果指的就是这次 session，改为「会话」 |
+| workspace | 工作区 | |
+| approval | 审批 | |
+| plugin | 插件 | |
+| skill | 技能 | |
+| archive | 归档 | |
+| account | 账户 | |
+| trace | 轨迹 | |
+| diagnostics | 诊断 | |
 
 Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都保留英文。
 
-## 7. 实施顺序
+## 7. 单分支协作
 
-### 7.1 语言底座
+分支：`feat/i18n`。
 
-修正 `LocaleService`，加上英文缺省、持久化和通用设置里的切换。内置目录先只放切换控件自己的文案，用来验证切换、回落和 `lang`。
+1. 开工前在第 9 节写上负责人，并把该步状态改成「进行中」。没有署名的步骤，别人可以认领。
+2. 一个步骤、一个文件，在同一时间只有一个认领人。做完把状态改成「已完成」，并写上提交。
+3. 提交前先同步 `feat/i18n`。提交要小，只包含自己认领的文件。
+4. 共享文件按第 8 节的锚点改。禁止整文件重排，禁止顺手改别人的 pane。
+5. 底座文件按第 2 节冻结。发现缺陷时单独开一个小提交，并在第 9 节记一笔。
+6. 界面里已经出现的错误码，由这个文件的认领人改成目录句子。错误码收口的人只改服务端的 code 和英文 `safeMessage`，不改 Web 文案文件。
 
-底座保持很小，不改这些热点文件：
+人少时仍然在同一分支上缩小并行度：同一个人可以连续做 Web 壳和设置，但不要同时改第 8 节里划给别人的锚点。CLI 和 Web 没有共同的文案文件，可以和 Web 并行。
 
-- `packages/web-units/src/settings.ts`
-- `packages/web/src/app.ts`
+## 8. 文件所有权
 
-语言开关的界面由设置页负责人加。底座只提供 `setLocale` 和持久化。
+`packages/web-units/src/settings.ts` 的 `SETTINGS_MARKUP` 里，每个设置页是单独一行。所有权按 section 锚点划分，不按「谁负责这个功能」整文件拿走。
 
-### 7.2 Web 固定壳
+| 锚点 | 认领 | 里面有什么 |
+| --- | --- | --- |
+| `#model-settings-pane` | 设置与通用 | 模型与账户页的标题、按钮、占位符 |
+| `#archived-settings-pane` | 设置与通用 | 已归档会话页的标题和搜索框 |
+| `#appearance-settings-pane` | 设置与通用 | 配色、皮肤、字号。语言开关已完成，不要重写那一组 `data-i18n` |
+| `#plugin-settings-pane` | 管理与资源 | 插件页标题、恢复模式、安装和搜索 |
+| `#resource-settings-pane` | 管理与资源 | 技能与 MCP 页的标题和工具条 |
+| `#computer-use-settings-pane` | 诊断与 Computer Use | Computer Use 页的标题、状态卡和按钮。诊断线未认领前，其他人不要改这一行 |
 
-侧栏、顶栏、输入框、空状态、会话菜单、消息和工具状态、审批按钮。
+只改自己的那一行。不要把整个模板重新换行或格式化。
 
-静态 `index.html` 默认写成英文，启动前读取 `localStorage` 再回填，避免已选中文的用户先看到英文。
+其他容易抢的文件：
 
-代表文件：
+| 文件 | 谁改 | 其他人 |
+| --- | --- | --- |
+| `packages/web/src/app.ts` | Web 壳。包括这个文件里直接拼给用户的失败句 | 错误码收口不改它 |
+| `packages/web/src/oauth-controls.ts` | 设置与通用。包括这里展示的失败句 | 错误码收口不改它 |
+| `packages/web/src/theme-boot.ts` | Web 壳，在 W6 加入静态壳回填 | 设置线不改它。已有的 `lang` 逻辑保持 |
+| `packages/web/src/client-modules/boot.ts` | 任何线都可以加一行 `register` | 不改存储、回落和事件 |
+| `packages/web/public/index.html` | Web 壳 | |
+| `packages/web/public/admin.html`、`resources.html` | 管理与资源 | `lang="en"` 已落地，只迁正文 |
+| `packages/web-server/src/server.ts` | 管理与资源，只迁两句「后台暂时不可用」 | 注释不动 |
+| `packages/web/src/computer-use-state.ts`、`settings-computer-use.tsx` | 诊断与 Computer Use | 模板行见上表 |
+| `packages/cli-tui/src/locale.ts` 和 `packages/cli/src` | CLI | |
 
-- `packages/web/src/app.ts`
-- `packages/web-ui/src/conversation/messages.tsx`
-- `packages/web-units/src/composer.ts`
-- `packages/web-units/src/sidebar.ts`
-- `packages/web-units/src/topbar.ts`
-- `packages/web/src/view.ts`
-- `packages/web/public/index.html`
+`app.ts` 里的 locale 回调、`appearance.ts` 里的语言单选已经接好。Web 壳和设置线改这些文件时保留这段接线。
 
-### 7.3 设置、管理和诊断
+## 9. 实施清单
 
-设置模板、`admin-text.ts`、插件确认、资源管理、Computer Use、轨迹面板。这是文案量最大的一段。`packages/web-ui/src/admin-text.ts` 已经是集中的状态标签层，适合先改成按 key 取词。
+状态以这一节为准。规模不按「含中文的行数」估算：那种计数把注释算进去，又把设置页一整行里的几十句算成 1。认领人打开文件，只迁渲染给用户的字符串。
 
-### 7.4 CLI / TUI，然后是命令行帮助
-
-把欢迎语、斜杠命令、工具卡片、用量、主题选择收进现有字典，默认改为英文。随后补 `usage()`、引导、`doctor`，以及 `packages/cli/launch/workspace-picker.ts` 里目前只有中文的工作区选择框。
-
-把 CLI 解析出的 locale 传给 SDK，让 `packages/sdk/src/text.ts` 里已有的两句安全文案跟界面一致。
-
-### 7.5 用户可见的失败说明
-
-协议继续只传稳定 code，例如 `CONFIG_AUTH_FAILED`、`E_PACKAGE_TRUST`。客户端用 code 查目录。服务端的 `safeMessage` 保持英文，只在客户端没有这条 code 时作兜底。
-
-Web 里已有的 `CONFIGURATION_REASON_MESSAGES` 就是这个模式，把它从写死中文改成目录。
-
-现在直接拼 `error.message` 的位置改成：本地化主句，原始信息留在诊断详情。包括 `packages/web/src/app.ts`、OAuth 提示、轨迹详情和资源列表。
-
-daemon 里仍直接写中文的安装摘要和校验说明，改成 code 加英文 `safeMessage`，由界面翻译。日志、密钥脱敏后的内部句子、堆栈不进目录。
-
-## 8. 多人协作
-
-先合入一份语言底座，然后按文件所有权并行。主分支允许短暂中英混杂。每个界面一旦开工，就必须整页换完。
-
-### 8.1 底座先合并
-
-第一天只派一个人做底座，合进主干后其他人再开分支。这一份改动不碰大文件，见 7.1。
-
-底座里同时放上：
-
-- locale 类型、查词、回落、持久化
-- key 命名和 `{name}` 插值
-- 各包目录的命名空间约定
-- key 双语必须成对的检查
-- 第 6 节的术语表
-
-### 8.2 按文件分人
-
-底座合入后，下面几条线同时开。每人只改自己的源文件、对应测试和自己的目录文件。
-
-| 负责人 | 包住的界面 | 主要文件 | 依赖 |
-| --- | --- | --- | --- |
-| Web 壳 | 侧栏、顶栏、输入框、空状态、会话菜单、消息和工具状态、审批 | `app.ts`、`index.html` 的壳文案、`sidebar.ts`、`topbar.ts`、`composer.ts`、`messages.tsx`、`view.ts` | 底座 |
-| 设置与通用 | 设置整页、账户、外观、语言开关 | `packages/web-units/src/settings.ts`、`packages/web/src/settings.ts`、`appearance.ts`、账户相关组件 | 底座 |
-| 管理与资源 | 插件确认、安装、技能、MCP | `admin-text.ts`、`admin-confirmation.tsx`、`packages/web/src/admin/plugins/admin.tsx`、`resource-list.tsx`、`resource-detail.tsx`、`packages/resource-control-web/src` | 底座 |
-| 诊断与 Computer Use | 轨迹、诊断导出、Computer Use 状态 | `packages/web-units/src/trace.ts`、`diagnostics-viewer.ts`、`diagnostics-dialog.tsx`、`computer-use-state.ts` | 底座 |
-| CLI | TUI 剩余文案、帮助、引导、工作区选择 | `packages/cli-tui/src`、`packages/cli/src`、`packages/cli/launch/workspace-picker.ts` | 底座；和 Web 无文件交集 |
-| 错误码收口 | 服务端仍写给用户看的中文句子 | daemon、host 里直接展示的摘要；改成稳定 code + 英文 `safeMessage` | 界面侧已按 code 查词；code 字符串可以先并行整理 |
-
-`app.ts`、`settings.ts`、`trace.ts`、`admin.tsx` 都是单文件热点，各只给一个人。
-
-每个界面上已经出现的错误码，由该界面负责人翻译。例如设置页的 `CONFIGURATION_REASON_MESSAGES`。错误码负责人只改服务端句子和 code，不改 Web 文案。
-
-人少时合并线条：
-
-- 两个人：一人做底座、Web 壳和设置；另一人等底座合入后做 CLI。管理和诊断由先空出来的人接。
-- 三个人：管理和诊断并成一条 Web 线，CLI 单独一条。
-
-### 8.3 每条线的完成标准
-
-- 这个界面上的固定文案都走 `t()` 或 `data-i18n`。同一屏幕不留一半写死中文。
-- 每个新 key 同时有英文和简体中文。
-- 渲染时取词，不在模块加载时把译文写进常量。
-- 对应测试改为断言目录结果，或断言默认英文。
-- 不改模型提示词，不改协议 schema，不改 `preset.locale`。
-
-合入顺序只有一个硬门槛：底座先合并。之后各线互不阻塞。最后留一个短收尾：确认默认仍是英文、切换两边都完整、清单上没有未迁完的用户可见文案。
-
-主干在收尾前会中英混在一起：已迁移的屏幕随语言切换，还没迁移的屏幕仍是原来的中文。用一张清单登记文件归属和是否迁完。
-
-### 8.4 建议清单
+### 9.1 总览
 
 | 线条 | 负责人 | 状态 |
 | --- | --- | --- |
-| 语言底座 |  | 未开始 |
-| Web 壳 | zzl | 进行中 |
-| 设置与通用 | zzl | 进行中 |
+| 语言底座 | yuan | 已完成（2026-10-01，`c3fbcb1`） |
+| Web 壳 | zzl | 进行中（2026-10-01） |
+| 设置与通用 | zzl | 进行中（2026-10-01） |
 | 管理与资源 | swx | 进行中（2026-10-01） |
-| 诊断与 Computer Use |  | 未开始 |
-| CLI | zzl | 进行中 |
-| 错误码收口 |  | 未开始 |
-| 收尾核对 |  | 未开始 |
+| 诊断与 Computer Use | | 未开始 |
+| CLI | zzl | 进行中（2026-10-01） |
+| 错误码收口 | | 未开始 |
+| 收尾核对 | | 未开始 |
 
-## 9. 测试与兼容
+### 9.2 Web 壳
 
-- 每个目录保证 `en` 和 `zh-CN` 的 key 一致。
-- 缺 key 时回落英文。
-- 切换语言后，抽查一个标签和 `documentElement.lang`。
-- 现有断言中文文案的测试，随对应界面改成断言目录结果或默认英文。
-- 协议 schema 不变。
-- 预设语义不变。
-
-## 10. 做完后的结果
-
-用户打开 Web 或 TUI 看到英文。在通用设置或 `AGNES_LOCALE` 切到简体中文后，固定界面和已知错误码跟着变。模型提示词、用户内容和文档保持原样。
-
-## 11. 分工线条与步骤（署名清单）
-
-本节把 §7 的实施顺序拆到 §8.2 的线条上，作为可署名的执行清单。规模数字是源码（不含测试）中含中文字符的行匹配数，仅供分人参考，实际以逐文件迁移时盘点为准。
-
-认领与署名惯例：
-
-1. 认领一条线：在 11.1 总览表填上负责人、分支名和日期，状态改「进行中」，并同步 §8.4 总清单。
-2. 完成一个步骤：在该步骤行的「完成于 / 署名」列填日期和名字。
-3. 一条线（含热点单文件）只归一人；开工先署名，避免撞线。
-4. 标「建议并入」的文件是 §8.2 未点名、按界面就近归线的，认领时在 PR 描述注明即可。
-
-### 11.1 线条总览
-
-| 线条 | 规模（约） | 负责人 | 分支 | 状态 |
-| --- | --- | --- | --- | --- |
-| 语言底座 | 17 文件 / +509 行 | | feat/i18n | 第一版已落地（c3fbcb1f），待评审合主干 |
-| Web 壳 | 约 600 处 | zzl | feat/i18n | 进行中（2026-10-01） |
-| 设置与通用 | 约 290 处 | zzl | feat/i18n | 进行中（2026-10-01） |
-| 管理与资源 | 约 540 处 | swx | feat/i18n | 进行中（2026-10-01） |
-| 诊断与 Computer Use | 约 280 处 | | | 未开始 |
-| CLI | 字典 18 key 已有，余待迁 | zzl | feat/i18n | 进行中（2026-10-01） |
-| 错误码收口 | 盘点后定 | | | 未开始 |
-| 收尾核对 | — | | | 未开始 |
-
-### 11.2 Web 壳
-
-建议并入：会话菜单/会话操作/导航，timeline / turns / presentation / usage 工具状态与工具卡（§8.2「消息和工具状态」的就近归属）。
-
-| 步骤 | 内容 | 主要文件（约处数） | 完成于 / 署名 |
+| 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| W1 | 输入框与空状态 | `web-units/src/composer.ts`（12） | |
-| W2 | 侧栏与顶栏 | `sidebar.ts`（16）、`topbar.ts`（9） | |
-| W3 | 会话菜单、会话操作、导航 | `session-menu.ts`（21）、`session-actions.ts`（18）、`navigation.ts`（21） | |
-| W4 | 消息与工具状态 | `messages.tsx`（47）、`timeline.ts`（55）、`turns.ts`（21）、`presentation.ts`（24）、`usage.ts`（1）、`web-units/src/conversation/tool-card.ts`（7）、`conversation.ts`（2）、`conversation-message-adapter.tsx`（1）、`timeline-node-host.tsx`（1）、`document-preview.ts`（4）、`web-ui/src/conversation/`：`turn-actions.tsx`（22）、`cost-format.ts`（27）、`usage.tsx`（10）、`markdown.tsx`（3）、`document-preview.tsx`（3）、`cost.tsx`（1）、`runtime.ts`（3） | |
-| W5 | app.ts 热点（单文件，留到最后） | `app.ts`（120） | |
-| W6 | index.html 静态壳 | `index.html`（64），默认英文 + localStorage 回填 + `data-i18n` | |
-| W7 | 运行时状态与 slot 壳 | client-modules：`reconcile.ts`（26）、`runtime-status.ts`（10）、`hot-reload.ts`（1）、`timeline-slot.ts`（11）；`region-slots.ts`（7）、`shell.ts`（5）、`view.ts`（24）、`web-ui/src/confirm.ts`（1）、`web-client/src/externals.ts`（3）、`outlet.tsx`（2） | |
+| W1 | 输入框与空状态 | `packages/web-units/src/composer.ts` | 未开始 |
+| W2 | 侧栏与顶栏 | `packages/web-units/src/sidebar.ts`、`topbar.ts` | 未开始 |
+| W3 | 会话菜单、会话操作、导航 | `packages/web/src/session-menu.ts`、`session-actions.ts`、`navigation.ts` | 未开始 |
+| W4 | 消息、工具状态、费用和预览 | `packages/web-ui/src/conversation/`（含 `messages.tsx`、`turn-actions.tsx`、`cost-format.ts`、`usage.tsx`）、`packages/web/src/timeline.ts`、`turns.ts`、`presentation.ts`、`usage.ts`、`view.ts`、`document-preview.ts`、`packages/web-units/src/conversation/tool-card.ts` | 未开始 |
+| W5 | `app.ts` 里其余用户可见句子 | `packages/web/src/app.ts`。保留已有 locale 回调。这个文件里的失败句一起改成 code 查目录 | 未开始 |
+| W6 | 三个页面的静态壳，以及绘制前回填 | `packages/web/public/index.html`；回填实现放在 `packages/web/src/theme-boot.ts`，让 admin / resources 独立打开时同样生效 | 未开始 |
+| W7 | 其余用户可见壳句 | `packages/web/src/region-slots.ts`、`shell.ts`、`packages/web-ui/src/confirm.ts`、`packages/web-client/src/outlet.tsx` 的「插件渲染失败」 | 未开始 |
 
-### 11.3 设置与通用
+`packages/web/src/client-modules/reconcile.ts`、`runtime-status.ts`、`hot-reload.ts`、`timeline-slot.ts` 里的中文是注释或日志，不迁。若其中有渲染到页面上的句子，记入 W7，不要把整文件当成文案。
 
-建议并入：四个 picker、oauth-controls、skin、theme/theme-boot、tool-icon、session-title、设置页 Computer Use 段。
+### 9.3 设置与通用
 
-| 步骤 | 内容 | 主要文件（约处数） | 完成于 / 署名 |
+| 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| S1 | 通用段模板（`data-i18n` 为主） | `web-units/src/settings.ts`（12） | |
-| S2 | 设置主体与账户 | `web/src/settings.ts`（65）、`appearance.ts`（25）、`web-ui/src/settings-accounts.tsx`（8）、`settings-account-dialog.tsx`（15） | |
-| S3 | 设置外围控件 | model/permission/provider/workspace-picker（16）、`web-ui/src/select-picker.ts`（1）、`oauth-controls.ts`（14）、`skin.ts`（60）、`theme.ts`（22）、`theme-boot.ts`（20）、`tool-icon.ts`（7）、`session-title.ts`（1）、`settings-model-pane.tsx`（8）、`settings-computer-use.tsx`（13） | |
+| S1 | 通用页剩余文案 | `settings.ts` 的 `#appearance-settings-pane`。语言开关保持不动 | 未开始 |
+| S2 | 模型、账户、已归档会话的模板 | `settings.ts` 的 `#model-settings-pane`、`#archived-settings-pane` | 未开始 |
+| S3 | 设置逻辑与账户对话框 | `packages/web/src/settings.ts`（含 `CONFIGURATION_REASON_MESSAGES`）、`appearance.ts`（保留语言单选）、`packages/web-ui/src/settings-accounts.tsx`、`settings-account-dialog.tsx`、`settings-model-pane.tsx` | 未开始 |
+| S4 | 选择器、OAuth、皮肤、字号、工具图标 | `model-picker.ts`、`permission-picker.ts`、`provider-picker.ts`、`workspace-picker.ts`、`oauth-controls.ts`（含失败句）、`skin.ts`、`theme.ts`、`tool-icon.ts`、`session-title.ts`、`packages/web-ui/src/select-picker.ts` | 未开始 |
 
-### 11.4 管理与资源
+`theme-boot.ts` 不在这一线。`skin.ts`、`theme.ts` 里的注释不迁，只迁用户能看见的名称和提示。
 
-| 步骤 | 内容 | 主要文件（约处数） | 完成于 / 署名 |
+### 9.4 管理与资源
+
+| 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| A1 | 集中标签层先行 | `web-ui/src/admin-text.ts`（56）、`ui/state-lights.tsx`（11） | 认领整条管理与资源线：swx（2026-10-01） |
-| A2 | 确认与对话框 | `admin-confirmation.tsx`（95）、`admin-dialogs.tsx`（13）、`admin-list.tsx`（27）、`admin-detail.tsx`（9） | |
-| A3 | 插件管理 | `web/src/admin/plugins/admin.tsx`（106）、`source-form.ts`（4） | |
-| A4 | 资源双站 | `resource-list.tsx`（37）、`resource-detail.tsx`（27）、`resource-control-web/src/admin.tsx`（75）、`skill-copy.ts`（7） | |
-| A5 | 静态壳 | `admin.html`（41）、`resources.html`（30），复用 W6 的回填机制 | |
+| A1 | 集中标签 | `packages/web-ui/src/admin-text.ts`、`ui/state-lights.tsx` | 进行中，swx（2026-10-01） |
+| A2 | 确认、列表和详情 | `admin-confirmation.tsx`、`admin-dialogs.tsx`、`admin-list.tsx`、`admin-detail.tsx` | 未开始 |
+| A3 | 插件管理逻辑，以及插件页模板 | `packages/web/src/admin/plugins/admin.tsx`、`source-form.ts`；`settings.ts` 的 `#plugin-settings-pane` | 未开始 |
+| A4 | 资源管理 | `resource-list.tsx`、`resource-detail.tsx`；`packages/resource-control-web/src/admin.tsx`、`skill-copy.ts`、`mcp-form-validation.ts`、`api.ts`；`settings.ts` 的 `#resource-settings-pane` | 未开始 |
+| A5 | 静态管理页和服务器不可用提示 | `admin.html`、`resources.html` 的正文；`packages/web-server/src/server.ts` 的两句不可用提示。回填依赖 W6 的 `theme-boot.ts`，A5 在 W6 之后收尾 | 未开始 |
 
-### 11.5 诊断与 Computer Use
+### 9.5 诊断与 Computer Use
 
-| 步骤 | 内容 | 主要文件（约处数） | 完成于 / 署名 |
+| 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| D1 | Computer Use 状态 | `computer-use-state.ts`（106） | |
-| D2 | 轨迹面板（单文件热点） | `web-units/src/trace.ts`（127） | |
-| D3 | 诊断导出 | `diagnostics-viewer.ts`（23）、`web-ui/src/diagnostics-dialog.tsx`（14）、`web/src/diagnostics-dialog.ts`（7）、`diagnostics-bundle.ts`（4） | |
+| D1 | Computer Use 状态和设置页模板 | `packages/web/src/computer-use-state.ts`、`packages/web-ui/src/settings-computer-use.tsx`、`settings.ts` 的 `#computer-use-settings-pane` | 未开始 |
+| D2 | 轨迹面板 | `packages/web-units/src/trace.ts`。这个文件只由诊断线改 | 未开始 |
+| D3 | 诊断导出 | `packages/web-units/src/diagnostics-viewer.ts`、`packages/web-ui/src/diagnostics-dialog.tsx`、`packages/web/src/diagnostics-dialog.ts`、`diagnostics-bundle.ts` | 未开始 |
 
-### 11.6 CLI
+### 9.6 CLI
 
-| 步骤 | 内容 | 主要文件 | 完成于 / 署名 |
+| 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| C1 | TUI 剩余文案收进字典、默认改英文 | `packages/cli-tui/src`（欢迎语/斜杠命令/工具卡片/用量/主题） | |
-| C2 | 帮助与引导补中文 | `usage()`、`doctor`、引导、`packages/cli/launch/workspace-picker.ts` | |
-| C3 | locale 传 SDK | `packages/sdk/src/text.ts`（2 句） | |
+| C1 | TUI 文案收进字典，默认改为英文 | `packages/cli-tui/src`。`resolveLocale` 在 `AGNES_LOCALE` 未设置时返回 `en`，不再看 `LANG` | 未开始 |
+| C2 | 帮助、引导、工作区选择、资源命令里的用户句 | `packages/cli/src` 的 `usage()`、`doctor`、引导；`packages/cli/launch/workspace-picker.ts`；`packages/resource-control-cli/src/resources.ts` | 未开始 |
+| C3 | 把 CLI 解析出的 locale 传给 SDK | `packages/sdk/src/text.ts` 已有的两句，跟 TUI 使用同一个 locale | 未开始 |
 
-### 11.7 错误码收口
+### 9.7 错误码收口
 
-| 步骤 | 内容 | 范围 | 完成于 / 署名 |
-| --- | --- | --- | --- |
-| E1 | 盘点 daemon / host 直写中文的句子，列清单 | daemon（config / admin-surface / session-preferences / supervisor 三件 / worker-link）、host（codex-login / skill-install / skill-preload）、worker-runtime（commands / mcp-row-runtime / mcp-server-rows）、resource-control-{store,runtime,worker,cli} 各 1–2 件 | |
-| E2 | 服务端改稳定 code + 英文 `safeMessage` | E1 清单 | |
-| E3 | 客户端按 code 查词，推广 `CONFIGURATION_REASON_MESSAGES` 模式 | app.ts / OAuth 提示 / 轨迹详情 / 资源列表 | |
+客户端文件里的失败句已经划给该文件的界面认领人。这一线只处理服务端仍直接写给人看的句子。
 
-### 11.8 收尾核对
-
-| 步骤 | 内容 | 完成于 / 署名 |
+| 步骤 | 内容 | 状态 |
 | --- | --- | --- |
-| F1 | 双端默认英文确认 | |
-| F2 | §8.4 清单全部「已完成」，无残留用户可见中文 | |
-| F3 | key 双语成对检查进 CI，术语表抽查 | |
+| E1 | 列出 daemon、host、worker-runtime、resource-control 服务端里用户能看到的中文句子。注释、日志、密钥脱敏后的内部句子跳过 | 未开始 |
+| E2 | 这些句子改成稳定 code 加英文 `safeMessage`。`safeMessage` 是客户端没有这条 code 时的兜底，保持英文 | 未开始 |
+| E3 | 核对界面认领人已经用 code 查目录。缺的 code 补进对应目录，仍由那个界面文件的认领人改客户端 | 未开始 |
 
-### 11.9 范围待裁定（差集扫描发现）
+已知要在 E1 里打开的位置：daemon 的 config、admin-surface、session-preferences、supervisor、worker-link；host 的 codex-login、skill-install、skill-preload；worker-runtime 的 commands、mcp 行；package-manager、sandbox-remote、core、ai、base extensions 里若有渲染给用户的句子，同样列入。抽查后确认只是注释的，写进第 10 节，不改。
 
-| 事项 | 内容 | 建议 |
+协议继续只传稳定 code，例如 `CONFIG_AUTH_FAILED`、`E_PACKAGE_TRUST`。不改 schema。
+
+### 9.8 收尾
+
+| 步骤 | 内容 | 状态 |
 | --- | --- | --- |
-| channels（钉钉卡片） | `channels/src/adapters/dingtalk/cards.ts` 等审批按钮「同意/拒绝」、摘要文案，终端用户可见 | **本期暂缓**（2026-10-01 裁定）：用户群与 Web/CLI 不完全重叠、量小且为服务端渲染；日后按 §7.5 的稳定 code + 目录模式单独处理，notice 系列语义与 cli-tui 字典同源，届时可复用 key |
-| 后端零星 | package-manager（client-assets / lockfile）、sandbox-remote、core、ai、base/extensions 零星源码中文 | 多为日志与内部说明，E1 盘点时一并甄别 |
-| extension-api | src 四文件，抽查为代码注释 | 预计全豁免，E1 核实 |
-| cli/tools/build-local.ts | 构建脚本 | 豁免 |
-| web/public/style.css、web-ui tokens.css、REGISTRY.md | 已核实为注释/文档 | 豁免 |
-| web-admin-frame | C 线删除计划内 | 有意排除，随删除消失 |
+| F1 | Web 未设置 `agnes-locale` 时是英文；CLI 未设置 `AGNES_LOCALE` 时是英文，中文 `LANG` 不会把它切走 | 未开始 |
+| F2 | 第 9 节全部「已完成」。第 10 节之外，不再有渲染给用户的硬编码中文或硬编码英文用户句 | 未开始 |
+| F3 | 每个目录文件都有 key 成对测试；抽查第 6.3 节的术语 | 未开始 |
 
-### 11.10 覆盖检查（怎么发现遗漏）
+## 10. 本期不做
 
-三层，逐层兜底：
+| 事项 | 处理 |
+| --- | --- |
+| `packages/channels/`，包括 `runner/` 的审批、通知、命令回复，以及钉钉卡片 | 暂缓。用户和 Web / CLI 不完全同一批，而且是服务端渲染。以后按 code 加目录做。届时审批句子再决定是否复用 CLI 的 key |
+| `examples/` 示例客户端和皮肤包里的中文标签 | 不做。属于示例作者的文案 |
+| 源码注释、`console` 日志、`packages/cli/tools/build-local.ts` | 不做 |
+| `packages/web/public/style.css`、web-ui 的 tokens、`REGISTRY.md` | 已核实为注释或文档，不做 |
+| `packages/web-admin-frame` | 删除计划内，不单独做国际化 |
+| extension-api 的中文 | 先视为注释。E1 若发现用户可见句子，再补进 E2 |
 
-1. **分线期差集扫描**：全量列出含中文的源码文件，与 §11 分配表做差集，差出来的就是遗漏：
+## 11. 怎样算一条做完
 
-   ```bash
-   rg -l '[\x{4e00}-\x{9fff}]' packages -g '!node_modules' -g '!dist' -g '!**/test/**' -g '!*.test.*' -g '!**/fixtures/**' -g '*.{ts,tsx,html,css}'
-   ```
+- 这个步骤里的用户可见句子都在渲染时通过 `t()` 取得，或在 HTML 提交之后用 `data-i18n` 回填。同一屏幕不留一半写死的中文。
+- 新 key 同时有英文和简体中文，并带有成对测试。
+- 切换语言后，该屏幕上的句子和 `documentElement.lang` 一起变。React 组件会因 locale 订阅而重绘；`innerHTML` 模板在再次提交后仍是新语言。
+- 原来断言中文的测试改为断言目录结果。默认语言下断言英文。
+- 不改模型提示词，不改协议 schema，不改 `preset.locale`。
 
-   清单里每个文件必须在 §11.2–11.7 某一步、§11.9 某一行，或属注释/测试豁免——三none即漏。
-2. **执行期 ratchet**：开工前记录中文匹配总数作基线，此后每个线 PR 合入前重跑计数，只许降不许涨（防一边迁一边新增硬编码）：
-
-   ```bash
-   rg -o '[\x{4e00}-\x{9fff}]' packages -g '!node_modules' -g '!dist' -g '!**/test/**' -g '!*.test.*' -g '!**/fixtures/**' -g '*.{ts,tsx,html}' | wc -l
-   ```
-
-3. **收尾期清零门**：F2 时白名单（注释文件、测试、协议码、提示词、channels 暂缓件）之外源码中文残留应为 0；配合 §9 的 key 双语成对检查进 CI，构成最终门。
+收尾时用第 9 节的文件清单核对，不用「源码里中文字符总数必须下降」做门禁。那个总数包含注释，界面迁完也不会变成 0，只改注释也会被误判成回归。
