@@ -312,8 +312,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 5763 -> 5770; approved feature scope, no spare allocation.
   // Windows stale-lock reclamation added 17 counted lines; exact baseline total, no spare.
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
-  // Immutable local, npm, and git package snapshots. Measured 7403, exact, no spare.
-  'packages/package-manager/src': 7403,
+  // Immutable package snapshots and the lock resolver. Measured 7836, exact, no spare.
+  'packages/package-manager/src': 7836,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
