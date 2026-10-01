@@ -251,7 +251,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| D1 | Computer Use 状态和设置页模板 | `packages/web/src/computer-use-state.ts`、`packages/web-ui/src/settings-computer-use.tsx`、`settings.ts` 的 `#computer-use-settings-pane` | 未开始 |
+| D1 | Computer Use 状态和设置页模板 | `packages/web/src/computer-use-state.ts`、`packages/web-ui/src/settings-computer-use.tsx`、`settings.ts` 的 `#computer-use-settings-pane` | 已完成（yuan，2026-10-01） |
 | D2 | 轨迹面板 | `packages/web-units/src/trace.ts`。这个文件只由诊断线改 | 未开始 |
 | D3 | 诊断导出 | `packages/web-units/src/diagnostics-viewer.ts`、`packages/web-ui/src/diagnostics-dialog.tsx`、`packages/web/src/diagnostics-dialog.ts`、`diagnostics-bundle.ts` | 未开始 |
 
@@ -310,8 +310,9 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 键 | 当前上限 |
 | --- | --- |
-| `packages/web-client/src` | 1714 |
-| `packages/web/src` | 13124 |
-| `packages/web/src/app` | 1827 |
+| `packages/web-client/src` | 1745 |
+| `packages/web-ui/src` | 4714 |
+| `packages/web/src` | 13587 |
+| `packages/web/src/app` | 1838 |
 
 某个目录加了文案文件或把句子搬进渲染之后超限，就在同一次提交里按实测行数改这个上限，并写明增加了多少行。不要放宽扫描范围，也不要为了留下余量把上限改得比实测更高。`packages/web-ui/src`、`packages/web-units/src`、`packages/cli-tui/src` 也有上限，改到它们时同样处理。

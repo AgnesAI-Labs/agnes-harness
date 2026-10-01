@@ -207,10 +207,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 Web Plugins parity: row-scoped client services and stable web-unit contracts. Exact.
   // CU-ARTIFACT-RETENTION-GC-INDEX C8: measured 1714, exact, no spare (+9). ClientResourceReclaimedError
   // thrown on a 410 artifact_reclaimed read.
-  'packages/web-client/src': 1714,
+  // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
+  'packages/web-client/src': 1745,
   'packages/web-slots/src': 605,
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
-  'packages/web-ui/src': 4706,
+  // Computer Use settings chrome resolves copy at render. Measured 4714, exact, no spare (+8).
+  'packages/web-ui/src': 4714,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   'packages/web-units/src': 4630,
   'packages/base/extensions/tools-core': 800,
@@ -375,7 +377,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1825, exact (+1).
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
-  'packages/web/src/app': 1827,
+  // Workbench locale wiring. Measured 1838, exact, no spare (+11).
+  'packages/web/src/app': 1838,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -2022,7 +2025,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the three UI lines moved most of this scope into packages/web-ui/src,
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
-  'packages/web/src': 13124,
+  // Computer Use copy catalog and locale-aware status text. Measured 13587, exact, no spare.
+  'packages/web/src': 13587,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
