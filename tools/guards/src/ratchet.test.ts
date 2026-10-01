@@ -929,7 +929,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
   // Interaction domain rules: pending questions, one accepted answer per version and a wake per terminal
   // change. Measured 25787, exact, no spare (+309).
-  'packages/core/src': 25787,
+  // Interaction wake delivery: retries with backoff, dead letters and redrive under the original key.
+  // Measured 25893, exact, no spare (+106).
+  'packages/core/src': 25893,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

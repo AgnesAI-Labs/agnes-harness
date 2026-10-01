@@ -26,8 +26,20 @@ export type StoredInteractionResponse = Readonly<{
 export type InteractionWake = Readonly<{
   deliveryKey: string
   interactionId: Wire.Id
+  owner: InteractionOwner
   version: number
   status: Wire.InteractionRecord['status']
+  responseId: Wire.Id | null
+}>
+
+/** Delivery progress of one wake. A dead wake keeps its data so a repair redelivers the same key. */
+export type StoredInteractionWake = Readonly<{
+  wake: InteractionWake
+  delivery: 'pending' | 'acked' | 'dead'
+  consecutiveFailures: number
+  nextAttemptAt: Wire.Timestamp
+  lastError: Wire.RuntimeError | null
+  ackRef: string | null
 }>
 
 export interface InteractionTransaction {
@@ -36,7 +48,10 @@ export interface InteractionTransaction {
   response(responseId: Wire.Id): StoredInteractionResponse | undefined
   putRecord(record: Wire.InteractionRecord): void
   putResponse(response: StoredInteractionResponse): void
-  enqueueWake(wake: InteractionWake): void
+  wake(deliveryKey: string): StoredInteractionWake | undefined
+  /** Pending wakes whose next attempt is due, oldest first. */
+  dueWakes(now: Wire.Timestamp, limit: number): readonly StoredInteractionWake[]
+  putWake(wake: StoredInteractionWake): void
 }
 
 export interface InteractionStorage {
@@ -59,7 +74,7 @@ export type InteractionResponseInput = Readonly<{
 type Detail = keyof typeof RuntimeErrorDetails
 type Refusal = { ok: false; error: Wire.RuntimeError }
 
-const fail = (detail: Detail, message: string): Refusal => ({
+export const fail = (detail: Detail, message: string): Refusal => ({
   ok: false,
   error: {
     code: RuntimeErrorDetails[detail].code as Wire.RuntimeError['code'],
@@ -177,11 +192,20 @@ function answerFor(
  * interaction version, and a wake per terminal change. Reading permission stays with the provider.
  */
 export function createInteractionAuthority(storage: InteractionStorage, clock: InteractionClock) {
-  const wake = (record: Wire.InteractionRecord): InteractionWake => ({
-    deliveryKey: `${record.interactionId}@${record.version}`,
-    interactionId: record.interactionId,
-    version: record.version,
-    status: record.status,
+  const wake = (record: Wire.InteractionRecord, now: Wire.Timestamp): StoredInteractionWake => ({
+    wake: {
+      deliveryKey: `${record.interactionId}@${record.version}`,
+      interactionId: record.interactionId,
+      owner: record.owner,
+      version: record.version,
+      status: record.status,
+      responseId: record.status === 'answered' ? record.resolution.responseId : null,
+    },
+    delivery: 'pending',
+    consecutiveFailures: 0,
+    nextAttemptAt: now,
+    lastError: null,
+    ackRef: null,
   })
 
   return {
@@ -276,7 +300,7 @@ export function createInteractionAuthority(storage: InteractionStorage, clock: I
         }
         tx.putRecord(answered.value)
         tx.putResponse({ responseId, fingerprint, status })
-        tx.enqueueWake(wake(answered.value))
+        tx.putWake(wake(answered.value, now))
         return { ok: true as const, value: status }
       })
     },
@@ -313,7 +337,7 @@ export function createInteractionAuthority(storage: InteractionStorage, clock: I
         })
         if (!next.ok) return next
         tx.putRecord(next.value)
-        tx.enqueueWake(wake(next.value))
+        tx.putWake(wake(next.value, now))
         return next
       })
     },

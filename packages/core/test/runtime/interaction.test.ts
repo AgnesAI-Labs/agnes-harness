@@ -1,3 +1,4 @@
+import { createRuntimeInboxFixture } from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, computeApprovalIntentDigest } from '@agnes/protocol/runtime'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -5,20 +6,21 @@ import {
   createInteractionAuthority,
   type InteractionEvidence,
   type InteractionStorage,
-  type InteractionWake,
   type StoredInteractionResponse,
+  type StoredInteractionWake,
 } from '../../src/runtime/interaction/authority.js'
+import { createInteractionBridge } from '../../src/runtime/interaction/command-bridge.js'
 
 /** Copy-on-write store: a body that throws leaves the committed maps untouched. */
 function memoryStorage(failPutResponse = false) {
   const records = new Map<string, Wire.InteractionRecord>()
   const responses = new Map<string, StoredInteractionResponse>()
-  const wakes: InteractionWake[] = []
+  const wakes = new Map<string, StoredInteractionWake>()
   const storage: InteractionStorage = {
     async transaction(body) {
       const r = new Map(records)
       const s = new Map(responses)
-      const w = [...wakes]
+      const w = new Map(wakes)
       const result = body({
         record: (id) => r.get(id),
         recordByIdempotencyKey: (key) => [...r.values()].find((x) => x.request.idempotencyKey === key),
@@ -28,13 +30,19 @@ function memoryStorage(failPutResponse = false) {
           if (failPutResponse) throw new Error('disk full')
           s.set(response.responseId, response)
         },
-        enqueueWake: (wake) => void w.push(wake),
+        wake: (key) => w.get(key),
+        dueWakes: (at, limit) =>
+          [...w.values()]
+            .filter((x) => x.delivery === 'pending' && Date.parse(x.nextAttemptAt) <= Date.parse(at))
+            .slice(0, limit),
+        putWake: (wake) => void w.set(wake.wake.deliveryKey, wake),
       })
       records.clear()
       for (const [k, v] of r) records.set(k, v)
       responses.clear()
       for (const [k, v] of s) responses.set(k, v)
-      wakes.splice(0, wakes.length, ...w)
+      wakes.clear()
+      for (const [k, v] of w) wakes.set(k, v)
       return result
     },
   }
@@ -198,12 +206,26 @@ describe('interaction authority: approval answers', () => {
       schema: { typeId: 'agh.interaction/approval-answer@1' },
       value: { decision: 'approve', grantScope: 'once' },
     })
-    expect(store.wakes).toEqual([
-      { deliveryKey: `${interactionId}@2`, interactionId, version: 2, status: 'answered' },
+    expect([...store.wakes.values()]).toEqual([
+      {
+        wake: {
+          deliveryKey: `${interactionId}@2`,
+          interactionId,
+          owner,
+          version: 2,
+          status: 'answered',
+          responseId: 'resp-1',
+        },
+        delivery: 'pending',
+        consecutiveFailures: 0,
+        nextAttemptAt: now,
+        lastError: null,
+        ackRef: null,
+      },
     ])
 
     expect(await authority.respond(approve(interactionId))).toEqual(accepted)
-    expect(store.wakes).toHaveLength(1)
+    expect(store.wakes.size).toBe(1)
     expect(await authority.responseStatus('resp-1')).toEqual(accepted)
   })
 
@@ -226,7 +248,7 @@ describe('interaction authority: approval answers', () => {
     const refused = await authority.respond(approve(interactionId, extra))
     expect(refused.ok ? undefined : refused.error.detailCode).toBe(detail)
     expect(store.records.get(interactionId)?.status).toBe('pending')
-    expect(store.wakes).toEqual([])
+    expect(store.wakes.size).toBe(0)
   })
 
   it('refuses an actor outside allowedResponders and an answer after expiry', async () => {
@@ -347,7 +369,7 @@ describe('interaction authority: expiry, cancellation and atomicity', () => {
       terminationReason: 'timed out',
     })
     expect(await authority.terminate('expire', expire)).toEqual(expired)
-    expect(store.wakes.map((w) => w.status)).toEqual(['expired'])
+    expect([...store.wakes.values()].map((w) => w.wake.status)).toEqual(['expired'])
   })
 
   it('cancels a pending question but not an answered one', async () => {
@@ -391,6 +413,137 @@ describe('interaction authority: expiry, cancellation and atomicity', () => {
     await expect(a.respond(approve('ix-1'))).rejects.toThrow('disk full')
     expect(failing.records.get('ix-1')?.status).toBe('pending')
     expect(failing.responses.size).toBe(0)
-    expect(failing.wakes).toEqual([])
+    expect(failing.wakes.size).toBe(0)
+  })
+})
+
+describe('interaction bridge: one wake per terminal change', () => {
+  const failure = (message: string) => ({
+    ok: false as const,
+    error: {
+      code: 'retryable' as const,
+      detailCode: 'backend_unavailable',
+      message,
+      retryAdvice: { kind: 'never' as const },
+      diagnosticId: 'test-inbox',
+    },
+  })
+
+  async function answered() {
+    const { interactionId } = await open(approvalRequest())
+    await authority.respond(approve(interactionId))
+    return { interactionId, key: `${interactionId}@2` }
+  }
+
+  it('wakes the waiter once through the inbox fixture and marks the answer applied', async () => {
+    const inbox = createRuntimeInboxFixture()
+    const { key } = await answered()
+    const woken: string[] = []
+    inbox.registerWaiter(key, (acceptance) => void woken.push(acceptance.deliveryId))
+    const bridge = createInteractionBridge(
+      store.storage,
+      async (wake) => ({
+        ok: true,
+        value: { deliveryId: inbox.notify(wake.deliveryKey).deliveryId },
+      }),
+      { now: () => now },
+    )
+
+    expect(await bridge.flush()).toEqual({ acked: 1, retrying: 0, dead: 0 })
+    expect(await bridge.flush()).toEqual({ acked: 0, retrying: 0, dead: 0 })
+    expect(woken).toHaveLength(1)
+    expect(store.wakes.get(key)).toMatchObject({ delivery: 'acked', ackRef: woken[0] })
+    const status = await authority.responseStatus('resp-1')
+    expect(status.ok && status.value.status).toBe('applied')
+  })
+
+  it('redelivers after a restart without waking the waiter twice', async () => {
+    const inbox = createRuntimeInboxFixture()
+    const { key } = await answered()
+    let woken = 0
+    inbox.registerWaiter(key, () => void woken++)
+    const sink = async (wake: { deliveryKey: string }) => ({
+      ok: true as const,
+      value: { deliveryId: inbox.notify(wake.deliveryKey).deliveryId },
+    })
+    // The first process delivered but stopped before recording the acknowledgement.
+    inbox.notify(key)
+    const restarted = createInteractionAuthority(store.storage, { now: () => now, newId: () => 'unused' })
+    expect((await restarted.read(key.split('@')[0] as string)).ok).toBe(true)
+    expect(await createInteractionBridge(store.storage, sink, { now: () => now }).flush()).toMatchObject({
+      acked: 1,
+    })
+    expect(woken).toBe(1)
+  })
+
+  it('backs off after a failure and retries once the delay has passed', async () => {
+    const { key } = await answered()
+    let fails = 1
+    const bridge = createInteractionBridge(
+      store.storage,
+      async () => {
+        if (fails-- > 0) throw new Error('inbox offline')
+        return { ok: true, value: { deliveryId: 'd-1' } }
+      },
+      { now: () => now },
+    )
+
+    expect(await bridge.flush()).toEqual({ acked: 0, retrying: 1, dead: 0 })
+    expect(store.wakes.get(key)).toMatchObject({
+      delivery: 'pending',
+      consecutiveFailures: 1,
+      lastError: { detailCode: 'backend_unavailable', message: 'inbox offline' },
+      nextAttemptAt: '2026-10-01T00:00:01.000Z',
+    })
+    expect(await bridge.flush()).toEqual({ acked: 0, retrying: 0, dead: 0 })
+    now = '2026-10-01T00:00:01Z'
+    expect(await bridge.flush()).toEqual({ acked: 1, retrying: 0, dead: 0 })
+  })
+
+  it('turns a wake into a dead letter after the failure limit and redrives it under the same key', async () => {
+    const { key } = await answered()
+    let healthy = false
+    const deliveries: string[] = []
+    const bridge = createInteractionBridge(
+      store.storage,
+      async (wake) => {
+        if (!healthy) return failure('inbox refused')
+        deliveries.push(wake.deliveryKey)
+        return { ok: true, value: { deliveryId: 'd-1' } }
+      },
+      { now: () => now },
+      { maxFailures: 3 },
+    )
+    for (const at of ['2026-10-01T00:00:00Z', '2026-10-01T00:00:01Z', '2026-10-01T00:00:03Z']) {
+      now = at
+      await bridge.flush()
+    }
+    expect(store.wakes.get(key)).toMatchObject({ delivery: 'dead', consecutiveFailures: 3 })
+    now = '2026-10-02T00:00:00Z'
+    expect(await bridge.flush()).toEqual({ acked: 0, retrying: 0, dead: 0 })
+
+    const early = await bridge.redrive('missing')
+    expect(early.ok ? undefined : early.error.detailCode).toBe('not_found')
+    healthy = true
+    expect((await bridge.redrive(key)).ok).toBe(true)
+    expect(await bridge.flush()).toEqual({ acked: 1, retrying: 0, dead: 0 })
+    expect(deliveries).toEqual([key])
+    const again = await bridge.redrive(key)
+    expect(again.ok ? undefined : again.error.detailCode).toBe('revision_conflict')
+  })
+
+  it('delivers expiry wakes without touching any response', async () => {
+    const { interactionId } = await open(approvalRequest())
+    now = '2026-10-08T00:00:00Z'
+    await authority.terminate('expire', { interactionId, expectedVersion: 1, reason: 'timed out' })
+    const bridge = createInteractionBridge(
+      store.storage,
+      async () => ({ ok: true, value: { deliveryId: 'd-1' } }),
+      {
+        now: () => now,
+      },
+    )
+    expect(await bridge.flush()).toEqual({ acked: 1, retrying: 0, dead: 0 })
+    expect(store.responses.size).toBe(0)
   })
 })
