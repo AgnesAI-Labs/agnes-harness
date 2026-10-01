@@ -209,7 +209,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | 管理与资源 | swx | 进行中（2026-10-01） |
 | 诊断与 Computer Use | yuan | 已完成（2026-10-01，`661a0c0`、`22f6020`、`db1c53e`） |
 | CLI | zzl | 进行中（2026-10-01） |
-| 错误码收口 | | 未开始 |
+| 错误码收口 | yuan | 进行中（2026-10-01） |
 | 收尾核对 | | 未开始 |
 
 ### 9.2 Web 壳
@@ -269,9 +269,9 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 状态 |
 | --- | --- | --- |
-| E1 | 列出 daemon、host、worker-runtime、resource-control 服务端里用户能看到的中文句子。注释、日志、密钥脱敏后的内部句子跳过 | 未开始 |
-| E2 | 这些句子改成稳定 code 加英文 `safeMessage`。`safeMessage` 是客户端没有这条 code 时的兜底，保持英文 | 未开始 |
-| E3 | 核对界面认领人已经用 code 查目录。缺的 code 补进对应目录，仍由那个界面文件的认领人改客户端 | 未开始 |
+| E1 | 列出 daemon、host、worker-runtime、resource-control 服务端里用户能看到的中文句子。注释、日志、密钥脱敏后的内部句子跳过 | 进行中（yuan，2026-10-01） |
+| E2 | 这些句子改成稳定 code 加英文 `safeMessage`。`safeMessage` 是客户端没有这条 code 时的兜底，保持英文 | 进行中（yuan，2026-10-01） |
+| E3 | 核对界面认领人已经用 code 查目录。缺的 code 补进对应目录，仍由那个界面文件的认领人改客户端 | 进行中（yuan，2026-10-01） |
 
 已知要在 E1 里打开的位置：daemon 的 config、admin-surface、session-preferences、supervisor、worker-link；host 的 codex-login、skill-install、skill-preload；worker-runtime 的 commands、mcp 行；package-manager、sandbox-remote、core、ai、base extensions 里若有渲染给用户的句子，同样列入。抽查后确认只是注释的，写进第 10 节，不改。
 
