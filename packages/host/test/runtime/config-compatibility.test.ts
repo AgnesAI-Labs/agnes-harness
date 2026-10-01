@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { validateRuntime } from '@agnes/protocol/runtime'
 import { expect, it } from 'vitest'
 import {
@@ -112,7 +113,8 @@ it('blocks a relative directory and a home path when no deployer home is supplie
     profiles: [{ layer: 'user', document: { name: 'dev', dataDir: '~/data' } }],
   })
   expect(expanded.status).toBe('accepted')
-  expect(expanded.providerConfig?.directories.dataDir).toBe('/opt/deploy/data')
+  // The stored directory is the absolute path under the supplied home, in the host path form.
+  expect(expanded.providerConfig?.directories.dataDir).toBe(join('/opt/deploy', 'data'))
 })
 
 it('keeps an unplaced limit and does not invent the other process limits', () => {
