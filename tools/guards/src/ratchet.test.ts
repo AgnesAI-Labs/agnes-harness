@@ -1362,7 +1362,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
   // Conformance testkit: evidence, discovery, test service container and inbox fixture. Measured 907, exact, no spare.
-  'packages/extension-api/testkit': 907,
+  // Default config file and fetch cases register six scenarios. Measured 978, exact, no spare.
+  'packages/extension-api/testkit': 978,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2538,7 +2539,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined measured 50715.
   // Scoped dependency projection over one fixed Cordis root.
   // Re-measured with this guard's countLines(): 51097, exact cap, no spare.
-  'packages/host/src': 51097,
+  // An aborted file refresh is refused before the loader runs.
+  // Re-measured with this guard's countLines(): 51099, exact cap, no spare.
+  'packages/host/src': 51099,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

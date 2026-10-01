@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { documentDigest } from '../../../../packages/host/src/runtime/config/config-digest.ts'
 import { readPinnedConfigDocument } from '../../../../packages/host/src/runtime/config/host-read.ts'
 import {
@@ -181,32 +182,77 @@ function provePersistentPin(): { digest: string } {
   }
 }
 
+const require = createRequire(import.meta.url)
+const tsxCli = require.resolve('tsx/cli')
+const versionedService = fileURLToPath(
+  new URL('../../../../packages/host/test/runtime/config-source-worker.ts', import.meta.url),
+)
+
+function requestCount(stdout: string): number {
+  return stdout.match(/^request /gm)?.length ?? 0
+}
+
 async function proveHttpPin(expectedDigest: string): Promise<void> {
-  let body = { revision: 1, schema: parameterSchemaRef, value: { name: 'pinned', meta: { a: 1 } } }
-  let calls = 0
-  const server: Server = createServer((_request, response) => {
-    calls += 1
-    response.setHeader('content-type', 'application/json')
-    response.end(JSON.stringify(body))
+  const child: ChildProcess = spawn(process.execPath, [tsxCli, versionedService, 'serve'], {
+    env: { ...process.env, AGNES_CONFIG_SCHEMA: JSON.stringify(parameterSchemaRef) },
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const address = server.address() as AddressInfo
-  const http = createFetchConfigProvider(async (_sourceRef, signal) => {
-    const response = await fetch(`http://127.0.0.1:${address.port}/latest`, { signal })
-    return (await response.json()) as typeof body
+  let stdout = ''
+  let stderr = ''
+  child.stdout?.setEncoding('utf8')
+  child.stderr?.setEncoding('utf8')
+  child.stdout?.on('data', (chunk: string) => {
+    stdout += chunk
+  })
+  child.stderr?.on('data', (chunk: string) => {
+    stderr += chunk
   })
   try {
+    const port = await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`versioned server did not start\n${stderr}`)), 20_000)
+      const watch = () => {
+        const match = /^ready (\d+)$/.exec(stdout.split('\n')[0] ?? '')
+        if (match?.[1] === undefined) return
+        clearTimeout(timer)
+        resolve(Number(match[1]))
+      }
+      child.stdout?.on('data', watch)
+      child.once('exit', () => {
+        clearTimeout(timer)
+        reject(new Error(`versioned server exited\n${stderr}`))
+      })
+      watch()
+    })
+    let revision = '1'
+    const http = createFetchConfigProvider(async (_sourceRef, signal) => {
+      const response = await fetch(`http://127.0.0.1:${port}/${revision}`, { signal })
+      if (!response.ok) throw new Error(`status ${response.status}`)
+      return (await response.json()) as {
+        revision: number
+        schema: SchemaRef
+        value: { name: string; meta: { a: number } }
+      }
+    })
     assert.equal(await http.source.refresh('remote'), null)
-    body = { revision: 2, schema: parameterSchemaRef, value: { name: 'newer', meta: { a: 2 } } }
-    const callsAfterAdmit = calls
+    const callsAfterAdmit = requestCount(stdout)
     const pinned = readPinnedConfigDocument(http.provider, 'remote', 1)
     assert.equal(pinned.ok, true)
     if (!pinned.ok) return
-    assert.equal(calls, callsAfterAdmit)
+    assert.equal(requestCount(stdout), callsAfterAdmit)
     assert.equal(pinned.result.digest, expectedDigest)
     assert.equal(pinned.result.revision, 1)
+    revision = '2'
+    assert.equal(await http.source.refresh('remote'), null)
+    const latest = http.provider.read({ sourceRef: 'remote', revision: null })
+    assert.equal(latest.ok, true)
+    if (!latest.ok) return
+    assert.equal(latest.result.revision, 2)
+    assert.equal(latest.result.digest, documentDigest({ name: 'newer', meta: { a: 2 } }))
+    assert.equal(readPinnedConfigDocument(http.provider, 'remote', 1).ok, true)
+    assert.equal(requestCount(stdout), callsAfterAdmit + 1)
   } finally {
-    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+    if (child.exitCode === null && child.signalCode === null) child.kill()
+    await new Promise<void>((resolve) => child.once('exit', () => resolve()))
   }
 }
 

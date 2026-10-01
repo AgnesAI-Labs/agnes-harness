@@ -26,7 +26,7 @@ export type ConfigSource = {
 
 export type FileConfigSource = {
   source: ConfigSource
-  refresh(sourceRef: string): ConfigRefusal | null
+  refresh(sourceRef: string, signal?: AbortSignal): ConfigRefusal | null
 }
 
 export type FetchedSnapshot = {
@@ -183,9 +183,12 @@ export function createFileConfigSource(load: (sourceRef: string) => string | nul
   const store = createStore()
   return {
     source: store,
-    refresh(sourceRef) {
+    refresh(sourceRef, signal) {
       if (store.disposed) return configRefusal('disposed', '', 'config source is disposed')
+      // An aborted caller never admits. The loader is not asked once the signal is already aborted.
+      if (signal?.aborted) return configRefusal('cancelled', '/sourceRef', 'snapshot refresh was cancelled')
       const text = load(sourceRef)
+      if (signal?.aborted) return configRefusal('cancelled', '/sourceRef', 'snapshot refresh was cancelled')
       if (text === null)
         return configRefusal('source_unavailable', '/sourceRef', 'snapshot file is unavailable')
       let parsed: unknown
