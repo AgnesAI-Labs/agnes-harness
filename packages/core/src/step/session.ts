@@ -11,6 +11,7 @@ import type {
   ApprovalMode,
   ExecutionDomain,
   InferenceEvent,
+  ModelRecord,
   Provider,
   RequestBody,
   RequestMediaHeader,
@@ -647,11 +648,39 @@ export class SessionImpl {
     return this.d.tracker.state
   }
 
+  private initialModelSettingsRestored = false
+
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
     if (this.state.session) {
+      if (!this.initialModelSettingsRestored)
+        this.restoreInitialModelSettings(this.state.session.modelSettings)
       await this.restoreYolo()
       return
+    }
+    const modelSettings: NonNullable<SessionStart['modelSettings']> = []
+    let records: ModelRecord[] = []
+    try {
+      records = this.d.provider.models()
+    } catch {
+      // Match resolveModel's fallback when a provider cannot publish its catalogue.
+    }
+    for (const slot of Object.keys(this.preset.model.route)) {
+      const target = resolveModel(this, slot)
+      const record = records.find((m) => m.route === target.route && m.id === target.model)
+      if (!record) continue
+      const thinking = this.preset.model.thinking[slot] ?? record.defaultSettings?.thinking
+      modelSettings.push({
+        slot,
+        ...target,
+        settings: {
+          ...(thinking === undefined ? {} : { thinking }),
+          contextWindow:
+            this.preset.model.contextWindow?.[slot] ??
+            record.defaultSettings?.contextWindow ??
+            record.contextWindow,
+        },
+      })
     }
     await this.d.log.append([
       // The one row that carries no lane: a session opens once, not once per lane.
@@ -665,10 +694,33 @@ export class SessionImpl {
           resolvedProfileHash: this.d.resolvedProfileHash,
           preset: this.preset.name,
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
+          ...(modelSettings.length ? { modelSettings } : {}),
           ...(this.d.imported ? { imported: this.d.imported } : {}),
         },
       },
     ])
+    this.restoreInitialModelSettings(modelSettings)
+  }
+
+  private restoreInitialModelSettings(models: SessionStart['modelSettings']): void {
+    this.initialModelSettingsRestored = true
+    if (!models) return
+    const model = {
+      ...this.preset.model,
+      route: { ...this.preset.model.route },
+      id: { ...this.preset.model.id },
+      thinking: { ...this.preset.model.thinking },
+      contextWindow: { ...this.preset.model.contextWindow },
+    }
+    for (const selection of models) {
+      const slot = selection.slot
+      model.route[slot] = selection.route
+      model.id[slot] = selection.model
+      model.thinking[slot] = selection.settings.thinking
+      model.contextWindow[slot] = selection.settings.contextWindow
+    }
+    this.preset = { ...this.preset, model }
+    this.d.runtime.preset = this.preset
   }
 
   /**
@@ -1688,7 +1740,13 @@ export class SessionImpl {
     return setPreset(this, view)
   }
 
-  setModel(sel: { slot: string; route: string; model: string; thinking?: ThinkingLevel }): Promise<Seq> {
+  setModel(sel: {
+    slot: string
+    route: string
+    model: string
+    thinking?: ThinkingLevel | null
+    contextWindow?: number | null
+  }): Promise<Seq> {
     return setModel(this, sel)
   }
 
@@ -1972,7 +2030,17 @@ export class SessionImpl {
       .find((entry) => entry.route === target.route && entry.id === target.model)
     return this.d.ui.usage({
       route: target.route,
-      model: model ?? { id: target.model, contextWindow: contextWindowFor(this, target.route, target.model) },
+      model: {
+        ...model,
+        id: target.model,
+        contextWindow: contextWindowFor(this, target.route, target.model),
+      },
+      settings: {
+        ...(this.preset.model.thinking.primary === undefined
+          ? {}
+          : { thinking: this.preset.model.thinking.primary }),
+        contextWindow: contextWindowFor(this, target.route, target.model),
+      },
       thinking: this.preset.model.thinking.primary ?? 'off',
       autoCompact: this.preset.compaction.enabled,
     })
@@ -2015,7 +2083,17 @@ export class SessionImpl {
       upto: cut,
       lane: this.lane,
       route: target.route,
-      model: model ?? { id: target.model, contextWindow: contextWindowFor(this, target.route, target.model) },
+      model: {
+        ...model,
+        id: target.model,
+        contextWindow: contextWindowFor(this, target.route, target.model),
+      },
+      settings: {
+        ...(this.preset.model.thinking.primary === undefined
+          ? {}
+          : { thinking: this.preset.model.thinking.primary }),
+        contextWindow: contextWindowFor(this, target.route, target.model),
+      },
       thinking: this.preset.model.thinking.primary ?? 'off',
       contextTokens: contextTokensAtCut(events, this.lane, cut),
       autoCompact: this.preset.compaction.enabled,

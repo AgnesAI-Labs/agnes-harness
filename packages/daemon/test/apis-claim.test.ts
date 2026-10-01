@@ -138,7 +138,13 @@ describe('apis.list / auth.claim', () => {
     // test.ts's twoRouteHostOptions for a custom profileInputs.user.provider.routes). daemon's local
     // openTestHost wrapper (./host.js) does not forward profileInputs, so this reaches straight for
     // @agnes/host/testkit's createTestHost, the same escape hatch other daemon tests already use.
-    const model = fakeModel({ id: 'm1', route: 'gw', reasoning: true, thinkingLevelMap: { high: 'high' } })
+    const model = fakeModel({
+      id: 'm1',
+      route: 'gw',
+      reasoning: true,
+      thinkingLevelMap: { high: 'high' },
+      defaultSettings: { thinking: 'high', contextWindow: 64000 },
+    })
     const dataDir = mkdtempSync(join(tmpdir(), 'agnesd-apis-list-'))
     try {
       const { host } = await createTestHost({
@@ -171,6 +177,8 @@ describe('apis.list / auth.claim', () => {
         id: 'm1',
         reasoning: true,
         thinkingLevelMap: { high: 'high' },
+        contextWindow: model.contextWindow,
+        defaultSettings: { thinking: 'high', contextWindow: 64000 },
       })
       await ep.close()
       await host.close()

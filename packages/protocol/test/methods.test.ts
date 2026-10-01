@@ -901,6 +901,23 @@ describe('methods (I1 set)', () => {
       ),
     ).toContainEqual(expect.objectContaining({ code: 'ENUM', key: 'slot' }))
     expect(validateMethod('_agnes/v1/session.setModel', 'result', { effectiveFromSeq: 1 }).ok).toBe(true)
+    const selection = { sessionId: 's', slot: 'primary', route: 'r1', model: 'm' }
+    for (const settings of [
+      { thinking: 'high', contextWindow: 32000 },
+      { thinking: null, contextWindow: null },
+    ])
+      expect(validateMethod('_agnes/v1/session.setModel', 'params', { ...selection, ...settings }).ok).toBe(
+        true,
+      )
+    for (const settings of [
+      { thinking: 'unknown' },
+      { contextWindow: 0 },
+      { contextWindow: 1.5 },
+      { contextWindow: Number.MAX_SAFE_INTEGER + 1 },
+    ])
+      expect(validateMethod('_agnes/v1/session.setModel', 'params', { ...selection, ...settings }).ok).toBe(
+        false,
+      )
   })
 
   it('setYolo takes a sessionId and a boolean and returns the seq it takes effect from', () => {

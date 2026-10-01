@@ -1,3 +1,5 @@
+import type { ModelSettings } from '@agnes/protocol'
+
 export { shouldShowEmptyState } from './conversation-visibility.js'
 
 export type ComposerPresentation = {
@@ -15,7 +17,7 @@ export type ComposerActionPresentation = {
   title: string
 }
 
-export type KnownSessionModel = { route: string; id: string }
+export type KnownSessionModel = { route: string; id: string; settings?: ModelSettings }
 
 type ResizeableComposer = {
   scrollHeight: number

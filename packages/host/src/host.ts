@@ -129,7 +129,13 @@ export interface Host {
   validatePresetSwitch(name: string): ResolvedPreset
   /** Same gate, for `session.setModel`. Throws `HostError` on a selection outside this deployment's
    *  assembled route table; the caller passes `sel` unchanged on to `session.setModel()`. */
-  validateModelSwitch(sel: { slot: string; route: string; model: string; thinking?: ThinkingLevel }): void
+  validateModelSwitch(sel: {
+    slot: string
+    route: string
+    model: string
+    thinking?: ThinkingLevel | null
+    contextWindow?: number | null
+  }): void
 }
 
 export async function createHost(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {

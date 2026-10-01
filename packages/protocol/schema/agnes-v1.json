@@ -325,7 +325,9 @@
                     "additionalProperties": {
                       "type": "string"
                     }
-                  }
+                  },
+                  "contextWindow": { "type": "integer", "minimum": 1 },
+                  "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" }
                 }
               }
             },
@@ -2329,6 +2331,7 @@
           "additionalProperties": false,
           "required": ["route", "id", "thinking"],
           "properties": {
+            "settings": { "$ref": "model.json#/$defs/ModelSettings" },
             "route": {
               "type": "string",
               "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
@@ -3511,7 +3514,12 @@
           "type": "string"
         },
         "thinking": {
-          "$ref": "model.json#/$defs/ThinkingLevel"
+          "anyOf": [{ "$ref": "model.json#/$defs/ThinkingLevel" }, { "type": "null" }]
+        },
+        "contextWindow": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       }
     },
@@ -3683,6 +3691,7 @@
       "additionalProperties": false,
       "required": ["action"],
       "properties": {
+        "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
         "action": {
           "enum": ["start", "poll", "answer", "test", "commit", "cancel"]
         },
@@ -3855,6 +3864,10 @@
       "additionalProperties": false,
       "required": ["id", "name"],
       "properties": {
+        "reasoning": { "type": "boolean" },
+        "thinkingLevelMap": { "type": "object", "additionalProperties": { "type": "string" } },
+        "contextWindow": { "type": "integer", "minimum": 1 },
+        "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -3992,6 +4005,7 @@
       "additionalProperties": false,
       "required": ["providerId", "model"],
       "properties": {
+        "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
         "providerId": {
           "type": "string",
           "minLength": 1,

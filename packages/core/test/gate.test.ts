@@ -1,7 +1,9 @@
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import { CompactionRunner } from '../src/step/compaction.js'
 import { compactionTriggerTokens, contextTokens } from '../src/step/gate.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
+import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
 
 const sig = () => new AbortController().signal
@@ -69,24 +71,81 @@ describe('contextTokens', () => {
 })
 
 describe('checkpointRoutine compaction threshold', () => {
-  it('passes the real model contextWindow to shouldCompact, not the fallback default', async () => {
-    const provider = fakeProvider([textTurn('a')])
-    Object.assign(provider, { models: () => [modelRecord('default', 'big-model', 321)] })
-    const { session } = await openSession({ provider })
-    const seen: number[] = []
-    session.compaction = {
-      shouldCompact: ({ contextWindow }) => {
-        seen.push(contextWindow)
-        return false
-      },
-      onOverflow: () => 'failure',
-    }
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
-    // The threshold is checked at both checkpoints a plain text turn passes through (before
-    // inference and again on the way to stopGate); both must see the real window, not just one.
-    expect(seen).toEqual([321, 321])
-  })
+  it.each([
+    [4096, 128000],
+    [8192, 128000],
+    [16384, 128000],
+    [16385, 128000],
+    [32000, 128000],
+    [128000, 128000],
+    [8192, 8192],
+    [16384, 16384],
+  ])(
+    'answers short prompts within a %s-token window on a %s-token model without asking for a context exception',
+    async (window, capacity) => {
+      for (const defaults of [false, true]) {
+        const provider = fakeProvider([textTurn('ok')])
+        provider.models = () => [
+          {
+            ...modelRecord('default', 'big-model', capacity),
+            ...(defaults ? { defaultSettings: { contextWindow: window } } : {}),
+          },
+        ]
+        const { session, log } = await openSession({
+          provider,
+          compaction: new CompactionRunner({ plan: async () => null, onCompact: async () => undefined }),
+          seams: fakeSeams({ approval: { ask: async () => 'rejected' } }),
+        })
+        if (!defaults)
+          await session.setModel({
+            slot: 'primary',
+            route: 'default',
+            model: 'big-model',
+            contextWindow: window,
+          })
+        for (const text of ['hi', 'continue']) {
+          await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
+          expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+        }
+        expect((await log.scan({ type: 'assistant/message', limit: 10 })).map((row) => row.data)).toEqual([
+          expect.objectContaining({ content: [{ type: 'text', text: 'ok' }] }),
+          expect.objectContaining({ content: [{ type: 'text', text: 'ok' }] }),
+        ])
+        expect(await log.scan({ type: 'approval/asked', limit: 10 })).toEqual([])
+        expect((await session.projectUI()).usage?.context.window).toBe(window)
+      }
+    },
+  )
+
+  it.each([undefined, 123])(
+    'passes the effective context window %s to compaction and usage',
+    async (window) => {
+      const provider = fakeProvider([textTurn('a')])
+      Object.assign(provider, { models: () => [modelRecord('default', 'big-model', 321)] })
+      const { session } = await openSession({ provider })
+      if (window !== undefined)
+        await session.setModel({
+          slot: 'primary',
+          route: 'default',
+          model: 'big-model',
+          contextWindow: window,
+        })
+      const seen: number[] = []
+      session.compaction = {
+        shouldCompact: ({ contextWindow }) => {
+          seen.push(contextWindow)
+          return false
+        },
+        onOverflow: () => 'failure',
+      }
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      // The threshold is checked at both checkpoints a plain text turn passes through (before
+      // inference and again on the way to stopGate); both must see the real window, not just one.
+      expect(seen).toEqual([window ?? 321, window ?? 321])
+      expect((await session.projectUI()).usage?.context.window).toBe(window ?? 321)
+    },
+  )
 
   it('falls back to the default only when the provider publishes no matching record', async () => {
     const { session } = await openSession({ provider: fakeProvider([textTurn('a')]) })

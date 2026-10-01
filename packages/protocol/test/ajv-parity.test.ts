@@ -228,6 +228,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   SurfaceOp: SessionGen.SurfaceOp,
   EventEnvelope: SessionGen.EventEnvelope,
   SessionStart: SessionGen.SessionStart,
+  SessionModelSelection: SessionGen.SessionModelSelection,
   SubagentCost: SessionGen.SubagentCost,
   TurnStart: SessionGen.TurnStart,
   TurnEnd: SessionGen.TurnEnd,
@@ -471,6 +472,7 @@ const MODEL_DEFS: Record<string, TSchema> = {
   ResponseMeta: ModelGen.ResponseMeta,
   SlotName: ModelGen.SlotName,
   ThinkingLevel: ModelGen.ThinkingLevel,
+  ModelSettings: ModelGen.ModelSettings,
   AiErrorCode: ModelGen.AiErrorCode,
   DecodeRule: ModelGen.DecodeRule,
   Sha256: ModelGen.Sha256,
@@ -864,6 +866,15 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'valid and the first two invalid reuse fixtures/events/envelope.jsonl; the rest are per-constraint boundary negatives',
   },
+  SessionModelSelection: {
+    valid: { slot: 'primary', route: 'r', model: 'm', settings: { thinking: 'high', contextWindow: 32000 } },
+    invalid: [
+      { slot: 'primary', route: 'r', model: 'm' },
+      { slot: 'primary', route: 'r', model: 'm', settings: { contextWindow: 0 } },
+      { slot: 'primary', route: 'r', model: 'm', settings: { thinking: 'unknown' } },
+    ],
+    note: 'a session snapshot includes settings and validates their window and thinking level',
+  },
   SessionStart: {
     valid: sessionStartOk,
     invalid: [
@@ -877,6 +888,15 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { ...sessionStartOk, parent: { key: 'k', boundarySeq: 0 } }, // boundary: minimum:1
       { ...sessionStartOk, imported: { source: 'nope', sourceId: 'x', cwd: '/x' } }, // enum
       { ...sessionStartOk, imported: { source: 'codex', sourceId: 'x', cwd: rep(4097) } }, // boundary: maxLength:4096
+      {
+        ...sessionStartOk,
+        modelSettings: Array.from({ length: 8 }, () => ({
+          slot: 'primary',
+          route: 'r',
+          model: 'm',
+          settings: {},
+        })),
+      }, // maxItems:7
     ],
     note: 'valid and the first invalid reuse the .data of fixtures/events/i1-types.jsonl; the rest are boundary negatives',
   },
@@ -3100,6 +3120,17 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     valid: 'max',
     invalid: ['extreme', 'High', 1],
     note: 'thinking levels are the closed off/minimal/low/medium/high/xhigh/max set exposed by onboarding and presets',
+  },
+  ModelSettings: {
+    valid: { thinking: 'high', contextWindow: 32000 },
+    invalid: [
+      { thinking: 'unknown' },
+      { contextWindow: 0 },
+      { contextWindow: 1.5 },
+      { contextWindow: Number.MAX_SAFE_INTEGER + 1 },
+      { maxTokens: 8192 },
+    ],
+    note: 'optional settings accept supported enum values and a positive safe window; extra keys are rejected',
   },
   AiErrorCode: {
     valid: 'RATE_LIMIT',

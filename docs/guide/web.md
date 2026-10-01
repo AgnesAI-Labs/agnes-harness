@@ -38,6 +38,8 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 5. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
 6. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
 
+Choose **思考 · 上下文** beside the composer model picker to set reasoning intensity and context window for this session. The choices reflect the selected model's supported levels; leave the window empty to restore catalog capacity. Applying saves the settings for subsequent requests and reopening. Account settings provide defaults for new sessions. Existing sessions keep their saved settings when those defaults change.
+
 ### Inspect the trajectory
 
 Switch from Chat to Trajectory to review a session by turn and step. Select a record for its status, duration, error, and available token usage. The timeline offers four order and duration modes: drag to filter, scroll to zoom, right-drag to pan, and press Escape to clear the range.
