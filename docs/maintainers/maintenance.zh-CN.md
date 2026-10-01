@@ -51,8 +51,8 @@ pnpm gen:check
 
 README 与架构说明共用[英文](../assets/architecture.svg)和[中文](../assets/architecture.zh-CN.svg) SVG。[生成脚本](../../tools/public-docs/render-architecture.mjs)维护一套布局与两份语言文案。修改脚本后运行 `node tools/public-docs/render-architecture.mjs`；`node tools/public-docs/render-architecture.mjs --check` 检查两张 SVG 是否与图源一致。需要查看两种语言的实际渲染，确认文字不越界，并在 README 宽度下保持可读。插图只用 CSS 与 SMIL 做动画，因此在 GitHub 的图片视图中也能播放，读者设置减少动态效果时保持静止；需要在浏览器中分别检查静止后的布局和动画过程。
 
-角色比喻与实现声明应分别表达。实线表示已有软件能力，虚线表示规划中的 AGH 接入。支持状态以 main 的实际代码与指南为准，并保持 README、架构说明和设备方向页一致。
+角色比喻与实现声明应分别表达：插图展示目标架构，README 角色表写明各角色的当前范围。当前范围以 main 的实际代码与指南为准，并保持 README、架构说明和设备接入页一致。
 
 ## README 演示素材
 
-[`docs/assets/readme/`](../assets/readme/) 中的横幅、动图与截图从本地实例录制，录制时使用隔离的 `AGH_HOME`、合成的示例工作区和已配置的模型；任何一帧都不得出现凭据、个人路径或客户数据。采用某次录制前，先核对画面中每个回答是否正确，字幕不超出指南与[已知限制](../reference/limitations.zh-CN.md)的表述。界面或所演示的流程变化后，需要重新录制。动画介绍 `trailer.webp` 是渲染出的动态图形而不是录屏：角色、支持状态或 FDE、MHS 表述变化时，需要与架构图一起更新，规划中的内容始终标为规划中。
+[`docs/assets/readme/`](../assets/readme/) 中的横幅、动图与截图从本地实例录制，录制时使用隔离的 `AGH_HOME`、合成的示例工作区和已配置的模型；任何一帧都不得出现凭据、个人路径或客户数据。采用某次录制前，先核对画面中每个回答是否正确，字幕不超出指南与[已知限制](../reference/limitations.zh-CN.md)的表述。界面或所演示的流程变化后，需要重新录制。动画介绍 `trailer.webp` 是渲染出的动态图形而不是录屏：角色、支持状态或 FDE、MHS 表述变化时，需要与架构图一起更新，保持两者表述一致。

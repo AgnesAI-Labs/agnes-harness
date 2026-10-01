@@ -10,9 +10,9 @@ AGH 的客户端展示状态，daemon 管理会话与控制面，Host 组装运�
 
 ## 大脑、小脑、记忆与身体
 
-**LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。** 这是一组描述产品愿景的角色比喻。总览图用虚线标出规划中的接入；下方请求链路图对应当前软件实现。
+**LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。** 这是一组描述产品愿景的角色比喻，总览图展示目标架构；下方请求链路图对应当前软件实现。
 
-![AGH 架构与应用方向：Jev 和 MHS 接入用虚线标为规划](../assets/architecture.zh-CN.svg)
+![AGH 架构与应用方向：四个角色在同一套运行时中，支撑企业 FDE 交付与 MHS 设备接入](../assets/architecture.zh-CN.svg)
 
 | 概念 | 职责与实现边界 |
 | --- | --- |
@@ -99,6 +99,6 @@ FDE 是交付方式，MHS 是设备接入方向。FDE 交付可通过 AGH 已有
 
 普通后端插件作为受信进程内代码执行；一次工具审批或可用的命令沙箱不代表任意插件代码已被隔离。审批、沙箱等必要接缝由受信部署配置选择；普通扩展注册工具或 hook 不会获得替换它们的权限。详见[安全与信任](../guide/security.zh-CN.md)。
 
-MHS 适配器对应总览图中的虚线规划分支，基于 MCP（Model Context Protocol）而非厂商专属 SDK 或 ROS 桥接；接入指南与示例[即将开放](../guide/mhs.zh-CN.md)。仅完成一次 MCP 连接本身不构成 MHS 兼容证明，因为目前没有可供认证的公开 MHS 规范；取消任务也不代表物理设备已安全停止。企业部署、审计、隔离与设备动作均需在实际环境中分别验证。
+MHS 适配器对应总览图中的设备分支，基于 MCP（Model Context Protocol）而非厂商专属 SDK 或 ROS 桥接；接入指南与示例[即将开放](../guide/mhs.zh-CN.md)。仅完成一次 MCP 连接本身不构成 MHS 兼容证明，因为目前没有可供认证的公开 MHS 规范；取消任务也不代表物理设备已安全停止。企业部署、审计、隔离与设备动作均需在实际环境中分别验证。
 
 源码依据：[Host](../../packages/host/src/assemble.ts)、[Worker](../../packages/worker-runtime/src/main.ts)、[Core](../../packages/core/src)、[Daemon](../../packages/daemon/src/supervisor/supervisor.ts)、[运行目标发布](../../packages/host/src/runtime-target-publisher.ts)、[Web Context](../../packages/web/src/client-modules/boot.ts)。

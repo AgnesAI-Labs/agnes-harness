@@ -24,12 +24,12 @@
 </div>
 
 <p align="center">
-  <img src="docs/assets/readme/trailer.webp" alt="动画介绍：大脑（LLM）、小脑（Jev，规划中）、记忆（Harness）与身体（MHS，规划中，经 MCP 接入）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付，并规划接入物理世界的 MHS" width="100%" />
+  <img src="docs/assets/readme/trailer.webp" alt="动画介绍：大脑（LLM）、小脑（Jev）、记忆（Harness）与身体（MHS，经 MCP 连接设备）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付与物理世界的 MHS 接入" width="100%" />
 </p>
 
 <p align="center">
   <b>LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。</b><br />
-  <sub>Jev 与 MHS 属于规划中的接入，MHS 以 MCP 为基础。<a href="#architecture">查看架构</a></sub>
+  <sub>同一套底座，支撑企业 FDE 交付与物理世界的 MHS 接入。<a href="#architecture">查看架构</a></sub>
 </p>
 
 把 AI 带进真实现场，难点往往不在模型本身，而在客户的业务系统、负责审批的人，以及每个现场都不一样的细节。Agnes Harness（AGH）把模型、工具、任务状态和业务界面连接在一起：**把现场差异写进插件，让 Harness 负责执行并留下记录，把验证过的能力带到下一个项目。**
@@ -73,20 +73,20 @@
 
 ## 架构：大脑、小脑、记忆与身体
 
-大脑、小脑、记忆与身体这组比喻表达 AGH 的产品愿景：把推理、结构化决策、持久任务上下文和物理能力组织到一起。下图区分已有软件路径与规划中的接入。
+大脑、小脑、记忆与身体这组比喻表达 AGH 的产品愿景：把推理、结构化决策、持久任务上下文和物理能力组织到一起。下图展示四个角色在同一套运行时中的位置。
 
-![AGH 架构：LLM 是大脑、Jev 是小脑、Harness 是记忆、MHS 是身体；Jev 和设备接入以虚线标为规划](docs/assets/architecture.zh-CN.svg)
+![AGH 架构：LLM 是大脑、Jev 是小脑、Harness 是记忆、MHS 是身体，同一套运行时支撑企业 FDE 交付与 MHS 设备接入](docs/assets/architecture.zh-CN.svg)
 
 | 角色 | 在 AGH 中意味着什么 | 当前范围 |
 | --- | --- | --- |
 | **LLM / 大脑** | 理解请求、推理任务、提出行动建议 | 经 AI Provider 接入模型 |
-| **Jev / 小脑** | 路由、评分等结构化决策，协助协调执行 | 规划接入；main 当前使用内置 Core 循环 |
+| **Jev / 小脑** | 路由、评分等结构化决策，协助协调执行 | 接入进行中；main 当前使用内置 Core 循环 |
 | **Harness / 记忆** | 保存会话历史、任务状态、执行记录，以及沉淀在 Skills 中的可复用方法 | 已有任务上下文与恢复机制；Harness 同时负责执行与治理 |
-| **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | 规划通过基于 MCP 的适配器接入设备；AGH 接入文档与示例即将开放 |
+| **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | 通过基于 MCP 的适配器接入设备；AGH 接入文档与示例即将开放 |
 
-FDE 是交付方式，MHS 是设备接入方向。两者使用同一套底座，FDE 的现场交付也可以包含设备场景。
+FDE 是交付方式，MHS 负责把设备接进来。两者使用同一套底座，FDE 的现场交付也可以包含设备场景。
 
-| 共享模块 | 当前怎样支撑 FDE | 后续 MHS 接入可以复用什么 |
+| 共享模块 | 当前怎样支撑 FDE | MHS 接入复用什么 |
 | --- | --- | --- |
 | **App Server / 统一接入** | 为 CLI、Web、SDK 提供共享会话、任务提交、事件推送与审批路由 | 任务入口、人工确认与状态展示 |
 | **Agent Loop / 执行循环** | 模型与工具执行、任务状态、事件记录、中断处理与恢复 | 高层设备任务编排与结果记录 |
@@ -209,7 +209,7 @@ AGH 当前为开发者预览。
 | 插件：后端工具与服务、Web 面板、Skills、hooks、MCP | 可用，有已记录的限制 |
 | 命令沙箱与执行约束 | 取决于平台 |
 | 平台 | 已在 macOS + Node 24 上记录本地检查；Linux 与 Windows 需另行验收 |
-| Jev 结构化决策 | 规划中 |
+| Jev 结构化决策 | 接入中 |
 | MHS 设备接入（基于 MCP） | 即将开放 |
 
 [支持范围与已知限制](docs/reference/limitations.zh-CN.md)帮助你选择试用环境；[验证与复现](docs/maintainers/verification.zh-CN.md)提供检查命令与验收范围。

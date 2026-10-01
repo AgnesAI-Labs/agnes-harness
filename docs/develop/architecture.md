@@ -12,9 +12,9 @@ Clients present state, the daemon manages sessions and the control plane, Host a
 
 ## Brain, cerebellum, memory and body
 
-**LLM is the brain, Jev is the cerebellum, Harness is the memory, and MHS is the body.** This is a role metaphor for the product vision. The overview marks planned integrations with dashed outlines; the request diagram below follows the existing software implementation.
+**LLM is the brain, Jev is the cerebellum, Harness is the memory, and MHS is the body.** This is a role metaphor for the product vision, and the overview shows the target architecture; the request diagram below follows the existing software implementation.
 
-![AGH architecture and deployment paths, with planned Jev and MHS integration shown using dashed outlines](../assets/architecture.svg)
+![AGH architecture and deployment paths: the four roles in one runtime that serves enterprise FDE delivery and MHS device integration](../assets/architecture.svg)
 
 | Concept | Responsibility and implementation boundary |
 | --- | --- |
@@ -115,6 +115,6 @@ FDE is a delivery approach; MHS is a device integration direction. An FDE deploy
 
 Ordinary backend plugins execute as trusted in-process code. A tool approval or available command sandbox does not isolate arbitrary plugin code. Approvals, sandbox behavior, and other required seams are selected by trusted deployment configuration; ordinary extensions do not acquire the right to replace them by registering a tool or hook. See [security and trust](../guide/security.md).
 
-MHS adapters are the dashed, planned branch in the overview, built on MCP (Model Context Protocol) rather than a vendor-specific SDK or a ROS bridge. Integration guides and examples are [coming soon](../guide/mhs.md); a bare MCP connection alone does not establish MHS compatibility, since no public MHS specification is open for certification. Task cancellation does not establish that a physical device stopped safely. Enterprise deployment, audit, isolation, and device actions each need validation in their actual environment.
+MHS adapters are the device branch in the overview, built on MCP (Model Context Protocol) rather than a vendor-specific SDK or a ROS bridge. Integration guides and examples are [coming soon](../guide/mhs.md); a bare MCP connection alone does not establish MHS compatibility, since no public MHS specification is open for certification. Task cancellation does not establish that a physical device stopped safely. Enterprise deployment, audit, isolation, and device actions each need validation in their actual environment.
 
 Source: [Host](../../packages/host/src/assemble.ts), [Worker](../../packages/worker-runtime/src/main.ts), [Core](../../packages/core/src), [Daemon](../../packages/daemon/src/supervisor/supervisor.ts), [runtime-target publication](../../packages/host/src/runtime-target-publisher.ts), [Web Context](../../packages/web/src/client-modules/boot.ts).

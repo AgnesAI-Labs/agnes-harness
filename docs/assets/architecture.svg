@@ -1,48 +1,44 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1400" viewBox="0 0 1200 1400" role="img" aria-labelledby="title description" xml:lang="en">
 <title id="title">Agnes Harness — One execution foundation for field delivery and the physical world</title>
-<desc id="description">Animated AGH architecture. LLM is the brain, Jev the cerebellum, Harness the memory and MHS the body; Jev and MHS are planned, and MHS device adapters build on MCP. Clients reach the App Server, the Agent Runtime runs the agent loop with Harness memory and controlled execution, plugins extend the runtime, and the same foundation serves enterprise FDE delivery and future physical-world integration.</desc>
+<desc id="description">Animated AGH architecture. LLM is the brain, Jev the cerebellum, Harness the memory and MHS the body; MHS device adapters build on MCP. Clients reach the App Server, the Agent Runtime runs the agent loop with Harness memory and controlled execution, plugins extend the runtime, and the same foundation serves enterprise FDE delivery and physical-world integration.</desc>
 <defs><radialGradient id="bg" cx="50%" cy="0%" r="95%"><stop offset="0" stop-color="#26307a"/><stop offset=".55" stop-color="#121a48"/><stop offset="1" stop-color="#0a0f2b"/></radialGradient><radialGradient id="halo"><stop offset="0" stop-color="#7c8cff" stop-opacity=".9"/><stop offset="1" stop-color="#7c8cff" stop-opacity="0"/></radialGradient><radialGradient id="core"><stop offset="0" stop-color="#2b3690"/><stop offset="1" stop-color="#151c52"/></radialGradient><linearGradient id="sweepGrad" x1="0" x2="1"><stop offset="0" stop-color="#38d6ff" stop-opacity="0"/><stop offset=".5" stop-color="#38d6ff" stop-opacity=".28"/><stop offset="1" stop-color="#38d6ff" stop-opacity="0"/></linearGradient><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="rgba(255,255,255,0.045)" stroke-width="1"/></pattern><clipPath id="memclip"><rect x="880" y="590" width="232" height="196" rx="10"/></clipPath><style>.beat{opacity:0;animation:beat 12s ease-in-out infinite}@keyframes beat{0%,100%{opacity:0}4%{opacity:1}13%{opacity:0}}.pulse{animation:pulse 2.6s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:.9}}.march{animation:march 1.4s linear infinite}@keyframes march{to{stroke-dashoffset:-28}}.spin{transform-box:fill-box;transform-origin:center;animation:spin 9s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.comet{animation:comet 6s linear infinite}@keyframes comet{to{stroke-dashoffset:-628.3}}.sweep{animation:sweep 3.6s ease-in-out infinite}@keyframes sweep{0%{transform:translateX(-90px)}60%,100%{transform:translateX(330px)}}.pin{animation:pin 12s ease-in-out infinite}@keyframes pin{0%,46%,62%,100%{opacity:.35}50%{opacity:1}}@media (prefers-reduced-motion:reduce){*{animation:none!important}.motion{display:none}}</style></defs>
 <rect width="1200" height="1400" rx="24" fill="url(#bg)"/>
 <rect width="1200" height="1400" rx="24" fill="url(#grid)"/>
 <g font-family="Inter, -apple-system, Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif">
 <text x="60" y="76" font-size="38" font-weight="800" fill="#eef1ff">Agnes Harness</text>
 <text x="60" y="110" font-size="17" font-weight="400" fill="#9aa6d8">One execution foundation for field delivery and the physical world</text>
-<path d="M 820 64 H 852" stroke="#38d6ff" stroke-width="2.4"/>
-<text x="862" y="69" font-size="13" font-weight="400" fill="#9aa6d8">Solid: existing software paths</text>
-<path d="M 820 94 H 852" stroke="#fbbf24" stroke-width="2.4" stroke-dasharray="6 5" class="march"/>
-<text x="862" y="99" font-size="13" font-weight="400" fill="#9aa6d8">Dashed: planned AGH integration</text>
-<rect x="60" y="148" width="255" height="104" rx="18" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.45)" stroke-width="1.4"/>
+<rect x="60" y="148" width="255" height="104" rx="18" fill="rgba(180,155,255,0.07)" stroke="rgba(180,155,255,0.55)" stroke-width="1.4"/>
 <circle cx="106" cy="200" r="30" fill="url(#halo)" class="pulse" style="animation-delay:0s"/>
 <circle cx="106" cy="200" r="24" fill="url(#core)" stroke="#b49bff" stroke-width="1.4"/>
 <g transform="translate(93 187) scale(1.0833333333333333)" fill="none" stroke="#b49bff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5a3 3 0 0 0-5.6 1.2A3.2 3.2 0 0 0 4.6 12a3.3 3.3 0 0 0 2.3 5 3 3 0 0 0 5.1 1.4z"/><path d="M12 5.5a3 3 0 0 1 5.6 1.2 3.2 3.2 0 0 1 1.8 5.3 3.3 3.3 0 0 1-2.3 5A3 3 0 0 1 12 18.4"/><path d="M8.5 10.5c1 .3 1.8 1 2 2M15.5 10.5c-1 .3-1.8 1-2 2"/></g>
 <text x="146" y="186" font-size="18" font-weight="800" fill="#eef1ff">LLM</text>
 <text x="195" y="186" font-size="15" font-weight="600" fill="#b49bff">Brain</text>
 <text x="146" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">Reasoning and actions</text>
-<text x="146" y="232" font-size="12" font-weight="600" fill="#34d399">Via AI providers</text>
-<rect x="335" y="148" width="255" height="104" rx="18" fill="rgba(251,191,36,0.06)" stroke="rgba(251,191,36,0.75)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<text x="146" y="232" font-size="12" font-weight="600" fill="#b49bff">Via AI providers</text>
+<rect x="335" y="148" width="255" height="104" rx="18" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.55)" stroke-width="1.4"/>
 <circle cx="381" cy="200" r="30" fill="url(#halo)" class="pulse" style="animation-delay:0.6s"/>
 <circle cx="381" cy="200" r="24" fill="url(#core)" stroke="#fbbf24" stroke-width="1.4"/>
 <g transform="translate(368 187) scale(1.0833333333333333)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="7" r="2.2"/><circle cx="12" cy="18" r="2.2"/><circle cx="12" cy="11" r="1.4"/><path d="M8 7.6l2.8 2.6M16 7.6l-2.8 2.6M12 12.4v3.4"/></g>
 <text x="421" y="186" font-size="18" font-weight="800" fill="#eef1ff">Jev</text>
 <text x="465" y="186" font-size="15" font-weight="600" fill="#fbbf24">Cerebellum</text>
 <text x="421" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">Decisions and routing</text>
-<text x="421" y="232" font-size="12" font-weight="600" fill="#fbbf24">Planned</text>
-<rect x="610" y="148" width="255" height="104" rx="18" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.45)" stroke-width="1.4"/>
+<text x="421" y="232" font-size="12" font-weight="600" fill="#fbbf24">Works with the agent loop</text>
+<rect x="610" y="148" width="255" height="104" rx="18" fill="rgba(56,214,255,0.07)" stroke="rgba(56,214,255,0.55)" stroke-width="1.4"/>
 <circle cx="656" cy="200" r="30" fill="url(#halo)" class="pulse" style="animation-delay:1.2s"/>
 <circle cx="656" cy="200" r="24" fill="url(#core)" stroke="#38d6ff" stroke-width="1.4"/>
 <g transform="translate(643 187) scale(1.0833333333333333)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/><path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></g>
 <text x="696" y="186" font-size="18" font-weight="800" fill="#eef1ff">Harness</text>
 <text x="782" y="186" font-size="15" font-weight="600" fill="#38d6ff">Memory</text>
 <text x="696" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">State, history, methods</text>
-<text x="696" y="232" font-size="12" font-weight="600" fill="#34d399">Sessions, records, Skills</text>
-<rect x="885" y="148" width="255" height="104" rx="18" fill="rgba(251,191,36,0.06)" stroke="rgba(251,191,36,0.75)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<text x="696" y="232" font-size="12" font-weight="600" fill="#38d6ff">Sessions, records, Skills</text>
+<rect x="885" y="148" width="255" height="104" rx="18" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.55)" stroke-width="1.4"/>
 <circle cx="931" cy="200" r="30" fill="url(#halo)" class="pulse" style="animation-delay:1.7999999999999998s"/>
 <circle cx="931" cy="200" r="24" fill="url(#core)" stroke="#fbbf24" stroke-width="1.4"/>
 <g transform="translate(918 187) scale(1.0833333333333333)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h9M8.5 20v-6l6-5 4 2"/><circle cx="8.5" cy="14" r="1.6"/><circle cx="14.5" cy="9" r="1.6"/><path d="M18.5 11v2.5"/></g>
 <text x="971" y="186" font-size="18" font-weight="800" fill="#eef1ff">MHS</text>
 <text x="1020" y="186" font-size="15" font-weight="600" fill="#fbbf24">Body</text>
 <text x="971" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">Physical devices</text>
-<text x="971" y="232" font-size="12" font-weight="600" fill="#fbbf24">Planned · via MCP</text>
+<text x="971" y="232" font-size="12" font-weight="600" fill="#fbbf24">Devices via MCP</text>
 <rect x="60" y="284" width="1080" height="140" rx="18" fill="rgba(255,255,255,0.035)" stroke="rgba(132,150,255,0.30)" stroke-width="1.4"/>
 <text x="84" y="316" font-size="14" font-weight="800" fill="#38d6ff" letter-spacing="1.6">APP SERVER</text>
 <text x="84" y="338" font-size="13" font-weight="400" fill="#9aa6d8">Shared sessions · task submission · event streaming · approval routing</text>
@@ -98,7 +94,7 @@
 <g class="motion" fill="#ffffff" opacity="0"><circle r="11.700000000000001" opacity=".22"/><circle r="4.5"/><animateMotion path="M 600 580 A 100 100 0 0 1 600 780 A 100 100 0 0 1 600 580" dur="6s" begin="0s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="6s" begin="0s" repeatCount="indefinite"/></g>
 <circle cx="806" cy="590" r="27" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.6" stroke-dasharray="4 5" class="spin"/>
 <g transform="translate(794 578) scale(1)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="7" r="2.2"/><circle cx="12" cy="18" r="2.2"/><circle cx="12" cy="11" r="1.4"/><path d="M8 7.6l2.8 2.6M16 7.6l-2.8 2.6M12 12.4v3.4"/></g>
-<text x="806" y="550" font-size="12" font-weight="600" fill="#fbbf24" text-anchor="middle">Jev routing · planned</text>
+<text x="806" y="550" font-size="12" font-weight="600" fill="#fbbf24" text-anchor="middle">Jev routing</text>
 <path d="M 784 606 L 716 636" stroke="#fbbf24" stroke-width="1.6" stroke-dasharray="4 5" class="march" fill="none"/>
 <rect x="868" y="556" width="248" height="236" rx="16" fill="rgba(56,214,255,0.06)" stroke="rgba(56,214,255,0.45)" stroke-width="1.4"/>
 <g transform="translate(885 567) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/><path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></g>
@@ -184,28 +180,28 @@
 <g transform="translate(343 1287) scale(0.9166666666666666)" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></g>
 <text x="376" y="1303" font-size="14.5" font-weight="600" fill="#eef1ff">Domain software</text>
 <text x="84" y="1336" font-size="12" font-weight="400" fill="#6f7bb3">Connectors are built and validated per site</text>
-<rect x="612" y="1150" width="528" height="196" rx="18" fill="rgba(251,191,36,0.05)" stroke="rgba(251,191,36,0.8)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<rect x="612" y="1150" width="528" height="196" rx="18" fill="rgba(251,191,36,0.05)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4"/>
 <text x="636" y="1182" font-size="14" font-weight="800" fill="#fbbf24" letter-spacing="1.4">MHS · PHYSICAL WORLD</text>
-<text x="636" y="1204" font-size="13" font-weight="400" fill="#9aa6d8">Planned · built on MCP</text>
-<rect x="636" y="1222" width="220" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<text x="636" y="1204" font-size="13" font-weight="400" fill="#9aa6d8">Built on MCP</text>
+<rect x="636" y="1222" width="220" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.45)" stroke-width="1.4"/>
 <g transform="translate(651 1233) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.6"/><path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/></g>
 <text x="684" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">MCP adapter</text>
-<rect x="896" y="1222" width="220" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<rect x="896" y="1222" width="220" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.45)" stroke-width="1.4"/>
 <g transform="translate(911 1233) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16a7.5 7.5 0 1 1 15 0"/><path d="M12 16l3.5-4.5"/><circle cx="12" cy="16" r="1.2"/></g>
 <text x="944" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">Controller</text>
 <path d="M 856 1244 H 892" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 4" class="march"/>
-<rect x="636" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<rect x="636" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.45)" stroke-width="1.4"/>
 <g transform="translate(651 1287) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5h4l-1 8h-2zM11.5 11.5v3M5 20h14M15.5 17.5a5 5 0 0 0-3-6"/></g>
 <text x="684" y="1303" font-size="13.5" font-weight="600" fill="#eef1ff">Microscope</text>
-<rect x="800" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<rect x="800" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.45)" stroke-width="1.4"/>
 <g transform="translate(815 1287) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h9M8.5 20v-6l6-5 4 2"/><circle cx="8.5" cy="14" r="1.6"/><circle cx="14.5" cy="9" r="1.6"/><path d="M18.5 11v2.5"/></g>
 <text x="848" y="1303" font-size="13.5" font-weight="600" fill="#eef1ff">Robotic arm</text>
-<rect x="964" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<rect x="964" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.45)" stroke-width="1.4"/>
 <g transform="translate(979 1287) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5h5M10.5 3.5v6l-5 8.8a1.6 1.6 0 0 0 1.4 2.2h10.2a1.6 1.6 0 0 0 1.4-2.2l-5-8.8v-6"/><path d="M7.6 15h8.8"/></g>
 <text x="1012" y="1303" font-size="13.5" font-weight="600" fill="#eef1ff">Liquid handler</text>
 <text x="636" y="1336" font-size="12" font-weight="400" fill="#6f7bb3">Illustrative devices · interlocks and e-stops stay on devices</text>
 <g class="beat" style="animation-delay:8s" fill="none" stroke="#34d399"><rect x="60" y="1150" width="528" height="196" rx="18" stroke-width="9" stroke-opacity=".22"/><rect x="60" y="1150" width="528" height="196" rx="18" stroke-width="2.4"/></g>
 <g class="beat" style="animation-delay:8.6s" fill="none" stroke="#fbbf24"><rect x="612" y="1150" width="528" height="196" rx="18" stroke-width="9" stroke-opacity=".22"/><rect x="612" y="1150" width="528" height="196" rx="18" stroke-width="2.4"/></g>
-<text x="600" y="1380" font-size="13.5" font-weight="400" fill="#9aa6d8" text-anchor="middle">FDE is a delivery approach. MHS is a device integration direction. Both run on the same foundation.</text>
+<text x="600" y="1380" font-size="13.5" font-weight="400" fill="#9aa6d8" text-anchor="middle">FDE delivers at enterprise sites. MHS connects the physical world. Both run on the same foundation.</text>
 </g>
 </svg>

@@ -30,13 +30,11 @@ const translations = {
   en: {
     title: 'Agnes Harness',
     subtitle: 'One execution foundation for field delivery and the physical world',
-    existing: 'Solid: existing software paths',
-    planned: 'Dashed: planned AGH integration',
     roles: [
       ['LLM', 'Brain', 'Reasoning and actions', 'Via AI providers'],
-      ['Jev', 'Cerebellum', 'Decisions and routing', 'Planned'],
+      ['Jev', 'Cerebellum', 'Decisions and routing', 'Works with the agent loop'],
       ['Harness', 'Memory', 'State, history, methods', 'Sessions, records, Skills'],
-      ['MHS', 'Body', 'Physical devices', 'Planned · via MCP'],
+      ['MHS', 'Body', 'Physical devices', 'Devices via MCP'],
     ],
     server: 'APP SERVER',
     serverDetail: 'Shared sessions · task submission · event streaming · approval routing',
@@ -46,7 +44,7 @@ const translations = {
     llm: ['Model reasoning', 'LLM via AI providers'],
     loop: ['AGENT LOOP', 'until the task is done'],
     steps: ['Reason', 'Act', 'Call tool', 'Result', 'Continue'],
-    jev: 'Jev routing · planned',
+    jev: 'Jev routing',
     memory: 'HARNESS MEMORY',
     memoryLayers: ['Sessions', 'Task state', 'Event records', 'Skills'],
     governance: ['CONTROLLED EXECUTION', 'Tool approvals · command sandbox · execution policy · recovery'],
@@ -61,25 +59,23 @@ const translations = {
     fde: ['FDE · ENTERPRISE DELIVERY', 'Compose plugins into a customer-specific agent'],
     fdeItems: ['Knowledge base', 'Database', 'Business systems', 'Domain software'],
     fdeNote: 'Connectors are built and validated per site',
-    mhs: ['MHS · PHYSICAL WORLD', 'Planned · built on MCP'],
+    mhs: ['MHS · PHYSICAL WORLD', 'Built on MCP'],
     mhsChain: ['MCP adapter', 'Controller'],
     devices: ['Microscope', 'Robotic arm', 'Liquid handler'],
     mhsNote: 'Illustrative devices · interlocks and e-stops stay on devices',
     footer:
-      'FDE is a delivery approach. MHS is a device integration direction. Both run on the same foundation.',
+      'FDE delivers at enterprise sites. MHS connects the physical world. Both run on the same foundation.',
     description:
-      'Animated AGH architecture. LLM is the brain, Jev the cerebellum, Harness the memory and MHS the body; Jev and MHS are planned, and MHS device adapters build on MCP. Clients reach the App Server, the Agent Runtime runs the agent loop with Harness memory and controlled execution, plugins extend the runtime, and the same foundation serves enterprise FDE delivery and future physical-world integration.',
+      'Animated AGH architecture. LLM is the brain, Jev the cerebellum, Harness the memory and MHS the body; MHS device adapters build on MCP. Clients reach the App Server, the Agent Runtime runs the agent loop with Harness memory and controlled execution, plugins extend the runtime, and the same foundation serves enterprise FDE delivery and physical-world integration.',
   },
   'zh-CN': {
     title: 'Agnes Harness',
     subtitle: '一套执行底座，连接企业现场与物理世界',
-    existing: '实线：已有软件能力',
-    planned: '虚线：规划中的 AGH 接入',
     roles: [
       ['LLM', '大脑', '理解、推理与动作建议', '经 AI Provider 接入'],
-      ['Jev', '小脑', '结构化决策与路由', '规划中'],
+      ['Jev', '小脑', '结构化决策与路由', '与 Agent 循环协同'],
       ['Harness', '记忆', '状态、历史与可复用方法', '会话、执行记录、Skills'],
-      ['MHS', '身体', '连接物理设备的能力', '规划中 · 经 MCP 接入'],
+      ['MHS', '身体', '连接物理设备的能力', '经 MCP 接入设备'],
     ],
     server: 'APP SERVER · 统一接入',
     serverDetail: '共享会话 · 任务提交 · 事件推送 · 审批路由',
@@ -89,7 +85,7 @@ const translations = {
     llm: ['模型推理', '经 AI Provider 接入 LLM'],
     loop: ['AGENT LOOP', '循环推进，直到完成'],
     steps: ['推理', '决定动作', '调用工具', '返回结果', '继续 / 完成'],
-    jev: 'Jev 路由 · 规划中',
+    jev: 'Jev 路由',
     memory: 'HARNESS 记忆',
     memoryLayers: ['会话', '任务状态', '事件记录', 'Skills'],
     governance: ['受控执行', '工具审批 · 命令沙箱 · 执行策略 · 中断恢复'],
@@ -104,13 +100,13 @@ const translations = {
     fde: ['FDE · 企业现场交付', '组合插件，构建客户专属 Agent'],
     fdeItems: ['知识库', '数据库', '业务系统', '领域软件'],
     fdeNote: '具体连接器按现场开发与验证',
-    mhs: ['MHS · 物理世界', '规划中 · 以 MCP 为基础'],
+    mhs: ['MHS · 物理世界', '以 MCP 为基础连接设备'],
     mhsChain: ['MCP 适配器', '设备控制器'],
     devices: ['显微镜', '机械臂', '移液工作站'],
     mhsNote: '设备仅为示意 · 互锁与急停由设备负责',
-    footer: 'FDE 是交付方式，MHS 是设备接入方向；两者运行在同一套底座上。',
+    footer: 'FDE 服务企业现场，MHS 连接物理世界；两者运行在同一套底座上。',
     description:
-      'AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体；Jev 与 MHS 属于规划，MHS 设备适配器基于 MCP。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与未来的物理世界接入。',
+      'AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体，MHS 设备适配器基于 MCP。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与物理世界接入。',
   },
 }
 
@@ -259,28 +255,17 @@ function render(t, lang) {
     '<g font-family="Inter, -apple-system, Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif">',
   )
 
-  // Header and legend.
+  // Header.
   text(60, 76, t.title, { size: 38, weight: 800 })
   text(60, 110, t.subtitle, { size: 17, fill: c.muted })
-  push(`<path d="M ${W - 380} 64 H ${W - 348}" stroke="${c.cyan}" stroke-width="2.4"/>`)
-  text(W - 338, 69, t.existing, { size: 13, fill: c.muted })
-  push(
-    `<path d="M ${W - 380} 94 H ${W - 348}" stroke="${c.amber}" stroke-width="2.4" stroke-dasharray="6 5"` +
-      ' class="march"/>',
-  )
-  text(W - 338, 99, t.planned, { size: 13, fill: c.muted })
 
   // Four roles: brain, cerebellum, memory, body.
   const roleIcon = ['brain', 'nodes', 'stack', 'arm']
   const roleColor = [c.violet, c.amber, c.cyan, c.amber]
+  const roleTint = ['180,155,255', '251,191,36', '56,214,255', '251,191,36']
   t.roles.forEach(([name, role, line, status], i) => {
     const x = 60 + i * 275
-    const planned = i === 1 || i === 3
-    panel(x, 148, 255, 104, {
-      fill: planned ? 'rgba(251,191,36,0.06)' : 'rgba(124,140,255,0.08)',
-      stroke: planned ? 'rgba(251,191,36,0.75)' : 'rgba(124,140,255,0.45)',
-      dashed: planned,
-    })
+    panel(x, 148, 255, 104, { fill: `rgba(${roleTint[i]},0.07)`, stroke: `rgba(${roleTint[i]},0.55)` })
     push(
       `<circle cx="${x + 46}" cy="200" r="30" fill="url(#halo)" class="pulse"` +
         ` style="animation-delay:${i * 0.6}s"/>`,
@@ -292,7 +277,7 @@ function render(t, lang) {
     const nameWidth = [...name].reduce((w, ch) => w + (ch === ch.toUpperCase() ? 13 : 10.5), 0)
     text(x + 86 + nameWidth + 10, 186, role, { size: 15, weight: 600, fill: roleColor[i] })
     text(x + 86, 210, line, { size: 12.5, fill: c.muted })
-    text(x + 86, 232, status, { size: 12, weight: 600, fill: planned ? c.amber : c.green })
+    text(x + 86, 232, status, { size: 12, weight: 600, fill: roleColor[i] })
   })
 
   // App Server with its entry points.
@@ -374,7 +359,7 @@ function render(t, lang) {
       4.5,
     )
 
-    // Jev: planned structured-decision helper beside the loop.
+    // Jev: structured-decision helper beside the loop.
     push(
       `<circle cx="806" cy="590" r="27" fill="rgba(251,191,36,0.08)" stroke="${c.amber}" stroke-width="1.6"` +
         ' stroke-dasharray="4 5" class="spin"/>',
@@ -462,18 +447,13 @@ function render(t, lang) {
     })
     text(84, 1336, t.fdeNote, { size: 12, fill: c.faint })
 
-    panel(612, 1150, 528, 196, {
-      fill: 'rgba(251,191,36,0.05)',
-      stroke: 'rgba(251,191,36,0.8)',
-      dashed: true,
-    })
+    panel(612, 1150, 528, 196, { fill: 'rgba(251,191,36,0.05)', stroke: 'rgba(251,191,36,0.6)' })
     text(636, 1182, t.mhs[0], { size: 14, weight: 800, fill: c.amber, ls: 1.4 })
     text(636, 1204, t.mhs[1], { size: 13, fill: c.muted })
     const amber = {
       color: c.amber,
       fill: 'rgba(251,191,36,0.07)',
-      stroke: 'rgba(251,191,36,0.6)',
-      dashed: true,
+      stroke: 'rgba(251,191,36,0.45)',
     }
     chip(636, 1222, 220, 44, 'chip', t.mhsChain[0], amber)
     chip(896, 1222, 220, 44, 'gauge', t.mhsChain[1], amber)

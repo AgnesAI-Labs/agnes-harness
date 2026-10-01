@@ -24,12 +24,12 @@ Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0
 </div>
 
 <p align="center">
-  <img src="docs/assets/readme/trailer.webp" alt="Animated introduction: the brain (LLM), the cerebellum (Jev, planned), the memory (Harness) and the body (MHS, planned, connected through MCP) come together as Agnes Harness, one execution foundation for enterprise FDE delivery and, as a planned direction, physical-world MHS integration" width="100%" />
+  <img src="docs/assets/readme/trailer.webp" alt="Animated introduction: the brain (LLM), the cerebellum (Jev), the memory (Harness) and the body (MHS, connecting devices through MCP) come together as Agnes Harness, one execution foundation for enterprise FDE delivery and physical-world MHS integration" width="100%" />
 </p>
 
 <p align="center">
   <b>LLM is the brain. Jev is the cerebellum. Harness is the memory. MHS is the body.</b><br />
-  <sub>Jev and MHS are planned integrations, and MHS builds on MCP. <a href="#architecture">See the architecture</a></sub>
+  <sub>One foundation for enterprise FDE delivery and physical-world MHS integration. <a href="#architecture">See the architecture</a></sub>
 </p>
 
 Taking AI into a real deployment is rarely about the model alone. It is about the customer's systems, the people who approve the work, and the details that differ at every site. Agnes Harness (AGH) connects models, tools, task state, and business interfaces: **put the differences into plugins, let the harness run and record the work, and carry what you validated into the next deployment.**
@@ -73,20 +73,20 @@ What it is not, so you can choose the right trial:
 
 ## Architecture: brain, cerebellum, memory and body
 
-The brain, cerebellum, memory and body describe AGH's vision: combine reasoning, structured decisions, persistent task context, and physical capabilities. The diagram separates existing software paths from planned integrations.
+The brain, cerebellum, memory and body describe AGH's vision: combine reasoning, structured decisions, persistent task context, and physical capabilities. The diagram shows where each role sits in one runtime.
 
-![AGH architecture: LLM as brain, Jev as cerebellum, Harness as memory, and MHS as body; dashed boxes show planned Jev and device integration](docs/assets/architecture.svg)
+![AGH architecture: LLM as brain, Jev as cerebellum, Harness as memory, and MHS as body, in one runtime that serves enterprise FDE delivery and MHS device integration](docs/assets/architecture.svg)
 
 | Role | What it means in AGH | Current scope |
 | --- | --- | --- |
 | **LLM / brain** | Understand requests, reason about the task, and propose actions | Model integration through AI providers |
-| **Jev / cerebellum** | Structured decisions such as routing and scoring to help coordinate execution | Planned integration; main currently uses the built-in Core loop |
+| **Jev / cerebellum** | Structured decisions such as routing and scoring to help coordinate execution | Integration in progress; main currently uses the built-in Core loop |
 | **Harness / memory** | Retain session history, task state, execution records, and reusable methods in Skills | Existing task context and recovery mechanisms; Harness also runs and governs execution |
-| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | Planned device integration via MCP-based adapters; AGH guides and examples are coming soon |
+| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | Device integration through MCP-based adapters; AGH guides and examples are coming soon |
 
-FDE is a delivery approach; MHS is a device integration direction. Both build on the same foundation, and an FDE deployment can include devices.
+FDE is a delivery approach; MHS brings devices into the same work. Both build on the same foundation, and an FDE deployment can include devices.
 
-| Shared module | Supports FDE today | What a future MHS integration can reuse |
+| Shared module | Supports FDE today | What MHS integration reuses |
 | --- | --- | --- |
 | **App Server** | Shared sessions, task submission, event delivery, and approval routing for CLI, Web, and SDK clients | Task entry points, human confirmation, and status presentation |
 | **Agent Loop** | Model/tool execution, task state, event records, interruption handling, and recovery | High-level device task orchestration and result records |
@@ -209,7 +209,7 @@ AGH is a developer preview.
 | Plugins: backend tools and services, Web panels, Skills, hooks, MCP | Available, with documented constraints |
 | Command sandbox and execution constraints | Platform-dependent |
 | Platforms | Recorded local checks on macOS with Node 24; Linux and Windows need separate acceptance |
-| Jev structured decisions | Planned |
+| Jev structured decisions | Integration in progress |
 | MHS device integration (MCP-based) | Coming soon |
 
 Use [supported scope and known limitations](docs/reference/limitations.md) to choose your trial environment, and the [verification guide](docs/maintainers/verification.md) for reproducible checks and their scope.
