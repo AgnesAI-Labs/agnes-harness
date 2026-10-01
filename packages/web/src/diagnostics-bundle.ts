@@ -5,16 +5,17 @@ import type {
   EventEnvelope,
   UITimeline,
 } from '@agnes/protocol'
+import { diagnosticsText } from '@agnes/web-units/diagnostics-locale'
 // 走诊断相关的子路径，而不是 @agnes/web-units 的包根 barrel：barrel 会连带导出整个 UI 组件树
 // (含 XMarkdown 的 CJS 构建)，而它的 CJS 里有 require('./DebugPanel.css')，在没有 CSS 加载器的
 // 环境里会直接抛语法错误。本模块只做收集、脱敏和打包，不需要 React。
-import {
-  type BrowserLog,
-  type DiagnosticsArtifact,
-  type DiagnosticsBundle,
-  type DiagnosticsInclude,
-  type DiagnosticsWarning,
-  type LogTail,
+import type {
+  BrowserLog,
+  DiagnosticsArtifact,
+  DiagnosticsBundle,
+  DiagnosticsInclude,
+  DiagnosticsWarning,
+  LogTail,
 } from '@agnes/web-units/diagnostics-types'
 import { renderDiagnosticsViewer } from '@agnes/web-units/diagnostics-viewer'
 import { buildZip, type ZipEntry } from '@agnes/web-units/diagnostics-zip'
@@ -227,7 +228,7 @@ export async function collectDiagnostics(
   if (effective.conversation) {
     if (!projection) warnings.push({ source: 'trace', reason: 'unavailable' })
     else if (input.projectionHasEarlier) {
-      const detail = `仅含已加载的最近 ${projection.nodes.length} 个节点，更早的历史未包含`
+      const detail = diagnosticsText('diagnostics.trace.window', { n: projection.nodes.length })
       warnings.push({ source: 'trace', reason: 'truncated', detail })
     }
   }

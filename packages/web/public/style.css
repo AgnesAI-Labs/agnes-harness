@@ -1603,27 +1603,27 @@ button.trace-gantt-bar:focus-visible {
   font-size: 0.75rem;
   font-weight: 500;
 }
-.trace-badge.kind-用户 {
+.trace-badge.kind-user {
   color: var(--agnes-trace-badge-user-text);
   background: var(--agnes-trace-badge-user-bg);
 }
-.trace-badge.kind-上下文 {
+.trace-badge.kind-context {
   color: var(--agnes-trace-badge-context-text);
   background: var(--agnes-trace-badge-context-bg);
 }
-.trace-badge.kind-助手 {
+.trace-badge.kind-assistant {
   color: var(--agnes-trace-badge-assistant-text);
   background: var(--agnes-trace-badge-assistant-bg);
 }
-.trace-badge.kind-工具 {
+.trace-badge.kind-tool {
   color: var(--agnes-trace-badge-tool-text);
   background: var(--agnes-trace-badge-tool-bg);
 }
-.trace-badge.kind-审批 {
+.trace-badge.kind-approval {
   color: var(--agnes-trace-badge-approval-text);
   background: var(--agnes-trace-badge-approval-bg);
 }
-.trace-badge.kind-整理 {
+.trace-badge.kind-compaction {
   color: var(--agnes-trace-badge-compaction-text);
   background: var(--agnes-trace-badge-compaction-bg);
 }

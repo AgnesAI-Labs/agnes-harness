@@ -122,15 +122,15 @@ describe('renderDiagnosticsViewer', () => {
     new Function(runtime?.textContent ?? '')()
 
     const tabLabels = Array.from(document.querySelectorAll('#agh-tabs button')).map((b) => b.textContent)
-    expect(tabLabels).toEqual(['概览', '对话', '轨迹', '日志', '系统', '产物'])
+    expect(tabLabels).toEqual(['Overview', 'Conversation', 'Trace', 'Logs', 'System', 'Artifacts'])
 
-    expect(document.getElementById('tab-logs')?.textContent).toContain('未包含')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('Not included')
 
     const traceText = document.getElementById('tab-trace')?.textContent ?? ''
     expect(traceText).toContain('root-call')
     expect(traceText).toContain('child-tool')
-    expect(traceText).toMatch(/1\.5 ?秒|1500 ?毫秒/)
-    expect(traceText).toContain('250 毫秒')
+    expect(traceText).toMatch(/1\.5 s|1500 ms/)
+    expect(traceText).toContain('250 ms')
   })
 
   it('lists artifacts metadata', () => {

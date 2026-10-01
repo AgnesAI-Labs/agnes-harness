@@ -25,6 +25,8 @@ import {
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
 import { BuiltinWebUnitRegistry } from '@agnes/web-units'
+import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
+import { traceCatalog } from '@agnes/web-units/trace-locale'
 import { createElement } from 'react'
 import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '../locale-catalog.js'
 import {
@@ -152,6 +154,8 @@ export async function startClientModules(options: {
   const locale = new LocaleService(ctx, storedLocale)
   locale.register(WEB_LOCALE_NAMESPACE, webLocaleCatalog)
   locale.register(COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog)
+  locale.register('@agnes/web-diagnostics', diagnosticsCatalog)
+  locale.register('@agnes/web-trace', traceCatalog)
   const commands = new CommandService(ctx, options.authorizeCommand)
 
   const registry = (ctx as unknown as { slots: SlotRegistry }).slots
