@@ -146,7 +146,7 @@ From inspection to instrument coordination, field work connects device state, hu
 On the public [Agents' Last Exam (ALE) leaderboard](https://agents-last-exam.org/leaderboard), which evaluates complete agent systems (model, harness, and tools) on professional tasks, Agnes Harness with Agnes 2.5 Pro Beta reaches a 21.7% overall pass rate, level with OpenClaw + GPT-5.5.
 
 <p align="center">
-  <img src="docs/assets/readme/ale-leaderboard.png" alt="Agents' Last Exam leaderboard results for Agnes Harness with Agnes 2.5 Pro Beta: 21.7% overall pass rate, 42.7% overall score, 31.3% near-term pass rate, 23.6% full-spectrum pass rate, 25.7% ALE-CLI pass rate and 50.2% ALE-CLI score" width="100%" />
+  <img src="docs/assets/readme/ale-leaderboard.png" alt="Agents' Last Exam results for Agnes Harness with Agnes 2.5 Pro Beta: 21.7% overall pass rate, 42.7% overall score, 31.3% near-term pass rate, 23.6% full-spectrum pass rate, 25.7% ALE-CLI pass rate and 50.2% ALE-CLI score, beside an excerpt of nearby leaderboard entries whose models and settings differ" width="100%" />
 </p>
 
 <p align="center"><sub>Results depend on model versions, settings, and tool configurations. See the leaderboard for current figures.</sub></p>
