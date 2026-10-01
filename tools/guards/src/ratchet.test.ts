@@ -1370,7 +1370,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Restricted effects peer and the events outbox projection. Measured 1442, exact, no spare.
   // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
   // Config registration records the requested provider id. Measured 1515, exact, no spare.
-  'packages/extension-api/testkit': 1515,
+  // Shared blob and artifact access suites with their scenario registration. Measured 2338, exact, no spare.
+  'packages/extension-api/testkit': 2338,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

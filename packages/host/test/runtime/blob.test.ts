@@ -1,13 +1,23 @@
 import { createHash } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CallContext, Outcome, ScopeRef } from '@agnes/extension-api/runtime'
+import {
+  type BuildIdentity,
+  type ConformanceHarness,
+  createConformanceHarness,
+  SCENARIOS,
+} from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
-import { RuntimeArtifactPolicy, RuntimeClientTransportPolicy } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeArtifactPolicy,
+  RuntimeClientTransportPolicy,
+} from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
-import { type BlobService, createBlobService } from '../../src/runtime/providers/blob.js'
+import { BLOB_FEATURES, type BlobService, createBlobService } from '../../src/runtime/providers/blob.js'
 
 const START = Date.parse('2026-10-01T00:00:00.000Z')
 const MIB = RuntimeClientTransportPolicy.maxRangeBytes
@@ -394,5 +404,103 @@ describe('default blob service reads', () => {
     writeFileSync(join(dataDir, 'artifacts', 'sha256', ref.digest.slice(0, 2), ref.digest), text('abcdeX'))
     expect(refused(await blob.blobRead.readRange({ ref, offset: 0, length: 2 }, ctx()))).toBe('integrity')
     expect(refused(await blob.blobRead.openRead({ ref, offset: 0 }, ctx()))).toBe('integrity')
+  })
+})
+
+/**
+ * The shared suite lives outside this package's build, so it is loaded by URL, as the conformance
+ * runner loads binders. Only the parts used here are typed.
+ */
+type BlobSuite = {
+  createBlobReadGate(): {
+    allows(context: CallContext, ref: Wire.BlobRef): boolean
+    revoke(ref: Wire.BlobRef): void
+  }
+  blobContractPort(subject: object): unknown
+  registerBlobContract(harness: ConformanceHarness, binding: object): void
+}
+
+const BUILD: BuildIdentity = {
+  codeSha: 'host-test',
+  buildDigest: 'host-test-build',
+  lockDigest: 'host-test-lock',
+  specVersion: 'host-test-spec',
+  sdkVersion: 'host-test-sdk',
+  sdkDigest: 'host-test-sdk-digest',
+  platform: 'host-test-platform',
+}
+const fileDigest = (path: string) => sha(readFileSync(new URL(path, import.meta.url)))
+
+describe('default blob service: conformance', () => {
+  it('passes the shared blob suite in all six scenarios', async () => {
+    const suite = (await import(
+      new URL('../../../extension-api/testkit/runtime/contracts/blob.ts', import.meta.url).href
+    )) as BlobSuite
+    const dataDir = await fresh()
+    const gate = suite.createBlobReadGate()
+    const start = () =>
+      createBlobService({
+        dataDir,
+        authorityId: 'blob-authority',
+        binding: BINDING,
+        authorizeRead: gate.allows,
+      })
+    let current = start()
+    let live = true
+    let seeds = 0
+    const shut = () => {
+      if (live) current.close()
+      live = false
+    }
+    const port = suite.blobContractPort({
+      binding: {
+        requirement: {
+          contract: 'agh.blob',
+          major: 1,
+          logicalName: 'conformance',
+          features: [...BLOB_FEATURES],
+          scope: 'runtime',
+          optional: false,
+        },
+        binding: { ...BINDING, logicalName: 'conformance', providerId: 'default' },
+        blobRead: current.blobRead,
+      },
+      gate,
+      read: () => current.blobRead,
+      seed: (bytes: Uint8Array) => pinned(current, bytes, `conformance-${++seeds}`),
+      corrupt: async (ref: Wire.BlobRef, bytes: Uint8Array) =>
+        writeFileSync(join(dataDir, 'artifacts', 'sha256', ref.digest.slice(0, 2), ref.digest), bytes),
+      async reopen() {
+        shut()
+        current = start()
+        live = true
+      },
+      close: async () => shut(),
+      remains: () => existsSync(join(dataDir, 'artifacts', 'blob-service.db')),
+    })
+    const harness = createConformanceHarness()
+    suite.registerBlobContract(harness, {
+      providerId: 'default',
+      recipe: 'packages/host/src/runtime/providers/blob.ts',
+      command: 'host-blob-conformance',
+      build: BUILD,
+      providerDigest: fileDigest('../../src/runtime/providers/blob.ts'),
+      configDigest: canonicalJsonDigest({ authorityId: 'blob-authority' }),
+      releaseSetDigest: fileDigest('../../package.json'),
+      port,
+    })
+    try {
+      const report = await harness.run({
+        contracts: ['agh.blob'],
+        providers: ['default'],
+        command: 'host-blob-conformance',
+        clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
+      })
+      expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
+        SCENARIOS.map((scenario) => [scenario, 'passed']),
+      )
+    } finally {
+      shut()
+    }
   })
 })
