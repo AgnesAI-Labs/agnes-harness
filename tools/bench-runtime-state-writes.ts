@@ -1,7 +1,8 @@
-// Times 300 intakeReceipt, 300 claimOutbox, and 300 ackOutbox calls in one session.
-// Setup (createRun, write-open, action admission, and mark_running) is not included.
-// The store clock is Date.now, so the writer lease has to stay live for the whole sample.
-// A 50-call window reports its maximum and the average of the 25th and 26th ordered samples.
+// Times 1200 admitInvocation, advanceRun, dispatchAdmission, and intakeReceipt calls in one session.
+// Each dispatch holds one parallel-action quota unit and the following intake releases it.
+// Close and mark_running stay outside the timer. The store clock is Date.now, so the writer lease
+// has to stay live for the whole sample. A 100-call window reports its maximum and the average of
+// the 50th and 51st ordered samples.
 //
 //   tsx tools/bench-runtime-state-writes.ts
 import { createHash } from 'node:crypto'
@@ -10,16 +11,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type {
-  AckOutboxRequest,
   AdvanceRunRequest,
   CallContext,
-  ClaimOutboxRequest,
   CloseInvocationRequest,
   CommitControlRequest,
   CommitGuard,
   DispatchAdmissionRequest,
   InvocationAdmission,
-  OutboxClaim,
   Outcome,
   PreparedAction,
   Receipt,
@@ -32,17 +30,13 @@ import { createRuntimeStateStore } from '../packages/host/src/runtime/providers/
 import { digestOf as canonicalDigest, stableId } from '../packages/host/src/runtime/state/records.ts'
 import { jcs } from '../packages/protocol/src/jcs.ts'
 
-const CALLS = 300
-const BATCH = 64
+const CALLS = 1200
+const WINDOW = 100
 const LEASE_TTL_MS = 600_000
-const WINDOWS = [
-  [1, 50],
-  [51, 100],
-  [101, 150],
-  [151, 200],
-  [201, 250],
-  [251, 300],
-] as const
+const WINDOWS = Array.from({ length: CALLS / WINDOW }, (_, index) => {
+  const from = index * WINDOW + 1
+  return [from, from + WINDOW - 1] as const
+})
 
 const authority: StateAuthorityRef = {
   authorityId: 'authority-bench',
@@ -214,7 +208,7 @@ function dispatchBody(
       idempotencyKey: null,
       requestDigest: canonicalDigest(action.input),
     },
-    budget: { reservation: null, quota: [] },
+    budget: { reservation: null, quota: [{ name: 'parallel-action', amount: 1 }] },
     deadline,
   }
 }
@@ -269,7 +263,7 @@ function intakeBody(
 
 function segment(samples: readonly number[]) {
   const sorted = [...samples].sort((left, right) => left - right)
-  const medianMs = ((sorted[24] ?? 0) + (sorted[25] ?? 0)) / 2
+  const medianMs = ((sorted[WINDOW / 2 - 1] ?? 0) + (sorted[WINDOW / 2] ?? 0)) / 2
   return { medianMs, maxMs: sorted.at(-1) ?? 0 }
 }
 
@@ -283,15 +277,9 @@ async function timeCall(samples: number[], body: () => Promise<void>): Promise<v
   samples.push(performance.now() - started)
 }
 
-async function prepareInvocation(
-  store: ReturnType<typeof createRuntimeStateStore>,
-  index: number,
-  baseRevision: number,
-  deadline: string,
-  call: CallContext,
-): Promise<void> {
+function admitBody(index: number, baseRevision: number, deadline: string): InvocationAdmission {
   const invocationId = `invocation-${index}`
-  const admit: InvocationAdmission = {
+  return {
     requestId: `admit-${invocationId}`,
     runId,
     targetActionId: null,
@@ -302,8 +290,11 @@ async function prepareInvocation(
     deadline,
     queryAllowance: 0,
   }
-  unwrap(await store.admitInvocation(admit, call), `admit ${index}`)
-  const close: CloseInvocationRequest = {
+}
+
+function closeBody(index: number): CloseInvocationRequest {
+  const invocationId = `invocation-${index}`
+  return {
     requestId: `close-${invocationId}`,
     invocationId,
     state: 'prepared',
@@ -312,7 +303,6 @@ async function prepareInvocation(
     unresolvedInflightIds: [],
     observedQueryCount: 0,
   }
-  unwrap(await store.closeInvocation(close, call), `close ${index}`)
 }
 
 async function main(): Promise<void> {
@@ -321,9 +311,10 @@ async function main(): Promise<void> {
   const directory = mkdtempSync(join(tmpdir(), 'agnes-state-writes-'))
   const file = join(directory, 'state.sqlite')
   const store = createRuntimeStateStore({ file, authority, now: () => Date.now() })
+  const admitMs: number[] = []
+  const advanceMs: number[] = []
+  const dispatchMs: number[] = []
   const intakeMs: number[] = []
-  const claimMs: number[] = []
-  const ackMs: number[] = []
   try {
     unwrap(await store.createRun(admission(deadline), call), 'createRun')
     unwrap(
@@ -340,95 +331,59 @@ async function main(): Promise<void> {
       ),
       'write-open',
     )
-    const actions: PreparedAction[] = []
     let revision = 0
-    let batch = 0
-    while (actions.length < CALLS) {
-      batch += 1
-      const count = Math.min(BATCH, CALLS - actions.length)
-      const created: PreparedAction[] = []
-      for (let offset = 0; offset < count; offset += 1) {
-        created.push(preparedAction(`step-${actions.length + offset + 1}`, deadline))
-      }
-      await prepareInvocation(store, batch, revision, deadline, call)
-      const receipt = unwrap(
-        await store.advanceRun(advanceBody(batch, revision, created), call),
-        `advance ${batch}`,
-      )
-      revision = receipt.runRevision
-      actions.push(...created)
-    }
-    const invocationId = `invocation-${batch}`
-    const ready: { action: PreparedAction; attemptId: string; authorizationId: string }[] = []
     for (let index = 1; index <= CALLS; index += 1) {
-      const action = actions[index - 1]
-      if (!action) throw new Error(`missing action ${index}`)
-      const request = dispatchBody(index, action, invocationId, revision, deadline)
-      const admitted = unwrap(await store.dispatchAdmission(request, call), `dispatch ${index}`)
-      if (admitted.state !== 'admitted') throw new Error(`dispatch ${index} settled as ${admitted.state}`)
+      const invocationId = `invocation-${index}`
+      const action = preparedAction(`step-${index}`, deadline)
+      await timeCall(admitMs, async () => {
+        unwrap(await store.admitInvocation(admitBody(index, revision, deadline), call), `admit ${index}`)
+      })
+      unwrap(await store.closeInvocation(closeBody(index), call), `close ${index}`)
+      await timeCall(advanceMs, async () => {
+        const receipt = unwrap(
+          await store.advanceRun(advanceBody(index, revision, [action]), call),
+          `advance ${index}`,
+        )
+        revision = receipt.runRevision
+      })
+      let attemptId = ''
+      let authorizationId = ''
+      await timeCall(dispatchMs, async () => {
+        const request = dispatchBody(index, action, invocationId, revision, deadline)
+        attemptId = request.attemptId
+        const admitted = unwrap(await store.dispatchAdmission(request, call), `dispatch ${index}`)
+        if (admitted.state !== 'admitted') throw new Error(`dispatch ${index} settled as ${admitted.state}`)
+        authorizationId = admitted.authorizationId
+      })
       const mark: CommitControlRequest = {
         commitId: `mark-${index}`,
         guard: commitGuard(invocationId, revision),
         command: {
           kind: 'mark_running',
-          attemptId: request.attemptId,
+          attemptId,
           expectedAttemptRevision: 1,
           externalRequests: [],
         },
       }
       unwrap(await store.commitControl(mark, call), `mark ${index}`)
-      ready.push({ action, attemptId: request.attemptId, authorizationId: admitted.authorizationId })
-    }
-    for (let index = 1; index <= CALLS; index += 1) {
-      const item = ready[index - 1]
-      if (!item) throw new Error(`missing intake ${index}`)
-      const request = intakeBody(index, item.action, item.attemptId, item.authorizationId)
+      const intake = intakeBody(index, action, attemptId, authorizationId)
       await timeCall(intakeMs, async () => {
-        const accepted = unwrap(await store.intakeReceipt(request, call), `intake ${index}`)
+        const accepted = unwrap(await store.intakeReceipt(intake, call), `intake ${index}`)
         if (accepted.state !== 'accepted') throw new Error(`intake ${index} settled as ${accepted.state}`)
-      })
-    }
-    const destination = stableId('obxdst', authority.authorityId)
-    const claims: OutboxClaim[] = []
-    for (let index = 1; index <= CALLS; index += 1) {
-      const request: ClaimOutboxRequest = {
-        requestId: `claim-${index}`,
-        destination,
-        ownerId: 'owner-bench',
-        limit: 1,
-        leaseMs: 60_000,
-      }
-      await timeCall(claimMs, async () => {
-        const claimed = unwrap(await store.claimOutbox(request, call), `claim ${index}`)
-        const claim = claimed[0]?.claim
-        if (!claim) throw new Error(`claim ${index} returned no event`)
-        claims.push(claim)
-      })
-    }
-    for (let index = 1; index <= CALLS; index += 1) {
-      const claim = claims[index - 1]
-      if (!claim) throw new Error(`missing claim ${index}`)
-      const request: AckOutboxRequest = {
-        requestId: `ack-${index}`,
-        claim,
-        acknowledgement: inline({ acked: true }),
-      }
-      await timeCall(ackMs, async () => {
-        const acked = unwrap(await store.ackOutbox(request, call), `ack ${index}`)
-        if (acked.state !== 'acked') throw new Error(`ack ${index} settled as ${acked.state}`)
       })
     }
     console.log(
       JSON.stringify({
         mode: 'state-writes',
         calls: CALLS,
-        window: 50,
+        window: WINDOW,
         sessionId,
         leaseTtlMs: LEASE_TTL_MS,
-        note: 'Times only intakeReceipt, claimOutbox, and ackOutbox. The segment median averages the 25th and 26th ordered samples.',
+        note: 'Times admitInvocation, advanceRun, dispatchAdmission, and intakeReceipt. Each dispatch holds one parallel-action unit and the following intake releases it. The segment median averages the 50th and 51st ordered samples.',
+        admitInvocation: windowsOf(admitMs),
+        advanceRun: windowsOf(advanceMs),
+        dispatchAdmission: windowsOf(dispatchMs),
         intakeReceipt: windowsOf(intakeMs),
-        claimOutbox: windowsOf(claimMs),
-        ackOutbox: windowsOf(ackMs),
       }),
     )
   } finally {

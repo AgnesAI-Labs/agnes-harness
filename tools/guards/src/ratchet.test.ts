@@ -2518,7 +2518,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // invocation admission commit in that store. Measured 42196.
   // No-hook intake, rejected-admission publication, signal consumption, outbox delivery,
   // and query-usage flush commit in that store. Measured 43552.
-  'packages/host/src': 43552,
+  // Signal sequence and active-invocation indexes, and quota lookup through the run's
+  // reservation refs, commit in that store. Measured 43738.
+  'packages/host/src': 43738,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

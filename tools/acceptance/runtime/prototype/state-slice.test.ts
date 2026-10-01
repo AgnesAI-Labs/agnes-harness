@@ -1832,6 +1832,25 @@ describe('runtime state advance, dispatch, and invocation', () => {
     if (!refused.ok) expect(refused.error).toMatchObject({ code: 'invalid_input', detailCode: 'query_count' })
     expect(count(path, 'events')).toBe(before)
     expect(recordValue<{ state: string }>(path, 'invocation:invocation-1').state).toBe('active')
+    expect(
+      query<{ invocation_id: string }>(path, 'SELECT invocation_id FROM runtime_active_invocation'),
+    ).toEqual([{ invocation_id: 'invocation-1' }])
+    const second = await store.admitInvocation(
+      {
+        requestId: 'admit-invocation-2',
+        runId: 'run-1',
+        targetActionId: null,
+        baseRevision: 0,
+        bindingId: 'binding-1',
+        writerEpoch: 1,
+        invocationId: 'invocation-2',
+        deadline: future,
+        queryAllowance: 0,
+      },
+      context(),
+    )
+    expect(second.ok).toBe(false)
+    if (!second.ok) expect(second.error).toMatchObject({ code: 'conflict', detailCode: 'invocation_state' })
     unwrap(
       await store.closeInvocation(
         {
@@ -1847,6 +1866,7 @@ describe('runtime state advance, dispatch, and invocation', () => {
       ),
       'close',
     )
+    expect(count(path, 'runtime_active_invocation')).toBe(0)
     store.close()
   })
 
@@ -2636,6 +2656,67 @@ function loadSides(path: string, commitId: string): CommitSideEntry[] {
   ).map((row) => JSON.parse(row.entry_json) as CommitSideEntry)
 }
 
+function rewriteRecord(path: string, recordId: string, value: unknown): void {
+  mutate(path, (db) => {
+    const head = db
+      .prepare('SELECT owner_json, record_revision, last_commit_id FROM runtime_records WHERE record_id = ?')
+      .get(recordId) as { owner_json: string; record_revision: number; last_commit_id: string } | undefined
+    if (!head) throw new Error(`missing record ${recordId}`)
+    const owner = JSON.parse(head.owner_json) as RecordOwner
+    const digest = bodyDigest(owner, value)
+    const valueJson = canonicalJson(value)
+    db.prepare('UPDATE runtime_records SET value_json = ?, body_digest = ? WHERE record_id = ?').run(
+      valueJson,
+      digest,
+      recordId,
+    )
+    db.prepare(
+      `UPDATE runtime_record_versions SET value_json = ?, digest = ?
+       WHERE record_id = ? AND record_revision = ? AND commit_id = ?`,
+    ).run(valueJson, digest, recordId, head.record_revision, head.last_commit_id)
+    const manifests = db
+      .prepare(
+        'SELECT record_id, previous_revision, next_json FROM runtime_mutation_manifests WHERE commit_id = ?',
+      )
+      .all(head.last_commit_id) as {
+      record_id: string
+      previous_revision: number | null
+      next_json: string | null
+    }[]
+    const decoded: CommitMutationManifest[] = manifests.map((row) => {
+      const next =
+        row.next_json === null ? null : (JSON.parse(row.next_json) as CommitMutationManifest['next'])
+      if (next && row.record_id === recordId) {
+        next.digest = digest
+        db.prepare(
+          'UPDATE runtime_mutation_manifests SET next_json = ? WHERE commit_id = ? AND record_id = ?',
+        ).run(canonicalJson(next), head.last_commit_id, row.record_id)
+      }
+      return {
+        commitId: head.last_commit_id,
+        recordId: row.record_id,
+        previousRevision: row.previous_revision,
+        next,
+      }
+    })
+    const event = db
+      .prepare(
+        `SELECT seq, data FROM events
+         WHERE session_key = 'session-1' AND json_extract(data, '$.commitId') = ?`,
+      )
+      .get(head.last_commit_id) as { seq: number; data: string } | undefined
+    if (!event) throw new Error(`missing commit ${head.last_commit_id}`)
+    const data = JSON.parse(event.data) as Record<string, unknown>
+    data.mutationsDigest = mutationDigest(decoded)
+    db.prepare('UPDATE events SET data = ? WHERE session_key = ? AND seq = ?').run(
+      JSON.stringify(data),
+      'session-1',
+      event.seq,
+    )
+  })
+  rehashSession(path)
+}
+
 function replaceSides(path: string, commitId: string, sides: CommitSideEntry[]): void {
   mutate(path, (db) => {
     db.prepare('DELETE FROM runtime_side_entries WHERE commit_id = ?').run(commitId)
@@ -2858,6 +2939,13 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
       recordValue<{ activeQuotaReservationRefs: string[] }>(path, 'run-quota:run-1')
         .activeQuotaReservationRefs,
     ).toEqual([])
+    expect(
+      query<{ target_key: string; next_seq: number }>(
+        path,
+        'SELECT target_key, next_seq FROM runtime_signal_seq',
+      ),
+    ).toEqual([{ target_key: '', next_seq: 2 }])
+    expect(count(path, 'runtime_active_invocation')).toBe(0)
     store.close()
   })
 
@@ -3706,6 +3794,151 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     reopened.close()
     expect(opened.ok).toBe(false)
     if (!opened.ok) expect(opened.error.message).toBe('rejected admission does not publish a completion')
+  })
+
+  it('refuses open when an acceleration index or quota ref does not match the records', async () => {
+    async function intakeOnce(): Promise<string> {
+      const { path, store } = await leasedRun()
+      await preparedInvocation(store, 'invocation-1', 0)
+      const action = preparedAction('step-1')
+      unwrap(
+        await store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [action]), context()),
+        'advance',
+      )
+      const request = dispatchBody(action, 'invocation-1', 1, 'admission-1')
+      const admitted = unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+      if (admitted.state !== 'admitted') throw new Error('expected an admission')
+      await markRunning(store, 'invocation-1', 1, request.attemptId, 'mark-1')
+      unwrap(
+        await store.intakeReceipt(
+          intakeOf('intake-1', action, request.attemptId, admitted.authorizationId, 'receipt-1'),
+          context(),
+        ),
+        'intake',
+      )
+      store.close()
+      return path
+    }
+
+    const bumped = await intakeOnce()
+    expect(query<{ next_seq: number }>(bumped, 'SELECT next_seq FROM runtime_signal_seq')).toEqual([
+      { next_seq: 2 },
+    ])
+    mutate(bumped, (db) => {
+      db.prepare('UPDATE runtime_signal_seq SET next_seq = next_seq + 1').run()
+    })
+    const bumpOpen = openStore(bumped)
+    const bumpRefused = await bumpOpen.open(readOpen('open-signal-seq'), context())
+    bumpOpen.close()
+    expect(bumpRefused.ok).toBe(false)
+    if (!bumpRefused.ok)
+      expect(bumpRefused.error.message).toBe('signal sequence index does not match the records')
+
+    const removed = await intakeOnce()
+    mutate(removed, (db) => {
+      db.prepare('DELETE FROM runtime_signal_seq').run()
+    })
+    const removedOpen = openStore(removed)
+    const removedRefused = await removedOpen.open(readOpen('open-signal-seq-missing'), context())
+    removedOpen.close()
+    expect(removedRefused.ok).toBe(false)
+    if (!removedRefused.ok)
+      expect(removedRefused.error.message).toBe('signal sequence index does not match the records')
+
+    const { path: activePath, store: activeStore } = await leasedRun()
+    unwrap(
+      await activeStore.admitInvocation(
+        {
+          requestId: 'admit-invocation-1',
+          runId: 'run-1',
+          targetActionId: null,
+          baseRevision: 0,
+          bindingId: 'binding-1',
+          writerEpoch: 1,
+          invocationId: 'invocation-1',
+          deadline: future,
+          queryAllowance: 0,
+        },
+        context(),
+      ),
+      'admit',
+    )
+    expect(
+      query<{ invocation_id: string }>(activePath, 'SELECT invocation_id FROM runtime_active_invocation'),
+    ).toEqual([{ invocation_id: 'invocation-1' }])
+    activeStore.close()
+    mutate(activePath, (db) => {
+      db.prepare('DELETE FROM runtime_active_invocation').run()
+    })
+    const activeOpen = openStore(activePath)
+    const activeRefused = await activeOpen.open(readOpen('open-active-invocation'), context())
+    activeOpen.close()
+    expect(activeRefused.ok).toBe(false)
+    if (!activeRefused.ok)
+      expect(activeRefused.error.message).toBe('active invocation index does not match the records')
+
+    const held = await leasedRun()
+    await preparedInvocation(held.store, 'invocation-1', 0)
+    const heldAction = preparedAction('step-1')
+    unwrap(
+      await held.store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [heldAction]), context()),
+      'advance',
+    )
+    const heldRequest = dispatchBody(heldAction, 'invocation-1', 1, 'admission-1', [
+      { name: 'parallel-action', amount: 1 },
+    ])
+    const heldAdmission = unwrap(await held.store.dispatchAdmission(heldRequest, context()), 'dispatch')
+    expect(heldAdmission.state).toBe('admitted')
+    held.store.close()
+    const quota = recordValue<{ activeQuotaReservationRefs: string[] }>(held.path, 'run-quota:run-1')
+    expect(quota.activeQuotaReservationRefs).toEqual([stableId('qr', 'admission-1')])
+    rewriteRecord(held.path, 'run-quota:run-1', { ...quota, activeQuotaReservationRefs: [] })
+    const quotaOpen = openStore(held.path)
+    const quotaRefused = await quotaOpen.open(readOpen('open-quota-ref'), context())
+    quotaOpen.close()
+    expect(quotaRefused.ok).toBe(false)
+    if (!quotaRefused.ok)
+      expect(quotaRefused.error.message).toBe('active quota reservation does not match the held mirror')
+
+    const dangling = await leasedRun()
+    await preparedInvocation(dangling.store, 'invocation-1', 0)
+    const first = preparedAction('step-1')
+    unwrap(
+      await dangling.store.advanceRun(advanceBody('advance-1', 'invocation-1', 0, [first]), context()),
+      'advance',
+    )
+    unwrap(
+      await dangling.store.dispatchAdmission(
+        dispatchBody(first, 'invocation-1', 1, 'admission-1', [{ name: 'parallel-action', amount: 1 }]),
+        context(),
+      ),
+      'hold',
+    )
+    await preparedInvocation(dangling.store, 'invocation-2', 1)
+    const second = preparedAction('step-2')
+    unwrap(
+      await dangling.store.advanceRun(advanceBody('advance-2', 'invocation-2', 1, [second]), context()),
+      'advance 2',
+    )
+    const current = recordValue<{ activeQuotaReservationRefs: string[] }>(dangling.path, 'run-quota:run-1')
+    mutate(dangling.path, (db) => {
+      const head = db
+        .prepare('SELECT value_json FROM runtime_records WHERE record_id = ?')
+        .get('run-quota:run-1') as { value_json: string }
+      const value = JSON.parse(head.value_json) as { activeQuotaReservationRefs: string[] }
+      value.activeQuotaReservationRefs = [...current.activeQuotaReservationRefs, 'missing']
+      db.prepare('UPDATE runtime_records SET value_json = ? WHERE record_id = ?').run(
+        JSON.stringify(value),
+        'run-quota:run-1',
+      )
+    })
+    const missing = await dangling.store.dispatchAdmission(
+      dispatchBody(second, 'invocation-2', 2, 'admission-2', [{ name: 'parallel-action', amount: 1 }]),
+      context(),
+    )
+    expect(missing.ok).toBe(false)
+    if (!missing.ok) expect(missing.error.message).toBe('active quota reservation has no mirror')
+    dangling.store.close()
   })
 
   it('pins every commit in a tool round and drains that round’s outbox', async () => {

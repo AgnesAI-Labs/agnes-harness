@@ -104,6 +104,10 @@ const BUDGET_RESERVATION = 'bounded-units and cost-hard budget reservation is no
 const LIVE_AGENT_QUOTA = 'live-agent quota is not implemented'
 const HOOK_RESULTS = 'hook results and approval taint acknowledgement are not implemented'
 const CONTROL_COMMAND = 'control command is not implemented'
+const SIGNAL_INDEX_MISMATCH = 'signal sequence index does not match the records'
+const INVOCATION_INDEX_MISMATCH = 'active invocation index does not match the records'
+const QUOTA_REF_MISMATCH = 'active quota reservation does not match the held mirror'
+const QUOTA_MIRROR_MISSING = 'active quota reservation has no mirror'
 const RESULT_TYPE = 'agh.runtime/action-result@1'
 const STREAM_END_TYPE = 'agh.runtime/stream-end@1'
 const COMPLETED_SIGNAL_TYPE = 'agh.runtime/action-completed@1'
@@ -587,19 +591,43 @@ function resultView(receipt: Receipt): ActionResultView {
   return view
 }
 
+function signalTargetKey(targetActionId: string | null): string {
+  // Action ids are non-empty. An empty key is the run-level signal; NULL would not be unique in the primary key.
+  return targetActionId ?? ''
+}
+
+function wholeNumber(value: unknown): number | undefined {
+  const number = typeof value === 'bigint' ? Number(value) : value
+  return typeof number === 'number' && Number.isSafeInteger(number) ? number : undefined
+}
+
 function nextSignalSeq(ports: ControlPorts, runId: string, targetActionId: string | null): number {
-  let max = 0
-  const rows = ports.all<{ value_json: string }>(
-    `SELECT value_json FROM runtime_records WHERE record_id LIKE 'signal:%'`,
+  const row = ports.get<{ next_seq: unknown }>(
+    'SELECT next_seq FROM runtime_signal_seq WHERE run_id = ? AND target_key = ?',
+    runId,
+    signalTargetKey(targetActionId),
   )
-  for (const row of rows) {
-    const value = parseJson(row.value_json) as {
-      signal?: { runId?: string; targetActionId?: string | null; seq?: number }
-    }
-    if (value.signal?.runId !== runId || (value.signal.targetActionId ?? null) !== targetActionId) continue
-    if (typeof value.signal.seq === 'number' && value.signal.seq > max) max = value.signal.seq
-  }
-  return max + 1
+  if (!row) return 1
+  const seq = wholeNumber(row.next_seq)
+  if (seq === undefined || seq < 1) integrity(SIGNAL_INDEX_MISMATCH)
+  return seq
+}
+
+function recordAssignedSignalSeq(
+  ports: ControlPorts,
+  runId: string,
+  targetActionId: string | null,
+  seq: number,
+): void {
+  const next = seq + 1
+  ports.run(
+    `INSERT INTO runtime_signal_seq (run_id, target_key, next_seq) VALUES (?, ?, ?)
+     ON CONFLICT(run_id, target_key) DO UPDATE SET next_seq = ?`,
+    runId,
+    signalTargetKey(targetActionId),
+    next,
+    next,
+  )
 }
 
 function insertOutboxDelivery(
@@ -650,41 +678,67 @@ function outboxValue(
   }
 }
 
+function sourceRecordId(value: Record<string, unknown>): string | undefined {
+  const source = value.source
+  if (source === null || typeof source !== 'object' || Array.isArray(source)) return undefined
+  const recordId = (source as { recordId?: unknown }).recordId
+  return typeof recordId === 'string' ? recordId : undefined
+}
+
+function requireHeldMirror(
+  ports: ControlPorts,
+  runId: string,
+  reservationId: string,
+): { head: StoredHead; value: Record<string, unknown> } {
+  const head = ports.loadHead(quotaRecordId(reservationId))
+  if (!head) integrity(QUOTA_MIRROR_MISSING)
+  const value = storedValue<Record<string, unknown>>(head)
+  const scopeIds = Array.isArray(value.scopeIds) ? value.scopeIds : []
+  if (
+    value.reservationId !== reservationId ||
+    value.kind !== 'parallel-action' ||
+    value.status !== 'held' ||
+    !scopeIds.includes(runId) ||
+    !Number.isSafeInteger(value.quantity) ||
+    (value.quantity as number) <= 0
+  )
+    integrity(QUOTA_REF_MISMATCH)
+  return { head, value }
+}
+
+function reservationRefs(ports: ControlPorts, runId: string): { head?: StoredHead; refs: string[] } {
+  const loaded = loadQuota(ports, runId)
+  const refs = loaded.value?.activeQuotaReservationRefs ?? []
+  if (new Set(refs).size !== refs.length) integrity(QUOTA_REF_MISMATCH)
+  return loaded.head ? { head: loaded.head, refs } : { refs }
+}
+
 function releaseHeldMirrors(
   ports: ControlPorts,
   runId: string,
   actionId: string,
   stamp: string,
 ): RecordUpdate[] {
+  const listed = reservationRefs(ports, runId)
+  if (!listed.head || listed.refs.length === 0) return []
   const actionKey = actionRecordId(actionId)
-  const rows = ports.all<{ record_id: string }>(
-    `SELECT record_id FROM runtime_records WHERE record_id LIKE 'quota:%'`,
-  )
   const updates: RecordUpdate[] = []
   const released: string[] = []
-  for (const row of rows) {
-    const head = ports.loadHead(row.record_id)
-    if (!head) continue
-    const value = storedValue<Record<string, unknown>>(head)
-    const source = value.source
-    const sourceId =
-      source !== null && typeof source === 'object' && !Array.isArray(source)
-        ? (source as { recordId?: unknown }).recordId
-        : undefined
-    if (value.kind !== 'parallel-action' || value.status !== 'held' || sourceId !== actionKey) continue
-    if (typeof value.reservationId === 'string') released.push(value.reservationId)
+  for (const reservationId of listed.refs) {
+    const { head, value } = requireHeldMirror(ports, runId, reservationId)
+    if (sourceRecordId(value) !== actionKey) continue
     updates.push(
       updated(head, QUOTA_MIRROR_SCHEMA, ownerOf(head), { ...value, status: 'released', releasedAt: stamp }),
     )
+    released.push(reservationId)
   }
   if (released.length === 0) return updates
-  const quotaHead = requireHead(ports, runQuotaRecordId(runId), 'quota_absent', 'run quota record is missing')
-  const quota = storedValue<RunQuotaValue>(quotaHead)
+  const quota = storedValue<RunQuotaValue>(listed.head)
   const dropping = new Set(released)
   updates.push(
-    updated(quotaHead, RUN_QUOTA_SCHEMA, ownerOf(quotaHead), {
+    updated(listed.head, RUN_QUOTA_SCHEMA, ownerOf(listed.head), {
       ...quota,
-      activeQuotaReservationRefs: quota.activeQuotaReservationRefs.filter((id) => !dropping.has(id)),
+      activeQuotaReservationRefs: listed.refs.filter((id) => !dropping.has(id)),
     }),
   )
   return updates
@@ -791,11 +845,13 @@ function publishNoHook(
       : `${ports.authority.authorityId}\0${receipt.receiptId}\0${targetActionId}`
   const signalId = stableId('sig', signalKey)
   const source: BindingRef = receipt.provenance.producer
+  const seq = nextSignalSeq(ports, input.run.runId, targetActionId)
+  recordAssignedSignalSeq(ports, input.run.runId, targetActionId, seq)
   const signal: Signal = {
     signalId,
     runId: input.run.runId,
     targetActionId,
-    seq: nextSignalSeq(ports, input.run.runId, targetActionId),
+    seq,
     typeId: COMPLETED_SIGNAL_TYPE,
     schema: inlineSchema,
     source,
@@ -1034,14 +1090,11 @@ export async function admitInvocationTx(
     refuse('conflict', 'revision', 'invocation base revision does not match the run')
   if (ports.loadHead(invocationRecordId(request.invocationId)))
     refuse('conflict', 'invocation_exists', 'invocation already exists')
-  const active = ports.all<{ value_json: string }>(
-    `SELECT value_json FROM runtime_records WHERE record_id LIKE 'invocation:%'`,
+  const active = ports.get<{ invocation_id: string }>(
+    'SELECT invocation_id FROM runtime_active_invocation WHERE run_id = ?',
+    request.runId,
   )
-  for (const row of active) {
-    const value = parseJson(row.value_json) as { runId?: string; state?: string }
-    if (value.runId === request.runId && value.state === 'active')
-      refuse('conflict', 'invocation_state', 'an invocation is already active')
-  }
+  if (active) refuse('conflict', 'invocation_state', 'an invocation is already active')
   const existing = loadQuota(ports, request.runId)
   const totalQueries = existing.value?.totalQueries ?? 0
   const reservedQueries = existing.value?.reservedQueries ?? 0
@@ -1127,6 +1180,11 @@ export async function admitInvocationTx(
   if (existing.head) updates.push(updated(existing.head, RUN_QUOTA_SCHEMA, ownerOf(existing.head), quota))
   else creates.push(record(runQuotaRecordId(request.runId), RUN_QUOTA_SCHEMA, 1, loaded.owner, quota))
   ports.openQueryMeter(grantId, capacity)
+  ports.run(
+    'INSERT INTO runtime_active_invocation (run_id, invocation_id) VALUES (?, ?)',
+    request.runId,
+    request.invocationId,
+  )
   return rememberWrapped(
     ports,
     {
@@ -1206,6 +1264,12 @@ export async function closeInvocationTx(
   if (failed > MAX_FAILED_INVOCATIONS) refuse('conflict', 'quota', 'failed invocation quota is exhausted')
   if (quota.reservedQueries < delta + unused) integrity('query reservation is larger than the run reserve')
   const stamp = at(ports)
+  const active = ports.get<{ invocation_id: string }>(
+    'SELECT invocation_id FROM runtime_active_invocation WHERE run_id = ?',
+    invocation.runId,
+  )
+  if (!active || active.invocation_id !== invocation.invocationId) integrity(INVOCATION_INDEX_MISMATCH)
+  ports.run('DELETE FROM runtime_active_invocation WHERE run_id = ?', invocation.runId)
   const result: CloseInvocationResult = { invocationId: request.invocationId, state: resulting }
   return rememberWrapped(
     ports,
@@ -1474,20 +1538,11 @@ function parallelAmount(request: DispatchAdmissionRequest): number {
 }
 
 function heldParallel(ports: ControlPorts, runId: string): number {
-  const rows = ports.all<{ value_json: string }>(
-    `SELECT value_json FROM runtime_records WHERE record_id LIKE 'quota:%'`,
-  )
+  const listed = reservationRefs(ports, runId)
   let held = 0
-  for (const row of rows) {
-    const value = parseJson(row.value_json) as {
-      kind?: string
-      status?: string
-      quantity?: number
-      scopeIds?: string[]
-    }
-    if (value.kind !== 'parallel-action' || value.status !== 'held' || !value.scopeIds?.includes(runId))
-      continue
-    held += value.quantity ?? 0
+  for (const reservationId of listed.refs) {
+    const { value } = requireHeldMirror(ports, runId, reservationId)
+    held += value.quantity as number
   }
   return held
 }
@@ -2309,7 +2364,14 @@ type QuotaNote = {
   kind: string
   requestFingerprint: string
   scopeIds: string[]
+  reservationId: string
 }
+
+type RunQuotaNote = { revision: number; refs: string[] | undefined }
+
+type SignalHeadNote = { revision: number; runId: string; targetKey: string; seq: number }
+
+type InvocationHeadNote = { revision: number; runId: string; invocationId: string; state: string }
 
 type AdmissionNote = {
   revision: number
@@ -2352,6 +2414,9 @@ export type ControlScan = {
   usages: Map<string, string>
   usageSides: Map<string, string>
   usageSideCount: Map<string, number>
+  signalHeads: Map<string, SignalHeadNote>
+  invocations: Map<string, InvocationHeadNote>
+  runQuotas: Map<string, RunQuotaNote>
 }
 
 export type ControlVersionNote = {
@@ -2365,6 +2430,8 @@ export type ControlEvidence = {
   sessionId: string
   requests(): { request_id: string; fingerprint: string; result_json: string }[]
   domainJson(): string | undefined
+  signalSeqIndex(): { run_id: string; target_key: string; next_seq: unknown }[]
+  activeInvocations(): { run_id: string; invocation_id: string }[]
 }
 
 export function createControlScan(): ControlScan {
@@ -2390,6 +2457,9 @@ export function createControlScan(): ControlScan {
     usages: new Map(),
     usageSides: new Map(),
     usageSideCount: new Map(),
+    signalHeads: new Map(),
+    invocations: new Map(),
+    runQuotas: new Map(),
   }
 }
 
@@ -2426,6 +2496,8 @@ export function noteControlVersion(scan: ControlScan, version: ControlVersionNot
   else if (id.startsWith('dispatch:')) noteAdmissionVersion(scan, version)
   else if (id.startsWith('receipt:')) noteReceiptVersion(scan, version)
   else if (id.startsWith('quota:')) noteQuotaVersion(scan, version)
+  else if (id.startsWith('run-quota:')) noteRunQuotaVersion(scan, version)
+  else if (id.startsWith('invocation:')) noteInvocationVersion(scan, version)
   else if (id.startsWith('visibility:')) noteVisibilityVersion(scan, version)
   else if (id.startsWith('signal:')) noteSignalVersion(scan, version)
   else if (id.startsWith('outbox:')) noteOutboxVersion(scan, version)
@@ -2502,6 +2574,16 @@ function noteReceiptVersion(scan: ControlScan, version: ControlVersionNote): voi
   })
 }
 
+function stringRefs(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const refs: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string') return undefined
+    refs.push(item)
+  }
+  return refs
+}
+
 function noteQuotaVersion(scan: ControlScan, version: ControlVersionNote): void {
   const body = bodyRecord(version.value_json)
   noteLatest(scan.quotas, version.record_id, {
@@ -2510,6 +2592,26 @@ function noteQuotaVersion(scan: ControlScan, version: ControlVersionNote): void 
     kind: typeof body.kind === 'string' ? body.kind : '',
     requestFingerprint: typeof body.requestFingerprint === 'string' ? body.requestFingerprint : '',
     scopeIds: textList(body.scopeIds),
+    reservationId: typeof body.reservationId === 'string' ? body.reservationId : '',
+  })
+}
+
+function noteRunQuotaVersion(scan: ControlScan, version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  const runId = typeof body.runId === 'string' ? body.runId : ''
+  noteLatest(scan.runQuotas, runId === '' ? version.record_id : runId, {
+    revision: version.record_revision,
+    refs: stringRefs(body.activeQuotaReservationRefs),
+  })
+}
+
+function noteInvocationVersion(scan: ControlScan, version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  noteLatest(scan.invocations, version.record_id, {
+    revision: version.record_revision,
+    runId: typeof body.runId === 'string' ? body.runId : '',
+    invocationId: typeof body.invocationId === 'string' ? body.invocationId : '',
+    state: typeof body.state === 'string' ? body.state : '',
   })
 }
 
@@ -2531,6 +2633,15 @@ function noteSignalVersion(scan: ControlScan, version: ControlVersionNote): void
   const body = bodyRecord(version.value_json)
   const sourceReceiptId = typeof body.sourceReceiptId === 'string' ? body.sourceReceiptId : ''
   if (sourceReceiptId !== '') scan.signalsByReceipt.add(sourceReceiptId)
+  const signal = objectRecord(body.signal)
+  const target = signal?.targetActionId
+  const seq = wholeNumber(signal?.seq)
+  noteLatest(scan.signalHeads, version.record_id, {
+    revision: version.record_revision,
+    runId: typeof signal?.runId === 'string' ? signal.runId : '',
+    targetKey: typeof target === 'string' ? target : '',
+    seq: seq ?? 0,
+  })
 }
 
 function noteOutboxVersion(scan: ControlScan, version: ControlVersionNote): void {
@@ -2660,6 +2771,78 @@ function assertPublication(scan: ControlScan): void {
   }
 }
 
+function assertQuotaReservations(scan: ControlScan): void {
+  const heldByRun = new Map<string, Set<string>>()
+  const heldIds = new Set<string>()
+  for (const quota of scan.quotas.values()) {
+    if (quota.kind !== 'parallel-action' || quota.status !== 'held') continue
+    if (quota.reservationId === '' || heldIds.has(quota.reservationId) || quota.scopeIds.length === 0)
+      integrity(QUOTA_REF_MISMATCH)
+    heldIds.add(quota.reservationId)
+    for (const runId of quota.scopeIds) {
+      const set = heldByRun.get(runId) ?? new Set<string>()
+      set.add(quota.reservationId)
+      heldByRun.set(runId, set)
+    }
+  }
+  const referenced = new Set<string>()
+  for (const [runId, quota] of scan.runQuotas) {
+    if (!quota.refs) integrity(QUOTA_REF_MISMATCH)
+    const unique = new Set(quota.refs)
+    if (unique.size !== quota.refs.length) integrity(QUOTA_REF_MISMATCH)
+    const expected = heldByRun.get(runId) ?? new Set<string>()
+    if (unique.size !== expected.size) integrity(QUOTA_REF_MISMATCH)
+    for (const id of unique) {
+      if (!expected.has(id)) integrity(QUOTA_REF_MISMATCH)
+      referenced.add(id)
+    }
+    heldByRun.delete(runId)
+  }
+  if (heldByRun.size > 0) integrity(QUOTA_REF_MISMATCH)
+  for (const id of heldIds) {
+    if (!referenced.has(id)) integrity(QUOTA_REF_MISMATCH)
+  }
+}
+
+function assertSignalSeq(scan: ControlScan, evidence: ControlEvidence): void {
+  const expected = new Map<string, SignalHeadNote>()
+  for (const note of scan.signalHeads.values()) {
+    if (note.runId === '' || note.seq < 1) integrity(SIGNAL_INDEX_MISMATCH)
+    const key = `${note.runId}\0${note.targetKey}`
+    const current = expected.get(key)
+    if (!current || note.seq > current.seq) expected.set(key, note)
+  }
+  const rows = evidence.signalSeqIndex()
+  if (rows.length !== expected.size) integrity(SIGNAL_INDEX_MISMATCH)
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const key = `${row.run_id}\0${row.target_key}`
+    const next = wholeNumber(row.next_seq)
+    const match = expected.get(key)
+    if (seen.has(key) || next === undefined || !match || next !== match.seq + 1)
+      integrity(SIGNAL_INDEX_MISMATCH)
+    seen.add(key)
+  }
+}
+
+function assertActiveInvocations(scan: ControlScan, evidence: ControlEvidence): void {
+  const expected = new Map<string, string>()
+  for (const note of scan.invocations.values()) {
+    if (note.state !== 'active') continue
+    if (note.runId === '' || note.invocationId === '' || expected.has(note.runId))
+      integrity(INVOCATION_INDEX_MISMATCH)
+    expected.set(note.runId, note.invocationId)
+  }
+  const rows = evidence.activeInvocations()
+  if (rows.length !== expected.size) integrity(INVOCATION_INDEX_MISMATCH)
+  const seen = new Set<string>()
+  for (const row of rows) {
+    if (seen.has(row.run_id) || expected.get(row.run_id) !== row.invocation_id)
+      integrity(INVOCATION_INDEX_MISMATCH)
+    seen.add(row.run_id)
+  }
+}
+
 export function finishControlScan(scan: ControlScan, evidence: ControlEvidence): void {
   matchCreation(
     scan.actions,
@@ -2757,6 +2940,9 @@ export function finishControlScan(scan: ControlScan, evidence: ControlEvidence):
     }
   }
   assertPublication(scan)
+  assertQuotaReservations(scan)
+  assertSignalSeq(scan, evidence)
+  assertActiveInvocations(scan, evidence)
   const pinnedText = evidence.domainJson()
   if (scan.admissions.size === 0) {
     if (pinnedText !== undefined) integrity('dispatch domain does not match the pinned domain')

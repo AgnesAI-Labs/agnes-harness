@@ -184,6 +184,15 @@ const RUNTIME_DDL = [
      fingerprint TEXT NOT NULL,
      result_json TEXT NOT NULL,
      PRIMARY KEY (method, request_id))`,
+  // Rebuilt from signal and invocation records when a session is opened. Outside the ledger digest.
+  `CREATE TABLE IF NOT EXISTS runtime_signal_seq (
+     run_id TEXT NOT NULL,
+     target_key TEXT NOT NULL,
+     next_seq INTEGER NOT NULL,
+     PRIMARY KEY (run_id, target_key))`,
+  `CREATE TABLE IF NOT EXISTS runtime_active_invocation (
+     run_id TEXT PRIMARY KEY,
+     invocation_id TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS runtime_leases (
      scope_id TEXT PRIMARY KEY,
      writer_id TEXT,
@@ -993,6 +1002,14 @@ export class RuntimeStateDatabase {
           'SELECT domain_json FROM runtime_dispatch_domains WHERE session_id = ?',
           sessionId,
         )?.domain_json,
+      signalSeqIndex: () =>
+        this.all<{ run_id: string; target_key: string; next_seq: unknown }>(
+          'SELECT run_id, target_key, next_seq FROM runtime_signal_seq',
+        ),
+      activeInvocations: () =>
+        this.all<{ run_id: string; invocation_id: string }>(
+          'SELECT run_id, invocation_id FROM runtime_active_invocation',
+        ),
     })
     await this.verifySessionAdmissions(sessionId, runs, formatSeq)
     this.verifyOutboxDelivery(sessionId)
