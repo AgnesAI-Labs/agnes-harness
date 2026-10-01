@@ -1,3 +1,4 @@
+import type { ThinkingLevel } from '@agnes/protocol'
 import type { LocaleVars } from '@agnes/web-client'
 
 export { shouldShowEmptyState } from './conversation-visibility.js'
@@ -20,7 +21,7 @@ export type ComposerActionPresentation = {
   title: string
 }
 
-export type KnownSessionModel = { route: string; id: string }
+export type KnownSessionModel = { route: string; id: string; thinking?: ThinkingLevel }
 
 type ResizeableComposer = {
   scrollHeight: number
@@ -96,8 +97,14 @@ export function canSubmitComposer(
   return state.connected && state.hasSession && !state.sending && !state.stopping && !state.loading
 }
 
+/** 档位在界面上按首字母大写显示，与后台的 `ThinkingLevel` 小写取值区分开。 */
+export function thinkingLevelLabel(level: ThinkingLevel): string {
+  return level.charAt(0).toUpperCase() + level.slice(1)
+}
+
 export function modelSelectLabel(model: KnownSessionModel | undefined, t: Translate): string {
-  return model?.id ?? t('composer.model.select')
+  if (!model) return t('composer.model.select')
+  return model.thinking ? `${model.id} ${thinkingLevelLabel(model.thinking)}` : model.id
 }
 
 export function modelSelectAccessibleName(model: KnownSessionModel | undefined, t: Translate): string {

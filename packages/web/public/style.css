@@ -2522,8 +2522,10 @@ body.session-switching #approval {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* 首层入口菜单按内容定宽（positionPopover 的 width: 'content'），所以下界放得很低：
+     菜单项就「名称 + 当前值 + 箭头」，钉死宽只会在右侧留一片空白。 */
   width: max-content;
-  min-width: min(240px, calc(100vw - 32px));
+  min-width: min(11rem, calc(100vw - 32px));
   max-width: min(420px, calc(100vw - 32px));
   max-height: min(360px, calc(100vh - 96px));
   padding: 0.25rem;
@@ -2539,6 +2541,13 @@ body.session-switching #approval {
 }
 .model-picker[data-placement="below"] {
   transform-origin: top left;
+}
+/* 子菜单从入口行的方向长出来。 */
+.model-picker[data-placement="right"] {
+  transform-origin: top left;
+}
+.model-picker[data-placement="left"] {
+  transform-origin: top right;
 }
 .model-picker-help {
   margin: 0;
@@ -2610,6 +2619,41 @@ body.session-switching #approval {
   font-size: 0.75rem;
   line-height: 1.125rem;
   overflow-wrap: anywhere;
+}
+/* 首层入口行：「名称 —— 当前值 ›」。选中态由右侧的当前值表达，不再用左侧对勾，
+   所以要撤掉 .model-picker-option 的对勾占位和左内边距。 */
+.model-picker-entry {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+}
+.model-picker-entry::before {
+  content: none;
+}
+/* 子菜单开着的那一行保持高亮，这样「右边这块列表是从哪来的」一眼能看出来。 */
+.model-picker-entry[data-open="true"] {
+  background: var(--agnes-bg-hover);
+}
+.model-picker-entry-label {
+  color: var(--agnes-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.model-picker-entry-value {
+  overflow: hidden;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-picker-chevron {
+  flex: 0 0 auto;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--agnes-icon-secondary);
 }
 #cancel,
 #send {

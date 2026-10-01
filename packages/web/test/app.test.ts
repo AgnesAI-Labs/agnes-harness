@@ -241,6 +241,23 @@ function submit(text: string): void {
   document.getElementById('composer')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 }
 
+/** 模型选择器首层是入口菜单（模型 / 推理等级），点「模型」那一行才展开模型列表子菜单。 */
+function openModelList(): void {
+  const entries = Array.from(document.querySelectorAll<HTMLElement>('.model-picker-entry'))
+  const row = entries.find(
+    (entry) => entry.querySelector('.model-picker-entry-label')?.textContent === '模型',
+  )
+  if (!row) throw new Error('model picker entry menu did not open')
+  row.click()
+}
+
+/** 模型列表在子菜单里，不在首层入口菜单上。 */
+function modelMenu(): HTMLElement {
+  const found = document.querySelector<HTMLElement>('#model-submenu-listbox')
+  if (!found) throw new Error('model picker submenu did not open')
+  return found
+}
+
 afterEach(async () => {
   window.dispatchEvent(new Event('pagehide'))
   await Promise.resolve()
@@ -420,7 +437,8 @@ describe('web session selection', () => {
     models = [...models, { route: 'new', id: 'model-b' }]
     await savedCallback({ ...snapshot, effect: 'new-sessions' })
     control('model').click()
-    expect(document.querySelector('[role="listbox"]')?.textContent).toContain('model-b')
+    openModelList()
+    expect(modelMenu().textContent).toContain('model-b')
     control('model').click()
     control('new').click()
     await vi.waitFor(() => expect(control('model').disabled).toBe(false))
@@ -432,6 +450,76 @@ describe('web session selection', () => {
       expect(control(id).disabled).toBe(false)
     expect(control('send').disabled).toBe(true)
   })
+
+  it('offers a reasoning-level entry and sends the chosen level', async () => {
+    installPublicFixture()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      // reasoning / thinkingLevelMap 必须原样到达选择器，否则第二层档位屏根本不会出现。
+      apis: vi.fn(async () => ({
+        profile: {
+          models: [
+            {
+              route: 'local',
+              id: 'model-a',
+              reasoning: true,
+              thinkingLevelMap: { low: 'low', high: 'high' },
+            },
+          ],
+        },
+      })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await import('../src/app.js')
+    const control = (id: string) => document.getElementById(id) as HTMLButtonElement
+    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
+
+    const rows = () => Array.from(modelMenu().querySelectorAll<HTMLElement>('[role="option"]'))
+    const entryValue = (label: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>('.model-picker-entry'))
+        .find((row) => row.querySelector('.model-picker-entry-label')?.textContent === label)
+        ?.querySelector('.model-picker-entry-value')?.textContent
+
+    control('model').click()
+    openModelList()
+    rows()[0]?.click()
+    await vi.waitFor(() =>
+      expect(old.setModel).toHaveBeenCalledWith({ slot: 'primary', route: 'local', model: 'model-a' }),
+    )
+
+    // 换到支持推理的模型之后，入口菜单才多出「推理等级」这一行。
+    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
+    control('model').click()
+    expect(entryValue('推理等级')).toBe('默认')
+
+    Array.from(document.querySelectorAll<HTMLElement>('.model-picker-entry'))
+      .find((row) => row.querySelector('.model-picker-entry-label')?.textContent === '推理等级')
+      ?.click()
+    expect(rows().map((row) => row.textContent?.trim())).toEqual(['Low', 'High'])
+
+    rows()[1]?.click()
+    await vi.waitFor(() =>
+      expect(old.setModel).toHaveBeenCalledWith({
+        slot: 'primary',
+        route: 'local',
+        model: 'model-a',
+        thinking: 'high',
+      }),
+    )
+  }, 20_000)
 
   it.each(['save-first', 'poll-first', 'poll-fails'])(
     'keeps saved model status accurate when %s',
@@ -483,9 +571,9 @@ describe('web session selection', () => {
       else pollRead.resolve(result)
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
       modelButton.click()
-      expect(document.querySelector('[role="listbox"]')?.textContent).toContain('model-b')
-      if (order === 'poll-first')
-        expect(document.querySelector('[role="listbox"]')?.textContent).toContain('model-c')
+      openModelList()
+      expect(modelMenu().textContent).toContain('model-b')
+      if (order === 'poll-first') expect(modelMenu().textContent).toContain('model-c')
     },
   )
 
@@ -729,7 +817,8 @@ describe('web session selection', () => {
     prompt.dispatchEvent(new Event('input', { bubbles: true }))
 
     model.click()
-    const option = document.querySelector<HTMLElement>('[role="option"]')
+    openModelList()
+    const option = modelMenu().querySelector<HTMLElement>('[role="option"]')
     option?.click()
     await vi.waitFor(() =>
       expect(old.setModel).toHaveBeenCalledWith({ slot: 'primary', route: 'local', model: 'model-a' }),
@@ -1011,7 +1100,8 @@ describe('web session selection', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(dialog.open).toBe(false))
     document.getElementById('model')?.click()
-    document.querySelector<HTMLElement>('[role="option"]')?.click()
+    openModelList()
+    modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
 
     submit('保留这条首轮草稿')
     await vi.waitFor(() =>
@@ -1182,13 +1272,14 @@ describe('web model confirmation', () => {
     expect(model.getAttribute('aria-label')).toBe('当前会话模型：model-a')
 
     model.click()
-    document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+    openModelList()
+    modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
     await vi.waitFor(() => expect(old.setModel).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(document.getElementById('notice')?.dataset.kind).toBe('error'))
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-a')
     expect(model.getAttribute('aria-label')).not.toContain('account-acct-private')
 
-    document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+    modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
     await vi.waitFor(() => expect(old.setModel).toHaveBeenCalledTimes(2))
     expect(model.disabled).toBe(true)
     document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()

@@ -1,4 +1,4 @@
-import type { UsageView } from '@agnes/protocol'
+import type { ThinkingLevel, UsageView } from '@agnes/protocol'
 import {
   type ComponentType,
   createElement,
@@ -15,7 +15,17 @@ import {
 import { flushSync } from 'react-dom'
 import type { Translate } from './locales/index.js'
 
-export type ModelPickerOption = { id: string; route: string; label?: string }
+export type ModelPickerOption = {
+  id: string
+  route: string
+  label?: string
+  /** 模型是否支持思考档位；来自 apis.list 的 profile.models[].reasoning。 */
+  reasoning?: boolean
+  /** 模型声明的「档位 → provider 取值」映射；缺省表示任意合法档位都接受。 */
+  thinkingLevelMap?: Record<string, string>
+  /** 本次要应用的思考档位；只在模型支持思考时随选择结果一起出现。 */
+  thinking?: ThinkingLevel
+}
 export type ModelPickerState = {
   accessibleName: string
   disabled: boolean

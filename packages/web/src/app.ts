@@ -1316,11 +1316,17 @@ function selectedModelAvailable(): boolean {
 async function refreshModels(): Promise<ModelPickerOption[]> {
   const generation = ++modelReadGeneration
   const apis = await client.apis()
-  const models = (apis.profile.models ?? []).map(({ route, id }) => ({
-    route,
-    id,
-    ...(accountLabels.has(route) ? { label: accountLabels.get(route) as string } : {}),
-  }))
+  // 思考能力必须原样带到前端：模型选择器的第二层完全靠 reasoning / thinkingLevelMap
+  // 决定「要不要问档位、能问哪几档」，丢掉它们就等于没有思考强度可选。
+  const models = (apis.profile.models ?? []).map(
+    ({ route, id, reasoning, thinkingLevelMap }) => ({
+      route,
+      id,
+      ...(accountLabels.has(route) ? { label: accountLabels.get(route) as string } : {}),
+      ...(reasoning === undefined ? {} : { reasoning }),
+      ...(thinkingLevelMap === undefined ? {} : { thinkingLevelMap }),
+    }),
+  )
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
@@ -1370,11 +1376,19 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     }
   }
 }
+/** 档位只跟着支持思考的模型走：不支持的模型不带 thinking，后台据此清掉旧档位。 */
+function modelSelection(option: ModelPickerOption): KnownSessionModel {
+  return {
+    route: option.route,
+    id: option.id,
+    ...(option.thinking ? { thinking: option.thinking } : {}),
+  }
+}
 async function selectModel(option: ModelPickerOption): Promise<boolean> {
   const session = current
   if (sessionPending || modelChangePending) return false
   if (!session && draftingNew) {
-    knownSessionModel = { route: option.route, id: option.id }
+    knownSessionModel = modelSelection(option)
     rememberWebComposer({ model: knownSessionModel })
     notice.textContent = '新会话将使用所选模型。'
     notice.dataset.kind = ''
@@ -1386,9 +1400,14 @@ async function selectModel(option: ModelPickerOption): Promise<boolean> {
   modelChangePending = true
   renderControls()
   try {
-    await session.setModel({ slot: 'primary', route: option.route, model: option.id })
+    await session.setModel({
+      slot: 'primary',
+      route: option.route,
+      model: option.id,
+      ...(option.thinking ? { thinking: option.thinking } : {}),
+    })
     if (current !== session || selection !== epoch || sessionPending) return false
-    knownSessionModel = { route: option.route, id: option.id }
+    knownSessionModel = modelSelection(option)
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
     notice.textContent = '模型已更新，后续请求将使用所选模型。'
@@ -1735,7 +1754,12 @@ function submitComposer(): void {
     if (!session) throw new Error('会话创建失败。')
     if (initialModelPending) {
       const selectedModel = initialModelPending
-      await session.setModel({ slot: 'primary', route: selectedModel.route, model: selectedModel.id })
+      await session.setModel({
+        slot: 'primary',
+        route: selectedModel.route,
+        model: selectedModel.id,
+        ...(selectedModel.thinking ? { thinking: selectedModel.thinking } : {}),
+      })
       if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
       knownSessionModel = selectedModel
       initialModelPending = undefined
