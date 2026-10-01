@@ -1374,7 +1374,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Config evidence records deployment reuse for each scenario. Measured 1527, exact, no spare.
   // Package source and resolver scenario registration on that base. Measured 1679, exact, no spare.
   // Unsupported reference source kinds register as not-advertised. Measured 1683, exact, no spare.
-  'packages/extension-api/testkit': 1683,
+  // Shared blob and artifact access suites with their scenario registration, and blob selection
+  // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
+  'packages/extension-api/testkit': 2546,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2550,9 +2552,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined measured 50715.
   // Scoped dependency projection over one fixed Cordis root.
   // Re-measured with this guard's countLines(): 51097, exact cap, no spare.
-  // An aborted file refresh is refused before the loader runs.
-  // Re-measured with this guard's countLines(): 51099, exact cap, no spare.
-  'packages/host/src': 51099,
+  // An aborted file refresh is refused before the loader runs. Measured 51099.
+  // Default blob and artifacts services: uploads, pins and gc in one SQLite store, publication,
+  // grants and download tickets in another, reads through the selected blob service.
+  // Re-measured with this guard's countLines(): 52711, exact cap, no spare.
+  // Seal streams stored chunks into the private store, and closed services refuse with one code.
+  // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
+  'packages/host/src': 52783,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
