@@ -143,7 +143,7 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 
 ## 公开评测
 
-在公开的 [Agents' Last Exam（ALE）排行榜](https://agents-last-exam.org/leaderboard)上（评测对象是完整的 Agent 系统：模型 + Harness + 工具，任务来自真实的专业工作场景），Agnes Harness 搭配 Agnes 2.5 Pro Beta 的总通过率为 21.7%，与 OpenClaw + GPT-5.5 持平。
+在公开的 [Agents' Last Exam（ALE）排行榜](https://agents-last-exam.org/leaderboard)上（评测对象是完整的 Agent 系统：模型 + Harness + 工具，任务来自真实的专业工作场景），Agnes Harness 搭配 Agnes 2.5 Pro Beta 的总通过率为 21.7%，总得分 42.7。
 
 <p align="center">
   <img src="docs/assets/readme/ale-leaderboard.png" alt="Agents' Last Exam 中 Agnes Harness 搭配 Agnes 2.5 Pro Beta 的成绩：总通过率 21.7%，总得分 42.7%，Near-term 通过率 31.3%，Full-Spectrum 通过率 23.6%，ALE-CLI 通过率 25.7%、得分 50.2%；旁边是榜单上相近条目的节选，各条目的模型与设置不同" width="100%" />
