@@ -66,7 +66,11 @@
 
 **LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。**
 
-这组角色比喻表达 AGH 的产品愿景：把推理、结构化决策、持久任务上下文和物理能力组织到一起。下图区分已有软件路径与规划中的接入。
+<p align="center">
+  <img src="docs/assets/readme/trailer.webp" alt="动画介绍：大脑（LLM）、小脑（Jev，规划中）、记忆（Harness）与身体（MHS，规划中，经 MCP 接入）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付，并规划接入物理世界的 MHS" width="100%" />
+</p>
+
+这组角色比喻表达 AGH 的产品愿景：把推理、结构化决策、持久任务上下文和物理能力组织到一起。下方的详细架构图区分已有软件路径与规划中的接入。
 
 ![AGH 架构：LLM 是大脑、Jev 是小脑、Harness 是记忆、MHS 是身体；Jev 和设备接入以虚线标为规划](docs/assets/architecture.zh-CN.svg)
 

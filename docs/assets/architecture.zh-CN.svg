@@ -1,79 +1,225 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1248" viewBox="0 0 1200 1248" role="img" aria-labelledby="title description" xml:lang="zh-CN">
-<title id="title">Agnes Harness — 一套执行底座，将现场交付沉淀为可复用的能力。</title>
-<desc id="description">AGH 架构：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。Jev 与 MHS 接入属于规划，MHS 设备适配器基于 MCP。App Server、Agent Loop、Sandbox 与插件体系支撑企业现场交付，设备适配器将同一底座延伸到物理场景。</desc>
-<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2459ce"/></marker><marker id="planned-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9a5a13"/></marker></defs>
-<rect width="1200" height="1248" rx="20" fill="#ffffff"/>
-<g font-family="Inter, Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif">
-<text x="36" y="55" font-size="36" font-weight="700" fill="#172b4d">Agnes Harness</text>
-<text x="36" y="87" font-size="20" font-weight="400" fill="#52647b">一套执行底座，将现场交付沉淀为可复用的能力。</text>
-<path d="M 36 116 H 69" stroke="#2459ce" stroke-width="2.2"/>
-<text x="80" y="122" font-size="17" font-weight="400" fill="#52647b">实线：已有软件能力</text>
-<path d="M 530 116 H 563" stroke="#9a5a13" stroke-width="2.2" stroke-dasharray="7 5"/>
-<text x="574" y="122" font-size="17" font-weight="400" fill="#52647b">虚线：AGH 规划中的接入</text>
-<rect x="36" y="146" width="264" height="111" rx="14" fill="#f3f7ff" stroke="#c8d5e5" stroke-width="1.8"/>
-<text x="53" y="179" font-size="20" font-weight="700" fill="#2459ce">LLM / 大脑</text>
-<text x="53" y="207" font-size="16" font-weight="400" fill="#52647b">理解、推理与候选动作生成</text>
-<text x="53" y="232" font-size="16" font-weight="400" fill="#52647b">通过 AI Provider 接入</text>
-<rect x="324" y="146" width="264" height="111" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
-<text x="341" y="179" font-size="20" font-weight="700" fill="#9a5a13">Jev / 小脑</text>
-<text x="341" y="207" font-size="16" font-weight="400" fill="#52647b">结构化决策与执行协调</text>
-<text x="341" y="232" font-size="16" font-weight="400" fill="#52647b">规划接入</text>
-<rect x="612" y="146" width="264" height="111" rx="14" fill="#f3f7ff" stroke="#c8d5e5" stroke-width="1.8"/>
-<text x="629" y="179" font-size="20" font-weight="700" fill="#2459ce">HARNESS / 记忆</text>
-<text x="629" y="207" font-size="16" font-weight="400" fill="#52647b">任务状态、历史与可复用方法</text>
-<text x="629" y="232" font-size="16" font-weight="400" fill="#52647b">会话、执行记录与 Skills</text>
-<rect x="900" y="146" width="264" height="111" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
-<text x="917" y="179" font-size="20" font-weight="700" fill="#9a5a13">MHS / 身体</text>
-<text x="917" y="207" font-size="16" font-weight="400" fill="#52647b">连接物理设备的能力接口</text>
-<text x="917" y="232" font-size="16" font-weight="400" fill="#52647b">规划经 MCP 适配器接入</text>
-<text x="36" y="284" font-size="17" font-weight="400" fill="#52647b">角色比喻解释产品愿景；下方架构层说明实际执行职责。</text>
-<rect x="36" y="310" width="1128" height="111" rx="14" fill="#f3f7ff" stroke="#2459ce" stroke-width="1.8"/>
-<text x="58" y="344" font-size="22" font-weight="700" fill="#2459ce">APP SERVER / 统一接入</text>
-<text x="58" y="376" font-size="21" font-weight="600" fill="#172b4d">CLI / TUI  ·  Web  ·  SDK / API 调用方</text>
-<text x="58" y="402" font-size="18" font-weight="400" fill="#52647b">SDK + daemon + workers：任务提交、共享会话、事件输出与审批路由</text>
-<path d="M 600 423 L 600 452" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)"/>
-<rect x="36" y="457" width="1128" height="325" rx="14" fill="#f8fafc" stroke="#c8d5e5" stroke-width="1.8"/>
-<text x="58" y="490" font-size="22" font-weight="700" fill="#2459ce">AGENT RUNTIME / 执行底座</text>
-<text x="58" y="517" font-size="18" font-weight="400" fill="#52647b">Host 装配能力，Core 在 worker 内推进任务。</text>
-<rect x="58" y="539" width="519" height="142" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
-<text x="78" y="572" font-size="22" font-weight="650" fill="#172b4d">Agent Loop / 执行循环</text>
-<text x="78" y="601" font-size="18" font-weight="400" fill="#52647b">模型 → 动作 → 工具 → 结果 → 下一步</text>
-<text x="78" y="628" font-size="18" font-weight="400" fill="#52647b">继续、暂停、恢复或完成</text>
-<text x="78" y="655" font-size="18" font-weight="400" fill="#52647b">LLM 经 AI Provider 接入；Jev 接入属规划</text>
-<rect x="625" y="539" width="517" height="142" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
-<text x="645" y="572" font-size="22" font-weight="650" fill="#172b4d">受控工具执行 / Sandbox</text>
-<text x="645" y="601" font-size="18" font-weight="400" fill="#52647b">工具授权与执行策略</text>
-<text x="645" y="628" font-size="18" font-weight="400" fill="#52647b">对适用的命令执行施加沙箱约束</text>
-<text x="645" y="655" font-size="18" font-weight="400" fill="#52647b">文件、网络与进程约束取决于平台能力</text>
-<path d="M 580 610 L 620 610" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
-<rect x="58" y="704" width="1084" height="59" rx="14" fill="#edf7f3" stroke="#b5d5c7" stroke-width="1.8"/>
-<text x="78" y="730" font-size="20" font-weight="650" fill="#176b55">Harness 记忆 / 持久任务上下文</text>
-<text x="78" y="751" font-size="17" font-weight="400" fill="#52647b">会话历史 · 任务状态 · 事件记录 · 恢复 · 可复用的 Skills</text>
-<path d="M 600 789 L 600 818" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
-<rect x="36" y="827" width="1128" height="164" rx="14" fill="#f3f7ff" stroke="#2459ce" stroke-width="1.8"/>
-<text x="58" y="860" font-size="22" font-weight="700" fill="#2459ce">PLUGINS / 插件体系</text>
-<text x="58" y="887" font-size="18" font-weight="400" fill="#52647b">Cordis 组织能力装配、依赖、包信任与生命周期</text>
-<rect x="58" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
-<text x="74" y="935" font-size="20" font-weight="600" fill="#172b4d">工具与业务服务</text>
-<text x="74" y="958" font-size="16" font-weight="400" fill="#52647b">后端插件 · MCP</text>
-<rect x="425" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
-<text x="441" y="935" font-size="20" font-weight="600" fill="#172b4d">方法与任务知识</text>
-<text x="441" y="958" font-size="16" font-weight="400" fill="#52647b">Skills · hooks</text>
-<rect x="792" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
-<text x="808" y="935" font-size="20" font-weight="600" fill="#172b4d">岗位工作台</text>
-<text x="808" y="958" font-size="16" font-weight="400" fill="#52647b">Web 面板 · 受限服务调用</text>
-<path d="M 316 995 L 316 1030" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)"/>
-<path d="M 886 995 L 886 1030" fill="none" stroke="#9a5a13" stroke-width="2.2" marker-end="url(#planned-arrow)" stroke-dasharray="7 5"/>
-<rect x="36" y="1038" width="552" height="147" rx="14" fill="#f0f8f5" stroke="#94bcac" stroke-width="1.8"/>
-<text x="58" y="1072" font-size="22" font-weight="700" fill="#176b55">FDE / 企业现场交付</text>
-<text x="58" y="1103" font-size="18" font-weight="400" fill="#52647b">知识检索 · 数据库 · 业务系统</text>
-<text x="58" y="1130" font-size="18" font-weight="400" fill="#52647b">组合工具、Skills 与业务界面</text>
-<text x="58" y="1157" font-size="18" font-weight="400" fill="#52647b">具体连接器需要开发与场景验证。</text>
-<rect x="612" y="1038" width="552" height="147" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
-<text x="634" y="1072" font-size="22" font-weight="700" fill="#9a5a13">MHS / 物理设备接入</text>
-<text x="634" y="1103" font-size="18" font-weight="400" fill="#52647b">规划：MCP 适配器 → 控制器 → 设备</text>
-<text x="634" y="1130" font-size="18" font-weight="400" fill="#52647b">状态读取 · 动作请求 · 执行回执</text>
-<text x="634" y="1157" font-size="18" font-weight="400" fill="#52647b">互锁与急停由设备及其控制系统承担。</text>
-<text x="36" y="1223" font-size="18" font-weight="400" fill="#52647b">FDE 是交付方式，MHS 是设备接入方向；两者使用同一套执行底座。</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1400" viewBox="0 0 1200 1400" role="img" aria-labelledby="title description" xml:lang="zh-CN">
+<title id="title">Agnes Harness — 一套执行底座，连接企业现场与物理世界</title>
+<desc id="description">AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体；Jev 与 MHS 属于规划，MHS 设备适配器基于 MCP。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与未来的物理世界接入。</desc>
+<defs><radialGradient id="bg" cx="50%" cy="0%" r="95%"><stop offset="0" stop-color="#26307a"/><stop offset=".55" stop-color="#121a48"/><stop offset="1" stop-color="#0a0f2b"/></radialGradient><radialGradient id="halo"><stop offset="0" stop-color="#7c8cff" stop-opacity=".9"/><stop offset="1" stop-color="#7c8cff" stop-opacity="0"/></radialGradient><radialGradient id="core"><stop offset="0" stop-color="#2b3690"/><stop offset="1" stop-color="#151c52"/></radialGradient><linearGradient id="sweepGrad" x1="0" x2="1"><stop offset="0" stop-color="#38d6ff" stop-opacity="0"/><stop offset=".5" stop-color="#38d6ff" stop-opacity=".28"/><stop offset="1" stop-color="#38d6ff" stop-opacity="0"/></linearGradient><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="rgba(255,255,255,0.045)" stroke-width="1"/></pattern><filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><clipPath id="memclip"><rect x="880" y="590" width="232" height="196" rx="10"/></clipPath><style>.rise{animation:rise .9s cubic-bezier(.2,.7,.2,1) both}@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}.beat{opacity:0;animation:beat 12s ease-in-out infinite}@keyframes beat{0%,100%{opacity:0}4%{opacity:1}13%{opacity:0}}.pulse{animation:pulse 2.6s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:.9}}.march{animation:march 1.4s linear infinite}@keyframes march{to{stroke-dashoffset:-28}}.spin{transform-box:fill-box;transform-origin:center;animation:spin 9s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.comet{animation:comet 6s linear infinite}@keyframes comet{to{stroke-dashoffset:-628.3}}.sweep{animation:sweep 3.6s ease-in-out infinite}@keyframes sweep{0%{transform:translateX(-90px)}60%,100%{transform:translateX(330px)}}.pin{animation:pin 12s ease-in-out infinite}@keyframes pin{0%,46%,62%,100%{opacity:.35}50%{opacity:1}}@media (prefers-reduced-motion:reduce){*{animation:none!important}.motion{display:none}}</style></defs>
+<rect width="1200" height="1400" rx="24" fill="url(#bg)"/>
+<rect width="1200" height="1400" rx="24" fill="url(#grid)"/>
+<g font-family="Inter, -apple-system, Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif">
+<g class="rise" style="animation-delay:0s">
+<text x="60" y="76" font-size="38" font-weight="800" fill="#eef1ff">Agnes Harness</text>
+<text x="60" y="110" font-size="17" font-weight="400" fill="#9aa6d8">一套执行底座，连接企业现场与物理世界</text>
+<path d="M 820 64 H 852" stroke="#38d6ff" stroke-width="2.4"/>
+<text x="862" y="69" font-size="13" font-weight="400" fill="#9aa6d8">实线：已有软件能力</text>
+<path d="M 820 94 H 852" stroke="#fbbf24" stroke-width="2.4" stroke-dasharray="6 5" class="march"/>
+<text x="862" y="99" font-size="13" font-weight="400" fill="#9aa6d8">虚线：规划中的 AGH 接入</text>
+</g>
+<g class="rise" style="animation-delay:0.15s">
+<rect x="60" y="148" width="255" height="104" rx="18" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.45)" stroke-width="1.4"/>
+<circle cx="106" cy="200" r="30" fill="url(#halo)" class="pulse" style="animation-delay:0s"/>
+<circle cx="106" cy="200" r="24" fill="url(#core)" stroke="#b49bff" stroke-width="1.4"/>
+<g transform="translate(93 187) scale(1.0833333333333333)" fill="none" stroke="#b49bff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5a3 3 0 0 0-5.6 1.2A3.2 3.2 0 0 0 4.6 12a3.3 3.3 0 0 0 2.3 5 3 3 0 0 0 5.1 1.4z"/><path d="M12 5.5a3 3 0 0 1 5.6 1.2 3.2 3.2 0 0 1 1.8 5.3 3.3 3.3 0 0 1-2.3 5A3 3 0 0 1 12 18.4"/><path d="M8.5 10.5c1 .3 1.8 1 2 2M15.5 10.5c-1 .3-1.8 1-2 2"/></g>
+<text x="146" y="186" font-size="18" font-weight="800" fill="#eef1ff">LLM</text>
+<text x="195" y="186" font-size="15" font-weight="600" fill="#b49bff">大脑</text>
+<text x="146" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">理解、推理与动作建议</text>
+<text x="146" y="232" font-size="12" font-weight="600" fill="#34d399">经 AI Provider 接入</text>
+<rect x="335" y="148" width="255" height="104" rx="18" fill="rgba(251,191,36,0.06)" stroke="rgba(251,191,36,0.75)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<circle cx="381" cy="200" r="30" fill="url(#halo)" class="pulse" style="animation-delay:0.6s"/>
+<circle cx="381" cy="200" r="24" fill="url(#core)" stroke="#fbbf24" stroke-width="1.4"/>
+<g transform="translate(368 187) scale(1.0833333333333333)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="7" r="2.2"/><circle cx="12" cy="18" r="2.2"/><circle cx="12" cy="11" r="1.4"/><path d="M8 7.6l2.8 2.6M16 7.6l-2.8 2.6M12 12.4v3.4"/></g>
+<text x="421" y="186" font-size="18" font-weight="800" fill="#eef1ff">Jev</text>
+<text x="465" y="186" font-size="15" font-weight="600" fill="#fbbf24">小脑</text>
+<text x="421" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">结构化决策与路由</text>
+<text x="421" y="232" font-size="12" font-weight="600" fill="#fbbf24">规划中</text>
+<rect x="610" y="148" width="255" height="104" rx="18" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.45)" stroke-width="1.4"/>
+<circle cx="656" cy="200" r="30" fill="url(#halo)" class="pulse" style="animation-delay:1.2s"/>
+<circle cx="656" cy="200" r="24" fill="url(#core)" stroke="#38d6ff" stroke-width="1.4"/>
+<g transform="translate(643 187) scale(1.0833333333333333)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/><path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></g>
+<text x="696" y="186" font-size="18" font-weight="800" fill="#eef1ff">Harness</text>
+<text x="782" y="186" font-size="15" font-weight="600" fill="#38d6ff">记忆</text>
+<text x="696" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">状态、历史与可复用方法</text>
+<text x="696" y="232" font-size="12" font-weight="600" fill="#34d399">会话、执行记录、Skills</text>
+<rect x="885" y="148" width="255" height="104" rx="18" fill="rgba(251,191,36,0.06)" stroke="rgba(251,191,36,0.75)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<circle cx="931" cy="200" r="30" fill="url(#halo)" class="pulse" style="animation-delay:1.7999999999999998s"/>
+<circle cx="931" cy="200" r="24" fill="url(#core)" stroke="#fbbf24" stroke-width="1.4"/>
+<g transform="translate(918 187) scale(1.0833333333333333)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h9M8.5 20v-6l6-5 4 2"/><circle cx="8.5" cy="14" r="1.6"/><circle cx="14.5" cy="9" r="1.6"/><path d="M18.5 11v2.5"/></g>
+<text x="971" y="186" font-size="18" font-weight="800" fill="#eef1ff">MHS</text>
+<text x="1020" y="186" font-size="15" font-weight="600" fill="#fbbf24">身体</text>
+<text x="971" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">连接物理设备的能力</text>
+<text x="971" y="232" font-size="12" font-weight="600" fill="#fbbf24">规划中 · 经 MCP 接入</text>
+</g>
+<g class="rise" style="animation-delay:0.3s">
+<rect x="60" y="284" width="1080" height="140" rx="18" fill="rgba(255,255,255,0.035)" stroke="rgba(132,150,255,0.30)" stroke-width="1.4"/>
+<text x="84" y="316" font-size="14" font-weight="800" fill="#38d6ff" letter-spacing="1.6">APP SERVER · 统一接入</text>
+<text x="84" y="338" font-size="13" font-weight="400" fill="#9aa6d8">共享会话 · 任务提交 · 事件推送 · 审批路由</text>
+<rect x="84" y="356" width="240" height="48" rx="12" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.42)" stroke-width="1.4"/>
+<g transform="translate(99 369) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></g>
+<text x="132" y="385" font-size="14.5" font-weight="600" fill="#eef1ff">Web 工作台</text>
+<rect x="348" y="356" width="240" height="48" rx="12" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.42)" stroke-width="1.4"/>
+<g transform="translate(363 369) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10l3 2.5L7 15M12 15h5"/></g>
+<text x="396" y="385" font-size="14.5" font-weight="600" fill="#eef1ff">CLI / TUI</text>
+<rect x="612" y="356" width="240" height="48" rx="12" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.42)" stroke-width="1.4"/>
+<g transform="translate(627 369) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></g>
+<text x="660" y="385" font-size="14.5" font-weight="600" fill="#eef1ff">IDE · ACP</text>
+<rect x="876" y="356" width="240" height="48" rx="12" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.42)" stroke-width="1.4"/>
+<g transform="translate(891 369) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .4-8A5.5 5.5 0 0 0 6.6 9.5 4.3 4.3 0 0 0 7 18z"/></g>
+<text x="924" y="385" font-size="14.5" font-weight="600" fill="#eef1ff">SDK / API</text>
+</g>
+<rect class="beat" style="animation-delay:0s" x="84" y="356" width="1032" height="48" rx="12" fill="none" stroke="#38d6ff" stroke-width="2.4" filter="url(#glow)"/>
+<path d="M 300 424 V 470" stroke="rgba(56,214,255,0.35)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle class="motion" r="3.6" fill="#38d6ff" opacity="0" filter="url(#glow)"><animateMotion path="M 300 424 V 470" dur="1.6s" begin="0.4s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.6s" begin="0.4s" repeatCount="indefinite"/></circle>
+<path d="M 600 424 V 470" stroke="rgba(56,214,255,0.35)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle class="motion" r="3.6" fill="#38d6ff" opacity="0" filter="url(#glow)"><animateMotion path="M 600 424 V 470" dur="1.6s" begin="0.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.6s" begin="0.8s" repeatCount="indefinite"/></circle>
+<path d="M 900 424 V 470" stroke="rgba(56,214,255,0.35)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle class="motion" r="3.6" fill="#38d6ff" opacity="0" filter="url(#glow)"><animateMotion path="M 900 424 V 470" dur="1.6s" begin="1.2000000000000002s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.6s" begin="1.2000000000000002s" repeatCount="indefinite"/></circle>
+<g class="rise" style="animation-delay:0.45s">
+<rect x="60" y="470" width="1080" height="440" rx="18" fill="rgba(124,140,255,0.05)" stroke="rgba(124,140,255,0.5)" stroke-width="1.4"/>
+<text x="84" y="502" font-size="14" font-weight="800" fill="#7c8cff" letter-spacing="1.6">AGENT RUNTIME · 执行底座</text>
+<text x="84" y="524" font-size="13" font-weight="400" fill="#9aa6d8">Host 装配能力，Core 在 worker 内持续推进任务</text>
+<rect x="84" y="556" width="240" height="236" rx="16" fill="rgba(180,155,255,0.07)" stroke="rgba(180,155,255,0.45)" stroke-width="1.4"/>
+<circle cx="204" cy="642" r="58" fill="url(#halo)" class="pulse"/>
+<circle cx="204" cy="642" r="44" fill="url(#core)" stroke="#b49bff" stroke-width="1.6"/>
+<g transform="translate(181 619) scale(1.9166666666666667)" fill="none" stroke="#b49bff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5a3 3 0 0 0-5.6 1.2A3.2 3.2 0 0 0 4.6 12a3.3 3.3 0 0 0 2.3 5 3 3 0 0 0 5.1 1.4z"/><path d="M12 5.5a3 3 0 0 1 5.6 1.2 3.2 3.2 0 0 1 1.8 5.3 3.3 3.3 0 0 1-2.3 5A3 3 0 0 1 12 18.4"/><path d="M8.5 10.5c1 .3 1.8 1 2 2M15.5 10.5c-1 .3-1.8 1-2 2"/></g>
+<text x="204" y="728" font-size="17" font-weight="700" fill="#eef1ff" text-anchor="middle">模型推理</text>
+<text x="204" y="752" font-size="12.5" font-weight="400" fill="#9aa6d8" text-anchor="middle">经 AI Provider 接入 LLM</text>
+<path d="M 324 674 H 488" stroke="rgba(180,155,255,0.5)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle cx="600" cy="680" r="100" fill="none" stroke="rgba(124,140,255,0.25)" stroke-width="2"/>
+<circle cx="600" cy="680" r="100" fill="none" stroke="#38d6ff" stroke-width="3" stroke-linecap="round" stroke-dasharray="110 518.3" transform="rotate(-90 600 680)" class="comet" filter="url(#glow)"/>
+<circle cx="600" cy="680" r="62" fill="url(#core)" stroke="rgba(124,140,255,0.4)"/>
+<text x="600" y="676" font-size="14" font-weight="800" fill="#eef1ff" text-anchor="middle" letter-spacing="1.4">AGENT LOOP</text>
+<text x="600" y="696" font-size="11.5" font-weight="400" fill="#9aa6d8" text-anchor="middle">循环推进，直到完成</text>
+<circle cx="600.0" cy="580.0" r="21" fill="#18205a" stroke="#38d6ff" stroke-width="1.6"/>
+<g transform="translate(589 569) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 16v4M16 18h4"/></g>
+<text x="630.0" y="585.0" font-size="13.5" font-weight="650" fill="#eef1ff" text-anchor="start">推理</text>
+<circle cx="695.1" cy="649.1" r="21" fill="#18205a" stroke="#38d6ff" stroke-width="1.6"/>
+<g transform="translate(684.1056516295154 638.0983005625053) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="3.5" width="13" height="17" rx="2"/><path d="M9 9h6M9 12.5h6M9 16h4"/></g>
+<text x="725.1" y="654.1" font-size="13.5" font-weight="650" fill="#eef1ff" text-anchor="start">决定动作</text>
+<circle cx="658.8" cy="760.9" r="21" fill="#18205a" stroke="#38d6ff" stroke-width="1.6"/>
+<g transform="translate(647.7785252292473 749.9016994374947) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></g>
+<text x="666.8" y="802.9" font-size="13.5" font-weight="650" fill="#eef1ff" text-anchor="middle">调用工具</text>
+<circle cx="541.2" cy="760.9" r="21" fill="#18205a" stroke="#38d6ff" stroke-width="1.6"/>
+<g transform="translate(530.2214747707527 749.9016994374947) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.8 2.8L16.2 9"/></g>
+<text x="533.2" y="802.9" font-size="13.5" font-weight="650" fill="#eef1ff" text-anchor="middle">返回结果</text>
+<circle cx="504.9" cy="649.1" r="21" fill="#18205a" stroke="#38d6ff" stroke-width="1.6"/>
+<g transform="translate(493.89434837048464 638.0983005625052) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.8 4.5v3.6h-3.6"/></g>
+<text x="474.9" y="654.1" font-size="13.5" font-weight="650" fill="#eef1ff" text-anchor="end">继续 / 完成</text>
+<circle class="motion" r="4.5" fill="#ffffff" opacity="0" filter="url(#glow)"><animateMotion path="M 600 580 A 100 100 0 0 1 600 780 A 100 100 0 0 1 600 580" dur="6s" begin="0s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="6s" begin="0s" repeatCount="indefinite"/></circle>
+<circle cx="806" cy="590" r="27" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.6" stroke-dasharray="4 5" class="spin"/>
+<g transform="translate(794 578) scale(1)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="7" r="2.2"/><circle cx="12" cy="18" r="2.2"/><circle cx="12" cy="11" r="1.4"/><path d="M8 7.6l2.8 2.6M16 7.6l-2.8 2.6M12 12.4v3.4"/></g>
+<text x="806" y="550" font-size="12" font-weight="600" fill="#fbbf24" text-anchor="middle">Jev 路由 · 规划中</text>
+<path d="M 784 606 L 716 636" stroke="#fbbf24" stroke-width="1.6" stroke-dasharray="4 5" class="march" fill="none"/>
+<rect x="868" y="556" width="248" height="236" rx="16" fill="rgba(56,214,255,0.06)" stroke="rgba(56,214,255,0.45)" stroke-width="1.4"/>
+<g transform="translate(885 567) scale(0.9166666666666666)" fill="none" stroke="#38d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/><path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></g>
+<text x="916" y="584" font-size="13" font-weight="800" fill="#38d6ff" letter-spacing="1.2">HARNESS 记忆</text>
+<rect x="888" y="600" width="216" height="38" rx="10" fill="rgba(56,214,255,0.08)" stroke="rgba(56,214,255,0.35)" stroke-width="1.4"/>
+<circle cx="906" cy="619" r="4" fill="#38d6ff" class="pulse" style="animation-delay:0s"/>
+<text x="922" y="624" font-size="14" font-weight="600" fill="#eef1ff">会话</text>
+<rect x="888" y="646" width="216" height="38" rx="10" fill="rgba(56,214,255,0.08)" stroke="rgba(56,214,255,0.35)" stroke-width="1.4"/>
+<circle cx="906" cy="665" r="4" fill="#38d6ff" class="pulse" style="animation-delay:0.4s"/>
+<text x="922" y="670" font-size="14" font-weight="600" fill="#eef1ff">任务状态</text>
+<rect x="888" y="692" width="216" height="38" rx="10" fill="rgba(56,214,255,0.08)" stroke="rgba(56,214,255,0.35)" stroke-width="1.4"/>
+<circle cx="906" cy="711" r="4" fill="#38d6ff" class="pulse" style="animation-delay:0.8s"/>
+<text x="922" y="716" font-size="14" font-weight="600" fill="#eef1ff">事件记录</text>
+<rect x="888" y="738" width="216" height="38" rx="10" fill="rgba(56,214,255,0.08)" stroke="rgba(56,214,255,0.35)" stroke-width="1.4"/>
+<circle cx="906" cy="757" r="4" fill="#38d6ff" class="pulse" style="animation-delay:1.2000000000000002s"/>
+<text x="922" y="762" font-size="14" font-weight="600" fill="#eef1ff">Skills</text>
+<g clip-path="url(#memclip)"><rect class="sweep" x="880" y="590" width="90" height="196" fill="url(#sweepGrad)"/></g>
+<path d="M 712 680 H 868" stroke="rgba(56,214,255,0.5)" stroke-width="2" stroke-dasharray="3 5"/>
+<rect x="84" y="820" width="1032" height="66" rx="14" fill="rgba(52,211,153,0.07)" stroke="rgba(52,211,153,0.45)" stroke-width="1.4"/>
+<g transform="translate(103 840) scale(1.0833333333333333)" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></g>
+<text x="144" y="848" font-size="13.5" font-weight="800" fill="#34d399" letter-spacing="1.2">受控执行</text>
+<text x="144" y="870" font-size="13" font-weight="400" fill="#9aa6d8">工具审批 · 命令沙箱 · 执行策略 · 中断恢复</text>
+</g>
+<rect class="beat" style="animation-delay:2.4s" x="84" y="556" width="240" height="236" rx="16" fill="none" stroke="#b49bff" stroke-width="2.4" filter="url(#glow)"/>
+<rect class="beat" style="animation-delay:3.4s" x="868" y="556" width="248" height="236" rx="16" fill="none" stroke="#38d6ff" stroke-width="2.4" filter="url(#glow)"/>
+<rect class="beat" style="animation-delay:4.4s" x="84" y="820" width="1032" height="66" rx="14" fill="none" stroke="#34d399" stroke-width="2.4" filter="url(#glow)"/>
+<path d="M 206 940 V 910" stroke="rgba(124,140,255,0.4)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle class="motion" r="3.4" fill="#7c8cff" opacity="0" filter="url(#glow)"><animateMotion path="M 206 960 V 910" dur="1.4s" begin="6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.4s" begin="6s" repeatCount="indefinite"/></circle>
+<path d="M 470 940 V 910" stroke="rgba(124,140,255,0.4)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle class="motion" r="3.4" fill="#7c8cff" opacity="0" filter="url(#glow)"><animateMotion path="M 470 960 V 910" dur="1.4s" begin="6.3s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.4s" begin="6.3s" repeatCount="indefinite"/></circle>
+<path d="M 734 940 V 910" stroke="rgba(124,140,255,0.4)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle class="motion" r="3.4" fill="#7c8cff" opacity="0" filter="url(#glow)"><animateMotion path="M 734 960 V 910" dur="1.4s" begin="6.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.4s" begin="6.6s" repeatCount="indefinite"/></circle>
+<path d="M 998 940 V 910" stroke="rgba(124,140,255,0.4)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle class="motion" r="3.4" fill="#7c8cff" opacity="0" filter="url(#glow)"><animateMotion path="M 998 960 V 910" dur="1.4s" begin="6.9s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.4s" begin="6.9s" repeatCount="indefinite"/></circle>
+<g class="rise" style="animation-delay:0.6s">
+<rect x="60" y="940" width="1080" height="164" rx="18" fill="rgba(255,255,255,0.035)" stroke="rgba(132,150,255,0.30)" stroke-width="1.4"/>
+<text x="84" y="972" font-size="14" font-weight="800" fill="#7c8cff" letter-spacing="1.6">PLUGINS · 插件体系</text>
+<text x="84" y="994" font-size="13" font-weight="400" fill="#9aa6d8">一切皆插件：包信任、依赖与生命周期</text>
+<rect x="149" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0s"/>
+<rect x="199" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0s"/>
+<rect x="249" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0s"/>
+<rect x="84" y="1016" width="240" height="66" rx="12" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.42)" stroke-width="1.4"/>
+<g transform="translate(99 1038) scale(0.9166666666666666)" fill="none" stroke="#7c8cff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5h6v2M3.5 12.5h17"/></g>
+<text x="132" y="1045" font-size="15" font-weight="650" fill="#eef1ff">工具与业务服务</text>
+<text x="132" y="1064" font-size="12" font-weight="400" fill="#9aa6d8">后端插件</text>
+<rect x="413" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.15s"/>
+<rect x="463" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.15s"/>
+<rect x="513" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.15s"/>
+<rect x="348" y="1016" width="240" height="66" rx="12" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.42)" stroke-width="1.4"/>
+<g transform="translate(363 1038) scale(0.9166666666666666)" fill="none" stroke="#7c8cff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5.5A2.5 2.5 0 0 1 12 7.5V20a2 2 0 0 0-2-2H4z"/><path d="M20 5h-5.5A2.5 2.5 0 0 0 12 7.5V20a2 2 0 0 1 2-2h6z"/></g>
+<text x="396" y="1045" font-size="15" font-weight="650" fill="#eef1ff">数据与知识</text>
+<text x="396" y="1064" font-size="12" font-weight="400" fill="#9aa6d8">MCP 连接</text>
+<rect x="677" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.3s"/>
+<rect x="727" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.3s"/>
+<rect x="777" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.3s"/>
+<rect x="612" y="1016" width="240" height="66" rx="12" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.42)" stroke-width="1.4"/>
+<g transform="translate(627 1038) scale(0.9166666666666666)" fill="none" stroke="#7c8cff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="7" height="5" rx="1.2"/><rect x="13.5" y="15" width="7" height="5" rx="1.2"/><path d="M7 9v3.5a2 2 0 0 0 2 2h4.5"/></g>
+<text x="660" y="1045" font-size="15" font-weight="650" fill="#eef1ff">方法与流程</text>
+<text x="660" y="1064" font-size="12" font-weight="400" fill="#9aa6d8">Skills · hooks</text>
+<rect x="941" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.44999999999999996s"/>
+<rect x="991" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.44999999999999996s"/>
+<rect x="1041" y="1008" width="10" height="8" rx="2" fill="#7c8cff" class="pin" style="animation-delay:0.44999999999999996s"/>
+<rect x="876" y="1016" width="240" height="66" rx="12" fill="rgba(124,140,255,0.08)" stroke="rgba(124,140,255,0.42)" stroke-width="1.4"/>
+<g transform="translate(891 1038) scale(0.9166666666666666)" fill="none" stroke="#7c8cff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M9.5 4v16M9.5 10h11"/></g>
+<text x="924" y="1045" font-size="15" font-weight="650" fill="#eef1ff">岗位工作台</text>
+<text x="924" y="1064" font-size="12" font-weight="400" fill="#9aa6d8">Web 面板</text>
+</g>
+<rect class="beat" style="animation-delay:6s" x="84" y="1016" width="1032" height="66" rx="12" fill="none" stroke="#7c8cff" stroke-width="2.4" filter="url(#glow)"/>
+<path d="M 324 1104 V 1150" stroke="rgba(52,211,153,0.5)" stroke-width="2" stroke-dasharray="3 5"/>
+<circle class="motion" r="3.6" fill="#34d399" opacity="0" filter="url(#glow)"><animateMotion path="M 324 1104 V 1150" dur="1.4s" begin="7.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.4s" begin="7.6s" repeatCount="indefinite"/></circle>
+<path d="M 876 1104 V 1150" stroke="#fbbf24" stroke-width="2" stroke-dasharray="5 5" class="march"/>
+<circle class="motion" r="3.6" fill="#fbbf24" opacity="0" filter="url(#glow)"><animateMotion path="M 876 1104 V 1150" dur="1.4s" begin="8.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.85;1" dur="1.4s" begin="8.2s" repeatCount="indefinite"/></circle>
+<g class="rise" style="animation-delay:0.75s">
+<rect x="60" y="1150" width="528" height="196" rx="18" fill="rgba(52,211,153,0.06)" stroke="rgba(52,211,153,0.55)" stroke-width="1.4"/>
+<text x="84" y="1182" font-size="14" font-weight="800" fill="#34d399" letter-spacing="1.4">FDE · 企业现场交付</text>
+<text x="84" y="1204" font-size="13" font-weight="400" fill="#9aa6d8">组合插件，构建客户专属 Agent</text>
+<rect x="84" y="1222" width="232" height="44" rx="12" fill="rgba(52,211,153,0.08)" stroke="rgba(52,211,153,0.4)" stroke-width="1.4"/>
+<g transform="translate(99 1233) scale(0.9166666666666666)" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5.5A2.5 2.5 0 0 1 12 7.5V20a2 2 0 0 0-2-2H4z"/><path d="M20 5h-5.5A2.5 2.5 0 0 0 12 7.5V20a2 2 0 0 1 2-2h6z"/></g>
+<text x="132" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">知识库</text>
+<rect x="328" y="1222" width="232" height="44" rx="12" fill="rgba(52,211,153,0.08)" stroke="rgba(52,211,153,0.4)" stroke-width="1.4"/>
+<g transform="translate(343 1233) scale(0.9166666666666666)" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/></g>
+<text x="376" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">数据库</text>
+<rect x="84" y="1276" width="232" height="44" rx="12" fill="rgba(52,211,153,0.08)" stroke="rgba(52,211,153,0.4)" stroke-width="1.4"/>
+<g transform="translate(99 1287) scale(0.9166666666666666)" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="10" height="16" rx="1"/><path d="M14 10h6v10h-6M7 8h4M7 12h4M7 16h4"/></g>
+<text x="132" y="1303" font-size="14.5" font-weight="600" fill="#eef1ff">业务系统</text>
+<rect x="328" y="1276" width="232" height="44" rx="12" fill="rgba(52,211,153,0.08)" stroke="rgba(52,211,153,0.4)" stroke-width="1.4"/>
+<g transform="translate(343 1287) scale(0.9166666666666666)" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></g>
+<text x="376" y="1303" font-size="14.5" font-weight="600" fill="#eef1ff">领域软件</text>
+<text x="84" y="1336" font-size="12" font-weight="400" fill="#6f7bb3">具体连接器按现场开发与验证</text>
+<rect x="612" y="1150" width="528" height="196" rx="18" fill="rgba(251,191,36,0.05)" stroke="rgba(251,191,36,0.8)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<text x="636" y="1182" font-size="14" font-weight="800" fill="#fbbf24" letter-spacing="1.4">MHS · 物理世界</text>
+<text x="636" y="1204" font-size="13" font-weight="400" fill="#9aa6d8">规划中 · 以 MCP 为基础</text>
+<rect x="636" y="1222" width="220" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<g transform="translate(651 1233) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.6"/><path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/></g>
+<text x="684" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">MCP 适配器</text>
+<rect x="896" y="1222" width="220" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<g transform="translate(911 1233) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16a7.5 7.5 0 1 1 15 0"/><path d="M12 16l3.5-4.5"/><circle cx="12" cy="16" r="1.2"/></g>
+<text x="944" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">设备控制器</text>
+<path d="M 856 1244 H 892" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 4" class="march"/>
+<rect x="636" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<g transform="translate(651 1287) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5h4l-1 8h-2zM11.5 11.5v3M5 20h14M15.5 17.5a5 5 0 0 0-3-6"/></g>
+<text x="684" y="1303" font-size="13.5" font-weight="600" fill="#eef1ff">显微镜</text>
+<rect x="800" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<g transform="translate(815 1287) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h9M8.5 20v-6l6-5 4 2"/><circle cx="8.5" cy="14" r="1.6"/><circle cx="14.5" cy="9" r="1.6"/><path d="M18.5 11v2.5"/></g>
+<text x="848" y="1303" font-size="13.5" font-weight="600" fill="#eef1ff">机械臂</text>
+<rect x="964" y="1276" width="152" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4" stroke-dasharray="8 6" class="march"/>
+<g transform="translate(979 1287) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5h5M10.5 3.5v6l-5 8.8a1.6 1.6 0 0 0 1.4 2.2h10.2a1.6 1.6 0 0 0 1.4-2.2l-5-8.8v-6"/><path d="M7.6 15h8.8"/></g>
+<text x="1012" y="1303" font-size="13.5" font-weight="600" fill="#eef1ff">移液工作站</text>
+<text x="636" y="1336" font-size="12" font-weight="400" fill="#6f7bb3">设备仅为示意 · 互锁与急停由设备负责</text>
+</g>
+<rect class="beat" style="animation-delay:8s" x="60" y="1150" width="528" height="196" rx="18" fill="none" stroke="#34d399" stroke-width="2.4" filter="url(#glow)"/>
+<rect class="beat" style="animation-delay:8.6s" x="612" y="1150" width="528" height="196" rx="18" fill="none" stroke="#fbbf24" stroke-width="2.4" filter="url(#glow)"/>
+<g class="rise" style="animation-delay:0.9s">
+<text x="600" y="1380" font-size="13.5" font-weight="400" fill="#9aa6d8" text-anchor="middle">FDE 是交付方式，MHS 是设备接入方向；两者运行在同一套底座上。</text>
+</g>
 </g>
 </svg>
