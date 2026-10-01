@@ -23,8 +23,12 @@ import {
   ThemeService,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
-import { createAntdRoot } from '@agnes/web-ui'
-import { BuiltinWebUnitRegistry } from '@agnes/web-units'
+import { WEB_UI_LOCALE_NAMESPACE, createAntdRoot, webUiLocaleCatalog } from '@agnes/web-ui'
+import {
+  BuiltinWebUnitRegistry,
+  WEB_UNITS_LOCALE_NAMESPACE,
+  webUnitsLocaleCatalog,
+} from '@agnes/web-units'
 import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
 import { createElement } from 'react'
@@ -154,6 +158,8 @@ export async function startClientModules(options: {
   applyDocumentLocale(document.documentElement, storedLocale)
   const locale = new LocaleService(ctx, storedLocale)
   locale.register(WEB_LOCALE_NAMESPACE, webLocaleCatalog)
+  locale.register(WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog)
+  locale.register(WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog)
   locale.register(COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog)
   locale.register('@agnes/web-diagnostics', diagnosticsCatalog)
   locale.register('@agnes/web-trace', traceCatalog)
@@ -272,12 +278,15 @@ export async function startClientModules(options: {
   const conversation = options.conversationContainer
     ? mountConversationRegion(registry, options.conversationContainer, {
         session,
+        locale,
         onMount: mountConversationChildren,
         onUnmount: unmountConversationChildren,
       })
     : undefined
   if (conversation) builtinUnits.mount('@agnes/web-conversation', () => conversation.dispose())
-  const topbar = options.topbarContainer ? mountTopbarRegion(registry, options.topbarContainer) : undefined
+  const topbar = options.topbarContainer
+    ? mountTopbarRegion(registry, options.topbarContainer, locale)
+    : undefined
   if (topbar) builtinUnits.mount('@agnes/web-topbar', () => topbar.dispose())
   const approval = options.approvalContainer
     ? mountApprovalRegion(registry, options.approvalContainer)
@@ -296,6 +305,7 @@ export async function startClientModules(options: {
           onSubmit: () => undefined,
           onWorkspace: () => undefined,
         },
+        locale,
       )
     : undefined
   if (composer) builtinUnits.mount('@agnes/web-composer', () => composer.dispose())
@@ -333,7 +343,7 @@ export async function startClientModules(options: {
   if (topbar) await topbar.ready
 
   const sidebar = options.sidebarContainer
-    ? mountSidebarRegion(registry, options.sidebarContainer, options.sidebar)
+    ? mountSidebarRegion(registry, options.sidebarContainer, options.sidebar, locale)
     : undefined
   if (sidebar) builtinUnits.mount('@agnes/web-sidebar', () => sidebar.dispose())
   const transcript =

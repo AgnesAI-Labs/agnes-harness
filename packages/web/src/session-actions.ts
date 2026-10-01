@@ -1,5 +1,6 @@
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import type { Translate } from './presentation.js'
 
 export type SessionAction = 'rename' | 'fork' | 'archive'
 
@@ -20,29 +21,39 @@ export function createSessionActions(options: {
   changed(): Promise<unknown>
   fork(id: string, title: string): Promise<void>
   error(error: unknown): void
+  translate: Translate
 }) {
+  const t = options.translate
   const dialog = document.createElement('dialog')
   dialog.className = 'session-rename-dialog'
   dialog.setAttribute('aria-labelledby', 'session-rename-heading')
   dialog.dataset.agnesRegion = 'dialog'
   dialog.innerHTML = `<form>
-    <div class="dialog-heading"><h2 id="session-rename-heading">重命名会话</h2></div>
-    <label class="form-field" for="session-rename-input">会话名称
+    <div class="dialog-heading"><h2 id="session-rename-heading"></h2></div>
+    <label class="form-field" for="session-rename-input">
       <input id="session-rename-input" required autocomplete="off" aria-describedby="session-rename-error" />
     </label>
     <p id="session-rename-error" class="session-rename-error" role="alert"></p>
-    <div class="dialog-actions"><button class="secondary-button" type="button">取消</button><button class="primary-button" type="submit">重命名</button></div></form>`
+    <div class="dialog-actions"><button class="secondary-button" type="button"></button><button class="primary-button" type="submit"></button></div></form>`
   document.body.append(dialog)
+  dialog.querySelector('h2')!.textContent = t('session.rename.heading')
+  const nameLabel = dialog.querySelector('label')!
+  nameLabel.insertBefore(document.createTextNode(t('session.rename.nameLabel')), nameLabel.firstChild)
+  const cancelText = t('session.rename.cancel')
+  const submitRename = t('session.rename.submit')
+  dialog.querySelector<HTMLButtonElement>('.secondary-button')!.textContent = cancelText
   const form = dialog.querySelector('form') as HTMLFormElement
   const input = dialog.querySelector('input') as HTMLInputElement
   const error = dialog.querySelector('p') as HTMLParagraphElement
   const cancel = dialog.querySelector('button') as HTMLButtonElement
   const submit = dialog.querySelector('[type=submit]') as HTMLButtonElement
+  submit.textContent = submitRename
   let target: string | undefined
   let pending = false
   let saved = false
   let returnFocus: HTMLElement | undefined
-  const text = (failure: unknown) => (failure instanceof Error ? failure.message : '操作失败，请重试。')
+  const text = (failure: unknown) =>
+    failure instanceof Error ? failure.message : t('session.rename.defaultError')
   const close = () => {
     if (!pending) dialog.close()
   }
@@ -64,7 +75,7 @@ export function createSessionActions(options: {
       Array.from(title).length > 80 ||
       /[\p{Cc}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u.test(title)
     ) {
-      error.textContent = '请输入 1–80 个字符的单行名称。'
+      error.textContent = t('session.rename.invalidName')
       input.setAttribute('aria-invalid', 'true')
       input.focus()
       return
@@ -84,11 +95,13 @@ export function createSessionActions(options: {
         await options.changed()
         dialog.close()
       } catch (failure) {
-        error.textContent = saved ? `名称已保存，但列表刷新失败：${text(failure)}` : text(failure)
+        error.textContent = saved
+          ? t('session.rename.savedRefreshFailed', { detail: text(failure) })
+          : text(failure)
       } finally {
         pending = submit.disabled = cancel.disabled = false
         input.disabled = saved
-        submit.textContent = saved ? '重试刷新' : '重命名'
+        submit.textContent = saved ? t('session.rename.retryRefresh') : submitRename
         dialog.removeAttribute('aria-busy')
         if (dialog.open) (saved ? submit : input).focus()
       }
@@ -122,14 +135,15 @@ export function createSessionActions(options: {
       const item = document.createElement('li')
       const copy = document.createElement('div')
       const title = document.createElement('strong')
-      title.textContent = row.title ?? '未命名会话'
+      title.textContent = row.title ?? t('session.archived.unnamed')
       const location = document.createElement('p')
-      location.textContent = row.cwd ?? '未分类'
+      location.textContent = row.cwd ?? t('session.uncategorized')
       copy.append(title, location)
       const restore = document.createElement('button')
       restore.type = 'button'
-      restore.textContent = restoring.has(row.sessionId) ? '正在恢复…' : '取消归档'
-      restore.setAttribute('aria-label', `取消归档 ${title.textContent}`)
+      const restoreLabel = t('session.archived.restore')
+      restore.textContent = restoring.has(row.sessionId) ? t('session.archived.restoring') : restoreLabel
+      restore.setAttribute('aria-label', t('session.archived.restoreAria', { title: title.textContent ?? '' }))
       restore.disabled = restoring.has(row.sessionId)
       restore.addEventListener('click', () => {
         if (archivedView()?.rows !== rows || restoring.has(row.sessionId)) return
@@ -146,13 +160,13 @@ export function createSessionActions(options: {
             archived = archived.filter((item) => item.sessionId !== row.sessionId)
             renderArchived()
             await options.changed()
-            await loadArchived('已取消归档，但列表刷新失败：')
+            await loadArchived(t('session.archived.refreshFailedPrefix'))
             if (archivedView()?.rows === rows) search.focus()
           } catch (failure) {
             const current = archivedView()
             if (current)
               current.message.textContent = restored
-                ? `已取消归档，但列表刷新失败：${text(failure)}`
+                ? t('session.archived.refreshFailedPrefix') + text(failure)
                 : text(failure)
           } finally {
             restoring.delete(row.sessionId)
@@ -163,7 +177,11 @@ export function createSessionActions(options: {
       item.append(copy, restore)
       rows.append(item)
     }
-    empty.textContent = visible.length ? '' : archived.length ? '没有匹配的已归档会话。' : '暂无已归档会话。'
+    empty.textContent = visible.length
+      ? ''
+      : archived.length
+        ? t('session.archived.empty.noMatch')
+        : t('session.archived.empty.fallback')
   }
   const loadArchived = async (failurePrefix = '') => {
     const view = archivedView()
@@ -180,7 +198,7 @@ export function createSessionActions(options: {
         const page = await options.client.session.list({ limit: 500, ...(cursor ? { cursor } : {}) })
         if (!current()) return
         all.push(...page.items.filter((row) => row.archived))
-        if (page.next === cursor && page.next !== undefined) throw new Error('会话列表分页未推进，请重试。')
+        if (page.next === cursor && page.next !== undefined) throw new Error(t('session.archived.paginationStalled'))
         cursor = page.next
       } while (cursor !== undefined)
       archived = all
@@ -204,7 +222,8 @@ export function createSessionActions(options: {
         await options.changed()
         if (archivedView()?.rows === view.rows) await loadArchived()
       } catch (failure) {
-        if (archivedView()?.rows === view.rows) view.message.textContent = `列表刷新失败：${text(failure)}`
+        if (archivedView()?.rows === view.rows)
+          view.message.textContent = t('session.refreshFailed', { detail: text(failure) })
       }
     })()
   }
@@ -243,7 +262,7 @@ export function createSessionActions(options: {
         returnFocus = trigger
         saved = false
         input.disabled = false
-        submit.textContent = '重命名'
+        submit.textContent = submitRename
         input.value = title
         error.textContent = ''
         input.removeAttribute('aria-invalid')
@@ -266,7 +285,9 @@ export function createSessionActions(options: {
         }
       } catch (failure) {
         options.error(
-          archivedSuccessfully ? new Error(`已归档，但列表刷新失败，请刷新页面：${text(failure)}`) : failure,
+          archivedSuccessfully
+            ? new Error(t('session.archiveRefreshFailedNotice', { detail: text(failure) }))
+            : failure,
         )
       } finally {
         busy.delete(id)

@@ -74,8 +74,7 @@ import { createUsagePanel } from './usage.js'
 
 export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
 
-const SIDEBAR_DEPENDENCIES: SidebarDependencies = {
-  renderNavigation: renderSessionNavigation,
+const SIDEBAR_DEPENDENCIES_BASE = {
   bindSidebar,
 }
 const TRANSCRIPT_DEPENDENCIES: TranscriptDependencies = {
@@ -312,17 +311,19 @@ function SidebarDshFrame({
   handle,
   state,
   actions,
+  dependencies,
 }: {
   handle: { current: SidebarHandle | null }
   state: SidebarState
   actions?: Partial<SidebarActions>
+  dependencies: SidebarDependencies
 }): ReturnType<typeof createElement> {
   const outlet = (name: string) => createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true })
   return createElement(Sidebar, {
     ref: handle,
     state,
     actions,
-    dependencies: SIDEBAR_DEPENDENCIES,
+    dependencies,
     slots: {
       brandMark: outlet('sidebar.brand.mark'),
       brandName: outlet('sidebar.brand.name'),
@@ -466,10 +467,12 @@ function ComposerDshFrame({
   registry,
   setHandle,
   options,
+  dependencies,
 }: {
   registry: SlotRegistry
   setHandle: (value: ComposerHandle | null) => void
   options: ComposerRegionOptions
+  dependencies: ComposerDependencies
 }): ReturnType<typeof createElement> {
   const outlet = (name: string) => createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true })
   return createElement(
@@ -486,7 +489,7 @@ function ComposerDshFrame({
       }),
       createElement(Composer, {
         ref: setHandle,
-        dependencies: COMPOSER_DEPENDENCIES,
+        dependencies,
         ...options,
         slots: {
           attachments: outlet('conversation.input.attachments'),
@@ -516,7 +519,20 @@ export function mountComposerRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: ComposerRegionOptions,
+  locale: LocaleService,
 ): ComposerRegionMount {
+  // Render-time lookup: the injected translate reads whatever locale is current on each render.
+  const composerDependencies: ComposerDependencies = {
+    ...COMPOSER_DEPENDENCIES,
+    translate: (key, vars) => locale.t(key, vars),
+    // Wrap the usage panel so the shared React component renders with the current locale.
+    UsagePanel: (props) =>
+      createElement(ConversationUsage, {
+        ...props,
+        t: (key, vars) => locale.t(key, vars),
+      }),
+    createUsagePanel: (parent) => createUsagePanel(parent, (key, vars) => locale.t(key, vars)),
+  }
   const ownedShell = registry.spec('root') ? undefined : mountDshShellRegion(registry)
   if (!registry.spec('conversation.composer'))
     registry.declare(
@@ -566,6 +582,7 @@ export function mountComposerRegion(
         registry,
         setHandle,
         options: composerOptions,
+        dependencies: composerDependencies,
       }),
   )
   const removeBuiltin = registry.register(
@@ -1000,7 +1017,11 @@ export interface TopbarRegionMount extends EmptyStateRegionMount, TopbarHandle {
 }
 
 /** Mount the component-owned topbar behind a replaceable SlotOutlet. */
-export function mountTopbarRegion(registry: SlotRegistry, container: HTMLElement): TopbarRegionMount {
+export function mountTopbarRegion(
+  registry: SlotRegistry,
+  container: HTMLElement,
+  locale: LocaleService,
+): TopbarRegionMount {
   const handle = { current: null as TopbarHandle | null }
   const disconnectListeners = new Set<() => void>()
   let resolveReady!: () => void
@@ -1025,6 +1046,7 @@ export function mountTopbarRegion(registry: SlotRegistry, container: HTMLElement
       createElement(Topbar, {
         ref: setHandle,
         disconnectListeners,
+        translate: (key, vars) => locale.t(key, vars),
       }),
   )
   container.replaceChildren()
@@ -1131,6 +1153,7 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
 /** Make the conversation shell a session-scoped replacement boundary before mounting its children. */
 export interface ConversationRegionOptions {
   session?: SessionService
+  locale?: LocaleService
   onMount?(children: ConversationChildContainers): void
   onUnmount?(): void
 }
@@ -1195,7 +1218,11 @@ export function mountConversationRegion(
     () =>
       createElement(Conversation, {
         ref: handle,
-        ...options,
+        onMount: options.onMount,
+        onUnmount: options.onUnmount,
+        ...(options.locale
+          ? { translate: (key: string, vars?: Record<string, string | number>) => options.locale!.t(key, vars) }
+          : {}),
         slots: {
           session: createElement(SlotOutlet, { name: 'conversation.session', hideWhenEmpty: true }),
           sessionHeader: createElement(SlotOutlet, {
@@ -1282,7 +1309,14 @@ export function mountSidebarRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: { state?: SidebarState; actions?: Partial<SidebarActions> } = {},
+  locale: LocaleService,
 ): SidebarRegionMount {
+  // Render-time lookup: navigation copy resolves on each rebuild against the current locale.
+  const sidebarDependencies: SidebarDependencies = {
+    ...SIDEBAR_DEPENDENCIES_BASE,
+    translate: (key, vars) => locale.t(key, vars),
+    renderNavigation: (options) => renderSessionNavigation(options, (key, vars) => locale.t(key, vars)),
+  }
   registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   if (!registry.spec('sidebar')) registry.declare('sidebar', { kind: 'single', scope: 'root' }, 'web-shell')
   const handle = { current: null as SidebarHandle | null }
@@ -1299,6 +1333,7 @@ export function mountSidebarRegion(
         handle,
         state: options.state ?? EMPTY_SIDEBAR_STATE,
         ...(options.actions === undefined ? {} : { actions: options.actions }),
+        dependencies: sidebarDependencies,
       }),
   )
   const removeBuiltin = registry.register(

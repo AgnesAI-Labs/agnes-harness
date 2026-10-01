@@ -1,4 +1,5 @@
 import { positionPopover } from '@agnes/web-ui'
+import type { Translate } from './presentation.js'
 import type { SessionAction } from './session-actions.js'
 
 /**
@@ -12,18 +13,18 @@ import type { SessionAction } from './session-actions.js'
  * ② 触发按钮可 Tab 可达，菜单支持键盘导航。
  */
 
-/** 会话菜单项定义。归档可恢复、不销毁日志，因此不标记为危险操作。 */
+/** 会话菜单项定义：文案是 locale key，渲染时取词。归档可恢复、不销毁日志，因此不标记为危险操作。 */
 const ITEMS: readonly (readonly [SessionAction, string, readonly string[]])[] = [
   [
     'rename',
-    '重命名',
+    'session.menu.rename',
     [
       'M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z',
       'm15 5 4 4',
     ],
   ],
-  ['fork', '分叉会话', ['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']],
-  ['archive', '归档会话', ['M3 4h18v4H3z', 'M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8', 'M10 12h4']],
+  ['fork', 'session.menu.fork', ['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']],
+  ['archive', 'session.menu.archive', ['M3 4h18v4H3z', 'M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8', 'M10 12h4']],
 ]
 
 /** 24px 栅格 + `.icon`，线宽与端点样式因此自动跟随仓内图标族。 */
@@ -60,38 +61,42 @@ export function closeSessionMenu(returnFocus = false): void {
 }
 
 /** 行内可见的触发控件：16px 裸三点图标。 */
-export function createSessionMenuTrigger(id: string, name: string): HTMLButtonElement {
+export function createSessionMenuTrigger(id: string, name: string, t: Translate): HTMLButtonElement {
   const trigger = document.createElement('button')
   trigger.type = 'button'
   trigger.className = 'session-menu-trigger'
   trigger.dataset.sessionActionId = id
   trigger.setAttribute('aria-haspopup', 'menu')
   trigger.setAttribute('aria-expanded', 'false')
-  trigger.setAttribute('aria-label', `会话操作 ${name}`)
+  trigger.setAttribute('aria-label', t('session.menu.triggerAria', { name }))
   trigger.append(icon(['M5 12h.01', 'M12 12h.01', 'M19 12h.01']))
   return trigger
 }
 
-export function attachSessionMenu(trigger: HTMLButtonElement, select: (action: SessionAction) => void): void {
+export function attachSessionMenu(
+  trigger: HTMLButtonElement,
+  select: (action: SessionAction) => void,
+  t: Translate,
+): void {
   trigger.addEventListener('click', () => {
     if (open?.trigger === trigger) closeSessionMenu(true)
-    else show(trigger, select)
+    else show(trigger, select, t)
   })
 }
 
-function show(trigger: HTMLButtonElement, select: (action: SessionAction) => void): void {
+function show(trigger: HTMLButtonElement, select: (action: SessionAction) => void, t: Translate): void {
   closeSessionMenu()
-  const label = trigger.getAttribute('aria-label') ?? '会话操作'
+  const label = trigger.getAttribute('aria-label') ?? t('session.menu.label')
   const panel = document.createElement('div')
   panel.className = 'session-menu-actions'
   panel.setAttribute('role', 'menu')
   panel.setAttribute('aria-label', label)
-  for (const [action, text, paths] of ITEMS) {
+  for (const [action, key, paths] of ITEMS) {
     const item = document.createElement('button')
     item.type = 'button'
     item.setAttribute('role', 'menuitem')
     const caption = document.createElement('span')
-    caption.textContent = text
+    caption.textContent = t(key)
     item.append(icon(paths), caption)
     item.addEventListener('click', () => {
       closeSessionMenu(true)

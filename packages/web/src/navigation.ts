@@ -1,4 +1,5 @@
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
+import type { Translate } from './presentation.js'
 import { attachSessionMenu, closeSessionMenu, createSessionMenuTrigger } from './session-menu.js'
 
 type SessionRow = PageSessionMeta['items'][number] & { cwd?: string }
@@ -76,19 +77,22 @@ export function renderWorkspaceOptions(
   )
 }
 
-export function renderSessionNavigation(options: {
-  nav: HTMLElement
-  sessions: PageSessionMeta['items']
-  workspaces: readonly WorkspaceEntry[]
-  currentId?: string
-  activeId?: string
-  labels: ReadonlyMap<string, string>
-  disabled?: boolean
-  next?: string
-  loadMore?(cursor: string): void
-  action?(action: 'rename' | 'fork' | 'archive', id: string, title: string, trigger: HTMLElement): void
-  open(id: string): void
-}): void {
+export function renderSessionNavigation(
+  options: {
+    nav: HTMLElement
+    sessions: PageSessionMeta['items']
+    workspaces: readonly WorkspaceEntry[]
+    currentId?: string
+    activeId?: string
+    labels: ReadonlyMap<string, string>
+    disabled?: boolean
+    next?: string
+    loadMore?(cursor: string): void
+    action?(action: 'rename' | 'fork' | 'archive', id: string, title: string, trigger: HTMLElement): void
+    open(id: string): void
+  },
+  t: Translate,
+): void {
   const groups = new Map<string, SessionRow[]>()
   for (const workspace of options.workspaces) groups.set(workspace.path, [])
   groups.set('', [])
@@ -108,10 +112,10 @@ export function renderSessionNavigation(options: {
     heading.type = 'button'
     heading.className = 'workspace-heading'
     heading.setAttribute('aria-expanded', String(!collapsed))
-    heading.title = workspace?.path ?? '没有工作区归属的历史会话'
+    heading.title = workspace?.path ?? t('nav.noWorkspaceTitle')
     const name = document.createElement('span')
     name.className = 'workspace-name'
-    name.textContent = workspace?.name ?? '未分类'
+    name.textContent = workspace?.name ?? t('session.uncategorized')
     heading.append(...folderPair(), name)
     const children = document.createElement('div')
     children.className = 'workspace-sessions'
@@ -125,7 +129,7 @@ export function renderSessionNavigation(options: {
       if (row.sessionId === options.currentId) choice.setAttribute('aria-current', 'page')
       const title = document.createElement('span')
       title.className = 'session-title'
-      title.textContent = row.title || options.labels.get(row.sessionId) || `会话 ${row.sessionId.slice(-8)}`
+      title.textContent = row.title || options.labels.get(row.sessionId) || t('nav.sessionFallback', { id: row.sessionId.slice(-8) })
       choice.title = title.textContent
       choice.append(title)
       choice.addEventListener('click', () => options.open(row.sessionId))
@@ -139,10 +143,12 @@ export function renderSessionNavigation(options: {
       if (options.action) {
         const menu = document.createElement('div')
         menu.className = 'session-menu'
-        const trigger = createSessionMenuTrigger(row.sessionId, title.textContent ?? '新会话')
+        const trigger = createSessionMenuTrigger(row.sessionId, title.textContent ?? t('nav.fallbackName'), t)
         trigger.disabled = options.disabled ?? false
-        attachSessionMenu(trigger, (action) =>
-          options.action?.(action, row.sessionId, title.textContent ?? '新会话', trigger),
+        attachSessionMenu(
+          trigger,
+          (action) => options.action?.(action, row.sessionId, title.textContent ?? t('nav.fallbackName'), trigger),
+          t,
         )
         menu.append(trigger)
         item.append(menu)
@@ -166,7 +172,7 @@ export function renderSessionNavigation(options: {
     const next = options.next
     const more = document.createElement('button')
     more.type = 'button'
-    more.textContent = '加载更多任务'
+    more.textContent = t('nav.loadMore')
     more.disabled = options.disabled ?? false
     more.addEventListener('click', () => options.loadMore?.(next))
     options.nav.append(more)

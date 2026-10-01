@@ -184,7 +184,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     >
       <div ref={earlier} className="transcript-earlier" hidden={!projection.meta?.hasEarlier}>
         <button type="button" onClick={loadEarlier}>
-          加载更早的记录
+          {locale ? locale.t('timeline.loadEarlier') : 'Load earlier records'}
         </button>
       </div>
       <div id="transcript-content" ref={content}>

@@ -13,6 +13,7 @@ import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
 import { getSlotCardContext, mountSlotCard } from './client-modules/timeline-slot.js'
 import { isConversationNode } from './conversation-visibility.js'
 import { createMarkdownRenderer } from './markdown.js'
+import type { Translate } from './presentation.js'
 import { toolIcon } from './tool-icon.js'
 import { createTurnProjector } from './turns.js'
 import { createCostDetails } from './usage.js'
@@ -68,17 +69,17 @@ type DshNodeMount = {
   dispose(): void
 }
 
-const APPROVAL_LABEL: Record<ApprovalNode['state'], string> = {
-  pending: '需要你确认',
-  decided: '审批已处理',
-  expired: '审批已过期',
+const APPROVAL_LABEL_KEYS: Record<ApprovalNode['state'], string> = {
+  pending: 'timeline.approval.pending',
+  decided: 'timeline.approval.decided',
+  expired: 'timeline.approval.expired',
 }
-const APPROVAL_DECISION_LABEL = new Map<string, string>([
-  ['allowed-once', '仅允许这次'],
-  ['allowed-session', '本会话允许'],
-  ['allowed-permanent', '对此配置始终允许'],
-  ['rejected', '已拒绝'],
-  ['cancelled', '已取消'],
+const APPROVAL_DECISION_KEYS = new Map<string, string>([
+  ['allowed-once', 'timeline.decision.allowedOnce'],
+  ['allowed-session', 'timeline.decision.allowedSession'],
+  ['allowed-permanent', 'timeline.decision.allowedPermanent'],
+  ['rejected', 'timeline.decision.rejected'],
+  ['cancelled', 'timeline.decision.cancelled'],
 ])
 
 const textContent = (node: UserNode): string =>
@@ -90,9 +91,9 @@ const textContent = (node: UserNode): string =>
     .join('\n')
 
 /** What an assistant node says; an attempt whose streamed text died with its process says so. */
-function assistantText(node: Extract<UINode, { kind: 'assistant' }>): string {
+function assistantText(node: Extract<UINode, { kind: 'assistant' }>, t: Translate): string {
   if (node.lostChars === undefined || node.text !== '') return node.text
-  return `_输出中断，至少 ${node.lostChars} 字未保存_`
+  return t('timeline.lostOutput', { count: node.lostChars })
 }
 
 // 流式期间每个 preview 都会对全部节点重算一次 fingerprint，全文拼接是 O(会话总长) 的
@@ -180,24 +181,27 @@ function article(node: UINode): HTMLElement {
   return element
 }
 
-const approvalStatus = (node: ApprovalNode): string =>
+const approvalStatus = (node: ApprovalNode, t: Translate): string =>
   (node.state === 'decided' && node.decision
-    ? APPROVAL_DECISION_LABEL.get(node.decision.verdict)
-    : undefined) ?? APPROVAL_LABEL[node.state]
+    ? (() => {
+        const key = APPROVAL_DECISION_KEYS.get(node.decision.verdict)
+        return key === undefined ? undefined : t(key)
+      })()
+    : undefined) ?? t(APPROVAL_LABEL_KEYS[node.state])
 
-function approvalLabel(node: ApprovalNode): string {
-  return `审批：${approvalStatus(node)}`
+function approvalLabel(node: ApprovalNode, t: Translate): string {
+  return t('timeline.approvalLabel', { status: approvalStatus(node, t) })
 }
 
-function compactionSummary(node: Extract<UINode, { kind: 'compaction' }>): string {
-  return node.summary ?? `已整理上下文（范围：${node.range.join('–')}）`
+function compactionSummary(node: Extract<UINode, { kind: 'compaction' }>, t: Translate): string {
+  return node.summary ?? t('timeline.compactionFallback', { range: node.range.join('–') })
 }
 
-function createEntry(node: UINode): Entry {
+function createEntry(node: UINode, t: Translate): Entry {
   const element = article(node)
 
   if (node.kind === 'user') {
-    const title = heading(element, 'node-label', '你')
+    const title = heading(element, 'node-label', t('timeline.userLabel'))
     const body = text(element, 'node-body', textContent(node))
     return {
       kind: node.kind,
@@ -205,7 +209,7 @@ function createEntry(node: UINode): Entry {
       fingerprint: fingerprint(node),
       update(next) {
         if (next.kind !== 'user') return
-        updateText(title, '你')
+        updateText(title, t('timeline.userLabel'))
         updateText(body, textContent(next))
       },
     }
@@ -225,7 +229,7 @@ function createEntry(node: UINode): Entry {
     let thinkingWasActive = thinkingActive(node)
     thinking.open = thinkingWasActive
     const thinkingSummary = document.createElement('summary')
-    thinkingSummary.textContent = '深度思考'
+    thinkingSummary.textContent = t('timeline.thinkingSummary')
     thinkingSummary.addEventListener('click', () => {
       thinkingPreference = !thinking.open
     })
@@ -240,7 +244,7 @@ function createEntry(node: UINode): Entry {
     const body = document.createElement('div')
     body.className = 'node-body markdown'
     element.append(body)
-    const bodyRenderer = createMarkdownRenderer(body, assistantText(node), {
+    const bodyRenderer = createMarkdownRenderer(body, assistantText(node, t), {
       streaming: node.streaming === true,
     })
     element.dataset.streaming = String(node.streaming === true)
@@ -262,6 +266,7 @@ function createEntry(node: UINode): Entry {
         if (next.kind !== 'assistant') return
         element.dataset.streaming = String(next.streaming === true)
         updateText(title, 'Agnes')
+        updateText(thinkingSummary, t('timeline.thinkingSummary'))
         thinking.hidden = !next.thinking?.trim()
         const active = thinkingActive(next)
         // 只在「思考结束」的那一刻收起一次，不会反复覆盖用户此后的手动开合。
@@ -270,7 +275,7 @@ function createEntry(node: UINode): Entry {
         thinking.open = thinkingPreference ?? active
         if (next.thinking !== undefined)
           thinkingRenderer.update(next.thinking, { streaming: next.streaming === true })
-        bodyRenderer.update(assistantText(next), { streaming: next.streaming === true })
+        bodyRenderer.update(assistantText(next, t), { streaming: next.streaming === true })
       },
       dispose() {
         thinkingRenderer.dispose({ defer: true })
@@ -280,7 +285,7 @@ function createEntry(node: UINode): Entry {
   }
 
   if (node.kind === 'tool') {
-    const card = createConversationToolCard(element, node, { icon: toolIcon })
+    const card = createConversationToolCard(element, node, { icon: toolIcon, translate: t })
     return {
       kind: node.kind,
       element,
@@ -298,28 +303,28 @@ function createEntry(node: UINode): Entry {
   if (node.kind === 'approval') {
     const head = document.createElement('div')
     head.className = 'approval-head'
-    const title = label(head, 'node-label', '审批')
-    const status = label(head, 'tool-status', approvalStatus(node))
+    const title = label(head, 'node-label', t('timeline.approvalTitle'))
+    const status = label(head, 'tool-status', approvalStatus(node, t))
     const summary = text(element, 'approval-summary', node.summary)
     element.prepend(head)
-    element.setAttribute('aria-label', approvalLabel(node))
+    element.setAttribute('aria-label', approvalLabel(node, t))
     return {
       kind: node.kind,
       element,
       fingerprint: fingerprint(node),
       update(next) {
         if (next.kind !== 'approval') return
-        updateText(title, '审批')
-        updateText(status, approvalStatus(next))
+        updateText(title, t('timeline.approvalTitle'))
+        updateText(status, approvalStatus(next, t))
         updateText(summary, next.summary)
-        element.setAttribute('aria-label', approvalLabel(next))
+        element.setAttribute('aria-label', approvalLabel(next, t))
         element.dataset.state = next.state
       },
     }
   }
 
   if (node.kind === 'cost') {
-    const update = createCostDetails(element)
+    const update = createCostDetails(element, t)
     update(node)
     return {
       kind: node.kind,
@@ -332,7 +337,7 @@ function createEntry(node: UINode): Entry {
   }
 
   if (node.kind === 'artifact') {
-    const title = heading(element, 'node-label', '产物')
+    const title = heading(element, 'node-label', t('timeline.artifactLabel'))
     const body = text(element, 'node-body', node.name)
     return {
       kind: node.kind,
@@ -340,23 +345,23 @@ function createEntry(node: UINode): Entry {
       fingerprint: fingerprint(node),
       update(next) {
         if (next.kind !== 'artifact') return
-        updateText(title, '产物')
+        updateText(title, t('timeline.artifactLabel'))
         updateText(body, next.name)
       },
     }
   }
 
   if (node.kind === 'compaction') {
-    const title = heading(element, 'node-label', '上下文整理')
-    const body = text(element, 'node-body', compactionSummary(node))
+    const title = heading(element, 'node-label', t('timeline.compactionLabel'))
+    const body = text(element, 'node-body', compactionSummary(node, t))
     return {
       kind: node.kind,
       element,
       fingerprint: fingerprint(node),
       update(next) {
         if (next.kind !== 'compaction') return
-        updateText(title, '上下文整理')
-        updateText(body, compactionSummary(next))
+        updateText(title, t('timeline.compactionLabel'))
+        updateText(body, compactionSummary(next, t))
       },
     }
   }
@@ -379,12 +384,12 @@ function createEntry(node: UINode): Entry {
     }
   }
 
-  const title = heading(element, 'node-label', '暂不支持的内容')
+  const title = heading(element, 'node-label', t('timeline.unsupportedLabel'))
   const body = text(element, 'node-body', '')
   const update = (next: UINode) => {
     if (next.kind !== 'contribute-conflict') return
-    updateText(title, '上下文配置冲突')
-    updateText(body, `${next.key}：${next.ops.join('、')}`)
+    updateText(title, t('timeline.conflictLabel'))
+    updateText(body, `${next.key}${t('timeline.conflictJoiner')}${next.ops.join(t('timeline.conflictOpsJoiner'))}`)
     element.setAttribute('role', 'note')
   }
   update(node)
@@ -670,10 +675,16 @@ function restoreTranscriptSelection(transcript: HTMLElement, saved: SavedSelecti
 
 export function createTimelineRenderer(options: TimelineRendererOptions): TimelineRenderer {
   const scrollContainer = options.scrollContainer ?? options.transcript
+  // 渲染时取词：t 只在渲染/更新瞬间调用；locale 变化经订阅触发一次带滚动保持的全量重渲染。
+  const t: Translate = options.locale ? (key, vars) => options.locale!.t(key, vars) : (key) => key
+  const localeVersion = options.locale
+    ? () => options.locale!.getSnapshot()
+    : (): string => 'en'
   const entries = new Map<string, Entry>()
   const turnProjector = createTurnProjector({
     transcript: options.transcript,
     ...(options.onFork ? { onFork: options.onFork } : {}),
+    translate: t,
   })
   // 贴底跟随是**粘性**的：只有用户主动滚动（滚轮/触摸/拖滚动条）才解除，
   // 程序写入的滚动不算。判定依据是"位置是否等于程序最后一次写入的位置"：
@@ -697,11 +708,13 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     options.newContentButton.hidden = true
   }
   // Node objects are immutable once rendered, so an unchanged object keeps its fingerprint.
+  // The current locale joins the fingerprint: switching languages invalidates every entry so the
+  // next render (the subscription below forces one) refreshes all rendered copy in place.
   const fingerprints = new WeakMap<UINode, string>()
   const fingerprintOf = (node: UINode): string => {
     let value = fingerprints.get(node)
     if (value === undefined) {
-      value = fingerprint(node)
+      value = `${localeVersion()}|${fingerprint(node)}`
       fingerprints.set(node, value)
     }
     return value
@@ -712,7 +725,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
   earlier.hidden = true
   const earlierButton = document.createElement('button')
   earlierButton.type = 'button'
-  earlierButton.textContent = '加载更早的记录'
+  earlierButton.textContent = t('timeline.loadEarlier')
   earlier.append(earlierButton)
   if (options.transcript.parentElement && scrollContainer !== options.transcript)
     options.transcript.before(earlier)
@@ -733,10 +746,16 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
         })
       : undefined
   sentinel?.observe(earlier)
-  const render = (nodes: readonly UINode[], turns?: readonly UITurn[], nextMeta?: TimelineMeta): void => {
+  const render = (
+    nodes: readonly UINode[],
+    turns?: readonly UITurn[],
+    nextMeta?: TimelineMeta,
+    opts?: { preserveScroll?: boolean },
+  ): void => {
     meta = nextMeta
     loadingEarlier = false
     earlier.hidden = !nextMeta?.hasEarlier
+    earlierButton.textContent = t('timeline.loadEarlier')
     const visibleNodes = nodes.filter(isConversationNode)
     const savedSelection = saveTranscriptSelection(options.transcript)
     // Earlier nodes inserted above keep the reader where they were, measured from the bottom.
@@ -758,7 +777,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
         old?.dispose?.()
         old?.dshNode?.dispose()
         old?.element.remove()
-        entry = createEntry(node)
+        entry = createEntry(node, t)
         entry.dshNode = mountDshNode(entry, node, options)
         entries.set(node.id, entry)
         changed = true
@@ -798,7 +817,8 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     }
 
     if (changed) {
-      if (follow) scrollToBottom()
+      if (opts?.preserveScroll) jumpTo(scrollContainer.scrollHeight - fromBottom)
+      else if (follow) scrollToBottom()
       else if (prepended) jumpTo(scrollContainer.scrollHeight - fromBottom)
       else options.newContentButton.hidden = nearBottom(scrollContainer)
     }
@@ -812,6 +832,22 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
       sentinel.observe(earlier)
     }
   }
+
+  // 语言切换：记住最近一次渲染入参，locale 变化时重跑一次 render。fingerprint 掺了 locale
+  // 版本，全部 entry 原地更新文案；preserveScroll 保证阅读位置不跳底。
+  let lastRender: { nodes: readonly UINode[]; turns?: readonly UITurn[]; meta?: TimelineMeta } | undefined
+  const renderAndRemember = (
+    nodes: readonly UINode[],
+    turns?: readonly UITurn[],
+    nextMeta?: TimelineMeta,
+  ): void => {
+    lastRender = { nodes, turns, meta: nextMeta }
+    render(nodes, turns, nextMeta)
+  }
+  options.locale?.subscribe(() => {
+    const last = lastRender
+    if (last) render(last.nodes, last.turns, last.meta, { preserveScroll: true })
+  })
 
   const onScroll = () => {
     const top = scrollContainer.scrollTop
@@ -842,7 +878,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
   }
 
   return {
-    render,
+    render: renderAndRemember,
     reset,
     dispose() {
       reset()

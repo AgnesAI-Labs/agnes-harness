@@ -26,12 +26,14 @@ function SlotLeaf({
   node,
   registry,
   claim,
+  t,
 }: {
   node: SlotNode
   registry: SlotRegistry | undefined
   claim: ClaimResolver | undefined
+  t: (key: string) => string
 }) {
-  const fallback = <span>此卡片的插件未就绪</span>
+  const fallback = <span>{t('slot.notReady')}</span>
   return (
     <div data-slot-node={node.fill.slot} data-agnes-region="slot-card">
       {registry && claim ? (
@@ -138,6 +140,7 @@ export function WebConversationMessages({
     () => registry?.sessionId,
   )
   const props: ConversationMessagesProps = {
+    t: (key, vars) => locale?.t(key, vars) ?? key,
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
     renderTurnActions: (turn, finalText, settled) => (
@@ -146,6 +149,8 @@ export function WebConversationMessages({
         turn={turn}
         finalText={finalText}
         settled={settled}
+        t={(key, vars) => locale?.t(key, vars) ?? key}
+        {...(locale ? { localeTag: locale.locale } : {})}
         {...(onFork ? { onFork } : {})}
       />
     ),
@@ -155,10 +160,20 @@ export function WebConversationMessages({
         source={text}
         part={part}
         streaming={state?.streaming ?? false}
+        t={(key, vars) => locale?.t(key, vars) ?? key}
       />
     ),
-    renderTool: (node) => <ConversationToolCard node={node} icon={toolIconReact(node.name)} />,
-    renderSlot: (node) => <SlotLeaf key={node.id} node={node} registry={registry} claim={claim} />,
+    renderTool: (node) => (
+      <ConversationToolCard
+        key={node.id}
+        node={node}
+        icon={toolIconReact(node.name)}
+        t={(key, vars) => locale?.t(key, vars) ?? key}
+      />
+    ),
+    renderSlot: (node) => (
+      <SlotLeaf key={node.id} node={node} registry={registry} claim={claim} t={(key) => locale?.t(key) ?? key} />
+    ),
     renderNode: (node, native) =>
       registry ? <DshNodeLeaf key={node.id} node={node} native={native} registry={registry} /> : native,
   }

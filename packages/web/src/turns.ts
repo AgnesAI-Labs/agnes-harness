@@ -1,5 +1,6 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import { type ConversationMessageActions, createConversationMessageActions } from '@agnes/web-units'
+import type { Translate } from './presentation.js'
 
 type TurnEntry = {
   element: HTMLElement
@@ -19,19 +20,23 @@ type TurnEntry = {
 
 type RenderedNode = { element: HTMLElement; thinking?: HTMLDetailsElement }
 
-const turnStatus: Record<UITurn['status'], string> = {
-  running: '正在执行',
-  waiting: '等待处理',
-  completed: '已完成',
-  failed: '执行失败',
-  cancelled: '已取消',
+const TURN_STATUS_KEYS: Record<UITurn['status'], string> = {
+  running: 'turn.status.running',
+  waiting: 'turn.status.waiting',
+  completed: 'turn.status.completed',
+  failed: 'turn.status.failed',
+  cancelled: 'turn.status.cancelled',
 }
 
-const durationLabel = (duration?: number): string | undefined => {
+const durationLabel = (duration: number | undefined, t: Translate): string | undefined => {
   if (duration === undefined) return undefined
-  if (duration < 1000) return `${duration} 毫秒`
-  if (duration < 60_000) return `${(duration / 1000).toFixed(duration < 10_000 ? 1 : 0)} 秒`
-  return `${Math.floor(duration / 60_000)} 分 ${Math.round((duration % 60_000) / 1000)} 秒`
+  if (duration < 1000) return t('turn.duration.ms', { n: duration })
+  if (duration < 60_000)
+    return t('turn.duration.s', { n: (duration / 1000).toFixed(duration < 10_000 ? 1 : 0) })
+  return t('turn.duration.minSec', {
+    min: Math.floor(duration / 60_000),
+    sec: Math.round((duration % 60_000) / 1000),
+  })
 }
 
 function processChevron(): SVGSVGElement {
@@ -119,7 +124,9 @@ function makeTurnEntry(onFork?: (turn: UITurn) => Promise<void>): TurnEntry {
 export function createTurnProjector(options: {
   transcript: HTMLElement
   onFork?: (turn: UITurn) => Promise<void>
+  translate: Translate
 }) {
+  const t = options.translate
   const turnEntries = new Map<string, TurnEntry>()
   const ticking = new Set<TurnEntry>()
   let clock: ReturnType<typeof setInterval> | undefined
@@ -216,14 +223,14 @@ export function createTurnProjector(options: {
         ]
         for (const [parent, children] of destinations) place(parent, children)
         for (const [parent, children] of destinations) trim(parent, children)
-        let status = turnStatus[turn.status]
+        let status = t(TURN_STATUS_KEYS[turn.status])
         if (turn.status === 'running' || turn.status === 'waiting') {
-          if (pendingApproval || awaitingToolApproval) status = '等待审批'
-          else if (turn.status === 'waiting') status = turnStatus.waiting
-          else if (runningTool) status = '正在执行工具'
-          else if (latestStreaming?.text.trim()) status = '正在回复'
-          else if (latestStreaming?.thinking?.trim()) status = '正在思考'
-          else status = '正在准备回复'
+          if (pendingApproval || awaitingToolApproval) status = t('turn.status.awaitingApproval')
+          else if (turn.status === 'waiting') status = t(TURN_STATUS_KEYS.waiting)
+          else if (runningTool) status = t('turn.status.runningTool')
+          else if (latestStreaming?.text.trim()) status = t('turn.status.replying')
+          else if (latestStreaming?.thinking?.trim()) status = t('turn.status.thinking')
+          else status = t('turn.status.preparing')
         }
         const entry = shell
         const active = !turn.endedAt && (turn.status === 'running' || turn.status === 'waiting')
@@ -231,9 +238,9 @@ export function createTurnProjector(options: {
         entry.refreshStatus = () => {
           const duration =
             active && Number.isFinite(startedAt)
-              ? `${Math.floor(Math.max(0, Date.now() - startedAt) / 1000)} 秒`
-              : durationLabel(turn.durationMs)
-          const statusText = `${status}${duration ? ` · 用时 ${duration}` : ''}`
+              ? t('turn.duration.s', { n: Math.floor(Math.max(0, Date.now() - startedAt) / 1000) })
+              : durationLabel(turn.durationMs, t)
+          const statusText = duration ? `${status}${t('turn.elapsedSuffix', { duration })}` : status
           if (entry.status.textContent !== statusText) entry.status.textContent = statusText
           if (entry.processLabel.textContent !== statusText) entry.processLabel.textContent = statusText
         }

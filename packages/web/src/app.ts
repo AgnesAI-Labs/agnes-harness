@@ -48,6 +48,7 @@ import {
   modelSelectLabel,
   setButtonLabel,
   shouldShowEmptyState,
+  type Translate,
   workspaceErrorNotice,
 } from './presentation.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
@@ -330,6 +331,10 @@ const renderer = clientModules.transcript as NonNullable<typeof clientModules.tr
 if (!renderer) throw new Error('missing transcript region')
 bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard })
 
+// 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
+const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
+clientModules.locale.subscribe(() => renderControls())
+
 // A daemon notice is only an invalidation hint. Every read goes back through the SDK roster
 // endpoint, and a failed read leaves the current page/modules intact for the next hint.
 function scheduleClientRosterRead(initial = false): void {
@@ -450,6 +455,7 @@ const sessionActions = createSessionActions({
     if (document.body.classList.contains('sidebar-open')) clientModules.sidebar?.dismiss()
     showError(error)
   },
+  translate: t,
 })
 let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {
@@ -471,6 +477,7 @@ function errorMessage(error: unknown): string {
     diagnostic?.diagnosticUnavailable,
     diagnostic?.code === 'TURN_ERROR' ? diagnostic.error?.code : undefined,
     diagnostic?.reason,
+    t,
   )
 }
 function showError(error: unknown): void {
@@ -566,7 +573,7 @@ function renderControls(): void {
   const busy = projection ? webView(projection).busy : false
   const hasInput = composerRuntime.getDraft().trim().length > 0
   const initialSubmissionPending = sending && pendingSessionKey !== undefined
-  const action = composerActionPresentation({ busy, loading: sessionPending, sending })
+  const action = composerActionPresentation({ busy, loading: sessionPending, sending }, t)
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
     control.disabled = recoveryDisabled()
   const canStartDraft = draftingNew && selectedWorkspace?.available === true
@@ -574,30 +581,33 @@ function renderControls(): void {
     cancel: {
       disabled: !connected || !busy || stopping || sessionPending,
       hidden: !busy && !stopping,
-      label: stopping ? '正在请求停止…' : '停止',
+      label: stopping ? t('composer.cancel.stopping') : t('composer.cancel.stop'),
     },
     connected,
     configured,
     hasSession: current !== undefined || draftingNew,
     hint:
       knownSessionModel && !selectedModelAvailable()
-        ? { kind: 'state', text: '当前模型已不可用，请重新选择模型' }
-        : composerHintPresentation({
-            connected,
-            configured,
-            hasSession: current !== undefined || draftingNew,
-            busy,
-            stopping,
-            loading: sessionPending,
-          }),
+        ? { kind: 'state', text: t('composer.hint.modelUnavailable') }
+        : composerHintPresentation(
+            {
+              connected,
+              configured,
+              hasSession: current !== undefined || draftingNew,
+              busy,
+              stopping,
+              loading: sessionPending,
+            },
+            t,
+          ),
     input: {
       disabled:
         !available || (!current && !draftingNew) || stopping || sessionPending || initialSubmissionPending,
-      placeholder: busy ? '补充下一轮要做的事…' : '描述你想完成的事…',
+      placeholder: busy ? t('composer.placeholder.busy') : t('composer.placeholder.idle'),
     },
     loading: sessionPending,
     model: {
-      accessibleName: modelSelectAccessibleName(knownSessionModel),
+      accessibleName: modelSelectAccessibleName(knownSessionModel, t),
       disabled:
         !available ||
         (!current && !draftingNew) ||
@@ -605,7 +615,7 @@ function renderControls(): void {
         sessionPending ||
         initialSubmissionPending ||
         !runtimeModels.length,
-      label: modelSelectLabel(knownSessionModel),
+      label: modelSelectLabel(knownSessionModel, t),
       options: runtimeModels,
       pending: modelChangePending,
       ...(knownSessionModel ? { selected: knownSessionModel } : {}),
@@ -635,14 +645,14 @@ function renderControls(): void {
     usage: projection?.usage,
     workspace: {
       disabled: !available || sending || sessionPending,
-      label: selectedWorkspace?.name ?? (current ? '当前工作区' : '选择工作区'),
-      title: selectedWorkspace?.path ?? (current ? '当前会话工作区' : '选择工作区'),
+      label: selectedWorkspace?.name ?? (current ? t('composer.workspace.current') : t('composer.workspace.select')),
+      title: selectedWorkspace?.path ?? (current ? t('composer.workspace.currentTitle') : t('composer.workspace.select')),
     },
   }
   composerRuntime.render(composerView)
   updateSidebar()
   if (sessionPending) {
-    topbarRuntime.setStatus('正在准备会话', 'loading')
+    topbarRuntime.setStatus(t('topbar.preparing'), 'loading')
   }
   conversationRuntime.setEmptyStateVisible(shouldShowEmptyState(projection))
   renderNewSessionControls()
@@ -1192,7 +1202,7 @@ async function registerWorkspace(cwd: string): Promise<void> {
     closeNewSessionDialog()
     composerRuntime.focus()
   } catch (error) {
-    const failure = new Error(workspaceErrorNotice(error), { cause: error })
+    const failure = new Error(workspaceErrorNotice(error, t), { cause: error })
     element('new-session-error', 'p').textContent = failure.message
     throw failure
   } finally {
@@ -1629,7 +1639,7 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
   } catch (error) {
     if (!isCurrentRequest()) return
     const message = error instanceof Error ? error.message : '打开管理面板失败，请重试。'
-    paneNotice.textContent = errorNotice(message)
+    paneNotice.textContent = errorNotice(message, undefined, undefined, undefined, undefined, t)
     paneNotice.dataset.kind = 'error'
     resourceList?.replaceChildren()
   } finally {

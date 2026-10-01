@@ -3,6 +3,7 @@ import {
   documentResourceUrl,
   sanitizeDocumentHtml,
 } from '@agnes/web-ui/assistant-ui'
+import type { LocaleVars } from '@agnes/web-client'
 import { createMarkdownRenderer, type MarkdownRenderer } from './markdown.js'
 
 export type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-ui/assistant-ui'
@@ -26,7 +27,11 @@ function unavailable(element: HTMLElement, message: string): void {
   element.append(fallback)
 }
 
-function renderInput(element: HTMLElement, input: DocumentPreviewInput): MarkdownRenderer | undefined {
+function renderInput(
+  element: HTMLElement,
+  input: DocumentPreviewInput,
+  t: (key: string, vars?: LocaleVars) => string,
+): MarkdownRenderer | undefined {
   clear(element)
   element.dataset.documentPreview = input.kind
   if (input.title) element.setAttribute('aria-label', input.title)
@@ -55,12 +60,12 @@ function renderInput(element: HTMLElement, input: DocumentPreviewInput): Markdow
     case 'image': {
       const url = documentResourceUrl(input.resourceUrl)
       if (!url) {
-        unavailable(element, '图片资源未获授权')
+        unavailable(element, t('doc.preview.unavailable', { kind: t('doc.kind.image'), reason: t('doc.reason.unauthorized') }))
         return undefined
       }
       const image = document.createElement('img')
       image.src = url
-      image.alt = input.title ?? '文档图片'
+      image.alt = input.title ?? t('doc.imageFallback')
       image.decoding = 'async'
       element.append(image)
       return undefined
@@ -68,12 +73,12 @@ function renderInput(element: HTMLElement, input: DocumentPreviewInput): Markdow
     case 'pdf': {
       const url = documentResourceUrl(input.resourceUrl)
       if (!url) {
-        unavailable(element, 'PDF 资源未获授权')
+        unavailable(element, t('doc.preview.unavailable', { kind: t('doc.kind.pdf'), reason: t('doc.reason.unauthorized') }))
         return undefined
       }
       const frame = document.createElement('iframe')
       frame.src = url
-      frame.title = input.title ?? 'PDF 文档'
+      frame.title = input.title ?? t('doc.pdfFallback')
       frame.setAttribute('sandbox', '')
       element.append(frame)
       return undefined
@@ -88,13 +93,14 @@ function renderInput(element: HTMLElement, input: DocumentPreviewInput): Markdow
 export function createDocumentPreview(
   element: HTMLElement,
   initial: DocumentPreviewInput,
+  t: (key: string, vars?: LocaleVars) => string = (key) => key,
 ): DocumentPreviewRenderer {
   let markdown: MarkdownRenderer | undefined
   let disposed = false
   const apply = (input: DocumentPreviewInput): void => {
     if (disposed) return
     markdown?.dispose()
-    markdown = renderInput(element, input)
+    markdown = renderInput(element, input, t)
   }
   apply(initial)
   return {
