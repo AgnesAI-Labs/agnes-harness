@@ -1372,7 +1372,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
   // Config registration records the requested provider id. Measured 1515, exact, no spare.
   // Config evidence records deployment reuse for each scenario. Measured 1527, exact, no spare.
-  'packages/extension-api/testkit': 1527,
+  // Package source and resolver scenario registration on that base. Measured 1679, exact, no spare.
+  'packages/extension-api/testkit': 1679,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
