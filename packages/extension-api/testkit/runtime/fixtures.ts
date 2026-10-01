@@ -1,9 +1,11 @@
 /**
- * Non-persistent inbox fixture for tests.
- * The generated public surface has no acceptance result carrying a delivery id
- * and a runtime reference. CommandHandle.result is a data reference. The state
- * intake receipt belongs to the state store, which this fixture does not replace.
- * The returned delivery id is valid only on this instance.
+ * In-memory inbox fixture. Nothing is persisted.
+ * Each instance mints delivery ids in its own namespace. Repeating a delivery
+ * key returns that id and does not wake waiters again. read accepts only an id
+ * this instance issued; an id from another instance is rejected.
+ * Acceptance is `{ deliveryId }` only. The public surface has no type that
+ * pairs a delivery id with a runtime reference, and this fixture does not
+ * stand in for the state store.
  */
 export const RUNTIME_INBOX_FIXTURE = 'runtime-inbox' as const
 

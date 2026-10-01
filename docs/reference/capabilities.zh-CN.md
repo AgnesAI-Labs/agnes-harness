@@ -11,6 +11,12 @@
 | 能力 ID | 功能 | 状态 | 阻塞项 / 当前边界 | 后续方向 | 源码依据 |
 |---|---|---|---|---|---|
 | `runtime.python.execution` | Python 代码运行时 | stub | 已有实验验证阈值，但尚无 Python 内核、原始 I/O 桥接、快照或恢复后端。 | 需要通过验证的运行时后端 | `packages/runtime-python/src/index.ts` |
+| `runtime.state-store` | 运行时会话状态存储 | partial | 打开会话、取得写租约和创建 run 会连同账本证明一起提交。重复的写打开或写租约请求会返回最初的结果。空 continue 推进、调用准入与关闭、仅观察的派发准入、mark_running、无 Hook 回执接入、动作结果探测、内存中的查询准入，以及 outbox 认领、确认和失败会在这个存储里提交。这几项之外的状态存储方法仍会拒绝。 | 补齐这几项之外的状态存储方法 | `packages/host/src/runtime/providers/state.ts` |
+| `runtime.advance-transition` | 运行推进 | partial | 空 continue，以及消费一条已存在的 signal，会提交。未知 signal、已消费的 signal、会话贡献，以及 wait、complete、fail 会在任何写入之前拒绝。 | 补齐会话贡献与其余转移 | `packages/host/src/runtime/state/control.ts` |
+| `runtime.dispatch-budget` | 派发预算 | partial | 空 reservation、且不请求 live-agent 配额时，observe 派发准入会提交。非空预算 reservation 或 live-agent 配额会在任何写入之前拒绝，并且不会钉住域。 | 补齐有界 reservation 与 live-agent 配额 | `packages/host/src/runtime/state/control.ts` |
+| `runtime.dispatch-hooks` | 派发 Hook 与污点确认 | partial | 没有 Hook 结果、也没有审批污点确认的派发准入会提交。带上其中任一项会在任何写入之前拒绝。 | 补齐 Hook 结果与审批污点确认 | `packages/host/src/runtime/state/control.ts` |
+| `runtime.control-command` | 控制命令 | partial | mark_running 会把执行尝试提交为 running。其余控制命令会在任何写入之前拒绝。 | 补齐其余控制命令 | `packages/host/src/runtime/state/control.ts` |
+| `runtime.intake-result-handling` | 回执结果处理 | partial | 无 Hook 的回执接入会在一次提交里发布 ready view、结果 outbox 和完成 signal。被拒绝的准入在自己的事务里发布同一套结果。inline-pure 和 staged 结果处理会在任何写入之前拒绝。 | 补齐 inline-pure 与 staged 结果处理 | `packages/host/src/runtime/state/control.ts` |
 | `code.runtime.lifecycle` | Code-mode 运行时生命周期 | stub | 扩展接口已存在，但尚未接入运行时生命周期。 | 在 `runtime.python.execution` 之后接入 | `packages/code/src/extensions/code-mode/index.ts` |
 | `ai.models.catalogue-probe` | 提供方模型目录探测 | partial | 常见 OpenAI/Anthropic 连通性探测可用；特定协议的模型目录与部分认证变体会被拒绝。 | 按提供方补充实现 | `packages/ai/src/adapters/pi/probe-models.ts`<br>`packages/ai/src/adapters/pi/probe.ts` |
 | `approval.ticket-store` | 停驻审批票据 | stub | 审批策略尚无持久化票据存储。 | 需要持久化存储 | `packages/base/extensions/approval-policy/src/tickets.ts` |

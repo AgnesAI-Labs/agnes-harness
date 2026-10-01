@@ -8,14 +8,20 @@ import type {
   ServiceRequirement,
 } from '@agnes/extension-api/runtime'
 import { RuntimeServiceCatalog } from '@agnes/protocol/runtime'
+import { createRestrictedEffectsFixture, type RestrictedEffectsFixture } from './effects.js'
 import {
   type AssertionRecord,
   type AssertionStatus,
+  type BuildIdentity,
   type ConformanceReport,
+  type EvidenceReuse,
   type FailureCode,
   FIXTURE_MARKS,
   type FixtureMark,
+  type GateKind,
+  type GateObservation,
   judgeReport,
+  PROVIDER_ABSENT,
   QUALIFICATIONS,
   type Qualification,
   type ReportDraft,
@@ -30,6 +36,11 @@ export interface DiscoveredContract {
   readonly contract: string
   readonly major: number
   readonly methods: readonly string[]
+}
+
+export function providerFileForContract(contract: string): string {
+  const suffix = contract.startsWith('agh.') ? contract.slice('agh.'.length) : contract
+  return `examples/runtime-reference/src/providers/${suffix}.ts`
 }
 
 export function discoverContracts(): readonly DiscoveredContract[] {
@@ -64,6 +75,9 @@ export interface AssertionInput {
   readonly attachmentDigest: string | null
   readonly fixture: FixtureMark | null
   readonly sharedEvidenceId: string | null
+  readonly reuse?: EvidenceReuse
+  readonly perImplementation?: boolean
+  readonly gate?: GateObservation | null
 }
 
 export interface CaseContext {
@@ -74,6 +88,7 @@ export interface CaseContext {
   readonly clock: InjectedClock
   readonly container: TestServiceContainer
   readonly inbox: RuntimeInboxFixture
+  readonly effects: RestrictedEffectsFixture
 }
 
 export interface CaseRegistration {
@@ -96,6 +111,7 @@ export interface TestServiceBinding {
   readonly binding: BindingRef
   readonly query?: BoundService['query']
   readonly compute?: BoundService['compute']
+  readonly eventsOutbox?: NonNullable<BoundService['eventsOutbox']>
   readonly artifactAccess?: NonNullable<BoundService['artifactAccess']>
   readonly blobRead?: NonNullable<BoundService['blobRead']>
   readonly clientIngress?: NonNullable<BoundService['clientIngress']>
@@ -160,6 +176,7 @@ function project(binding: TestServiceBinding): BoundService {
     binding: binding.binding,
     query: binding.query ?? (async () => unavailable('query')),
     compute: binding.compute ?? (async () => unavailable('compute')),
+    ...(binding.eventsOutbox !== undefined ? { eventsOutbox: binding.eventsOutbox } : {}),
     ...(binding.artifactAccess !== undefined ? { artifactAccess: binding.artifactAccess } : {}),
     ...(binding.blobRead !== undefined ? { blobRead: binding.blobRead } : {}),
     ...(binding.clientIngress !== undefined ? { clientIngress: binding.clientIngress } : {}),
@@ -235,6 +252,7 @@ export interface ConformanceHarness {
   readonly kind: 'conformance-harness'
   readonly container: TestServiceContainer
   readonly inbox: RuntimeInboxFixture
+  readonly effects: RestrictedEffectsFixture
   registerCase(registration: CaseRegistration): void
   run(request: ConformanceRunRequest): Promise<ConformanceReport>
 }
@@ -247,14 +265,97 @@ function knownQualification(value: string): value is Qualification {
   return (QUALIFICATIONS as readonly string[]).includes(value)
 }
 
+const ABSENT_BUILD: BuildIdentity = {
+  codeSha: 'absent',
+  buildDigest: 'absent',
+  lockDigest: 'absent',
+  specVersion: 'absent',
+  sdkVersion: 'absent',
+  sdkDigest: 'absent',
+  platform: 'absent',
+}
+
+const ABSENT_REUSE: EvidenceReuse = {
+  scope: 'unregistered',
+  methodKind: 'unregistered',
+  lifecycle: 'call',
+  undeclaredConnection: false,
+}
+
+function absentAssertion(
+  contract: string,
+  providerId: string,
+  request: ConformanceRunRequest,
+  build: BuildIdentity,
+): AssertionRecord {
+  return {
+    id: `absent:${providerId}:${contract}`,
+    contract,
+    scenario: 'select',
+    qualification: 'required',
+    providerId,
+    providerDigest: PROVIDER_ABSENT,
+    recipe: providerFileForContract(contract),
+    features: [],
+    build,
+    consumer: 'unregistered',
+    command: request.command,
+    startedAt: request.clock.startedAt,
+    finishedAt: request.clock.finishedAt,
+    status: 'failed',
+    configDigest: 'absent',
+    releaseSetDigest: 'absent',
+    attachmentDigest: null,
+    fixture: null,
+    sharedEvidenceId: null,
+    reuse: ABSENT_REUSE,
+    perImplementation: true,
+    gate: null,
+  }
+}
+
+function refusalAssertion(
+  kind: Extract<GateKind, 'shared-authority' | 'remote-call'>,
+  providerId: string,
+  request: ConformanceRunRequest,
+  build: BuildIdentity,
+): AssertionRecord {
+  return {
+    id: `gate:${kind}`,
+    contract: kind,
+    scenario: 'deny',
+    qualification: 'not-advertised',
+    providerId,
+    providerDigest: 'gate-observation',
+    recipe: `gate:${kind}`,
+    features: [],
+    build,
+    consumer: 'unregistered',
+    command: request.command,
+    startedAt: request.clock.startedAt,
+    finishedAt: request.clock.finishedAt,
+    status: 'passed',
+    configDigest: 'absent',
+    releaseSetDigest: 'absent',
+    attachmentDigest: null,
+    fixture: null,
+    sharedEvidenceId: null,
+    reuse: { ...ABSENT_REUSE, scope: 'deployment', methodKind: kind },
+    perImplementation: true,
+    gate: { kind, declared: false, observed: 'refused' },
+  }
+}
+
 export function createConformanceHarness(): ConformanceHarness {
   const container = createTestServiceContainer()
   const inbox = createRuntimeInboxFixture()
+  const effects = createRestrictedEffectsFixture()
   const cases: CaseRegistration[] = []
   return {
     kind: 'conformance-harness',
     container,
     inbox,
+    effects,
     registerCase(registration) {
       if (!knownScenario(registration.scenario) || !knownQualification(registration.qualification)) {
         throw new Error('case scenario or qualification is not recognized')
@@ -281,6 +382,7 @@ export function createConformanceHarness(): ConformanceHarness {
           clock: request.clock,
           container,
           inbox,
+          effects,
         })
         if (input.fixture !== null && !(FIXTURE_MARKS as readonly string[]).includes(input.fixture)) {
           throw new Error('case fixture mark is not recognized')
@@ -295,6 +397,21 @@ export function createConformanceHarness(): ConformanceHarness {
           finishedAt: request.clock.finishedAt,
         })
       }
+      const build = assertions[0]?.build ?? ABSENT_BUILD
+      for (const contract of requested) {
+        if (!known.has(contract)) continue
+        for (const providerId of request.providers) {
+          const covered = assertions.some(
+            (item) => item.contract === contract && item.providerId === providerId,
+          )
+          if (!covered) assertions.push(absentAssertion(contract, providerId, request, build))
+        }
+      }
+      if (request.contracts === 'all') {
+        const providerId = request.providers[0] ?? 'unregistered'
+        assertions.push(refusalAssertion('shared-authority', providerId, request, build))
+        assertions.push(refusalAssertion('remote-call', providerId, request, build))
+      }
       const draft: ReportDraft = {
         contracts: requested,
         providers: [...request.providers],
@@ -303,6 +420,7 @@ export function createConformanceHarness(): ConformanceHarness {
         startedAt: request.clock.startedAt,
         finishedAt: request.clock.finishedAt,
         assertions,
+        ...(request.contracts === 'all' ? { enforceCatalogGates: true } : {}),
       }
       return judgeReport(draft)
     },

@@ -11,6 +11,72 @@
       ]
     },
     {
+      "id": "runtime.state-store",
+      "evidence": [
+        {
+          "path": "packages/host/src/runtime/providers/state.ts",
+          "marker": "not implemented"
+        }
+      ]
+    },
+    {
+      "id": "runtime.advance-transition",
+      "evidence": [
+        {
+          "path": "packages/host/src/runtime/state/control.ts",
+          "marker": "conversation contribution is not implemented"
+        },
+        {
+          "path": "packages/host/src/runtime/state/control.ts",
+          "marker": "wait, complete, and fail transitions are not implemented"
+        }
+      ]
+    },
+    {
+      "id": "runtime.dispatch-budget",
+      "evidence": [
+        {
+          "path": "packages/host/src/runtime/state/control.ts",
+          "marker": "bounded-units and cost-hard budget reservation is not implemented"
+        },
+        {
+          "path": "packages/host/src/runtime/state/control.ts",
+          "marker": "live-agent quota is not implemented"
+        }
+      ]
+    },
+    {
+      "id": "runtime.dispatch-hooks",
+      "evidence": [
+        {
+          "path": "packages/host/src/runtime/state/control.ts",
+          "marker": "hook results and approval taint acknowledgement are not implemented"
+        }
+      ]
+    },
+    {
+      "id": "runtime.control-command",
+      "evidence": [
+        {
+          "path": "packages/host/src/runtime/state/control.ts",
+          "marker": "control command is not implemented"
+        }
+      ]
+    },
+    {
+      "id": "runtime.intake-result-handling",
+      "evidence": [
+        {
+          "path": "packages/host/src/runtime/state/control.ts",
+          "marker": "inline pure result handling is not implemented"
+        },
+        {
+          "path": "packages/host/src/runtime/state/control.ts",
+          "marker": "staged result handling is not implemented"
+        }
+      ]
+    },
+    {
       "id": "code.runtime.lifecycle",
       "evidence": [
         {

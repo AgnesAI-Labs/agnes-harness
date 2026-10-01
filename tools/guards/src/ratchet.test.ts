@@ -200,7 +200,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // `const prototype`, the two-line `if`). Re-measured: 1997, exact cap, no spare.
   // 2026-09-21 stage 2a: hooks-runner and privacy leave the resource-owned id list (-5 counted
   // lines, tightened to the exact measurement). Re-measured with this guard's countLines(): 1992.
-  'packages/plugin-runtime/src': 2024,
+  // Fixed Cordis generation assembly, one hook snapshot, and community contract binding.
+  // Re-measured with this guard's countLines(): 4117, exact cap, no spare.
+  'packages/plugin-runtime/src': 4117,
   'packages/cosmokit/src': 483,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.
@@ -1364,7 +1366,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
   // Conformance testkit: evidence, discovery, test service container and inbox fixture. Measured 907, exact, no spare.
-  'packages/extension-api/testkit': 907,
+  // Default config file and fetch cases register six scenarios. Measured 978, exact, no spare.
+  // Qualification gaps, shared-evidence matching and restricted legacy fixtures. Measured 1317, exact, no spare.
+  // Re-measured with those gaps on the config-case base. Measured 1388, exact, no spare.
+  // Omitted reuse, per-implementation and gate take defaults. Measured 1332, exact, no spare.
+  // Re-measured with those defaults on the config-case base. Measured 1403, exact, no spare.
+  // Restricted effects peer and the events outbox projection. Measured 1442, exact, no spare.
+  // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
+  // Config registration records the requested provider id. Measured 1515, exact, no spare.
+  'packages/extension-api/testkit': 1515,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2509,12 +2519,40 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
-  // Legacy profile and preset documents convert field by field.
-  // Explicit dag-code selection and community contract references sit beside them.
-  // A replaceable config source pins admitted snapshots and resolves layered documents.
-  // A pinned read names one revision and does not ask the source for a newer snapshot.
-  // Measured 43759, exact, no spare.
-  'packages/host/src': 43759,
+  // Session records, mutation manifests, and runtime ledger attestation share one database.
+  // Measured 39675.
+  // Record heads match their latest attested version, and a repeated write request returns its
+  // original result. Measured 39883.
+  // A verified session head is reused for later writes. Opening a session still rechecks that session.
+  // Measured 40049.
+  // Open verification hashes canonical stored bodies and checks compiled proof schemas once.
+  // Measured 40263.
+  // The state store canonicalizes JSON beside the protocol serializer. Measured 40328.
+  // Empty-continue advance, observe-only dispatch admission, mark_running, and zero-query
+  // invocation admission commit in that store. Measured 42196.
+  // No-hook intake, rejected-admission publication, signal consumption, outbox delivery,
+  // and query-usage flush commit in that store. Measured 43552.
+  // Signal sequence and active-invocation indexes, and quota lookup through the run's
+  // reservation refs, commit in that store. Measured 43738.
+  // One model turn's tool dispatches share a state commit. One commit's record versions,
+  // mutation manifests, and side entries share a proof row. Measured 44794.
+  // Same-connection transactions queue for their whole lifetime. Replayed open and lease
+  // results are checked against their schema and the proved head, authority, and current
+  // lease. Outbox verification reads 500 rows at a time. A version body is matched to
+  // its proof header in one pass over each table. Measured 44962.
+  // Outbox delivery stores consecutiveFailures beside attempts. Open assembles
+  // the public record from that row and checks it against the runtime schema.
+  // Measured 45057 before the configuration provider was on this base.
+  // Legacy profile and preset documents convert field by field. Explicit dag-code
+  // selection and community contract references sit beside them. A replaceable
+  // config source pins admitted snapshots and resolves layered documents. A pinned
+  // read names one revision and does not ask the source for a newer snapshot.
+  // Combined measured 50715.
+  // Scoped dependency projection over one fixed Cordis root.
+  // Re-measured with this guard's countLines(): 51097, exact cap, no spare.
+  // An aborted file refresh is refused before the loader runs.
+  // Re-measured with this guard's countLines(): 51099, exact cap, no spare.
+  'packages/host/src': 51099,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
