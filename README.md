@@ -44,7 +44,7 @@ These roles describe AGH's vision: combine reasoning, structured decisions, pers
 | **LLM / brain** | Understand requests, reason about the task, and propose actions | Model integration through AI providers |
 | **Jev / cerebellum** | Structured decisions such as routing and scoring to help coordinate execution | Planned integration; main currently uses the built-in Core loop |
 | **Harness / memory** | Retain session history, task state, execution records, and reusable methods in Skills | Existing task context and recovery mechanisms; Harness also runs and governs execution |
-| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | Planned device integration; AGH guides and examples are coming soon |
+| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | Planned device integration via MCP-based adapters; AGH guides and examples are coming soon |
 
 FDE is a delivery approach; MHS is a device integration direction. Both build on the same foundation, and an FDE deployment can include devices.
 
@@ -53,7 +53,7 @@ FDE is a delivery approach; MHS is a device integration direction. Both build on
 | **App Server** | Shared sessions, task submission, event delivery, and approval routing for CLI, Web, and SDK clients | Task entry points, human confirmation, and status presentation |
 | **Agent Loop** | Model/tool execution, task state, event records, interruption handling, and recovery | High-level device task orchestration and result records |
 | **Sandbox / execution constraints** | Tool authorization and applicable command, file, network, and process constraints | Software execution boundaries; device controllers retain motion control, interlocks, and emergency stops |
-| **Plugins** | Backend tools/services, Web panels, Skills, hooks, and MCP connections, organized with Cordis and package governance | An extension path for device adapters and device-facing interfaces; adapters still require implementation and validation |
+| **Plugins** | Backend tools/services, Web panels, Skills, hooks, and MCP connections, organized with Cordis and package governance | An extension path for MCP-based device adapters and device-facing interfaces; adapters still require implementation and validation |
 
 Business connectors and workbenches are built through these extension paths for each deployment. The current repository has no verified general-purpose MHS adapter or end-to-end device example. Ordinary backend plugins run as trusted in-process code; sandbox constraints apply to the supported execution paths.
 
@@ -99,7 +99,7 @@ The full documentation is available in [English](docs/README.md) and [简体中�
 
 ## MHS: extending into the physical world
 
-AGH plans to explore physical device integration through the Model Hardware Standard (MHS), bringing device state, human confirmation, and execution receipts into task workflows. The goal is to make integrations reusable across inspection, instrument coordination, and field operations.
+AGH's device integration direction builds on MCP (Model Context Protocol) rather than a vendor-specific SDK, so integrations stay reusable across inspection, instrument coordination, and field operations. See [Architecture](#architecture) for how MHS fits the brain, cerebellum, memory, and body.
 
 **MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](docs/guide/mhs.md)
 

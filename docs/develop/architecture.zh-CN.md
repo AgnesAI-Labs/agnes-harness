@@ -19,7 +19,7 @@ AGH 的客户端展示状态，daemon 管理会话与控制面，Host 组装运�
 | **LLM / 大脑** | [AI Provider 层](../../packages/ai/src)提供模型推理；Core 通过受控执行流程处理候选动作。 |
 | **Jev / 小脑** | 规划中的结构化决策接入，用于路由、评分和执行协调。main 使用内置 [Core loop](../../packages/core/src/step/session.ts)，没有 Jev 适配器或 Jev 驱动的 loop。[TypeSafe 的 Jev 说明](https://docs.typesafe.ai/introduction/coding-agents)介绍其结构化决策角色；AGH 的接入合同仍需实现与验证。 |
 | **Harness / 记忆** | [Core 事件记录](../../packages/core/src/log)、任务状态、共享会话与恢复机制保存任务上下文；[Skills](../guide/skills.zh-CN.md)沉淀可复用方法。Harness 同时承担执行与治理；这些记忆机制按现有合同保存事实与方法。 |
-| **MHS / 身体** | 规划中的设备能力接口：AGH 通过适配器组织状态读取、动作请求和回执。物理身体由设备及其控制器组成；AGH 的 [MHS 接入](../guide/mhs.zh-CN.md)仍处于探索阶段。 |
+| **MHS / 身体** | 规划中的设备能力接口，基于 MCP（Model Context Protocol）而非厂商专属 SDK 或 ROS 桥接：AGH 通过基于 MCP 的适配器组织状态读取、动作请求和回执。物理身体由设备及其控制器组成；AGH 的 [MHS 接入](../guide/mhs.zh-CN.md)仍处于探索阶段。 |
 
 Jev 的决策和 LLM 的候选动作都应经过后台授权与执行控制。会话记录和 Skills 提供上下文；权限由配置的策略与审批流程决定。
 
@@ -99,6 +99,6 @@ FDE 是交付方式，MHS 是设备接入方向。FDE 交付可通过 AGH 已有
 
 普通后端插件作为受信进程内代码执行；一次工具审批或可用的命令沙箱不代表任意插件代码已被隔离。审批、沙箱等必要接缝由受信部署配置选择；普通扩展注册工具或 hook 不会获得替换它们的权限。详见[安全与信任](../guide/security.zh-CN.md)。
 
-MHS 适配器对应总览图中的虚线规划分支，接入指南与示例[即将开放](../guide/mhs.zh-CN.md)。仅连接厂商 SDK、ROS 或 MCP 不构成 MHS 兼容证明；取消任务也不代表物理设备已安全停止。企业部署、审计、隔离与设备动作均需在实际环境中分别验证。
+MHS 适配器对应总览图中的虚线规划分支，基于 MCP（Model Context Protocol）而非厂商专属 SDK 或 ROS 桥接；接入指南与示例[即将开放](../guide/mhs.zh-CN.md)。仅完成一次 MCP 连接本身不构成 MHS 兼容证明，因为目前没有可供认证的公开 MHS 规范；取消任务也不代表物理设备已安全停止。企业部署、审计、隔离与设备动作均需在实际环境中分别验证。
 
 源码依据：[Host](../../packages/host/src/assemble.ts)、[Worker](../../packages/worker-runtime/src/main.ts)、[Core](../../packages/core/src)、[Daemon](../../packages/daemon/src/supervisor/supervisor.ts)、[运行目标发布](../../packages/host/src/runtime-target-publisher.ts)、[Web Context](../../packages/web/src/client-modules/boot.ts)。
