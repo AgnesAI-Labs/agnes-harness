@@ -2507,8 +2507,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38101 (+2).
   // Legacy profile and preset documents convert field by field.
   // Explicit dag-code selection and community contract references sit beside them.
-  // Measured 41824, exact, no spare.
-  'packages/host/src': 41824,
+  // A replaceable config source pins admitted snapshots and resolves layered documents.
+  // Measured 43741, exact, no spare.
+  'packages/host/src': 43741,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
