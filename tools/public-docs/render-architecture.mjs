@@ -26,7 +26,7 @@ const translations = {
       ['LLM / BRAIN', 'Reasoning & action proposals', 'Inference via AI providers'],
       ['Jev / CEREBELLUM', 'Structured decisions & routing', 'Planned integration'],
       ['HARNESS / MEMORY', 'Task state, history & methods', 'Sessions, records & Skills'],
-      ['MHS / BODY', 'Physical device capabilities', 'Planned device integration'],
+      ['MHS / BODY', 'Physical device capabilities', 'Planned via MCP adapters'],
     ],
     metaphor: 'Role metaphors explain the vision; the layers below show execution responsibilities.',
     server: 'APP SERVER',
@@ -63,14 +63,14 @@ const translations = {
     ],
     mhs: 'MHS / PHYSICAL INTEGRATION',
     mhsLines: [
-      'Planned: adapter → controller → device',
+      'Planned: MCP adapter → controller → device',
       'State reads · action requests · receipts',
       'Interlocks & emergency stops stay on devices.',
     ],
     footer:
       'FDE is a delivery approach. MHS is a device integration direction. Both use the same foundation.',
     description:
-      'AGH architecture with LLM as brain, Jev as cerebellum, Harness as memory and MHS as body. Jev and MHS integration are planned. App Server, agent loop, sandbox and plugins support enterprise delivery; device adapters extend the same foundation into physical workflows.',
+      'AGH architecture with LLM as brain, Jev as cerebellum, Harness as memory and MHS as body. Jev and MHS integration are planned; MHS device adapters build on MCP. App Server, agent loop, sandbox and plugins support enterprise delivery; device adapters extend the same foundation into physical workflows.',
   },
   'zh-CN': {
     title: 'Agnes Harness',
@@ -81,7 +81,7 @@ const translations = {
       ['LLM / 大脑', '理解、推理与候选动作生成', '通过 AI Provider 接入'],
       ['Jev / 小脑', '结构化决策与执行协调', '规划接入'],
       ['HARNESS / 记忆', '任务状态、历史与可复用方法', '会话、执行记录与 Skills'],
-      ['MHS / 身体', '连接物理设备的能力接口', '规划设备接入'],
+      ['MHS / 身体', '连接物理设备的能力接口', '规划经 MCP 适配器接入'],
     ],
     metaphor: '角色比喻解释产品愿景；下方架构层说明实际执行职责。',
     server: 'APP SERVER / 统一接入',
@@ -118,13 +118,13 @@ const translations = {
     ],
     mhs: 'MHS / 物理设备接入',
     mhsLines: [
-      '规划：适配器 → 控制器 → 设备',
+      '规划：MCP 适配器 → 控制器 → 设备',
       '状态读取 · 动作请求 · 执行回执',
       '互锁与急停由设备及其控制系统承担。',
     ],
     footer: 'FDE 是交付方式，MHS 是设备接入方向；两者使用同一套执行底座。',
     description:
-      'AGH 架构：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。Jev 与 MHS 接入属于规划。App Server、Agent Loop、Sandbox 与插件体系支撑企业现场交付，设备适配器将同一底座延伸到物理场景。',
+      'AGH 架构：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。Jev 与 MHS 接入属于规划，MHS 设备适配器基于 MCP。App Server、Agent Loop、Sandbox 与插件体系支撑企业现场交付，设备适配器将同一底座延伸到物理场景。',
   },
 }
 
