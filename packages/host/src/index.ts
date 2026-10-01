@@ -410,6 +410,13 @@ export type { PluginManageBridge, PluginManageInvocation } from './resources/plu
 export { createSkillInstaller, type SkillInstallAuthority } from './resources/skill-install.js'
 export { validInstallPathPolicy } from './resources/skill-install-files.js'
 export type { SkillInstallBridge, SkillInstallInvocation } from './resources/skill-install-port.js'
+export {
+  createHostScopedDependencies,
+  type HostPermissionGrant,
+  type HostProviderPublication,
+  type HostScopedDependencies,
+  type HostSelectedProvider,
+} from './runtime/scoped-dependencies.js'
 export * from './runtime-target-publisher.js'
 export * from './runtime-target-report.js'
 export * from './sandbox-readiness-manager.js'
