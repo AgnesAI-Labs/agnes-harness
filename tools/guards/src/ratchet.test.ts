@@ -2505,12 +2505,36 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
-  // Legacy profile and preset documents convert field by field.
-  // Explicit dag-code selection and community contract references sit beside them.
-  // A replaceable config source pins admitted snapshots and resolves layered documents.
-  // A pinned read names one revision and does not ask the source for a newer snapshot.
-  // Measured 43759, exact, no spare.
-  'packages/host/src': 43759,
+  // Session records, mutation manifests, and runtime ledger attestation share one database.
+  // Measured 39675.
+  // Record heads match their latest attested version, and a repeated write request returns its
+  // original result. Measured 39883.
+  // A verified session head is reused for later writes. Opening a session still rechecks that session.
+  // Measured 40049.
+  // Open verification hashes canonical stored bodies and checks compiled proof schemas once.
+  // Measured 40263.
+  // The state store canonicalizes JSON beside the protocol serializer. Measured 40328.
+  // Empty-continue advance, observe-only dispatch admission, mark_running, and zero-query
+  // invocation admission commit in that store. Measured 42196.
+  // No-hook intake, rejected-admission publication, signal consumption, outbox delivery,
+  // and query-usage flush commit in that store. Measured 43552.
+  // Signal sequence and active-invocation indexes, and quota lookup through the run's
+  // reservation refs, commit in that store. Measured 43738.
+  // One model turn's tool dispatches share a state commit. One commit's record versions,
+  // mutation manifests, and side entries share a proof row. Measured 44794.
+  // Same-connection transactions queue for their whole lifetime. Replayed open and lease
+  // results are checked against their schema and the proved head, authority, and current
+  // lease. Outbox verification reads 500 rows at a time. A version body is matched to
+  // its proof header in one pass over each table. Measured 44962.
+  // Outbox delivery stores consecutiveFailures beside attempts. Open assembles
+  // the public record from that row and checks it against the runtime schema.
+  // Measured 45057 before the configuration provider was on this base.
+  // Legacy profile and preset documents convert field by field. Explicit dag-code
+  // selection and community contract references sit beside them. A replaceable
+  // config source pins admitted snapshots and resolves layered documents. A pinned
+  // read names one revision and does not ask the source for a newer snapshot.
+  // Combined measured 50715.
+  'packages/host/src': 50715,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
