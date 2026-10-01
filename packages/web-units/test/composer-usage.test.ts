@@ -19,6 +19,7 @@ it('uses component ownership and disposes compatible custom factories on replace
   const update = Object.assign(vi.fn(), { dispose: vi.fn() })
   const picker = () => ({ destroy: vi.fn(), render: vi.fn() })
   const dependencies: ComposerDependencies = {
+    translate: (key) => key,
     createModelPicker: picker,
     createPermissionPicker: picker,
     createUsagePanel: vi.fn(() => update),

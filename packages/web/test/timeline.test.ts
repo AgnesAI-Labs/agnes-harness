@@ -7,6 +7,7 @@ import { createElement, useEffect, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
+import { zhLocaleService } from './helpers/locale.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -20,7 +21,7 @@ function renderer() {
   document.body.append(transcript, newContentButton)
   return {
     transcript,
-    timeline: createTimelineRenderer({ transcript, newContentButton }),
+    timeline: createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton }),
   }
 }
 
@@ -42,7 +43,7 @@ describe('timeline reader semantics', () => {
     const transcript = document.createElement('div')
     const newContentButton = document.createElement('button')
     document.body.append(transcript, newContentButton)
-    const timeline = createTimelineRenderer({ transcript, newContentButton, registry })
+    const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton, registry })
     const node: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: '原生回答' }
 
     timeline.render([node])
@@ -142,7 +143,7 @@ describe('timeline reader semantics', () => {
     const transcript = document.createElement('div')
     const newContentButton = document.createElement('button')
     document.body.append(transcript, newContentButton)
-    const timeline = createTimelineRenderer({ transcript, newContentButton, registry })
+    const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton, registry })
     timeline.render([{ kind: 'assistant', id: 'assistant-1', seq: 1, text: 'answer' }])
     await vi.waitFor(() => expect(mounted).toBe(1))
 
@@ -181,7 +182,7 @@ describe('timeline reader semantics', () => {
     const fork = vi.fn(async () => undefined)
     const transcript = document.createElement('div')
     document.body.append(transcript)
-    const timeline = createTimelineRenderer({
+    const timeline = createTimelineRenderer({ locale: zhLocaleService(), 
       transcript,
       newContentButton: document.createElement('button'),
       onFork: fork,
@@ -704,7 +705,7 @@ describe('timeline reader semantics', () => {
         geometry.scrollTop = options.top
       },
     })
-    const timeline = createTimelineRenderer({ transcript, newContentButton })
+    const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton })
     const node: UINode = { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: '1' }] }
 
     // 初始渲染即贴底；程序写入引发的 scroll 事件不解除跟随。
@@ -825,7 +826,7 @@ describe('loading earlier records', () => {
       configurable: true,
       get: () => 100 * transcript.querySelectorAll('[data-node-id]').length,
     })
-    const timeline = createTimelineRenderer({ transcript, scrollContainer, newContentButton })
+    const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, scrollContainer, newContentButton })
     return { scrollContainer, transcript, timeline }
   }
   const say = (id: string, seq: number, text = id): UINode => ({ kind: 'assistant', id, seq, text })

@@ -4,6 +4,7 @@ import type { Client } from '@agnes/sdk/browser'
 import { SlotRegistry } from '@agnes/web-client'
 import { createElement } from 'react'
 import { expect, it, vi } from 'vitest'
+import { zhT } from './helpers/locale.js'
 import { mountSettingsPaneRegion, settingsPaneSlot } from '../src/region-slots.js'
 import { createSessionActions } from '../src/session-actions.js'
 
@@ -33,6 +34,7 @@ it('keeps archived results, search and restore connected after opening and switc
       changed,
       error,
       fork: vi.fn(),
+      translate: zhT,
     })
     const originalPane = region.pane('archived')
     // Production creates the controller before session load updates the slot registry.

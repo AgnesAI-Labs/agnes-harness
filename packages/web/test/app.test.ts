@@ -73,6 +73,12 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
   },
   memoryJournal: sdk.memoryJournal,
 }))
+
+// i18n: the workbench defaults to English; these tests assert the zh-CN catalog,
+// so the locale preference is pinned before each app start.
+beforeEach(() => {
+  localStorage.setItem('agnes-locale', 'zh-CN')
+})
 vi.mock('../src/session-binding.js', () => ({
   bindWebSession: binding.bindWebSession,
   loadWebSession: binding.loadWebSession,

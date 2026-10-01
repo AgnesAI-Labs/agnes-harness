@@ -10,6 +10,7 @@ import { act, createElement, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WebConversationMessages } from '../src/conversation-message-adapter.js'
+import { zhLocaleService } from './helpers/locale.js'
 import { createTimelineRenderer } from '../src/timeline.js'
 
 const nodes: UINode[] = [
@@ -52,7 +53,7 @@ it('retires legacy turn actions when the projection loses its turn list, then su
   document.body.append(host)
   const add = vi.spyOn(document, 'addEventListener')
   const remove = vi.spyOn(document, 'removeEventListener')
-  const timeline = createTimelineRenderer({
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(), 
     transcript: host,
     newContentButton: document.createElement('button'),
   })
@@ -130,7 +131,7 @@ it('retires the legacy action root after a parent React commit without nested-ro
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
   const host = document.createElement('section')
   document.body.append(host)
-  const timeline = createTimelineRenderer({
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(), 
     transcript: host,
     newContentButton: document.createElement('button'),
   })

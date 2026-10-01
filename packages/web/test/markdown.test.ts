@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMarkdownRenderer } from '../src/markdown.js'
+import { zhLocaleService } from './helpers/locale.js'
 import { createTimelineRenderer } from '../src/timeline.js'
 
 afterEach(() => {
@@ -166,7 +167,7 @@ describe('Markdown DOM renderer', () => {
 it('preserves a selected assistant block while the answer is already streaming', () => {
   const transcript = container()
   const newContent = document.createElement('button')
-  const timeline = createTimelineRenderer({ transcript, newContentButton: newContent })
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton: newContent })
   timeline.render([
     {
       kind: 'assistant',
@@ -209,7 +210,7 @@ it('preserves a selected assistant block while the answer is already streaming',
 
 it('keeps historical thinking closed and preserves a manual collapse across streaming updates', () => {
   const transcript = container()
-  const timeline = createTimelineRenderer({ transcript, newContentButton: document.createElement('button') })
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton: document.createElement('button') })
   // text 留空：这一例要的是「思考阶段本身」的展开态与手动收起。
   const node = { kind: 'assistant' as const, id: 'thinking-1', seq: 1, text: '', thinking: 'thought' }
   timeline.render([node])
@@ -228,7 +229,7 @@ it('keeps historical thinking closed and preserves a manual collapse across stre
 
 it('collapses thinking once it ends and keeps a manual re-expand afterwards', () => {
   const transcript = container()
-  const timeline = createTimelineRenderer({ transcript, newContentButton: document.createElement('button') })
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton: document.createElement('button') })
   const node = {
     kind: 'assistant' as const,
     id: 'thinking-2',
@@ -263,7 +264,7 @@ it('collapses thinking once it ends and keeps a manual re-expand afterwards', ()
 
 it('still collapses at the end of the thinking phase when it was expanded by hand during it', () => {
   const transcript = container()
-  const timeline = createTimelineRenderer({ transcript, newContentButton: document.createElement('button') })
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton: document.createElement('button') })
   const node = {
     kind: 'assistant' as const,
     id: 'thinking-3',
@@ -296,7 +297,7 @@ it('still collapses at the end of the thinking phase when it was expanded by han
 it('replaces an entry whose node kind changes without leaving its prior DOM or listeners behind', () => {
   const transcript = container()
   const newContent = document.createElement('button')
-  const timeline = createTimelineRenderer({ transcript, newContentButton: newContent })
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton: newContent })
   timeline.render([{ kind: 'assistant', id: 'same-id', seq: 1, text: 'first', streaming: true }])
   timeline.render([
     {
@@ -320,7 +321,7 @@ it('replaces an entry whose node kind changes without leaving its prior DOM or l
 it('labels unreported usage honestly and keeps verified amounts, including zero', () => {
   const transcript = container()
   const newContent = document.createElement('button')
-  const timeline = createTimelineRenderer({ transcript, newContentButton: newContent })
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(),  transcript, newContentButton: newContent })
 
   timeline.render([{ kind: 'cost', id: 'cost-1', seq: 1, source: 'estimated' }])
   expect(transcript.querySelector('.call-usage summary')?.textContent).toBe('费用未提供')

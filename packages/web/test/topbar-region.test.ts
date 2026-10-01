@@ -25,9 +25,10 @@ describe('rendered topbar region', () => {
     expect(handle).toBeDefined()
     expect(topbar?.querySelector('[data-slot="ui:topbar"]')).toBeTruthy()
     expect(topbar?.querySelector('#sidebar-toggle')).toBeInstanceOf(HTMLButtonElement)
-    expect(topbar?.querySelector('#task-title')?.textContent).toBe('新会话')
-    expect(topbar?.querySelector('#status')?.textContent).toBe('准备任务')
-    expect(topbar?.querySelector('#connection')?.textContent).toBe('正在连接后台')
+    // No locale preference saved: the workbench defaults to English (assert the catalog default).
+    expect(topbar?.querySelector('#task-title')?.textContent).toBe('New session')
+    expect(topbar?.querySelector('#status')?.textContent).toBe('Ready')
+    expect(topbar?.querySelector('#connection')?.textContent).toBe('Connecting to the backend')
     expect(topbar?.querySelector('#disconnect')).toBeInstanceOf(HTMLButtonElement)
 
     const toggle = topbar?.querySelector<HTMLButtonElement>('#sidebar-toggle')
@@ -42,7 +43,7 @@ describe('rendered topbar region', () => {
     expect(topbar?.querySelector('#task-title')?.textContent).toBe('测试任务')
     expect(topbar?.querySelector('#status')?.textContent).toBe('执行中')
     expect(topbar?.querySelector('#status')?.getAttribute('data-state')).toBe('running')
-    expect(topbar?.querySelector('#connection')?.textContent).toBe('本地后台已连接')
+    expect(topbar?.querySelector('#connection')?.textContent).toBe('Local backend connected')
     expect(topbar?.querySelector('#connection')?.getAttribute('data-state')).toBe('connected')
   })
 

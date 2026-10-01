@@ -2,11 +2,12 @@
 import type { UINode, UsageView } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
+import { zhLocaleService, zhT } from './helpers/locale.js'
 import { costDetails, costSummary, createUsagePanel, type UsagePanelUpdater } from '../src/usage.js'
 
 const panels: UsagePanelUpdater[] = []
 function mountUsage(parent: HTMLElement) {
-  const panel = createUsagePanel(parent)
+  const panel = createUsagePanel(parent, zhT)
   panels.push(panel)
   return panel
 }
@@ -37,24 +38,24 @@ const usage: UsageView = {
   model: { route: 'account-acct-private', id: 'm', thinking: 'high', maxTokens: 8192 },
 }
 it('shows per-call values and known timing, without double counting reasoning or fabricating dollars', () => {
-  expect(costSummary(call)).toBe('输入 120 · 输出 50 · $0.000125（估算）')
+  expect(costSummary(call, zhT)).toBe('输入 120 · 输出 50 · $0.000125（估算）')
   expect(
     costSummary({
       ...call,
       billing: { usdMicros: 125, source: 'gateway', subscription: false },
     }),
   ).toContain('（网关记录）')
-  expect(costDetails(call)).toContainEqual(['额度', '0.000206 credits · 估算'])
-  expect(costDetails(call)).toContainEqual(['推理 Token（输出的子集）', '20'])
-  expect(costDetails(call)).toContainEqual(['模型请求耗时', '2.40 秒'])
+  expect(costDetails(call, zhT)).toContainEqual(['额度', '0.000206 credits · 估算'])
+  expect(costDetails(call, zhT)).toContainEqual(['推理 Token（输出的子集）', '20'])
+  expect(costDetails(call, zhT)).toContainEqual(['模型请求耗时', '2.40 秒'])
   const legacy = { kind: 'cost', id: 'c2', seq: 5, source: 'estimated', credits: 2 } as const
-  expect(costSummary(legacy)).toBe('2 credits（估算）')
-  expect(costDetails(legacy)).toContainEqual(['Token 明细', '未提供'])
-  expect(costDetails(legacy).flat().join(' ')).not.toContain('$')
+  expect(costSummary(legacy, zhT)).toBe('2 credits（估算）')
+  expect(costDetails(legacy, zhT)).toContainEqual(['Token 明细', '未提供'])
+  expect(costDetails(legacy, zhT).flat().join(' ')).not.toContain('$')
 })
 it('keeps a call disclosure open on replacement and renders model names as text', () => {
   const transcript = document.createElement('section')
-  const timeline = createTimelineRenderer({
+  const timeline = createTimelineRenderer({ locale: zhLocaleService(), 
     transcript,
     newContentButton: document.createElement('button'),
   })
@@ -138,15 +139,15 @@ it('preserves zero and missing values and separate dollar/credit provenance in p
     timing: { ttftMs: 0, durationMs: 0 },
     interrupted: true,
   }
-  expect(costSummary(zero)).toBe('输入 0 · 输出 0 · $0.00（网关记录） · 已中断')
-  expect(costDetails(zero)).toContainEqual(['额度', '0 credits · 估算'])
-  expect(costDetails(zero)).toContainEqual(['美元费用', '$0.00 · 网关记录'])
-  expect(costDetails(zero)).toContainEqual(['推理 Token（输出的子集）', '0'])
-  expect(costDetails(zero)).toContainEqual(['首次输出等待', '0 ms'])
-  expect(costDetails(zero)).toContainEqual(['模型请求耗时', '0 ms'])
+  expect(costSummary(zero, zhT)).toBe('输入 0 · 输出 0 · $0.00（网关记录） · 已中断')
+  expect(costDetails(zero, zhT)).toContainEqual(['额度', '0 credits · 估算'])
+  expect(costDetails(zero, zhT)).toContainEqual(['美元费用', '$0.00 · 网关记录'])
+  expect(costDetails(zero, zhT)).toContainEqual(['推理 Token（输出的子集）', '0'])
+  expect(costDetails(zero, zhT)).toContainEqual(['首次输出等待', '0 ms'])
+  expect(costDetails(zero, zhT)).toContainEqual(['模型请求耗时', '0 ms'])
   const missing = { kind: 'cost', id: 'missing', seq: 1, source: 'gateway' } as const
-  expect(costSummary(missing)).toBe('费用未提供')
-  expect(costDetails(missing)).toEqual([
+  expect(costSummary(missing, zhT)).toBe('费用未提供')
+  expect(costDetails(missing, zhT)).toEqual([
     ['记录范围', '单次费用记录'],
     ['Token 明细', '未提供'],
     ['额度', '未提供'],
