@@ -1797,7 +1797,6 @@ button.trace-gantt-bar:focus-visible {
 }
 #transcript {
   height: 100%;
-  margin-inline: auto;
   /* 切换会话时旧画面降不透明度提示「正在准备」（body.session-switching），
      新投影就绪后平滑恢复。 */
   transition: opacity var(--transition);
@@ -1805,8 +1804,15 @@ button.trace-gantt-bar:focus-visible {
      （长代码串、长路径）把整条会话推出横向滚动。 */
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 1rem 2rem;
   scroll-behavior: smooth;
+  width: 100%;
+}
+/* 滚动容器占满整个中列，内容列自己限宽居中。限宽若落回 #transcript，两侧留白就属于
+   不可滚动的祖先（.conversation-region-root / .conversation-shell / body 都是
+   overflow: hidden），鼠标停在留白上时找不到可滚动祖先，滚轮会毫无反应。 */
+#transcript-content {
+  margin-inline: auto;
+  padding: 1rem 2rem;
   width: min(100%, var(--chat-content-width));
 }
 #empty-state {
@@ -2324,33 +2330,60 @@ button.trace-gantt-bar:focus-visible {
   gap: 0.5rem;
   margin-top: 0.875rem;
 }
-body:has(#transcript:empty) #prompt {
+/* 空态判据取 `#empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
+   此前用的 `#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content`
+   子节点，`:empty` 不匹配，下面这一组规则全是死规则，实际效果一直是"输入卡贴底"。 */
+body:has(#empty-state:not([hidden])) #prompt {
   min-height: 3.25rem;
 }
-/* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中——空态时让
-   .conversation-shell 收起为内容高度，两端各吃一份 auto 外边距即可居中，
-   顶栏（flex 首项）不受影响。此前是 hero 占满、输入卡贴底。 */
-body:has(#transcript:empty) .conversation-shell {
+/* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中。两级绝对定位
+   （.conversation-region-root 与 #empty-state）必须在空态下放开，hero 才撑得出真实
+   高度；否则 shell 高度为 0，后面两份 auto 外边距无处可吃。顶栏在空态是绝对定位的
+   悬浮开关，不占流，所以不再需要补偿它的高度。 */
+body:has(#empty-state:not([hidden])) .workbench-split {
   flex: 0 1 auto;
   margin-top: auto;
-  overflow: visible;
 }
-body:has(#transcript:empty) #empty-state {
+body:has(#empty-state:not([hidden])) .conversation-region-root,
+body:has(#empty-state:not([hidden])) #empty-state {
   position: static;
   inset: auto;
 }
+body:has(#empty-state:not([hidden])) .conversation-shell {
+  overflow: visible;
+}
 /* 空态下会话清单里没有内容，但它带着 16px 上下内边距会占位、把 hero 顶下去，
    于是 hero 跑出 shell 而整体偏离居中。空态时直接让位。 */
-body:has(#transcript:empty) #transcript {
+body:has(#empty-state:not([hidden])) #transcript {
   display: none;
 }
-body:has(#transcript:empty) #composer {
+/* 下边那份 auto 必须挂在 main 的 flex 子项上：挂到 #composer 上会被 #composer-mount
+   挡住，块级上下文里的纵向 auto 外边距会算成 0，居中就只剩上面那一份。 */
+body:has(#empty-state:not([hidden])) #composer-mount {
   margin-bottom: auto;
 }
-/* 两份 auto 只把这一组居中在"顶栏以下"的空间里，观感上仍偏低；用等高的下内边距
-   把顶栏那一份补回来，中轴才与视口一致。 */
-body:has(#transcript:empty) main {
-  padding-bottom: 8rem;
+/* 新会话时顶栏不成立：标题、状态都没有内容，页签也没有会话可切。容器降为不占流的
+   透明浮层，只留下左上角的侧栏开关——窄屏和折叠态下它是唤出导航的唯一入口，不能
+   跟着一起消失。连接异常那一行仍然保留（见 connection-group 的可见性规则）。 */
+body:has(#empty-state:not([hidden])) main {
+  position: relative;
+}
+body:has(#empty-state:not([hidden])) .topbar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 6;
+  min-height: 0;
+  padding: 0.625rem 1.75rem;
+  border-bottom: 0;
+  background: transparent;
+}
+body:has(#empty-state:not([hidden])) .topbar .task-heading,
+body:has(#empty-state:not([hidden])) .session-tabs-bar {
+  display: none;
+}
+/* .task-heading 平时靠 flex:1 把连接组顶到右边；它退场后这份推力要显式补回来。 */
+body:has(#empty-state:not([hidden])) .connection-group {
+  margin-left: auto;
 }
 /* 切换会话的加载态：上一会话画面降不透明度（含会话区外的审批卡），提示内容
    正在被替换；新投影就绪后由 body.session-switching 移除而平滑恢复。
@@ -2891,7 +2924,7 @@ body {
   #empty-state {
     width: calc(100% - 2rem);
   }
-  #transcript {
+  #transcript-content {
     padding-inline: 1rem;
   }
   .new-content {
@@ -2985,7 +3018,7 @@ body {
   #empty-state {
     width: calc(100% - 1.5rem);
   }
-  #transcript {
+  #transcript-content {
     padding-inline: 0.75rem;
   }
   .composer-controls {
@@ -3952,7 +3985,7 @@ body {
     min-height: 3.4rem;
     padding-inline: 0.75rem;
   }
-  #transcript {
+  #transcript-content {
     padding: 1.5rem 1rem 5rem;
   }
   .timeline-node.user {
