@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1248" viewBox="0 0 1200 1248" role="img" aria-labelledby="title description" xml:lang="en">
+<title id="title">Agnes Harness — One execution foundation. Reusable capabilities for field delivery.</title>
+<desc id="description">AGH architecture with LLM as brain, Jev as cerebellum, Harness as memory and MHS as body. Jev and MHS integration are planned. App Server, agent loop, sandbox and plugins support enterprise delivery; device adapters extend the same foundation into physical workflows.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2459ce"/></marker><marker id="planned-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9a5a13"/></marker></defs>
+<rect width="1200" height="1248" rx="20" fill="#ffffff"/>
+<g font-family="Inter, Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif">
+<text x="36" y="55" font-size="36" font-weight="700" fill="#172b4d">Agnes Harness</text>
+<text x="36" y="87" font-size="20" font-weight="400" fill="#52647b">One execution foundation. Reusable capabilities for field delivery.</text>
+<path d="M 36 116 H 69" stroke="#2459ce" stroke-width="2.2"/>
+<text x="80" y="122" font-size="17" font-weight="400" fill="#52647b">Solid: existing software paths</text>
+<path d="M 530 116 H 563" stroke="#9a5a13" stroke-width="2.2" stroke-dasharray="7 5"/>
+<text x="574" y="122" font-size="17" font-weight="400" fill="#52647b">Dashed: planned AGH integration</text>
+<rect x="36" y="146" width="264" height="111" rx="14" fill="#f3f7ff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="53" y="179" font-size="20" font-weight="700" fill="#2459ce">LLM / BRAIN</text>
+<text x="53" y="207" font-size="16" font-weight="400" fill="#52647b">Reasoning &amp; action proposals</text>
+<text x="53" y="232" font-size="16" font-weight="400" fill="#52647b">Inference via AI providers</text>
+<rect x="324" y="146" width="264" height="111" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
+<text x="341" y="179" font-size="20" font-weight="700" fill="#9a5a13">Jev / CEREBELLUM</text>
+<text x="341" y="207" font-size="16" font-weight="400" fill="#52647b">Structured decisions &amp; routing</text>
+<text x="341" y="232" font-size="16" font-weight="400" fill="#52647b">Planned integration</text>
+<rect x="612" y="146" width="264" height="111" rx="14" fill="#f3f7ff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="629" y="179" font-size="20" font-weight="700" fill="#2459ce">HARNESS / MEMORY</text>
+<text x="629" y="207" font-size="16" font-weight="400" fill="#52647b">Task state, history &amp; methods</text>
+<text x="629" y="232" font-size="16" font-weight="400" fill="#52647b">Sessions, records &amp; Skills</text>
+<rect x="900" y="146" width="264" height="111" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
+<text x="917" y="179" font-size="20" font-weight="700" fill="#9a5a13">MHS / BODY</text>
+<text x="917" y="207" font-size="16" font-weight="400" fill="#52647b">Physical device capabilities</text>
+<text x="917" y="232" font-size="16" font-weight="400" fill="#52647b">Planned device integration</text>
+<text x="36" y="284" font-size="17" font-weight="400" fill="#52647b">Role metaphors explain the vision; the layers below show execution responsibilities.</text>
+<rect x="36" y="310" width="1128" height="111" rx="14" fill="#f3f7ff" stroke="#2459ce" stroke-width="1.8"/>
+<text x="58" y="344" font-size="22" font-weight="700" fill="#2459ce">APP SERVER</text>
+<text x="58" y="376" font-size="21" font-weight="600" fill="#172b4d">CLI / TUI  ·  Web  ·  SDK / API consumers</text>
+<text x="58" y="402" font-size="18" font-weight="400" fill="#52647b">SDK + daemon + workers: task submission, shared sessions, events &amp; approval routing</text>
+<path d="M 600 423 L 600 452" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)"/>
+<rect x="36" y="457" width="1128" height="325" rx="14" fill="#f8fafc" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="58" y="490" font-size="22" font-weight="700" fill="#2459ce">AGENT RUNTIME</text>
+<text x="58" y="517" font-size="18" font-weight="400" fill="#52647b">Host assembles capabilities; Core advances tasks inside the worker.</text>
+<rect x="58" y="539" width="519" height="142" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="78" y="572" font-size="22" font-weight="650" fill="#172b4d">Agent Loop / Core</text>
+<text x="78" y="601" font-size="18" font-weight="400" fill="#52647b">Model → action → tool → result → repeat</text>
+<text x="78" y="628" font-size="18" font-weight="400" fill="#52647b">Continue, pause, recover or finish</text>
+<text x="78" y="655" font-size="18" font-weight="400" fill="#52647b">LLM via AI Provider; Jev integration planned</text>
+<rect x="625" y="539" width="517" height="142" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="645" y="572" font-size="22" font-weight="650" fill="#172b4d">Controlled tool execution / Sandbox</text>
+<text x="645" y="601" font-size="18" font-weight="400" fill="#52647b">Tool authorization &amp; execution policy</text>
+<text x="645" y="628" font-size="18" font-weight="400" fill="#52647b">Sandbox applicable command execution</text>
+<text x="645" y="655" font-size="18" font-weight="400" fill="#52647b">Platform-dependent file, network &amp; process limits</text>
+<path d="M 580 610 L 620 610" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<rect x="58" y="704" width="1084" height="59" rx="14" fill="#edf7f3" stroke="#b5d5c7" stroke-width="1.8"/>
+<text x="78" y="730" font-size="20" font-weight="650" fill="#176b55">Harness memory / persistent task context</text>
+<text x="78" y="751" font-size="17" font-weight="400" fill="#52647b">Session history · task state · event records · recovery · reusable Skills</text>
+<path d="M 600 789 L 600 818" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<rect x="36" y="827" width="1128" height="164" rx="14" fill="#f3f7ff" stroke="#2459ce" stroke-width="1.8"/>
+<text x="58" y="860" font-size="22" font-weight="700" fill="#2459ce">PLUGINS / CORDIS</text>
+<text x="58" y="887" font-size="18" font-weight="400" fill="#52647b">Capability composition, dependencies, package trust &amp; lifecycle</text>
+<rect x="58" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="74" y="935" font-size="20" font-weight="600" fill="#172b4d">Tools &amp; business services</text>
+<text x="74" y="958" font-size="16" font-weight="400" fill="#52647b">Backend plugins · MCP</text>
+<rect x="425" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="441" y="935" font-size="20" font-weight="600" fill="#172b4d">Methods &amp; task knowledge</text>
+<text x="441" y="958" font-size="16" font-weight="400" fill="#52647b">Skills · hooks</text>
+<rect x="792" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="808" y="935" font-size="20" font-weight="600" fill="#172b4d">Role-specific workbenches</text>
+<text x="808" y="958" font-size="16" font-weight="400" fill="#52647b">Web panels · constrained services</text>
+<path d="M 316 995 L 316 1030" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)"/>
+<path d="M 886 995 L 886 1030" fill="none" stroke="#9a5a13" stroke-width="2.2" marker-end="url(#planned-arrow)" stroke-dasharray="7 5"/>
+<rect x="36" y="1038" width="552" height="147" rx="14" fill="#f0f8f5" stroke="#94bcac" stroke-width="1.8"/>
+<text x="58" y="1072" font-size="22" font-weight="700" fill="#176b55">FDE / ENTERPRISE DELIVERY</text>
+<text x="58" y="1103" font-size="18" font-weight="400" fill="#52647b">Knowledge · databases · business systems</text>
+<text x="58" y="1130" font-size="18" font-weight="400" fill="#52647b">Compose tools, Skills &amp; business interfaces</text>
+<text x="58" y="1157" font-size="18" font-weight="400" fill="#52647b">Connectors need implementation &amp; validation.</text>
+<rect x="612" y="1038" width="552" height="147" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
+<text x="634" y="1072" font-size="22" font-weight="700" fill="#9a5a13">MHS / PHYSICAL INTEGRATION</text>
+<text x="634" y="1103" font-size="18" font-weight="400" fill="#52647b">Planned: adapter → controller → device</text>
+<text x="634" y="1130" font-size="18" font-weight="400" fill="#52647b">State reads · action requests · receipts</text>
+<text x="634" y="1157" font-size="18" font-weight="400" fill="#52647b">Interlocks &amp; emergency stops stay on devices.</text>
+<text x="36" y="1223" font-size="18" font-weight="400" fill="#52647b">FDE is a delivery approach. MHS is a device integration direction. Both use the same foundation.</text>
+</g>
+</svg>

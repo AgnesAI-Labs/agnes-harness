@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1248" viewBox="0 0 1200 1248" role="img" aria-labelledby="title description" xml:lang="zh-CN">
+<title id="title">Agnes Harness — 一套执行底座，将现场交付沉淀为可复用的能力。</title>
+<desc id="description">AGH 架构：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。Jev 与 MHS 接入属于规划。App Server、Agent Loop、Sandbox 与插件体系支撑企业现场交付，设备适配器将同一底座延伸到物理场景。</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2459ce"/></marker><marker id="planned-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9a5a13"/></marker></defs>
+<rect width="1200" height="1248" rx="20" fill="#ffffff"/>
+<g font-family="Inter, Segoe UI, PingFang SC, Microsoft YaHei, Arial, sans-serif">
+<text x="36" y="55" font-size="36" font-weight="700" fill="#172b4d">Agnes Harness</text>
+<text x="36" y="87" font-size="20" font-weight="400" fill="#52647b">一套执行底座，将现场交付沉淀为可复用的能力。</text>
+<path d="M 36 116 H 69" stroke="#2459ce" stroke-width="2.2"/>
+<text x="80" y="122" font-size="17" font-weight="400" fill="#52647b">实线：已有软件能力</text>
+<path d="M 530 116 H 563" stroke="#9a5a13" stroke-width="2.2" stroke-dasharray="7 5"/>
+<text x="574" y="122" font-size="17" font-weight="400" fill="#52647b">虚线：AGH 规划中的接入</text>
+<rect x="36" y="146" width="264" height="111" rx="14" fill="#f3f7ff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="53" y="179" font-size="20" font-weight="700" fill="#2459ce">LLM / 大脑</text>
+<text x="53" y="207" font-size="16" font-weight="400" fill="#52647b">理解、推理与候选动作生成</text>
+<text x="53" y="232" font-size="16" font-weight="400" fill="#52647b">通过 AI Provider 接入</text>
+<rect x="324" y="146" width="264" height="111" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
+<text x="341" y="179" font-size="20" font-weight="700" fill="#9a5a13">Jev / 小脑</text>
+<text x="341" y="207" font-size="16" font-weight="400" fill="#52647b">结构化决策与执行协调</text>
+<text x="341" y="232" font-size="16" font-weight="400" fill="#52647b">规划接入</text>
+<rect x="612" y="146" width="264" height="111" rx="14" fill="#f3f7ff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="629" y="179" font-size="20" font-weight="700" fill="#2459ce">HARNESS / 记忆</text>
+<text x="629" y="207" font-size="16" font-weight="400" fill="#52647b">任务状态、历史与可复用方法</text>
+<text x="629" y="232" font-size="16" font-weight="400" fill="#52647b">会话、执行记录与 Skills</text>
+<rect x="900" y="146" width="264" height="111" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
+<text x="917" y="179" font-size="20" font-weight="700" fill="#9a5a13">MHS / 身体</text>
+<text x="917" y="207" font-size="16" font-weight="400" fill="#52647b">连接物理设备的能力接口</text>
+<text x="917" y="232" font-size="16" font-weight="400" fill="#52647b">规划设备接入</text>
+<text x="36" y="284" font-size="17" font-weight="400" fill="#52647b">角色比喻解释产品愿景；下方架构层说明实际执行职责。</text>
+<rect x="36" y="310" width="1128" height="111" rx="14" fill="#f3f7ff" stroke="#2459ce" stroke-width="1.8"/>
+<text x="58" y="344" font-size="22" font-weight="700" fill="#2459ce">APP SERVER / 统一接入</text>
+<text x="58" y="376" font-size="21" font-weight="600" fill="#172b4d">CLI / TUI  ·  Web  ·  SDK / API 调用方</text>
+<text x="58" y="402" font-size="18" font-weight="400" fill="#52647b">SDK + daemon + workers：任务提交、共享会话、事件输出与审批路由</text>
+<path d="M 600 423 L 600 452" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)"/>
+<rect x="36" y="457" width="1128" height="325" rx="14" fill="#f8fafc" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="58" y="490" font-size="22" font-weight="700" fill="#2459ce">AGENT RUNTIME / 执行底座</text>
+<text x="58" y="517" font-size="18" font-weight="400" fill="#52647b">Host 装配能力，Core 在 worker 内推进任务。</text>
+<rect x="58" y="539" width="519" height="142" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="78" y="572" font-size="22" font-weight="650" fill="#172b4d">Agent Loop / 执行循环</text>
+<text x="78" y="601" font-size="18" font-weight="400" fill="#52647b">模型 → 动作 → 工具 → 结果 → 下一步</text>
+<text x="78" y="628" font-size="18" font-weight="400" fill="#52647b">继续、暂停、恢复或完成</text>
+<text x="78" y="655" font-size="18" font-weight="400" fill="#52647b">LLM 经 AI Provider 接入；Jev 接入属规划</text>
+<rect x="625" y="539" width="517" height="142" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="645" y="572" font-size="22" font-weight="650" fill="#172b4d">受控工具执行 / Sandbox</text>
+<text x="645" y="601" font-size="18" font-weight="400" fill="#52647b">工具授权与执行策略</text>
+<text x="645" y="628" font-size="18" font-weight="400" fill="#52647b">对适用的命令执行施加沙箱约束</text>
+<text x="645" y="655" font-size="18" font-weight="400" fill="#52647b">文件、网络与进程约束取决于平台能力</text>
+<path d="M 580 610 L 620 610" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<rect x="58" y="704" width="1084" height="59" rx="14" fill="#edf7f3" stroke="#b5d5c7" stroke-width="1.8"/>
+<text x="78" y="730" font-size="20" font-weight="650" fill="#176b55">Harness 记忆 / 持久任务上下文</text>
+<text x="78" y="751" font-size="17" font-weight="400" fill="#52647b">会话历史 · 任务状态 · 事件记录 · 恢复 · 可复用的 Skills</text>
+<path d="M 600 789 L 600 818" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<rect x="36" y="827" width="1128" height="164" rx="14" fill="#f3f7ff" stroke="#2459ce" stroke-width="1.8"/>
+<text x="58" y="860" font-size="22" font-weight="700" fill="#2459ce">PLUGINS / 插件体系</text>
+<text x="58" y="887" font-size="18" font-weight="400" fill="#52647b">Cordis 组织能力装配、依赖、包信任与生命周期</text>
+<rect x="58" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="74" y="935" font-size="20" font-weight="600" fill="#172b4d">工具与业务服务</text>
+<text x="74" y="958" font-size="16" font-weight="400" fill="#52647b">后端插件 · MCP</text>
+<rect x="425" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="441" y="935" font-size="20" font-weight="600" fill="#172b4d">方法与任务知识</text>
+<text x="441" y="958" font-size="16" font-weight="400" fill="#52647b">Skills · hooks</text>
+<rect x="792" y="908" width="350" height="65" rx="14" fill="#ffffff" stroke="#c8d5e5" stroke-width="1.8"/>
+<text x="808" y="935" font-size="20" font-weight="600" fill="#172b4d">岗位工作台</text>
+<text x="808" y="958" font-size="16" font-weight="400" fill="#52647b">Web 面板 · 受限服务调用</text>
+<path d="M 316 995 L 316 1030" fill="none" stroke="#2459ce" stroke-width="2.2" marker-end="url(#arrow)"/>
+<path d="M 886 995 L 886 1030" fill="none" stroke="#9a5a13" stroke-width="2.2" marker-end="url(#planned-arrow)" stroke-dasharray="7 5"/>
+<rect x="36" y="1038" width="552" height="147" rx="14" fill="#f0f8f5" stroke="#94bcac" stroke-width="1.8"/>
+<text x="58" y="1072" font-size="22" font-weight="700" fill="#176b55">FDE / 企业现场交付</text>
+<text x="58" y="1103" font-size="18" font-weight="400" fill="#52647b">知识检索 · 数据库 · 业务系统</text>
+<text x="58" y="1130" font-size="18" font-weight="400" fill="#52647b">组合工具、Skills 与业务界面</text>
+<text x="58" y="1157" font-size="18" font-weight="400" fill="#52647b">具体连接器需要开发与场景验证。</text>
+<rect x="612" y="1038" width="552" height="147" rx="14" fill="#fff8eb" stroke="#9a5a13" stroke-width="1.8" stroke-dasharray="7 5"/>
+<text x="634" y="1072" font-size="22" font-weight="700" fill="#9a5a13">MHS / 物理设备接入</text>
+<text x="634" y="1103" font-size="18" font-weight="400" fill="#52647b">规划：适配器 → 控制器 → 设备</text>
+<text x="634" y="1130" font-size="18" font-weight="400" fill="#52647b">状态读取 · 动作请求 · 执行回执</text>
+<text x="634" y="1157" font-size="18" font-weight="400" fill="#52647b">互锁与急停由设备及其控制系统承担。</text>
+<text x="36" y="1223" font-size="18" font-weight="400" fill="#52647b">FDE 是交付方式，MHS 是设备接入方向；两者使用同一套执行底座。</text>
+</g>
+</svg>

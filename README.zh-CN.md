@@ -10,7 +10,7 @@ Agnes Harness（AGH）将模型、工具、任务状态和业务界面连接在�
 
 [English](README.md) | 简体中文
 
-[快速开始](docs/guide/quickstart.zh-CN.md) · [体验示例](docs/guide/demo.zh-CN.md) · [开发插件](docs/develop/plugins.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [MHS（即将开放）](docs/guide/mhs.zh-CN.md)
+[快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [体验示例](docs/guide/demo.zh-CN.md) · [开发插件](docs/develop/plugins.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [MHS（即将开放）](docs/guide/mhs.zh-CN.md)
 
 开发者预览（pre-alpha） · [源码构建](#从源码开始) · [Apache-2.0](LICENSE)
 
@@ -27,6 +27,37 @@ Agnes Harness（AGH）将模型、工具、任务状态和业务界面连接在�
 | **把授权与结果放进执行过程** | 包信任、工具审批、执行约束与会话记录，让集成有明确的控制点 | [安全与信任](docs/guide/security.zh-CN.md) |
 
 我们面向 Forward Deployed Engineering（FDE）：深入业务现场，把系统集成、使用体验和持续迭代做成可交付的软件。**把现场差异写进插件，把任务执行交给 Harness，把经过验证的能力带到下一个项目。** [了解 FDE 与应用场景 →](docs/guide/why-agh.zh-CN.md)
+
+<a id="architecture"></a>
+<a id="为扩展而组织的运行基础"></a>
+
+## 架构：大脑、小脑、记忆与身体
+
+**LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。**
+
+这组角色表达 AGH 的产品愿景：组合推理、结构化决策、持久任务上下文与物理能力。图中实线表示已有软件能力，虚线表示规划中的接入。
+
+![AGH 架构：LLM 是大脑、Jev 是小脑、Harness 是记忆、MHS 是身体；Jev 和设备接入以虚线标为规划](docs/assets/architecture.zh-CN.svg)
+
+| 角色 | 在 AGH 中的含义 | 当前范围 |
+| --- | --- | --- |
+| **LLM / 大脑** | 理解请求、推理任务并生成候选动作 | 通过 AI Provider 接入模型 |
+| **Jev / 小脑** | 通过路由、评分等结构化决策辅助执行协调 | 规划接入；main 当前运行内置 Core loop |
+| **Harness / 记忆** | 保存会话历史、任务状态、执行记录，并用 Skills 沉淀可复用方法 | 已有任务上下文与恢复机制；Harness 同时承担执行与治理 |
+| **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | 规划设备接入；AGH 接入文档与示例即将开放 |
+
+FDE 是交付方式，MHS 是设备接入方向。两者使用同一套底座，FDE 的现场交付也可以包含设备场景。
+
+| 共享模块 | 当前怎样支撑 FDE | 后续 MHS 接入可以复用什么 |
+| --- | --- | --- |
+| **App Server** | 为 CLI、Web、SDK 提供共享会话、任务提交、事件输出与审批路由 | 任务入口、人工确认与状态展示 |
+| **Agent Loop** | 模型与工具执行、任务状态、事件记录、中断处理与恢复 | 高层设备任务编排与结果记录 |
+| **Sandbox / 执行约束** | 工具授权，以及适用的命令、文件、网络和进程约束 | 软件执行边界；运动控制、互锁和急停仍由设备控制器承担 |
+| **Plugins / 插件体系** | 后端工具与服务、Web 面板、Skills、hooks、MCP，由 Cordis 和包治理组织 | 设备适配器与设备操作界面的扩展入口；具体适配仍需开发与验证 |
+
+具体业务连接器与工作台通过这些扩展入口按现场需求构建。当前仓库没有已验证的通用 MHS 适配器或端到端设备示例。普通后端插件作为受信进程内代码运行；沙箱约束作用于相应的受支持执行路径。
+
+实际请求链路与源码归属见[架构说明](docs/develop/architecture.zh-CN.md)，深入实现可从[源码地图](docs/develop/source-map.zh-CN.md)开始；执行边界见[安全与信任](docs/guide/security.zh-CN.md)。
 
 ## 从三个示例，开始构建你的应用
 
@@ -65,12 +96,6 @@ node packages/cli/dist/local/agnes.mjs -p "简要说明当前项目的用途"
 跟随[首次运行](docs/guide/quickstart.zh-CN.md)查看结果、找到会话，并继续任务。没有模型账号，也可以运行[本地模拟模型演示](docs/guide/demo.zh-CN.md#不配置模型账号先跑通本地链路)，先体验插件与任务执行流程。
 
 完整文档提供[英文](docs/README.md)与[简体中文](docs/README.zh-CN.md)版本，每页都可以切换到同一主题的另一种语言。
-
-## 为扩展而组织的运行基础
-
-AGH 的 App Server 架构将任务状态保存在后台。CLI、Web 和 SDK 围绕同一套会话接口工作；Cordis 组织插件依赖与生命周期，后端能力和前端界面通过各自的入口扩展。
-
-这让业务工具、任务知识和岗位界面可以分别开发，再组合进同一个应用。想了解一次请求如何从界面走到工具执行，阅读[架构说明](docs/develop/architecture.zh-CN.md)；准备深入实现，从[源码地图](docs/develop/source-map.zh-CN.md)开始。
 
 ## MHS：向物理世界延伸
 

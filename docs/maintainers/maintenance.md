@@ -54,3 +54,9 @@ pnpm gen:check
 The checker verifies root entry points, translation pairs, language switches, links and anchors, common sensitive-data patterns, and the [source-check manifest](../../tools/public-docs/source-checks.json). It does not fetch external URLs or replace tutorial execution, browser acceptance, or distribution review. Modify generators before regenerating package documentation.
 
 Check the actual source when changing steps or failure semantics. Report tests, builds, and external acceptance separately; see [verification](verification.md) for reproducible commands and scope, and [versioning](versioning.md) for version and npm policy.
+
+## Architecture illustrations
+
+The README and architecture guide share [English](../assets/architecture.svg) and [Chinese](../assets/architecture.zh-CN.svg) SVG illustrations. [The renderer](../../tools/public-docs/render-architecture.mjs) owns one layout and both language dictionaries. Edit that source, then run `node tools/public-docs/render-architecture.mjs`; `node tools/public-docs/render-architecture.mjs --check` checks that both SVGs match the source. Inspect both rendered languages for text fit and readability at README width.
+
+Keep role metaphors separate from implementation claims. Solid outlines denote existing software paths; dashed outlines denote planned AGH integrations. Update availability against main's actual code and guides, then keep the README, architecture guide, and device direction aligned.

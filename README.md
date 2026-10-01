@@ -10,7 +10,7 @@ Agnes Harness (AGH) connects models, tools, task state, and business interfaces.
 
 English | [简体中文](README.zh-CN.md)
 
-[Quickstart](docs/guide/quickstart.md) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS (coming soon)](docs/guide/mhs.md)
+[Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS (coming soon)](docs/guide/mhs.md)
 
 Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0](LICENSE)
 
@@ -27,6 +27,37 @@ From a business tool to a workbench for a particular role, AGH provides a shared
 | **Authorization and results within the execution flow** | Package trust, tool approvals, execution constraints, and session records provide explicit points of control | [Security and trust](docs/guide/security.md) |
 
 AGH is built for Forward Deployed Engineering (FDE): working in users' environments to turn systems integration, a usable interface, and ongoing iteration into delivered software. **Put the differences into plugins. Let the harness handle execution. Reuse validated capabilities in the next deployment.** [Explore FDE and application scenarios →](docs/guide/why-agh.md)
+
+<a id="architecture"></a>
+<a id="a-runtime-built-to-extend"></a>
+
+## Architecture: brain, cerebellum, memory and body
+
+**LLM is the brain. Jev is the cerebellum. Harness is the memory. MHS is the body.**
+
+These roles describe AGH's vision: combine reasoning, structured decisions, persistent task context, and physical capabilities. The diagram separates existing software paths from planned integrations.
+
+![AGH architecture: LLM as brain, Jev as cerebellum, Harness as memory, and MHS as body; dashed boxes show planned Jev and device integration](docs/assets/architecture.svg)
+
+| Role | What it means in AGH | Current scope |
+| --- | --- | --- |
+| **LLM / brain** | Understand requests, reason about the task, and propose actions | Model integration through AI providers |
+| **Jev / cerebellum** | Structured decisions such as routing and scoring to help coordinate execution | Planned integration; main currently uses the built-in Core loop |
+| **Harness / memory** | Retain session history, task state, execution records, and reusable methods in Skills | Existing task context and recovery mechanisms; Harness also runs and governs execution |
+| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | Planned device integration; AGH guides and examples are coming soon |
+
+FDE is a delivery approach; MHS is a device integration direction. Both build on the same foundation, and an FDE deployment can include devices.
+
+| Shared module | Supports FDE today | What a future MHS integration can reuse |
+| --- | --- | --- |
+| **App Server** | Shared sessions, task submission, event delivery, and approval routing for CLI, Web, and SDK clients | Task entry points, human confirmation, and status presentation |
+| **Agent Loop** | Model/tool execution, task state, event records, interruption handling, and recovery | High-level device task orchestration and result records |
+| **Sandbox / execution constraints** | Tool authorization and applicable command, file, network, and process constraints | Software execution boundaries; device controllers retain motion control, interlocks, and emergency stops |
+| **Plugins** | Backend tools/services, Web panels, Skills, hooks, and MCP connections, organized with Cordis and package governance | An extension path for device adapters and device-facing interfaces; adapters still require implementation and validation |
+
+Business connectors and workbenches are built through these extension paths for each deployment. The current repository has no verified general-purpose MHS adapter or end-to-end device example. Ordinary backend plugins run as trusted in-process code; sandbox constraints apply to the supported execution paths.
+
+Follow the actual request path and source ownership in the [architecture guide](docs/develop/architecture.md), explore the [source map](docs/develop/source-map.md), or read [security and trust](docs/guide/security.md).
 
 ## Three examples to start building
 
@@ -65,12 +96,6 @@ node packages/cli/dist/local/agnes.mjs -p "Briefly explain what this project doe
 Follow the [quickstart](docs/guide/quickstart.md) to inspect results, find the session, and continue working. Without a model account, you can try the [local simulated-model demo](docs/guide/demo.md#run-locally-without-a-model-account) to explore plugins and task execution.
 
 The full documentation is available in [English](docs/README.md) and [简体中文](docs/README.zh-CN.md). Each page links to the same topic in the other language.
-
-## A runtime built to extend
-
-AGH's App Server architecture keeps task state in the backend. CLI, Web, and SDK work through a shared set of session interfaces. Cordis organizes plugin dependencies and lifecycles, with dedicated extension paths for backend capabilities and frontend interfaces.
-
-You can develop business tools, task knowledge, and role-specific interfaces separately, then combine them into an application. Follow a request from the interface to tool execution in the [architecture guide](docs/develop/architecture.md), or explore the implementation through the [source map](docs/develop/source-map.md).
 
 ## MHS: extending into the physical world
 
