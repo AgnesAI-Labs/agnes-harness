@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from '@agnes/protocol'
+import { minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import { materializeRoutes, pinPresetRoutes } from './assemble/routes.js'
 import type { Assembled } from './assemble.js'
 import { HostError } from './errors.js'
@@ -73,10 +73,13 @@ export function validateModelSwitch(
     sel.contextWindow !== undefined &&
     sel.contextWindow !== null &&
     (!Number.isSafeInteger(sel.contextWindow) ||
-      sel.contextWindow < 1 ||
+      sel.contextWindow < minimumContextBudget(record.contextWindow) ||
       sel.contextWindow > record.contextWindow)
   )
-    throw new HostError('E_MODEL_UNSUPPORTED', 'context window exceeds the selected model capacity')
+    throw new HostError(
+      'E_MODEL_UNSUPPORTED',
+      `context budget must be between ${minimumContextBudget(record.contextWindow)} and ${record.contextWindow} tokens`,
+    )
 }
 
 /**

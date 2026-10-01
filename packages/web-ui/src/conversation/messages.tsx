@@ -462,6 +462,13 @@ function Turn({
             </div>
           )}
         </details>
+        {turn.status === 'failed' && (
+          <p className="turn-error" role="alert">
+            {turn.error
+              ? `${turn.error.code}：${turn.error.message}`
+              : `本次执行未完成（${turn.reason ?? '未知原因'}），暂未收到具体错误信息。`}
+          </p>
+        )}
         <div className="turn-node-flow">
           {ordered.map((node) => {
             const final = node.id === turn.finalAssistantId

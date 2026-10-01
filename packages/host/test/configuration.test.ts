@@ -126,6 +126,7 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
   for (const invalid of [
     { contextWindow: capacity + 1 },
     { contextWindow: 1.5 },
+    { contextWindow: 100 },
     { thinking: 'unknown' },
     { thinking: 'high' },
   ]) {

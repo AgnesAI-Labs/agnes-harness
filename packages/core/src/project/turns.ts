@@ -1,4 +1,5 @@
 import type { CostLedger, EventEnvelope, UINode, UITurn, UITurnCall, UITurnUsage } from '@agnes/protocol'
+import { clipUtf16 } from './clip.js'
 import { createTraceState, hydrateTraceState, type TraceFoldState, traceFold } from './trace.js'
 
 type TurnEndReason = NonNullable<UITurn['reason']>
@@ -178,6 +179,7 @@ export class TurnProjection {
           delete turn.endedAt
           delete turn.durationMs
           delete turn.reason
+          delete turn.error
           this.current = continuedId
           owner = continuedId
           changed.add(continuedId)
@@ -216,6 +218,10 @@ export class TurnProjection {
         if (Number.isFinite(start) && Number.isFinite(end) && end >= start) turn.durationMs = end - start
         turn.reason = reason
         turn.status = statusFor(reason)
+        const error = data?.error as { code?: unknown; message?: unknown } | undefined
+        if (typeof error?.code === 'string' && typeof error.message === 'string')
+          turn.error = { code: clipUtf16(error.code, 64), message: clipUtf16(error.message, 4096) }
+        else delete turn.error
         turn.forkable = reason === 'completed'
         const finalSeq = data?.lastAssistantSeq
         const final = typeof finalSeq === 'number' ? this.assistantRows.get(finalSeq) : undefined

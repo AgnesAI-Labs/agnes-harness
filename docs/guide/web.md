@@ -38,7 +38,9 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 5. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
 6. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
 
-Choose **思考 · 上下文** beside the composer model picker to set reasoning intensity and context window for this session. The choices reflect the selected model's supported levels; leave the window empty to restore catalog capacity. Applying saves the settings for subsequent requests and reopening. Account settings provide defaults for new sessions. Existing sessions keep their saved settings when those defaults change.
+Choose **思考 · 上下文** beside the composer model picker to set reasoning intensity and context budget for this session. The choices reflect the selected model's supported levels. Enter a full token count or an explicit `K`/`M` suffix: `100K` means 100,000 tokens, while `100` means 100 tokens and is too small for ordinary models. Leave the budget empty to restore automatic sizing. Applying saves the settings for subsequent requests and reopening. Account settings provide defaults for new sessions. Existing sessions keep their saved settings when those defaults change.
+
+Failed turns show the recorded error code and message below their status, even when the process is collapsed. These details remain available after reopening the session. Older records without error details are labeled explicitly.
 
 ### Inspect the trajectory
 

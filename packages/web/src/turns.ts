@@ -5,6 +5,7 @@ type TurnEntry = {
   element: HTMLElement
   user: HTMLElement
   status: HTMLElement
+  error: HTMLElement
   process: HTMLDetailsElement
   processSummary: HTMLElement
   processLabel: HTMLElement
@@ -86,6 +87,10 @@ function makeTurnEntry(onFork?: (turn: UITurn) => Promise<void>): TurnEntry {
   const processBody = document.createElement('div')
   processBody.className = 'turn-process-body'
   process.append(processSummary, processBody)
+  const error = document.createElement('p')
+  error.className = 'turn-error'
+  error.setAttribute('role', 'alert')
+  error.hidden = true
   const attention = document.createElement('div')
   attention.className = 'turn-attention'
   const final = document.createElement('div')
@@ -93,12 +98,13 @@ function makeTurnEntry(onFork?: (turn: UITurn) => Promise<void>): TurnEntry {
   const actions = createConversationMessageActions({
     ...(onFork ? { onFork } : {}),
   })
-  response.append(identity, status, process, attention, final, actions.element)
+  response.append(identity, status, process, error, attention, final, actions.element)
   element.append(user, response)
   const entry: TurnEntry = {
     element,
     user,
     status,
+    error,
     process,
     processSummary,
     processLabel,
@@ -238,6 +244,14 @@ export function createTurnProjector(options: {
           if (entry.processLabel.textContent !== statusText) entry.processLabel.textContent = statusText
         }
         entry.refreshStatus()
+        entry.error.hidden = turn.status !== 'failed'
+        const errorText =
+          turn.status !== 'failed'
+            ? ''
+            : turn.error
+              ? `${turn.error.code}：${turn.error.message}`
+              : `本次执行未完成（${turn.reason ?? '未知原因'}），暂未收到具体错误信息。`
+        if (entry.error.textContent !== errorText) entry.error.textContent = errorText
         if (active) ticking.add(entry)
         else delete entry.refreshStatus
         shell.status.hidden = processCount > 0

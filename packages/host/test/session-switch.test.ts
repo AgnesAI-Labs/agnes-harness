@@ -233,6 +233,18 @@ describe('validateModelSwitch', () => {
     expect(() =>
       validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm', thinking: 'high' }),
     ).not.toThrow()
+    for (const contextWindow of [100, 2047, 8193])
+      expect(() =>
+        validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm', contextWindow }),
+      ).toThrow(/E_MODEL_UNSUPPORTED/)
+    expect(() =>
+      validateModelSwitch(profile, assembled, {
+        slot: 'primary',
+        route: 'gw',
+        model: 'm',
+        contextWindow: 4096,
+      }),
+    ).not.toThrow()
   })
 
   it('refuses a thinking level a non-reasoning model does not support', async () => {

@@ -72,18 +72,17 @@ export function SettingsAccountDialog() {
             <Field className="form-field" label="默认思考强度">
               <SettingsOptionSelect id="config-thinking" />
             </Field>
-            <Field className="form-field" label="默认上下文窗口（tokens）">
+            <Field className="form-field" label="默认上下文预算（Token）">
               <input
                 id="config-context-window"
-                type="number"
-                min={1}
-                step={1}
+                type="text"
+                maxLength={32}
                 placeholder="自动（模型目录默认值）"
                 aria-describedby="config-model-settings-hint config-error"
               />
             </Field>
             <p id="config-model-settings-hint" className="field-hint">
-              新会话继承这些默认值；已有会话保留自己的配置。
+              支持 K/M 单位，如 100K 表示 100,000 Token。新会话继承这些默认值；已有会话保留自己的配置。
             </p>
             <p id="config-state" aria-live="polite" />
             <Button id="config-retry" className="secondary-button compact" htmlType="button" hidden>

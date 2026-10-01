@@ -45,15 +45,24 @@ it('shows supported thinking levels, validates the window and keeps failed chang
     [...document.querySelectorAll('#session-model-thinking option')].map((o) => o.getAttribute('value')),
   ).toEqual(['', 'low', 'high'])
   expect((document.getElementById('session-model-window') as HTMLInputElement).value).toBe('64000')
+  await input('session-model-window', '100')
+  await click('应用到本会话')
+  expect(onApply).not.toHaveBeenCalled()
   await input('session-model-window', '128001')
   await click('应用到本会话')
   expect(onApply).not.toHaveBeenCalled()
   expect(document.getElementById('session-model-window')?.getAttribute('aria-invalid')).toBe('true')
   expect(document.querySelector('[role="alert"]')?.textContent).toContain('正整数')
-  await input('session-model-window', '32000')
   await input('session-model-thinking', 'high')
-  await click('应用到本会话')
-  expect(onApply).toHaveBeenLastCalledWith({ thinking: 'high', contextWindow: 32000 })
+  for (const [value, contextWindow] of [
+    ['32K', 32000],
+    ['0.032M', 32000],
+    ['100K', 100000],
+  ] as const) {
+    await input('session-model-window', value)
+    await click('应用到本会话')
+    expect(onApply).toHaveBeenLastCalledWith({ thinking: 'high', contextWindow })
+  }
   expect(document.querySelector('[role="alert"]')?.textContent).toContain('配置未保存')
   expect(document.getElementById('session-model-thinking')).not.toBeNull()
   onApply.mockResolvedValue(true)

@@ -2682,6 +2682,21 @@
         "reason": {
           "enum": ["completed", "aborted", "error", "parked", "blocked", "budget", "max_steps", "interrupted"]
         },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        },
         "nodeIds": {
           "type": "array",
           "items": {

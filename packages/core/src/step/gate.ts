@@ -1,5 +1,7 @@
+import { minimumContextBudget } from '@agnes/protocol'
 import { scanAll } from '../log/scan-pages.js'
 import type { BudgetState, Inbox, RepairDecision } from '../reduce/shapes.js'
+import { canonicalJson } from '../request/hash.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
 import { quoteBudget } from './calibrate.js'
 import { claimFrom, inboxEvent } from './inbox.js'
@@ -85,15 +87,9 @@ function modelCapacityFor(s: SessionImpl, route: string, model: string): number 
 
 /** The slot's saved window, or the capacity advertised by its provider. */
 export function contextWindowFor(s: SessionImpl, route: string, model: string, slot = 'primary'): number {
-  const effectiveSlot =
-    slot === 'compaction' && !s.preset.model.route.compaction && !s.preset.model.id.compaction
-      ? 'primary'
-      : slot
-  const selected = resolveModel(s, effectiveSlot)
+  const selected = resolveModel(s, slot)
   const window =
-    selected.route === route && selected.model === model
-      ? s.preset.model.contextWindow?.[effectiveSlot]
-      : undefined
+    selected.route === route && selected.model === model ? s.preset.model.contextWindow?.[slot] : undefined
   return window ?? modelCapacityFor(s, route, model)
 }
 
@@ -103,18 +99,42 @@ export function compactionSettingsFor(s: SessionImpl, contextWindow: number) {
   if (!Number.isFinite(configured.reserveTokens) || configured.reserveTokens < 0)
     throw new CoreError('E_ENVELOPE', 'compaction reserveTokens must be nonnegative')
   const target = resolveModel(s, 'primary')
-  const scale = Math.min(1, contextWindow / modelCapacityFor(s, target.route, target.model))
-  const scaledReserve = Math.floor(configured.reserveTokens * scale)
-  // A catalogue can itself be smaller than the preset's reserve. Leave room for history then too.
-  const reserveTokens = scaledReserve < contextWindow ? scaledReserve : Math.floor(contextWindow / 4)
-  if (scale === 1 && reserveTokens === configured.reserveTokens) return configured
+  if (
+    contextWindow >= modelCapacityFor(s, target.route, target.model) &&
+    configured.reserveTokens < contextWindow
+  )
+    return configured
+  // Fit to the selected budget itself, not its ratio to a potentially huge model capacity.
+  const reserveTokens = Math.min(configured.reserveTokens, Math.floor(contextWindow / 4))
+  const keepRecentTokens = Math.min(
+    configured.keepRecentTokens,
+    Math.floor((contextWindow - reserveTokens) / 2),
+  )
+  if (reserveTokens === configured.reserveTokens && keepRecentTokens === configured.keepRecentTokens)
+    return configured
   return {
     reserveTokens,
-    // Keep a suffix below the trigger and leave room for the new summary and the next request.
-    keepRecentTokens: Math.min(
-      Math.floor(configured.keepRecentTokens * scale),
-      Math.floor((contextWindow - reserveTokens) / 2),
-    ),
+    keepRecentTokens,
+  }
+}
+
+/** A reduced conversation budget cannot compact away fixed instructions and tool schemas. */
+export function contextBudgetError(
+  s: SessionImpl,
+  slot: string,
+  prefix: { system: string; tools: readonly unknown[] },
+) {
+  const window = s.preset.model.contextWindow?.[slot]
+  if (window === undefined) return undefined
+  const target = resolveModel(s, slot)
+  const capacity = modelCapacityFor(s, target.route, target.model)
+  if (window >= capacity) return undefined
+  const fixedTokens = estimateTokens(canonicalJson(prefix))
+  const { reserveTokens } = compactionSettingsFor(s, window)
+  if (window >= minimumContextBudget(capacity) && fixedTokens + reserveTokens < window) return undefined
+  return {
+    code: 'BUDGET_EXCEEDED',
+    message: `Session context budget (${window} tokens) cannot fit fixed instructions/tools (${fixedTokens} estimated tokens) and reserved space. Increase the context budget or reset it to automatic.`,
   }
 }
 

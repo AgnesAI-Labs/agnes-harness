@@ -35,9 +35,9 @@ export function ConversationUsage({ usage, connected }: ConversationUsageProps) 
   const rows: Array<[string, string]> = usage
     ? [
         ['上下文占用', `${count(usage.context.tokens)} Token`],
-        ['模型窗口', `${count(usage.context.window)} Token`],
+        ['本会话预算', `${count(usage.context.window)} Token`],
         ...(usage.model.maxTokens
-          ? [['最大输出上限', `${count(usage.model.maxTokens)} Token`] as [string, string]]
+          ? [['模型最大输出', `${count(usage.model.maxTokens)} Token`] as [string, string]]
           : []),
         ['自动整理上下文', usage.context.autoCompact ? '已启用' : '未启用'],
       ]
@@ -71,7 +71,7 @@ export function ConversationUsage({ usage, connected }: ConversationUsageProps) 
           ))}
         </dl>
         <p className="usage-note">
-          上下文为后台估算，包含当前保留的对话等内容；模型窗口与输出上限来自模型配置。
+          上下文为后台估算，包含当前保留的对话等内容；会话预算用于自动整理，不改变模型容量。模型最大输出来自模型目录。
         </p>
       </div>
     </details>

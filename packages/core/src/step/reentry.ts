@@ -1,5 +1,5 @@
 import type { ToolResult } from '@agnes/extension-api'
-import type { JsonValue, ThinkingLevel } from '@agnes/protocol'
+import { type JsonValue, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import { type NestedToolLease, NestedToolSchedulingError } from '../effects/scheduler.js'
 import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
@@ -418,10 +418,12 @@ export async function setModel(
       sel.contextWindow !== undefined &&
       sel.contextWindow !== null &&
       (!Number.isSafeInteger(sel.contextWindow) ||
-        sel.contextWindow < 1 ||
+        sel.contextWindow < minimumContextBudget(known.contextWindow) ||
         sel.contextWindow > known.contextWindow)
     )
-      throw modelUnknown('context window exceeds the selected model capacity')
+      throw modelUnknown(
+        `context budget must be between ${minimumContextBudget(known.contextWindow)} and ${known.contextWindow} tokens`,
+      )
     const priorThinking = s.preset.model.thinking[sel.slot]
     const priorWindow = s.preset.model.contextWindow?.[sel.slot]
     const from = {

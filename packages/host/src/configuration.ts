@@ -34,6 +34,7 @@ import type {
   ModelRecord,
   ModelSettings,
 } from '@agnes/protocol'
+import { minimumContextBudget } from '@agnes/protocol'
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { subscriptionCredentials } from './adapters/codex-credentials.js'
 import {
@@ -523,7 +524,12 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
 
 function checkedDefaults(model: ConfigModel, value: unknown): ModelSettings {
   const settings = normalizeModelSettings(value)
-  if (!settings || !supportsModelSettings(model, settings))
+  if (
+    !settings ||
+    !supportsModelSettings(model, settings) ||
+    (settings.contextWindow !== undefined &&
+      settings.contextWindow < minimumContextBudget(model.contextWindow))
+  )
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
   return settings
 }

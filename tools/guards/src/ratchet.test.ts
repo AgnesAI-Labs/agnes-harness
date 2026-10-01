@@ -1,8 +1,12 @@
-// OPTIONAL-STEP-BUDGET: Core 25478->25482 for the committed-cursor livelock guard; exact count, no spare.
+// OPTIONAL-STEP-BUDGET merge: remeasured combined Core source at 25706; exact count, no spare.
+// TURN-ERROR-REPAIR: measured persisted error projection and visible React/DOM failure details; no spare allocation.
+// CONTEXT-BUDGET-REPAIR: reviewed budget admission, summary limits, empty-plan refusal and explicit K/M input;
+// exact measured source counts, no exclusions or spare allocation.
 // SESSION-MODEL-SETTINGS: reviewed defaults, session snapshots/replay, capability metadata and Web controls;
 // exact countLines() totals after formatting, no exclusions or spare allocation.
 // SESSION-MODEL-SETTINGS-REPAIR: Core +27 counted lines for window-sized compaction budgets;
 // Host preset replay uses the latest event even when its name matches the initial snapshot.
+// OPTIONAL-STEP-BUDGET: Core 25478->25482 for the committed-cursor livelock guard; exact count, no spare.
 // UI-INTEGRATION-20260927: merged A/B/C lines (ui-refactor + ui-admin-pages); exact combined counts.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
@@ -215,7 +219,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
-  'packages/web-ui/src': 4860,
+  'packages/web-ui/src': 4872,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   'packages/web-units/src': 4646,
   'packages/base/extensions/tools-core': 800,
@@ -397,7 +401,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/model-picker': 278,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
-  'packages/web/src/settings': 843,
+  'packages/web/src/settings': 848,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -593,7 +597,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // override a model's reasoning capability when the installed pi-ai catalogue is incomplete or
   // wrong), landing independently of WIN-12c's own +2. Re-measured on the merged tree directly
   // (never summed): 911; exact cap, no spare.
-  'packages/host/src/configuration': 1213,
+  'packages/host/src/configuration': 1219,
   'packages/host/src/configuration-lock': 39,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
@@ -930,7 +934,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
-  'packages/core/src': 25655,
+  'packages/core/src': 25706,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1237,7 +1241,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  'packages/protocol/src': 2203,
+  'packages/protocol/src': 2204,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -2027,7 +2031,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the three UI lines moved most of this scope into packages/web-ui/src,
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
-  'packages/web/src': 13301,
+  'packages/web/src': 13320,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2499,7 +2503,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
-  'packages/host/src': 38253,
+  'packages/host/src': 38262,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
