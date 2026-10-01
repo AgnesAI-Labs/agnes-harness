@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { importEdges, scanTokens } from './module-edges.js'
+import { importEdges, quoted, scanTokens } from './module-edges.js'
 import { isTestFile, repoRoot } from './repo.js'
 
 /**
@@ -227,7 +227,8 @@ function bypassProblems(base: string): string[] {
   for (const file of callerFiles(base)) {
     const rel = repoRel(file, base)
     for (const token of scanTokens(read(file))) {
-      if (batches.includes(token)) problems.push(`${rel}: calls ${token}`)
+      const method = quoted(token) ?? token
+      if (batches.includes(method)) problems.push(`${rel}: calls ${method}`)
       if (!rel.startsWith(`${STATE_DIR}/`)) {
         for (const table of tables) {
           if (mentionsIdent(token, table)) problems.push(`${rel}: reads ${table}`)
@@ -576,6 +577,8 @@ describe('other packages stay on the public state surface', () => {
         'packages/host/src/runtime/state/ddl.ts': sqlSample,
         'packages/other/src/call.ts':
           'export const run = (store: { commitDispatchBatch(id: string): void }) => store.commitDispatchBatch("x")\n',
+        'packages/other/src/computed.ts':
+          'export const run = (store: Record<string, (id: string) => void>) => store["commitDispatchBatch"]("x")\n',
         'packages/other/src/sql.ts': "export const q = 'SELECT id FROM runtime_records'\n",
         'packages/host/src/runtime/state/own.ts':
           "export const own = 'SELECT id FROM runtime_records'\nexport const batch = 'commitDispatchBatch'\n",
@@ -585,6 +588,7 @@ describe('other packages stay on the public state surface', () => {
         const problems = bypassProblems(base)
         const text = problems.join('\n')
         expect(text).toContain('packages/other/src/call.ts: calls commitDispatchBatch')
+        expect(text).toContain('packages/other/src/computed.ts: calls commitDispatchBatch')
         expect(text).toContain('packages/other/src/sql.ts: reads runtime_records')
         expect(text).not.toContain('packages/host/src/runtime/state/own.ts')
         expect(text).not.toContain('note.ts')
