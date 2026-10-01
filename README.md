@@ -37,6 +37,7 @@ Taking AI into a real deployment is rarely about the model alone. It is about th
 - [What AGH is, and what it is not](#what-agh-is-and-what-it-is-not)
 - [Architecture: brain, cerebellum, memory and body](#architecture)
 - [What AGH does for a deployment team](#what-agh-does-for-a-deployment-team)
+- [Public benchmark](#public-benchmark)
 - [Who it is for](#who-it-is-for)
 - [Start from an example](#start-from-an-example)
 - [Run from source](#run-from-source)
@@ -132,6 +133,16 @@ Capture task methods in [Skills](docs/guide/skills.md) and package reusable busi
 ### 6. The site also has devices
 
 From inspection to instrument coordination, field work connects device state, human judgment, and business workflows. AGH's device integration direction builds on MCP (Model Context Protocol) rather than a vendor-specific SDK, bringing state reads, action requests, and execution receipts into the same task flow. **MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](docs/guide/mhs.md)
+
+## Public benchmark
+
+On the public [Agents' Last Exam (ALE) leaderboard](https://agents-last-exam.org/leaderboard), which evaluates complete agent systems (model, harness, and tools) on professional tasks, Agnes Harness with Agnes 2.5 Pro Beta reaches a 21.7% overall pass rate, level with OpenClaw + GPT-5.5.
+
+<p align="center">
+  <img src="docs/assets/readme/ale-leaderboard.png" alt="Agents' Last Exam leaderboard results for Agnes Harness with Agnes 2.5 Pro Beta: 21.7% overall pass rate, 42.7% overall score, 31.3% near-term pass rate, 23.6% full-spectrum pass rate, 25.7% ALE-CLI pass rate and 50.2% ALE-CLI score" width="100%" />
+</p>
+
+<p align="center"><sub>Results depend on model versions, settings, and tool configurations. See the leaderboard for current figures.</sub></p>
 
 ## Who it is for
 

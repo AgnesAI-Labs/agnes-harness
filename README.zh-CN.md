@@ -37,6 +37,7 @@
 - [AGH 是什么，不是什么](#agh-是什么不是什么)
 - [架构：大脑、小脑、记忆与身体](#architecture)
 - [在现场交付中，AGH 能帮上什么](#在现场交付中agh-能帮上什么)
+- [公开评测](#公开评测)
 - [适合谁](#适合谁)
 - [从示例开始](#从示例开始)
 - [从源码开始](#从源码开始)
@@ -132,6 +133,16 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 ### 6. 现场还有设备
 
 从巡检到仪器协作，现场工作需要把设备状态、人的判断与业务流程连接起来。AGH 的设备接入方向以 MCP（Model Context Protocol）为基础，而不是厂商专属 SDK，让状态读取、动作请求和执行回执进入同一套任务流程。**MHS 接入文档与示例即将开放。**[了解设备接入方向 →](docs/guide/mhs.zh-CN.md)
+
+## 公开评测
+
+在公开的 [Agents' Last Exam（ALE）排行榜](https://agents-last-exam.org/leaderboard)上（评测对象是完整的 Agent 系统：模型 + Harness + 工具，任务来自真实的专业工作场景），Agnes Harness 搭配 Agnes 2.5 Pro Beta 的总通过率为 21.7%，与 OpenClaw + GPT-5.5 持平。
+
+<p align="center">
+  <img src="docs/assets/readme/ale-leaderboard.png" alt="Agents' Last Exam 排行榜中 Agnes Harness 搭配 Agnes 2.5 Pro Beta 的成绩：总通过率 21.7%，总得分 42.7%，Near-term 通过率 31.3%，Full-Spectrum 通过率 23.6%，ALE-CLI 通过率 25.7%、得分 50.2%" width="100%" />
+</p>
+
+<p align="center"><sub>成绩随模型版本、设置与工具配置而变化，以榜单最新数据为准。</sub></p>
 
 ## 适合谁
 
