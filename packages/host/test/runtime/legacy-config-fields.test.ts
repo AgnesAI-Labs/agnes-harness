@@ -152,6 +152,41 @@ it('keeps max_steps as a primary-decision budget and fills only missing defaults
   expect(fan).toMatchObject({ source: 'specified-default', value: 4 })
 })
 
+it('reads a bare string model route as that slot and keeps a separate model pin', () => {
+  const routed = presetOf({
+    name: 'sample',
+    model: { route: { primary: 'anthropic' }, id: { primary: 'claude' } },
+  })
+  expect(routed.status).toBe('accepted')
+  expect(routed.sessionParameters).toMatchObject({
+    model: { route: { primary: { route: 'anthropic', model: 'claude' } } },
+  })
+  expect(routed.sessionParameters).not.toHaveProperty('model.id')
+  expect(routed.rows.find((row) => row.path === '/model/route/primary/route')).toMatchObject({
+    present: true,
+    source: 'document',
+    value: 'anthropic',
+  })
+  expect(routed.rows.find((row) => row.path === '/model/route/primary/model')).toMatchObject({
+    present: true,
+    source: 'document',
+    value: 'claude',
+  })
+  const routeOnly = presetOf({ name: 'sample', model: { route: { primary: 'anthropic' } } })
+  expect(routeOnly.rows.find((row) => row.path === '/model/route/primary/route')).toMatchObject({
+    present: true,
+    source: 'document',
+    value: 'anthropic',
+  })
+  expect(routeOnly.rows.find((row) => row.path === '/model/route/primary/model')).toMatchObject({
+    present: false,
+    source: 'absent',
+  })
+  expect(routeOnly.sessionParameters).toBeNull()
+  expect(routeOnly.status).toBe('refused')
+  expect(routeOnly.diagnostics.some((item) => item.code === 'schema_invalid')).toBe(true)
+})
+
 it('uses the default primary-decision budget when max_steps is omitted', () => {
   const result = presetOf({ name: 'bare' })
   expect(result.status).toBe('accepted')
