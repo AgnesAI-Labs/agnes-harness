@@ -150,6 +150,30 @@ function mutate(path: string, change: (db: DatabaseSync) => void): void {
   }
 }
 
+function patchResult(
+  db: DatabaseSync,
+  method: string,
+  requestId: string,
+  change: (result: {
+    claim: { writerId: string }
+    snapshot: { throughSeq: number; headDigest: string; authority: { tenantId: string } }
+  }) => void,
+): void {
+  const row = db
+    .prepare('SELECT result_json FROM runtime_request_results WHERE method = ? AND request_id = ?')
+    .get(method, requestId) as { result_json: string }
+  const result = JSON.parse(row.result_json) as {
+    claim: { writerId: string }
+    snapshot: { throughSeq: number; headDigest: string; authority: { tenantId: string } }
+  }
+  change(result)
+  db.prepare('UPDATE runtime_request_results SET result_json = ? WHERE method = ? AND request_id = ?').run(
+    JSON.stringify(result),
+    method,
+    requestId,
+  )
+}
+
 const writeOpen = (requestId: string, writerId = 'writer-a', ttlMs = 1_000) => ({
   requestId,
   authority,
@@ -1075,6 +1099,308 @@ describe('runtime state records, proof rows, and ledger events', () => {
     ])
   })
 
+  it('replays a renew after the ledger advances', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    expect((await store.lease(leaseRequest('lease-acquire', 'acquire', 'writer-a', 0), context())).ok).toBe(
+      true,
+    )
+    const request = leaseRequest('lease-renew', 'renew', 'writer-a', 1, 5_000)
+    const first = await store.lease(request, context())
+    expect(
+      (await store.createRun(admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'next' }), context()))
+        .ok,
+    ).toBe(true)
+    const replayed = await store.lease(request, context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(replayed).toEqual(first)
+    expect(
+      query<{ writer_epoch: number; writer_id: string }>(
+        path,
+        'SELECT writer_epoch, writer_id FROM runtime_leases',
+      ),
+    ).toEqual([{ writer_epoch: 1, writer_id: 'writer-a' }])
+  })
+
+  it('rejects a replayed write-open whose stored writer id was changed', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    const first = await store.open(request, context())
+    mutate(path, (db) => {
+      patchResult(db, 'open', 'open-write', (result) => {
+        result.claim.writerId = 'rogue-writer'
+      })
+    })
+    const replayed = await store.open(request, context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(
+      query<{ writer_id: string; writer_epoch: number }>(
+        path,
+        'SELECT writer_id, writer_epoch FROM runtime_leases',
+      ),
+    ).toEqual([{ writer_id: 'writer-a', writer_epoch: 1 }])
+  })
+
+  it('rejects a replayed lease whose stored writer id was changed', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = leaseRequest('lease-acquire', 'acquire', 'writer-a', 0)
+    const first = await store.lease(request, context())
+    mutate(path, (db) => {
+      patchResult(db, 'lease', 'lease-acquire', (result) => {
+        result.claim.writerId = 'rogue-writer'
+      })
+    })
+    const replayed = await store.lease(request, context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(
+      query<{ writer_id: string; writer_epoch: number }>(
+        path,
+        'SELECT writer_id, writer_epoch FROM runtime_leases',
+      ),
+    ).toEqual([{ writer_id: 'writer-a', writer_epoch: 1 }])
+  })
+
+  it('rejects an old writer receipt after the lease is taken over', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    expect((await store.open(request, context())).ok).toBe(true)
+    expect((await store.lease(leaseRequest('lease-release', 'release', 'writer-a', 1), context())).ok).toBe(
+      true,
+    )
+    expect((await store.lease(leaseRequest('lease-reclaim', 'reclaim', 'writer-b', 1), context())).ok).toBe(
+      true,
+    )
+    store.close()
+    mutate(path, (db) => {
+      patchResult(db, 'open', 'open-write', (result) => {
+        result.claim.writerId = 'rogue-writer'
+      })
+    })
+    const reopened = openStore(path)
+    const replayed = await reopened.open(request, context())
+    reopened.close()
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(
+      query<{ writer_id: string; writer_epoch: number }>(
+        path,
+        'SELECT writer_id, writer_epoch FROM runtime_leases',
+      ),
+    ).toEqual([{ writer_id: 'writer-b', writer_epoch: 2 }])
+  })
+
+  it('rejects an untampered open after another writer takes the lease', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    const first = await store.open(request, context())
+    expect((await store.lease(leaseRequest('lease-release', 'release', 'writer-a', 1), context())).ok).toBe(
+      true,
+    )
+    expect((await store.lease(leaseRequest('lease-reclaim', 'reclaim', 'writer-b', 1), context())).ok).toBe(
+      true,
+    )
+    const replayed = await store.open(request, context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok)
+      expect(replayed.error).toMatchObject({ code: 'conflict', detailCode: 'historical_receipt' })
+    expect(
+      query<{ writer_id: string; writer_epoch: number }>(
+        path,
+        'SELECT writer_id, writer_epoch FROM runtime_leases',
+      ),
+    ).toEqual([{ writer_id: 'writer-b', writer_epoch: 2 }])
+  })
+
+  it('rejects a replayed open whose prefix digest was forged', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    const first = await store.open(request, context())
+    store.close()
+    mutate(path, (db) => {
+      patchResult(db, 'open', 'open-write', (result) => {
+        result.snapshot.throughSeq = 1
+        result.snapshot.headDigest = 'f'.repeat(64)
+      })
+    })
+    const reopened = openStore(path)
+    const replayed = await reopened.open(request, context())
+    reopened.close()
+    expect(first.ok).toBe(true)
+    if (first.ok) expect(first.value.snapshot.throughSeq).toBe(2)
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(
+      query<{ writer_id: string; writer_epoch: number }>(
+        path,
+        'SELECT writer_id, writer_epoch FROM runtime_leases',
+      ),
+    ).toEqual([{ writer_id: 'writer-a', writer_epoch: 1 }])
+  })
+
+  it('rejects a replayed open whose snapshot tenant was forged', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    expect((await store.open(request, context())).ok).toBe(true)
+    store.close()
+    mutate(path, (db) => {
+      patchResult(db, 'open', 'open-write', (result) => {
+        result.snapshot.authority.tenantId = 'rogue-tenant'
+      })
+    })
+    const reopened = openStore(path)
+    const replayed = await reopened.open(request, context())
+    reopened.close()
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    if (!replayed.ok)
+      expect(replayed.error.message).toBe('stored open result does not match the session authority')
+    expect(
+      query<{ writer_id: string; writer_epoch: number }>(
+        path,
+        'SELECT writer_id, writer_epoch FROM runtime_leases',
+      ),
+    ).toEqual([{ writer_id: 'writer-a', writer_epoch: 1 }])
+  })
+
+  it('rejects a stored open result that no longer matches its schema', async () => {
+    const path = file()
+    const store = openStore(path)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    expect((await store.open(request, context())).ok).toBe(true)
+    mutate(path, (db) => {
+      db.prepare(
+        "UPDATE runtime_request_results SET result_json = ? WHERE method = 'open' AND request_id = 'open-write'",
+      ).run('{}')
+    })
+    const replayed = await store.open(request, context())
+    store.close()
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+    expect(query<{ writer_epoch: number }>(path, 'SELECT writer_epoch FROM runtime_leases')).toEqual([
+      { writer_epoch: 1 },
+    ])
+  })
+
+  it('rejects a replayed open after its writer lease expires', async () => {
+    const path = file()
+    let now = Date.parse(admittedAt)
+    const store = openStore(path, () => now)
+    expect((await store.createRun(admission(), context())).ok).toBe(true)
+    const request = writeOpen('open-write')
+    const first = await store.open(request, context())
+    now += 1_001
+    const replayed = await store.open(request, context())
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(replayed.ok).toBe(false)
+    if (!replayed.ok)
+      expect(replayed.error).toMatchObject({ code: 'conflict', detailCode: 'historical_receipt' })
+    expect(
+      query<{ writer_id: string; writer_epoch: number }>(
+        path,
+        'SELECT writer_id, writer_epoch FROM runtime_leases',
+      ),
+    ).toEqual([{ writer_id: 'writer-a', writer_epoch: 1 }])
+  })
+
+  it('queues two independent createRun calls on one connection', async () => {
+    const path = file()
+    const store = openStore(path)
+    const [first, second] = await Promise.all([
+      store.createRun(admission({ ticketId: 'ticket-a', runId: 'run-a', text: 'a' }), context()),
+      store.createRun(
+        admission({ ticketId: 'ticket-b', runId: 'run-b', text: 'b', sessionId: 'session-2' }),
+        context(),
+      ),
+    ])
+    store.close()
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(true)
+    if (first.ok && first.value.state === 'created') expect(first.value.runId).toBe('run-a')
+    if (second.ok && second.value.state === 'created') expect(second.value.runId).toBe('run-b')
+    expect(count(path, 'sessions')).toBe(2)
+    expect(count(path, 'events')).toBe(4)
+  })
+
+  it('does not let a queued failure poison the next transaction', async () => {
+    const path = file()
+    let trip = true
+    const store = openStore(
+      path,
+      () => Date.parse(admittedAt),
+      () => {
+        if (!trip) return
+        trip = false
+        throw new Error('injected storage fault')
+      },
+    )
+    const [failed, created] = await Promise.all([
+      store.createRun(admission({ ticketId: 'ticket-a', runId: 'run-a', text: 'a' }), context()),
+      store.createRun(
+        admission({ ticketId: 'ticket-b', runId: 'run-b', text: 'b', sessionId: 'session-2' }),
+        context(),
+      ),
+    ])
+    const opened = await store.open(
+      {
+        requestId: 'open-session-2',
+        authority,
+        sessionId: 'session-2',
+        mode: 'read',
+        writerId: null,
+        ttlMs: null,
+      },
+      context(),
+    )
+    store.close()
+    expect(failed.ok).toBe(false)
+    if (!failed.ok) expect(failed.error).toMatchObject({ code: 'internal', detailCode: 'fault' })
+    expect(created.ok).toBe(true)
+    expect(opened.ok).toBe(true)
+    expect(
+      query<{ session_key: string }>(path, 'SELECT session_key FROM sessions ORDER BY session_key'),
+    ).toEqual([{ session_key: 'session-2' }])
+  })
+
+  it('does not let a queued refusal poison the next transaction', async () => {
+    const path = file()
+    const store = openStore(path)
+    const [missing, created] = await Promise.all([
+      store.open(writeOpen('open-missing'), context()),
+      store.createRun(admission(), context()),
+    ])
+    store.close()
+    expect(missing.ok).toBe(false)
+    if (!missing.ok)
+      expect(missing.error).toMatchObject({ code: 'invalid_input', detailCode: 'session_absent' })
+    expect(created.ok).toBe(true)
+    expect(count(path, 'sessions')).toBe(1)
+    expect(count(path, 'events')).toBe(2)
+  })
+
   it('does not deduplicate a read open, which takes no writer lease', async () => {
     const path = file()
     const store = openStore(path)
@@ -1282,6 +1608,48 @@ function dispatchBody(
   }
 }
 
+async function mixedControl(path: string, action: PreparedAction, overlap: boolean) {
+  const store = openStore(path)
+  unwrap(await store.createRun(admission(), context()), 'createRun')
+  unwrap(await store.open(writeOpen('open-write'), context()), 'open')
+  await preparedInvocation(store, 'invocation-1', 0)
+  const second = admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'next' })
+  const advance = advanceBody('advance-1', 'invocation-1', 0, [action])
+  const batch = [dispatchBody(action, 'invocation-1', 1, 'admission-1')]
+  const [createOutcome, advanceOutcome, dispatchOutcome] = overlap
+    ? await Promise.all([
+        store.createRun(second, context()),
+        store.advanceRun(advance, context()),
+        store.commitDispatchBatch('commit-batch-1', batch, context()),
+      ])
+    : [
+        await store.createRun(second, context()),
+        await store.advanceRun(advance, context()),
+        await store.commitDispatchBatch('commit-batch-1', batch, context()),
+      ]
+  store.close()
+  if (!createOutcome.ok || createOutcome.value.state !== 'created')
+    throw new Error('createRun did not admit the second run')
+  if (!advanceOutcome.ok)
+    throw new Error(`${advanceOutcome.error.detailCode}: ${advanceOutcome.error.message}`)
+  if (!dispatchOutcome.ok)
+    throw new Error(`${dispatchOutcome.error.detailCode}: ${dispatchOutcome.error.message}`)
+  const decision = dispatchOutcome.value[0]
+  if (decision?.state !== 'admitted') throw new Error('dispatch was not admitted')
+  return {
+    runId: createOutcome.value.runId,
+    runRevision: advanceOutcome.value.runRevision,
+    actionIds: advanceOutcome.value.actionIds,
+    dispatch: {
+      state: decision.state,
+      authorizationId: decision.authorizationId,
+      attemptId: decision.attemptId,
+      commitId: decision.commitId,
+    },
+    events: count(path, 'events'),
+  }
+}
+
 async function leasedRun(path = file()): Promise<{ path: string; store: RuntimeStateStore }> {
   const store = openStore(path)
   unwrap(await store.createRun(admission(), context()), 'createRun')
@@ -1397,6 +1765,13 @@ function saveCommitEvent(path: string, seq: number, data: unknown): void {
 }
 
 describe('runtime state advance, dispatch, and invocation', () => {
+  it('matches a serial create, advance, and batched dispatch when those calls overlap', async () => {
+    const action = preparedAction('step-1')
+    const serial = await mixedControl(file(), action, false)
+    const overlapped = await mixedControl(file(), action, true)
+    expect(overlapped).toEqual(serial)
+  })
+
   it('continues a run, admits an action, and marks the attempt running', async () => {
     const { path, store } = await leasedRun()
     expect(count(path, 'runtime_records')).toBe(3)

@@ -37,6 +37,7 @@ import {
   RuntimeCommitData as RuntimeCommitSchema,
   RuntimeFormatData,
 } from '@agnes/protocol/gen/session-v1'
+import { validateRuntime } from '@agnes/protocol/runtime'
 import { TypeCompiler } from '@sinclair/typebox/compiler'
 import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
@@ -445,6 +446,13 @@ export type RuntimeDurability = {
   checkpointFullfsync: number | null
 }
 
+type OutboxDeliveryRow = {
+  event_id: string
+  claim_epoch: number
+  acked_epoch: number | null
+  delivery: string
+}
+
 type MetaRow = {
   session_id: string
   workspace_id: string
@@ -702,6 +710,7 @@ export class RuntimeStateDatabase {
   private pendingWrite = false
   private wroteCommit = false
   private notedAux = false
+  private writeChain: Promise<void> = Promise.resolve()
   private staging: CommitStaging | null = null
   private draft: ProofDraft | null = null
   private closed = false
@@ -762,9 +771,14 @@ export class RuntimeStateDatabase {
         return { verified, result: this.openResult(request, verified, null) }
       }
       const fingerprint = digestOf(request)
-      const replayed = this.replayRequest<StateOpenResult>('open', request.requestId, fingerprint)
+      const replayed = this.replayChecked<StateOpenResult>(
+        'open',
+        request.requestId,
+        fingerprint,
+        'StateOpenResult',
+      )
       if (replayed) {
-        this.assertOpenReplay(replayed, verified, request.sessionId)
+        this.assertOpenReplay(replayed, verified, request)
         return { verified, result: replayed }
       }
       const claim = this.takeLease(request.sessionId, request.writerId, request.ttlMs)
@@ -782,9 +796,14 @@ export class RuntimeStateDatabase {
         refuse('invalid_input', 'writer_epoch', 'lease operation needs an expected writer epoch')
       const verified = await this.requireSession(request.sessionId)
       const fingerprint = digestOf(request)
-      const replayed = this.replayRequest<StateLeaseResult>('lease', request.requestId, fingerprint)
+      const replayed = this.replayChecked<StateLeaseResult>(
+        'lease',
+        request.requestId,
+        fingerprint,
+        'StateLeaseResult',
+      )
       if (replayed) {
-        this.assertLeaseReplay(replayed, request.sessionId)
+        this.assertLeaseReplay(replayed, request)
         return replayed
       }
       if (request.expectedLastSeq !== verified.lastSeq)
@@ -1765,44 +1784,95 @@ export class RuntimeStateDatabase {
     refuse('invalid_input', 'operation', 'unknown lease operation')
   }
 
-  private assertOpenReplay(result: StateOpenResult, verified: VerifiedSession, sessionId: string): void {
+  private assertOpenReplay(
+    result: StateOpenResult,
+    verified: VerifiedSession,
+    request: StateOpenRequest,
+  ): void {
     const snapshot = result.snapshot
+    const writerId = request.writerId
     if (
       !snapshot ||
-      snapshot.sessionId !== sessionId ||
+      writerId === null ||
+      snapshot.sessionId !== request.sessionId ||
       result.formatVersion !== verified.formatVersion ||
       result.minReader !== verified.minReader ||
       !sameJson(result.parent, verified.parent)
     )
       integrity('stored open result does not match the verified session')
+    if (!sameJson(snapshot.authority, this.authority))
+      integrity('stored open result does not match the session authority')
     if (!Number.isSafeInteger(snapshot.throughSeq) || snapshot.throughSeq > verified.lastSeq)
       integrity('stored open result is ahead of the verified head')
-    if (snapshot.throughSeq === verified.lastSeq && snapshot.headDigest !== verified.headDigest)
+    // One primary-key lookup on (session_key, seq). Commits do not walk the chain.
+    const digest = this.eventDigest(request.sessionId, snapshot.throughSeq)
+    if (digest === null || digest !== snapshot.headDigest)
       integrity('stored open result does not match the verified head')
     if (!result.claim) integrity('stored write-open result has no writer claim')
-    this.assertClaim(result.claim, this.loadLease(sessionId), sessionId)
+    this.assertClaim(result.claim, this.loadLease(request.sessionId), request.sessionId, {
+      writerId,
+      authorityEpoch: request.authority.authorityEpoch,
+    })
   }
 
-  private assertLeaseReplay(result: StateLeaseResult, sessionId: string): void {
-    const lease = this.loadLease(sessionId)
+  private assertLeaseReplay(result: StateLeaseResult, request: StateLeaseRequest): void {
+    const lease = this.loadLease(request.sessionId)
     if (!Number.isSafeInteger(result.lastWriterEpoch) || result.lastWriterEpoch > lease.last_writer_epoch)
       integrity('stored writer epoch does not match the lease')
-    if (result.claim) this.assertClaim(result.claim, lease, sessionId)
+    if (result.claim)
+      this.assertClaim(result.claim, lease, request.sessionId, {
+        writerId: request.writerId,
+        authorityEpoch: request.authority.authorityEpoch,
+      })
   }
 
-  private assertClaim(claim: WriterClaim, lease: LeaseRow, sessionId: string): void {
-    if (claim.scopeId !== sessionId) integrity('stored writer claim does not match the lease')
+  private assertClaim(
+    claim: WriterClaim,
+    lease: LeaseRow,
+    sessionId: string,
+    request: { writerId: string; authorityEpoch: number },
+  ): void {
+    if (claim.scopeId !== sessionId || claim.writerId !== request.writerId)
+      integrity('stored writer claim does not match the request')
+    if (claim.authorityEpoch !== request.authorityEpoch)
+      integrity('stored writer claim does not match the request')
     if (
       !Number.isSafeInteger(claim.writerEpoch) ||
       claim.writerEpoch < 1 ||
       claim.writerEpoch > lease.last_writer_epoch
     )
       integrity('stored writer epoch does not match the lease')
-    if (lease.writer_epoch !== claim.writerEpoch) return
+    // Lease changes are not in the proof chain yet. An old or expired claim is refused
+    // instead of being treated as the current writer.
+    if (lease.writer_epoch !== claim.writerEpoch || !this.leaseIsLive(lease, this.now()))
+      refuse('conflict', 'historical_receipt', 'historical writer receipt cannot be verified')
     if (lease.writer_id !== claim.writerId || lease.authority_epoch !== claim.authorityEpoch)
       integrity('stored writer claim does not match the lease')
     if (lease.lease_until === null || new Date(lease.lease_until).toISOString() !== claim.leaseUntil)
       integrity('stored writer claim does not match the lease')
+  }
+
+  private eventDigest(sessionId: string, seq: number): string | null {
+    if (!Number.isSafeInteger(seq) || seq < 1) return null
+    const row = this.get<{ integrity_digest: string | null }>(
+      'SELECT integrity_digest FROM events WHERE session_key = ? AND seq = ?',
+      sessionId,
+      seq,
+    )
+    return row?.integrity_digest ?? null
+  }
+
+  private replayChecked<T>(
+    method: string,
+    requestId: string,
+    fingerprint: string,
+    schema: 'StateOpenResult' | 'StateLeaseResult',
+  ): T | undefined {
+    const stored = this.replayRequest<unknown>(method, requestId, fingerprint)
+    if (stored === undefined) return undefined
+    const validated = validateRuntime(schema, stored)
+    if (!validated.ok) integrity('stored request result does not match its schema')
+    return validated.value as T
   }
 
   private replayRequest<T>(method: string, requestId: string, fingerprint: string): T | undefined {
@@ -2113,7 +2183,17 @@ export class RuntimeStateDatabase {
     return this.get<MetaRow>('SELECT * FROM runtime_session_meta WHERE session_id = ?', sessionId)
   }
 
-  private async tx<T>(method: string, requestId: string, body: () => T | Promise<T>): Promise<T> {
+  private tx<T>(method: string, requestId: string, body: () => T | Promise<T>): Promise<T> {
+    // The tail is replaced before this function awaits, so overlapping calls queue in order.
+    const run = this.writeChain.then(() => this.runTx(method, requestId, body))
+    this.writeChain = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
+  private async runTx<T>(method: string, requestId: string, body: () => T | Promise<T>): Promise<T> {
     this.pendingWrite = false
     this.wroteCommit = false
     this.notedAux = false
@@ -2263,48 +2343,111 @@ export class RuntimeStateDatabase {
   }
 
   private verifyOutboxDelivery(sessionId: string): void {
-    const records = this.all<{ record_id: string; value_json: string }>(
+    this.verifyOutboxHeads(sessionId)
+    this.verifyOutboxRows(sessionId)
+  }
+
+  private verifyOutboxHeads(sessionId: string): void {
+    let after = 'outbox:'
+    let inclusive = true
+    for (;;) {
+      const records = this.all<{ record_id: string; value_json: string }>(
+        `SELECT h.record_id, b.value_json
+           FROM runtime_record_heads h
+           JOIN runtime_version_bodies b
+             ON b.record_id = h.record_id AND b.record_revision = h.record_revision
+          WHERE h.record_id ${inclusive ? '>=' : '>'} ? AND h.record_id < 'outbox;'
+          ORDER BY h.record_id
+          LIMIT ?`,
+        after,
+        PROOF_PAGE,
+      )
+      if (records.length === 0) return
+      const eventIds: string[] = []
+      for (const record of records) {
+        const value = this.parseJson<{ sessionId?: unknown }>(
+          record.value_json,
+          'record body cannot be decoded',
+        )
+        if (value.sessionId !== sessionId) continue
+        eventIds.push(record.record_id.slice('outbox:'.length))
+      }
+      const deliveries = this.outboxDeliveries(eventIds)
+      for (const eventId of eventIds) {
+        const row = deliveries.get(eventId)
+        if (!row) integrity('outbox delivery row is missing')
+        this.assertOutboxAck(row)
+      }
+      const last = records[records.length - 1]
+      if (!last || records.length < PROOF_PAGE) return
+      after = last.record_id
+      inclusive = false
+    }
+  }
+
+  private verifyOutboxRows(sessionId: string): void {
+    let after = ''
+    for (;;) {
+      const rows = this.all<OutboxDeliveryRow>(
+        `SELECT event_id, claim_epoch, acked_epoch, delivery
+           FROM runtime_outbox_delivery
+          WHERE session_id = ? AND event_id > ?
+          ORDER BY event_id
+          LIMIT ?`,
+        sessionId,
+        after,
+        PROOF_PAGE,
+      )
+      if (rows.length === 0) return
+      const heads = this.outboxHeads(rows.map((row) => `outbox:${row.event_id}`))
+      for (const row of rows) {
+        const head = heads.get(`outbox:${row.event_id}`)
+        if (!head) integrity('outbox delivery names an unknown event')
+        const value = this.parseJson<{ sessionId?: unknown }>(head, 'record body cannot be decoded')
+        if (value.sessionId !== sessionId) integrity('outbox delivery names an unknown event')
+        this.assertOutboxAck(row)
+      }
+      const last = rows[rows.length - 1]
+      if (!last || rows.length < PROOF_PAGE) return
+      after = last.event_id
+    }
+  }
+
+  private outboxDeliveries(eventIds: readonly string[]): Map<string, OutboxDeliveryRow> {
+    if (eventIds.length === 0) return new Map()
+    const rows = this.all<OutboxDeliveryRow>(
+      `SELECT event_id, claim_epoch, acked_epoch, delivery
+         FROM runtime_outbox_delivery
+        WHERE event_id IN (SELECT value FROM json_each(?))`,
+      JSON.stringify(eventIds),
+    )
+    return new Map(rows.map((row) => [row.event_id, row]))
+  }
+
+  private outboxHeads(recordIds: readonly string[]): Map<string, string> {
+    if (recordIds.length === 0) return new Map()
+    const rows = this.all<{ record_id: string; value_json: string }>(
       `SELECT h.record_id, b.value_json
          FROM runtime_record_heads h
          JOIN runtime_version_bodies b
            ON b.record_id = h.record_id AND b.record_revision = h.record_revision
-        WHERE h.record_id LIKE 'outbox:%'`,
+        WHERE h.record_id IN (SELECT value FROM json_each(?))`,
+      JSON.stringify(recordIds),
     )
-    const rows = this.all<{
-      event_id: string
-      claim_epoch: number
-      acked_epoch: number | null
-      delivery: string
-    }>(
-      `SELECT event_id, claim_epoch, acked_epoch, delivery FROM runtime_outbox_delivery WHERE session_id = ?`,
-      sessionId,
+    return new Map(rows.map((row) => [row.record_id, row.value_json]))
+  }
+
+  private assertOutboxAck(row: OutboxDeliveryRow): void {
+    if (row.delivery !== 'acked') return
+    if (
+      row.acked_epoch === null ||
+      !Number.isSafeInteger(row.acked_epoch) ||
+      row.acked_epoch < 1 ||
+      !Number.isSafeInteger(row.claim_epoch) ||
+      row.claim_epoch < 1 ||
+      row.acked_epoch > row.claim_epoch
     )
-    const byEvent = new Map(rows.map((row) => [row.event_id, row]))
-    const known = new Set<string>()
-    for (const record of records) {
-      const value = this.parseJson<{ sessionId?: unknown }>(
-        record.value_json,
-        'record body cannot be decoded',
-      )
-      if (value.sessionId !== sessionId) continue
-      const eventId = record.record_id.slice('outbox:'.length)
-      known.add(eventId)
-      const row = byEvent.get(eventId)
-      if (!row) integrity('outbox delivery row is missing')
-      if (row.delivery !== 'acked') continue
-      if (
-        row.acked_epoch === null ||
-        !Number.isSafeInteger(row.acked_epoch) ||
-        row.acked_epoch < 1 ||
-        !Number.isSafeInteger(row.claim_epoch) ||
-        row.claim_epoch < 1 ||
-        row.acked_epoch > row.claim_epoch
-      )
-        integrity('outbox acknowledgement has no claim epoch')
-    }
-    for (const row of rows) {
-      if (!known.has(row.event_id)) integrity('outbox delivery names an unknown event')
-    }
+      integrity('outbox acknowledgement has no claim epoch')
   }
 
   private writeCommit(input: WriteCommitInput): { receipt: StateCommitReceipt; verified: VerifiedSession } {
@@ -2798,15 +2941,55 @@ export class RuntimeStateDatabase {
   }
 
   private assertReferencedBodies(): void {
-    const orphan = this.get<{ record_id: string }>(
-      `SELECT b.record_id AS record_id FROM runtime_version_bodies b
-        WHERE NOT EXISTS (
-          SELECT 1 FROM runtime_commit_proofs p, json_each(p.versions_json) v
-          WHERE json_extract(v.value, '$.recordId') = b.record_id
-            AND json_extract(v.value, '$.recordRevision') = b.record_revision
-        )`,
-    )
-    if (orphan) integrity('record version body has no header')
+    // One pass over proof packs and one pass over bodies. A correlated json_each
+    // re-parsed every pack for every body.
+    const covered = new Set<string>()
+    let afterCommit = ''
+    for (;;) {
+      const proofs = this.all<{ commit_id: string; versions_json: string }>(
+        `SELECT commit_id, versions_json FROM runtime_commit_proofs
+          WHERE commit_id > ? ORDER BY commit_id LIMIT ?`,
+        afterCommit,
+        PROOF_PAGE,
+      )
+      if (proofs.length === 0) break
+      for (const proof of proofs) {
+        for (const item of this.proofArray(proof.versions_json)) {
+          if (
+            !isPlainRecord(item) ||
+            typeof item.recordId !== 'string' ||
+            typeof item.recordRevision !== 'number'
+          )
+            continue
+          covered.add(`${item.recordId}\0${item.recordRevision}`)
+        }
+      }
+      const last = proofs[proofs.length - 1]
+      if (!last || proofs.length < PROOF_PAGE) break
+      afterCommit = last.commit_id
+    }
+    let afterId = ''
+    let afterRevision = -1
+    for (;;) {
+      const bodies = this.all<{ record_id: string; record_revision: number }>(
+        `SELECT record_id, record_revision FROM runtime_version_bodies
+          WHERE (record_id, record_revision) > (?, ?)
+          ORDER BY record_id, record_revision
+          LIMIT ?`,
+        afterId,
+        afterRevision,
+        PROOF_PAGE,
+      )
+      if (bodies.length === 0) return
+      for (const body of bodies) {
+        if (!covered.has(`${body.record_id}\0${body.record_revision}`))
+          integrity('record version body has no header')
+      }
+      const last = bodies[bodies.length - 1]
+      if (!last || bodies.length < PROOF_PAGE) return
+      afterId = last.record_id
+      afterRevision = last.record_revision
+    }
   }
 
   private assertReceipt(sessionId: string, receipt: StateCommitReceipt, fingerprint: string): void {
