@@ -1,6 +1,12 @@
 import { webRowId } from '@agnes/web-slots'
 
 export {
+  type LocaleCatalog,
+  type LocaleDictionary,
+  type Translate,
+  webUnitsLocaleCatalog,
+} from './locales/index.js'
+export {
   Approval,
   type ApprovalAction,
   type ApprovalHandle,

@@ -3,6 +3,7 @@ import { ConversationToolCard as ReactToolCard } from '@agnes/web-ui/assistant-u
 import { createElement, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
+import type { Translate } from '../locales/index.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -13,15 +14,18 @@ export interface ConversationToolCard {
 
 export interface ConversationToolCardOptions {
   icon(name: string): Element
+  /** Locale-bound translate; called on every render so a locale switch refreshes the card. */
+  translate: Translate
 }
 
-const STATUS_LABEL: Record<ToolNode['status'], string> = {
-  planned: '等待执行',
-  awaiting_approval: '等待审批',
-  running: '正在执行',
-  completed: '执行完成',
-  failed: '执行失败',
-  cancelled: '已取消',
+/** 渲染时取词：状态 → key 表，文案在 render 时按当前 locale 解析。 */
+const STATUS_LABEL_KEYS: Record<ToolNode['status'], string> = {
+  planned: 'tool.status.planned',
+  awaiting_approval: 'tool.status.awaitingApproval',
+  running: 'tool.status.running',
+  completed: 'tool.status.completed',
+  failed: 'tool.status.failed',
+  cancelled: 'tool.status.cancelled',
 }
 
 /** Copy an existing icon into a React-owned tree without adopting its DOM nodes. */
@@ -60,8 +64,12 @@ export function createConversationToolCard(
       iconName = next.name
       icon = reactIcon(options.icon(iconName))
     }
+    const statusLabel = options.translate(STATUS_LABEL_KEYS[next.status])
     element.dataset.status = next.status
-    element.setAttribute('aria-label', `工具 ${next.name}：${STATUS_LABEL[next.status]}`)
+    element.setAttribute(
+      'aria-label',
+      options.translate('tool.card.aria', { name: next.name, status: statusLabel }),
+    )
     flushSync(() =>
       root.render(
         createElement(ReactToolCard, {

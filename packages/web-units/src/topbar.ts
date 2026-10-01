@@ -6,14 +6,16 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
+import type { Translate } from './locales/index.js'
 
 export type TopbarConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed'
 
-const CONNECTION_LABELS: Record<TopbarConnectionState, string> = {
-  connecting: '正在连接后台',
-  connected: '本地后台已连接',
-  reconnecting: '连接中断，正在重连',
-  closed: '后台连接已关闭',
+/** 渲染时取词：状态 → key 表，文案在组件内按当前 locale 解析。 */
+const CONNECTION_LABEL_KEYS: Record<TopbarConnectionState, string> = {
+  connecting: 'topbar.connection.connecting',
+  connected: 'topbar.connection.connected',
+  reconnecting: 'topbar.connection.reconnecting',
+  closed: 'topbar.connection.closed',
 }
 
 const SIDEBAR_TOGGLE_ICON_PATHS = [
@@ -31,10 +33,11 @@ export interface TopbarHandle {
 
 interface TopbarProps {
   disconnectListeners: Set<() => void>
+  translate: Translate
 }
 
 export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
-  { disconnectListeners }: TopbarProps,
+  { disconnectListeners, translate: t }: TopbarProps,
   ref: ForwardedRef<TopbarHandle>,
 ) {
   const taskTitle = useRef<HTMLHeadingElement>(null)
@@ -56,7 +59,7 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
       setConnectionState(value) {
         if (!connection.current) return
         connection.current.dataset.state = value
-        connection.current.textContent = CONNECTION_LABELS[value]
+        connection.current.textContent = t(CONNECTION_LABEL_KEYS[value])
       },
       onDisconnect(listener) {
         disconnectListeners.add(listener)
@@ -89,7 +92,7 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
         id: 'sidebar-toggle',
         className: 'icon-button sidebar-toggle',
         type: 'button',
-        'aria-label': '打开导航',
+        'aria-label': t('sidebar.openNav'),
         'aria-expanded': 'false',
       },
       createElement(
@@ -106,11 +109,11 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
     createElement(
       'div',
       { className: 'task-heading' },
-      createElement('h1', { ref: taskTitle, id: 'task-title' }, '新会话'),
+      createElement('h1', { ref: taskTitle, id: 'task-title' }, t('topbar.defaultTitle')),
       createElement(
         'span',
         { ref: status, id: 'status', role: 'status', 'aria-live': 'polite', 'data-state': 'idle' },
-        '准备任务',
+        t('topbar.defaultStatus'),
       ),
     ),
     createElement(
@@ -125,7 +128,7 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
           'aria-live': 'polite',
           'data-state': 'connecting',
         },
-        CONNECTION_LABELS.connecting,
+        t(CONNECTION_LABEL_KEYS.connecting),
       ),
       createElement(
         'button',
@@ -134,8 +137,8 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
           id: 'disconnect',
           className: 'icon-button quiet-disconnect',
           type: 'button',
-          'aria-label': '断开连接',
-          title: '断开连接',
+          'aria-label': t('topbar.disconnect'),
+          title: t('topbar.disconnect'),
         },
         createElement(
           'svg',

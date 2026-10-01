@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
+import type { Translate } from './locales/index.js'
 export type SessionAction = 'rename' | 'fork' | 'archive'
 
 export interface SidebarNavigationOptions {
@@ -32,6 +33,8 @@ export interface SidebarShell {
 }
 
 export interface SidebarDependencies {
+  /** Locale-bound translate (host injects); called during render, never cached. */
+  translate: Translate
   renderNavigation(options: SidebarNavigationOptions): void
   bindSidebar(narrow: MediaQueryList): SidebarShell
 }
@@ -166,6 +169,7 @@ const SidebarBuiltin = forwardRef<
   const settingsButton = useRef<HTMLButtonElement>(null)
   const shell = useRef<SidebarShell | undefined>(undefined)
   const stateRef = useRef(state)
+  const t: Translate = dependencies?.translate ?? ((key) => key)
   /** 上一次真正渲染的导航区数据签名；未渲染过时为 undefined，首次更新不得短路。 */
   const renderedSignature = useRef<string | undefined>(undefined)
   const renderNavigation = useCallback(
@@ -273,7 +277,7 @@ const SidebarBuiltin = forwardRef<
           id: 'sidebar-close',
           className: 'icon-button sidebar-close',
           type: 'button',
-          'aria-label': '关闭导航',
+          'aria-label': t('sidebar.closeNav'),
         },
         icon(CLOSE_ICON, '0 0 20 20', 'icon icon-fill'),
       ),
@@ -291,13 +295,13 @@ const SidebarBuiltin = forwardRef<
           disabled: state.newDisabled,
         },
         icon(NEW_ICON, '0 0 16 16', 'icon icon-fill'),
-        createElement('span', null, '新会话'),
+        createElement('span', null, t('sidebar.newSession')),
       ),
     ),
     createElement(
       'div',
       { className: 'sidebar-section-heading' },
-      createElement('p', { className: 'section-label' }, '工作区与会话'),
+      createElement('p', { className: 'section-label' }, t('sidebar.sectionHeading')),
       createElement(
         'button',
         {
@@ -305,14 +309,14 @@ const SidebarBuiltin = forwardRef<
           ref: workspaceAdd,
           className: 'icon-button subtle',
           type: 'button',
-          'aria-label': '添加工作区',
-          title: '添加工作区',
+          'aria-label': t('sidebar.addWorkspace'),
+          title: t('sidebar.addWorkspace'),
         },
         icon(ADD_ICON, '0 0 12 12', 'icon icon-fill'),
       ),
       slots?.workspaces,
     ),
-    createElement('nav', { id: 'sessions', 'aria-label': '任务列表', ref: nav }),
+    createElement('nav', { id: 'sessions', 'aria-label': t('sidebar.sessionsNav'), ref: nav }),
     slots?.panellist,
     createElement(
       'div',
@@ -322,7 +326,7 @@ const SidebarBuiltin = forwardRef<
         'button',
         { id: 'settings', ref: settingsButton, className: 'secondary-button', type: 'button' },
         icon(SETTINGS_ICON, '0 0 16 16', 'icon icon-settings'),
-        createElement('span', null, '设置'),
+        createElement('span', null, t('sidebar.settings')),
       ),
       slots?.settings,
     ),
