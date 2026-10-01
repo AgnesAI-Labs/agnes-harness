@@ -23,6 +23,15 @@
 
 </div>
 
+<p align="center">
+  <img src="docs/assets/readme/trailer.webp" alt="动画介绍：大脑（LLM）、小脑（Jev，规划中）、记忆（Harness）与身体（MHS，规划中，经 MCP 接入）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付，并规划接入物理世界的 MHS" width="100%" />
+</p>
+
+<p align="center">
+  <b>LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。</b><br />
+  <sub>Jev 与 MHS 属于规划中的接入，MHS 以 MCP 为基础。<a href="#architecture">查看架构</a></sub>
+</p>
+
 把 AI 带进真实现场，难点往往不在模型本身，而在客户的业务系统、负责审批的人，以及每个现场都不一样的细节。Agnes Harness（AGH）把模型、工具、任务状态和业务界面连接在一起：**把现场差异写进插件，让 Harness 负责执行并留下记录，把验证过的能力带到下一个项目。**
 
 <p align="center">
@@ -64,13 +73,7 @@
 
 ## 架构：大脑、小脑、记忆与身体
 
-**LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。**
-
-<p align="center">
-  <img src="docs/assets/readme/trailer.webp" alt="动画介绍：大脑（LLM）、小脑（Jev，规划中）、记忆（Harness）与身体（MHS，规划中，经 MCP 接入）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付，并规划接入物理世界的 MHS" width="100%" />
-</p>
-
-这组角色比喻表达 AGH 的产品愿景：把推理、结构化决策、持久任务上下文和物理能力组织到一起。下方的详细架构图区分已有软件路径与规划中的接入。
+大脑、小脑、记忆与身体这组比喻表达 AGH 的产品愿景：把推理、结构化决策、持久任务上下文和物理能力组织到一起。下图区分已有软件路径与规划中的接入。
 
 ![AGH 架构：LLM 是大脑、Jev 是小脑、Harness 是记忆、MHS 是身体；Jev 和设备接入以虚线标为规划](docs/assets/architecture.zh-CN.svg)
 

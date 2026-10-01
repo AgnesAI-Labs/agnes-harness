@@ -23,6 +23,15 @@ Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0
 
 </div>
 
+<p align="center">
+  <img src="docs/assets/readme/trailer.webp" alt="Animated introduction: the brain (LLM), the cerebellum (Jev, planned), the memory (Harness) and the body (MHS, planned, connected through MCP) come together as Agnes Harness, one execution foundation for enterprise FDE delivery and, as a planned direction, physical-world MHS integration" width="100%" />
+</p>
+
+<p align="center">
+  <b>LLM is the brain. Jev is the cerebellum. Harness is the memory. MHS is the body.</b><br />
+  <sub>Jev and MHS are planned integrations, and MHS builds on MCP. <a href="#architecture">See the architecture</a></sub>
+</p>
+
 Taking AI into a real deployment is rarely about the model alone. It is about the customer's systems, the people who approve the work, and the details that differ at every site. Agnes Harness (AGH) connects models, tools, task state, and business interfaces: **put the differences into plugins, let the harness run and record the work, and carry what you validated into the next deployment.**
 
 <p align="center">
@@ -64,13 +73,7 @@ What it is not, so you can choose the right trial:
 
 ## Architecture: brain, cerebellum, memory and body
 
-**LLM is the brain. Jev is the cerebellum. Harness is the memory. MHS is the body.**
-
-<p align="center">
-  <img src="docs/assets/readme/trailer.webp" alt="Animated introduction: the brain (LLM), the cerebellum (Jev, planned), the memory (Harness) and the body (MHS, planned, connected through MCP) come together as Agnes Harness, one execution foundation for enterprise FDE delivery and, as a planned direction, physical-world MHS integration" width="100%" />
-</p>
-
-These roles describe AGH's vision: combine reasoning, structured decisions, persistent task context, and physical capabilities. The detailed diagram below separates existing software paths from planned integrations.
+The brain, cerebellum, memory and body describe AGH's vision: combine reasoning, structured decisions, persistent task context, and physical capabilities. The diagram separates existing software paths from planned integrations.
 
 ![AGH architecture: LLM as brain, Jev as cerebellum, Harness as memory, and MHS as body; dashed boxes show planned Jev and device integration](docs/assets/architecture.svg)
 
