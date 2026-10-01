@@ -57,8 +57,9 @@ describe('host boundaries', () => {
     const callers = files.filter((f) => /\bKernel\s*\.\s*create\s*\(/.test(read(f)))
     expect(callers.map((f) => f.slice(src.length))).toEqual(['assemble.ts'])
   })
-  // The writer lease setting belongs to the kernel; extension leases are bound to their row and
-  // must not start reading it again. Comments are stripped so prose naming the key does not count.
+  // The writer lease setting belongs to the kernel. Two static classifications may name the key:
+  // the process-static prefix list, and the legacy limit table. Neither classification reads it.
+  // Extension leases stay bound to their row. Comments are stripped so prose naming the key does not count.
   it('lease.ttl_ms reaches only the kernel writer lease wiring and the static-key classification', () => {
     const uncommented = (text: string): string =>
       text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/gm, '$1')
@@ -71,13 +72,22 @@ describe('host boundaries', () => {
           ])
           .filter(([, count]) => count !== 0),
       )
-    expect(occurrences(/['"]lease\.ttl_ms['"]/g)).toEqual({ 'assemble.ts': 2, 'profile-policy.ts': 1 })
+    expect(occurrences(/['"]lease\.ttl_ms['"]/g)).toEqual({
+      'assemble.ts': 2,
+      'profile-policy.ts': 1,
+      'runtime/config/legacy-fields.ts': 1,
+    })
     expect(occurrences(/\bleaseTtlMs\b/g)).toEqual({ 'assemble.ts': 1 })
     const wiring = uncommented(read(join(src, 'assemble.ts')))
       .split('\n')
       .filter((line) => /['"]lease\.ttl_ms['"]/.test(line))
     expect(wiring).toHaveLength(1)
     expect(wiring[0]).toContain("leaseTtlMs: profile.limits['lease.ttl_ms']")
+    const legacy = uncommented(read(join(src, 'runtime', 'config', 'legacy-fields.ts')))
+    const legacyKeys = legacy.split('\n').filter((line) => /['"]lease\.ttl_ms['"]/.test(line))
+    expect(legacyKeys).toHaveLength(1)
+    expect(legacyKeys[0]).toMatch(/^\s*['"]lease\.ttl_ms['"]\s*:/)
+    expect(legacy).not.toMatch(/\bleaseTtlMs\b/)
     // A comment that names the key is not a read of it.
     const provider = read(join(src, 'assemble', 'provider.ts'))
     expect(provider).toContain('lease.ttl_ms')
