@@ -929,7 +929,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
-  'packages/core/src': 25478,
+  // Domain command journal rules and the authorized projection with owner-issued cursors.
+  // Measured 26066 (+588), exact, no spare.
+  'packages/core/src': 26066,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1790,7 +1792,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
   // Stored public configuration uses canonical JSON and existing credential checks: exact 26512.
-  'packages/daemon/src': 26512,
+  // Durable domain store with outbox delivery, dead letters and redrive; measured 27055 (+543), exact.
+  'packages/daemon/src': 27055,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
