@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, it } from 'vitest'
 import { documentDigest } from '../../src/runtime/config/config-digest.js'
+import { readPinnedConfigDocument } from '../../src/runtime/config/host-read.js'
 import {
   type ConfigOutcome,
   type ConfigProvider,
@@ -616,4 +617,40 @@ it('refuses a profile chain longer than 16 documents', () => {
     profiles.push(bind(`layer-${index}`, index + 1, document))
   }
   expect(codeOf(providerFor().resolve({ ...request, profiles }))).toBe('extends_depth')
+})
+
+it('reads one admitted revision through the host adapter and does not ask for a newer file', () => {
+  const files = new Map<string, string>()
+  let loads = 0
+  const seen: unknown[] = []
+  const file = createFileConfigProvider((sourceRef) => {
+    loads += 1
+    return files.get(sourceRef) ?? null
+  })
+  const first = { revision: 1, schema: parameterSchemaRef, value: { name: 'pinned', meta: { a: 1 } } }
+  files.set('local', JSON.stringify(first))
+  expect(file.source.refresh('local')).toBeNull()
+  files.set('local', JSON.stringify({ revision: 2, schema: parameterSchemaRef, value: { name: 'newer' } }))
+  const loadsAfterAdmit = loads
+  const reader = {
+    read(input: unknown) {
+      seen.push(input)
+      return file.provider.read(input)
+    },
+  }
+  const pinned = readPinnedConfigDocument(reader, 'local', 1)
+  expect(pinned.ok).toBe(true)
+  if (!pinned.ok) return
+  expect(pinned.result.revision).toBe(1)
+  expect(pinned.result.documentRef).toMatchObject({
+    kind: 'inline',
+    value: { name: 'pinned', meta: { a: 1 } },
+  })
+  expect(loads).toBe(loadsAfterAdmit)
+  expect(seen).toEqual([{ sourceRef: 'local', revision: 1 }])
+  expect(codeOf(readPinnedConfigDocument(reader, 'local', Number.NaN))).toBe('schema_invalid')
+  expect(seen).toHaveLength(1)
+  expect(codeOf(readPinnedConfigDocument(reader, 'local', 2))).toBe('source_unavailable')
+  file.provider.dispose()
+  expect(codeOf(readPinnedConfigDocument(reader, 'local', 1))).toBe('disposed')
 })

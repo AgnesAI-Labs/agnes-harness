@@ -2508,8 +2508,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Legacy profile and preset documents convert field by field.
   // Explicit dag-code selection and community contract references sit beside them.
   // A replaceable config source pins admitted snapshots and resolves layered documents.
-  // Measured 43741, exact, no spare.
-  'packages/host/src': 43741,
+  // A pinned read names one revision and does not ask the source for a newer snapshot.
+  // Measured 43759, exact, no spare.
+  'packages/host/src': 43759,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
