@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - examples/packages/cordis-greeting
+  - examples/runtime-reference
   - tools/*
 patchedDependencies:
   jiti@2.7.0: patches/jiti@2.7.0.patch
