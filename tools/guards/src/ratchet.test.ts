@@ -2520,7 +2520,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // and query-usage flush commit in that store. Measured 43552.
   // Signal sequence and active-invocation indexes, and quota lookup through the run's
   // reservation refs, commit in that store. Measured 43738.
-  'packages/host/src': 43738,
+  // One model turn's tool dispatches share a state commit. One commit's record versions,
+  // mutation manifests, and side entries share a proof row. Measured 44794.
+  'packages/host/src': 44794,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

@@ -1,6 +1,7 @@
 import { hash } from 'node:crypto'
 import type { SchemaRef, StateAuthorityRef } from '@agnes/extension-api/runtime'
 import { canonicalJson } from './canonical-json.js'
+import { noteSha, profiling } from './profile.js'
 
 /** Registered session-ledger proofs. Rows are appended in the session database. */
 export const FORMAT_EVENT = 'runtime/format'
@@ -236,12 +237,45 @@ export function digestOf(value: unknown): string {
 }
 
 function digestText(text: string): string {
-  return hash('sha256', text, 'hex')
+  if (!profiling) return hash('sha256', text, 'hex')
+  const started = performance.now()
+  const digest = hash('sha256', text, 'hex')
+  noteSha(performance.now() - started, Buffer.byteLength(text))
+  return digest
 }
 
 /** sha256 of the JCS object `{"owner":<ownerJson>,"value":<valueJson>}`. Matches `bodyDigest` when both texts are already canonical. */
 export function canonicalStoredBodyDigest(ownerJson: string, valueJson: string): string {
   return digestText(`{"owner":${ownerJson},"value":${valueJson}}`)
+}
+
+export type EncodedStoredRecord = {
+  schemaJson: string
+  ownerJson: string
+  valueJson: string
+  digest: string
+}
+
+/** One JCS pass over schema, owner, and value. The digest matches `bodyDigest(owner, value)`. */
+export function encodeStoredRecord(record: {
+  schema: SchemaRef
+  owner: RecordOwner
+  value: unknown
+}): EncodedStoredRecord {
+  const schemaJson = canonicalJson(record.schema)
+  const ownerJson = canonicalJson(record.owner)
+  const valueJson = canonicalJson(record.value)
+  return {
+    schemaJson,
+    ownerJson,
+    valueJson,
+    digest: canonicalStoredBodyDigest(ownerJson, valueJson),
+  }
+}
+
+/** Canonical JSON of a mutation `next` when `schemaJson` is already the canonical schema. */
+export function storedMutationNextJson(recordRevision: number, digest: string, schemaJson: string): string {
+  return `{"digest":${JSON.stringify(digest)},"recordRevision":${JSON.stringify(recordRevision)},"schema":${schemaJson}}`
 }
 
 function schemaRef(typeId: string, document: unknown): SchemaRef {
@@ -541,6 +575,7 @@ export function createManifest(
   commitId: string,
   record: StoredRecord,
   previousRevision: number | null = null,
+  digest?: string,
 ): CommitMutationManifest {
   return {
     commitId,
@@ -549,7 +584,7 @@ export function createManifest(
     next: {
       recordRevision: record.recordRevision,
       schema: record.schema,
-      digest: bodyDigest(record.owner, record.value),
+      digest: digest ?? bodyDigest(record.owner, record.value),
     },
   }
 }

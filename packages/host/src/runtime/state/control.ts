@@ -39,6 +39,7 @@ import type {
   UsageFact,
 } from '@agnes/extension-api/runtime'
 import { canonicalJson } from './canonical-json.js'
+import { noteJsonParse, profiling } from './profile.js'
 import {
   ACTION_SCHEMA,
   ATTEMPT_SCHEMA,
@@ -183,6 +184,12 @@ export interface ControlPorts {
     requestId: string,
     ticket: { fingerprint: string; ticketId: string; remainingQueries: number },
   ): void
+  /** Set only while several control steps share one state-commit. Replay keys stay on each request. */
+  attestedCommitId: string | null
+}
+
+function attestedCommitId(ports: ControlPorts, requested: string): string {
+  return ports.attestedCommitId ?? requested
 }
 
 type LeaseRow = {
@@ -310,7 +317,11 @@ type RejectReason = 'quota' | 'expired' | 'cancelled'
 
 function parseJson(text: string): unknown {
   try {
-    return JSON.parse(text) as unknown
+    if (!profiling) return JSON.parse(text) as unknown
+    const started = performance.now()
+    const value = JSON.parse(text) as unknown
+    noteJsonParse(performance.now() - started, text.length)
+    return value
   } catch {
     integrity('record body cannot be decoded')
   }
@@ -1191,7 +1202,7 @@ export async function admitInvocationTx(
       ...blankInput(
         loaded.value.sessionId,
         verified,
-        ports.ulid(),
+        attestedCommitId(ports, ports.ulid()),
         stamp,
         fingerprint,
         request.runId,
@@ -1277,7 +1288,7 @@ export async function closeInvocationTx(
       ...blankInput(
         loaded.value.sessionId,
         verified,
-        ports.ulid(),
+        attestedCommitId(ports, ports.ulid()),
         stamp,
         fingerprint,
         invocation.runId,
@@ -1382,17 +1393,13 @@ export async function advanceRunTx(
     ports.assertReceipt(request.guard.sessionId, stored, fingerprint)
     return { result: stored, sessionId: request.guard.sessionId }
   }
+  const commitId = attestedCommitId(ports, request.commitId)
   assertTransition(request)
   const guarded = assertGuard(ports, request.guard, 'advance')
   const flushed = request.guard.queryUsage
     ? planQueryFlush(ports, guarded.invocation, request.guard.queryUsage)
     : undefined
-  const consumed = consumeSignals(
-    ports,
-    request.guard.runId,
-    request.transition.consumeSignals,
-    request.commitId,
-  )
+  const consumed = consumeSignals(ports, request.guard.runId, request.transition.consumeSignals, commitId)
   if (request.transition.expectedRevision !== guarded.value.revision)
     refuse('conflict', 'revision', 'run revision does not match')
   const planned: { key: string; actionId: string; create?: StoredRecord }[] = []
@@ -1424,7 +1431,7 @@ export async function advanceRunTx(
       resolvedReceiptId: null,
       resolutionId: null,
       ownerRef: { kind: 'run', id: request.guard.runId },
-      createdByCommitId: request.commitId,
+      createdByCommitId: commitId,
       resultHookPlan: null,
       taintSnapshot: snapshot,
       authorizationTaintSnapshot: null,
@@ -1467,7 +1474,7 @@ export async function advanceRunTx(
     ...blankInput(
       request.guard.sessionId,
       verified,
-      request.commitId,
+      commitId,
       stamp,
       fingerprint,
       request.guard.runId,
@@ -1507,9 +1514,7 @@ export async function advanceRunTx(
     ],
     sides: [
       ...planned.flatMap((item) =>
-        item.create
-          ? [{ commitId: request.commitId, kind: 'action-created' as const, actionId: item.actionId }]
-          : [],
+        item.create ? [{ commitId, kind: 'action-created' as const, actionId: item.actionId }] : [],
       ),
       ...consumed.sides,
     ],
@@ -1548,11 +1553,11 @@ function heldParallel(ports: ControlPorts, runId: string): number {
 }
 
 function loadPinnedDomain(ports: ControlPorts, sessionId: string): unknown | undefined {
-  const row = ports.get<{ domain_json: string }>(
-    'SELECT domain_json FROM runtime_dispatch_domains WHERE session_id = ?',
+  const row = ports.get<{ dispatch_domain_json: string | null }>(
+    'SELECT dispatch_domain_json FROM runtime_session_meta WHERE session_id = ?',
     sessionId,
   )
-  return row ? parseJson(row.domain_json) : undefined
+  return row?.dispatch_domain_json ? parseJson(row.dispatch_domain_json) : undefined
 }
 
 function assertDomain(
@@ -1574,9 +1579,9 @@ function assertDomain(
 
 function pinDomain(ports: ControlPorts, sessionId: string, domain: unknown): void {
   ports.run(
-    'INSERT INTO runtime_dispatch_domains (session_id, domain_json) VALUES (?, ?)',
-    sessionId,
+    'UPDATE runtime_session_meta SET dispatch_domain_json = ? WHERE session_id = ?',
     canonicalJson(domain),
+    sessionId,
   )
 }
 
@@ -1647,6 +1652,7 @@ export async function dispatchAdmissionTx(
     ports.assertReceipt(request.guard.sessionId, stored.receipt, fingerprint)
     return { result: stored.result, sessionId: request.guard.sessionId }
   }
+  const commitId = attestedCommitId(ports, request.commitId)
   assertDispatchShape(request)
   const requested = parallelAmount(request)
   const guarded = assertGuard(ports, request.guard, 'follow')
@@ -1665,7 +1671,7 @@ export async function dispatchAdmissionTx(
   const input = blankInput(
     request.guard.sessionId,
     verified,
-    request.commitId,
+    commitId,
     stamp,
     fingerprint,
     request.guard.runId,
@@ -1681,7 +1687,7 @@ export async function dispatchAdmissionTx(
     const quotaReservationRefs = mirrorId ? [mirrorId] : []
     result = {
       state: 'admitted',
-      commitId: request.commitId,
+      commitId,
       authorizationId,
       attemptId: request.attemptId,
       budgetReservationRefs: [],
@@ -1762,7 +1768,7 @@ export async function dispatchAdmissionTx(
   } else {
     const controlId = stableId('ctl', admissionId)
     const receiptId = stableId('rcpt', admissionId)
-    result = { state: 'rejected', commitId: request.commitId, reason: decision.reason, error: decision.error }
+    result = { state: 'rejected', commitId, reason: decision.reason, error: decision.error }
     const attempt: AttemptValue = {
       attemptId: controlId,
       actionId: request.actionId,
@@ -1816,7 +1822,7 @@ export async function dispatchAdmissionTx(
       firstReceiptId: receiptId,
     }
     input.updates = [updated(actionHead, ACTION_SCHEMA, owner, settledAction)]
-    input.sides = [{ commitId: request.commitId, kind: 'receipt-created', receiptId }]
+    input.sides = [{ commitId, kind: 'receipt-created', receiptId }]
     const rejectionReceipt: Receipt = {
       receiptId,
       actionId: request.actionId,
@@ -1832,7 +1838,7 @@ export async function dispatchAdmissionTx(
       completedAt: stamp,
     }
     const published = publishNoHook(ports, {
-      commitId: request.commitId,
+      commitId,
       stamp,
       sessionId: request.guard.sessionId,
       owner,
@@ -2403,7 +2409,7 @@ export type ControlScan = {
   receiptOutcomes: Map<string, ReceiptOutcome>
   attempts: Map<string, AttemptNote>
   attemptsOnCommit: Map<string, AttemptNote[]>
-  actionStates: Map<string, string[]>
+  actionStates: Map<string, { actionId: string; state: string }[]>
   admissions: Map<string, AdmissionNote>
   quotas: Map<string, QuotaNote>
   views: Map<string, ViewNote>
@@ -2509,7 +2515,7 @@ function noteActionVersion(scan: ControlScan, version: ControlVersionNote): void
   const actionId = typeof body.actionId === 'string' ? body.actionId : ''
   const state = typeof body.state === 'string' ? body.state : ''
   const states = scan.actionStates.get(version.commit_id) ?? []
-  states.push(state)
+  states.push({ actionId, state })
   scan.actionStates.set(version.commit_id, states)
   if (version.record_revision !== 1) return
   const createdBy = typeof body.createdByCommitId === 'string' ? body.createdByCommitId : ''
@@ -2713,18 +2719,16 @@ function storedRequest(text: string): {
   }
 }
 
-function receiptIdOnCommit(scan: ControlScan, commitId: string): string | undefined {
-  let found: string | undefined
+function receiptIdsForAction(scan: ControlScan, commitId: string, actionId: string): string[] {
+  const found: string[] = []
   for (const [receiptId, sideCommit] of scan.receiptSides) {
     if (sideCommit !== commitId) continue
-    if (found !== undefined) return undefined
-    found = receiptId
+    if (scan.receiptOutcomes.get(receiptId)?.actionId === actionId) found.push(receiptId)
   }
   return found
 }
 
-function assertRejectionPublished(scan: ControlScan, commitId: string): void {
-  const receiptId = receiptIdOnCommit(scan, commitId)
+function assertRejectionPublished(scan: ControlScan, commitId: string, receiptId: string | undefined): void {
   const view = receiptId === undefined ? undefined : scan.views.get(receiptId)
   const eventId = receiptId === undefined ? undefined : stableId('obx', `${commitId}\0result\0${receiptId}`)
   if (
@@ -2912,17 +2916,23 @@ export function finishControlScan(scan: ControlScan, evidence: ControlEvidence):
           integrity('admitted authorization does not match the decision')
       }
       if (admission.result.state === 'rejected') {
-        const states = scan.actionStates.get(admission.commitId) ?? []
-        const attempts = scan.attemptsOnCommit.get(admission.commitId) ?? []
+        const actionId = typeof stored.request.actionId === 'string' ? stored.request.actionId : ''
+        const states = (scan.actionStates.get(admission.commitId) ?? []).filter(
+          (item) => item.actionId === actionId,
+        )
+        const attempts = (scan.attemptsOnCommit.get(admission.commitId) ?? []).filter(
+          (attempt) => attempt.actionId === actionId,
+        )
         const controls = attempts.filter((attempt) => attempt.kind === 'control' && attempt.number === 0)
         const executing = attempts.filter((attempt) => attempt.number >= 1)
-        const receipts = scan.receiptsOnCommit.get(admission.commitId) ?? 0
+        const receiptIds = receiptIdsForAction(scan, admission.commitId, actionId)
         if (
+          actionId === '' ||
           states.length !== 1 ||
-          states[0] !== 'settled' ||
+          states[0]?.state !== 'settled' ||
           controls.length !== 1 ||
           executing.length !== 0 ||
-          receipts !== 1
+          receiptIds.length !== 1
         )
           integrity('rejected admission does not settle the action')
         const runId = typeof guardRecord?.runId === 'string' ? guardRecord.runId : ''
@@ -2935,7 +2945,7 @@ export function finishControlScan(scan: ControlScan, evidence: ControlEvidence):
           )
             integrity('rejected admission still holds quota')
         }
-        assertRejectionPublished(scan, admission.commitId)
+        assertRejectionPublished(scan, admission.commitId, receiptIds[0])
       }
     }
   }

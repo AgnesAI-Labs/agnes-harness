@@ -1,5 +1,6 @@
 import { types } from 'node:util'
 import { jcs } from '@agnes/protocol'
+import { noteCanonical, profiling } from './profile.js'
 
 const fallback = new Error('canonical-json fallback')
 
@@ -7,6 +8,14 @@ const fallback = new Error('canonical-json fallback')
  * Duplicate raw JSON keys are rejected by the parser and cannot be recovered from an object.
  * A proxy is encoded by `jcs` so the two stay identical. */
 export function canonicalJson(value: unknown): string {
+  if (!profiling) return encodeCanonical(value)
+  const started = performance.now()
+  const text = encodeCanonical(value)
+  noteCanonical(performance.now() - started, Buffer.byteLength(text))
+  return text
+}
+
+function encodeCanonical(value: unknown): string {
   const invalid = () => new Error('invalid JCS input')
   const active = new Set<object>()
   const string = (text: string): string => {

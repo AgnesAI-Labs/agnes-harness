@@ -60,17 +60,30 @@ import {
   noteControlVersion,
   probeActionResultTx,
   probeDispatchTx,
+  type StoredHead,
   type WriteCommitInput,
 } from './control.js'
+import {
+  enterPhase,
+  leavePhase,
+  noteBoundary,
+  noteJsonParse,
+  noteJsonStringify,
+  noteSql,
+  profiling,
+} from './profile.js'
 import {
   bodyDigest,
   type ChainRow,
   type CommitMutationManifest,
   type CommitSideEntry,
   canonicalStoredBodyDigest,
+  compareUtf8,
   createManifest,
   digestOf,
+  type EncodedStoredRecord,
   emptyIntegrity,
+  encodeStoredRecord,
   FORMAT_EVENT,
   FORMAT_VERSION,
   type FormatEventData,
@@ -102,6 +115,7 @@ import {
   sideCounts,
   sideEntryIdentity,
   sideListsDigest,
+  storedMutationNextJson,
   taintRecordId,
 } from './records.js'
 import { integrity, refuse, StateRefusal } from './refusal.js'
@@ -113,31 +127,19 @@ const proofChecks = {
   commit: TypeCompiler.Compile(RuntimeCommitSchema),
   format: TypeCompiler.Compile(RuntimeFormatData),
 }
-const VERSIONS_BY_COMMIT = `SELECT record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
-  FROM runtime_record_versions WHERE commit_id IN (SELECT value FROM json_each(?))`
-const MANIFESTS_BY_COMMIT = `SELECT commit_id, record_id, previous_revision, next_json
-  FROM runtime_mutation_manifests WHERE commit_id IN (SELECT value FROM json_each(?))`
-const SIDES_BY_COMMIT = `SELECT commit_id, entry_json
-  FROM runtime_side_entries WHERE commit_id IN (SELECT value FROM json_each(?))`
-const HEADS_BY_COMMIT = `SELECT h.record_id, h.min_reader, h.record_revision, h.last_commit_id, h.body_digest,
-       (v.record_id IS NOT NULL) AS has_version,
-       (v.record_id IS NOT NULL
-         AND h.schema_json = v.schema_json
-         AND h.owner_json = v.owner_json
-         AND h.value_json = v.value_json
-         AND h.body_digest = v.digest) AS same_text,
-       CASE WHEN h.record_id = ? THEN h.value_json END AS identity_json
-  FROM runtime_records h
-  LEFT JOIN runtime_record_versions v
-    ON v.record_id = h.record_id
-   AND v.commit_id = h.last_commit_id
-   AND v.record_revision = h.record_revision
- WHERE h.last_commit_id IN (SELECT value FROM json_each(?))`
-const HEAD_BY_ID = `SELECT record_id, schema_json, min_reader, record_revision, last_commit_id, owner_json, value_json, body_digest
-  FROM runtime_records WHERE record_id = ?`
+const HEAD_BY_ID = `SELECT h.record_id, h.schema_json, h.min_reader, h.record_revision, h.last_commit_id,
+       h.owner_json, b.value_json, h.body_digest
+  FROM runtime_record_heads h
+  JOIN runtime_version_bodies b
+    ON b.record_id = h.record_id AND b.record_revision = h.record_revision
+ WHERE h.record_id = ?`
+const HEADS_BY_COMMIT = `SELECT record_id, schema_json, min_reader, record_revision, last_commit_id, owner_json, body_digest
+  FROM runtime_record_heads WHERE last_commit_id IN (SELECT value FROM json_each(?))`
+const PROOFS_BY_COMMIT = `SELECT commit_id, ledger_seq, manifests_json, sides_json, versions_json
+  FROM runtime_commit_proofs WHERE commit_id IN (SELECT value FROM json_each(?))`
 
 const RUNTIME_DDL = [
-  `CREATE TABLE IF NOT EXISTS runtime_records (
+  `CREATE TABLE IF NOT EXISTS runtime_record_heads (
      record_id TEXT PRIMARY KEY,
      schema_json TEXT NOT NULL,
      min_reader INTEGER NOT NULL,
@@ -146,60 +148,53 @@ const RUNTIME_DDL = [
      created_at TEXT NOT NULL,
      updated_at TEXT NOT NULL,
      owner_json TEXT NOT NULL,
-     value_json TEXT NOT NULL,
-     body_digest TEXT NOT NULL)`,
-  `CREATE INDEX IF NOT EXISTS runtime_records_commit ON runtime_records (last_commit_id)`,
-  `CREATE TABLE IF NOT EXISTS runtime_record_versions (
+     body_digest TEXT NOT NULL
+   ) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS runtime_version_bodies (
      record_id TEXT NOT NULL,
      record_revision INTEGER NOT NULL,
-     schema_json TEXT NOT NULL,
-     commit_id TEXT NOT NULL,
-     digest TEXT NOT NULL,
-     owner_json TEXT NOT NULL,
      value_json TEXT NOT NULL,
-     PRIMARY KEY (record_id, record_revision))`,
-  `CREATE INDEX IF NOT EXISTS runtime_record_versions_commit ON runtime_record_versions (commit_id)`,
-  `CREATE TABLE IF NOT EXISTS runtime_mutation_manifests (
-     commit_id TEXT NOT NULL,
-     record_id TEXT NOT NULL,
-     previous_revision INTEGER,
-     next_json TEXT,
-     PRIMARY KEY (commit_id, record_id))`,
-  `CREATE INDEX IF NOT EXISTS runtime_mutation_manifests_commit ON runtime_mutation_manifests (commit_id)`,
-  `CREATE TABLE IF NOT EXISTS runtime_side_entries (
-     commit_id TEXT NOT NULL,
-     kind TEXT NOT NULL,
-     identity TEXT NOT NULL,
-     entry_json TEXT NOT NULL,
-     PRIMARY KEY (commit_id, kind, identity))`,
-  `CREATE INDEX IF NOT EXISTS runtime_side_entries_commit ON runtime_side_entries (commit_id)`,
+     PRIMARY KEY (record_id, record_revision)
+   ) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS runtime_commit_proofs (
+     commit_id TEXT PRIMARY KEY,
+     ledger_seq INTEGER NOT NULL,
+     manifests_json TEXT NOT NULL,
+     sides_json TEXT NOT NULL,
+     versions_json TEXT NOT NULL
+   ) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS runtime_admissions (
      ticket_id TEXT PRIMARY KEY,
      fingerprint TEXT NOT NULL,
      run_id TEXT NOT NULL,
-     probe_json TEXT NOT NULL)`,
+     probe_json TEXT NOT NULL
+   ) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS runtime_request_results (
      method TEXT NOT NULL,
      request_id TEXT NOT NULL,
      fingerprint TEXT NOT NULL,
      result_json TEXT NOT NULL,
-     PRIMARY KEY (method, request_id))`,
+     PRIMARY KEY (method, request_id)
+   ) WITHOUT ROWID`,
   // Rebuilt from signal and invocation records when a session is opened. Outside the ledger digest.
   `CREATE TABLE IF NOT EXISTS runtime_signal_seq (
      run_id TEXT NOT NULL,
      target_key TEXT NOT NULL,
      next_seq INTEGER NOT NULL,
-     PRIMARY KEY (run_id, target_key))`,
+     PRIMARY KEY (run_id, target_key)
+   ) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS runtime_active_invocation (
      run_id TEXT PRIMARY KEY,
-     invocation_id TEXT NOT NULL)`,
+     invocation_id TEXT NOT NULL
+   ) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS runtime_leases (
      scope_id TEXT PRIMARY KEY,
      writer_id TEXT,
      writer_epoch INTEGER,
      lease_until INTEGER,
      authority_epoch INTEGER NOT NULL,
-     last_writer_epoch INTEGER NOT NULL)`,
+     last_writer_epoch INTEGER NOT NULL
+   ) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS runtime_session_meta (
      session_id TEXT PRIMARY KEY,
      workspace_id TEXT NOT NULL,
@@ -207,10 +202,9 @@ const RUNTIME_DDL = [
      min_reader INTEGER NOT NULL,
      authority_json TEXT NOT NULL,
      parent_json TEXT NOT NULL,
-     latest_commit_id TEXT)`,
-  `CREATE TABLE IF NOT EXISTS runtime_dispatch_domains (
-     session_id TEXT PRIMARY KEY,
-     domain_json TEXT NOT NULL)`,
+     latest_commit_id TEXT,
+     dispatch_domain_json TEXT
+   ) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS runtime_outbox_delivery (
      event_id TEXT PRIMARY KEY,
      session_id TEXT NOT NULL,
@@ -225,9 +219,216 @@ const RUNTIME_DDL = [
      delivery TEXT NOT NULL,
      ack_ref TEXT,
      error_json TEXT,
-     last_owner TEXT)`,
+     last_owner TEXT
+   ) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS runtime_outbox_delivery_due
      ON runtime_outbox_delivery (destination, delivery, next_attempt_at)`,
+  `CREATE TABLE IF NOT EXISTS runtime_aux_commits (
+     token TEXT PRIMARY KEY
+   ) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS runtime_commit_fingerprints (
+     commit_id TEXT PRIMARY KEY,
+     fingerprints_json TEXT NOT NULL
+   ) WITHOUT ROWID`,
+  `CREATE VIEW IF NOT EXISTS runtime_records AS
+   SELECT h.record_id, h.schema_json, h.min_reader, h.record_revision, h.last_commit_id,
+          h.created_at, h.updated_at, h.owner_json, b.value_json, h.body_digest
+     FROM runtime_record_heads h
+     JOIN runtime_version_bodies b
+       ON b.record_id = h.record_id AND b.record_revision = h.record_revision`,
+  `CREATE VIEW IF NOT EXISTS runtime_record_versions AS
+   SELECT json_extract(v.value, '$.recordId') AS record_id,
+          json_extract(v.value, '$.recordRevision') AS record_revision,
+          json_extract(v.value, '$.schemaJson') AS schema_json,
+          p.commit_id AS commit_id,
+          json_extract(v.value, '$.digest') AS digest,
+          json_extract(v.value, '$.ownerJson') AS owner_json,
+          b.value_json AS value_json
+     FROM runtime_commit_proofs p, json_each(p.versions_json) v
+     LEFT JOIN runtime_version_bodies b
+       ON b.record_id = json_extract(v.value, '$.recordId')
+      AND b.record_revision = json_extract(v.value, '$.recordRevision')`,
+  `CREATE VIEW IF NOT EXISTS runtime_mutation_manifests AS
+   SELECT p.commit_id AS commit_id,
+          json_extract(m.value, '$.recordId') AS record_id,
+          json_extract(m.value, '$.previousRevision') AS previous_revision,
+          json_extract(m.value, '$.nextJson') AS next_json
+     FROM runtime_commit_proofs p, json_each(p.manifests_json) m`,
+  `CREATE VIEW IF NOT EXISTS runtime_side_entries AS
+   SELECT p.commit_id AS commit_id,
+          json_extract(s.value, '$.kind') AS kind,
+          json_extract(s.value, '$.identity') AS identity,
+          json_extract(s.value, '$.entryJson') AS entry_json
+     FROM runtime_commit_proofs p, json_each(p.sides_json) s`,
+  `CREATE VIEW IF NOT EXISTS runtime_dispatch_domains AS
+   SELECT session_id, dispatch_domain_json AS domain_json
+     FROM runtime_session_meta
+    WHERE dispatch_domain_json IS NOT NULL`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_records_insert
+   INSTEAD OF INSERT ON runtime_records
+   BEGIN
+     INSERT INTO runtime_record_heads (
+       record_id, schema_json, min_reader, record_revision, last_commit_id, created_at, updated_at,
+       owner_json, body_digest
+     ) VALUES (
+       NEW.record_id, NEW.schema_json, NEW.min_reader, NEW.record_revision, NEW.last_commit_id,
+       NEW.created_at, NEW.updated_at, NEW.owner_json, NEW.body_digest
+     );
+     INSERT INTO runtime_version_bodies (record_id, record_revision, value_json)
+     VALUES (NEW.record_id, NEW.record_revision, NEW.value_json)
+     ON CONFLICT(record_id, record_revision) DO UPDATE SET value_json = excluded.value_json;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_records_update
+   INSTEAD OF UPDATE ON runtime_records
+   BEGIN
+     UPDATE runtime_record_heads
+        SET schema_json = NEW.schema_json,
+            min_reader = NEW.min_reader,
+            record_revision = NEW.record_revision,
+            last_commit_id = NEW.last_commit_id,
+            created_at = NEW.created_at,
+            updated_at = NEW.updated_at,
+            owner_json = NEW.owner_json,
+            body_digest = NEW.body_digest
+      WHERE record_id = OLD.record_id;
+     UPDATE runtime_version_bodies
+        SET value_json = NEW.value_json
+      WHERE record_id = OLD.record_id AND record_revision = OLD.record_revision;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_records_delete
+   INSTEAD OF DELETE ON runtime_records
+   BEGIN
+     DELETE FROM runtime_record_heads WHERE record_id = OLD.record_id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_record_versions_insert
+   INSTEAD OF INSERT ON runtime_record_versions
+   BEGIN
+     INSERT INTO runtime_version_bodies (record_id, record_revision, value_json)
+     VALUES (NEW.record_id, NEW.record_revision, NEW.value_json)
+     ON CONFLICT(record_id, record_revision) DO UPDATE SET value_json = excluded.value_json;
+     UPDATE runtime_commit_proofs
+        SET versions_json = json_insert(
+          versions_json,
+          '$[#]',
+          json_object(
+            'digest', NEW.digest,
+            'hasBody', json('true'),
+            'ownerJson', NEW.owner_json,
+            'recordId', NEW.record_id,
+            'recordRevision', NEW.record_revision,
+            'schemaJson', NEW.schema_json
+          )
+        )
+      WHERE commit_id = NEW.commit_id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_record_versions_update
+   INSTEAD OF UPDATE ON runtime_record_versions
+   BEGIN
+     UPDATE runtime_version_bodies
+        SET value_json = NEW.value_json
+      WHERE record_id = OLD.record_id AND record_revision = OLD.record_revision;
+     UPDATE runtime_commit_proofs
+        SET versions_json = json_replace(
+          versions_json,
+          '$[' || (
+            SELECT v.key FROM json_each(runtime_commit_proofs.versions_json) v
+            WHERE json_extract(v.value, '$.recordId') = OLD.record_id
+              AND json_extract(v.value, '$.recordRevision') = OLD.record_revision
+          ) || ']',
+          json_object(
+            'digest', NEW.digest,
+            'hasBody', json('true'),
+            'ownerJson', NEW.owner_json,
+            'recordId', NEW.record_id,
+            'recordRevision', NEW.record_revision,
+            'schemaJson', NEW.schema_json
+          )
+        )
+      WHERE commit_id = OLD.commit_id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_record_versions_delete
+   INSTEAD OF DELETE ON runtime_record_versions
+   BEGIN
+     UPDATE runtime_commit_proofs
+        SET versions_json = COALESCE((
+          SELECT json_group_array(json(v.value))
+            FROM json_each(runtime_commit_proofs.versions_json) v
+           WHERE json_extract(v.value, '$.recordId') <> OLD.record_id
+              OR json_extract(v.value, '$.recordRevision') <> OLD.record_revision
+        ), '[]')
+      WHERE commit_id = OLD.commit_id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_mutation_manifests_insert
+   INSTEAD OF INSERT ON runtime_mutation_manifests
+   BEGIN
+     UPDATE runtime_commit_proofs
+        SET manifests_json = json_insert(
+          manifests_json,
+          '$[#]',
+          json_object(
+            'nextJson', NEW.next_json,
+            'previousRevision', NEW.previous_revision,
+            'recordId', NEW.record_id
+          )
+        )
+      WHERE commit_id = NEW.commit_id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_mutation_manifests_update
+   INSTEAD OF UPDATE ON runtime_mutation_manifests
+   BEGIN
+     UPDATE runtime_commit_proofs
+        SET manifests_json = json_replace(
+          manifests_json,
+          '$[' || (
+            SELECT m.key FROM json_each(runtime_commit_proofs.manifests_json) m
+            WHERE json_extract(m.value, '$.recordId') = OLD.record_id
+          ) || ']',
+          json_object(
+            'nextJson', NEW.next_json,
+            'previousRevision', NEW.previous_revision,
+            'recordId', NEW.record_id
+          )
+        )
+      WHERE commit_id = OLD.commit_id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_mutation_manifests_delete
+   INSTEAD OF DELETE ON runtime_mutation_manifests
+   BEGIN
+     UPDATE runtime_commit_proofs
+        SET manifests_json = COALESCE((
+          SELECT json_group_array(json(m.value))
+            FROM json_each(runtime_commit_proofs.manifests_json) m
+           WHERE json_extract(m.value, '$.recordId') <> OLD.record_id
+        ), '[]')
+      WHERE commit_id = OLD.commit_id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_side_entries_insert
+   INSTEAD OF INSERT ON runtime_side_entries
+   BEGIN
+     UPDATE runtime_commit_proofs
+        SET sides_json = json_insert(
+          sides_json,
+          '$[#]',
+          json_object(
+            'entryJson', NEW.entry_json,
+            'identity', NEW.identity,
+            'kind', NEW.kind
+          )
+        )
+      WHERE commit_id = NEW.commit_id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS runtime_side_entries_delete
+   INSTEAD OF DELETE ON runtime_side_entries
+   BEGIN
+     UPDATE runtime_commit_proofs
+        SET sides_json = COALESCE((
+          SELECT json_group_array(json(s.value))
+            FROM json_each(runtime_commit_proofs.sides_json) s
+           WHERE json_extract(s.value, '$.kind') <> OLD.kind
+              OR json_extract(s.value, '$.identity') <> OLD.identity
+        ), '[]')
+      WHERE commit_id = OLD.commit_id;
+   END`,
 ]
 
 export type { StateFailure } from './refusal.js'
@@ -420,6 +621,74 @@ export type RuntimeStateDatabaseOptions = {
   onCommit?: (commit: CommitNotice) => void
 }
 
+function parseProfiled(text: string): unknown {
+  if (!profiling) return JSON.parse(text) as unknown
+  const started = performance.now()
+  const value = JSON.parse(text) as unknown
+  noteJsonParse(performance.now() - started, text.length)
+  return value
+}
+
+function stringifyProfiled(value: unknown): string {
+  if (!profiling) return JSON.stringify(value)
+  const started = performance.now()
+  const text = JSON.stringify(value)
+  noteJsonStringify(performance.now() - started, text.length)
+  return text
+}
+
+type StagedChange = {
+  previousRevision: number | null
+  created: boolean
+  final: StoredRecord
+  encoded: EncodedStoredRecord
+}
+
+type PackedManifest = { recordId: string; previousRevision: number | null; nextJson: string | null }
+
+type PackedVersion = {
+  recordId: string
+  recordRevision: number
+  schemaJson: string
+  digest: string
+  ownerJson: string
+  hasBody: boolean
+}
+
+type PackedSide = { kind: string; identity: string; entryJson: string }
+
+type ProofDraft = { manifests: PackedManifest[]; sides: PackedSide[]; versions: PackedVersion[] }
+
+type ProofRow = {
+  commit_id: string
+  ledger_seq: number
+  manifests_json: string
+  sides_json: string
+  versions_json: string
+}
+
+type PendingRequest = { method: string; requestId: string; fingerprint: string; result: unknown }
+
+type CommitStaging = {
+  commitId: string
+  changes: Map<string, StagedChange>
+  shadow: Map<string, StoredHead>
+  sides: CommitSideEntry[]
+  sideKeys: Set<string>
+  memberFingerprints: string[]
+  receipts: StateCommitReceipt[]
+  pending: PendingRequest[]
+  actionIds: { key: string; actionId: string }[]
+  actionKeys: Set<string>
+  eventActionIds: Set<string>
+  sessionId: string
+  verified: VerifiedSession | null
+  at: string
+  writerEpoch: number
+  runId: string
+  runRevision: number
+}
+
 export class RuntimeStateDatabase {
   private readonly db: DatabaseSync
   private readonly statements = new Map<string, StatementSync>()
@@ -431,6 +700,10 @@ export class RuntimeStateDatabase {
   private readonly verifiedHeads = new Map<string, VerifiedSession>()
   private readonly queryMeters = new Map<string, QueryMeter>()
   private pendingWrite = false
+  private wroteCommit = false
+  private notedAux = false
+  private staging: CommitStaging | null = null
+  private draft: ProofDraft | null = null
   private closed = false
 
   constructor(options: RuntimeStateDatabaseOptions) {
@@ -554,7 +827,7 @@ export class RuntimeStateDatabase {
         }
         if (
           this.get(
-            'SELECT record_id FROM runtime_records WHERE record_id = ?',
+            'SELECT record_id FROM runtime_record_heads WHERE record_id = ?',
             runRecordId(input.admission.runId),
           )
         )
@@ -570,7 +843,11 @@ export class RuntimeStateDatabase {
         const at = input.admission.admittedAt
         const owner = this.owner(input.admission.bindingId, input.scope)
         const records = this.createRunRecords(input, owner, existing === undefined)
-        const manifests = records.map((record) => createManifest(commitId, record))
+        const prepared = records.map((record) => {
+          const encoded = encodeStoredRecord(record)
+          return { record, encoded, manifest: createManifest(commitId, record, null, encoded.digest) }
+        })
+        const manifests = prepared.map((item) => item.manifest)
         const sides: CommitSideEntry[] = []
         const data: RuntimeCommitData = {
           commitId,
@@ -599,7 +876,14 @@ export class RuntimeStateDatabase {
         this.pendingWrite = true
         this.appendEvent(input.admission.sessionId, commit, protectedCommit.integrity)
         if (firstSeq === 0) firstSeq = commit.seq
-        for (const record of records) this.insertRecord(record, commitId, at)
+        this.draft = { manifests: [], sides: [], versions: [] }
+        try {
+          for (const item of prepared)
+            this.insertRecord(item.record, commitId, at, item.encoded, item.manifest)
+          this.writeProof(commitId, commit.seq)
+        } finally {
+          this.draft = null
+        }
         const parent = JSON.stringify(null)
         if (existing) {
           this.run(
@@ -610,8 +894,9 @@ export class RuntimeStateDatabase {
         } else {
           this.run(
             `INSERT INTO runtime_session_meta (
-             session_id, workspace_id, format_version, min_reader, authority_json, parent_json, latest_commit_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             session_id, workspace_id, format_version, min_reader, authority_json, parent_json,
+             latest_commit_id, dispatch_domain_json
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
             input.admission.sessionId,
             input.admission.workspaceId,
             FORMAT_VERSION,
@@ -738,6 +1023,85 @@ export class RuntimeStateDatabase {
   async failOutbox(request: FailOutboxRequest): Promise<FailOutboxResult> {
     return this.finishControl(
       await this.tx('failOutbox', request.requestId, () => failOutboxTx(this.controlPorts(), request)),
+    )
+  }
+
+  /** Admit, close, and advance of one invocation share one state-commit. */
+  async commitPreparedAdvance(
+    commitId: string,
+    admit: InvocationAdmission,
+    close: CloseInvocationRequest,
+    advance: AdvanceRunRequest,
+  ): Promise<StateCommitReceipt> {
+    return this.finishControl(
+      await this.tx('commitPreparedAdvance', commitId, async () => {
+        this.beginStaging(commitId)
+        try {
+          const admitted = await admitInvocationTx(this.controlPorts(), admit)
+          const closed = await closeInvocationTx(this.controlPorts(), close)
+          const advanced = await advanceRunTx(this.controlPorts(), advance)
+          const flushed = this.flushStaging()
+          const verified = flushed?.verified ?? closed.verified ?? admitted.verified
+          return {
+            result: advanced.result,
+            sessionId: advanced.sessionId,
+            ...(verified ? { verified } : {}),
+          }
+        } finally {
+          this.clearStaging()
+        }
+      }),
+    )
+  }
+
+  /** One model tool batch. A business rejection is committed per admission; a thrown refusal rolls the transaction back. */
+  async commitDispatchBatch(
+    commitId: string,
+    requests: readonly DispatchAdmissionRequest[],
+  ): Promise<DispatchAdmissionResult[]> {
+    const first = requests[0]
+    if (!first) return []
+    return this.finishControl(
+      await this.tx('dispatchAdmission', commitId, async () => {
+        this.beginStaging(commitId)
+        try {
+          const results: DispatchAdmissionResult[] = []
+          let sessionId = first.guard.sessionId
+          let verified: VerifiedSession | undefined
+          for (const request of requests) {
+            const step = await dispatchAdmissionTx(this.controlPorts(), request)
+            results.push(step.result)
+            sessionId = step.sessionId
+            if (step.verified) verified = step.verified
+          }
+          const flushed = this.flushStaging()
+          const verifiedHead = flushed?.verified ?? verified
+          return {
+            result: results,
+            sessionId,
+            ...(verifiedHead ? { verified: verifiedHead } : {}),
+          }
+        } finally {
+          this.clearStaging()
+        }
+      }),
+    )
+  }
+
+  async ackOutboxMany(requests: readonly AckOutboxRequest[]): Promise<AckOutboxResult[]> {
+    const first = requests[0]
+    if (!first) return []
+    return this.finishControl(
+      await this.tx('ackOutbox', first.requestId, async () => {
+        const results: AckOutboxResult[] = []
+        let sessionId = ''
+        for (const request of requests) {
+          const step = await ackOutboxTx(this.controlPorts(), request)
+          results.push(step.result)
+          sessionId = step.sessionId
+        }
+        return { result: results, sessionId }
+      }),
     )
   }
 
@@ -990,6 +1354,7 @@ export class RuntimeStateDatabase {
       if (!heads.seen.has(recordId)) integrity('latest record version has no head')
     }
     if (!heads.sawIdentity) integrity('session identity record is missing')
+    this.assertReferencedBodies()
     finishControlScan(control, {
       sessionId,
       requests: () =>
@@ -999,7 +1364,8 @@ export class RuntimeStateDatabase {
         ),
       domainJson: () =>
         this.get<{ domain_json: string }>(
-          'SELECT domain_json FROM runtime_dispatch_domains WHERE session_id = ?',
+          `SELECT dispatch_domain_json AS domain_json FROM runtime_session_meta
+            WHERE session_id = ? AND dispatch_domain_json IS NOT NULL`,
           sessionId,
         )?.domain_json,
       signalSeqIndex: () =>
@@ -1036,16 +1402,10 @@ export class RuntimeStateDatabase {
   ): void {
     if (commits.length === 0) return
     const idsJson = JSON.stringify(commits.map((commit) => commit.data.commitId))
-    const manifests = this.all<ManifestRow>(MANIFESTS_BY_COMMIT, idsJson).map((row) =>
-      this.decodeManifest(row),
-    )
-    const sides = this.all<SideRow>(SIDES_BY_COMMIT, idsJson).map((row) => {
-      const entry = this.parseJson<unknown>(row.entry_json, 'commit side entry cannot be decoded')
-      if (!isSideEntry(entry) || entry.commitId !== row.commit_id)
-        integrity('commit side entry does not match its row')
-      return entry
-    })
-    const versions = this.all<VersionRow>(VERSIONS_BY_COMMIT, idsJson)
+    const expanded = this.expandCommitProofs(commits)
+    const manifests = expanded.manifests
+    const sides = expanded.sides
+    const versions = expanded.versions
     const manifestsByCommit = new Map<string, CommitMutationManifest[]>()
     for (const manifest of manifests) {
       const list = manifestsByCommit.get(manifest.commitId) ?? []
@@ -1189,8 +1549,31 @@ export class RuntimeStateDatabase {
     scan: HeadScan,
   ): void {
     const identityId = sessionIdentityRecordId(scan.sessionId)
-    for (const head of this.all<HeadSummary>(HEADS_BY_COMMIT, identityId, idsJson))
-      this.verifyHeadSummary(head, versionsByKey, live, scan, identityId)
+    const heads = this.all<HeadRow>(HEADS_BY_COMMIT, idsJson)
+    const bodies = this.bodyMap(heads.map((head) => head.record_id))
+    for (const head of heads) {
+      const version = versionsByKey.get(
+        this.versionKey(head.record_id, head.record_revision, head.last_commit_id),
+      )
+      const body = bodies.get(`${head.record_id}\0${head.record_revision}`)
+      const summary: HeadSummary = {
+        record_id: head.record_id,
+        min_reader: head.min_reader,
+        record_revision: head.record_revision,
+        last_commit_id: head.last_commit_id,
+        body_digest: head.body_digest,
+        has_version: version !== undefined,
+        same_text:
+          version !== undefined &&
+          body !== undefined &&
+          head.schema_json === version.schema_json &&
+          head.owner_json === version.owner_json &&
+          head.body_digest === version.digest &&
+          body === version.value_json,
+        identity_json: head.record_id === identityId ? (body ?? null) : null,
+      }
+      this.verifyHeadSummary(summary, versionsByKey, live, scan, identityId)
+    }
   }
 
   private verifyHeadSummary(
@@ -1322,11 +1705,7 @@ export class RuntimeStateDatabase {
     verified: VerifiedSession,
     sessionId: string,
   ): AdmissionProbe {
-    const versions = this.all<VersionRow>(
-      `SELECT record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
-       FROM runtime_record_versions WHERE record_id = ? ORDER BY record_revision`,
-      runRecordId(row.run_id),
-    )
+    const versions = this.versionRowsForRecord(runRecordId(row.run_id))
     const runs = new Map<string, RunEvidence>()
     for (const version of versions) {
       const stored = this.all<EventRow>(
@@ -1439,12 +1818,20 @@ export class RuntimeStateDatabase {
   }
 
   private rememberRequest(method: string, requestId: string, fingerprint: string, result: unknown): void {
+    if (this.staging) {
+      this.staging.pending.push({ method, requestId, fingerprint, result })
+      return
+    }
+    this.insertRequest(method, requestId, fingerprint, result)
+  }
+
+  private insertRequest(method: string, requestId: string, fingerprint: string, result: unknown): void {
     this.run(
       'INSERT INTO runtime_request_results (method, request_id, fingerprint, result_json) VALUES (?, ?, ?, ?)',
       method,
       requestId,
       fingerprint,
-      JSON.stringify(result),
+      stringifyProfiled(result),
     )
   }
 
@@ -1504,8 +1891,8 @@ export class RuntimeStateDatabase {
     let actor: LedgerEvent['actor']
     let data: unknown
     try {
-      actor = JSON.parse(row.actor) as LedgerEvent['actor']
-      data = JSON.parse(row.data) as unknown
+      actor = parseProfiled(row.actor) as LedgerEvent['actor']
+      data = parseProfiled(row.data) as unknown
     } catch {
       integrity('stored event cannot be decoded')
     }
@@ -1667,48 +2054,30 @@ export class RuntimeStateDatabase {
     )
   }
 
-  private insertRecord(record: StoredRecord, commitId: string, at: string): void {
-    const digest = bodyDigest(record.owner, record.value)
-    const manifest = createManifest(commitId, record)
-    const schemaJson = canonicalJson(record.schema)
-    const ownerJson = canonicalJson(record.owner)
-    const valueJson = canonicalJson(record.value)
+  private insertRecord(
+    record: StoredRecord,
+    commitId: string,
+    at: string,
+    encoded: EncodedStoredRecord,
+    manifest: CommitMutationManifest,
+  ): void {
     this.run(
-      `INSERT INTO runtime_records (
+      `INSERT INTO runtime_record_heads (
          record_id, schema_json, min_reader, record_revision, last_commit_id, created_at, updated_at,
-         owner_json, value_json, body_digest
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         owner_json, body_digest
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.recordId,
-      schemaJson,
+      encoded.schemaJson,
       record.minReader,
       record.recordRevision,
       commitId,
       at,
       at,
-      ownerJson,
-      valueJson,
-      digest,
+      encoded.ownerJson,
+      encoded.digest,
     )
-    this.run(
-      `INSERT INTO runtime_record_versions (
-         record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      record.recordId,
-      record.recordRevision,
-      schemaJson,
-      commitId,
-      digest,
-      ownerJson,
-      valueJson,
-    )
-    this.run(
-      `INSERT INTO runtime_mutation_manifests (commit_id, record_id, previous_revision, next_json)
-       VALUES (?, ?, ?, ?)`,
-      manifest.commitId,
-      manifest.recordId,
-      manifest.previousRevision,
-      manifest.next === null ? null : canonicalJson(manifest.next),
-    )
+    this.insertBody(record.recordId, record.recordRevision, encoded.valueJson)
+    this.noteDraft(record, encoded, manifest)
   }
 
   private appendEvent(
@@ -1730,10 +2099,10 @@ export class RuntimeStateDatabase {
       event.type,
       Buffer.from(event.lane, 'utf8'),
       event.v,
-      JSON.stringify(event.actor),
+      stringifyProfiled(event.actor),
       event.origin,
       event.trust,
-      JSON.stringify(event.data),
+      stringifyProfiled(event.data),
       integrityMetadata.mode,
       integrityMetadata.previousDigest,
       integrityMetadata.digest,
@@ -1746,14 +2115,30 @@ export class RuntimeStateDatabase {
 
   private async tx<T>(method: string, requestId: string, body: () => T | Promise<T>): Promise<T> {
     this.pendingWrite = false
-    this.db.exec('BEGIN IMMEDIATE')
+    this.wroteCommit = false
+    this.notedAux = false
+    this.execBoundary('BEGIN IMMEDIATE', 'begin')
+    const profiled = profiling
+    let inPhase = false
+    if (profiled) {
+      enterPhase('inTx')
+      inPhase = true
+    }
     try {
       const value = await body()
+      if (inPhase) {
+        leavePhase()
+        inPhase = false
+      }
       this.beforeCommit?.()
-      this.db.exec('COMMIT')
+      if (this.notedAux && !this.wroteCommit) {
+        this.run('INSERT INTO runtime_aux_commits (token) VALUES (?)', this.ids.ulid())
+      }
+      this.execBoundary('COMMIT', 'commit')
       this.onCommit?.({ method, requestId, wrote: this.pendingWrite })
       return value
     } catch (error) {
+      if (inPhase) leavePhase()
       try {
         this.db.exec('ROLLBACK')
       } catch {
@@ -1763,9 +2148,24 @@ export class RuntimeStateDatabase {
     }
   }
 
+  private execBoundary(sql: string, kind: 'begin' | 'commit'): void {
+    if (!profiling) {
+      this.db.exec(sql)
+      return
+    }
+    enterPhase(kind)
+    const started = performance.now()
+    try {
+      this.db.exec(sql)
+      noteBoundary(kind, performance.now() - started)
+    } finally {
+      leavePhase()
+    }
+  }
+
   private parseJson<T>(text: string, message: string): T {
     try {
-      return JSON.parse(text) as T
+      return parseProfiled(text) as T
     } catch {
       integrity(message)
     }
@@ -1780,7 +2180,12 @@ export class RuntimeStateDatabase {
   }
 
   private get<T>(sql: string, ...args: SQLInputValue[]): T | undefined {
-    return this.statement(sql).get(...args) as T | undefined
+    const statement = this.statement(sql)
+    if (!profiling) return statement.get(...args) as T | undefined
+    const started = performance.now()
+    const row = statement.get(...args) as T | undefined
+    noteSql('read', performance.now() - started, sql)
+    return row
   }
 
   private one<T>(sql: string, ...args: SQLInputValue[]): T {
@@ -1790,11 +2195,21 @@ export class RuntimeStateDatabase {
   }
 
   private all<T>(sql: string, ...args: SQLInputValue[]): T[] {
-    return this.statement(sql).all(...args) as T[]
+    const statement = this.statement(sql)
+    if (!profiling) return statement.all(...args) as T[]
+    const started = performance.now()
+    const rows = statement.all(...args) as T[]
+    noteSql('read', performance.now() - started, sql)
+    return rows
   }
 
-  private run(sql: string, ...args: SQLInputValue[]): void {
-    this.statement(sql).run(...args)
+  private run(sql: string, ...args: SQLInputValue[]): ReturnType<StatementSync['run']> {
+    const statement = this.statement(sql)
+    if (!profiling) return statement.run(...args)
+    const started = performance.now()
+    const result = statement.run(...args)
+    noteSql('write', performance.now() - started, sql)
+    return result
   }
 
   private controlPorts(): ControlPorts {
@@ -1809,12 +2224,14 @@ export class RuntimeStateDatabase {
       replayRequest: (method, requestId, fingerprint) => this.replayRequest(method, requestId, fingerprint),
       rememberRequest: (method, requestId, fingerprint, result) =>
         this.rememberRequest(method, requestId, fingerprint, result),
-      loadHead: (recordId) => this.get(HEAD_BY_ID, recordId),
+      loadHead: (recordId) => this.staging?.shadow.get(recordId) ?? this.get(HEAD_BY_ID, recordId),
       writeCommit: (input) => this.writeCommit(input),
       assertReceipt: (sessionId, receipt, fingerprint) => this.assertReceipt(sessionId, receipt, fingerprint),
       noteWrite: () => {
         this.pendingWrite = true
+        this.notedAux = true
       },
+      attestedCommitId: this.staging?.commitId ?? null,
       openQueryMeter: (grantId, capacity) => this.openQueryMeter(grantId, capacity),
       queryMeter: (grantId) => this.queryMeter(grantId),
       lookupQueryTicket: (grantId, requestId) => this.lookupQueryTicket(grantId, requestId),
@@ -1847,7 +2264,11 @@ export class RuntimeStateDatabase {
 
   private verifyOutboxDelivery(sessionId: string): void {
     const records = this.all<{ record_id: string; value_json: string }>(
-      `SELECT record_id, value_json FROM runtime_records WHERE record_id LIKE 'outbox:%'`,
+      `SELECT h.record_id, b.value_json
+         FROM runtime_record_heads h
+         JOIN runtime_version_bodies b
+           ON b.record_id = h.record_id AND b.record_revision = h.record_revision
+        WHERE h.record_id LIKE 'outbox:%'`,
     )
     const rows = this.all<{
       event_id: string
@@ -1887,13 +2308,198 @@ export class RuntimeStateDatabase {
   }
 
   private writeCommit(input: WriteCommitInput): { receipt: StateCommitReceipt; verified: VerifiedSession } {
+    if (this.staging) return this.stageCommit(input)
+    return this.timedCommit(() => this.commitStaged(input))
+  }
+
+  private timedCommit<T>(body: () => T): T {
+    const profiled = profiling
+    if (profiled) enterPhase('writeCommit')
+    try {
+      return body()
+    } finally {
+      if (profiled) leavePhase()
+    }
+  }
+
+  private beginStaging(commitId: string): void {
+    if (this.staging) integrity('a control batch is already open')
+    this.staging = {
+      commitId,
+      changes: new Map(),
+      shadow: new Map(),
+      sides: [],
+      sideKeys: new Set(),
+      memberFingerprints: [],
+      receipts: [],
+      pending: [],
+      actionIds: [],
+      actionKeys: new Set(),
+      eventActionIds: new Set(),
+      sessionId: '',
+      verified: null,
+      at: '',
+      writerEpoch: 0,
+      runId: '',
+      runRevision: 0,
+    }
+  }
+
+  private clearStaging(): void {
+    this.staging = null
+  }
+
+  private stageCommit(input: WriteCommitInput): { receipt: StateCommitReceipt; verified: VerifiedSession } {
+    const staging = this.staging
+    if (!staging) integrity('a control batch is not open')
+    if (!staging.verified) {
+      staging.verified = input.verified
+      staging.sessionId = input.sessionId
+    }
+    staging.at = input.at
+    staging.writerEpoch = input.writerEpoch
+    staging.runId = input.runId
+    staging.runRevision = input.runRevision
+    staging.memberFingerprints.push(input.fingerprint)
+    if (input.actionId) staging.eventActionIds.add(input.actionId)
+    for (const item of input.actionIds) {
+      if (staging.actionKeys.has(item.actionId)) continue
+      staging.actionKeys.add(item.actionId)
+      staging.actionIds.push(item)
+    }
+    for (const record of input.creates) this.stageRecord(record, null, true)
+    for (const update of input.updates) this.stageRecord(update.record, update.previousRevision, false)
+    for (const side of input.sides) {
+      const rewritten = { ...side, commitId: staging.commitId }
+      const identity = `${rewritten.kind}\0${sideEntryIdentity(rewritten)}`
+      if (staging.sideKeys.has(identity)) integrity('duplicate side entry in one commit')
+      staging.sideKeys.add(identity)
+      staging.sides.push(rewritten)
+    }
+    const receipt: StateCommitReceipt = {
+      commitId: staging.commitId,
+      transactionFingerprint: input.fingerprint,
+      sessionId: input.sessionId,
+      firstSeq: 0,
+      lastSeq: 0,
+      headDigest: '',
+      runRevision: input.runRevision,
+      actionIds: input.actionIds,
+    }
+    staging.receipts.push(receipt)
+    return { receipt, verified: input.verified }
+  }
+
+  private stageRecord(record: StoredRecord, previousRevision: number | null, created: boolean): void {
+    const staging = this.staging
+    if (!staging) integrity('a control batch is not open')
+    const existing = staging.changes.get(record.recordId)
+    if (created && existing) integrity('record was created twice in one commit')
+    const collapsedRevision = existing
+      ? existing.created
+        ? 1
+        : (existing.previousRevision ?? 0) + 1
+      : record.recordRevision
+    const final = { ...record, recordRevision: collapsedRevision }
+    const encoded = encodeStoredRecord(record)
+    if (existing) {
+      existing.final = final
+      existing.encoded = encoded
+    } else {
+      staging.changes.set(record.recordId, {
+        previousRevision: created ? null : previousRevision,
+        created,
+        final,
+        encoded,
+      })
+    }
+    staging.shadow.set(record.recordId, {
+      record_id: record.recordId,
+      schema_json: encoded.schemaJson,
+      min_reader: record.minReader,
+      record_revision: record.recordRevision,
+      last_commit_id: staging.commitId,
+      owner_json: encoded.ownerJson,
+      value_json: encoded.valueJson,
+      body_digest: encoded.digest,
+    })
+  }
+
+  private flushStaging(): { receipt: StateCommitReceipt; verified: VerifiedSession } | undefined {
+    const staging = this.staging
+    if (!staging || staging.memberFingerprints.length === 0 || !staging.verified) return undefined
+    const members = staging.memberFingerprints
+    const fingerprint = members.length === 1 ? (members[0] ?? '') : digestOf(members)
+    const actionId = staging.eventActionIds.size === 1 ? ([...staging.eventActionIds][0] ?? null) : null
+    const creates: StoredRecord[] = []
+    const updates: { record: StoredRecord; previousRevision: number }[] = []
+    const prepared = new Map<string, EncodedStoredRecord>()
+    for (const change of staging.changes.values()) {
+      prepared.set(change.final.recordId, change.encoded)
+      if (change.created || change.previousRevision === null) creates.push(change.final)
+      else updates.push({ record: change.final, previousRevision: change.previousRevision })
+    }
+    const input: WriteCommitInput = {
+      sessionId: staging.sessionId,
+      verified: staging.verified,
+      commitId: staging.commitId,
+      at: staging.at,
+      fingerprint,
+      runId: staging.runId,
+      actionId,
+      writerEpoch: staging.writerEpoch,
+      runRevision: staging.runRevision,
+      actionIds: staging.actionIds,
+      creates,
+      updates,
+      sides: staging.sides,
+    }
+    const written = this.timedCommit(() => {
+      if (members.length > 1) {
+        this.run(
+          'INSERT INTO runtime_commit_fingerprints (commit_id, fingerprints_json) VALUES (?, ?)',
+          staging.commitId,
+          canonicalJson(members),
+        )
+      }
+      return this.commitStaged(input, prepared)
+    })
+    for (const receipt of staging.receipts) {
+      receipt.commitId = written.receipt.commitId
+      receipt.transactionFingerprint = written.receipt.transactionFingerprint
+      receipt.sessionId = written.receipt.sessionId
+      receipt.firstSeq = written.receipt.firstSeq
+      receipt.lastSeq = written.receipt.lastSeq
+      receipt.headDigest = written.receipt.headDigest
+      receipt.runRevision = written.receipt.runRevision
+      receipt.actionIds = written.receipt.actionIds
+    }
+    for (const pending of staging.pending) {
+      this.insertRequest(pending.method, pending.requestId, pending.fingerprint, pending.result)
+    }
+    return written
+  }
+
+  private commitStaged(
+    input: WriteCommitInput,
+    prepared?: ReadonlyMap<string, EncodedStoredRecord>,
+  ): { receipt: StateCommitReceipt; verified: VerifiedSession } {
     this.pendingWrite = true
-    const manifests = [
-      ...input.creates.map((record) => createManifest(input.commitId, record)),
-      ...input.updates.map((update) =>
-        createManifest(input.commitId, update.record, update.previousRevision),
-      ),
-    ]
+    this.wroteCommit = true
+    const creates = input.creates.map((record) => {
+      const encoded = prepared?.get(record.recordId) ?? encodeStoredRecord(record)
+      return { record, encoded, manifest: createManifest(input.commitId, record, null, encoded.digest) }
+    })
+    const updates = input.updates.map((update) => {
+      const encoded = prepared?.get(update.record.recordId) ?? encodeStoredRecord(update.record)
+      return {
+        record: update.record,
+        previousRevision: update.previousRevision,
+        encoded,
+        manifest: createManifest(input.commitId, update.record, update.previousRevision, encoded.digest),
+      }
+    })
+    const manifests = [...creates.map((item) => item.manifest), ...updates.map((item) => item.manifest)]
     const data: RuntimeCommitData = {
       commitId: input.commitId,
       transactionFingerprint: input.fingerprint,
@@ -1910,10 +2516,25 @@ export class RuntimeStateDatabase {
     const commit = this.event(this.ids.ulid(), input.at, STATE_COMMIT_EVENT, data, input.verified.chain)
     const protectedCommit = protectEvent(input.sessionId, commit, input.verified.chain)
     this.appendEvent(input.sessionId, commit, protectedCommit.integrity)
-    for (const record of input.creates) this.insertRecord(record, input.commitId, input.at)
-    for (const update of input.updates)
-      this.updateRecord(update.record, update.previousRevision, input.commitId, input.at)
-    for (const side of input.sides) this.insertSide(side)
+    try {
+      this.draft = { manifests: [], sides: [], versions: [] }
+      for (const item of creates)
+        this.insertRecord(item.record, input.commitId, input.at, item.encoded, item.manifest)
+      for (const item of updates) {
+        this.updateRecord(
+          item.record,
+          item.previousRevision,
+          input.commitId,
+          input.at,
+          item.encoded,
+          item.manifest,
+        )
+      }
+      for (const side of input.sides) this.insertSide(side)
+      this.writeProof(input.commitId, commit.seq)
+    } finally {
+      this.draft = null
+    }
     this.run(
       'UPDATE runtime_session_meta SET latest_commit_id = ? WHERE session_id = ?',
       input.commitId,
@@ -1945,64 +2566,250 @@ export class RuntimeStateDatabase {
     }
   }
 
-  private updateRecord(record: StoredRecord, previousRevision: number, commitId: string, at: string): void {
-    const digest = bodyDigest(record.owner, record.value)
-    const manifest = createManifest(commitId, record, previousRevision)
-    const schemaJson = canonicalJson(record.schema)
-    const ownerJson = canonicalJson(record.owner)
-    const valueJson = canonicalJson(record.value)
-    const updated = this.statement(
-      `UPDATE runtime_records
+  private updateRecord(
+    record: StoredRecord,
+    previousRevision: number,
+    commitId: string,
+    at: string,
+    encoded: EncodedStoredRecord,
+    manifest: CommitMutationManifest,
+  ): void {
+    const updated = this.run(
+      `UPDATE runtime_record_heads
        SET schema_json = ?, record_revision = ?, last_commit_id = ?, updated_at = ?,
-           owner_json = ?, value_json = ?, body_digest = ?
+           owner_json = ?, body_digest = ?
        WHERE record_id = ? AND record_revision = ?`,
-    ).run(
-      schemaJson,
+      encoded.schemaJson,
       record.recordRevision,
       commitId,
       at,
-      ownerJson,
-      valueJson,
-      digest,
+      encoded.ownerJson,
+      encoded.digest,
       record.recordId,
       previousRevision,
     )
     if (Number(updated.changes) !== 1) integrity('record head update missed its row')
+    this.insertBody(record.recordId, record.recordRevision, encoded.valueJson)
+    this.noteDraft(record, encoded, manifest)
+  }
+
+  private insertBody(recordId: string, recordRevision: number, valueJson: string): void {
     this.run(
-      `INSERT INTO runtime_record_versions (
-         record_id, record_revision, schema_json, commit_id, digest, owner_json, value_json
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      record.recordId,
-      record.recordRevision,
-      schemaJson,
-      commitId,
-      digest,
-      ownerJson,
+      `INSERT INTO runtime_version_bodies (record_id, record_revision, value_json) VALUES (?, ?, ?)`,
+      recordId,
+      recordRevision,
       valueJson,
     )
+  }
+
+  private noteDraft(
+    record: StoredRecord,
+    encoded: EncodedStoredRecord,
+    manifest: CommitMutationManifest,
+  ): void {
+    const draft = this.draft
+    if (!draft) integrity('proof pack is not open')
+    draft.manifests.push({
+      recordId: manifest.recordId,
+      previousRevision: manifest.previousRevision,
+      nextJson: this.mutationNextJson(manifest, encoded.schemaJson),
+    })
+    draft.versions.push({
+      recordId: record.recordId,
+      recordRevision: record.recordRevision,
+      schemaJson: encoded.schemaJson,
+      digest: encoded.digest,
+      ownerJson: encoded.ownerJson,
+      hasBody: true,
+    })
+  }
+
+  private writeProof(commitId: string, ledgerSeq: number): void {
+    const draft = this.draft
+    if (!draft) integrity('proof pack is not open')
+    const manifests = [...draft.manifests].sort((left, right) => compareUtf8(left.recordId, right.recordId))
+    const versions = [...draft.versions].sort((left, right) => {
+      const compared = compareUtf8(left.recordId, right.recordId)
+      return compared === 0 ? left.recordRevision - right.recordRevision : compared
+    })
+    const sides = [...draft.sides].sort((left, right) => {
+      const compared = compareUtf8(left.kind, right.kind)
+      return compared === 0 ? compareUtf8(left.identity, right.identity) : compared
+    })
     this.run(
-      `INSERT INTO runtime_mutation_manifests (commit_id, record_id, previous_revision, next_json)
-       VALUES (?, ?, ?, ?)`,
-      manifest.commitId,
-      manifest.recordId,
-      manifest.previousRevision,
-      manifest.next === null ? null : canonicalJson(manifest.next),
+      `INSERT INTO runtime_commit_proofs (
+         commit_id, ledger_seq, manifests_json, sides_json, versions_json
+       ) VALUES (?, ?, ?, ?, ?)`,
+      commitId,
+      ledgerSeq,
+      canonicalJson(manifests),
+      canonicalJson(sides),
+      canonicalJson(versions),
     )
+  }
+
+  private mutationNextJson(manifest: CommitMutationManifest, schemaJson: string): string | null {
+    if (manifest.next === null) return null
+    return storedMutationNextJson(manifest.next.recordRevision, manifest.next.digest, schemaJson)
   }
 
   private insertSide(entry: CommitSideEntry): void {
-    this.run(
-      `INSERT INTO runtime_side_entries (commit_id, kind, identity, entry_json) VALUES (?, ?, ?, ?)`,
-      entry.commitId,
-      entry.kind,
-      sideEntryIdentity(entry),
-      canonicalJson(entry),
+    const draft = this.draft
+    if (!draft) integrity('proof pack is not open')
+    draft.sides.push({
+      kind: entry.kind,
+      identity: sideEntryIdentity(entry),
+      entryJson: canonicalJson(entry),
+    })
+  }
+
+  private expandCommitProofs(commits: readonly ParsedCommit[]): {
+    manifests: CommitMutationManifest[]
+    sides: CommitSideEntry[]
+    versions: VersionRow[]
+  } {
+    const idsJson = JSON.stringify(commits.map((commit) => commit.data.commitId))
+    const expected = new Map(commits.map((commit) => [commit.data.commitId, commit.seq]))
+    const rows = this.all<ProofRow>(PROOFS_BY_COMMIT, idsJson)
+    if (rows.length !== commits.length) integrity('state commit has no proof pack')
+    const manifestRows: ManifestRow[] = []
+    const sideRows: SideRow[] = []
+    const headers: Array<Omit<VersionRow, 'value_json'> & { hasBody: boolean }> = []
+    for (const row of rows) {
+      if (row.ledger_seq !== expected.get(row.commit_id))
+        integrity('proof pack sequence does not match the state commit')
+      for (const item of this.proofArray(row.manifests_json)) {
+        if (
+          !isPlainRecord(item) ||
+          typeof item.recordId !== 'string' ||
+          (item.previousRevision !== null && typeof item.previousRevision !== 'number') ||
+          (item.nextJson !== null && typeof item.nextJson !== 'string')
+        )
+          integrity('proof pack cannot be decoded')
+        manifestRows.push({
+          commit_id: row.commit_id,
+          record_id: item.recordId,
+          previous_revision: item.previousRevision as number | null,
+          next_json: item.nextJson as string | null,
+        })
+      }
+      for (const item of this.proofArray(row.sides_json)) {
+        if (!isPlainRecord(item) || typeof item.entryJson !== 'string')
+          integrity('proof pack cannot be decoded')
+        sideRows.push({ commit_id: row.commit_id, entry_json: item.entryJson })
+      }
+      for (const item of this.proofArray(row.versions_json)) {
+        if (
+          !isPlainRecord(item) ||
+          typeof item.recordId !== 'string' ||
+          typeof item.recordRevision !== 'number' ||
+          typeof item.schemaJson !== 'string' ||
+          typeof item.digest !== 'string' ||
+          typeof item.ownerJson !== 'string'
+        )
+          integrity('proof pack cannot be decoded')
+        headers.push({
+          record_id: item.recordId,
+          record_revision: item.recordRevision,
+          schema_json: item.schemaJson,
+          commit_id: row.commit_id,
+          digest: item.digest,
+          owner_json: item.ownerJson,
+          hasBody: item.hasBody !== false,
+        })
+      }
+    }
+    const bodies = this.bodyMap(headers.map((header) => header.record_id))
+    const versions = headers.map((header) => {
+      const value = bodies.get(`${header.record_id}\0${header.record_revision}`)
+      if (header.hasBody && value === undefined) integrity('record version has no body')
+      return { ...header, value_json: value ?? '' }
+    })
+    return {
+      manifests: manifestRows.map((row) => this.decodeManifest(row)),
+      sides: sideRows.map((row) => {
+        const entry = this.parseJson<unknown>(row.entry_json, 'commit side entry cannot be decoded')
+        if (!isSideEntry(entry) || entry.commitId !== row.commit_id)
+          integrity('commit side entry does not match its row')
+        return entry
+      }),
+      versions,
+    }
+  }
+
+  private versionRowsForRecord(recordId: string): VersionRow[] {
+    const proofs = this.all<ProofRow>(
+      `SELECT commit_id, ledger_seq, manifests_json, sides_json, versions_json FROM runtime_commit_proofs`,
+    )
+    const headers: Array<Omit<VersionRow, 'value_json'>> = []
+    for (const row of proofs) {
+      for (const item of this.proofArray(row.versions_json)) {
+        if (!isPlainRecord(item) || item.recordId !== recordId || typeof item.recordRevision !== 'number')
+          continue
+        if (
+          typeof item.schemaJson !== 'string' ||
+          typeof item.digest !== 'string' ||
+          typeof item.ownerJson !== 'string'
+        )
+          integrity('proof pack cannot be decoded')
+        headers.push({
+          record_id: recordId,
+          record_revision: item.recordRevision,
+          schema_json: item.schemaJson,
+          commit_id: row.commit_id,
+          digest: item.digest,
+          owner_json: item.ownerJson,
+        })
+      }
+    }
+    headers.sort((left, right) => left.record_revision - right.record_revision)
+    const bodies = this.bodyMap([recordId])
+    return headers.map((header) => {
+      const value = bodies.get(`${header.record_id}\0${header.record_revision}`)
+      if (value === undefined) integrity('record version has no body')
+      return { ...header, value_json: value }
+    })
+  }
+
+  private proofById(commitId: string): ProofRow | undefined {
+    return this.get<ProofRow>(
+      `SELECT commit_id, ledger_seq, manifests_json, sides_json, versions_json
+         FROM runtime_commit_proofs WHERE commit_id = ?`,
+      commitId,
     )
   }
 
+  private proofArray(text: string): unknown[] {
+    const parsed = this.parseJson<unknown>(text, 'proof pack cannot be decoded')
+    if (!Array.isArray(parsed)) integrity('proof pack cannot be decoded')
+    return parsed
+  }
+
+  private bodyMap(recordIds: readonly string[]): Map<string, string> {
+    const map = new Map<string, string>()
+    if (recordIds.length === 0) return map
+    const rows = this.all<{ record_id: string; record_revision: number; value_json: string }>(
+      `SELECT record_id, record_revision, value_json FROM runtime_version_bodies
+        WHERE record_id IN (SELECT value FROM json_each(?))`,
+      JSON.stringify([...new Set(recordIds)]),
+    )
+    for (const row of rows) map.set(`${row.record_id}\0${row.record_revision}`, row.value_json)
+    return map
+  }
+
+  private assertReferencedBodies(): void {
+    const orphan = this.get<{ record_id: string }>(
+      `SELECT b.record_id AS record_id FROM runtime_version_bodies b
+        WHERE NOT EXISTS (
+          SELECT 1 FROM runtime_commit_proofs p, json_each(p.versions_json) v
+          WHERE json_extract(v.value, '$.recordId') = b.record_id
+            AND json_extract(v.value, '$.recordRevision') = b.record_revision
+        )`,
+    )
+    if (orphan) integrity('record version body has no header')
+  }
+
   private assertReceipt(sessionId: string, receipt: StateCommitReceipt, fingerprint: string): void {
-    if (receipt.transactionFingerprint !== fingerprint)
-      integrity('stored commit receipt does not match the request')
     if (receipt.sessionId !== sessionId || receipt.firstSeq !== receipt.lastSeq)
       integrity('stored commit receipt does not match the attested commit')
     const row = this.get<EventRow>(
@@ -2017,28 +2824,54 @@ export class RuntimeStateDatabase {
     if (
       proof.kind !== 'commit' ||
       proof.data.commitId !== receipt.commitId ||
-      proof.data.transactionFingerprint !== fingerprint ||
+      proof.data.transactionFingerprint !== receipt.transactionFingerprint ||
       proof.digest !== receipt.headDigest
     )
       integrity('stored commit receipt does not match the attested commit')
-    if (proof.data.runId) {
-      const version = this.get<{ value_json: string }>(
-        `SELECT value_json FROM runtime_record_versions WHERE commit_id = ? AND record_id = ?`,
+    if (proof.data.transactionFingerprint !== fingerprint) {
+      const members = this.get<{ fingerprints_json: string }>(
+        'SELECT fingerprints_json FROM runtime_commit_fingerprints WHERE commit_id = ?',
         receipt.commitId,
-        runRecordId(proof.data.runId),
       )
-      if (version) {
-        const value = this.parseJson<RunRecordValue>(version.value_json, 'record body cannot be decoded')
-        if (value.revision !== receipt.runRevision)
-          integrity('stored commit receipt does not match the attested commit')
+      const parsed = members
+        ? this.parseJson<unknown>(members.fingerprints_json, 'stored commit members cannot be decoded')
+        : undefined
+      if (
+        !Array.isArray(parsed) ||
+        !parsed.every((item) => typeof item === 'string') ||
+        digestOf(parsed) !== proof.data.transactionFingerprint ||
+        !parsed.includes(fingerprint)
+      )
+        integrity('stored commit receipt does not match the attested commit')
+    }
+    const packed = this.proofById(receipt.commitId)
+    if (!packed || packed.ledger_seq !== receipt.lastSeq)
+      integrity('stored commit receipt does not match the attested commit')
+    if (proof.data.runId) {
+      const recordId = runRecordId(proof.data.runId)
+      const header = this.proofArray(packed.versions_json).find(
+        (item) => isPlainRecord(item) && item.recordId === recordId,
+      )
+      if (isPlainRecord(header) && typeof header.recordRevision === 'number') {
+        const version = this.get<{ value_json: string }>(
+          `SELECT value_json FROM runtime_version_bodies WHERE record_id = ? AND record_revision = ?`,
+          recordId,
+          header.recordRevision,
+        )
+        if (version) {
+          const value = this.parseJson<RunRecordValue>(version.value_json, 'record body cannot be decoded')
+          if (value.revision !== receipt.runRevision)
+            integrity('stored commit receipt does not match the attested commit')
+        }
       }
     }
-    const sides = this.all<{ entry_json: string }>(
-      `SELECT entry_json FROM runtime_side_entries WHERE commit_id = ? AND kind = 'action-created'`,
-      receipt.commitId,
-    )
-    for (const side of sides) {
-      const entry = this.parseJson<CommitSideEntry>(side.entry_json, 'commit side entry cannot be decoded')
+    const sides = this.proofArray(packed.sides_json).flatMap((item) => {
+      if (!isPlainRecord(item) || item.kind !== 'action-created' || typeof item.entryJson !== 'string')
+        return []
+      return [item.entryJson]
+    })
+    for (const entryJson of sides) {
+      const entry = this.parseJson<CommitSideEntry>(entryJson, 'commit side entry cannot be decoded')
       if (
         entry.kind !== 'action-created' ||
         !receipt.actionIds.some((item) => item.actionId === entry.actionId)

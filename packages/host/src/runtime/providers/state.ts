@@ -1,13 +1,22 @@
 import { defaultIds } from '@agnes/core'
 import type {
+  AckOutboxRequest,
+  AckOutboxResult,
+  AdvanceRunRequest,
   CallContext,
+  CloseInvocationRequest,
+  DispatchAdmissionRequest,
+  DispatchAdmissionResult,
+  InvocationAdmission,
   Outcome,
   RuntimeError,
   RuntimeErrorCode,
   StateAuthorityRef,
+  StateCommitReceipt,
   StateStoreControl,
 } from '@agnes/extension-api/runtime'
 import { validateRuntime } from '@agnes/protocol/runtime'
+import { enterPhase, leavePhase, profiling } from '../state/profile.js'
 import {
   openRuntimeStateDatabase,
   type RuntimeDurability,
@@ -50,6 +59,25 @@ export type UnimplementedStateMethod = (typeof UNIMPLEMENTED_STATE_METHODS)[numb
 export type RuntimeStateStore = StateStoreControl & {
   close(): void
   durability(): RuntimeDurability
+  /** Host-internal. Not part of StateStoreControl. One state-commit covers admit, close, and advance. */
+  commitPreparedAdvance(
+    commitId: string,
+    admit: InvocationAdmission,
+    close: CloseInvocationRequest,
+    advance: AdvanceRunRequest,
+    context: CallContext,
+  ): Promise<Outcome<StateCommitReceipt>>
+  /** Host-internal. One state-commit covers a model tool batch. Intake stays separate. */
+  commitDispatchBatch(
+    commitId: string,
+    requests: readonly DispatchAdmissionRequest[],
+    context: CallContext,
+  ): Promise<Outcome<DispatchAdmissionResult[]>>
+  /** Host-internal. One transaction covers many acknowledgements. */
+  ackOutboxMany(
+    requests: readonly AckOutboxRequest[],
+    context: CallContext,
+  ): Promise<Outcome<AckOutboxResult[]>>
 }
 
 function sameAuthority(left: StateAuthorityRef, right: StateAuthorityRef): boolean {
@@ -58,6 +86,19 @@ function sameAuthority(left: StateAuthorityRef, right: StateAuthorityRef): boole
     left.tenantId === right.tenantId &&
     left.authorityEpoch === right.authorityEpoch
   )
+}
+
+function validateProfiled<K extends 'DispatchAdmissionRequest' | 'ReceiptIntakeRequest'>(
+  kind: K,
+  value: unknown,
+): ReturnType<typeof validateRuntime<K>> {
+  if (!profiling) return validateRuntime(kind, value)
+  enterPhase('schema')
+  try {
+    return validateRuntime(kind, value)
+  } finally {
+    leavePhase()
+  }
 }
 
 export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): RuntimeStateStore {
@@ -174,7 +215,7 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
     },
     advanceProvider: (_request, context) => unavailable('advanceProvider', context),
     dispatchAdmission: (request, context) => {
-      const result = validateRuntime('DispatchAdmissionRequest', request)
+      const result = validateProfiled('DispatchAdmissionRequest', request)
       if (!result.ok)
         return Promise.resolve(failure('invalid_input', 'schema', 'DispatchAdmissionRequest is not valid'))
       const rejected = rejectAuthority(result.value.guard.authority)
@@ -195,7 +236,7 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
       return run(context, () => database.commitControl(result.value))
     },
     intakeReceipt: (request, context) => {
-      const result = validateRuntime('ReceiptIntakeRequest', request)
+      const result = validateProfiled('ReceiptIntakeRequest', request)
       if (!result.ok)
         return Promise.resolve(failure('invalid_input', 'schema', 'ReceiptIntakeRequest is not valid'))
       return run(context, () => database.intakeReceipt(result.value))
@@ -227,6 +268,44 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
       return run(context, () => database.failOutbox(result.value))
     },
     pruneRecordVersions: (_request, context) => unavailable('pruneRecordVersions', context),
+    commitPreparedAdvance: (commitId, admit, close, advance, context) => {
+      const admitted = validateRuntime('InvocationAdmission', admit)
+      if (!admitted.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'InvocationAdmission is not valid'))
+      const closed = validateRuntime('CloseInvocationRequest', close)
+      if (!closed.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'CloseInvocationRequest is not valid'))
+      const advanced = validateRuntime('AdvanceRunRequest', advance)
+      if (!advanced.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'AdvanceRunRequest is not valid'))
+      const rejected = rejectAuthority(advanced.value.guard.authority)
+      if (rejected) return Promise.resolve(rejected)
+      return run(context, () =>
+        database.commitPreparedAdvance(commitId, admitted.value, closed.value, advanced.value),
+      )
+    },
+    commitDispatchBatch: (commitId, requests, context) => {
+      const validated: DispatchAdmissionRequest[] = []
+      for (const request of requests) {
+        const result = validateRuntime('DispatchAdmissionRequest', request)
+        if (!result.ok)
+          return Promise.resolve(failure('invalid_input', 'schema', 'DispatchAdmissionRequest is not valid'))
+        const rejected = rejectAuthority(result.value.guard.authority)
+        if (rejected) return Promise.resolve(rejected)
+        validated.push(result.value)
+      }
+      return run(context, () => database.commitDispatchBatch(commitId, validated))
+    },
+    ackOutboxMany: (requests, context) => {
+      const validated: AckOutboxRequest[] = []
+      for (const request of requests) {
+        const result = validateRuntime('AckOutboxRequest', request)
+        if (!result.ok)
+          return Promise.resolve(failure('invalid_input', 'schema', 'AckOutboxRequest is not valid'))
+        validated.push(result.value)
+      }
+      return run(context, () => database.ackOutboxMany(validated))
+    },
     close: () => database.close(),
     durability: () => database.durability(),
   }

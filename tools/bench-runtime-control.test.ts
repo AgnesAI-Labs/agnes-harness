@@ -54,7 +54,6 @@ describe('runtime control meter', () => {
   it('fails when a tool intake or an outbox ack is missing', () => {
     const full: CommitRecord[] = [
       commit(),
-      commit({ method: 'commitControl', requestId: 'mark-read:0' }),
       commit({ method: 'intakeReceipt', requestId: 'intake-read:0' }),
       commit({ method: 'claimOutbox', requestId: 'claim-0', bucket: 'shared', toolKeys: [] }),
       commit({ method: 'ackOutbox', requestId: 'ack-0', bucket: 'shared', toolKeys: [] }),
@@ -90,16 +89,15 @@ describe('runtime control meter', () => {
   it('splits a shared tool commit into an amortized share', () => {
     const classified = classifyCommits([
       commit({ requestId: 'shared-dispatch', toolKeys: ['read:0', 'read:1'] }),
-      commit({ method: 'commitControl', requestId: 'mark-0', toolKeys: ['read:0'] }),
       commit({ method: 'intakeReceipt', requestId: 'intake-0', toolKeys: ['read:0'] }),
-      commit({ method: 'commitControl', requestId: 'mark-1', toolKeys: ['read:1'] }),
       commit({ method: 'intakeReceipt', requestId: 'intake-1', toolKeys: ['read:1'] }),
       commit({ method: 'advanceRun', requestId: 'advance', bucket: 'shared', toolKeys: [] }),
     ])
-    expect(classified.tRound).toBe(6)
+    expect(classified.tRound).toBe(4)
     expect(classified.tShared).toBe(1)
-    expect(classified.tools.map((tool) => tool.amortized)).toEqual([2.5, 2.5])
-    expect(classified.tTool).toBe(3)
+    expect(classified.tools.map((tool) => tool.transactions)).toEqual([2, 2])
+    expect(classified.tools.map((tool) => tool.amortized)).toEqual([1.5, 1.5])
+    expect(classified.tTool).toBe(2)
   })
 
   it('reproduces the legacy driver counts for every measured scenario', async () => {
@@ -150,7 +148,7 @@ describe('runtime control meter', () => {
       })
       expect(sample.timingNote).toContain('BEGIN')
       if (sample.scenario === 'chat') expect(sample.tTool).toBe(0)
-      else expect(sample.tTool).toBe(3)
+      else expect(sample.tTool).toBe(2)
       expect(sample.commits).toBe(sample.tRound)
     }
     const report = buildReport(

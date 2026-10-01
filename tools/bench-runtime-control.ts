@@ -8,8 +8,9 @@
 // the return of COMMIT, observed by wrapping DatabaseSync.exec in this process.
 // That is the same span storage.commit covers on the baseline, and it is the
 // figure the commit-time gate uses. Call time wraps the public control method,
-// so validation before BEGIN stays visible and is not the gate. The host package
-// is unchanged. approval-k1 and the nested scenario are reported as unmeasured.
+// so validation before BEGIN stays visible and is not the gate. The campaign
+// leaves the in-process profiler off. approval-k1 and the nested scenario are
+// reported as unmeasured.
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -52,6 +53,14 @@ import {
   type RuntimeStateStore,
 } from '../packages/host/src/runtime/providers/state.js'
 import { canonicalJson } from '../packages/host/src/runtime/state/canonical-json.js'
+import {
+  enterPhase,
+  leavePhase,
+  type ProfileSnapshot,
+  resetProfile,
+  setProfiling,
+  snapshotProfile,
+} from '../packages/host/src/runtime/state/profile.js'
 import { digestOf, stableId } from '../packages/host/src/runtime/state/records.js'
 import type { CommitNotice } from '../packages/host/src/runtime/state/transactions.js'
 
@@ -66,6 +75,10 @@ export const MEASURED_SCENARIOS = ['k1', 'k4', 'k8', 'k16', 'chat'] as const
 export const UNMEASURED_SCENARIOS = ['approval-k1', 'nested-m50+approval+abort'] as const
 export type MeasuredScenario = (typeof MEASURED_SCENARIOS)[number]
 export type Mode = 'baseline' | 'candidate'
+export type ToolDispatchMode = 'each' | 'batch'
+
+/** Candidate tool dispatch. `each` keeps one transaction per tool. `batch` is the measured shape. */
+let toolDispatchMode: ToolDispatchMode = 'batch'
 
 /** Rank used by the legacy ledger driver: index floor(p * n). */
 export function percentile(values: number[], p: number): number {
@@ -75,7 +88,7 @@ export function percentile(values: number[], p: number): number {
 }
 
 export const TIMING_NOTE =
-  'Candidate transaction time is BEGIN start through COMMIT return on DatabaseSync.exec, including in-transaction writes and the beforeCommit callback, excluding schema validation before BEGIN. Call time is the public method. Host sources are unchanged.'
+  'Candidate transaction time is BEGIN start through COMMIT return on DatabaseSync.exec, including in-transaction writes and the beforeCommit callback, excluding schema validation before BEGIN. Call time is the host method. Durability stays WAL, synchronous=NORMAL, and darwin checkpoint_fullfsync.'
 
 export const BASELINE_ORACLE: Record<
   MeasuredScenario,
@@ -159,7 +172,7 @@ export function assertToolWindows(commits: readonly CommitRecord[], toolKeys: re
     const methods = commits
       .filter((commit) => commit.wrote && commit.toolKeys.includes(key))
       .map((commit) => commit.method)
-    for (const method of ['dispatchAdmission', 'commitControl', 'intakeReceipt']) {
+    for (const method of ['dispatchAdmission', 'intakeReceipt']) {
       if (!methods.includes(method)) throw new Error(`tool ${key} is missing ${method}`)
     }
   }
@@ -347,6 +360,7 @@ export type Sample = {
   bytes?: ByteReport
   commitsDetail?: CommitRecord[]
   timingNote?: string
+  dispatchMode?: ToolDispatchMode
   backend: 'legacy-kernel' | 'state'
 }
 
@@ -593,17 +607,9 @@ function unwrap<T>(result: Outcome<T>, label: string): T {
 
 type ActionSlot = { key: string; action: PreparedAction; receiptId: string; toolKeys: string[] }
 
-async function runAction(
-  store: RuntimeStateStore,
-  record: (commit: CommitRecord) => void,
-  invocationId: string,
-  revision: number,
-  slot: ActionSlot,
-  bucket: 'model' | 'tool',
-  result: unknown,
-): Promise<void> {
+function toolAdmission(invocationId: string, revision: number, slot: ActionSlot): DispatchAdmissionRequest {
   const admissionId = `admission-${slot.key}`
-  const request: DispatchAdmissionRequest = {
+  return {
     admissionId,
     commitId: `commit-${admissionId}`,
     guard: commitGuard(invocationId, revision),
@@ -638,28 +644,25 @@ async function runAction(
     budget: { reservation: null, quota: [{ name: 'parallel-action', amount: 1 }] },
     deadline: DEADLINE,
   }
+}
+
+async function runAction(
+  store: RuntimeStateStore,
+  record: (commit: CommitRecord) => void,
+  invocationId: string,
+  revision: number,
+  slot: ActionSlot,
+  bucket: 'model' | 'tool',
+  result: unknown,
+): Promise<void> {
+  const request = toolAdmission(invocationId, revision, slot)
   const admitted = unwrap(
-    await timed(record, 'dispatchAdmission', admissionId, bucket, slot.toolKeys, () =>
+    await timed(record, 'dispatchAdmission', request.admissionId, bucket, slot.toolKeys, () =>
       store.dispatchAdmission(request, callContext()),
     ),
     `dispatch ${slot.key}`,
   )
   if (admitted.state !== 'admitted') throw new Error(`dispatch ${slot.key} was not admitted`)
-  await timed(record, 'commitControl', `mark-${slot.key}`, bucket, slot.toolKeys, () =>
-    store.commitControl(
-      {
-        commitId: `mark-${slot.key}`,
-        guard: commitGuard(invocationId, revision),
-        command: {
-          kind: 'mark_running',
-          attemptId: request.attemptId,
-          expectedAttemptRevision: 1,
-          externalRequests: [externalRequest],
-        },
-      },
-      callContext(),
-    ),
-  )
   const actionId = stableId('act', `run-1\0${slot.key}`)
   const usageFact: UsageFact = {
     usageId: `usage-${slot.key}`,
@@ -680,7 +683,7 @@ async function runAction(
     inputDigest: digestOf(slot.action.input),
     outcome: 'succeeded',
     result: inline(result),
-    externalRequests: [externalRequest],
+    externalRequests: [],
     usageRefs: [usageFact.usageId],
     references: [],
     provenance: { sourceRefs: [], producer: toolBinding, trustLabels: [] },
@@ -701,6 +704,76 @@ async function runAction(
     ),
     `intake ${slot.key}`,
   )
+}
+
+async function runToolBatch(
+  store: RuntimeStateStore,
+  record: (commit: CommitRecord) => void,
+  invocationId: string,
+  revision: number,
+  ordinal: number,
+  slots: readonly ActionSlot[],
+): Promise<void> {
+  const requests = slots.map((slot) => toolAdmission(invocationId, revision, slot))
+  const admitted = unwrap(
+    await timed(
+      record,
+      'dispatchAdmission',
+      `tools-${ordinal}`,
+      'tool',
+      slots.map((slot) => slot.key),
+      () => store.commitDispatchBatch(`commit-tools-${ordinal}`, requests, callContext()),
+    ),
+    `dispatch tools-${ordinal}`,
+  )
+  if (admitted.length !== slots.length)
+    throw new Error(`dispatch tools-${ordinal} returned ${admitted.length}`)
+  for (let index = 0; index < slots.length; index += 1) {
+    const slot = slots[index]
+    const result = admitted[index]
+    if (!slot || !result || result.state !== 'admitted')
+      throw new Error(`dispatch ${slot?.key ?? index} was not admitted`)
+    const actionId = stableId('act', `run-1\0${slot.key}`)
+    const usageFact: UsageFact = {
+      usageId: `usage-${slot.key}`,
+      originKey: `origin-${slot.key}`,
+      actionId,
+      attemptId: requests[index]?.attemptId ?? '',
+      source: toolBinding,
+      dimensions: inline({ tokens: 1 }),
+      externalRequest,
+      observedAt: ADMITTED_AT,
+      certainty: 'measured',
+    }
+    const intake: ReceiptIntakeRequest = {
+      intakeId: `intake-${slot.key}`,
+      receipt: {
+        receiptId: slot.receiptId,
+        actionId,
+        attemptId: requests[index]?.attemptId ?? '',
+        bindingId: 'binding-1',
+        inputDigest: digestOf(slot.action.input),
+        outcome: 'succeeded',
+        result: inline({ text: 'read' }),
+        externalRequests: [],
+        usageRefs: [usageFact.usageId],
+        references: [],
+        provenance: { sourceRefs: [], producer: toolBinding, trustLabels: [] },
+        completedAt: ADMITTED_AT,
+      },
+      usage: [usageFact],
+      evidence: [],
+      sourceAuthorizationRef: result.authorizationId,
+      queryUsage: null,
+      resultHandling: { kind: 'no-hook' },
+    }
+    unwrap(
+      await timed(record, 'intakeReceipt', intake.intakeId, 'tool', slot.toolKeys, () =>
+        store.intakeReceipt(intake, callContext()),
+      ),
+      `intake ${slot.key}`,
+    )
+  }
 }
 
 async function timed<T>(
@@ -759,12 +832,6 @@ async function advance(
     deadline: DEADLINE,
     queryAllowance: 0,
   }
-  unwrap(
-    await timed(record, 'admitInvocation', admit.requestId, 'shared', [], () =>
-      store.admitInvocation(admit, callContext()),
-    ),
-    `admit ${phase}`,
-  )
   const close: CloseInvocationRequest = {
     requestId: `close-${invocationId}`,
     invocationId,
@@ -774,12 +841,6 @@ async function advance(
     unresolvedInflightIds: [],
     observedQueryCount: 0,
   }
-  unwrap(
-    await timed(record, 'closeInvocation', close.requestId, 'shared', [], () =>
-      store.closeInvocation(close, callContext()),
-    ),
-    `close ${phase}`,
-  )
   const request: AdvanceRunRequest = {
     commitId: `advance-${phase}`,
     guard: commitGuard(invocationId, revision),
@@ -792,8 +853,8 @@ async function advance(
     },
   }
   const committed = unwrap(
-    await timed(record, 'advanceRun', request.commitId, 'shared', [], () =>
-      store.advanceRun(request, callContext()),
+    await timed(record, 'commitPreparedAdvance', request.commitId, 'shared', [], () =>
+      store.commitPreparedAdvance(request.commitId, admit, close, request, callContext()),
     ),
     `advance ${phase}`,
   )
@@ -821,23 +882,17 @@ async function drainOutbox(store: RuntimeStateStore, record: (commit: CommitReco
       `claim ${batch}`,
     )
     if (claimed.length === 0) return
-    for (let index = 0; index < claimed.length; index += 1) {
-      const item = claimed[index]
-      if (!item) continue
-      unwrap(
-        await timed(record, 'ackOutbox', `ack-${batch}-${index}`, 'shared', [], () =>
-          store.ackOutbox(
-            {
-              requestId: `ack-${batch}-${index}`,
-              claim: item.claim,
-              acknowledgement: inline({ acked: true }),
-            },
-            callContext(),
-          ),
-        ),
-        `ack ${batch}-${index}`,
-      )
-    }
+    const acks = claimed.map((item, index) => ({
+      requestId: `ack-${batch}-${index}`,
+      claim: item.claim,
+      acknowledgement: inline({ acked: true }),
+    }))
+    unwrap(
+      await timed(record, 'ackOutbox', `ack-${batch}`, 'shared', [], () =>
+        store.ackOutboxMany(acks, callContext()),
+      ),
+      `ack ${batch}`,
+    )
   }
   throw new Error('outbox did not drain')
 }
@@ -856,6 +911,10 @@ export type ByteReport = {
   indexBytes: Record<string, number>
   auxiliary: Record<string, { payloadBytes: number; indexBytes: number }>
   headPayloadBytes: number
+  packedProofBytes: number
+  versionBodyPhysicalBytes: number
+  headPhysicalBytes: number
+  tablePages: Record<string, number>
   continuationBytes: number
   continuationVersions: number
   providerState: { present: false; note: string } | { present: true; bytes: number }
@@ -871,11 +930,17 @@ const AUXILIARY = [
   'runtime_dispatch_domains',
   'runtime_outbox_delivery',
   'runtime_admissions',
+  'runtime_aux_commits',
+  'runtime_commit_fingerprints',
 ]
+
+function scalar(db: DatabaseSync, sql: string): number {
+  return (db.prepare(sql).get() as { n: number }).n
+}
 
 function payloadOf(db: DatabaseSync, table: string): number {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string; type: string }>
-  const text = columns.filter((column) => /CHAR|CLOB|TEXT|BLOB/i.test(column.type))
+  const text = columns.filter((column) => column.type === '' || /CHAR|CLOB|TEXT|BLOB/i.test(column.type))
   if (text.length === 0) return 0
   const expression = text.map((column) => `COALESCE(LENGTH("${column.name}"),0)`).join('+')
   const row = db.prepare(`SELECT COALESCE(SUM(${expression}),0) AS n FROM "${table}"`).get() as { n: number }
@@ -976,8 +1041,16 @@ export function readByteReport(file: string, pageSize: number): ByteReport {
     return {
       versionBodyBytes,
       versionBodyBySchema,
-      manifestBytes: payloadOf(db, 'runtime_mutation_manifests'),
-      sideEntryBytes: payloadOf(db, 'runtime_side_entries'),
+      manifestBytes: scalar(
+        db,
+        `SELECT COALESCE(SUM(LENGTH(commit_id) + LENGTH(record_id) + COALESCE(LENGTH(next_json), 0)), 0) AS n
+           FROM runtime_mutation_manifests`,
+      ),
+      sideEntryBytes: scalar(
+        db,
+        `SELECT COALESCE(SUM(LENGTH(commit_id) + LENGTH(kind) + LENGTH(identity) + LENGTH(entry_json)), 0) AS n
+           FROM runtime_side_entries`,
+      ),
       ledgerProof: {
         stateCommitRowBytes: stateRow.n,
         formatRowBytes: formatRow.n,
@@ -986,7 +1059,38 @@ export function readByteReport(file: string, pageSize: number): ByteReport {
       },
       indexBytes,
       auxiliary,
-      headPayloadBytes: payloadOf(db, 'runtime_records'),
+      headPayloadBytes: scalar(
+        db,
+        `SELECT COALESCE(SUM(
+            LENGTH(record_id) + LENGTH(schema_json) + LENGTH(last_commit_id) + LENGTH(created_at) +
+            LENGTH(updated_at) + LENGTH(owner_json) + LENGTH(value_json) + LENGTH(body_digest)
+          ), 0) AS n FROM runtime_records`,
+      ),
+      packedProofBytes: scalar(
+        db,
+        `SELECT COALESCE(SUM(
+            LENGTH(commit_id) + LENGTH(manifests_json) + LENGTH(sides_json) + LENGTH(versions_json)
+          ), 0) AS n FROM runtime_commit_proofs`,
+      ),
+      versionBodyPhysicalBytes: scalar(
+        db,
+        `SELECT COALESCE(SUM(LENGTH(record_id) + LENGTH(value_json)), 0) AS n FROM runtime_version_bodies`,
+      ),
+      tablePages: Object.fromEntries(
+        (
+          db.prepare('SELECT name, COALESCE(SUM(pgsize), 0) AS n FROM dbstat GROUP BY name').all() as Array<{
+            name: string
+            n: number
+          }>
+        ).map((row) => [row.name, row.n]),
+      ),
+      headPhysicalBytes: scalar(
+        db,
+        `SELECT COALESCE(SUM(
+            LENGTH(record_id) + LENGTH(schema_json) + LENGTH(last_commit_id) + LENGTH(created_at) +
+            LENGTH(updated_at) + LENGTH(owner_json) + LENGTH(body_digest)
+          ), 0) AS n FROM runtime_record_heads`,
+      ),
       continuationBytes,
       continuationVersions,
       providerState: providerPresent
@@ -1002,9 +1106,9 @@ export function readByteReport(file: string, pageSize: number): ByteReport {
   }
 }
 
-/** Authoritative commits are `runtime/state-commit` events plus outbox claim, ack, and fail.
- * Those three call `noteWrite` and COMMIT without appending a state-commit event. An empty
- * claim stores `[]` and does not note a write, so it stays out of both sides. */
+/** Authoritative commits are `runtime/state-commit` events plus one aux token for each
+ * claim, ack, or fail transaction. Those call `noteWrite` and COMMIT without a state-commit.
+ * An empty claim stores `[]` and does not note a write, so it stays out of both sides. */
 function attestedCommits(file: string): number {
   const db = new DatabaseSync(file, { readOnly: true })
   try {
@@ -1012,9 +1116,7 @@ function attestedCommits(file: string): number {
       .prepare(
         `SELECT
            (SELECT COUNT(*) FROM events WHERE type = 'runtime/state-commit')
-           + (SELECT COUNT(*) FROM runtime_request_results
-              WHERE method IN ('claimOutbox', 'ackOutbox', 'failOutbox')
-                AND result_json != '[]') AS n`,
+           + (SELECT COUNT(*) FROM runtime_aux_commits) AS n`,
       )
       .get() as { n: number }
     return row.n
@@ -1105,19 +1207,20 @@ export async function runCandidate(name: string, ports?: LegacyPorts): Promise<S
           revision = await advance(store, record, revision, `tools-${modelOrdinal}`, actions, [
             signalId(`receipt-${modelKey}`),
           ])
-          for (const call of turn.calls) {
+          const slots: ActionSlot[] = turn.calls.map((call) => {
             const key = `read:${call.args.p}`
             const action = actions.find((item) => item.key === key)
             if (!action) throw new Error(`missing prepared action ${key}`)
-            await runAction(
-              store,
-              record,
-              `inv-tools-${modelOrdinal}`,
-              revision,
-              { key, action, receiptId: `receipt-${key}`, toolKeys: [key] },
-              'tool',
-              { text: 'read' },
-            )
+            return { key, action, receiptId: `receipt-${key}`, toolKeys: [key] }
+          })
+          if (toolDispatchMode === 'batch') {
+            await runToolBatch(store, record, `inv-tools-${modelOrdinal}`, revision, modelOrdinal, slots)
+          } else {
+            for (const slot of slots) {
+              await runAction(store, record, `inv-tools-${modelOrdinal}`, revision, slot, 'tool', {
+                text: 'read',
+              })
+            }
           }
           pendingTools = turn.calls
         } else {
@@ -1162,6 +1265,7 @@ export async function runCandidate(name: string, ports?: LegacyPorts): Promise<S
       commitMs: timingOf(wrote.map((commit) => commit.txMs)),
       callMs: timingOf(wrote.map((commit) => commit.callMs)),
       wallMs: roundMs(wallMs),
+      dispatchMode: toolDispatchMode,
       tTool: classified.tTool,
       tShared: classified.tShared,
       tRound: classified.tRound,
@@ -1323,6 +1427,10 @@ export function buildReport(samples: readonly Sample[], rounds: number): Report 
       indexBytes: candidate[0]?.bytes?.indexBytes,
       auxiliary: candidate[0]?.bytes?.auxiliary,
       headPayloadBytes: candidate[0]?.bytes?.headPayloadBytes,
+      packedProofBytes: candidate[0]?.bytes?.packedProofBytes,
+      versionBodyPhysicalBytes: candidate[0]?.bytes?.versionBodyPhysicalBytes,
+      headPhysicalBytes: candidate[0]?.bytes?.headPhysicalBytes,
+      tablePages: candidate[0]?.bytes?.tablePages,
     }
   }
   const ratio = (candidate: number, baseline: number) => (baseline === 0 ? null : candidate / baseline)
@@ -1460,8 +1568,202 @@ export async function runRound(round: number, rounds: number): Promise<Sample[]>
   return measured
 }
 
+/** One warmed tool dispatch and one warmed intake on the current public methods.
+ * The model turn warms statement cache. mark_running still runs between the two
+ * windows and is not included in either snapshot. */
+export async function profileHotCommits(samples = 5): Promise<ProfileCampaign> {
+  const rows: ProfileCampaign['samples'] = []
+  for (let index = 0; index < samples; index += 1) rows.push(await profileOneDatabase())
+  return {
+    samples: rows,
+    note: 'Each sample is a fresh database. The model turn warms SQL. The measured windows are one public dispatchAdmission and one intakeReceipt. mark_running between them stays outside the profile and is not part of the local-tool loop. Profiler branches stay off for the campaign.',
+  }
+}
+
+type ProfiledCall = { wallMs: number; admittedOrSettled: string; profile: ProfileSnapshot }
+
+type ProfileCampaign = {
+  note: string
+  samples: Array<{ dispatchAdmission: ProfiledCall; intakeReceipt: ProfiledCall }>
+}
+
+async function profileOneDatabase(): Promise<ProfileCampaign['samples'][number]> {
+  const directory = mkdtempSync(join(tmpdir(), 'agnes-profile-rc-'))
+  const file = join(directory, 'state.sqlite')
+  const frozen = Date.parse(ADMITTED_AT)
+  const store = createRuntimeStateStore({
+    file,
+    authority,
+    now: () => frozen,
+    onCommit: (commit) => storeNotice?.(commit),
+  })
+  const record = (): void => undefined
+  try {
+    unwrap(await store.createRun(admissionFor('one call'), callContext()), 'createRun')
+    unwrap(
+      await store.open(
+        {
+          requestId: 'open-write',
+          authority,
+          sessionId: 'session-1',
+          mode: 'write',
+          writerId: 'writer-a',
+          ttlMs: 60_000,
+        },
+        callContext(),
+      ),
+      'open',
+    )
+    const modelAction = preparedAction('model-0', {
+      role: 'model',
+      offered: ['read'],
+      userText: 'one call',
+      cursor: 0,
+    })
+    let revision = await advance(store, record, 0, 'model-0', [modelAction], [])
+    await runAction(
+      store,
+      record,
+      'inv-model-0',
+      revision,
+      { key: 'model-0', action: modelAction, receiptId: 'receipt-model-0', toolKeys: [] },
+      'model',
+      { calls: [{ name: 'read', args: { p: 0 } }] },
+    )
+    const toolAction = preparedAction('read:0', { name: 'read', args: { p: 0 } })
+    revision = await advance(store, record, revision, 'tools-0', [toolAction], [signalId('receipt-model-0')])
+    const admissionId = 'admission-read:0'
+    const request: DispatchAdmissionRequest = {
+      admissionId,
+      commitId: `commit-${admissionId}`,
+      guard: commitGuard('inv-tools-0', revision),
+      atomicDomain: {
+        domainId: 'domain-1',
+        revision: 1,
+        stateAuthority: authority,
+        budgetAuthority: authority,
+        stateBinding: {
+          bindingId: 'binding-1',
+          contract: 'agh.runtime/run-admission',
+          logicalName: 'run',
+          providerId: 'runtime-state',
+        },
+        budgetBinding: {
+          bindingId: 'binding-1',
+          contract: 'agh.runtime/run-admission',
+          logicalName: 'run',
+          providerId: 'runtime-state',
+        },
+      },
+      actionId: stableId('act', 'run-1\0read:0'),
+      expectedActionRevision: 1,
+      decisionRef: inline({ allow: admissionId }),
+      attemptId: `attempt-${admissionId}`,
+      requestIdentity: {
+        system: 'tool',
+        aghRequestId: `agh-${admissionId}`,
+        idempotencyKey: null,
+        requestDigest: digestOf(toolAction.input),
+      },
+      budget: { reservation: null, quota: [{ name: 'parallel-action', amount: 1 }] },
+      deadline: DEADLINE,
+    }
+    const dispatch = await profiledCall('dispatch', () => store.dispatchAdmission(request, callContext()))
+    if (!dispatch.ok || dispatch.value.state !== 'admitted')
+      throw new Error('profiled dispatch was not admitted')
+    unwrap(
+      await store.commitControl(
+        {
+          commitId: 'mark-read:0',
+          guard: commitGuard('inv-tools-0', revision),
+          command: {
+            kind: 'mark_running',
+            attemptId: request.attemptId,
+            expectedAttemptRevision: 1,
+            externalRequests: [externalRequest],
+          },
+        },
+        callContext(),
+      ),
+      'mark_running',
+    )
+    const actionId = stableId('act', 'run-1\0read:0')
+    const usageFact: UsageFact = {
+      usageId: 'usage-read:0',
+      originKey: 'origin-read:0',
+      actionId,
+      attemptId: request.attemptId,
+      source: toolBinding,
+      dimensions: inline({ tokens: 1 }),
+      externalRequest,
+      observedAt: ADMITTED_AT,
+      certainty: 'measured',
+    }
+    const intakeRequest: ReceiptIntakeRequest = {
+      intakeId: 'intake-read:0',
+      receipt: {
+        receiptId: 'receipt-read:0',
+        actionId,
+        attemptId: request.attemptId,
+        bindingId: 'binding-1',
+        inputDigest: digestOf(toolAction.input),
+        outcome: 'succeeded',
+        result: inline({ text: 'read' }),
+        externalRequests: [externalRequest],
+        usageRefs: [usageFact.usageId],
+        references: [],
+        provenance: { sourceRefs: [], producer: toolBinding, trustLabels: [] },
+        completedAt: ADMITTED_AT,
+      },
+      usage: [usageFact],
+      evidence: [],
+      sourceAuthorizationRef: dispatch.value.authorizationId,
+      queryUsage: null,
+      resultHandling: { kind: 'no-hook' },
+    }
+    const intake = await profiledCall('intake', () => store.intakeReceipt(intakeRequest, callContext()))
+    if (!intake.ok) throw new Error('profiled intake failed')
+    return {
+      dispatchAdmission: {
+        wallMs: dispatch.wallMs,
+        admittedOrSettled: dispatch.value.state,
+        profile: dispatch.profile,
+      },
+      intakeReceipt: { wallMs: intake.wallMs, admittedOrSettled: 'settled', profile: intake.profile },
+    }
+  } finally {
+    setProfiling(false)
+    store.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
+async function profiledCall<T>(
+  _label: string,
+  body: () => Promise<Outcome<T>>,
+): Promise<{ ok: true; value: T; wallMs: number; profile: ProfileSnapshot } | { ok: false }> {
+  resetProfile()
+  setProfiling(true)
+  enterPhase('call')
+  let open = true
+  const started = performance.now()
+  try {
+    const value = await body()
+    const wallMs = performance.now() - started
+    leavePhase()
+    open = false
+    if (!value.ok) return { ok: false }
+    return { ok: true, value: value.value, wallMs, profile: snapshotProfile() }
+  } finally {
+    if (open) leavePhase()
+    setProfiling(false)
+  }
+}
+
 function parseArgs(argv: string[]): {
   campaign: boolean
+  profile: boolean
+  dispatch: ToolDispatchMode
   rounds: number
   out: string | null
   round: number | null
@@ -1469,6 +1771,8 @@ function parseArgs(argv: string[]): {
   scenarios: string[]
 } {
   let campaign = false
+  let profile = false
+  let dispatch: ToolDispatchMode = 'batch'
   let rounds = 20
   let out: string | null = null
   let round: number | null = null
@@ -1477,18 +1781,31 @@ function parseArgs(argv: string[]): {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--campaign') campaign = true
-    else if (arg === '--rounds') rounds = Number(argv[++index])
+    else if (arg === '--profile') profile = true
+    else if (arg === '--dispatch') {
+      const value = argv[++index]
+      if (value !== 'each' && value !== 'batch') throw new Error(`unknown dispatch mode ${value}`)
+      dispatch = value
+    } else if (arg === '--rounds') rounds = Number(argv[++index])
     else if (arg === '--out') out = argv[++index] ?? null
     else if (arg === '--round') round = Number(argv[++index])
     else if (arg === '--mode') mode = argv[++index] as Mode | 'both'
     else if (arg === '--scenario') scenarios.push(argv[++index] ?? '')
     else throw new Error(`unknown argument ${arg}`)
   }
-  return { campaign, rounds, out, round, mode, scenarios }
+  return { campaign, profile, dispatch, rounds, out, round, mode, scenarios }
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
+  toolDispatchMode = args.dispatch
+  if (args.profile) {
+    const report = await profileHotCommits(5)
+    const text = JSON.stringify(report)
+    if (args.out) writeFileSync(args.out, `${text}\n`)
+    console.log(text)
+    return
+  }
   if (args.round !== null) {
     const samples = await runRound(args.round, args.rounds)
     for (const sample of samples) console.log(JSON.stringify(sample))
@@ -1502,7 +1819,7 @@ async function main(): Promise<void> {
     for (let round = 0; round < args.rounds; round += 1) {
       const child = execFileSync(
         process.execPath,
-        [tsx, script, '--round', String(round), '--rounds', String(args.rounds)],
+        [tsx, script, '--round', String(round), '--rounds', String(args.rounds), '--dispatch', args.dispatch],
         {
           cwd: repoRoot,
           encoding: 'utf8',

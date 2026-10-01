@@ -1165,6 +1165,17 @@ function recordValue<T>(path: string, recordId: string): T {
   return JSON.parse(rows[0].value_json) as T
 }
 
+function actionState(path: string, key: string): string {
+  return recordValue<{ state: string }>(path, `action:${stableId('act', `run-1\0${key}`)}`).state
+}
+
+function quotaFingerprints(path: string): string[] {
+  return query<{ value_json: string }>(
+    path,
+    "SELECT value_json FROM runtime_records WHERE record_id LIKE 'quota:%' ORDER BY record_id",
+  ).map((row) => (JSON.parse(row.value_json) as { requestFingerprint: string }).requestFingerprint)
+}
+
 function continuation(step = 1) {
   return {
     namespace: 'agh.test/loop',
@@ -1959,6 +1970,137 @@ describe('runtime state advance, dispatch, and invocation', () => {
     store.close()
     const reopened = openStore(path)
     expect((await reopened.open(readOpen('open-after-reject'), context())).ok).toBe(true)
+    reopened.close()
+  })
+
+  it('commits a quota rejection beside an admitted sibling in one dispatch batch', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const heldAction = preparedAction('step-hold')
+    const rejectedAction = preparedAction('step-over')
+    unwrap(
+      await store.advanceRun(
+        advanceBody('advance-batch', 'invocation-1', 0, [heldAction, rejectedAction]),
+        context(),
+      ),
+      'advance',
+    )
+    const before = count(path, 'events')
+    const heldRequest = dispatchBody(heldAction, 'invocation-1', 1, 'admission-hold', [
+      { name: 'parallel-action', amount: 16 },
+    ])
+    const rejectedRequest = dispatchBody(rejectedAction, 'invocation-1', 1, 'admission-over', [
+      { name: 'parallel-action', amount: 1 },
+    ])
+    const dispatched = unwrap(
+      await store.commitDispatchBatch('commit-batch-hold', [heldRequest, rejectedRequest], context()),
+      'batch',
+    )
+    expect(dispatched).toHaveLength(2)
+    expect(dispatched[0]).toMatchObject({
+      state: 'admitted',
+      commitId: 'commit-batch-hold',
+      quotaReservationRefs: [stableId('qr', 'admission-hold')],
+    })
+    expect(dispatched[1]).toMatchObject({
+      state: 'rejected',
+      reason: 'quota',
+      commitId: 'commit-batch-hold',
+    })
+    if (dispatched[1]?.state === 'rejected') expect(dispatched[1].error.code).toBe('quota')
+    expect(count(path, 'events')).toBe(before + 1)
+    expect(actionState(path, 'step-hold')).toBe('dispatching')
+    expect(actionState(path, 'step-over')).toBe('settled')
+    expect(quotaFingerprints(path)).toEqual([canonicalDigest(heldRequest)])
+    const replayed = unwrap(
+      await store.commitDispatchBatch('commit-batch-replay', [heldRequest, rejectedRequest], context()),
+      'replay',
+    )
+    expect(replayed).toEqual(dispatched)
+    expect(count(path, 'events')).toBe(before + 1)
+    await preparedInvocation(store, 'invocation-2', 1)
+    const third = preparedAction('step-next')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-next', 'invocation-2', 1, [third]), context()),
+      'advance next',
+    )
+    const beforePartial = count(path, 'events')
+    const partial = unwrap(
+      await store.commitDispatchBatch(
+        'commit-batch-partial',
+        [
+          heldRequest,
+          dispatchBody(third, 'invocation-2', 2, 'admission-next', [{ name: 'parallel-action', amount: 1 }]),
+        ],
+        context(),
+      ),
+      'partial',
+    )
+    expect(partial[0]).toEqual(dispatched[0])
+    expect(partial[1]).toMatchObject({
+      state: 'rejected',
+      reason: 'quota',
+      commitId: 'commit-batch-partial',
+    })
+    expect(count(path, 'events')).toBe(beforePartial + 1)
+    expect(actionState(path, 'step-hold')).toBe('dispatching')
+    expect(quotaFingerprints(path)).toEqual([canonicalDigest(heldRequest)])
+    store.close()
+    const reopened = openStore(path)
+    unwrap(await reopened.open(readOpen('open-after-batch'), context()), 'reopen')
+    reopened.close()
+  })
+
+  it('rolls the dispatch batch back when one admission is refused', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const first = preparedAction('step-a')
+    const second = preparedAction('step-b')
+    unwrap(
+      await store.advanceRun(advanceBody('advance-refuse', 'invocation-1', 0, [first, second]), context()),
+      'advance',
+    )
+    const before = count(path, 'events')
+    const refused = await store.commitDispatchBatch(
+      'commit-batch-refuse',
+      [
+        dispatchBody(first, 'invocation-1', 1, 'admission-keep', [{ name: 'parallel-action', amount: 1 }]),
+        {
+          ...dispatchBody(second, 'invocation-1', 1, 'admission-bad', [
+            { name: 'parallel-action', amount: 1 },
+          ]),
+          expectedActionRevision: 99,
+        },
+      ],
+      context(),
+    )
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error).toMatchObject({ code: 'conflict', detailCode: 'action_state' })
+    expect(count(path, 'events')).toBe(before)
+    expect(actionState(path, 'step-a')).toBe('prepared')
+    expect(actionState(path, 'step-b')).toBe('prepared')
+    expect(
+      query(path, "SELECT request_id FROM runtime_request_results WHERE method = 'dispatchAdmission'"),
+    ).toEqual([])
+    expect(
+      query<{ domain: string | null }>(
+        path,
+        'SELECT dispatch_domain_json AS domain FROM runtime_session_meta',
+      ),
+    ).toEqual([{ domain: null }])
+    const admitted = unwrap(
+      await store.dispatchAdmission(
+        dispatchBody(first, 'invocation-1', 1, 'admission-keep', [{ name: 'parallel-action', amount: 1 }]),
+        context(),
+      ),
+      'after rollback',
+    )
+    expect(admitted.state).toBe('admitted')
+    expect(actionState(path, 'step-a')).toBe('dispatching')
+    expect(actionState(path, 'step-b')).toBe('prepared')
+    store.close()
+    const reopened = openStore(path)
+    expect((await reopened.open(readOpen('open-after-rollback'), context())).ok).toBe(true)
     reopened.close()
   })
 
