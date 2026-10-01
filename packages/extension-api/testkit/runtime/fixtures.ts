@@ -24,6 +24,7 @@ export interface RuntimeInboxFixture {
 }
 
 export function createRuntimeInboxFixture(): RuntimeInboxFixture {
+  const namespace = `fixture-inbox-${crypto.randomUUID()}`
   const waiters = new Map<string, ((acceptance: RuntimeInboxAcceptance) => void)[]>()
   const fired = new Map<string, string>()
   return {
@@ -35,9 +36,8 @@ export function createRuntimeInboxFixture(): RuntimeInboxFixture {
       else existing.push(wake)
     },
     notify(deliveryKey) {
-      const previous = fired.get(deliveryKey)
-      if (previous !== undefined) return { deliveryId: previous, woken: 0 }
-      const deliveryId = `fixture-delivery-${fired.size + 1}`
+      if (fired.has(deliveryKey)) return { deliveryId: fired.get(deliveryKey) as string, woken: 0 }
+      const deliveryId = `${namespace}-delivery-${fired.size + 1}`
       fired.set(deliveryKey, deliveryId)
       const acceptance = { deliveryId }
       const queued = [...(waiters.get(deliveryKey) ?? [])]
