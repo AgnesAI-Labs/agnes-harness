@@ -1373,7 +1373,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Config registration records the requested provider id. Measured 1515, exact, no spare.
   // Config evidence records deployment reuse for each scenario. Measured 1527, exact, no spare.
   // Package source and resolver scenario registration on that base. Measured 1679, exact, no spare.
-  'packages/extension-api/testkit': 1679,
+  // Unsupported reference source kinds register as not-advertised. Measured 1683, exact, no spare.
+  'packages/extension-api/testkit': 1683,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

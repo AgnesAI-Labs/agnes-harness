@@ -1,4 +1,4 @@
-import { type BuildIdentity, SCENARIOS, type ScenarioName } from '../evidence.js'
+import { type BuildIdentity, type Qualification, SCENARIOS, type ScenarioName } from '../evidence.js'
 import type { AssertionInput, ConformanceHarness } from '../harness.js'
 
 const HEX = /^[a-f0-9]{64}$/
@@ -23,6 +23,8 @@ export interface PackageScenarioEvidence {
 /** One package source backed by an authorized local snapshot. */
 export interface PackageSourcePort {
   readonly recipe: string
+  readonly qualification?: Qualification
+  readonly scenarios?: readonly ScenarioName[]
   select(): Promise<PackageScenarioEvidence>
   normal(): Promise<PackageScenarioEvidence>
   deny(): Promise<PackageScenarioEvidence>
@@ -58,11 +60,13 @@ export function registerPackageSourceContract(
 ): void {
   const providerId = binding.providerId ?? 'default'
   for (const source of binding.sources) {
-    for (const scenario of SCENARIOS) {
+    const scenarios = source.scenarios ?? SCENARIOS
+    const qualification = source.qualification ?? 'required'
+    for (const scenario of scenarios) {
       harness.registerCase({
         contract: 'agh.package-source',
         scenario,
-        qualification: 'required',
+        qualification,
         providerId,
         async run(context): Promise<AssertionInput> {
           const evidence = await source[context.scenario]()

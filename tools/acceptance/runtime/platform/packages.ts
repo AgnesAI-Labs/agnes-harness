@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -498,6 +498,48 @@ function resolverToken(token: string): Kind | null {
   return null
 }
 
+function unsupportedSource(recipe: 'npm' | 'git'): PackageSourcePort {
+  const realId = SOURCE_ID.reference
+  const providerDigest = sha256(realId)
+  const sourceId = recipe === 'npm' ? 'npm' : 'origin'
+  const show = async (): Promise<PackageScenarioEvidence> => {
+    const root = temp(`pkg-${recipe}-`)
+    try {
+      const provider = createReferenceSource({
+        cacheDir: join(root, 'snapshots'),
+        ...(recipe === 'npm'
+          ? { npmRegistries: { [sourceId]: 'http://127.0.0.1:9' } }
+          : { gitRepositories: { [sourceId]: root } }),
+        providerId: realId,
+      })
+      const refreshed = await provider.refreshCatalog({
+        sourceId,
+        requirements: [{ packageId: 'acme.tools', versionRange: '1.0.0', sourceIds: [sourceId] }],
+      })
+      assert.equal(refreshed.ok, false)
+      if (refreshed.ok) return evidence(providerDigest, providerDigest, providerDigest, 'accepted')
+      assert.equal(refreshed.detailCode, 'source_kind_unsupported')
+      assert.equal(provider.networkReads(), 0)
+      assert.equal(provider.processSpawns(), 0)
+      const digest = sha256(refreshed.detailCode)
+      return evidence(providerDigest, digest, digest, refreshed.detailCode)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+  return {
+    recipe,
+    qualification: 'not-advertised',
+    scenarios: ['deny'],
+    select: show,
+    normal: show,
+    deny: show,
+    cancel: show,
+    recover: show,
+    dispose: show,
+  }
+}
+
 export async function bindPackageContracts(
   harness: ConformanceHarness,
   command: string,
@@ -521,7 +563,10 @@ export async function bindPackageContracts(
         command,
         build,
         providerId: token,
-        sources: [sourcePort(sources[sourceKind], sourceKind)],
+        sources: [
+          sourcePort(sources[sourceKind], sourceKind),
+          ...(sourceKind === 'reference' ? [unsupportedSource('npm'), unsupportedSource('git')] : []),
+        ],
       })
     }
     const resolverKind = resolverToken(token)
@@ -539,7 +584,9 @@ export async function bindPackageContracts(
 export interface PackageAcceptanceReport {
   readonly ok: true
   readonly sources: {
-    readonly local: { readonly digest: string; readonly reused: boolean; readonly installed: false }
+    readonly local: { readonly digest: string; readonly sameDigest: true; readonly installed: false }
+    readonly refusal: { readonly detailCode: string; readonly sameCode: true }
+    readonly symlink: { readonly detailCode: string; readonly sameCode: true }
     readonly npm: { readonly digest: string; readonly verified: boolean; readonly installed: false }
     readonly git: {
       readonly commit: string
@@ -547,8 +594,14 @@ export interface PackageAcceptanceReport {
       readonly head: string
       readonly installed: false
     }
+    readonly referenceUnsupported: { readonly npm: string; readonly git: string }
   }
-  readonly resolvers: { readonly digest: string; readonly sameLock: true }
+  readonly resolvers: {
+    readonly digest: string
+    readonly sameLock: true
+    readonly conflict: string
+    readonly sameConflict: true
+  }
 }
 
 async function stageInterrupt(
@@ -573,6 +626,86 @@ async function stageInterrupt(
   assert.equal(existsSync(join(cache, 'installed')), false)
 }
 
+async function symlinkDiagnostic(kind: Kind, root: string): Promise<string> {
+  const base = join(root, `${kind}-link`)
+  const real = join(base, 'real')
+  writePackageTree(real, 'acme.tools', '1.0.0', 'linked')
+  mkdirSync(join(base, 'linked', 'acme.tools'), { recursive: true })
+  symlinkSync(join(real, 'acme.tools', '1.0.0'), join(base, 'linked', 'acme.tools', '1.0.0'))
+  const create = kind === 'default' ? createDefaultSource : createReferenceSource
+  const provider = create({
+    cacheDir: join(base, 'snapshots'),
+    localRoots: { local: join(base, 'linked') },
+    providerId: SOURCE_ID[kind],
+  })
+  const refreshed = await provider.refreshCatalog({
+    sourceId: 'local',
+    requirements: [requirement('local')],
+  })
+  assert.equal(refreshed.ok, true)
+  if (!refreshed.ok) throw new Error('symlink refresh failed')
+  assert.deepEqual(refreshed.value.diagnosticIds, ['symlink_escape:acme.tools'])
+  return 'symlink_escape'
+}
+
+async function conflictReason(kind: Kind, root: string): Promise<string> {
+  const base = join(root, `${kind}-conflict`)
+  const left = join(base, 'left')
+  const right = join(base, 'right')
+  const cache = join(base, 'snapshots')
+  writePackageTree(left, 'acme.tools', '1.0.0', 'left')
+  writePackageTree(right, 'acme.tools', '1.0.0', 'right')
+  const create = kind === 'default' ? createDefaultSource : createReferenceSource
+  const createResolver = kind === 'default' ? createDefaultResolver : createReferenceResolver
+  for (const sourceId of ['left', 'right'] as const) {
+    const source = create({
+      cacheDir: cache,
+      localRoots: { left, right },
+      providerId: SOURCE_ID[kind],
+    })
+    const refreshed = await source.refreshCatalog({
+      sourceId,
+      requirements: [{ packageId: 'acme.tools', versionRange: '1.0.0', sourceIds: [sourceId] }],
+    })
+    assert.equal(refreshed.ok, true)
+    source.dispose()
+  }
+  const resolver = createResolver({ cacheDir: cache, providerId: RESOLVER_ID[kind] })
+  const resolved = resolver.resolve({
+    requirements: [{ packageId: 'acme.tools', versionRange: '1.0.0', sourceIds: [] }],
+    installedLock: emptyPackageLock(),
+    allowedSources: ['left', 'right'],
+    platform: 'test',
+    apiVersions: [],
+  })
+  assert.equal(resolved.ok, true)
+  if (!resolved.ok) throw new Error('conflict resolve failed')
+  assert.equal(resolved.value.lockGraph.entries.length, 0)
+  const reason = resolved.value.conflicts[0]?.reason ?? ''
+  assert.equal(reason.includes('content identity mismatch'), true)
+  return reason
+}
+
+async function referenceUnsupported(recipe: 'npm' | 'git', root: string): Promise<string> {
+  const sourceId = recipe === 'npm' ? 'npm' : 'origin'
+  const provider = createReferenceSource({
+    cacheDir: join(root, `reference-${recipe}`),
+    ...(recipe === 'npm'
+      ? { npmRegistries: { [sourceId]: 'http://127.0.0.1:9' } }
+      : { gitRepositories: { [sourceId]: root } }),
+    providerId: SOURCE_ID.reference,
+  })
+  const refreshed = await provider.refreshCatalog({
+    sourceId,
+    requirements: [{ packageId: 'acme.tools', versionRange: '1.0.0', sourceIds: [sourceId] }],
+  })
+  assert.equal(refreshed.ok, false)
+  if (refreshed.ok) throw new Error('reference accepted an unsupported source')
+  assert.equal(provider.networkReads(), 0)
+  assert.equal(provider.processSpawns(), 0)
+  return refreshed.detailCode
+}
+
 export async function runPackageAcceptance(): Promise<PackageAcceptanceReport> {
   const root = temp('pkg-accept-')
   const registries: Array<{ close(): Promise<void> }> = []
@@ -592,7 +725,8 @@ export async function runPackageAcceptance(): Promise<PackageAcceptanceReport> {
     )
     registries.push(registry)
     const gitPackage = initGitPackage(join(root, 'git'), 'from-git')
-    const report = { local: '', npm: '', git: '' }
+    let localDigest = ''
+    let refusal = ''
     let lockDigest = ''
     for (const kind of ['default', 'reference'] as const) {
       const create = kind === 'default' ? createDefaultSource : createReferenceSource
@@ -613,74 +747,21 @@ export async function runPackageAcceptance(): Promise<PackageAcceptanceReport> {
       if (!found.ok) throw new Error('local package was not discovered')
       const item = found.value.items[0]
       assert.ok(item)
-      if (report.local === '') report.local = item.digest
-      else assert.equal(item.digest, report.local)
+      if (localDigest === '') localDigest = item.digest
+      else assert.equal(item.digest, localDigest)
       const fetched = await local.fetch({ locator: item.locator, expectedDigest: item.digest })
       assert.equal(fetched.ok, true)
       const reads = local.networkReads()
       const reused = await local.fetch({ locator: item.locator, expectedDigest: item.digest })
       assert.equal(reused.ok, true)
       assert.equal(local.networkReads(), reads)
+      const refused = await local.fetch({ locator: item.locator, expectedDigest: 'b'.repeat(64) })
+      assert.equal(refused.ok, false)
+      if (!refused.ok) {
+        if (refusal === '') refusal = refused.detailCode
+        else assert.equal(refused.detailCode, refusal)
+      }
       await stageInterrupt(create, SOURCE_ID[kind], cache, localOptions, item.locator, item.digest)
-
-      const npmOptions: PackageSourceOptions = {
-        cacheDir: join(cache, 'npm'),
-        npmRegistries: { npm: registry.url },
-        providerId: SOURCE_ID[kind],
-        transport: {
-          async get(url: string) {
-            const response = await fetch(url.startsWith('/') ? `${registry.url}${url}` : url)
-            return { status: response.status, body: Buffer.from(await response.arrayBuffer()) }
-          },
-        },
-      }
-      const npm = create(npmOptions)
-      assert.equal(
-        (await npm.refreshCatalog({ sourceId: 'npm', requirements: [requirement('npm')] })).ok,
-        true,
-      )
-      const npmFound = npm.discover({ query: '', cursor: null, limit: 5 })
-      assert.equal(npmFound.ok, true)
-      if (!npmFound.ok) throw new Error('npm package was not discovered')
-      const npmItem = npmFound.value.items[0]
-      assert.ok(npmItem)
-      assert.equal(npmItem.digest, item.digest)
-      report.npm = npmItem.digest
-      await stageInterrupt(
-        create,
-        SOURCE_ID[kind],
-        npmOptions.cacheDir,
-        npmOptions,
-        npmItem.locator,
-        npmItem.digest,
-      )
-
-      const gitOptions: PackageSourceOptions = {
-        cacheDir: join(cache, 'git'),
-        gitRepositories: { origin: gitPackage.repo },
-        providerId: SOURCE_ID[kind],
-      }
-      const gitSource = create(gitOptions)
-      assert.equal(
-        (await gitSource.refreshCatalog({ sourceId: 'origin', requirements: [requirement('origin')] })).ok,
-        true,
-      )
-      const gitFound = gitSource.discover({ query: '', cursor: null, limit: 5 })
-      assert.equal(gitFound.ok, true)
-      if (!gitFound.ok) throw new Error('git package was not discovered')
-      const gitItem = gitFound.value.items[0]
-      assert.ok(gitItem)
-      assert.equal(gitItem.locator.kind === 'git' ? gitItem.locator.commit : '', gitPackage.commit)
-      report.git = gitItem.digest
-      await stageInterrupt(
-        create,
-        SOURCE_ID[kind],
-        gitOptions.cacheDir,
-        gitOptions,
-        gitItem.locator,
-        gitItem.digest,
-      )
-
       const resolver = createResolver({ cacheDir: cache, providerId: RESOLVER_ID[kind] })
       const resolved = resolver.resolve({
         requirements: [requirement('local')],
@@ -697,6 +778,69 @@ export async function runPackageAcceptance(): Promise<PackageAcceptanceReport> {
       assert.equal(resolver.networkReads(), 0)
       assert.equal(existsSync(join(cache, 'installed')), false)
     }
+    const linkCodes = await Promise.all(
+      (['default', 'reference'] as const).map((kind) => symlinkDiagnostic(kind, root)),
+    )
+    assert.equal(linkCodes[1], linkCodes[0])
+    const reasons = await Promise.all(
+      (['default', 'reference'] as const).map((kind) => conflictReason(kind, root)),
+    )
+    assert.equal(reasons[1], reasons[0])
+
+    const npmOptions: PackageSourceOptions = {
+      cacheDir: join(root, 'default', 'npm'),
+      npmRegistries: { npm: registry.url },
+      providerId: SOURCE_ID.default,
+      transport: {
+        async get(url: string) {
+          const response = await fetch(url.startsWith('/') ? `${registry.url}${url}` : url)
+          return { status: response.status, body: Buffer.from(await response.arrayBuffer()) }
+        },
+      },
+    }
+    const npm = createDefaultSource(npmOptions)
+    assert.equal((await npm.refreshCatalog({ sourceId: 'npm', requirements: [requirement('npm')] })).ok, true)
+    const npmFound = npm.discover({ query: '', cursor: null, limit: 5 })
+    assert.equal(npmFound.ok, true)
+    if (!npmFound.ok) throw new Error('npm package was not discovered')
+    const npmItem = npmFound.value.items[0]
+    assert.ok(npmItem)
+    assert.equal(npmItem.digest, localDigest)
+    await stageInterrupt(
+      createDefaultSource,
+      SOURCE_ID.default,
+      npmOptions.cacheDir,
+      npmOptions,
+      npmItem.locator,
+      npmItem.digest,
+    )
+
+    const gitOptions: PackageSourceOptions = {
+      cacheDir: join(root, 'default', 'git'),
+      gitRepositories: { origin: gitPackage.repo },
+      providerId: SOURCE_ID.default,
+    }
+    const gitSource = createDefaultSource(gitOptions)
+    assert.equal(
+      (await gitSource.refreshCatalog({ sourceId: 'origin', requirements: [requirement('origin')] })).ok,
+      true,
+    )
+    const gitFound = gitSource.discover({ query: '', cursor: null, limit: 5 })
+    assert.equal(gitFound.ok, true)
+    if (!gitFound.ok) throw new Error('git package was not discovered')
+    const gitItem = gitFound.value.items[0]
+    assert.ok(gitItem)
+    assert.equal(gitItem.locator.kind === 'git' ? gitItem.locator.commit : '', gitPackage.commit)
+    await stageInterrupt(
+      createDefaultSource,
+      SOURCE_ID.default,
+      gitOptions.cacheDir,
+      gitOptions,
+      gitItem.locator,
+      gitItem.digest,
+    )
+    const referenceNpm = await referenceUnsupported('npm', root)
+    const referenceGit = await referenceUnsupported('git', root)
     const head = gitPackage.advance()
     assert.notEqual(head, gitPackage.commit)
     const reread = createDefaultSource({
@@ -708,16 +852,20 @@ export async function runPackageAcceptance(): Promise<PackageAcceptanceReport> {
     assert.equal(stable.ok, true)
     if (!stable.ok) throw new Error('snapshot was not readable after head moved')
     const pinned = stable.value.items.find((entry) => entry.locator.kind === 'git')
-    assert.equal(pinned?.digest, report.git)
+    assert.equal(pinned?.digest, gitItem.digest)
     assert.equal(pinned?.locator.kind === 'git' ? pinned.locator.commit : '', gitPackage.commit)
+    const conflict = reasons[0] ?? ''
     return {
       ok: true,
       sources: {
-        local: { digest: report.local, reused: true, installed: false },
-        npm: { digest: report.npm, verified: true, installed: false },
-        git: { commit: gitPackage.commit, digest: report.git, head, installed: false },
+        local: { digest: localDigest, sameDigest: true, installed: false },
+        refusal: { detailCode: refusal, sameCode: true },
+        symlink: { detailCode: linkCodes[0] ?? '', sameCode: true },
+        npm: { digest: npmItem.digest, verified: true, installed: false },
+        git: { commit: gitPackage.commit, digest: gitItem.digest, head, installed: false },
+        referenceUnsupported: { npm: referenceNpm, git: referenceGit },
       },
-      resolvers: { digest: lockDigest, sameLock: true },
+      resolvers: { digest: lockDigest, sameLock: true, conflict, sameConflict: true },
     }
   } finally {
     await Promise.all(registries.map((registry) => registry.close()))

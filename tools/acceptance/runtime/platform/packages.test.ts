@@ -20,8 +20,16 @@ describe('package source and resolver conformance', () => {
       })
       expect(run.report.status).toBe('passed')
       expect(run.report.failures).toEqual([])
-      expect(run.report.assertions).toHaveLength(24)
-      expect(run.report.assertions.every((assertion) => assertion.status === 'passed')).toBe(true)
+      const required = run.report.assertions.filter((assertion) => assertion.qualification === 'required')
+      const omitted = run.report.assertions.filter(
+        (assertion) => assertion.qualification === 'not-advertised',
+      )
+      expect(required).toHaveLength(24)
+      expect(required.every((assertion) => assertion.status === 'passed')).toBe(true)
+      expect(omitted.map((assertion) => assertion.recipe).sort()).toEqual(['git', 'npm'])
+      expect(
+        omitted.every((assertion) => assertion.status === 'passed' && assertion.providerId === 'reference'),
+      ).toBe(true)
       const full = await runConformance({
         contracts: ['agh.package-source', 'agh.package-resolver'],
         providers: ['agh.default/package-source', 'agh.reference/package-resolver'],
@@ -38,14 +46,23 @@ describe('package source and resolver conformance', () => {
     }
   })
 
-  it('agrees on local, npm, and git bytes and on the lock', async () => {
+  it('agrees on local digests and refusals, and leaves npm and git to the default provider', async () => {
     const report = await runPackageAcceptance()
     expect(report.ok).toBe(true)
     expect(report.resolvers.sameLock).toBe(true)
+    expect(report.resolvers.sameConflict).toBe(true)
+    expect(report.resolvers.conflict).toContain('content identity mismatch')
     expect(report.sources.local.digest).toMatch(/^[a-f0-9]{64}$/)
+    expect(report.sources.local.sameDigest).toBe(true)
+    expect(report.sources.refusal).toEqual({ detailCode: 'digest_mismatch', sameCode: true })
+    expect(report.sources.symlink).toEqual({ detailCode: 'symlink_escape', sameCode: true })
     expect(report.sources.npm.digest).toBe(report.sources.local.digest)
     expect(report.sources.git.commit).toMatch(/^[0-9a-f]{40}$/)
     expect(report.sources.git.head).not.toBe(report.sources.git.commit)
+    expect(report.sources.referenceUnsupported).toEqual({
+      npm: 'source_kind_unsupported',
+      git: 'source_kind_unsupported',
+    })
     expect(report.sources.local.installed).toBe(false)
     expect(report.sources.npm.installed).toBe(false)
     expect(report.sources.git.installed).toBe(false)
