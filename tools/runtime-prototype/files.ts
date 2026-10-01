@@ -138,6 +138,7 @@ export const CHECKPOINT_FILES = [
   'packages/extension-api/test/runtime/client-transport-consumer.compile.ts',
   'packages/extension-api/test/runtime/artifact-consumer.compile.ts',
   'packages/extension-api/test/runtime/interaction-event-consumer.compile.ts',
+  'packages/extension-api/test/runtime/legacy-identity-consumer.compile.ts',
   'packages/protocol/package.json',
   'package.json',
   'pnpm-lock.yaml',

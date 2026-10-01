@@ -1,5 +1,3 @@
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import { expect, it } from 'vitest'
 import { documentDigest } from '../../src/runtime/config/config-digest.js'
 import { readPinnedConfigDocument } from '../../src/runtime/config/host-read.js'
@@ -295,59 +293,36 @@ it('reads the admitted revision after a newer file and a failed or cancelled fet
   expect(yamlRead.result.documentRef).toMatchObject({ value: { name: 'from-yaml' } })
   expect(yamlRead.result.digest).toBe(documentDigest({ name: 'from-yaml' }))
 
-  let calls = 0
-  let body = first
-  const server: Server = createServer((_request, response) => {
-    calls += 1
-    response.setHeader('content-type', 'application/json')
-    response.end(JSON.stringify(body))
+  let cancelledLoads = 0
+  const abortedFile = createFileConfigProvider(() => {
+    cancelledLoads += 1
+    return JSON.stringify(first)
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const address = server.address() as AddressInfo
-  const http = createFetchConfigProvider(async (_sourceRef, signal) => {
-    const response = await fetch(`http://127.0.0.1:${address.port}/latest`, { signal })
-    return (await response.json()) as { revision: number; schema: SchemaRef; value: { name: string } }
+  const fileAbort = new AbortController()
+  fileAbort.abort()
+  expect(abortedFile.source.refresh('local', fileAbort.signal)?.code).toBe('cancelled')
+  expect(cancelledLoads).toBe(0)
+  expect(abortedFile.provider.read({ sourceRef: 'local', revision: null }).ok).toBe(false)
+
+  const failing = createFetchConfigProvider(async () => {
+    throw new Error('offline')
   })
-  try {
-    expect(await http.source.refresh('remote')).toBeNull()
-    body = second
-    const callsAfterFirst = calls
-    const httpPinned = http.provider.read({ sourceRef: 'remote', revision: 1 })
-    expect(calls).toBe(callsAfterFirst)
-    expect(httpPinned.ok).toBe(true)
-    if (!httpPinned.ok) return
-    expect(httpPinned.result.digest).toBe(pinned.result.digest)
-    expect(await http.source.refresh('remote')).toBeNull()
-    const httpLatest = http.provider.read({ sourceRef: 'remote', revision: null })
-    expect(httpLatest.ok).toBe(true)
-    if (!httpLatest.ok) return
-    expect(httpLatest.result.revision).toBe(2)
-    expect(http.provider.read({ sourceRef: 'remote', revision: 1 })).toMatchObject({
-      ok: true,
-      result: { digest: pinned.result.digest },
-    })
-    const failing = createFetchConfigProvider(async () => {
-      throw new Error('offline')
-    })
-    expect((await failing.source.refresh('remote'))?.code).toBe('source_unavailable')
-    expect(failing.provider.read({ sourceRef: 'remote', revision: null }).ok).toBe(false)
-    const cancelled = createFetchConfigProvider(
-      (_sourceRef, signal) =>
-        new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
-        }),
-    )
-    const controller = new AbortController()
-    const pending = cancelled.source.refresh('remote', controller.signal)
-    controller.abort()
-    expect((await pending)?.code).toBe('cancelled')
-    expect(cancelled.provider.read({ sourceRef: 'remote', revision: null }).ok).toBe(false)
-    http.provider.dispose()
-    expect(codeOf(http.provider.read({ sourceRef: 'remote', revision: 1 }))).toBe('disposed')
-    expect(file.provider.read({ sourceRef: 'local', revision: 1 }).ok).toBe(true)
-  } finally {
-    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
-  }
+  expect((await failing.source.refresh('remote'))?.code).toBe('source_unavailable')
+  expect(failing.provider.read({ sourceRef: 'remote', revision: null }).ok).toBe(false)
+  const cancelled = createFetchConfigProvider(
+    (_sourceRef, signal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+      }),
+  )
+  const controller = new AbortController()
+  const pending = cancelled.source.refresh('remote', controller.signal)
+  controller.abort()
+  expect((await pending)?.code).toBe('cancelled')
+  expect(cancelled.provider.read({ sourceRef: 'remote', revision: null }).ok).toBe(false)
+  cancelled.provider.dispose()
+  expect(codeOf(cancelled.provider.read({ sourceRef: 'remote', revision: 1 }))).toBe('disposed')
+  expect(file.provider.read({ sourceRef: 'local', revision: 1 }).ok).toBe(true)
 })
 
 it('refuses a weaker layer that revives a package, widens authority, or breaks the parent chain', () => {

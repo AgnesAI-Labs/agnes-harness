@@ -41,6 +41,9 @@ export function sampleAssertion(overrides: Partial<AssertionRecord> = {}): Asser
     attachmentDigest: null,
     fixture: null,
     sharedEvidenceId: null,
+    reuse: { scope: 'run', methodKind: 'compute', lifecycle: 'call', undeclaredConnection: false },
+    perImplementation: false,
+    gate: null,
     ...overrides,
   }
 }

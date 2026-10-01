@@ -42,6 +42,15 @@ importers:
         specifier: workspace:*
         version: link:../../../packages/cordis
 
+  examples/runtime-reference:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../packages/extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+
   packages/ai:
     dependencies:
       '@agnes/protocol':

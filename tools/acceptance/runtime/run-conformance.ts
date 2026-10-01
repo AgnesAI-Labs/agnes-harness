@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
+  type ConformanceHarness,
   type ConformanceReport,
   createConformanceHarness,
   type InjectedClock,
@@ -67,11 +68,38 @@ export interface RunConformanceOptions {
   readonly reportPath: string | null
 }
 
+async function loadConfigBinder(href: string): Promise<{
+  bindConfigContract: (harness: ConformanceHarness, command: string, providerId: string) => Promise<void>
+}> {
+  return (await import(href)) as {
+    bindConfigContract: (harness: ConformanceHarness, command: string, providerId: string) => Promise<void>
+  }
+}
+
+function configProviderIds(providers: readonly string[]): readonly string[] {
+  return providers.filter((providerId) => providerId === 'default' || providerId === 'agh.default/config')
+}
+
+async function registerRequestedContracts(
+  harness: ConformanceHarness,
+  options: RunConformanceOptions,
+): Promise<void> {
+  const selected = options.contracts === 'all' || options.contracts.includes('agh.config')
+  const providerIds = configProviderIds(options.providers)
+  if (!selected || providerIds.length === 0) return
+  const href = new URL('./platform/config-conformance.ts', import.meta.url).href
+  const binder = await loadConfigBinder(href)
+  for (const providerId of providerIds) {
+    await binder.bindConfigContract(harness, options.command, providerId)
+  }
+}
+
 export async function runConformance(options: RunConformanceOptions): Promise<{
   readonly report: ConformanceReport
   readonly reportPath: string
 }> {
   const harness = createConformanceHarness()
+  await registerRequestedContracts(harness, options)
   const report = await harness.run({
     contracts: options.contracts,
     providers: options.providers,
