@@ -207,7 +207,7 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | Web 壳 | zzl | 进行中（2026-10-01） |
 | 设置与通用 | zzl | 进行中（2026-10-01） |
 | 管理与资源 | swx | 进行中（2026-10-01） |
-| 诊断与 Computer Use | yuan | 已完成（2026-10-01） |
+| 诊断与 Computer Use | yuan | 已完成（2026-10-01，`661a0c0`、`22f6020`、`db1c53e`） |
 | CLI | zzl | 进行中（2026-10-01） |
 | 错误码收口 | | 未开始 |
 | 收尾核对 | | 未开始 |
@@ -251,9 +251,9 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| D1 | Computer Use 状态和设置页模板 | `packages/web/src/computer-use-state.ts`、`packages/web-ui/src/settings-computer-use.tsx`、`settings.ts` 的 `#computer-use-settings-pane` | 已完成（yuan，2026-10-01） |
-| D2 | 轨迹面板 | `packages/web-units/src/trace.ts`。这个文件只由诊断线改 | 已完成（yuan，2026-10-01）。徽章、检查器、时间轴和空状态随页面语言变化 |
-| D3 | 诊断导出 | `packages/web-units/src/diagnostics-viewer.ts`、`packages/web-ui/src/diagnostics-dialog.tsx`、`packages/web/src/diagnostics-dialog.ts`、`diagnostics-bundle.ts` | 已完成（yuan，2026-10-01）。导出的 HTML 使用导出当时的语言 |
+| D1 | Computer Use 状态和设置页模板 | `packages/web/src/computer-use-state.ts`、`packages/web-ui/src/settings-computer-use.tsx`、`settings.ts` 的 `#computer-use-settings-pane` | 已完成（yuan，2026-10-01，`661a0c0`）。用词对齐在 `db1c53e` |
+| D2 | 轨迹面板 | `packages/web-units/src/trace.ts`。这个文件只由诊断线改 | 已完成（yuan，2026-10-01，`22f6020`）。单数数量和检索句在 `db1c53e` |
+| D3 | 诊断导出 | `packages/web-units/src/diagnostics-viewer.ts`、`packages/web-ui/src/diagnostics-dialog.tsx`、`packages/web/src/diagnostics-dialog.ts`、`diagnostics-bundle.ts` | 已完成（yuan，2026-10-01，`22f6020`）。导出的 HTML 使用导出当时的语言。用词对齐在 `db1c53e` |
 
 ### 9.6 CLI
 
