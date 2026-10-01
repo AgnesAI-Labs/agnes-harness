@@ -1,4 +1,4 @@
-import type { ModelSettings, ThinkingLevel } from '@agnes/protocol'
+import { type ModelSettings, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import { useState } from 'react'
 import { Button } from './ui/button.js'
 import { Dialog } from './ui/dialog.js'
@@ -23,6 +23,14 @@ export function modelThinkingOptions(map?: Record<string, string>) {
   ]
 }
 
+/** Suffixes are explicit: 100 is 100 tokens, while 100K is 100,000 tokens. */
+export function parseContextBudget(value: string): number | undefined {
+  const match = /^(\d+(?:\.\d+)?)\s*([km]?)$/i.exec(value.trim())
+  if (!match) return undefined
+  const tokens = Number(match[1]) * (match[2]?.toLowerCase() === 'm' ? 1e6 : match[2] ? 1000 : 1)
+  return Number.isSafeInteger(tokens) && tokens > 0 ? tokens : undefined
+}
+
 export type ModelSettingsDialogProps = {
   disabled: boolean
   settings: ModelSettings
@@ -44,9 +52,10 @@ export function ModelSettingsDialog({
   const [window, setWindow] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const tokens = parseContextBudget(window)
+  const minimum = minimumContextBudget(contextWindow)
   const validWindow =
-    window === '' ||
-    (Number.isSafeInteger(Number(window)) && Number(window) > 0 && Number(window) <= contextWindow)
+    window.trim() === '' || (tokens !== undefined && tokens >= minimum && tokens <= contextWindow)
   const validThinking =
     thinking === '' || modelThinkingOptions(thinkingLevelMap).some((option) => option.value === thinking)
   return (
@@ -57,7 +66,7 @@ export function ModelSettingsDialog({
         htmlType="button"
         disabled={disabled}
         aria-haspopup="dialog"
-        aria-label="配置本会话的思考强度和上下文窗口"
+        aria-label="配置本会话的思考强度和上下文预算"
         onClick={() => {
           setThinking(settings.thinking ?? '')
           setWindow(String(settings.contextWindow ?? ''))
@@ -82,7 +91,7 @@ export function ModelSettingsDialog({
           try {
             const accepted = await onApply({
               ...(thinking ? { thinking: thinking as ThinkingLevel } : {}),
-              ...(window ? { contextWindow: Number(window) } : {}),
+              ...(tokens === undefined ? {} : { contextWindow: tokens }),
             })
             if (accepted) setOpen(false)
             else setError('配置未保存，请检查连接或重试。')
@@ -111,13 +120,11 @@ export function ModelSettingsDialog({
             {!validThinking && <option value={thinking}>已保存的档位当前不可用：{thinking}</option>}
           </select>
         </Field>
-        <Field className="form-field" label="上下文窗口（tokens）" htmlFor="session-model-window">
+        <Field className="form-field" label="本会话上下文预算（Token）" htmlFor="session-model-window">
           <input
             id="session-model-window"
-            type="number"
-            min={1}
-            max={contextWindow}
-            step={1}
+            type="text"
+            maxLength={32}
             value={window}
             placeholder={`自动 · ${contextWindow.toLocaleString()}`}
             disabled={pending || disabled}
@@ -127,11 +134,12 @@ export function ModelSettingsDialog({
           />
         </Field>
         <p id="session-model-window-hint" className="field-hint">
-          留空恢复模型目录默认值。最大 {contextWindow.toLocaleString()} tokens；此值控制上下文压缩预算。
+          模型容量 {contextWindow.toLocaleString()} Token。可输入 100K（100,000
+          Token）或完整数量；留空恢复自动。较小预算会提前整理上下文。
         </p>
         <p id="session-model-settings-error" role="alert">
           {!validWindow
-            ? '请输入模型容量以内的正整数。'
+            ? `请输入 ${minimum.toLocaleString()} 至 ${contextWindow.toLocaleString()} 之间的正整数 Token，可使用 K/M 单位。`
             : !validThinking
               ? '该模型当前不支持已保存的思考强度，请重新选择。'
               : error}

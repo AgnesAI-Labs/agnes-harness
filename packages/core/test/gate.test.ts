@@ -117,11 +117,11 @@ describe('checkpointRoutine compaction threshold', () => {
     },
   )
 
-  it.each([undefined, 123])(
+  it.each([undefined, 2048])(
     'passes the effective context window %s to compaction and usage',
     async (window) => {
       const provider = fakeProvider([textTurn('a')])
-      Object.assign(provider, { models: () => [modelRecord('default', 'big-model', 321)] })
+      Object.assign(provider, { models: () => [modelRecord('default', 'big-model', 3210)] })
       const { session } = await openSession({ provider })
       if (window !== undefined)
         await session.setModel({
@@ -142,10 +142,37 @@ describe('checkpointRoutine compaction threshold', () => {
       expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
       // The threshold is checked at both checkpoints a plain text turn passes through (before
       // inference and again on the way to stopGate); both must see the real window, not just one.
-      expect(seen).toEqual([window ?? 321, window ?? 321])
-      expect((await session.projectUI()).usage?.context.window).toBe(window ?? 321)
+      expect(seen).toEqual([window ?? 3210, window ?? 3210])
+      expect((await session.projectUI()).usage?.context.window).toBe(window ?? 3210)
     },
   )
+
+  it('quotes the reserved-space threshold when no safe cut exists below the session budget', async () => {
+    const provider = fakeProvider([
+      textTurn('ok').map((event) =>
+        event.type === 'usage' ? { ...event, tokens: { ...event.tokens, input: 9832 } } : event,
+      ),
+    ])
+    provider.models = () => [modelRecord('default', 'big-model', 128000)]
+    const { session, log } = await openSession({
+      provider,
+      seams: fakeSeams({ approval: { ask: async () => 'rejected' } }),
+    })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+    await session.setModel({ slot: 'primary', route: 'default', model: 'big-model', contextWindow: 9999 })
+    session.compaction = new CompactionRunner({ plan: async () => null, onCompact: async () => undefined })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
+    const asked = await log.scan({ type: 'approval/asked', limit: 10 })
+    expect(asked).toHaveLength(1)
+    expect(asked[0]?.data).toMatchObject({
+      summary: expect.stringContaining(
+        'context 9838 tokens reached the 7500-token compaction threshold (9999-token session budget, 2499 reserved)',
+      ),
+    })
+    expect(provider.requests).toHaveLength(1)
+  })
 
   it('falls back to the default only when the provider publishes no matching record', async () => {
     const { session } = await openSession({ provider: fakeProvider([textTurn('a')]) })

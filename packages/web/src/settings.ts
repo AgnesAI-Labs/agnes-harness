@@ -8,9 +8,11 @@ import type {
   ModelSettings,
   ThinkingLevel,
 } from '@agnes/protocol'
+import { minimumContextBudget } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import {
   modelThinkingOptions,
+  parseContextBudget,
   renderRegion,
   SettingsAccounts,
   setSettingsSelectOptions,
@@ -303,6 +305,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const model = tested?.models.find((entry) => entry.id === ui.models.value)
     const thinking = ui.thinking?.value ?? model?.defaultSettings?.thinking
     const window = ui.contextWindow?.value.trim() ?? String(model?.defaultSettings?.contextWindow ?? '')
+    const tokens = parseContextBudget(window)
     if (
       thinking &&
       !modelThinkingOptions(model?.thinkingLevelMap).some((option) => option.value === thinking)
@@ -313,17 +316,19 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ui.thinking?.setAttribute('aria-invalid', 'false')
     if (
       window &&
-      (!Number.isSafeInteger(Number(window)) ||
-        Number(window) < 1 ||
-        (model?.contextWindow !== undefined && Number(window) > model.contextWindow))
+      (tokens === undefined ||
+        tokens < minimumContextBudget(model?.contextWindow) ||
+        (model?.contextWindow !== undefined && tokens > model.contextWindow))
     ) {
       ui.contextWindow?.setAttribute('aria-invalid', 'true')
-      throw new Error('上下文窗口须为模型容量以内的正整数')
+      throw new Error(
+        `上下文预算须为 ${minimumContextBudget(model?.contextWindow).toLocaleString()} Token 以上、模型容量以内的正整数，可使用 K/M 单位`,
+      )
     }
     ui.contextWindow?.setAttribute('aria-invalid', 'false')
     return {
       ...(thinking ? { thinking: thinking as ThinkingLevel } : {}),
-      ...(window ? { contextWindow: Number(window) } : {}),
+      ...(tokens === undefined ? {} : { contextWindow: tokens }),
     }
   }
   const renderModelSettings = (): void => {
@@ -349,7 +354,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (ui.modelSettingsHint)
       ui.modelSettingsHint.textContent =
         (model?.contextWindow ? `模型容量：${model.contextWindow.toLocaleString()} tokens。` : '') +
-        '留空使用模型目录默认窗口；仅新会话继承，已有会话保留自己的配置。'
+        '可输入 100K（100,000 Token）或完整数量，留空恢复自动；仅新会话继承，已有会话保留自己的配置。'
   }
 
   const renderKeyHint = (): void => {

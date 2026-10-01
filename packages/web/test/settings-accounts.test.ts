@@ -176,7 +176,7 @@ it('selects an exact account, clears transient keys and sends account-scoped tes
     [...h.doc.querySelectorAll('#config-thinking option')].map((option) => option.getAttribute('value')),
   ).toEqual(['', 'low', 'high'])
   h.input('config-thinking').value = 'high'
-  h.input('config-context-window').value = '32000'
+  h.input('config-context-window').value = '32K'
   h.doc
     .getElementById('config-form')
     ?.dispatchEvent(new (window as Window).Event('submit', { cancelable: true }))
