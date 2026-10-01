@@ -525,7 +525,7 @@ it('selects an admitted provider and refuses a raw secret, a bad storage path, a
   const cell = { ...policyCell(), allowSessionSelect: true, configOverridePaths: ['/apiKey'] }
   const config = {
     provider: { packageId: 'agnes-host', providerId: 'agh.default/config' },
-    config: { schema: secretSchemaRef, value: { apiKey: 'secret://vault/api' } },
+    config: { schema: secretSchemaRef, value: { apiKey: 'secret://v/k' } },
   }
   const documents = chain(({ parent, child }) => {
     parent.selectionPolicy = [cell]
@@ -554,17 +554,17 @@ it('selects an admitted provider and refuses a raw secret, a bad storage path, a
   if (!selected.ok) return
   expect(selected.result.preset.selections).toEqual(session.selections)
   expect(selected.result.preset.parameters.value).toEqual({ name: 'session', meta: { a: 4, b: 3 } })
-  expect(selected.result.profile.providerConfigs[0]?.config.value).toEqual({ apiKey: 'secret://vault/api' })
+  expect(selected.result.profile.providerConfigs[0]?.config.value).toEqual({ apiKey: 'secret://v/k' })
 
   const hidden = chain(({ parent, child }) => {
     parent.providerConfigs = [
-      { ...config, config: { schema: secretSchemaRef, value: { apiKey: 'raw-secret-value' } } },
+      { ...config, config: { schema: secretSchemaRef, value: { apiKey: 'raw-secret' } } },
     ]
     child.providerConfigs = structuredClone(parent.providerConfigs)
   })
   const secret = providerFor(catalog).resolve(hidden.request)
   expect(codeOf(secret)).toBe('secret_material')
-  expect(JSON.stringify(secret)).not.toContain('raw-secret-value')
+  expect(JSON.stringify(secret)).not.toContain('raw-secret')
 
   const relative = chain(({ parent, child }) => {
     parent.storage = { dataDir: 'relative/data', cacheDir: '/var/agnes/cache' }

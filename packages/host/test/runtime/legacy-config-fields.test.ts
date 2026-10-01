@@ -201,7 +201,7 @@ it('reports an unknown field with a stable pointer and leaves the input unchange
 })
 
 it('refuses secret material and keeps it out of the result', () => {
-  const secret = 'sk-live-secret-material'
+  const secret = 'sk-sample'
   const result = presetOf({
     name: 'sample',
     mcp: { servers: [{ id: 'tools', transport: 'stdio', env: { TOKEN: secret } }] },
