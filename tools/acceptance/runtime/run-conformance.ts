@@ -70,14 +70,57 @@ export interface RunConformanceOptions {
 
 async function loadConfigBinder(href: string): Promise<{
   bindConfigContract: (harness: ConformanceHarness, command: string, providerId: string) => Promise<void>
+  bindReferenceConfigContract: (
+    harness: ConformanceHarness,
+    command: string,
+    providerId: string,
+  ) => Promise<void>
 }> {
   return (await import(href)) as {
     bindConfigContract: (harness: ConformanceHarness, command: string, providerId: string) => Promise<void>
+    bindReferenceConfigContract: (
+      harness: ConformanceHarness,
+      command: string,
+      providerId: string,
+    ) => Promise<void>
   }
 }
 
 function configProviderIds(providers: readonly string[]): readonly string[] {
-  return providers.filter((providerId) => providerId === 'default' || providerId === 'agh.default/config')
+  return providers.filter(
+    (providerId) =>
+      providerId === 'default' || providerId === 'agh.default/config' || providerId === 'reference',
+  )
+}
+
+async function loadPackageBinder(href: string): Promise<{
+  bindPackageContracts: (
+    harness: ConformanceHarness,
+    command: string,
+    providers: readonly string[],
+    selected: { readonly source: boolean; readonly resolver: boolean },
+  ) => Promise<void>
+}> {
+  return (await import(href)) as {
+    bindPackageContracts: (
+      harness: ConformanceHarness,
+      command: string,
+      providers: readonly string[],
+      selected: { readonly source: boolean; readonly resolver: boolean },
+    ) => Promise<void>
+  }
+}
+
+function packageProviderRequested(providers: readonly string[]): boolean {
+  return providers.some(
+    (providerId) =>
+      providerId === 'default' ||
+      providerId === 'reference' ||
+      providerId === 'agh.default/package-source' ||
+      providerId === 'agh.reference/package-source' ||
+      providerId === 'agh.default/package-resolver' ||
+      providerId === 'agh.reference/package-resolver',
+  )
 }
 
 async function registerRequestedContracts(
@@ -86,11 +129,23 @@ async function registerRequestedContracts(
 ): Promise<void> {
   const selected = options.contracts === 'all' || options.contracts.includes('agh.config')
   const providerIds = configProviderIds(options.providers)
-  if (!selected || providerIds.length === 0) return
-  const href = new URL('./platform/config-conformance.ts', import.meta.url).href
-  const binder = await loadConfigBinder(href)
-  for (const providerId of providerIds) {
-    await binder.bindConfigContract(harness, options.command, providerId)
+  if (selected && providerIds.length > 0) {
+    const href = new URL('./platform/config-conformance.ts', import.meta.url).href
+    const binder = await loadConfigBinder(href)
+    for (const providerId of providerIds) {
+      if (providerId === 'reference') {
+        await binder.bindReferenceConfigContract(harness, options.command, providerId)
+      } else {
+        await binder.bindConfigContract(harness, options.command, providerId)
+      }
+    }
+  }
+  const source = options.contracts === 'all' || options.contracts.includes('agh.package-source')
+  const resolver = options.contracts === 'all' || options.contracts.includes('agh.package-resolver')
+  if ((source || resolver) && packageProviderRequested(options.providers)) {
+    const href = new URL('./platform/packages.ts', import.meta.url).href
+    const binder = await loadPackageBinder(href)
+    await binder.bindPackageContracts(harness, options.command, options.providers, { source, resolver })
   }
 }
 

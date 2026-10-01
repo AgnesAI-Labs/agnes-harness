@@ -312,7 +312,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 5763 -> 5770; approved feature scope, no spare allocation.
   // Windows stale-lock reclamation added 17 counted lines; exact baseline total, no spare.
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
-  'packages/package-manager/src': 5796,
+  // Immutable package snapshots and the lock resolver. Measured 7836, exact, no spare.
+  'packages/package-manager/src': 7836,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -1370,9 +1371,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Restricted effects peer and the events outbox projection. Measured 1442, exact, no spare.
   // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
   // Config registration records the requested provider id. Measured 1515, exact, no spare.
-  // Shared blob and artifact access suites with their scenario registration. Measured 2338, exact, no spare.
-  // Blob selection refusals through the test service container. Measured 2378, exact, no spare.
-  'packages/extension-api/testkit': 2378,
+  // Config evidence records deployment reuse for each scenario. Measured 1527, exact, no spare.
+  // Package source and resolver scenario registration on that base. Measured 1679, exact, no spare.
+  // Unsupported reference source kinds register as not-advertised. Measured 1683, exact, no spare.
+  // Shared blob and artifact access suites with their scenario registration, and blob selection
+  // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
+  'packages/extension-api/testkit': 2546,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
