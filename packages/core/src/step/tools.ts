@@ -173,6 +173,25 @@ function dispatchErrorResult(code: string, message: string): ToolResult {
   return { content: [{ type: 'text', text: message }], isError: true, details: { code } }
 }
 
+/**
+ * Model-facing text for a mutation call whose outcome stays unknown. A deadline or a cancel is ours
+ * and is named as such, so it is not mistaken for a lost transport and retried blindly.
+ */
+function unknownOutcomeMessage(name: string, cause: 'timeout' | 'cancelled' | undefined, ms: number): string {
+  if (!cause) return `the outcome of ${name} is unknown after dispatch`
+  const why =
+    cause === 'timeout'
+      ? `exceeded the ${ms} ms limit for one call and was aborted`
+      : 'was cancelled while running'
+  return (
+    `the outcome of ${name} is unknown: it ${why}, so it may have taken partial effect. ` +
+    'Inspect the current state before retrying; do not rerun it unchanged.' +
+    (cause === 'timeout'
+      ? ' Split it into shorter steps, or run it in the background if the tool offers that.'
+      : '')
+  )
+}
+
 async function settleSyntheticDispatch(
   s: SessionImpl,
   call: PlannedCall,
@@ -1113,9 +1132,14 @@ export async function approveAndExecute(
       ac.abort()
       const mutation = policy.isDestructive || !policy.isReadOnly || policy.replay === 'never'
       if (mutation) {
+        // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
         const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
           code: 'TOOL_OUTCOME_UNKNOWN',
-          message: `the outcome of ${call.name} is unknown after dispatch`,
+          message: unknownOutcomeMessage(
+            call.name,
+            timedOut ? 'timeout' : cancelled ? 'cancelled' : undefined,
+            timeoutMs,
+          ),
           outcome: 'unknown',
         })
         return {
