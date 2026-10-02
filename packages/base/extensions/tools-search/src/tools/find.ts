@@ -1,7 +1,7 @@
 import { defineTool, type ToolResult } from '@agnes/extension-api'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
 import { FindParams } from '../../../tools-core/src/tools/schemas.js'
-import { globToRegExp, newWalkReport, SEARCH_META, walk, walkNotes } from './walk.js'
+import { globToRegExp, newWalkReport, SEARCH_META, searchPathError, walk, walkNotes } from './walk.js'
 
 const MAX_ENTRIES = 100_000
 const DEFAULT_LIMIT = 1000
@@ -13,12 +13,15 @@ export const findTool = defineTool({
   parameters: FindParams,
   meta: SEARCH_META,
   async execute(args, ctx): Promise<ToolResult> {
+    const root = args.path ?? ctx.cwd
+    const denied = searchPathError(ctx, 'find', root)
+    if (denied) return denied
     const limit = args.limit ?? DEFAULT_LIMIT
     const re = globToRegExp(args.pattern)
     const report = newWalkReport()
     const out: string[] = []
     let atLimit = false
-    for await (const f of walk(ctx, args.path ?? ctx.cwd, report, { maxEntries: MAX_ENTRIES })) {
+    for await (const f of walk(ctx, root, report, { maxEntries: MAX_ENTRIES })) {
       if (f.kind !== 'file' || !re.test(f.rel)) continue
       if (out.length >= limit) {
         atLimit = true

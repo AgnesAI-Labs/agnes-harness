@@ -963,6 +963,7 @@ export async function approveAndExecute(
           generationDepth: s.generationDepth,
           actor: s.d.actor,
           cwd: s.d.cwd,
+          fullAccess: s.yolo,
           runtime: s.d.runtime,
           preset: s.preset,
           children: s.d.children,
@@ -988,7 +989,13 @@ export async function approveAndExecute(
           // against a number the kernel invented plans against a deadline that is not the real one.
           lease: { remainingMs: () => s.d.log.leaseRemainingMs() },
         },
-        { toolUseId: call.toolUseId, name: call.name, signal: ac.signal, timeoutMs },
+        {
+          toolUseId: call.toolUseId,
+          name: call.name,
+          signal: ac.signal,
+          timeoutMs,
+          outputMaxBytes: s.preset.tools.outputMaxBytes,
+        },
       )
     const invoke = (ctx: ReturnType<typeof context>, attempt: ExecuteAttempt) =>
       s.executeTool(

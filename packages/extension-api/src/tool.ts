@@ -39,6 +39,13 @@ export const RESOLVED_TOOL_CALL_POLICY_KEYS = [
 ] as const
 export const MAX_APPROVAL_SCOPES = 16
 
+// The most text of one tool result that reaches the model before the output guard cuts it. The preset
+// key `tools.output_max_bytes` sets it per deployment; the bounds keep a page and the notes the
+// guard writes inside it, and keep a result from outgrowing what an artifact is expected to hold.
+export const DEFAULT_OUTPUT_MAX_BYTES = 32768
+export const MIN_OUTPUT_MAX_BYTES = 4096
+export const MAX_OUTPUT_MAX_BYTES = 1048576
+
 // All eight keys must be written out on every tool, including the ones a tool has nothing to
 // say about: "no cost hint" is spelled `costHint: undefined`, not an omitted key. That is why
 // the last three are required keys typed `T | undefined` rather than optional `?:` members —
@@ -224,6 +231,8 @@ export interface ToolContext {
   progress(note: string): void
   readonly signal: AbortSignal
   readonly timeoutMs: number
+  /** Bytes of one result's text the model sees before the output guard cuts it (preset `tools.output_max_bytes`). */
+  readonly outputMaxBytes: number
   readonly lease: LeaseView
   readonly log: Logger
 }

@@ -20,6 +20,7 @@ export function prepareSessionSchema(schemaPath: string): JsonSchemaDoc {
     const allowed: Record<string, string> = {
       'https://agnes.ai/schema/runtime/v1/public.json': join(directory, 'runtime/public.json'),
       'prototype.json': join(directory, 'runtime/prototype.json'),
+      'model.json': join(directory, 'model.json'),
     }
     const destination = allowed[match[1] as string]
     if (!destination) throw new Error(`unsupported session schema authority ${reference}`)

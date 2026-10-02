@@ -1,3 +1,4 @@
+import { DEFAULT_OUTPUT_MAX_BYTES } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { SEAM_NAMES, type SeamImplementations, type TestSeams } from '../src/effects/seams.js'
 import { presetDefaults, readPreset } from '../src/step/preset.js'
@@ -27,7 +28,7 @@ describe('preset view', () => {
       preflight: 'estimate',
       perRequestCap: null,
       onExceed: 'quote',
-      maxSteps: 50,
+      maxSteps: null,
     })
     expect(d.approval).toEqual({
       onTimeout: 'rejected',
@@ -42,7 +43,7 @@ describe('preset view', () => {
       agentCallable: true,
     })
     expect(d.sandbox).toEqual({ onUnavailable: 'deny' })
-    expect(d.tools).toEqual({ timeoutMs: 120000, timeouts: {} })
+    expect(d.tools).toEqual({ timeoutMs: 120000, timeouts: {}, outputMaxBytes: DEFAULT_OUTPUT_MAX_BYTES })
     expect(d.verifier).toEqual({ timeoutMs: 30000, defaultTier: 0 })
     expect(d.repair).toEqual({ timeoutMs: 10000 })
     expect(d.completionGate).toEqual({ minItems: 3 })
@@ -113,7 +114,7 @@ describe('preset view', () => {
         budget: { preflight: 'count', per_request_cap: 13, on_exceed: 'deny', max_steps: 17 },
         approval: { timeout_ms: 19, on_unavailable: 'park', pending_ttl_ms: 23 },
         sandbox: { on_unavailable: 'allow' },
-        tools: { timeout_ms: 29, timeouts: { shell: 31 } },
+        tools: { timeout_ms: 29, output_max_bytes: 9000, timeouts: { shell: 31 } },
         verifier: { timeout_ms: 37, default_tier: 2 },
         repair: { timeout_ms: 41 },
         completion_gate: { min_items: 43 },
@@ -145,7 +146,7 @@ describe('preset view', () => {
       budget: { preflight: 'count', perRequestCap: 13, onExceed: 'deny', maxSteps: 17 },
       approval: { onTimeout: 'rejected', timeoutMs: 19, onUnavailable: 'park', pendingTtlMs: 23 },
       sandbox: { onUnavailable: 'allow' },
-      tools: { timeoutMs: 29, timeouts: { shell: 31 } },
+      tools: { timeoutMs: 29, outputMaxBytes: 9000, timeouts: { shell: 31 } },
       verifier: { timeoutMs: 37, defaultTier: 2 },
       repair: { timeoutMs: 41 },
       completionGate: { minItems: 43 },
@@ -171,6 +172,7 @@ describe('preset view', () => {
     expect(v.budget.perRequestCap).toBeNull()
     expect(v.budget.maxSteps).toBe(0)
     expect(v.compaction.enabled).toBe(false)
+    expect(readPreset({ budget: { max_steps: null } }, 'unlimited').budget.maxSteps).toBeNull()
     // Only an absent key falls back. A null written where a number belongs is passed through for
     // the host validator to have already rejected, not quietly turned into the default — asserting
     // it on per_request_cap alone proves nothing, because its default is null.
@@ -180,7 +182,7 @@ describe('preset view', () => {
 
   it('ignores a camelCase key, so a mis-spelled document keeps the default instead of half-applying', () => {
     const v = readPreset({ budget: { maxSteps: 80 } }, 'typo')
-    expect(v.budget.maxSteps).toBe(50)
+    expect(v.budget.maxSteps).toBeNull()
   })
 
   it('survives a document whose branch is a scalar instead of an object', () => {

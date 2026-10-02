@@ -1,4 +1,4 @@
-import { validateOpState } from '@agnes/protocol'
+import { type ThinkingLevel, validateOpState } from '@agnes/protocol'
 import {
   type Clock,
   CoreError,
@@ -514,7 +514,13 @@ export class SessionLogImpl {
       resolvedProfileHash: string | null
       writerRunId: string
       lane: string
-      modelSelections?: Array<{ slot: string; route: string; model: string }>
+      modelSelections?: Array<{
+        slot: string
+        route: string
+        model: string
+        thinking?: ThinkingLevel
+        contextWindow?: number
+      }>
       delegation?: {
         kind: 'fork' | 'spawn'
         creationId: string
@@ -641,7 +647,12 @@ export class SessionLogImpl {
             data: {
               slot: selection.slot,
               from: { route: selection.route, model: selection.model },
-              to: { route: selection.route, model: selection.model },
+              to: {
+                route: selection.route,
+                model: selection.model,
+                ...(selection.thinking === undefined ? {} : { thinking: selection.thinking }),
+                ...(selection.contextWindow === undefined ? {} : { contextWindow: selection.contextWindow }),
+              },
               reason: 'fork-origin',
             },
           }),

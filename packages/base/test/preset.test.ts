@@ -86,6 +86,7 @@ describe('presets/base.yaml', () => {
 describe('every key the kernel reads is spelled the way the kernel spells it', () => {
   const PATHS = [
     'tools.timeout_ms',
+    'tools.output_max_bytes',
     'tools.timeouts',
     'budget.preflight',
     'budget.per_request_cap',

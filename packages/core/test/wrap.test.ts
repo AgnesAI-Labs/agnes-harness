@@ -730,7 +730,13 @@ describe('buildToolContext hands every path to the file system, and decides none
         artifactJobEvent: async () => undefined,
         lease: { remainingMs: () => 1000 },
       },
-      { toolUseId: 't0', name: 'read', signal: new AbortController().signal, timeoutMs: 1000 },
+      {
+        toolUseId: 't0',
+        name: 'read',
+        signal: new AbortController().signal,
+        timeoutMs: 1000,
+        outputMaxBytes: 32768,
+      },
     )
   }
 

@@ -1,3 +1,15 @@
+// FULL-FILE-ACCESS: measured session-scoped file access, external checkpoints and authoritative UI permission
+// projection/synchronization. Exact countLines() caps after review; no exclusions or spare allocation.
+// PERMISSION-RECONNECT: measured Web +48 lines for fresh permission gating and interrupted submission guards.
+// OPTIONAL-STEP-BUDGET merge: remeasured combined Core source at 25706; exact count, no spare.
+// TURN-ERROR-REPAIR: measured persisted error projection and visible React/DOM failure details; no spare allocation.
+// CONTEXT-BUDGET-REPAIR: reviewed budget admission, summary limits, empty-plan refusal and explicit K/M input;
+// exact measured source counts, no exclusions or spare allocation.
+// SESSION-MODEL-SETTINGS: reviewed defaults, session snapshots/replay, capability metadata and Web controls;
+// exact countLines() totals after formatting, no exclusions or spare allocation.
+// SESSION-MODEL-SETTINGS-REPAIR: Core +27 counted lines for window-sized compaction budgets;
+// Host preset replay uses the latest event even when its name matches the initial snapshot.
+// OPTIONAL-STEP-BUDGET: Core 25478->25482 for the committed-cursor livelock guard; exact count, no spare.
 // UI-INTEGRATION-20260927: merged A/B/C lines (ui-refactor + ui-admin-pages); exact combined counts.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
@@ -213,10 +225,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1716, exact, no spare (+2).
   'packages/web-client/src': 1716,
   'packages/web-slots/src': 605,
-  // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
-  'packages/web-ui/src': 4706,
+  // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
+  'packages/web-ui/src': 4891,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 4630,
+  'packages/web-units/src': 4638,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -242,7 +254,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/tools-web': 244,
   'packages/base/extensions/compaction': 800,
   // CORDIS-C1b Task 6 fits checkpoint state to the invocation workspace; exact measured total.
-  'packages/base/extensions/fs-checkpoint': 380,
+  // FULL-ACCESS-FILES: preserve authorized external targets in schema 2 while reading schema 1; exact +10.
+  'packages/base/extensions/fs-checkpoint': 390,
   'packages/base/extensions/sandbox': 800,
   'packages/base/extensions/budget': 90,
   'packages/base/extensions/loop-hygiene': 100,
@@ -319,7 +332,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
   // Output-limit and rate-limit failures render actionable guidance. Measured +4, exact allocation.
-  'packages/web/src/presentation': 120,
+  'packages/web/src/presentation': 121,
   'packages/web/src/markdown': 48,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
@@ -380,11 +393,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1825, exact (+1).
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
-  'packages/web/src/app': 1827,
+  'packages/web/src/app': 1990,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
-  'packages/web/src/permission-picker': 215,
+  'packages/web/src/permission-picker': 219,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -394,10 +407,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
-  'packages/web/src/model-picker': 274,
+  'packages/web/src/model-picker': 278,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
-  'packages/web/src/settings': 800,
+  'packages/web/src/settings': 848,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -593,7 +606,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // override a model's reasoning capability when the installed pi-ai catalogue is incomplete or
   // wrong), landing independently of WIN-12c's own +2. Re-measured on the merged tree directly
   // (never summed): 911; exact cap, no spare.
-  'packages/host/src/configuration': 1202,
+  'packages/host/src/configuration': 1219,
   'packages/host/src/configuration-lock': 39,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
@@ -930,7 +943,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
-  'packages/core/src': 26971,
+  'packages/core/src': 27216,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -945,7 +958,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 3892,
+  'packages/ai/src': 3891,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1240,8 +1253,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime public schema exports and generated authority SPI: measured 2452, no spare allocation.
   // Bounded schema codecs and client transport validation: exact measured 2985, no spare.
   // Reviewed runtime contracts plus the generated legacy identity metadata export: measured 3444 (+1), exact.
-  'packages/protocol/src': 3444,
-  'packages/cli/src/tui': 4000,
+  'packages/protocol/src': 3447,
+  'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
   // the shared ticker + turn-clock wiring in app.ts, and the credits threshold in
@@ -1358,7 +1371,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Generated runtime/client contracts and pure author declarations: exact measured total, no spare.
   // Client transport ports, schema codecs and typed operations: exact measured 2717, no spare.
   // Reviewed client/owner signatures and pure artifact author helper: measured 2813 (+96), exact.
-  'packages/extension-api/src': 2813,
+  'packages/extension-api/src': 2818,
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1443,7 +1456,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
-  'packages/sdk/src': 5127,
+  'packages/sdk/src': 5130,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1803,7 +1816,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
   // Stored public configuration uses canonical JSON and existing credential checks: exact 26512.
-  'packages/daemon/src': 26512,
+  'packages/daemon/src': 26517,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2049,7 +2062,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the three UI lines moved most of this scope into packages/web-ui/src,
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
-  'packages/web/src': 13124,
+  'packages/web/src': 13411,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2559,7 +2572,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Seal streams stored chunks into the private store, and closed services refuse with one code.
   // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
-  'packages/host/src': 55418,
+  'packages/host/src': 55614,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2723,7 +2736,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+11).
   // Cancelling a child's creation also settles its execution state in the same statement. Measured
   // 5017, exact, no spare (+3).
-  'packages/host/src/adapters': 5017,
+  'packages/host/src/adapters': 5025,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.

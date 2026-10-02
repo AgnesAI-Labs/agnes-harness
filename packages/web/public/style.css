@@ -3187,6 +3187,12 @@ body {
   line-height: 1.5rem;
   overflow-wrap: anywhere;
 }
+.turn-error {
+  margin: 0 0 0.5rem;
+  color: var(--agnes-status-danger-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .process-avatar {
   width: 1.75rem;
   height: 1.75rem;

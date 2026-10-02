@@ -142,7 +142,27 @@ it('tests the chosen saved OAuth model and preserves classified failures', async
   })
   const first = must(state.models?.[0]).id,
     alternate = must(state.models?.[1]).id
-  await oauth({ action: 'commit', operationId: state.operationId, model: first }, owner, lifetime.signal)
+  const capacity = must(state.models?.[0]?.contextWindow)
+  const defaultSettings = { contextWindow: Math.floor(capacity / 2) }
+  await oauth(
+    { action: 'commit', operationId: state.operationId, model: first, defaultSettings },
+    owner,
+    lifetime.signal,
+  )
+  expect((await service.get()).accounts?.[0]?.models.find((m) => m.id === first)?.defaultSettings).toEqual(
+    defaultSettings,
+  )
+  expect(
+    (await service.profileInput()).provider?.routes?.[0]?.models?.find((m) => m.id === first)
+      ?.defaultSettings,
+  ).toEqual(defaultSettings)
+  await expect(
+    oauth(
+      { action: 'commit', operationId: state.operationId, model: first, defaultSettings: {} },
+      owner,
+      lifetime.signal,
+    ),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
   probe.mockRejectedValueOnce(Object.assign(new Error('private upstream details'), { code: 'NO_MODEL' }))
   await expect(service.test({ providerId: CODEX_ID, accountId: 'work' })).rejects.toMatchObject({
     code: 'CONFIG_SUBSCRIPTION_MODEL',
@@ -202,6 +222,7 @@ it('refreshes an expired staged grant before testing and commits the rotated gra
     expect.objectContaining({ refresh: 'rotated-staged' }),
     model,
     expect.any(AbortSignal),
+    undefined,
   )
   expect(fetch).toHaveBeenCalledTimes(1)
   lifetime.abort()

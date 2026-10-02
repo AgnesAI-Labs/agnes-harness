@@ -5,9 +5,19 @@ import type {
   ConfigProvider,
   ConfigSnapshot,
   ConfigTestResult,
+  ModelSettings,
+  ThinkingLevel,
 } from '@agnes/protocol'
+import { minimumContextBudget } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
-import { renderRegion, SettingsAccounts, setSettingsSelectOptions, unmountRegion } from '@agnes/web-ui'
+import {
+  modelThinkingOptions,
+  parseContextBudget,
+  renderRegion,
+  SettingsAccounts,
+  setSettingsSelectOptions,
+  unmountRegion,
+} from '@agnes/web-ui'
 import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
@@ -69,6 +79,9 @@ type SettingsElements = {
   apiKey: HTMLInputElement
   test: HTMLButtonElement
   models: HTMLSelectElement
+  thinking?: HTMLSelectElement | undefined
+  contextWindow?: HTMLInputElement | undefined
+  modelSettingsHint?: HTMLParagraphElement | undefined
   save: HTMLButtonElement
   error: HTMLParagraphElement
   state: HTMLParagraphElement
@@ -103,6 +116,9 @@ function readElements(): SettingsElements {
     apiKey: element('config-api-key', 'input'),
     test: element('config-test', 'button'),
     models: element('config-model', 'select'),
+    thinking: optionalElement('config-thinking', 'select'),
+    contextWindow: optionalElement('config-context-window', 'input'),
+    modelSettingsHint: optionalElement('config-model-settings-hint', 'p'),
     save: element('config-save', 'button'),
     error: element('config-error', 'p'),
     state: element('config-state', 'p'),
@@ -163,6 +179,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       : configuration?.provider
   }
   let providers: ConfigProvider[] = []
+  const modelDrafts = new Map<string, ModelSettings>()
   let tested: ConfigTestResult | undefined
   let testPending = false
   let savePending = false
@@ -263,6 +280,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       busy ||
       (oauthSelected && (oauth.operation() ? !tested?.models.length || !ui.models.value : !selectedAccount()))
     ui.models.disabled = !connected || busy || !tested?.models.length || (!oauthSelected && !tested.verified)
+    if (ui.thinking) ui.thinking.disabled = ui.models.disabled
+    if (ui.contextWindow) ui.contextWindow.disabled = ui.models.disabled
     ui.save.disabled =
       !connected || busy || !tested?.verified || tested.models.length === 0 || ui.models.value === ''
     providerPicker.sync()
@@ -278,7 +297,64 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       ? previousModel
       : (savedProvider()?.model ?? (models.length === 1 ? models[0]?.id : undefined))
     ui.models.value = savedModel && models.some((model) => model.id === savedModel) ? savedModel : ''
+    renderModelSettings()
     updateButtons()
+  }
+
+  const readModelSettings = (): ModelSettings => {
+    const model = tested?.models.find((entry) => entry.id === ui.models.value)
+    const thinking = ui.thinking?.value ?? model?.defaultSettings?.thinking
+    const window = ui.contextWindow?.value.trim() ?? String(model?.defaultSettings?.contextWindow ?? '')
+    const tokens = parseContextBudget(window)
+    if (
+      thinking &&
+      !modelThinkingOptions(model?.thinkingLevelMap).some((option) => option.value === thinking)
+    ) {
+      ui.thinking?.setAttribute('aria-invalid', 'true')
+      throw new Error('该模型当前不支持所选思考强度，请重新选择')
+    }
+    ui.thinking?.setAttribute('aria-invalid', 'false')
+    if (
+      window &&
+      (tokens === undefined ||
+        tokens < minimumContextBudget(model?.contextWindow) ||
+        (model?.contextWindow !== undefined && tokens > model.contextWindow))
+    ) {
+      ui.contextWindow?.setAttribute('aria-invalid', 'true')
+      throw new Error(
+        `上下文预算须为 ${minimumContextBudget(model?.contextWindow).toLocaleString()} Token 以上、模型容量以内的正整数，可使用 K/M 单位`,
+      )
+    }
+    ui.contextWindow?.setAttribute('aria-invalid', 'false')
+    return {
+      ...(thinking ? { thinking: thinking as ThinkingLevel } : {}),
+      ...(tokens === undefined ? {} : { contextWindow: tokens }),
+    }
+  }
+  const renderModelSettings = (): void => {
+    const model = tested?.models.find((entry) => entry.id === ui.models.value)
+    const defaults =
+      modelDrafts.get(ui.models.value) ??
+      selectedAccount()?.models.find((entry) => entry.id === ui.models.value)?.defaultSettings ??
+      model?.defaultSettings ??
+      {}
+    if (ui.thinking) {
+      const options = modelThinkingOptions(model?.thinkingLevelMap)
+      if (defaults.thinking && !options.some((option) => option.value === defaults.thinking))
+        options.push({ value: defaults.thinking, label: `已保存的档位当前不可用：${defaults.thinking}` })
+      setSettingsSelectOptions(ui.thinking, options)
+      ui.thinking.value = defaults.thinking ?? ''
+    }
+    if (ui.contextWindow) {
+      ui.contextWindow.value = String(defaults.contextWindow ?? '')
+      if (model?.contextWindow) ui.contextWindow.max = String(model.contextWindow)
+      else ui.contextWindow.removeAttribute('max')
+      ui.contextWindow.setAttribute('aria-invalid', 'false')
+    }
+    if (ui.modelSettingsHint)
+      ui.modelSettingsHint.textContent =
+        (model?.contextWindow ? `模型容量：${model.contextWindow.toLocaleString()} tokens。` : '') +
+        '可输入 100K（100,000 Token）或完整数量，留空恢复自动；仅新会话继承，已有会话保留自己的配置。'
   }
 
   const renderKeyHint = (): void => {
@@ -505,8 +581,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const inputRevision = revision
     const modelId = ui.models.value
     let request: ReturnType<typeof input>
+    let defaultSettings: ModelSettings | undefined
     try {
       request = input()
+      defaultSettings = ui.thinking || ui.contextWindow ? readModelSettings() : undefined
       if (accountName && editingId && !accountName.value.trim()) throw new Error('请填写账户名称')
     } catch (error) {
       setError(error)
@@ -519,7 +597,12 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     try {
       const oauthId = oauth.operation()
       const oauthResult = oauthId
-        ? await options.client.config.oauth({ action: 'commit', operationId: oauthId, model: modelId })
+        ? await options.client.config.oauth({
+            action: 'commit',
+            operationId: oauthId,
+            model: modelId,
+            ...(defaultSettings === undefined ? {} : { defaultSettings }),
+          })
         : undefined
       if (oauthId && !oauthResult?.snapshot) throw new Error('登录保存未完成')
       const saved =
@@ -528,6 +611,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
           ...request,
           ...(accountName && editingId ? { label: accountName.value.trim() } : {}),
           model: modelId,
+          ...(defaultSettings === undefined ? {} : { defaultSettings }),
           ...(configuration ? { expectedRevision: configuration.revision } : {}),
         }))
       if (!current(token, inputRevision)) {
@@ -574,6 +658,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   const editAccount = (id?: string): void => {
     if (savePending || testPending) return
+    modelDrafts.clear()
     editingId = id ?? `acct-${crypto.randomUUID()}`
     suggestedAccountLabel = undefined
     removingId = undefined
@@ -727,7 +812,17 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   })
   ui.baseUrl.addEventListener('input', () => resetTest())
   ui.apiKey.addEventListener('input', () => resetTest())
+  for (const control of [ui.thinking, ui.contextWindow])
+    control?.addEventListener('change', () => {
+      try {
+        modelDrafts.set(ui.models.value, readModelSettings())
+        ui.error.textContent = ''
+      } catch (error) {
+        setError(error)
+      }
+    })
   ui.models.addEventListener('change', () => {
+    renderModelSettings()
     if (isOAuth() && !oauth.operation() && tested) tested = { ...tested, verified: false }
     updateButtons()
   })

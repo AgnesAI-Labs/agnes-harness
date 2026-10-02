@@ -183,6 +183,17 @@
         "sourceEventSeqs": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
       }
     },
+    "SessionModelSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "route", "model", "settings"],
+      "properties": {
+        "slot": { "type": "string" },
+        "route": { "type": "string" },
+        "model": { "type": "string" },
+        "settings": { "$ref": "model.json#/$defs/ModelSettings" }
+      }
+    },
     "SessionStart": {
       "type": "object",
       "additionalProperties": false,
@@ -192,6 +203,11 @@
         "resolvedProfileHash": { "type": ["string", "null"], "maxLength": 128 },
         "preset": { "type": ["string", "null"], "maxLength": 128 },
         "agnesVersion": { "type": "string", "maxLength": 64 },
+        "modelSettings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SessionModelSelection" },
+          "maxItems": 7
+        },
         "parent": {
           "type": "object",
           "additionalProperties": false,

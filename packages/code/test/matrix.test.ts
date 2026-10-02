@@ -23,11 +23,7 @@ describe('preset matrix through the host resolver', () => {
     }
   })
 
-  // Evidence of the merge, and not of the defaults. Every value base.yaml declares that the kernel
-  // also defaults to is invisible here by construction - base says so itself - so the keys asserted
-  // are ones standard never mentions and the kernel has no default for at all. `budget.maxSteps` is
-  // the other direction: base says 50, the kernel defaults to 50, and standard says 80, so 80 can
-  // only have come from standard winning the merge.
+  // Parent fields survive the merge while standard supplies the product's request-credit cap.
   it('standard inherits the keys base owns and overrides the one it disagrees about', () => {
     const { doc } = resolvePreset('standard', docs)
     expect(doc.skills_roots).toEqual([
@@ -39,7 +35,8 @@ describe('preset matrix through the host resolver', () => {
     expect(doc.checkpoint).toEqual({ keep: 200, max_file_bytes: 10485760 })
     expect(doc.loop).toEqual({ repeat_threshold: 3, no_progress_steps: 4 })
     const view = toPresetView(doc)
-    expect(view.budget.maxSteps).toBe(80)
+    expect(view.budget.maxSteps).toBeNull()
+    expect(view.budget.perRequestCap).toBe(4000)
     expect(view.disclosure).toBe('standard')
   })
 
@@ -73,8 +70,8 @@ describe('preset matrix through the host resolver', () => {
     // Deep merge, not replacement: claw's own key wins and base's sibling keys survive beside it.
     expect(approval.on_unavailable).toBe('park')
     expect(approval.timeout_ms).toBe(60000)
-    // And the raised ceiling is claw's, over standard's 80, over base's 50.
-    expect(toPresetView(doc).budget.maxSteps).toBe(200)
+    // Unattended tasks also keep running until completion, cancellation or failure.
+    expect(toPresetView(doc).budget.maxSteps).toBeNull()
     expect(toPresetView(doc).depthLimit).toBe(3)
   })
 
@@ -100,6 +97,7 @@ describe('preset matrix through the host resolver', () => {
     expect(doc.tools).toEqual({
       core: ['read', 'write', 'edit', 'shell', 'grep', 'find', 'ls', 'todo', 'web_fetch'],
       timeout_ms: 120000,
+      output_max_bytes: 32768,
       timeouts: { web_fetch: 30000, skill_helper_import: 240000 },
     })
   })

@@ -7,6 +7,7 @@ export type { AntdRoot } from './antd-root.js'
 export { createAntdRoot } from './antd-root.js'
 export * from './confirm.js'
 export * from './diagnostics-dialog.js'
+export * from './model-settings-dialog.js'
 export * from './popover.js'
 export {
   createRegionHost,

@@ -75,6 +75,7 @@ export type ToolContextDeps = {
   generationDepth: number
   actor: Actor
   cwd: string
+  fullAccess?: boolean
   runtime: SeamRuntime
   preset: PresetView
   children: ChildrenFactory
@@ -115,7 +116,7 @@ export type ToolContextDeps = {
  */
 export function buildToolContext(
   d: ToolContextDeps,
-  call: { toolUseId: string; name: string; signal: AbortSignal; timeoutMs: number },
+  call: { toolUseId: string; name: string; signal: AbortSignal; timeoutMs: number; outputMaxBytes: number },
 ): ToolContext {
   const stepId = `${d.turn}/${d.step}`
   const publicFetch = d.publicFetch
@@ -124,6 +125,7 @@ export function buildToolContext(
       key: d.sessionKey,
       lane: d.lane,
       workspaceRoot: d.cwd,
+      fullAccess: d.fullAccess === true,
       turn: d.turn,
       step: d.step,
       toolUseId: call.toolUseId,
@@ -322,6 +324,7 @@ export function buildToolContext(
     progress: (note) => d.progress(note),
     signal: call.signal,
     timeoutMs: call.timeoutMs,
+    outputMaxBytes: call.outputMaxBytes,
     lease: {
       expiresAt: new Date(Date.now() + d.lease.remainingMs()).toISOString(),
       scope: {},

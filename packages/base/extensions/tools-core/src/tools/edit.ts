@@ -5,7 +5,8 @@ import { normalizeWorkspacePath } from '../paths.js'
 import { isBinary } from './read.js'
 import { EditParams } from './schemas.js'
 
-const dec = new TextDecoder()
+// Keep the BOM in the decoded text so an unrelated edit preserves it on writeback.
+const dec = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 const enc = new TextEncoder()
 
 function occurrences(hay: string, needle: string): number {
@@ -15,7 +16,7 @@ function occurrences(hay: string, needle: string): number {
     const j = hay.indexOf(needle, i)
     if (j < 0) return n
     n++
-    i = j + needle.length
+    i = j + 1
   }
 }
 
@@ -51,7 +52,12 @@ export const editTool = defineTool({
       // Decoding bytes that are not text and writing the decoded form back replaces every invalid
       // sequence with U+FFFD, which destroys the file while reporting success.
       if (isBinary(bytes)) return fail(`binary file (${bytes.byteLength} bytes); edit only works on text`)
-      const original = dec.decode(bytes)
+      let original: string
+      try {
+        original = dec.decode(bytes)
+      } catch {
+        return fail('edit failed: file is not valid UTF-8')
+      }
       let text = original
       for (const [i, e] of args.edits.entries()) {
         const n = occurrences(text, e.oldText)

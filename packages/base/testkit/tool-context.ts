@@ -7,7 +7,7 @@ import type {
   ToolContext,
   ToolResult,
 } from '@agnes/extension-api'
-import { unavailableProjections } from '@agnes/extension-api'
+import { DEFAULT_OUTPUT_MAX_BYTES, unavailableProjections } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 
 // An in-memory stand-in for the context the kernel hands a tool. Everything a tool is allowed to
@@ -29,6 +29,8 @@ export type FakeCalls = {
   read: { path: string; opts: { offset?: number; limit?: number } | undefined }[]
   execOpts: ExecOpts[]
   artifacts: { bytes: Uint8Array; mime: string | undefined; name: string | undefined }[]
+  /** Every ref `artifacts.get` was asked for, so a test can show a refused request never reached the store. */
+  artifactGets: ArtifactRef[]
   jobs: JsonValue[]
   plan: PlanItem[][]
   invoke: { name: string; args: JsonValue }[]
@@ -43,6 +45,8 @@ export type FakeToolContextOpts = {
   exec?: ExecFn
   invoke?: (name: string, args: JsonValue) => Promise<ToolResult>
   timeoutMs?: number
+  /** The `tools.output_max_bytes` a tool sees; a test that needs a small page or cut sets it. */
+  outputMaxBytes?: number
   /** Makes `artifacts.put` fail, which is how a tool's behaviour with no artifact store is tested. */
   artifactsFail?: string
   /**
@@ -85,11 +89,13 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
     read: [],
     execOpts: [],
     artifacts: [],
+    artifactGets: [],
     jobs: [],
     plan: [],
     invoke: [],
     confine: [],
   }
+  const stored = new Map<string, Uint8Array>()
   const runExec: ExecFn = opts.exec ?? (() => ({ code: 0, stdout: '', stderr: '' }))
   const readErrors = new Map(Object.entries(opts.readErrors ?? {}).map(([k, v]) => [abs(k), v]))
   const listErrors = new Map(Object.entries(opts.listErrors ?? {}).map(([k, v]) => [abs(k), v]))
@@ -184,13 +190,19 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       async put(bytes: Uint8Array, meta?: { mime?: string; name?: string }): Promise<ArtifactRef> {
         if (opts.artifactsFail !== undefined) throw new Error(opts.artifactsFail)
         calls.artifacts.push({ bytes, mime: meta?.mime, name: meta?.name })
-        return {
-          sha256: createHash('sha256').update(bytes).digest('hex'),
-          size: bytes.byteLength,
-          mime: meta?.mime ?? 'application/octet-stream',
-        }
+        const sha256 = createHash('sha256').update(bytes).digest('hex')
+        stored.set(sha256, bytes)
+        return { sha256, size: bytes.byteLength, mime: meta?.mime ?? 'application/octet-stream' }
       },
-      get: notSupported('artifacts.get'),
+      // Fails the way the real store does: an absent digest is "not found", and a size that does
+      // not match what was stored is refused rather than answered with whatever is there.
+      async get(ref: ArtifactRef): Promise<Uint8Array> {
+        calls.artifactGets.push(ref)
+        const bytes = stored.get(ref.sha256)
+        if (!bytes) throw new Error(`artifact not found: ${ref.sha256}`)
+        if (bytes.byteLength !== ref.size) throw new Error(`artifact size mismatch: ${ref.sha256}`)
+        return bytes
+      },
       async submitJob(spec: JsonValue): Promise<string> {
         calls.jobs.push(spec)
         return `job-${calls.jobs.length}`
@@ -215,6 +227,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
     progress: () => undefined,
     signal: new AbortController().signal,
     timeoutMs: opts.timeoutMs ?? 120000,
+    outputMaxBytes: opts.outputMaxBytes ?? DEFAULT_OUTPUT_MAX_BYTES,
     lease: { expiresAt: '2999-01-01T00:00:00Z', scope: {}, budget: { remaining: 1e9 } },
     log: { debug() {}, info() {}, warn() {}, error() {} },
   }
