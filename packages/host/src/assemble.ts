@@ -160,6 +160,7 @@ import {
   generationRegistries,
   prepareGenerationOwnerReplacement,
   publishedSessionRuntime,
+  retainGenerationRegistries,
 } from './runtime-generation-view.js'
 import {
   type IsolatedSessionOverlay,
@@ -892,7 +893,15 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           },
         }
       },
-      verifyCandidate: (candidate, tree) => rowExtensions.assertReplacements(candidate.tree.rows, tree),
+      verifyCandidate: (candidate, tree) => {
+        // The candidate has mounted, so the Kernel tables hold its registrations and leases. A revision
+        // cached by an earlier delivery (or by a candidate that was rejected) describes older ones.
+        retainGenerationRegistries(
+          generationViews,
+          runtimeTargetPublisher.current().value.current?.runtimeRegistryRevision,
+        )
+        rowExtensions.assertReplacements(candidate.tree.rows, tree)
+      },
       rebuildSessionScope: async (sessionKey, desired, candidate) => {
         const overlay = isolateSessionOverlay(
           candidate.ordinary.pluginTree.root,

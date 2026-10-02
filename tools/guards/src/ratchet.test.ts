@@ -1174,7 +1174,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
-  'packages/host/src/assemble': 4193,
+  // A returning package must not be served a cached generation bound to revoked leases. Measured 4200, exact (+7).
+  'packages/host/src/assemble': 4200,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2517,8 +2518,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
-  // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9), exact cap.
-  'packages/host/src': 38306,
+  // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9).
+  // Generation views are pruned before each candidate builds its session views. Measured 38319, exact (+13).
+  'packages/host/src': 38319,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
