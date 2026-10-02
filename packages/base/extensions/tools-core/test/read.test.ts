@@ -219,5 +219,11 @@ describe('read of an artifact the output guard stored', () => {
     const binary = await readTool.execute({ path: await store(ctx, new Uint8Array([97, 0, 98])) }, ctx)
     expect(binary.isError).toBe(true)
     expect(textOf(binary)).toContain('binary')
+    // A store may reject with something that is not an Error; that must come back as a failed read,
+    // not escape execute() and end the turn.
+    ctx.artifacts.get = () => Promise.reject(null)
+    const hostile = await readTool.execute({ path: `artifact://${sha}?size=3` }, ctx)
+    expect(hostile.isError).toBe(true)
+    expect(textOf(hostile)).toContain('read failed')
   })
 })

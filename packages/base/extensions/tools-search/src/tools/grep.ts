@@ -41,7 +41,7 @@ export const grepTool = defineTool({
     const context = args.context ?? 0
     // Matches one file's lines, as `label` and a 1-based line number. Shared by a file in the tree
     // and a stored output, so both are reported the same way and stop at the same limit.
-    const searchLines = (label: string, lines: string[]): void => {
+    const searchLines = (label: string, lines: string[], numberOf = (i: number): number => i + 1): void => {
       for (let i = 0; i < lines.length; i++) {
         if (!re.test(lines[i] as string)) continue
         if (matches >= limit) {
@@ -50,22 +50,25 @@ export const grepTool = defineTool({
         }
         matches++
         for (let j = Math.max(0, i - context); j < i; j++)
-          out.push(`${label}-${j + 1}-${clip(lines[j] as string)}`)
-        out.push(`${label}:${i + 1}:${clip(lines[i] as string)}`)
+          out.push(`${label}-${numberOf(j)}-${clip(lines[j] as string)}`)
+        out.push(`${label}:${numberOf(i)}:${clip(lines[i] as string)}`)
         for (let j = i + 1; j <= Math.min(lines.length - 1, i + context); j++)
-          out.push(`${label}-${j + 1}-${clip(lines[j] as string)}`)
+          out.push(`${label}-${numberOf(j)}-${clip(lines[j] as string)}`)
       }
     }
     if (args.path?.startsWith('artifact://')) {
-      // A stored output is one file, whatever glob says. Its lines are the ones read pages through,
-      // so a line number found here is the offset to read from.
+      // A stored output is one file, whatever glob says. Whole lines are searched, so a match is not
+      // lost to a fold, and each is reported at the row where its line begins: the offset to read from.
       const spilled = await loadSpilledLines(ctx, args.path)
       if (!spilled.ok) return toolError(spilled.message)
       searchLines(
         `artifact://${args.path.slice('artifact://'.length, 'artifact://'.length + 12)}`,
-        spilled.lines,
+        spilled.logical,
+        (i) => (spilled.starts[i] as number) + 1,
       )
-      const notes = atLimit ? [`[limit ${limit} reached; there may be more matches]`] : []
+      // Past the byte ceiling only the start was searched, which "no matches" must not hide.
+      const notes = [...(spilled.notes ? [spilled.notes.trimEnd()] : [])]
+      if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
       return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
     }
     for await (const f of walk(ctx, args.path ?? ctx.cwd, report, { maxEntries: MAX_ENTRIES })) {

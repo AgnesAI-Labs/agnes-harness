@@ -1,5 +1,11 @@
 import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
-import { byteLength, OUTPUT_LIMITS, parseSpillLocator, splitByBytes } from '../guards/output.js'
+import {
+  byteLength,
+  describeFailure,
+  OUTPUT_LIMITS,
+  parseSpillLocator,
+  splitByBytes,
+} from '../guards/output.js'
 import { ReadParams } from './schemas.js'
 
 // Ceiling on how much of a file is pulled into memory for one call. Without it a single read of a
@@ -49,7 +55,12 @@ function clipLine(line: string): string {
   return `${splitByBytes(line, WRAP_BYTES)[0]} [line cut at ${WRAP_BYTES} of ${bytes} bytes]`
 }
 
-export type SpilledLines = { ok: true; lines: string[]; notes: string } | { ok: false; message: string }
+// `lines` are the rows read pages through. `logical` are the text's own lines, and `starts[i]` is the
+// index in `lines` of the row where logical line i begins, so a search can run over whole lines and
+// still report the row to read from.
+export type SpilledLines =
+  | { ok: true; lines: string[]; logical: string[]; starts: number[]; notes: string }
+  | { ok: false; message: string }
 
 /**
  * The text an output-guard locator names, as the lines `read` pages through and `grep` searches.
@@ -81,7 +92,7 @@ export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<
   try {
     bytes = await ctx.artifacts.get(ref)
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    return { ok: false, message: describeFailure(e) }
   }
   if (isBinary(bytes))
     return { ok: false, message: `binary content (${bytes.byteLength} bytes); it cannot be shown as text` }
@@ -95,8 +106,14 @@ export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<
   // as a whole line is a line the text does not contain.
   if (notes !== '') text = text.slice(0, Math.max(text.lastIndexOf('\n') + 1, 0)) || text
   // A line that cannot be longer than the wrap width in bytes is left alone without encoding it.
-  const lines = toLines(text).flatMap((l) => (l.length * 3 <= WRAP_BYTES ? [l] : splitByBytes(l, WRAP_BYTES)))
-  return { ok: true, lines, notes }
+  const logical = toLines(text)
+  const lines: string[] = []
+  const starts: number[] = []
+  for (const l of logical) {
+    starts.push(lines.length)
+    lines.push(...(l.length * 3 <= WRAP_BYTES ? [l] : splitByBytes(l, WRAP_BYTES)))
+  }
+  return { ok: true, lines, logical, starts, notes }
 }
 
 // One page of numbered lines: from `offset`, at most `limit` of them, and no more than fit the

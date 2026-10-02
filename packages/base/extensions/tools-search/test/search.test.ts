@@ -365,13 +365,29 @@ describe('grep in an artifact the output guard stored', () => {
     ] as const) {
       const found = textOf(await grepTool.execute({ pattern, path }, ctx))
       const n = Number(/^artifact:\/\/[0-9a-f]{12}:(\d+):/.exec(found)?.[1])
-      expect(textOf(await readTool.execute({ path, offset: n, limit: 1 }, ctx))).toContain(shows)
+      // A long line is reported where it begins; the match is in the rows that follow it.
+      expect(textOf(await readTool.execute({ path, offset: n, limit: 4 }, ctx))).toContain(shows)
     }
     const limited = textOf(
       await grepTool.execute({ pattern: 'HIT', context: 1, limit: 1, glob: '*.ts', path }, ctx),
     )
     expect(limited).toMatch(/-\d+-.*\n.*:\d+:HIT 1\n.*-\d+-HIT 2\n\[limit 1 reached/)
     expect(textOf(await grepTool.execute({ pattern: 'ZZZ', path }, ctx))).toBe('no matches')
+  })
+
+  it('finds a match that straddles a fold, and says when only part of a large output was searched', async () => {
+    const ctx = fakeToolContext()
+    // The fold falls inside NEEDLE. Lines are searched whole and reported at the row where they begin.
+    const folded = await store(ctx, `x\n${'a'.repeat(2046)}NEEDLE${'b'.repeat(10)}`)
+    expect(textOf(await grepTool.execute({ pattern: 'NEEDLE', literal: true, path: folded }, ctx))).toMatch(
+      /:2:a+/,
+    )
+    expect(textOf(await readTool.execute({ path: folded, offset: 2, limit: 1 }, ctx))).toMatch(/^2\ta+/)
+    // Past the byte ceiling nothing was searched, and a bare "no matches" would claim otherwise.
+    const large = await store(ctx, `${'a\n'.repeat(MAX_READ_BYTES / 2 + 10)}NEEDLE\n`)
+    expect(textOf(await grepTool.execute({ pattern: 'NEEDLE', path: large }, ctx))).toContain(
+      `only the first ${MAX_READ_BYTES} bytes`,
+    )
   })
 
   it.each([

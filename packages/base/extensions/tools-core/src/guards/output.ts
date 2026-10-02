@@ -72,7 +72,7 @@ function cutTail(text: string, startBytes: number): string {
 // fixed code-unit count can leave a lone surrogate half. `cutTail` is applied at offset 0 rather
 // than to a cut, because the message arrives from outside and may already start with an orphan;
 // the note is text this guard writes, so it is well-formed whatever it is handed.
-function describeFailure(e: unknown): string {
+export function describeFailure(e: unknown): string {
   try {
     return cutTail(cutHead(String((e as Error)?.message ?? e), MAX_STORE_ERROR_BYTES), 0)
   } catch {
