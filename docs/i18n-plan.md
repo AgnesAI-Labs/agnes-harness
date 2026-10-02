@@ -203,26 +203,26 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 线条 | 负责人 | 状态 |
 | --- | --- | --- |
-| 语言底座 | yuan | 已完成（2026-10-01，`c3fbcb1`）。第 6.4 节的缺陷未修 |
-| Web 壳 | zzl | 已完成（2026-10-02） |
-| 设置与通用 | zzl | 已完成（2026-10-02） |
+| 语言底座 | yuan | 已完成（2026-10-01，`c3fbcb1`；第 6.4 节缺陷于 2026-10-03 修复并通过自动化用例） |
+| Web 壳 | zzl | 已完成（2026-10-02；2026-10-03 收尾核对修复局部 locale 接线） |
+| 设置与通用 | zzl | 已完成（2026-10-02；2026-10-03 修复设置模板和账户字段回填） |
 | 管理与资源 | swx | 已完成（2026-10-01） |
 | 诊断与 Computer Use | yuan | 已完成（2026-10-01，`661a0c0`、`22f6020`、`db1c53e`） |
-| CLI | zzl | 已完成（2026-10-02） |
+| CLI | zzl | 部分完成（2026-10-03：默认语言和部分 TUI 流程已接通；C1/C2 仍有硬编码英文用户文案） |
 | 错误码收口 | yuan | 已完成（2026-10-01，`bb5d6d8`） |
-| 收尾核对 | | 未开始 |
+| 收尾核对 | | 部分完成（2026-10-03；F2 未通过，见 §9.8 和 §12） |
 
 ### 9.2 Web 壳
 
 | 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| W1 | 输入框与空状态 | `packages/web-units/src/composer.ts` | 未开始 |
-| W2 | 侧栏与顶栏 | `packages/web-units/src/sidebar.ts`、`topbar.ts` | 未开始 |
-| W3 | 会话菜单、会话操作、导航 | `packages/web/src/session-menu.ts`、`session-actions.ts`、`navigation.ts` | 未开始 |
-| W4 | 消息、工具状态、费用和预览 | `packages/web-ui/src/conversation/`（含 `messages.tsx`、`turn-actions.tsx`、`cost-format.ts`、`usage.tsx`）、`packages/web/src/timeline.ts`、`turns.ts`、`presentation.ts`、`usage.ts`、`view.ts`、`document-preview.ts`、`packages/web-units/src/conversation/tool-card.ts` | 未开始 |
-| W5 | `app.ts` 里其余用户可见句子 | `packages/web/src/app.ts`。保留已有 locale 回调。这个文件里的失败句一起改成 code 查目录 | 未开始 |
-| W6 | 三个页面的静态壳，以及绘制前回填 | `packages/web/public/index.html`；回填实现放在 `packages/web/src/theme-boot.ts`，让 admin / resources 独立打开时同样生效 | 未开始 |
-| W7 | 其余用户可见壳句 | `packages/web/src/region-slots.ts`、`shell.ts`、`packages/web-ui/src/confirm.ts`、`packages/web-client/src/outlet.tsx` 的「插件渲染失败」 | 未开始 |
+| W1 | 输入框与空状态 | `packages/web-units/src/composer.ts` | 已完成（2026-10-02） |
+| W2 | 侧栏与顶栏 | `packages/web-units/src/sidebar.ts`、`topbar.ts` | 已完成（2026-10-02） |
+| W3 | 会话菜单、会话操作、导航 | `packages/web/src/session-menu.ts`、`session-actions.ts`、`navigation.ts` | 已完成（2026-10-02） |
+| W4 | 消息、工具状态、费用和预览 | `packages/web-ui/src/conversation/`（含 `messages.tsx`、`turn-actions.tsx`、`cost-format.ts`、`usage.tsx`）、`packages/web/src/timeline.ts`、`turns.ts`、`presentation.ts`、`usage.ts`、`view.ts`、`document-preview.ts`、`packages/web-units/src/conversation/tool-card.ts` | 已完成；2026-10-03 修复 timeline 语言切换缓存并补回归测试 |
+| W5 | `app.ts` 里其余用户可见句子 | `packages/web/src/app.ts`。保留已有 locale 回调。这个文件里的失败句一起改成 code 查目录 | 已完成（2026-10-02） |
+| W6 | 三个页面的静态壳，以及绘制前回填 | `packages/web/public/index.html`；回填实现放在 `packages/web/src/theme-boot.ts`，让 admin / resources 独立打开时同样生效 | 已完成（2026-10-02） |
+| W7 | 其余用户可见壳句 | `packages/web/src/region-slots.ts`、`shell.ts`、`packages/web-ui/src/confirm.ts`、`packages/web-client/src/outlet.tsx` 的「插件渲染失败」 | 已完成；2026-10-03 区域插槽的中文用例已注入对应 LocaleService |
 
 `packages/web/src/client-modules/reconcile.ts`、`runtime-status.ts`、`hot-reload.ts`、`timeline-slot.ts` 里的中文是注释或日志，不迁。若其中有渲染到页面上的句子，记入 W7，不要把整文件当成文案。
 
@@ -230,10 +230,10 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| S1 | 通用页剩余文案 | `settings.ts` 的 `#appearance-settings-pane`。语言开关保持不动 | 未开始 |
-| S2 | 模型、账户、已归档会话的模板 | `settings.ts` 的 `#model-settings-pane`、`#archived-settings-pane` | 未开始 |
-| S3 | 设置逻辑与账户对话框 | `packages/web/src/settings.ts`（含 `CONFIGURATION_REASON_MESSAGES`）、`appearance.ts`（保留语言单选）、`packages/web-ui/src/settings-accounts.tsx`、`settings-account-dialog.tsx`、`settings-model-pane.tsx` | 未开始 |
-| S4 | 选择器、OAuth、皮肤、字号、工具图标 | `model-picker.ts`、`permission-picker.ts`、`provider-picker.ts`、`workspace-picker.ts`、`oauth-controls.ts`（含失败句）、`skin.ts`、`theme.ts`、`tool-icon.ts`、`session-title.ts`、`packages/web-ui/src/select-picker.ts` | 未开始 |
+| S1 | 通用页剩余文案 | `settings.ts` 的 `#appearance-settings-pane`。语言开关保持不动 | 已完成（2026-10-02） |
+| S2 | 模型、账户、已归档会话的模板 | `settings.ts` 的 `#model-settings-pane`、`#archived-settings-pane` | 已完成；2026-10-03 补账户字段及初次提交回填 |
+| S3 | 设置逻辑与账户对话框 | `packages/web/src/settings.ts`（含 `CONFIGURATION_REASON_MESSAGES`）、`appearance.ts`（保留语言单选）、`packages/web-ui/src/settings-accounts.tsx`、`settings-account-dialog.tsx`、`settings-model-pane.tsx` | 已完成；2026-10-03 补齐账户对话框 locale keys |
+| S4 | 选择器、OAuth、皮肤、字号、工具图标 | `model-picker.ts`、`permission-picker.ts`、`provider-picker.ts`、`workspace-picker.ts`、`oauth-controls.ts`（含失败句）、`skin.ts`、`theme.ts`、`tool-icon.ts`、`session-title.ts`、`packages/web-ui/src/select-picker.ts` | 已完成；2026-10-03 修复 workspace picker locale bridge 缺失 |
 
 `theme-boot.ts` 不在这一线。`skin.ts`、`theme.ts` 里的注释不迁，只迁用户能看见的名称和提示。
 
@@ -259,9 +259,9 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 文件 | 状态 |
 | --- | --- | --- | --- |
-| C1 | TUI 文案收进字典，默认改为英文 | `packages/cli-tui/src`。`resolveLocale` 在 `AGNES_LOCALE` 未设置时返回 `en`，不再看 `LANG`。窄屏用 `displayWidth` 断言中文宽度 | 未开始 |
-| C2 | 帮助、引导、工作区选择、资源命令里的用户句 | `packages/cli/src` 的 `usage()`、`doctor`、引导；`packages/cli/launch/workspace-picker.ts`；`packages/resource-control-cli/src/resources.ts` | 未开始 |
-| C3 | 把 CLI 解析出的 locale 传给 SDK | `packages/sdk/src/text.ts` 已有的两句，跟 TUI 使用同一个 locale | 未开始 |
+| C1 | TUI 文案收进字典，默认改为英文 | `packages/cli-tui/src`。`resolveLocale` 在 `AGNES_LOCALE` 未设置时返回 `en`，不再看 `LANG`。窄屏用 `displayWidth` 断言中文宽度 | 部分完成：默认语言、帮助、选择器、引导、用量等已接入；命令结果与错误提示仍有硬编码英文，见 §12 |
+| C2 | 帮助、引导、工作区选择、资源命令里的用户句 | `packages/cli/src` 的 `usage()`、`doctor`、引导；`packages/cli/launch/workspace-picker.ts`；`packages/resource-control-cli/src/resources.ts` | 部分完成：帮助和引导已接入；资源命令及 package CLI 仍有硬编码英文，见 §12 |
+| C3 | 把 CLI 解析出的 locale 传给 SDK | `packages/sdk/src/text.ts` 已有的两句，跟 TUI 使用同一个 locale | 已完成（2026-10-03 抽测 SDK branding locale） |
 
 ### 9.7 错误码收口
 
@@ -281,9 +281,9 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 
 | 步骤 | 内容 | 状态 |
 | --- | --- | --- |
-| F1 | Web 未设置 `agnes-locale` 时是英文；CLI 未设置 `AGNES_LOCALE` 时是英文，中文 `LANG` 不会把它切走。存储写失败后本次语言仍在，改主题不会把它盖回旧值 | 未开始 |
-| F2 | 第 9 节全部「已完成」。第 10 节之外，不再有渲染给用户的硬编码中文或硬编码英文用户句 | 未开始 |
-| F3 | 每个目录文件都有 key 成对测试；抽查第 6.3 节的术语 | 未开始 |
+| F1 | Web 未设置 `agnes-locale` 时是英文；CLI 未设置 `AGNES_LOCALE` 时是英文，中文 `LANG` 不会把它切走。存储写失败后本次语言仍在，改主题不会把它盖回旧值 | 自动化验收通过；浏览器仅确认静态页面英文首屏，未手工操作语言切换 |
+| F2 | 第 9 节全部「已完成」。第 10 节之外，不再有渲染给用户的硬编码中文或硬编码英文用户句 | 未通过：CLI/TUI 和 resource-control-cli 仍有硬编码英文用户句，见 §12 |
+| F3 | 每个目录文件都有 key 成对测试；抽查第 6.3 节的术语 | 已完成：Web、web-ui、web-units、resource-control-web、CLI 扩展目录测试通过；抽查新增账户、会话、工作区、Provider 用词 |
 
 ## 10. 本期不做
 
@@ -322,3 +322,29 @@ Provider、MCP、API Key、Token、Computer Use、Agnes Harness 两种语言都�
 | `packages/web/src/app` | 1838 |
 
 某个目录加了文案文件或把句子搬进渲染之后超限，就在同一次提交里按实测行数改这个上限，并写明增加了多少行。不要放宽扫描范围，也不要为了留下余量把上限改得比实测更高。`packages/web-ui/src`、`packages/web-units/src`、`packages/cli-tui/src` 也有上限，改到它们时同样处理。
+
+## 12. 2026-10-03 收尾验收记录
+
+结论：国际化主体已接入，收尾验收部分通过；C1、C2 仍未完成，因此 F2 未通过，不能把 CLI/TUI 国际化标记为全部完成。
+
+本轮修复和复核：
+- Web 设置模板在初次插入和后续重绘时回填静态文案；补齐账户字段与账户对话框的配对 key。
+- 修正工作区选择器缺少 locale 函数、设置错误文本未使用传入翻译器，以及 TUI 的 /context、/help、主题与用量提示接线问题。
+- TUI 补齐选择器、引导、较早历史、命令说明与用量目录；CLI locale 只接受 AGNES_LOCALE=zh-CN，其余值及未设置值回落英文，并传递解析后的 locale。
+- 修正 timeline 对 locale 版本的缓存，使同一节点在切换语言后重新翻译；新增中文切换到英文的回归断言。
+- 补充 web、web-ui、web-units、resource-control-web 与 CLI 扩展目录的 key 集合相等、文案非空测试。
+
+未完成项（C1/C2）：
+- packages/cli-tui/src/commands.ts 仍有资源操作不可用、操作取消、无待处理操作、命令 usage、最近会话/无会话和压缩结果等硬编码英文。
+- packages/cli-tui/src/package-controller.ts 仍有 package 管理不可用、未安装 package、安装取消/待确认及 usage 错误等硬编码英文。
+- packages/cli-tui/src/app.ts 仍有请求失败和切换会话被待处理 prompt 阻止等硬编码英文提示。
+- packages/resource-control-cli/src/resources.ts、tui.ts 仍有资源操作失败、Daemon 不支持、待处理/取消提示和 usage 文案；packages/cli/src/commands/package.ts、packages/cli/src/commands/packages-pins.ts 仍有 package 状态、安装取消和 usage 文案。
+- 后续应先为这些路径建立英文/简体中文目录 key，再逐入口替换固定用户句并补默认语言、中文显示宽度和命令输出用例。工作量取决于命令和错误分支逐项盘点，当前证据不足以给出可靠人日估计。
+
+验证与限制：
+- 28 个聚焦测试文件、181 项断言通过；Biome 检查通过。
+- @agnes/web-ui、@agnes/web-units、@agnes/cli-tui、@agnes/sdk、@agnes/web、@agnes/cli 类型检查通过；@agnes/web 生产构建通过。构建输出列出 5 个第三方依赖未带 LICENSE 文件的提示。
+- packages/web/test/view.test.ts 和 packages/web/test/client-modules.runtime-status.test.ts 无法收集用例：Vitest 加载 @ant-design/x-markdown 的 DebugPanel.js 时遇到 SyntaxError: Unexpected token '.'，属于当前测试加载限制。
+- 浏览器只用静态构建确认工作台、管理页和资源页默认英文首屏及服务不可用状态；因无后端，没有手工验证设置内交互切换。语言存储、事件、主题重绘和切换后重翻由自动化用例覆盖。
+
+本记录不改变第 10 节排除范围，也不改变模型提示词、协议 schema 或 channels 处理范围。
