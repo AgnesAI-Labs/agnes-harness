@@ -20,6 +20,7 @@ import {
 import { API_VERSION, type ExtensionManifest, type LeaseView } from '@agnes/extension-api'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import {
+  AssemblyRefusal,
   createMutableSeamImplementations,
   type EntryRow,
   type RuntimeConvergenceReport,
@@ -155,6 +156,8 @@ import { createProductionImageInputTokenFallback } from './request-media-runtime
 import { bindSkillRuntimeToWorkspace, createSkillPromptPreloader } from './resources/skill-preload.js'
 import { safeSkillReadRoots } from './resources/skill-read-roots.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
+import { selectDefaultHostServices } from './runtime/host-services.js'
+import { createHostScopedDependencies } from './runtime/scoped-dependencies.js'
 import {
   type GenerationRegistries,
   generationRegistries,
@@ -251,6 +254,7 @@ export type OrdinaryReconciliationLifecycle = Readonly<{
 /** Where this host lives on disk. Every one is required: none of them has a safe default. */
 export type { AssembleDeps, HostPaths } from './assembly-deps.js'
 export type Assembled = {
+  readonly runtimeServices: import('./runtime/host-services.js').HostRuntimeServices
   activationBarrier: ReturnType<typeof createExtensionActivationBarrier>
   approvalGrants: ApprovalGrantManagement
   callService: ReturnType<typeof serviceInvoker>['call']
@@ -2308,6 +2312,36 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         [managed.statusEntries(), rowExtensions.statusEntries(), builtinRows.statusEntries()],
         rowExtensions.replacedBy,
       )
+    // The selected services share one fixed Cordis root alongside the existing runtime.
+    // Construction is mandatory: an incomplete root follows the same startup rollback as seams.
+    step = 'runtime-services'
+    const selectedServices = selectDefaultHostServices(dataDir, clock)
+    const serviceRoot = createHostScopedDependencies(selectedServices.grants)
+    let servicesPublished = false
+    rollback.push('runtime-services', async () => {
+      selectedServices.stop()
+      if (!servicesPublished) {
+        await serviceRoot.dependencies.close()
+        try {
+          if (serviceRoot.view(selectedServices.generationId).residualOwnerIds.length > 0)
+            throw new Error('Runtime service initialization left residual owners')
+        } catch (error) {
+          if (!(error instanceof AssemblyRefusal && error.code === 'unknown_generation')) throw error
+        }
+        return
+      }
+      serviceRoot.disable(selectedServices.generationId)
+      await serviceRoot.drain(selectedServices.generationId, clock())
+      const result = await serviceRoot.close(selectedServices.generationId)
+      if (result.residualOwnerIds.length > 0) throw new Error('Runtime services left residual owners')
+    })
+    await serviceRoot.publish(selectedServices)
+    servicesPublished = true
+    const runtimeServices = Object.freeze({
+      dependencies: serviceRoot.dependencies,
+      contextFor: selectedServices.contextFor,
+    })
+
     // 10 ready
     say('host.ready', { hash: profile.hash, extensions: extensionStatus().length })
     const servicesInvocation = serviceInvoker({
@@ -2323,6 +2357,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       }),
     })
     return {
+      runtimeServices,
       activationBarrier,
       approvalGrants: approvalGrantControl.management,
       callService: servicesInvocation.call,

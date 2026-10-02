@@ -1,3 +1,5 @@
+// Move the package-source process fixture out of production; measured exact allocation.
+// Exact measured allocation for Host selected service startup and local package adapters.
 // Exact measured directory, anchor, contract and offline epoch guard allocation; no headroom.
 // UI-INTEGRATION-20260927: merged A/B/C lines (ui-refactor + ui-admin-pages); exact combined counts.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
@@ -314,8 +316,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 5763 -> 5770; approved feature scope, no spare allocation.
   // Windows stale-lock reclamation added 17 counted lines; exact baseline total, no spare.
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
-  // Immutable package snapshots and the lock resolver. Measured 7836, exact, no spare.
-  'packages/package-manager/src': 7836,
+  // Immutable package snapshots and the lock resolver. Measured 7784, exact, no spare.
+  'packages/package-manager/src': 7784,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -1163,7 +1165,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
-  'packages/host/src/assemble': 4193,
+  'packages/host/src/assemble': 4225,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2575,7 +2577,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
   // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
   // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
-  'packages/host/src': 61798,
+  'packages/host/src': 62098,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
