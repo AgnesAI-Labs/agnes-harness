@@ -45,6 +45,7 @@
       "purpose": "UI runtime for the web workbench, resource administration and in-page client module host; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
+        "examples/runtime-reference",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-client",
