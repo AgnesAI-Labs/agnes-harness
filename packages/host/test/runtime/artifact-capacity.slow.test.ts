@@ -118,6 +118,7 @@ it('publishes a 1 GiB artifact and serves it in ranges and pull streams of at mo
     // The consumer sets the pace: while it holds off after one chunk, nothing more is read and the
     // stream does not end. Draining it then yields every byte in chunks of at most 1 MiB.
     produced = 0
+    const before = openFiles?.()
     const full = ok(await access.openStream(ref, ctx()))
     let settled = false
     void full.ended.then(() => {
@@ -146,9 +147,10 @@ it('publishes a 1 GiB artifact and serves it in ranges and pull streams of at mo
     expect(largest).toBeLessThanOrEqual(MIB)
     // Loose: a pull stream holds a few chunks, never a sizeable part of the content.
     expect(peak - baseline).toBeLessThan(256 * MIB)
+    // A stream settles before its file is closed, so the drained one is let go before counting again.
+    if (openFiles && before !== undefined) await expect.poll(openFiles).toBe(before)
 
     // Cancelling mid-stream ends it as cancelled and closes the file it was reading.
-    const before = openFiles?.()
     produced = 0
     const cancelled = ok(await access.openStream(ref, ctx()))
     const reader = cancelled.chunks[Symbol.asyncIterator]()

@@ -8,6 +8,7 @@
   "exclude": ["dist", "node_modules"],
   "references": [
     { "path": "../system-node" },
+    { "path": "../extension-api/tsconfig.tests.json" },
     {
       "path": "../../tsconfig.config.json"
     },

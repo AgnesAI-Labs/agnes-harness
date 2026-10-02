@@ -8,7 +8,14 @@ import {
   validateAuthorSchemaValue,
 } from './author-schema-subset.js'
 import { canonicalJsonDigest } from './jcs-digest.js'
-import type { Id, JsonValue, SchemaRef, TypeId, UInt53 } from './public.js'
+import {
+  type Id,
+  type JsonValue,
+  type SchemaRef,
+  type TypeId,
+  type UInt53,
+  validateRuntime,
+} from './public.js'
 import { runtimeSchemaDocument, type SchemaDocument } from './schema-document.js'
 
 export type GeneratedAuthorSchemaSource = {
@@ -110,7 +117,12 @@ export function validateAuthorSchemaIdentity(identity: {
     invalid('reserved or invalid owner')
   if (!nonemptyId(identity.name) || !SCHEMA_NAME.test(identity.name) || reservedNames.has(identity.name))
     invalid('invalid source name')
-  if (!nonemptyId(identity.typeId) || !positive(identity.revision)) invalid('invalid schema identity')
+  if (
+    !nonemptyId(identity.typeId) ||
+    !positive(identity.revision) ||
+    !validateRuntime('TypeId', identity.typeId).ok
+  )
+    invalid('invalid schema identity')
   const slash = identity.typeId.lastIndexOf('/'),
     at = identity.typeId.lastIndexOf('@')
   if (

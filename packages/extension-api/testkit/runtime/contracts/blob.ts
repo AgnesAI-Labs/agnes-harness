@@ -455,7 +455,9 @@ const JUDGE: Judge<BlobObservations> = {
     interrupted(seen.revoked, (detail) => refusalClass(detail) === 'denied') &&
     same(seen.selection, [
       'selected',
-      ...Array(3).fill('service_not_registered'),
+      'feature_missing',
+      'service_not_registered',
+      'service_not_registered',
       'operation_not_supported',
       'operation_not_supported',
       'service_container_closed',

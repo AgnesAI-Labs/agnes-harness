@@ -129,7 +129,7 @@ describe('integrity compute contracts', () => {
     )
   })
 
-  it('adds non-broker compute identities while preserving package verification identities', () => {
+  it('adds non-broker compute identities and records the current package verification revisions', () => {
     const catalog = RuntimeServiceCatalog['agh.integrity'].methods
     for (const method of ['canonicalize', 'verify'] as const) {
       expect(catalog[method].kind).toBe('compute')
@@ -143,13 +143,13 @@ describe('integrity compute contracts', () => {
     expect(RuntimeMethodSchemaRefs['agh.integrity'].verifyPackage).toEqual({
       input: {
         typeId: 'agh.integrity/verifyPackage.request@1',
-        revision: 1,
-        digest: '49ec85b3f6981133bd2b4242efb50083d78dc793bad30a732de7793f1876c72f',
+        revision: 2,
+        digest: 'cc59884e6574b5785a248c6dd58871da99407ea38243ea3c084edf322f8aa17e',
       },
       output: {
         typeId: 'agh.integrity/verifyPackage.response@1',
-        revision: 1,
-        digest: '5e05e7faae36739ddadb32f7af87eb503e9c259adc1a9fcd8afff41385d60976',
+        revision: 2,
+        digest: '332c87c5349f8eed9906f9667e08b50922d021369dd071d92087c5d7dce74649',
       },
     })
   })

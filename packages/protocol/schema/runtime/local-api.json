@@ -254,7 +254,8 @@
       "PageDomainEventRecord": "DomainEventRecord",
       "PagePackageLockEntry": "PackageLockEntry",
       "PageConversationSummary": "ConversationSummary",
-      "PageOutboxDeadLetterItem": "OutboxDeadLetterItem"
+      "PageOutboxDeadLetterItem": "OutboxDeadLetterItem",
+      "StateScanResult": "DataRef"
     }
   },
   "x-control-api": {
