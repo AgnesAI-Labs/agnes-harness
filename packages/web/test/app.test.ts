@@ -1,7 +1,8 @@
 /** @vitest-environment happy-dom */
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import type { ConfigSnapshot, UITimeline } from '@agnes/protocol'
+import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
+import type { LedgerEvent } from '@agnes/sdk/browser'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sdk = vi.hoisted(() => ({
@@ -97,8 +98,8 @@ type SessionDouble = {
   onPermissionRequest: ReturnType<typeof vi.fn>
   onPreview: ReturnType<typeof vi.fn>
   projectUI: ReturnType<typeof vi.fn>
-  projectUIOpening: ReturnType<typeof vi.fn>
-  projectUIPatch: ReturnType<typeof vi.fn>
+  projectUIOpening: ReturnType<typeof vi.fn<() => Promise<UIOpeningResult>>>
+  projectUIPatch: ReturnType<typeof vi.fn<(after: number) => Promise<UIProjectionUpdate>>>
   projectUIHistory: ReturnType<typeof vi.fn>
   readToolDetail: ReturnType<typeof vi.fn>
   prompt: ReturnType<typeof vi.fn>
@@ -122,6 +123,7 @@ function idleTimeline(sessionId: string, model?: { route: string; id: string }):
     upto: 0,
     generation: 1,
     opState: null,
+    yolo: false,
     nodes: [],
     turns: [],
     ...(model
@@ -144,6 +146,7 @@ function busyTimeline(sessionId: string): UITimeline {
     upto: 1,
     generation: 1,
     opState: { turn: 1, step: 1, phase: 'inference' },
+    yolo: false,
     nodes: [],
     turns: [],
   }
@@ -155,7 +158,7 @@ function busyTimeline(sessionId: string): UITimeline {
  * accepts whatever changed.
  */
 function session(id: string, projectUI: () => Promise<UITimeline>): SessionDouble {
-  const opening = vi.fn(async () => {
+  const opening = vi.fn<() => Promise<UIOpeningResult>>(async () => {
     const timeline = await projectUI()
     return { timeline, history: { hasEarlier: false, startIndex: 0, totalNodes: timeline.nodes.length } }
   })
@@ -170,6 +173,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
         upto: Math.max(after, timeline.upto),
         totalNodes: timeline.nodes.length,
         opState: timeline.opState,
+        ...(timeline.yolo === undefined ? {} : { yolo: timeline.yolo }),
         changes: timeline.nodes.map((node, index) => ({ op: 'upsert' as const, index, node })),
         turnChanges: timeline.turns.map((turn, index) => ({ op: 'upsert' as const, index, turn })),
         ...(timeline.usage ? { usage: timeline.usage } : {}),
@@ -250,6 +254,248 @@ afterEach(async () => {
   localStorage.clear()
 })
 
+describe('web permission synchronization', () => {
+  const label = () => document.querySelector('[data-permission-label]')?.textContent
+  const choose = (name: string) => {
+    document.getElementById('composer-permission')?.click()
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (row) => row.querySelector('.permission-picker-label')?.textContent === name,
+    )
+    expect(option).toBeDefined()
+    option?.click()
+  }
+
+  async function boot(yolo: boolean | undefined) {
+    installPublicFixture()
+    const timeline = idleTimeline('old')
+    timeline.upto = 10
+    if (yolo === undefined) delete timeline.yolo
+    else timeline.yolo = yolo
+    const old = session('old', async () => ({ ...timeline }))
+    let receive: ((value: IteratorResult<LedgerEvent>) => void) | undefined
+    const queued: LedgerEvent[] = []
+    old.events.mockImplementation(() => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () =>
+          new Promise<IteratorResult<LedgerEvent>>((resolve) => {
+            const event = queued.shift()
+            if (event) resolve({ done: false, value: event })
+            else receive = resolve
+          }),
+        return: async () => {
+          receive?.({ done: true, value: undefined })
+          receive = undefined
+          queued.length = 0
+          return { done: true, value: undefined }
+        },
+      }),
+    }))
+    const publish = (enabled: boolean) => {
+      timeline.yolo = enabled
+      timeline.upto++
+      const next = receive
+      receive = undefined
+      const event: LedgerEvent = {
+        seq: timeline.upto,
+        ts: '2026-10-01T00:00:00.000Z',
+        id: String(timeline.upto).padStart(26, '0'),
+        type: 'x/core/yolo-switch',
+        data: { to: enabled },
+        actor: { id: 'test', org: '', role: 'user', deptPath: [], attrs: {} },
+        origin: 'principal',
+        trust: 'trusted',
+        _meta: {
+          promptTurnId: '',
+          eventSequence: timeline.upto,
+          generation: 1,
+          lane: 'main',
+          phase: 'event',
+        },
+      }
+      if (next) next({ done: false, value: event })
+      else queued.push(event)
+      return timeline.upto
+    }
+    old.setYolo.mockImplementation(async (enabled: boolean) => ({ effectiveFromSeq: publish(enabled) }))
+    const listeners = new Map<string, Set<() => void>>()
+    const client = {
+      connectionState: 'connected',
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn((event: string, listener: () => void) => {
+        const handlers = listeners.get(event) ?? new Set<() => void>()
+        handlers.add(listener)
+        listeners.set(event, handlers)
+        return () => handlers.delete(listener)
+      }),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
+    }
+    sdk.createClient.mockReturnValue(client)
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await import('../src/app.js')
+    await vi.waitFor(() =>
+      expect((document.getElementById('composer-permission') as HTMLButtonElement).disabled).toBe(false),
+    )
+    const connect = (event: 'reconnecting' | 'reconnected') => {
+      client.connectionState = event === 'reconnected' ? 'connected' : 'reconnecting'
+      for (const listener of [...(listeners.get(event) ?? [])]) listener()
+    }
+    return { old, publish, timeline, connect }
+  }
+
+  it('restores full access on reopening, applies workspace selections, and follows remote patches', async () => {
+    const { old, publish } = await boot(false)
+    const staleReady = deferred<void>()
+    const freshReady = deferred<void>()
+    const projectPatch = old.projectUIPatch.getMockImplementation()
+    if (!projectPatch) throw new Error('missing projection fixture')
+    old.projectUIPatch
+      .mockImplementationOnce(async (...args) => {
+        const stale = await projectPatch(...args)
+        await staleReady.promise
+        return stale
+      })
+      .mockImplementationOnce(async (...args) => {
+        await freshReady.promise
+        return projectPatch(...args)
+      })
+    publish(false)
+    await vi.waitFor(() => expect(old.projectUIPatch).toHaveBeenCalledTimes(1))
+    choose('完全权限')
+    await vi.waitFor(() => expect(label()).toBe('完全权限'))
+    expect(old.setYolo).toHaveBeenLastCalledWith(true)
+    staleReady.resolve()
+    await vi.waitFor(() => expect(old.projectUIPatch).toHaveBeenCalledTimes(2))
+    expect(label()).toBe('完全权限')
+    freshReady.resolve()
+    const opened = old.projectUIOpening.mock.calls.length
+    document.querySelector<HTMLButtonElement>('[data-session="old"]')?.click()
+    await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBeGreaterThan(opened))
+    await vi.waitFor(() => expect(label()).toBe('完全权限'))
+    expect(old.setYolo.mock.calls.some(([enabled]) => enabled === false)).toBe(false)
+
+    choose('工作区内修改')
+    await vi.waitFor(() => expect(old.setYolo).toHaveBeenLastCalledWith(false))
+    await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
+    const applied = old.setYolo.mock.calls.length
+    choose('工作区内修改')
+    await vi.waitFor(() => expect(old.setYolo.mock.calls.length).toBe(applied + 1))
+    expect(old.setYolo).toHaveBeenLastCalledWith(false)
+
+    await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
+    const calls = old.setYolo.mock.calls.length
+    publish(true)
+    await vi.waitFor(() => expect(label()).toBe('完全权限'))
+    publish(false)
+    await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
+    submit('use the remotely selected workspace permissions')
+    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalled())
+    expect(old.setYolo).toHaveBeenCalledTimes(calls)
+    expect(old.projectUIPatch).toHaveBeenCalled()
+  }, 40_000)
+
+  it.each([false, true])(
+    'refreshes permission before sending after reconnect (previous full: %s)',
+    async (before) => {
+      const { old, timeline, connect } = await boot(before)
+      const failed = deferred<void>()
+      const ready = deferred<void>()
+      const opening = old.projectUIOpening.getMockImplementation()
+      if (!opening) throw new Error('missing opening fixture')
+      old.projectUIOpening
+        .mockImplementationOnce(async (...args) => {
+          await failed.promise
+          return opening(...args)
+        })
+        .mockImplementationOnce(async (...args) => {
+          await ready.promise
+          return opening(...args)
+        })
+      const opened = old.projectUIOpening.mock.calls.length
+      connect('reconnecting')
+      timeline.yolo = !before
+      timeline.upto++
+      connect('reconnected')
+      await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBeGreaterThan(opened))
+
+      const pendingLabel = label()
+      // An unrelated approval render must not restore the cached pre-disconnect projection.
+      const permission = binding.loadWebSession.mock.calls.at(-1)?.[2]
+      const abort = new AbortController()
+      const approval = permission(
+        {
+          sessionId: 'old',
+          toolCall: { toolCallId: 'reconnect-check', title: 'Reconnect check' },
+          options: [],
+        },
+        { signal: abort.signal },
+      )
+      abort.abort()
+      await approval
+      const renderedLabel = label()
+      submit('wait for the current permission')
+      const submittedWhilePending = old.prompt.mock.calls.length
+      failed.reject(new Error('reconnect opening unavailable'))
+      await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBeGreaterThan(opened + 1))
+      const failedLabel = label()
+      submit('wait after the opening failed')
+      const submittedAfterFailure = old.prompt.mock.calls.length
+      ready.resolve()
+      await vi.waitFor(() => expect(label()).toBe(before ? '工作区内修改' : '完全权限'))
+      old.prompt.mockClear()
+      submit('use the current permission')
+      await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('use the current permission'))
+      expect.soft(pendingLabel).toBe('请选择权限')
+      expect.soft(renderedLabel).toBe('请选择权限')
+      expect.soft(failedLabel).toBe('请选择权限')
+      expect.soft(submittedWhilePending).toBe(0)
+      expect.soft(submittedAfterFailure).toBe(0)
+      expect(old.setYolo).not.toHaveBeenCalled()
+    },
+    40_000,
+  )
+
+  it('requires a confirmed selection when an older backend omits its permission state', async () => {
+    const { old, timeline, connect } = await boot(undefined)
+    expect(label()).toBe('请选择权限')
+    submit('wait for permission')
+    expect(old.prompt).not.toHaveBeenCalled()
+    const applied = deferred<{ effectiveFromSeq: number }>()
+    old.setYolo.mockImplementationOnce(() => applied.promise)
+    choose('工作区内修改')
+    await vi.waitFor(() => expect(old.setYolo).toHaveBeenCalledWith(false))
+    submit('still waiting')
+    expect(old.prompt).not.toHaveBeenCalled()
+    applied.resolve({ effectiveFromSeq: 11 })
+    await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
+    submit('confirmed permission')
+    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('confirmed permission'))
+
+    const opened = old.projectUIOpening.mock.calls.length
+    connect('reconnecting')
+    timeline.upto = 12
+    connect('reconnected')
+    await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBeGreaterThan(opened))
+    await vi.waitFor(() => expect(label()).toBe('请选择权限'))
+    old.prompt.mockClear()
+    submit('reconnect needs a new confirmation')
+    expect(old.prompt).not.toHaveBeenCalled()
+    expect(old.setYolo).toHaveBeenCalledTimes(1)
+    old.setYolo.mockImplementationOnce(async () => ({ effectiveFromSeq: ++timeline.upto }))
+    choose('工作区内修改')
+    await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
+    submit('confirmed after reconnect')
+    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('confirmed after reconnect'))
+    expect(old.setYolo).toHaveBeenCalledTimes(2)
+  }, 20_000)
+})
+
 describe('web session selection', () => {
   it('reads trace tool details from the selected session and tags trace snapshots with that session', async () => {
     installPublicFixture()
@@ -306,124 +552,184 @@ describe('web session selection', () => {
     expect(next.readToolDetail).toHaveBeenCalledTimes(1)
   }, 15_000)
 
-  it('opens a new draft with the last model and permission', async () => {
-    installPublicFixture()
-    history.replaceState(null, '', '/#test-launcher-token')
-    localStorage.setItem(
-      'agnes-web-composer-selection',
-      JSON.stringify({ model: { route: 'local', id: 'model-b' }, permission: 'full' }),
-    )
-    const fresh = session('fresh', async () => idleTimeline('fresh'))
-    const draftModel = {
-      route: 'local',
-      id: 'model-b',
-      contextWindow: 128000,
-      thinkingLevelMap: { low: 'low', high: 'high' },
-      defaultSettings: { thinking: 'high', contextWindow: 64000 },
-    }
-    sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
-      on: vi.fn(),
-      close: vi.fn(async () => undefined),
-      apis: vi.fn(async () => ({
-        profile: {
-          models: [{ route: 'local', id: 'model-a' }, draftModel],
-        },
-      })),
-      config: {
-        get: vi.fn(async () => ({
-          configured: true,
-          profile: 'local',
-          provider: { id: 'local', route: 'local', model: 'model-a' },
-        })),
-        providers: vi.fn(async () => ({ providers: [] })),
-        save: vi.fn(async () => ({ configured: true })),
-        test: vi.fn(async () => ({ verified: true, models: [] })),
-      },
-      approval: { decide: vi.fn(async () => undefined) },
-      workspace: {
-        list: vi.fn(async () => ({ items: [] })),
-        add: vi.fn(async (path: string) => ({
-          workspace: { path, name: 'agnes', lastUsedAt: null, sessionCount: 0, available: true },
-        })),
-      },
-      session: {
-        list: vi.fn(async () => ({ items: [] })),
-        load: vi.fn(async () => fresh),
-        new: vi.fn(async () => fresh),
-      },
-    })
-    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
-      session: selected,
-      offPermission: vi.fn(),
-    }))
-    await import('../src/app.js')
-    const model = document.getElementById('model') as HTMLButtonElement
-    const permission = document.getElementById('composer-permission') as HTMLButtonElement
-    await vi.waitFor(() => {
-      expect(model.disabled).toBe(false)
-      expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
-    })
-    expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
-    const settingsButton = document.getElementById('composer-model-settings') as HTMLButtonElement
-    settingsButton.click()
-    await vi.waitFor(() =>
-      expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('64000'),
-    )
-    const thinking = document.getElementById('session-model-thinking') as HTMLSelectElement
-    expect(thinking.value).toBe('high')
-    thinking.value = 'low'
-    thinking.dispatchEvent(new Event('change', { bubbles: true }))
-    const windowInput = document.getElementById('session-model-window') as HTMLInputElement
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(windowInput, '32000')
-    windowInput.dispatchEvent(new Event('input', { bubbles: true }))
-    const dialogButton = (label: string) =>
-      [...document.querySelectorAll<HTMLButtonElement>('.agnes-ui-dialog button')].find(
-        (b) => b.textContent?.replace(/\s/g, '') === label,
+  it.each(['none', 'model', 'permission'] as const)(
+    'opens a new draft with the last model and permission (reconnect during %s)',
+    async (reconnectDuring) => {
+      installPublicFixture()
+      history.replaceState(null, '', '/#test-launcher-token')
+      localStorage.setItem(
+        'agnes-web-composer-selection',
+        JSON.stringify({ model: { route: 'local', id: 'model-b' }, permission: 'full' }),
       )
-    dialogButton('应用到本会话')?.click()
-    await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
-    draftModel.defaultSettings.contextWindow = 96000
-    model.click()
-    document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
-    await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
-    await configurationCallback.saved?.({
-      profile: 'local',
-      revision: 1,
-      configured: true,
-      provider: null,
-      effect: 'new-sessions',
-    })
-    settingsButton.click()
-    await vi.waitFor(() =>
-      expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('32000'),
-    )
-    expect((document.getElementById('session-model-thinking') as HTMLSelectElement).value).toBe('low')
-    dialogButton('取消')?.click()
-    const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
-    cwd.value = '/workspace/agnes'
-    document
-      .getElementById('new-session-form')
-      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await vi.waitFor(() =>
-      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false),
-    )
-    const prompt = document.getElementById('prompt') as HTMLTextAreaElement
-    prompt.value = 'use the remembered selection'
-    prompt.dispatchEvent(new Event('input', { bubbles: true }))
-    document
-      .getElementById('composer')
-      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await vi.waitFor(() => expect(fresh.setModel).toHaveBeenCalled())
-    expect(fresh.setModel).toHaveBeenCalledWith({
-      slot: 'primary',
-      route: 'local',
-      model: 'model-b',
-      thinking: 'low',
-      contextWindow: 32000,
-    })
-    expect(fresh.setYolo).toHaveBeenCalledWith(true)
-  }, 20_000)
+      const fresh = session('fresh', async () => idleTimeline('fresh'))
+      const applied = deferred<{ effectiveFromSeq: number }>()
+      if (reconnectDuring === 'model') fresh.setModel.mockImplementationOnce(() => applied.promise)
+      if (reconnectDuring === 'permission') fresh.setYolo.mockImplementationOnce(() => applied.promise)
+      const draftModel = {
+        route: 'local',
+        id: 'model-b',
+        contextWindow: 128000,
+        thinkingLevelMap: { low: 'low', high: 'high' },
+        defaultSettings: { thinking: 'high', contextWindow: 64000 },
+      }
+      const listeners = new Map<string, Set<() => void>>()
+      const client = {
+        connectionState: 'connected',
+        initialize: vi.fn(async () => undefined),
+        on: vi.fn((event: string, listener: () => void) => {
+          const handlers = listeners.get(event) ?? new Set<() => void>()
+          handlers.add(listener)
+          listeners.set(event, handlers)
+          return () => handlers.delete(listener)
+        }),
+        close: vi.fn(async () => undefined),
+        apis: vi.fn(async () => ({
+          profile: {
+            models: [{ route: 'local', id: 'model-a' }, draftModel],
+          },
+        })),
+        config: {
+          get: vi.fn(async () => ({
+            configured: true,
+            profile: 'local',
+            provider: { id: 'local', route: 'local', model: 'model-a' },
+          })),
+          providers: vi.fn(async () => ({ providers: [] })),
+          save: vi.fn(async () => ({ configured: true })),
+          test: vi.fn(async () => ({ verified: true, models: [] })),
+        },
+        approval: { decide: vi.fn(async () => undefined) },
+        workspace: {
+          list: vi.fn(async () => ({ items: [] })),
+          add: vi.fn(async (path: string) => ({
+            workspace: { path, name: 'agnes', lastUsedAt: null, sessionCount: 0, available: true },
+          })),
+        },
+        session: {
+          list: vi.fn(async () => ({ items: [] })),
+          load: vi.fn(async () => fresh),
+          new: vi.fn(async () => fresh),
+        },
+      }
+      sdk.createClient.mockReturnValue(client)
+      const connect = (event: 'reconnecting' | 'reconnected') => {
+        client.connectionState = event === 'reconnected' ? 'connected' : 'reconnecting'
+        for (const listener of [...(listeners.get(event) ?? [])]) listener()
+      }
+      binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+        session: selected,
+        offPermission: vi.fn(),
+      }))
+      await import('../src/app.js')
+      const model = document.getElementById('model') as HTMLButtonElement
+      const permission = document.getElementById('composer-permission') as HTMLButtonElement
+      await vi.waitFor(() => {
+        expect(model.disabled).toBe(false)
+        expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
+      })
+      expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
+      const settingsButton = document.getElementById('composer-model-settings') as HTMLButtonElement
+      settingsButton.click()
+      await vi.waitFor(() =>
+        expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('64000'),
+      )
+      const thinking = document.getElementById('session-model-thinking') as HTMLSelectElement
+      expect(thinking.value).toBe('high')
+      thinking.value = 'low'
+      thinking.dispatchEvent(new Event('change', { bubbles: true }))
+      const windowInput = document.getElementById('session-model-window') as HTMLInputElement
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(windowInput, '32000')
+      windowInput.dispatchEvent(new Event('input', { bubbles: true }))
+      const dialogButton = (label: string) =>
+        [...document.querySelectorAll<HTMLButtonElement>('.agnes-ui-dialog button')].find(
+          (b) => b.textContent?.replace(/\s/g, '') === label,
+        )
+      dialogButton('应用到本会话')?.click()
+      await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
+      draftModel.defaultSettings.contextWindow = 96000
+      model.click()
+      document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+      await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
+      await configurationCallback.saved?.({
+        profile: 'local',
+        revision: 1,
+        configured: true,
+        provider: null,
+        effect: 'new-sessions',
+      })
+      settingsButton.click()
+      await vi.waitFor(() =>
+        expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('32000'),
+      )
+      expect((document.getElementById('session-model-thinking') as HTMLSelectElement).value).toBe('low')
+      dialogButton('取消')?.click()
+      const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
+      cwd.value = '/workspace/agnes'
+      document
+        .getElementById('new-session-form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await vi.waitFor(() =>
+        expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false),
+      )
+      const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+      prompt.value = 'use the remembered selection'
+      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+      document
+        .getElementById('composer')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await vi.waitFor(() => expect(fresh.setModel).toHaveBeenCalled())
+      expect(fresh.setModel).toHaveBeenCalledWith({
+        slot: 'primary',
+        route: 'local',
+        model: 'model-b',
+        thinking: 'low',
+        contextWindow: 32000,
+      })
+      if (reconnectDuring !== 'none') {
+        if (reconnectDuring === 'permission')
+          await vi.waitFor(() => expect(fresh.setYolo).toHaveBeenCalledWith(true))
+        const ready = deferred<void>()
+        const opening = fresh.projectUIOpening.getMockImplementation()
+        if (!opening) throw new Error('missing opening fixture')
+        fresh.projectUIOpening.mockImplementationOnce(async (...args) => {
+          await ready.promise
+          return opening(...args)
+        })
+        const opened = fresh.projectUIOpening.mock.calls.length
+        connect('reconnecting')
+        connect('reconnected')
+        await vi.waitFor(() => expect(fresh.projectUIOpening.mock.calls.length).toBeGreaterThan(opened))
+        applied.resolve({ effectiveFromSeq: 1 })
+        // A settled first-turn RPC must not continue sending on a different connection.
+        await vi.waitFor(() =>
+          expect(fresh.prompt.mock.calls.length > 0 || prompt.value === 'use the remembered selection').toBe(
+            true,
+          ),
+        )
+        const submittedBeforeOpening = fresh.prompt.mock.calls.length
+        const permissionCalls = fresh.setYolo.mock.calls.length
+        ready.resolve()
+        await vi.waitFor(() =>
+          expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('工作区内修改'),
+        )
+        expect.soft(submittedBeforeOpening).toBe(0)
+        expect.soft(permissionCalls).toBe(reconnectDuring === 'model' ? 0 : 1)
+        expect.soft(prompt.value).toBe('use the remembered selection')
+        permission.click()
+        ;[...document.querySelectorAll<HTMLElement>('[role="option"]')]
+          .find((row) => row.querySelector('.permission-picker-label')?.textContent === '完全权限')
+          ?.click()
+        await vi.waitFor(() =>
+          expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限'),
+        )
+        submit('use the remembered selection')
+      }
+      expect(fresh.setYolo).toHaveBeenCalledWith(true)
+      await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('use the remembered selection'))
+      expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
+    },
+    20_000,
+  )
 
   it('keeps controls usable after a pending model update and refreshes both old and new drafts', async () => {
     installPublicFixture()

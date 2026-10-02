@@ -2,7 +2,15 @@ import { defineTool, type ToolResult } from '@agnes/extension-api'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
 import { isBinary, loadSpilledLines, MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { GrepParams } from '../../../tools-core/src/tools/schemas.js'
-import { globToRegExp, newWalkReport, SEARCH_META, toolError, walk, walkNotes } from './walk.js'
+import {
+  globToRegExp,
+  newWalkReport,
+  SEARCH_META,
+  searchPathError,
+  toolError,
+  walk,
+  walkNotes,
+} from './walk.js'
 
 const dec = new TextDecoder()
 
@@ -23,6 +31,7 @@ export const grepTool = defineTool({
   parameters: GrepParams,
   meta: SEARCH_META,
   async execute(args, ctx): Promise<ToolResult> {
+    const root = args.path ?? ctx.cwd
     const limit = args.limit ?? DEFAULT_LIMIT
     let re: RegExp
     try {
@@ -71,7 +80,9 @@ export const grepTool = defineTool({
       if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
       return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
     }
-    for await (const f of walk(ctx, args.path ?? ctx.cwd, report, { maxEntries: MAX_ENTRIES })) {
+    const denied = searchPathError(ctx, 'grep', root)
+    if (denied) return denied
+    for await (const f of walk(ctx, root, report, { maxEntries: MAX_ENTRIES })) {
       if (atLimit) break
       if (f.kind !== 'file' || (glob && !glob.test(f.rel))) continue
       let bytes: Uint8Array

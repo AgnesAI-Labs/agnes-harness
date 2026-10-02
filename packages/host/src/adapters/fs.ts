@@ -1,6 +1,7 @@
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:path'
 import { decideFsPath, FS_DENIED, type FsPolicy } from '@agnes/core'
 import type { FsEntry, FsStat } from '@agnes/extension-api'
+import { sessionHasFullFileAccess } from '../session-file-access.js'
 import type { FsIo } from './fs-io.js'
 import { localFsIo } from './fs-io-local.js'
 
@@ -130,8 +131,14 @@ export function createFs(
     const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
     const real = await canonicalize(io, abs, p)
     const decision = decideFsPath(policy, real, { caseSensitive })
-    if (decision.effect !== 'allow')
-      refuse(p, decision.reason === 'no-match' ? 'is outside every allow rule' : 'is denied by policy')
+    // Full session access widens unmatched paths; matching denies remain authoritative.
+    if (decision.effect !== 'allow' && !(decision.reason === 'no-match' && sessionHasFullFileAccess(fs)))
+      refuse(
+        p,
+        decision.reason === 'no-match'
+          ? 'is outside every allow rule; 请选择“完全权限”或将目标所在目录设为工作区。'
+          : 'is denied by policy',
+      )
     return { real, abs }
   }
 
@@ -167,7 +174,7 @@ export function createFs(
     return (await authorize(p)).real
   }
 
-  return {
+  const fs: FencedFs = {
     resolveInside,
     async canonicalize(p, opts) {
       usable(p)
@@ -221,9 +228,11 @@ export function createFs(
       // policy that allows a leaf but not its directory is not a licence to unlink there.
       const { real } = await authorize(p)
       const { policy, caseSensitive } = binding()
-      if (decideFsPath(policy, dirname(real), { caseSensitive }).effect !== 'allow')
+      const parent = decideFsPath(policy, dirname(real), { caseSensitive })
+      if (parent.effect !== 'allow' && !(parent.reason === 'no-match' && sessionHasFullFileAccess(fs)))
         refuse(p, 'is denied by policy at its parent')
       await io.rm(real, { recursive: opts.recursive ?? false })
     },
   }
+  return fs
 }

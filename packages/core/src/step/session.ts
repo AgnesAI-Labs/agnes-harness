@@ -1762,24 +1762,27 @@ export class SessionImpl {
     const checked = validateActor(inspected.value)
     if (!checked.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
     const actor = checked.value
-    const r = await this.d.log.append([
-      sysEvent(
-        { actor, lane: this.lane },
-        'x/core/yolo-switch',
-        {
-          version: 1,
-          to: enabled,
-          operatorId: actor.id,
-          sessionKey: this.key,
-          lane: this.lane,
-          profileHash: this.d.resolvedProfileHash,
-          sessionOwner: { id: this.d.actor.id, org: this.d.actor.org },
-        },
-        { ignorable: true },
-      ),
-    ])
-    this.yolo = enabled
-    return r.firstSeq
+    // A projection triggered by the committed event must wait for the matching live flag.
+    return this.exclusively(async () => {
+      const r = await this.d.log.append([
+        sysEvent(
+          { actor, lane: this.lane },
+          'x/core/yolo-switch',
+          {
+            version: 1,
+            to: enabled,
+            operatorId: actor.id,
+            sessionKey: this.key,
+            lane: this.lane,
+            profileHash: this.d.resolvedProfileHash,
+            sessionOwner: { id: this.d.actor.id, org: this.d.actor.org },
+          },
+          { ignorable: true },
+        ),
+      ])
+      this.yolo = enabled
+      return r.firstSeq
+    })
   }
 
   append(tx: EventInput[]) {
@@ -1805,7 +1808,7 @@ export class SessionImpl {
       return Promise.reject(
         new CoreError('E_ENVELOPE', 'UI upper bound must be a nonnegative safe sequence number'),
       )
-    return this.exclusively(() => this.projectFull(upto, opts))
+    return this.exclusively(async () => ({ ...(await this.projectFull(upto, opts)), yolo: this.yolo }))
   }
 
   private async projectFull(
@@ -1832,7 +1835,7 @@ export class SessionImpl {
       (upto !== undefined && (!Number.isSafeInteger(upto) || upto < after))
     )
       return Promise.reject(new CoreError('E_ENVELOPE', 'invalid UI projection patch bounds'))
-    return this.exclusively(async () => {
+    return this.exclusively<CoreUIProjectionUpdate>(async () => {
       this.guardProjection()
       // Historical cuts and dynamic extension fills retain the authoritative slow path. Production
       // daemon calls do not supply fills, so a live head hit stays wholly on the event-driven cell.
@@ -1884,7 +1887,11 @@ export class SessionImpl {
       }
       upserts.sort((a, b) => a.index - b.index)
       return { kind: 'patch', patch: { ...patch, turnChanges: [...removals, ...upserts] } }
-    })
+    }).then((update) =>
+      update.kind === 'patch'
+        ? { ...update, patch: { ...update.patch, yolo: this.yolo } }
+        : { ...update, timeline: { ...update.timeline, yolo: this.yolo } },
+    )
   }
 
   projectUIOpening(
@@ -1937,7 +1944,7 @@ export class SessionImpl {
         startIndex: page.startIndex,
         totalNodes: page.totalNodes,
       }
-    })
+    }).then((opening) => ({ ...opening, timeline: { ...opening.timeline, yolo: this.yolo } }))
   }
 
   projectUIHistory(

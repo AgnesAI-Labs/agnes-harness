@@ -195,6 +195,38 @@ it('keeps a ten-thousand-node opening snapshot at the frozen default tail size',
   expect(scan).not.toHaveBeenCalled()
 })
 
+it.each(['tui', 'web'] as const)('projects permission-only changes for %s subscribers', async (surface) => {
+  const { session, log } = await open({ provider: fakeProvider([]) })
+  const baseline = await session.projectUIOpening({ surface })
+  expect(baseline.timeline.yolo).toBe(false)
+  let after = baseline.timeline.upto
+  let notified: ReturnType<SessionImpl['projectUIPatch']> | undefined
+  const dispose = log.observeCommitted(['x/core/yolo-switch'], () => {
+    notified = session.projectUIPatch(after, undefined, { surface })
+  })
+  try {
+    for (const enabled of [true, false]) {
+      const seq = await session.setYolo(enabled, actor)
+      expect(notified).toBeDefined()
+      expect(await notified).toMatchObject({
+        kind: 'patch',
+        patch: { from: after, upto: seq, yolo: enabled, changes: [], turnChanges: [] },
+      })
+      expect((await session.projectUIOpening({ surface })).timeline.yolo).toBe(enabled)
+      expect((await session.projectUI(undefined, { surface })).yolo).toBe(enabled)
+      expect(
+        await session.projectUIPatch(baseline.timeline.upto, baseline.timeline.upto, { surface }),
+      ).toMatchObject({
+        kind: 'replace',
+        timeline: { upto: baseline.timeline.upto, yolo: enabled },
+      })
+      after = seq
+    }
+  } finally {
+    dispose()
+  }
+})
+
 it('applies each committed event once and serves a head patch from the bounded cell journal', async () => {
   const { session, storage } = await open({ provider: fakeProvider([]) })
   const baseline = await session.projectUI()

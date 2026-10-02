@@ -148,7 +148,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
   // that was always going to refuse - a rejected assembly is supposed to have no side effects.
   const audit = opts.audit ?? createFileAudit(join(opts.dataDir, 'audit', 'host.jsonl'))
   audit.write({ kind: 'profile.resolved', detail: { hash: profile.hash, chain: profile.chain } })
-  const workspaceRuntimes = new SessionWorkspaceRuntimeTable()
+  const workspaceRuntimes = new SessionWorkspaceRuntimeTable((key) => a.kernel.get(key)?.yolo === true)
   const a = await assemble(profile, {
     ...opts,
     loader,

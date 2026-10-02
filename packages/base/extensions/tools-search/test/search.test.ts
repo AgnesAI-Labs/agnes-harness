@@ -1,4 +1,4 @@
-import { checkToolDef, type ToolResult } from '@agnes/extension-api'
+import { checkToolDef, type ToolContext, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-context.js'
 import { spillLocator } from '../../tools-core/src/guards/output.js'
@@ -166,7 +166,7 @@ describe('grep', () => {
     expect(textOf(r)).toContain('not searched')
   })
 
-  it('does not walk into a path the shipped deny list covers', async () => {
+  it.each([false, true])('does not walk into a denied path with full access %s', async (fullAccess) => {
     // These are the paths the deployment defaults refuse to open: the secret store, the seam
     // tables, the audit log and the session database. A tool that walks a tree has to keep away
     // from them on its own - the kernel's own check compares the string it was handed, so a tool
@@ -181,19 +181,26 @@ describe('grep', () => {
         'ok.txt': 'hit',
       },
     })
-    const r = await grepTool.execute({ pattern: 'hit' }, ctx)
+    const selected = { ...ctx, session: { ...ctx.session, fullAccess } }
+    const r = await grepTool.execute({ pattern: 'hit' }, selected)
     expect(
       textOf(r)
         .split('\n')
         .filter((l) => l.includes(':1:hit')),
     ).toEqual(['ok.txt:1:hit'])
     expect(textOf(r)).toContain('denied by policy')
-    const f = await findTool.execute({ pattern: '**' }, ctx)
+    const f = await findTool.execute({ pattern: '**' }, selected)
     expect(
       textOf(f)
         .split('\n')
         .filter((l) => !l.startsWith('[')),
     ).toEqual(['ok.txt'])
+    for (const tool of [grepTool, findTool]) {
+      const denied = await tool.execute({ pattern: 'hit', path: 'secrets' }, selected)
+      expect(denied.isError, tool.name).toBe(true)
+      expect(textOf(denied), tool.name).toContain('denied by policy')
+      expect(textOf(denied), tool.name).not.toContain('完全权限')
+    }
   })
 
   it('keeps out of the workspace secrets directory under both .agh and the legacy .agnes name', async () => {
@@ -272,6 +279,55 @@ describe('find', () => {
   })
 })
 
+describe('search access scope', () => {
+  it.each(
+    [lsTool, findTool, grepTool].flatMap((tool) =>
+      ['/elsewhere', '/', 'C:/'].map((path) => ({ tool, path })),
+    ),
+  )('$tool.name only searches external root $path with full access', async ({ tool, path }) => {
+    const original = fakeToolContext()
+    const backing = fakeToolContext({
+      files: { 'external.ts': 'external match', 'nested/second.ts': 'external match' },
+    })
+    const prefix = path.endsWith('/') ? path : `${path}/`
+    const mapped = (input: string) => {
+      if (input === path) return backing.cwd
+      if (!input.startsWith(prefix) || input.slice(prefix.length).startsWith('/'))
+        throw new Error('not the requested absolute search root')
+      return `${backing.cwd}/${input.slice(prefix.length)}`
+    }
+    const ctx: ToolContext = {
+      ...original,
+      fs: {
+        ...original.fs,
+        list: (input) => backing.fs.list(mapped(input)),
+        stat: (input) => backing.fs.stat(mapped(input)),
+        read: (input, options) => backing.fs.read(mapped(input), options),
+      },
+    }
+    const args = { path, pattern: tool.name === 'grep' ? 'external match' : '**/*.ts' }
+    const full = { ...ctx, session: { ...ctx.session, fullAccess: true } }
+    const permitted = await tool.execute(args, full)
+    expect.soft(permitted.isError).toBeUndefined()
+    expect
+      .soft(textOf(permitted))
+      .toBe(
+        tool.name === 'grep'
+          ? 'external.ts:1:external match\nnested/second.ts:1:external match'
+          : tool.name === 'find'
+            ? 'external.ts\nnested/second.ts'
+            : 'external.ts\nnested/',
+      )
+    for (const selected of [ctx, { ...ctx, session: { ...ctx.session, fullAccess: false } }]) {
+      const denied = await tool.execute(args, selected)
+      expect.soft(denied.isError).toBe(true)
+      expect.soft(textOf(denied)).toContain('outside the workspace')
+      expect.soft(textOf(denied)).toContain('完全权限')
+      expect.soft(textOf(denied)).toContain('选择目标目录作为工作区')
+    }
+  })
+})
+
 describe('ls', () => {
   it('marks each entry kind, so a symlink is not shown as an ordinary file', async () => {
     const ctx = fakeToolContext({
@@ -322,12 +378,14 @@ describe('ls', () => {
     expect(r.isError).toBeUndefined()
   })
 
-  it('refuses a denied directory and hides denied entries from a listing', async () => {
+  it.each([false, true])('refuses and hides denied entries with full access %s', async (fullAccess) => {
     const ctx = fakeToolContext({ files: { 'secrets/key.txt': '', 'src/a.ts': '', 'sessions.db': '' } })
-    const denied = await lsTool.execute({ path: 'secrets' }, ctx)
+    const selected = { ...ctx, session: { ...ctx.session, fullAccess } }
+    const denied = await lsTool.execute({ path: 'secrets' }, selected)
     expect(denied.isError).toBe(true)
     expect(textOf(denied)).toContain('denied by policy')
-    const root = await lsTool.execute({}, ctx)
+    expect(textOf(denied)).not.toContain('完全权限')
+    const root = await lsTool.execute({}, selected)
     expect(textOf(root).split('\n')[0]).toBe('src/')
     expect(textOf(root)).not.toContain('secrets')
     expect(textOf(root)).not.toContain('sessions.db')

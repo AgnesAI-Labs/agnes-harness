@@ -2,7 +2,7 @@ import { defineTool, type FsEntry, type ToolResult } from '@agnes/extension-api'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { LsParams } from '../../../tools-core/src/tools/schemas.js'
-import { allowed, SEARCH_META, toolError } from './walk.js'
+import { allowed, SEARCH_META, searchPathError, toolError } from './walk.js'
 
 const DEFAULT_LIMIT = 500
 
@@ -20,8 +20,8 @@ export const lsTool = defineTool({
   async execute(args, ctx): Promise<ToolResult> {
     const dir = args.path ?? ctx.cwd
     const abs = normalizeWorkspacePath(dir, ctx.cwd).abs
-    if (!allowed(ctx, abs))
-      return toolError(`ls refused: ${dir} is outside the workspace or denied by policy`)
+    const denied = searchPathError(ctx, 'ls', dir)
+    if (denied) return denied
     let entries: FsEntry[]
     try {
       entries = await ctx.fs.list(dir)

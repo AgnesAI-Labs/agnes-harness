@@ -487,10 +487,14 @@ describe('session extras: deterministic UI projection diff', () => {
     }
 
     expect(
-      diffUITimeline(timeline([user, oldAssistant, removed], 3), timeline([nextAssistant, user, added], 4)),
+      diffUITimeline(timeline([user, oldAssistant, removed], 3), {
+        ...timeline([nextAssistant, user, added], 4),
+        yolo: true,
+      }),
     ).toMatchObject({
       from: 3,
       upto: 4,
+      yolo: true,
       changes: [
         { op: 'remove', id: 'c' },
         { op: 'upsert', index: 0, node: nextAssistant },
@@ -679,7 +683,7 @@ describe('session extras: list, preset/model switching and durable fork', () => 
     await h.close()
   })
 
-  it('setYolo flips the session-wide approval bypass — no route table to reject against', async () => {
+  it('setYolo updates live permissions and the UI projection even without node changes', async () => {
     const h = await openTestHost()
     const setSessionYolo = vi.fn(async () => undefined)
     Object.defineProperty(h.host, 'computerUse', {
@@ -699,6 +703,13 @@ describe('session extras: list, preset/model switching and durable fork', () => 
       method: 'session/new',
       params: { cwd: h.dataDir, mcpServers: [] },
     })) as { result: { sessionId: string } }
+    const opening = (await ep.handle({
+      jsonrpc: '2.0',
+      id: 10,
+      method: '_agnes/v1/session.projectUIOpening',
+      params: { sessionId, surface: 'web' },
+    })) as { result: { timeline: UITimeline } }
+    expect(opening.result.timeline.yolo).toBe(false)
     const on = await ep.handle({
       jsonrpc: '2.0',
       id: 3,
@@ -706,6 +717,15 @@ describe('session extras: list, preset/model switching and durable fork', () => 
       params: { sessionId, enabled: true },
     })
     expect(on).toMatchObject({ result: { effectiveFromSeq: expect.any(Number) } })
+    const update = await ep.handle({
+      jsonrpc: '2.0',
+      id: 11,
+      method: '_agnes/v1/session.projectUIPatch',
+      params: { sessionId, surface: 'web', after: opening.result.timeline.upto },
+    })
+    expect(update).toMatchObject({
+      result: { kind: 'patch', patch: { yolo: true, changes: [], turnChanges: [] } },
+    })
     const live = h.host.kernel.sessions.get(sessionId)
     if (!live) throw new Error('missing live session')
     const [switchEvent] = await live.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 })
@@ -722,6 +742,14 @@ describe('session extras: list, preset/model switching and durable fork', () => 
     })
     expect(off).toMatchObject({ result: { effectiveFromSeq: expect.any(Number) } })
     expect(setSessionYolo).toHaveBeenLastCalledWith({ key: sessionId, lane: 'main' }, false)
+    expect(
+      await ep.handle({
+        jsonrpc: '2.0',
+        id: 12,
+        method: '_agnes/v1/session.projectUI',
+        params: { sessionId, surface: 'web' },
+      }),
+    ).toMatchObject({ result: { yolo: false } })
     await ep.close()
     await h.close()
   })

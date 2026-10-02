@@ -14,6 +14,8 @@ export interface SessionRef {
   readonly lane: string
   /** Canonical workspace identity selected by the Host for this session. Data only, never authority. */
   readonly workspaceRoot: string
+  /** Session access-mode hint for tool prechecks; filesystem ports independently enforce authority. */
+  readonly fullAccess?: boolean
   readonly turn?: number
   readonly step?: number
   /** Host-resolved once when the session hook port is created; absent on older hosts. */

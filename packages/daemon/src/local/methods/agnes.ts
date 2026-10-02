@@ -294,6 +294,7 @@ export function diffUITimeline(previous: UITimeline, next: UITimeline): UITimeli
     opState: structuredClone(next.opState),
     changes,
     turnChanges,
+    ...(next.yolo === undefined ? {} : { yolo: next.yolo }),
     ...(next.budget === undefined ? {} : { budget: structuredClone(next.budget) }),
     ...(next.usage === undefined ? {} : { usage: structuredClone(next.usage) }),
   }

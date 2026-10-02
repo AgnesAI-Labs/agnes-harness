@@ -41,7 +41,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[<slot> <route>/<model> [<thinking>]]',
     description: '列出可用模型并选择，或直接切换指定槽位（可选带上 thinking 档）',
   },
-  { name: '/yolo', description: '本会话剩余部分跳过全部审批，一旦开启不可撤销' },
+  { name: '/yolo', description: '启用完全权限：工作区内外读写并跳过工具审批；TUI 无关闭命令' },
   { name: '/export', description: '导出当前会话' },
   { name: '/refine', description: '查看精炼提案（尚未投影到时间线）' },
   { name: '/packages', description: '查看已安装插件及其期望/实际状态' },
@@ -352,7 +352,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       })) as { effectiveFromSeq: number }
       writeComposerMemoryFile(app.composerSelectionPath, { permission: 'full' })
       return {
-        text: `yolo on from seq ${r.effectiveFromSeq} — every ask for the rest of this session is skipped`,
+        text: `full access from seq ${r.effectiveFromSeq}: read/write inside and outside the workspace; tool approvals skipped. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.`,
       }
     }
     case '/export':

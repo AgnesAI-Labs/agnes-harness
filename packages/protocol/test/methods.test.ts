@@ -526,6 +526,25 @@ describe('methods (I1 set)', () => {
   })
 
   it('validates incremental UI patches and rejects ambiguous changes', () => {
+    for (const yolo of [undefined, true, false, 'true', 1]) {
+      const fields = {
+        sessionId: 's',
+        generation: 1,
+        upto: 9,
+        opState: null,
+        ...(yolo === undefined ? {} : { yolo }),
+      }
+      const valid = yolo === undefined || typeof yolo === 'boolean'
+      expect(
+        validateMethod('_agnes/v1/session.projectUI', 'result', { ...fields, nodes: [], turns: [] }).ok,
+      ).toBe(valid)
+      expect(
+        validateMethod('_agnes/v1/session.projectUIPatch', 'result', {
+          kind: 'patch',
+          patch: { ...fields, from: 7, changes: [], turnChanges: [] },
+        }).ok,
+      ).toBe(valid)
+    }
     expect(
       validateMethod('_agnes/v1/session.projectUIPatch', 'params', {
         sessionId: 's',

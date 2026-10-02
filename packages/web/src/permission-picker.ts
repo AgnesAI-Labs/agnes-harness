@@ -11,11 +11,16 @@ export type PermissionOption = {
 
 export const PERMISSION_OPTIONS: readonly PermissionOption[] = [
   { id: 'view', label: '仅可查看', description: '本会话弹出的命令审批一律拒绝' },
-  { id: 'workspace', label: '工作区内修改', description: '工作区读写按默认策略；跑命令仍要审批' },
-  { id: 'full', label: '完全权限', description: '本会话跳过其余审批' },
+  { id: 'workspace', label: '工作区内修改', description: '仅工作区内读写；越界需切换完全权限或选择目录' },
+  {
+    id: 'full',
+    label: '完全权限',
+    description: '工作区内外文件读写；跳过审批，保留安全禁令和系统权限',
+  },
 ]
 
-export function permissionLabel(mode: PermissionMode): string {
+export function permissionLabel(mode: PermissionMode | null): string {
+  if (mode === null) return '请选择权限'
   return PERMISSION_OPTIONS.find((option) => option.id === mode)?.label ?? '工作区内修改'
 }
 
@@ -26,7 +31,7 @@ export function yoloEnabled(mode: PermissionMode): boolean {
 export type PermissionPickerState = {
   disabled: boolean
   pending: boolean
-  selected: PermissionMode
+  selected: PermissionMode | null
 }
 
 export type PermissionPicker = {
