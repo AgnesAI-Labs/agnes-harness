@@ -2,6 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import type {
+  DispatchAdmissionRequest,
+  ReceiptIntakeRequest,
+} from '../packages/extension-api/src/runtime/index.js'
 import {
   assertMeasuredSet,
   assertStateBackend,
@@ -10,6 +14,7 @@ import {
   buildReport,
   type CommitRecord,
   classifyCommits,
+  createBenchmarkUsageSource,
   kernelSessionCount,
   MEASURED_SCENARIOS,
   reconcileAuthoritative,
@@ -34,6 +39,59 @@ function commit(over: Partial<CommitRecord> = {}): CommitRecord {
 }
 
 describe('runtime control meter', () => {
+  it('requires the exact local usage source and refuses changed material or a reserved budget', () => {
+    const source = createBenchmarkUsageSource()
+    // Only fields consumed by this isolated source check; real scenarios use complete admitted requests.
+    const request = {
+      actionId: 'action-1',
+      attemptId: 'attempt-1',
+      budget: { reservation: null },
+      guard: { bindingId: 'binding-1' },
+    } as DispatchAdmissionRequest
+    const fact = {
+      usageId: 'usage-1',
+      originKey: 'origin-1',
+      actionId: 'action-1',
+      attemptId: 'attempt-1',
+      source: {
+        bindingId: 'binding-1',
+        contract: 'agh.test/tool',
+        logicalName: 'tool',
+        providerId: 'provider-1',
+      },
+    } as ReceiptIntakeRequest['usage'][number]
+    const intake = {
+      sourceAuthorizationRef: 'authorization-1',
+      evidence: [],
+      usage: [fact],
+      receipt: {
+        actionId: 'action-1',
+        attemptId: 'attempt-1',
+        bindingId: 'binding-1',
+        usageRefs: ['usage-1'],
+      },
+    } as unknown as ReceiptIntakeRequest
+    expect(source.verify(fact, intake.receipt, [])).toBeUndefined()
+    source.observe(request, 'authorization-1', intake)
+    expect(source.verify(fact, intake.receipt, [])).toEqual({ settlementRef: null })
+    expect(source.verify({ ...fact, usageId: 'changed' }, intake.receipt, [])).toBeUndefined()
+    expect(source.verify(fact, { ...intake.receipt, receiptId: 'changed' }, [])).toBeUndefined()
+    expect(source.verify({ ...fact, originKey: 'unknown' }, intake.receipt, [])).toBeUndefined()
+    expect(() => source.observe(request, 'other-authorization', intake)).toThrow(/unreserved local dispatch/)
+    expect(() =>
+      source.observe(
+        { ...request, budget: { ...request.budget, reservation: {} as never } },
+        'authorization-1',
+        intake,
+      ),
+    ).toThrow(/unreserved local dispatch/)
+    expect(() =>
+      source.observe(request, 'authorization-1', {
+        ...intake,
+        receipt: { ...intake.receipt, receiptId: 'changed' },
+      }),
+    ).toThrow(/identity conflicts/)
+  })
   it('fails when a counter drops an ack or records an intake the database does not have', () => {
     const counted = [
       commit({ wrote: true }),

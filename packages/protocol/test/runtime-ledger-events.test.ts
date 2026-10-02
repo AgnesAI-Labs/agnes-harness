@@ -50,10 +50,11 @@ describe('runtime ledger authority events', () => {
         }),
       ).ok,
     ).toBe(true)
+    expect(validateEvent(envelope('runtime/format', { ...runtimeFormatData, minReader: 2 })).ok).toBe(true)
     for (const [key, value] of [
       ['formatVersion', 1],
       ['runtimeSchemaMajor', 2],
-      ['minReader', 2],
+      ['minReader', 3],
       ['previousFormat', 3],
       ['sourceHeadDigest', 'D'.repeat(64)],
     ])

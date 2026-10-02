@@ -20,7 +20,6 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { afterEach, expect, it } from 'vitest'
-import { measureApprovalCommitIncrement } from '../../../tools/runtime-approval-commit-count.js'
 import { defaultPolicyDecision } from '../../core/src/runtime/policy/decision-composition.js'
 import { jcs } from '../../protocol/src/jcs.js'
 import { createIdentityAuthority } from '../src/runtime/identity/authority.js'
@@ -30,6 +29,7 @@ import type { ApprovalPreparation } from '../src/runtime/state/approval.js'
 import type { ControlPorts } from '../src/runtime/state/control.js'
 import { digestOf, stableId } from '../src/runtime/state/records.js'
 import { type RuntimeApprovalJointOwner, RuntimeStateDatabase } from '../src/runtime/state/transactions.js'
+import { measureApprovalCommitIncrement } from './helpers/runtime-approval-commit-count.js'
 
 const now = '2026-04-01T00:00:00.000Z',
   deadline = '2026-05-01T00:00:00.000Z'
@@ -363,16 +363,17 @@ async function fixture(
       target.bindingId === interactionBinding.bindingId && jcs(target.scope) === jcs(scope),
     () => true,
   )
+  const fixtureSigningKey = Buffer.from('isolated test signing material')
   const h = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url')
   const p = Buffer.from(
     JSON.stringify({ iss: 'issuer', sub: 'human', exp: Math.floor(Date.parse(now) / 1000) + 3600 }),
   ).toString('base64url')
-  const signature = createHmac('sha256', 'actual-fixture-key').update(`${h}.${p}`).digest('base64url')
+  const signature = createHmac('sha256', fixtureSigningKey).update(`${h}.${p}`).digest('base64url')
   const verified = verifyIdentityJwt(`${h}.${p}.${signature}`, {
     now: () => Date.parse(now),
     generation: 'generation',
     nonces: createIdentityNonceOwner(owner.db),
-    jwt: { issuer: 'issuer', secret: 'actual-fixture-key' },
+    jwt: { issuer: 'issuer', secret: fixtureSigningKey.toString() },
   })
   if (!verified.ok) throw Error('actual signed JWT refused')
   const instance = await identity.accept({
