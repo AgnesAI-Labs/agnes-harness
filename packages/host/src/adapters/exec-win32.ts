@@ -21,14 +21,21 @@ export function createWindowsExec(options: {
         )
       const controller = new AbortController()
       let timedOut = false
+      let cancelledFirst = false
       const output = createExecOutput(opts.maxOutputBytes ?? 1024 * 1024)
       const cancel = () => controller.abort()
       const timer = setTimeout(() => {
+        // First cause wins: a cancel that came first is not reported as a timeout.
+        if (cancelledFirst) return
         timedOut = true
         cancel()
       }, opts.timeoutMs ?? options.defaultTimeoutMs)
-      opts.signal?.addEventListener('abort', cancel, { once: true })
-      if (opts.signal?.aborted) cancel()
+      const onAbort = () => {
+        cancelledFirst = true
+        cancel()
+      }
+      opts.signal?.addEventListener('abort', onAbort, { once: true })
+      if (opts.signal?.aborted) onAbort()
       const execute = async (): Promise<ExecResult> => {
         let prepared: ReturnType<typeof preparePowerShellFile> | undefined
         try {
@@ -62,7 +69,7 @@ export function createWindowsExec(options: {
           throw cause
         } finally {
           clearTimeout(timer)
-          opts.signal?.removeEventListener('abort', cancel)
+          opts.signal?.removeEventListener('abort', onAbort)
           prepared?.dispose()
         }
       }

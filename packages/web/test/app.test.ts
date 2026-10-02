@@ -1468,6 +1468,67 @@ describe('web session selection', () => {
   })
 })
 
+describe('composer draft persistence', () => {
+  it('keeps a draft after a failed send but never revives a sent prompt when the page unloads mid-run', async () => {
+    installPublicFixture()
+    const old = session('old', async () => idleTimeline('old'))
+    const inFlight = deferred<undefined>()
+    old.prompt
+      .mockRejectedValueOnce(new Error('prompt rejected'))
+      .mockImplementationOnce(() => inFlight.promise)
+    const client = {
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      approval: { decide: vi.fn(async () => undefined) },
+      close: vi.fn(async () => undefined),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
+    }
+    sdk.createClient.mockReturnValue(client)
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+      session: selected,
+      offPermission: vi.fn(),
+    }))
+    await import('../src/app.js')
+    const composer = document.getElementById('prompt') as HTMLTextAreaElement
+    const draftKey = 'agnes-web-composer-draft'
+    const type = (text: string) => {
+      composer.value = text
+      composer.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    await vi.waitFor(() => expect(composer.disabled).toBe(false))
+
+    // A rejected send is a failure the user can retry: the draft comes back and stays stored.
+    type('一段较长的任务提示词')
+    document
+      .getElementById('composer')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(composer.value).toBe('一段较长的任务提示词'))
+    expect(sessionStorage.getItem(draftKey)).toBe('一段较长的任务提示词')
+
+    // The prompt was accepted and the run is in flight. Unloading closes the connection, which rejects
+    // the pending call, but that is not a failed send: nothing may be stored or put back.
+    document
+      .getElementById('composer')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(2))
+    expect(composer.value).toBe('')
+    expect(sessionStorage.getItem(draftKey)).toBeNull()
+    window.dispatchEvent(new Event('pagehide'))
+    inFlight.reject(new Error('transport closed'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(composer.value).toBe('')
+    expect(sessionStorage.getItem(draftKey)).toBeNull()
+  })
+})
+
 describe('web model confirmation', () => {
   it('preserves the confirmed model after a failed switch and ignores an old session response', async () => {
     installPublicFixture()

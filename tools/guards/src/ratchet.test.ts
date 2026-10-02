@@ -271,7 +271,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host/src/adapters/powershell-file': 47,
   'packages/host/src/adapters/powershell-temporary': 43,
   'packages/host/src/adapters/process-identity-win32': 18,
-  'packages/host/src/adapters/exec-win32': 78,
+  'packages/host/src/adapters/exec-win32': 84,
   'packages/host/src/adapters/exec-output': 32,
   'packages/host/src/adapters/secrets-win32': 25,
   // WIN-TITLE-REPAIR: +3 for peer-only rejection backoff; no counting exclusions changed.
@@ -970,7 +970,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // State path. Measured 27395, exact, no spare.
   // Merged with the domain command and projection providers on the integration base.
   // Measured 28556, exact, no spare.
-  'packages/core/src': 28801,
+  // Configurable tool output limit: the Preset key `tools.output_max_bytes` resolved and handed to each
+  // tool as `ctx.outputMaxBytes`. Measured 25723 (+8), exact cap without spare allocation.
+  // A mutating tool cut short by its deadline or a cancel names that cause in its unknown-outcome result
+  // text instead of reading as a lost transport. Measured 25741 (+18), exact cap.
+  // The soft deadline handed to a tool is a grace short of the kernel cut-off. Measured 25742 (+1), exact cap.
+  // The preset-wide default timeout reaches a tool as ctx.defaultTimeoutMs. Measured 25751 (+9), exact cap.
+  'packages/core/src': 28829,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1399,7 +1405,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Generated runtime/client contracts and pure author declarations: exact measured total, no spare.
   // Client transport ports, schema codecs and typed operations: exact measured 2717, no spare.
   // Reviewed client/owner signatures and pure artifact author helper: measured 2813 (+96), exact.
-  'packages/extension-api/src': 2818,
+  // `ToolContext.outputMaxBytes` and the three bounds of the Preset key `tools.output_max_bytes`,
+  // exported as constants. Measured 981 (+3), exact, no spare.
+  // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
+  // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
+  'packages/extension-api/src': 2825, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2638,7 +2648,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
   // Constrained network and secret providers. Measured 63169, exact, no spare.
   // Default interaction provider over the State approval entries. Measured 63248, exact, no spare (+79).
-  'packages/host/src': 63448,
+  // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9), exact cap.
+  'packages/host/src': 63457,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2802,7 +2813,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+11).
   // Cancelling a child's creation also settles its execution state in the same statement. Measured
   // 5017, exact, no spare (+3).
-  'packages/host/src/adapters': 5025,
+  // First-cause timedOut in exec and exec-win32. Measured 5034 (+9), exact cap.
+  'packages/host/src/adapters': 5034,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.

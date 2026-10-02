@@ -3,6 +3,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expectTypeOf, it } from 'vitest'
 import type {
   CapabilityReport,
+  ExecResult,
   ResolvedToolCallPolicy,
   SandboxEnforcement,
   ToolContext,
@@ -199,6 +200,7 @@ describe('tool types', () => {
       | 'progress'
       | 'signal'
       | 'timeoutMs'
+      | 'defaultTimeoutMs'
       | 'outputMaxBytes'
       | 'lease'
       | 'log'
@@ -206,6 +208,18 @@ describe('tool types', () => {
     expectTypeOf<ToolContext['platform']['shell']>().toEqualTypeOf<'posix' | 'powershell'>()
     expectTypeOf<ReturnType<ToolContext['platform']['capability']>>().toEqualTypeOf<CapabilityReport>()
     expectTypeOf<ReturnType<ToolContext['sandbox']['enforcement']>>().toEqualTypeOf<SandboxEnforcement>()
+  })
+})
+
+describe('exec result', () => {
+  it('reports a deadline as an optional fact, so an exec that does not know it still conforms', () => {
+    expectTypeOf<ExecResult['timedOut']>().toEqualTypeOf<boolean | undefined>()
+    expectTypeOf<{
+      code: number
+      stdout: string
+      stderr: string
+      truncated: boolean
+    }>().toExtend<ExecResult>()
   })
 })
 

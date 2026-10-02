@@ -534,6 +534,103 @@ describe('tools phase', () => {
     })
   })
 
+  // The kernel cuts a call off at the limit, but hands the tool a limit a grace short of it, so a tool
+  // that honours ctx.timeoutMs can return its own result before the cut.
+  it('hands a tool a soft deadline short of the kernel cut-off, so a tool that honours it returns normally', async () => {
+    let seen = 0
+    const s = await atTools(
+      [toolTurn('shell', { command: 'x' })],
+      withTool(
+        shellTool(async (_args, ctx) => {
+          seen = ctx.timeoutMs
+          await new Promise((resolve) => setTimeout(resolve, ctx.timeoutMs))
+          return { content: [{ type: 'text' as const, text: 'stopped itself' }] }
+        }),
+      ),
+    )
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, timeoutMs: 400, timeouts: {} },
+    }
+    await s.session.runToolsPhase()
+    expect(seen).toBe(360)
+    expect((await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
+      isError: false,
+      content: [{ text: 'stopped itself' }],
+    })
+    expect((await s.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
+      outcome: 'ok',
+    })
+  })
+
+  // A tool with its own limit (preset tools.timeouts) is cut off at that limit, is told a limit a grace
+  // short of it, and is also told the preset-wide default so it can tell "no request" from "the most".
+  it('tells a tool its own soft limit and the preset-wide default', async () => {
+    let seen: { limit: number; byDefault: number | undefined } | undefined
+    const s = await atTools(
+      [toolTurn('shell', { command: 'x' })],
+      withTool(
+        shellTool(async (_args, ctx) => {
+          seen = { limit: ctx.timeoutMs, byDefault: ctx.defaultTimeoutMs }
+          return { content: [{ type: 'text' as const, text: 'ok' }] }
+        }),
+      ),
+    )
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, timeoutMs: 400, timeouts: { shell: 1000 } },
+    }
+    await s.session.runToolsPhase()
+    expect(seen).toEqual({ limit: 900, byDefault: 400 })
+  })
+
+  it('hands ctx.exec results to the tool untouched, including the executor timedOut fact', async () => {
+    const s = await atTools(
+      [toolTurn('shell', { command: 'x' })],
+      withTool(
+        shellTool(async (_args, ctx) => {
+          const r = await ctx.exec(['x'])
+          return { content: [{ type: 'text' as const, text: JSON.stringify(r) }] }
+        }),
+      ),
+      fakeSeams({
+        sandbox: {
+          exec: async () => ({ code: -1, stdout: 'part', stderr: '', truncated: false, timedOut: true }),
+        },
+      }),
+    )
+    await s.session.runToolsPhase()
+    const row = (await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data as
+      | { content: Array<{ text: string }> }
+      | undefined
+    expect(JSON.parse(row?.content[0]?.text ?? '{}')).toMatchObject({
+      code: -1,
+      stdout: 'part',
+      timedOut: true,
+    })
+  })
+
+  it('a mutating tool that runs past its deadline stays unknown but says it timed out', async () => {
+    const s = await atTools(
+      [toolTurn('shell', { command: 'sleep 130' })],
+      withTool(shellTool(() => new Promise(() => undefined))),
+    )
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, timeoutMs: 5, timeouts: {} },
+    }
+    await s.session.runToolsPhase()
+    const res = (await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data as {
+      content: Array<{ text: string }>
+    }
+    // The code and the settlement keep a possibly-applied mutation from ever being replayed.
+    expect(res).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+    expect(res.content[0]?.text).toMatch(/5 ms limit.*aborted.*partial.*in the background/s)
+    expect((await s.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
+      outcome: 'unknown',
+    })
+  })
+
   it('hands each tool the output limit the preset resolved', async () => {
     let seen = 0
     const tool = readTool(async (_args, ctx) => {

@@ -692,7 +692,7 @@
       },
       {
         "path": "packages/extension-api/src/tool.ts",
-        "sha256": "3e5199ba93268d1ec77acfb7ea01a9e2427fb36cb874b495c9f4cc61527bdb15"
+        "sha256": "d8aacc7271c7ab46c10b0c1654f27dd608d4753335e41447001ecef345ee31cb"
       },
       {
         "path": "packages/extension-api/src/workspace-hooks.ts",
@@ -1395,9 +1395,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "0f0895bcfea727b500437ea916407fb49d647e905202fa05e6abe3dddb71b8f6",
+    "inputDigest": "2867737bb421abea7502f2749583b83221b486c8d3acaf80421da38306b6b009",
     "diagnostics": [],
-    "reportDigest": "b621e72db2081a19a2f028ce9f78c3ae001e21e6c08461e8b7439d23e0022fd1"
+    "reportDigest": "1429ab64be26870d6e31d1dc12c66c45c7287c09e07e349fc0ff070f32b33e94"
   },
-  "snapshotDigest": "0a639651da3e9017e9a1b90d27061d33227a1e20338dc12d3011ceaadee772fb"
+  "snapshotDigest": "1b39e22c2e59239c041d70d010c10f61564020f4908eea50500be0e371cf6efb"
 }
