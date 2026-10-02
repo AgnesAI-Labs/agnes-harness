@@ -4,7 +4,18 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ecosystem as baseEcosystem } from '@agnes/base'
 import { WORKSPACE_HOOK_SANDBOX, type WorkspaceHookSandbox } from '@agnes/core'
+import type { ServiceRequirement } from '@agnes/extension-api/runtime'
+import * as resolverModule from '@agnes/package-manager/runtime/package-resolver'
+import * as sourceModule from '@agnes/package-manager/runtime/package-source'
+import { jcs } from '@agnes/protocol'
+import {
+  canonicalJsonDigest,
+  type JsonValue,
+  RuntimeMethodSchemaRefs,
+  type SchemaRef,
+} from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as auditModule from '../src/audit.js'
 import { createHost } from '../src/host.js'
 import { createTestHost } from '../testkit/index.js'
 
@@ -18,6 +29,7 @@ describe('createHost', () => {
     return d
   }
   afterEach(() => {
+    vi.restoreAllMocks()
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   })
 
@@ -36,6 +48,216 @@ describe('createHost', () => {
     expect(kinds.at(-1)).toBe('host.closed')
     await expect(host.createSession({ cwd: dataDir })).rejects.toThrow(/E_HOST_CLOSED/)
   })
+  it('starts one selected service root beside the kernel and closes its providers in reverse order', async () => {
+    const dataDir = tmp()
+    const released: string[] = []
+    const caches: string[] = []
+    const originalSource = sourceModule.createPackageSourceProvider
+    const originalResolver = resolverModule.createPackageResolverProvider
+    vi.spyOn(sourceModule, 'createPackageSourceProvider').mockImplementation((options) => {
+      caches.push(options.cacheDir)
+      const provider = originalSource(options)
+      return {
+        ...provider,
+        dispose() {
+          released.push('source')
+          provider.dispose()
+        },
+      }
+    })
+    vi.spyOn(resolverModule, 'createPackageResolverProvider').mockImplementation((options) => {
+      const provider = originalResolver(options)
+      return {
+        ...provider,
+        dispose() {
+          released.push('resolver')
+          provider.dispose()
+        },
+      }
+    })
+    const { host, audit } = await createTestHost({ dataDir })
+    try {
+      const requirement = (contract: string): ServiceRequirement => ({
+        contract,
+        major: 1,
+        logicalName: 'default',
+        scope: 'runtime',
+        features: [],
+        optional: false,
+      })
+      const input = (schema: SchemaRef, value: JsonValue) => ({
+        kind: 'inline' as const,
+        schema,
+        value,
+        digest: canonicalJsonDigest(value),
+        bytes: new TextEncoder().encode(jcs(value)).byteLength,
+      })
+      const services = host.runtimeServices
+      const source = services.dependencies.get(requirement('agh.package-source'))
+      const resolver = services.dependencies.get(requirement('agh.package-resolver'))
+      expect(source.ok).toBe(true)
+      expect(resolver.ok).toBe(true)
+      if (!source.ok || !resolver.ok) throw new Error('missing selected services')
+      expect(services.dependencies.get(requirement('agh.state'))).toMatchObject({
+        ok: false,
+        error: { code: 'incompatible', detailCode: 'service_not_registered' },
+      })
+      const context = services.contextFor(source.value.binding)
+      const request = {
+        target: source.value.binding,
+        method: 'discover',
+        input: input(RuntimeMethodSchemaRefs['agh.package-source'].discover.input, {
+          query: '',
+          cursor: null,
+          limit: 10,
+        }),
+      }
+      const discovered = await source.value.query(request, context)
+      expect(discovered).toMatchObject({
+        ok: true,
+        value: { kind: 'value', output: { kind: 'inline', value: { items: [] } } },
+      })
+      await expect(
+        source.value.query(request, { ...context, authorizationRef: 'untrusted' }),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'denied', detailCode: 'permission_absent' },
+      })
+      await expect(
+        source.value.query(request, {
+          ...context,
+          scope: {
+            kind: 'runtime',
+            installationId: context.scope.installationId,
+            runtimeId: 'another-runtime',
+          },
+        }),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'denied', detailCode: 'scope_mismatch' },
+      })
+      await expect(
+        source.value.query({ ...request, input: { ...request.input, digest: '0'.repeat(64) } }, context),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'invalid_input', detailCode: 'data_integrity_mismatch' },
+      })
+      await expect(
+        source.value.query({ ...request, method: 'refreshCatalog' }, context),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'incompatible', detailCode: 'method_not_registered' },
+      })
+      await expect(
+        source.value.query(request, { ...context, signal: AbortSignal.abort() }),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'cancelled', detailCode: 'call_cancelled' },
+      })
+      for (const [changedRequest, changedContext, code, detailCode] of [
+        [{ ...request, target: resolver.value.binding }, context, 'denied', 'binding_mismatch'],
+        [request, { ...context, bindingId: resolver.value.binding.bindingId }, 'denied', 'binding_mismatch'],
+        [
+          {
+            ...request,
+            input: {
+              ...request.input,
+              schema: RuntimeMethodSchemaRefs['agh.package-resolver'].resolve.input,
+            },
+          },
+          context,
+          'invalid_input',
+          'schema_mismatch',
+        ],
+        [request, { ...context, deadline: '2000-01-01T00:00:00.000Z' }, 'timeout', 'deadline_expired'],
+      ] as const) {
+        await expect(source.value.query(changedRequest, changedContext)).resolves.toMatchObject({
+          ok: false,
+          error: { code, detailCode },
+        })
+      }
+      const resolved = await resolver.value.compute(
+        {
+          target: resolver.value.binding,
+          method: 'resolve',
+          input: input(RuntimeMethodSchemaRefs['agh.package-resolver'].resolve.input, {
+            requirements: [],
+            installedLock: resolverModule.emptyPackageLock(),
+            allowedSources: [],
+            platform: 'test',
+            apiVersions: [],
+          }),
+        },
+        services.contextFor(resolver.value.binding),
+      )
+      expect(resolved).toMatchObject({
+        ok: true,
+        value: { kind: 'inline', value: { conflicts: [], lockGraph: { entries: [] } } },
+      })
+      const session = await host.createSession({ cwd: dataDir })
+      expect(session.key).toBeTruthy()
+      await host.close()
+      expect(released).toEqual(['resolver', 'source'])
+      expect(caches.every((cache) => !existsSync(cache))).toBe(true)
+      expect(context.signal.aborted).toBe(true)
+      expect(services.dependencies.get(requirement('agh.package-source'))).toMatchObject({
+        ok: false,
+        error: { detailCode: 'service_container_closed' },
+      })
+      await expect(source.value.query(request, context)).resolves.toMatchObject({
+        ok: false,
+        error: { detailCode: 'service_container_closed' },
+      })
+      expect(audit.events.at(-1)).toMatchObject({ kind: 'host.closed', detail: { failed: [] } })
+    } finally {
+      await host.close()
+    }
+  })
+
+  it.each([false, true])(
+    'refuses startup and audits cleanup failures when a provider fails (cleanup failure: %s)',
+    async (cleanupFails) => {
+      const dataDir = tmp()
+      const caches: string[] = []
+      const released: string[] = []
+      const startupAudit = auditModule.createMemoryAudit()
+      vi.spyOn(auditModule, 'createMemoryAudit').mockReturnValue(startupAudit)
+      const originalSource = sourceModule.createPackageSourceProvider
+      vi.spyOn(sourceModule, 'createPackageSourceProvider').mockImplementation((options) => {
+        caches.push(options.cacheDir)
+        const provider = originalSource(options)
+        return {
+          ...provider,
+          dispose() {
+            released.push('source')
+            provider.dispose()
+            if (cleanupFails) throw new Error('source cleanup failed')
+          },
+        }
+      })
+      vi.spyOn(resolverModule, 'createPackageResolverProvider').mockImplementation(() => {
+        throw new Error('resolver unavailable')
+      })
+      await expect(createTestHost({ dataDir })).rejects.toMatchObject({
+        code: 'E_SEAM_INIT',
+        detail: { step: 'runtime-services' },
+      })
+      expect(startupAudit.events.find((event) => event.kind === 'startup.failed')).toMatchObject({
+        detail: { step: 'runtime-services', rollbackFailed: cleanupFails ? ['runtime-services'] : [] },
+      })
+      expect(released).toEqual(['source'])
+      expect(caches.every((cache) => !existsSync(cache))).toBe(true)
+      vi.restoreAllMocks()
+      const { host } = await createTestHost({ dataDir })
+      try {
+        const session = await host.createSession({ cwd: dataDir })
+        expect(session.key).toBeTruthy()
+      } finally {
+        await host.close()
+      }
+    },
+  )
+
   it('the closed refusal carries the lifecycle code, not a seam code', async () => {
     const { host } = await createTestHost({ dataDir: tmp() })
     await host.close()

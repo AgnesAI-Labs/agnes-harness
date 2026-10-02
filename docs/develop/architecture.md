@@ -60,6 +60,8 @@ A seam supplies a required part of execution, such as approval, ledger, or sandb
 
 Trusted backend Cordis rows may contribute tools, hooks, and constrained services. A browser module is a separate runtime surface bound to a row; see [plugin boundaries](plugins.md). Frontend and backend Contexts do not share memory. Ordinary `ctx.provide()` is not a cross-process proxy. Browsers call row services through declared relays without obtaining Host management objects.
 
+Host startup also opens one fixed Cordis service root, available to trusted Host code through the readonly `runtimeServices` accessor. Its initial defaults are `agh.package-source` queries and `agh.package-resolver` computation over an isolated, initially empty package cache. They have no admitted local roots, network sources, or maintenance operations. Unregistered contracts return `service_not_registered`. This root runs beside the existing Kernel, SQLite session storage, audit sink, and secrets composition. Initialization failure uses startup rollback; Host shutdown releases the resolver before the source and removes the cache. See [Host service selection](../../packages/host/src/runtime/host-services.ts) and [startup tests](../../packages/host/test/host.test.ts).
+
 <a id="runtime-target-与热更新"></a>
 
 ## Runtime targets and hot updates
