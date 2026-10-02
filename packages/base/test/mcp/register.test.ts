@@ -4,6 +4,8 @@ import { createRequire } from 'node:module'
 import { deflateSync } from 'node:zlib'
 import { checkToolDef, type ExtensionAPI, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MAX_READ_BYTES, readTool } from '../../extensions/tools-core/src/tools/read.js'
+import { grepTool } from '../../extensions/tools-search/src/tools/grep.js'
 import { connectMcp, MAX_MCP_REDIRECTS, type McpSdkDeps } from '../../src/mcp/connect.js'
 import { mcpLocalToolPrefix } from '../../src/mcp/naming.js'
 import {
@@ -299,6 +301,76 @@ describe('registerRemoteToolsStrict', () => {
     expect(total).toBeLessThanOrEqual(CALL_OUTPUT_LIMIT_BYTES)
     // The full hundred rows are still reachable through the artifact store, not just dropped.
     expect(guarded.content.some((b) => b.type === 'ref')).toBe(true)
+    // ... and reachable the way the model reaches them: by the locator the note shows, ?size=
+    // included. A digest prefix is not something read or grep can use.
+    const noteText = guarded.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n')
+    const locator = /artifact:\/\/[0-9a-f]{64}\?size=\d+/.exec(noteText)?.[0] as string
+    expect(locator).toBeDefined()
+    const first = await readTool.execute({ path: locator }, ctx)
+    expect(first.isError).toBeUndefined()
+    expect((first.content[0] as { text: string }).text).toContain('row 0')
+    const hit = await grepTool.execute({ pattern: 'row 99 ', path: locator }, ctx)
+    expect(hit.isError).toBeUndefined()
+    expect((hit.content[0] as { text: string }).text).toContain('row 99')
+  })
+
+  it('keeps only what read can give back of an oversized result, and says what was left out', async () => {
+    const MiB = 1024 * 1024
+    const cap = MAX_READ_BYTES
+    const textOf = (content: readonly { type: string; text?: string }[]) =>
+      content.map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n')
+    const run = async (content: Array<{ type: 'text'; text: string }>) => {
+      const conn = connection()
+      conn.callTool = async () => ({ content })
+      const state = fakeApi()
+      await registerRemoteToolsStrict(state.api, conn, stdio)
+      const ctx = ctxOf()
+      const result = await (state.tools[0] as ToolDef).execute({}, ctx)
+      return { ctx, result, text: textOf(result.content) }
+    }
+
+    // One block over the cap: the store gets the first `cap` bytes and the note gives the real size.
+    const line = (i: number) => `line ${i} ${'x'.repeat(100)}\n`
+    const big = Array.from({ length: Math.ceil((5 * MiB) / line(0).length) }, (_, i) => line(i)).join('')
+    const single = await run([{ type: 'text', text: big }])
+    expect(single.ctx.calls.artifacts).toHaveLength(1)
+    expect(single.ctx.calls.artifacts[0]?.bytes.byteLength).toBe(cap)
+    expect(single.text).toContain(`returned ${Buffer.byteLength(big)} bytes of text`)
+    expect(single.text).toContain(`only the first ${cap} bytes were kept`)
+    expect(single.text).toContain('not stored')
+    const locator = /artifact:\/\/[0-9a-f]{64}\?size=(\d+)/.exec(single.text)
+    expect(Number(locator?.[1])).toBe(cap)
+    expect(modelVisibleTextBytes(single.result.content)).toBeLessThanOrEqual(CALL_OUTPUT_LIMIT_BYTES)
+
+    // A cut inside a multi-byte character moves back to the character boundary; no U+FFFD appears.
+    const cjk = await run([{ type: 'text', text: '汉'.repeat(2 * MiB) }])
+    const kept = cjk.ctx.calls.artifacts[0]?.bytes as Uint8Array
+    expect(kept.byteLength).toBeLessThanOrEqual(cap)
+    expect(kept.byteLength % 3).toBe(0)
+    expect(new TextDecoder().decode(kept)).not.toContain('\uFFFD')
+
+    // Several blocks that together pass the cap: later ones are cut, then dropped, and counted.
+    const block = (c: string) => ({ type: 'text' as const, text: c.repeat(2 * MiB) })
+    const many = await run([block('a'), block('b'), block('c'), block('d')])
+    const storedBytes = many.ctx.calls.artifacts.reduce((n, a) => n + a.bytes.byteLength, 0)
+    expect(storedBytes).toBeLessThanOrEqual(cap)
+    expect(many.text).toContain(`returned ${8 * MiB} bytes of text`)
+    expect(many.text).toContain('2 text blocks after that point were dropped')
+
+    // The cut note is paid for out of the call budget, like the omission note: with the budget nearly
+    // spent by admitted blocks and a cut result behind them, everything shown still fits.
+    const tight = await run([
+      ...Array.from({ length: 4 }, () => ({ type: 'text' as const, text: 'q'.repeat(8080) })),
+      { type: 'text', text: 'r'.repeat(5 * MiB) },
+    ])
+    expect(tight.text).toContain('bytes of text')
+    expect(tight.text).toContain('omitted')
+    expect(modelVisibleTextBytes(tight.result.content)).toBeLessThanOrEqual(CALL_OUTPUT_LIMIT_BYTES)
+
+    // At the cap exactly nothing is cut and no note is added.
+    const exact = await run([{ type: 'text', text: 'z'.repeat(cap) }])
+    expect(exact.text).not.toContain('bytes of text')
+    expect(exact.ctx.calls.artifacts[0]?.bytes.byteLength).toBe(cap)
   })
 
   it.each([

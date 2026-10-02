@@ -375,11 +375,23 @@ describe('createMcpRowRuntime keeps a row live against the real tool registry', 
       text: `row ${i} ${'y'.repeat(7000)}`,
     }))
     const many = await run(`${ALPHA_PREFIX}dump`, {})
-    expect(textOf(many)).toContain('full text set stored as artifact')
+    expect(textOf(many)).toContain('full text set stored')
     expect(textOf(many)).not.toContain('could not be stored')
     const setRef = many.content.find((block) => block.type === 'ref')?.ref
     expect(setRef).toBeDefined()
-    expect(JSON.parse(new TextDecoder().decode(store.get(setRef?.sha256 as string)))).toHaveLength(20)
+    expect(new TextDecoder().decode(store.get(setRef?.sha256 as string))).toContain('=== text block 20 of 20')
+    // The set comes back through the locator in the note, by read and by grep, like a single block.
+    const setLocator = /artifact:\/\/[0-9a-f]{64}\?size=\d+/.exec(textOf(many))?.[0]
+    expect(setLocator).toBeDefined()
+    expect(textOf(await run('read', { path: setLocator }))).toContain('row 0')
+    expect(textOf(await run('grep', { pattern: 'row 19 ', path: setLocator }))).toContain('row 19')
+
+    // A result past the most `read` can give back is cut before it is stored, and the note says so.
+    content = [{ type: 'text', text: 'z'.repeat(5 * 1024 * 1024) }]
+    const huge = await run(`${ALPHA_PREFIX}dump`, {})
+    expect(textOf(huge)).toContain('only the first 4194304 bytes were kept')
+    const hugeLocator = /artifact:\/\/[0-9a-f]{64}\?size=(\d+)/.exec(textOf(huge))
+    expect(Number(hugeLocator?.[1])).toBe(4 * 1024 * 1024)
   })
 })
 

@@ -68,7 +68,7 @@ const isContinuation = (byte: number): boolean => (byte & 0b1100_0000) === 0b100
 // text came from outside this process -- an artifact backend's error message, a tool that built a
 // string by slicing bytes of its own. Returning early on the short path would let that half
 // through untouched, which is the one case this trimming exists for.
-function cutHead(text: string, endBytes: number): string {
+export function cutHead(text: string, endBytes: number): string {
   const bytes = encoder.encode(text)
   if (bytes.length <= endBytes) return decoder.decode(bytes)
   let end = endBytes
@@ -273,7 +273,7 @@ export async function guardOutputSet(
   let stored: string
   try {
     ref = await ctx.artifacts.put(new TextEncoder().encode(manifest), { mime: 'application/json' })
-    stored = `full set stored as artifact ${ref.sha256.slice(0, 12)}`
+    stored = `full set stored at ${spillLocator(ref)}. To read it, call read with that full path, ?size= included, and an offset/limit, or grep that full path to search it; it is a JSON array with one entry per content block`
   } catch (e) {
     // Same failure mode guardOutput guards against: an artifact store outage must not turn into an
     // unbounded result just because the pointer that would have replaced it could not be written.
