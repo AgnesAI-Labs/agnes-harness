@@ -1,7 +1,7 @@
 import { realpath, stat } from 'node:fs/promises'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
-import { canonicalJsonDigest } from '@agnes/protocol/runtime'
+import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import {
   acquireLease,
   bindWorkspace,
@@ -30,7 +30,7 @@ export type WorkspaceServiceOptions = {
   providerId?: Wire.Id
   generation?: number
   leaseMs?: number
-  /** Read-only stand-in. Registration into the real directory is left to that service. */
+  /** Deployment-selected reader; route publication remains a maintenance responsibility. */
   directoryRead?: AuthorityDirectoryRead
 }
 
@@ -156,18 +156,22 @@ export function createWorkspaceService(options: WorkspaceServiceOptions): Worksp
         if (scopeWorkspace !== body.workspaceId)
           throw new StoreFault('permission_denied', 'workspace is outside the caller scope')
         if (options.directoryRead) {
-          const looked = await options.directoryRead.read({
-            kind: 'authority',
-            logicalAuthorityId: body.workspaceId,
-          })
-          if (!looked.ok) {
-            if (looked.error.detailCode !== 'not_found')
+          try {
+            const looked = await options.directoryRead.read({
+              kind: 'authority',
+              logicalAuthorityId: body.workspaceId,
+            })
+            if (
+              !looked.ok ||
+              !validateRuntime('AuthorityDirectoryReadResult', looked.value).ok ||
+              looked.value.kind !== 'authority' ||
+              looked.value.route.logicalAuthorityId !== body.workspaceId ||
+              looked.value.route.tenantId !== options.tenantId ||
+              looked.value.route.locationRef !== body.workspaceId
+            )
               throw new StoreFault('permission_denied', 'authority location does not match the workspace')
-          } else if (
-            looked.value.kind !== 'authority' ||
-            looked.value.route.locationRef !== body.workspaceId
-          ) {
-            throw new StoreFault('permission_denied', 'authority location does not match the workspace')
+          } catch {
+            throw new StoreFault('permission_denied', 'authority directory is unavailable or incompatible')
           }
         }
         const lease = acquireLease(store, {
