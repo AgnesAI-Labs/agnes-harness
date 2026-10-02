@@ -937,9 +937,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merged with the policy and integrity providers on the integration base. Measured 27386, exact, no spare.
   // Shared interaction authority and its public exports: exact measured 27310 (+339).
   // Merged with the shared interaction authority on the integration base. Measured 27395, exact, no spare.
-  // Interaction wake delivery bridge removed: an approval answer now commits its inbox and signal in
-  // the State transaction. Measured 27310, exact, no spare.
-  'packages/core/src': 27310,
+  // Interaction wake delivery bridge restored until expiry, cancellation and question wakes have a
+  // State path. Measured 27395, exact, no spare.
+  'packages/core/src': 27395,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
