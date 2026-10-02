@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { checkRelations } from '../src/log/relations.js'
+import { contextAnchorOf } from '../src/reduce/anchor.js'
 import { ChunkedMap } from '../src/reduce/chunked-map.js'
 import { foldEvents, initialState, reduce } from '../src/reduce/reducer.js'
 import { effectTree, type LedgerState } from '../src/reduce/state.js'
@@ -38,6 +39,24 @@ const opstate = (step: number) => ({
   latestAssistantSeq: null,
   taint: false,
   phase: { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: 1 },
+})
+
+describe('contextAnchorOf', () => {
+  const tokens = { input: 10, output: 5, cacheRead: 3, cacheWrite: 2 }
+  const row = (extra: object) => ev('cost/ledger', { purpose: 'inference', effectId: 'e', tokens, ...extra })
+
+  it('anchors on an inference row but not on an interrupted or adjusting one', () => {
+    expect(contextAnchorOf(row({}))).toMatchObject({ total: 20, input: 10, cacheRead: 3 })
+    expect(contextAnchorOf(row({ interrupted: true }))).toBeUndefined()
+    expect(contextAnchorOf(row({ adjustment: { of: 1, delta: -1 } }))).toBeUndefined()
+  })
+
+  it('anchors on a compaction end only when tokensAfter is a nonnegative safe integer', () => {
+    const end = (data: unknown) => contextAnchorOf(ev('x/core/compaction-end', data))
+    expect(end({ tokensAfter: 0 })).toMatchObject({ total: 0, input: 0, cacheRead: 0 })
+    for (const bad of [-1, 1.5, '9', null, 2 ** 53]) expect(end({ tokensAfter: bad })).toBeUndefined()
+    expect(end(null)).toBeUndefined()
+  })
 })
 
 describe('reducer', () => {

@@ -135,6 +135,66 @@ describe('production compaction phase', () => {
     },
   )
 
+  describe('with tool schemas in the fixed prefix', () => {
+    // Sixteen tools of about a thousand tokens each (a description is capped at 4096 characters).
+    const bulky = Array.from(
+      { length: 16 },
+      (_, i) => ({ ...(readTool() as object), name: `bulky_${i}`, description: 'x'.repeat(4000) }) as never,
+    )
+
+    async function reducedBudget(tools: boolean, window: number) {
+      const provider = fakeProvider([textTurn('old answer'), textTurn('SUMMARY'), textTurn('done')])
+      provider.models = () => [{ ...model('answer-model', 'primary', 1_000_000), maxTokens: 4096 }]
+      const registry = new ToolRegistry()
+      if (tools) for (const tool of bulky) registry.add(tool, { source: 'agnes/base', trust: 'builtin' })
+      const { session, log } = await openSession({ provider, registry })
+      session.preset.model.id.primary = 'answer-model'
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'history '.repeat(25000) }],
+        actor,
+      })
+      await session.run({ until: 'turn-end', signal: signal() })
+      await session.setModel({
+        slot: 'primary',
+        route: 'default',
+        model: 'answer-model',
+        contextWindow: window,
+      })
+      let keep: number | undefined
+      session.compaction = new CompactionRunner({
+        plan: async (payload, config) => {
+          keep = config.keepRecentTokens
+          return { ...plan(payload), maxTokens: 100 }
+        },
+        onCompact: async () => undefined,
+      })
+      await session.requestCompaction({ actor, admissionId: 'with-tools' })
+      const ended = await session.run({ until: 'turn-end', signal: signal() })
+      return { provider, log, keep, ended }
+    }
+
+    it('keeps a smaller tail so the schemas still fit next to it', async () => {
+      const plain = await reducedBudget(false, 32000)
+      const tooled = await reducedBudget(true, 32000)
+      const request = tooled.provider.requests[0]
+      expect(request?.tools).toHaveLength(16)
+      const fixed = estimateTokens(canonicalJson({ system: request?.system, tools: request?.tools }))
+      expect(tooled.keep).toBe(Math.floor((24000 - fixed) / 2))
+      // The tools alone cost about 16000 tokens, which come off the kept tail at half rate.
+      expect(plain.keep).toBeGreaterThan((tooled.keep ?? 0) + 6000)
+    })
+
+    it('refuses a compaction when the schemas leave no room below the reserve', async () => {
+      // Without the schemas the fixed prefix and the 5000-token reserve fit in 20000 tokens.
+      expect((await reducedBudget(false, 20000)).ended.reason).toBe('completed')
+      const tooled = await reducedBudget(true, 20000)
+      expect(tooled.ended.reason).toBe('budget')
+      expect((await tooled.log.scan({ type: 'turn/end', limit: 10 })).at(-1)?.data).toMatchObject({
+        error: { code: 'BUDGET_EXCEEDED' },
+      })
+    })
+  })
+
   it('settles an internal context-first block before sending a cold summary', async () => {
     const { session, provider, log } = await history()
     provider.models = () => [model('answer-model', 'primary', 10_000)]
@@ -1838,7 +1898,11 @@ describe('routing a summary that is unavailable', () => {
   })
 
   it('lifts the back-off once a compaction succeeds', async () => {
-    const h = await toolHistory([errorOf('AUTH', false), textTurn('Goal: read three files. Progress: done.')])
+    const h = await toolHistory([
+      errorOf('AUTH', false),
+      textTurn('Goal: read three files. Progress: done.'),
+      errorOf('AUTH', false),
+    ])
     await h.enter('threshold')
     const turn = (h.session.op() as { meta: { turn: number } }).meta.turn
     expect(h.runner.suspended(turn)).toBe(true)
@@ -1846,6 +1910,22 @@ describe('routing a summary that is unavailable', () => {
     await h.enter('requested')
     expect((await h.outcome()).replaces).toHaveLength(1)
     expect(h.runner.suspended(turn)).toBe(false)
+    expect(h.runner.unavailableFailures).toBe(0)
+    // The escalation starts over: the next failure spares one turn again, not two.
+    await h.enter('threshold')
+    expect(h.runner.suspendedThrough).toBe(turn + 1)
+  })
+
+  it('spares 1, 2, 4, 8, 8, ... turns after consecutive failures', () => {
+    const r = runner()
+    const spared: number[] = []
+    for (let i = 0; i < 6; i++) {
+      r.suspend(100)
+      spared.push(r.suspendedThrough - 100)
+    }
+    expect(spared).toEqual([1, 2, 4, 8, 8, 8])
+    expect(r.suspended(r.suspendedThrough)).toBe(true)
+    expect(r.suspended(r.suspendedThrough + 1)).toBe(false)
   })
 
   it.each(['AUTH', 'QUOTA'])(
@@ -1880,15 +1960,11 @@ describe('routing a summary that is unavailable', () => {
     session.preset.model.id.compaction = 'summary-model'
     session.compaction = runner()
     session.compaction.shouldCompact = () => true
-    for (turn = 1; turn <= 9; turn++) {
+    for (turn = 1; turn <= 12; turn++) {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: `turn ${turn}` }], actor })
       expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     }
-    // The failure is retried later and later, not every turn.
-    expect(attempts[0]).toBe(1)
-    expect(attempts).not.toContain(2)
-    expect(attempts.length).toBeLessThanOrEqual(3)
-    expect((attempts[2] ?? 0) - (attempts[1] ?? 0)).toBeGreaterThan((attempts[1] ?? 0) - (attempts[0] ?? 0))
-    expect(attempts.length).toBeGreaterThanOrEqual(2)
+    // The failure is retried later and later, not every turn: each attempt spares the next 1, 2, 4 turns.
+    expect(attempts).toEqual([1, 3, 6, 11])
   })
 })

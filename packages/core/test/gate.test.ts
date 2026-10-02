@@ -1,7 +1,12 @@
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { compactionSettingsFor, compactionTriggerTokens, contextTokens } from '../src/step/gate.js'
+import {
+  compactionSettingsFor,
+  compactionTriggerTokens,
+  contextTokens,
+  nearlyFull,
+} from '../src/step/gate.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -214,6 +219,19 @@ describe('compactionSettingsFor', () => {
       expect(compactionSettingsFor(session, window, fixed)).toMatchObject({ reserveTokens, keepRecentTokens })
     },
   )
+})
+
+describe('nearlyFull', () => {
+  it('is true only when less than half the reserve is left below the window', async () => {
+    const { session } = await openSession({ provider: fakeProvider([textTurn('ok')]) })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hello' }], actor })
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+    const used = compactionTriggerTokens(session)
+    expect(used).toBeGreaterThan(0)
+    // Exactly half the reserve left is still room to wait; one token less is not.
+    expect(nearlyFull(session, used + 100, 200)).toBe(false)
+    expect(nearlyFull(session, used + 99, 200)).toBe(true)
+  })
 })
 
 describe('compactionTriggerTokens', () => {
