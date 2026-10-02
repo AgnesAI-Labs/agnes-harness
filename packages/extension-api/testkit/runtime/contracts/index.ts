@@ -1,5 +1,6 @@
 export * from './artifacts.js'
 export * from './audit.js'
+export * from './authority-directory.js'
 export * from './blob.js'
 export * from './config.js'
 export * from './files.js'

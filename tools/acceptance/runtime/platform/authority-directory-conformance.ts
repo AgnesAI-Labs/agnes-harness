@@ -242,7 +242,7 @@ async function withProvider<T>(
   filesystem: 'unsupported' | undefined,
   run: (provider: DirectoryProvider) => Promise<T>,
 ): Promise<T> {
-  const root = mkdtempSync(`/tmp/p04-${recipe}-`)
+  const root = mkdtempSync(`/tmp/authority-directory-${recipe}-`)
   let provider: DirectoryProvider | null = null
   try {
     provider = openAt(recipe, root, filesystem)
@@ -385,7 +385,7 @@ async function cancel(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidenc
 }
 
 async function recover(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidence> {
-  const root = mkdtempSync(`/tmp/p04-${recipe}-recover-`)
+  const root = mkdtempSync(`/tmp/authority-directory-${recipe}-recover-`)
   const first = openAt(recipe, root)
   try {
     const route = await seeded(first)
@@ -418,8 +418,8 @@ async function recover(recipe: Recipe): Promise<AuthorityDirectoryScenarioEviden
 }
 
 async function dispose(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidence> {
-  const leftRoot = mkdtempSync(`/tmp/p04-${recipe}-dispose-`)
-  const rightRoot = mkdtempSync(`/tmp/p04-${recipe}-sibling-`)
+  const leftRoot = mkdtempSync(`/tmp/authority-directory-${recipe}-dispose-`)
+  const rightRoot = mkdtempSync(`/tmp/authority-directory-${recipe}-sibling-`)
   let left: DirectoryProvider | null = null
   let right: DirectoryProvider | null = null
   try {
@@ -473,6 +473,27 @@ export async function bindAuthorityDirectoryContracts(
     }
     registerAuthorityDirectoryContract(harness, binding)
   }
+}
+
+export async function bindConformance(
+  harness: ConformanceHarness,
+  request: {
+    readonly command: string
+    readonly contracts: readonly string[] | 'all'
+    readonly providers: readonly string[]
+  },
+): Promise<{ readonly contracts: readonly string[]; readonly providers: readonly string[] }> {
+  const contract = 'agh.authority-directory'
+  if (request.contracts !== 'all' && !request.contracts.includes(contract)) {
+    return { contracts: [], providers: [] }
+  }
+  const providers = request.providers.filter((id) =>
+    ['default', 'reference', 'agh.default/authority-directory', 'agh.reference/authority-directory'].includes(
+      id,
+    ),
+  )
+  if (providers.length > 0) await bindAuthorityDirectoryContracts(harness, request.command, providers)
+  return { contracts: [contract], providers }
 }
 
 async function both<T>(
