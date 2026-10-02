@@ -8,6 +8,7 @@ export type FileDigest = { path: string; sha256: string }
 export const SOURCE_FILES = [
   'packages/protocol/schema/runtime/prototype.json',
   'packages/protocol/schema/runtime/public.json',
+  'packages/protocol/schema/runtime/state85-legacy-schema-documents.json',
   'packages/protocol/schema/runtime/local-api.json',
   'packages/protocol/schema/runtime/empty-config.schema.json',
   'packages/protocol/schema/runtime/profile.schema.json',
@@ -23,6 +24,7 @@ export const SOURCE_FILES = [
   'packages/protocol/tools/gen-runtime.ts',
   'packages/protocol/tools/gen-runtime-full.ts',
   'packages/protocol/tools/gen-runtime-refs.ts',
+  'packages/protocol/tools/gen-runtime-state.ts',
   'packages/protocol/tools/gen-runtime-graph.ts',
   'packages/protocol/tools/gen-runtime-catalog.ts',
   'packages/protocol/tools/gen-client-transport.ts',
@@ -47,6 +49,7 @@ export const SOURCE_FILES = [
   'packages/protocol/tools/gen-author-schema.ts',
   'packages/protocol/tools/gen-author-schema-types.ts',
   'packages/protocol/tools/author-schema-json.ts',
+  'packages/protocol/tools/author-schema-document.ts',
   'packages/protocol/tools/build-author-schema-cli.mjs',
   'packages/extension-api/src/runtime/authoring.ts',
   'packages/extension-api/src/runtime/authoring-schemas.ts',
@@ -123,6 +126,7 @@ export const GENERATED_FILES = [
 ] as const
 
 export const CHECKPOINT_FILES = [
+  'packages/extension-api/test/runtime/state-query-consumer.compile.ts',
   'packages/extension-api/package.json',
   'packages/extension-api/test/runtime/prototype-consumer.compile.ts',
   'packages/extension-api/test/runtime/authoring-consumer.compile.ts',

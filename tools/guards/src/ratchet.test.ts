@@ -930,7 +930,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
-  'packages/core/src': 26971,
+  // Shared interaction authority and its public exports: exact measured 27310 (+339).
+  'packages/core/src': 27310,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1239,8 +1240,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // tree: 2201, exact.
   // Runtime public schema exports and generated authority SPI: measured 2452, no spare allocation.
   // Bounded schema codecs and client transport validation: exact measured 2985, no spare.
-  // Reviewed runtime contracts plus the generated legacy identity metadata export: measured 3444 (+1), exact.
-  'packages/protocol/src': 3444,
+  // Reviewed runtime contracts with generated State metadata exports: measured 3459, exact.
+  'packages/protocol/src': 3459,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -2561,7 +2562,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Seal streams stored chunks into the private store, and closed services refuse with one code.
   // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
-  'packages/host/src': 55418,
+  // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
+  'packages/host/src': 57869,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
