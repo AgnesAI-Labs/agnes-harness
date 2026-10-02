@@ -2558,7 +2558,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with this guard's countLines(): 52711, exact cap, no spare.
   // Seal streams stored chunks into the private store, and closed services refuse with one code.
   // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
-  'packages/host/src': 55229,
+  // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
+  'packages/host/src': 55418,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
