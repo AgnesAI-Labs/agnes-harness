@@ -29,7 +29,7 @@ export type ModelPicker = {
   render(state: ModelPickerState): void
 }
 export type PermissionMode = 'view' | 'workspace' | 'full'
-export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode }
+export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
 export type PermissionPicker = {
   destroy(): void
   render(state: PermissionPickerState): void

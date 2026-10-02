@@ -18,7 +18,7 @@ export const DENIED_PATHS = ['.git', ...WORKSPACE_SECRET_DIRS, 'secrets', 'table
 
 // The meta the three search tools share. All eight keys are written out here rather than in each
 // tool, because they genuinely are the same answer: reading a tree changes nothing, costs nothing
-// worth quoting, and reaches nothing outside the workspace.
+// worth quoting, and accesses local files through the Host's filesystem port.
 export const SEARCH_META: ToolMeta = {
   isReadOnly: true,
   isDestructive: false,
@@ -34,11 +34,20 @@ export function toolError(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true }
 }
 
-/** Whether a path is inside the workspace and outside every denied subtree. */
+/** Lexical precheck only; the filesystem port independently enforces the session's access scope. */
 export function allowed(ctx: ToolContext, abs: string): boolean {
   const w = normalizeWorkspacePath(abs, ctx.cwd)
-  if (!w.inside) return false
+  if (!w.inside) return ctx.session.fullAccess === true
   return !DENIED_PATHS.some((d) => w.rel === d || w.rel.startsWith(`${d}/`))
+}
+
+export function searchPathError(ctx: ToolContext, tool: string, path: string): ToolResult | undefined {
+  if (allowed(ctx, path)) return undefined
+  if (!normalizeWorkspacePath(path, ctx.cwd).inside)
+    return toolError(
+      `${tool} refused: ${path} is outside the workspace. Switch to Full permissions (完全权限) or select the target directory as the workspace (选择目标目录作为工作区).`,
+    )
+  return toolError(`${tool} refused: ${path} is denied by policy`)
 }
 
 export type WalkEntry = { rel: string; abs: string; kind: FsEntry['kind'] }
@@ -106,7 +115,7 @@ export async function* walk(
     const rel = queue.shift() as string
     let entries: FsEntry[]
     try {
-      entries = await ctx.fs.list(rel === '' ? base : `${base}/${rel}`)
+      entries = await ctx.fs.list(rel === '' ? root : `${base}/${rel}`)
     } catch {
       report.unreadable++
       continue

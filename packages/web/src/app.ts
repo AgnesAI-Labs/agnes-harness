@@ -379,8 +379,12 @@ let modelChangePending = false
 let modelSelectionSeq = 0
 let draftModelSettingsEdited = false
 let permissionMode: PermissionMode = 'workspace'
+let initialPermissionPending: PermissionMode | undefined
 let permissionChangePending = false
-let sessionYoloEnabled = false
+let permissionRefreshPending = false
+let permissionConnectionEpoch = 0
+let sessionYoloEnabled: boolean | undefined
+let permissionSelectionSeq = 0
 let submissionGeneration = 0
 // daemon 自己报出的 profile（config.get() 后才知道）；皮肤清单与客户端模块名册都必须把它传回去。
 let profileName = ''
@@ -557,6 +561,15 @@ function clearSessionRecovery(): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
+  if (!connected) {
+    permissionConnectionEpoch++
+    if (current) {
+      permissionRefreshPending = true
+      sessionYoloEnabled = undefined
+      // An interrupted first submission must not replay its permission choice after reconnecting.
+      initialPermissionPending = undefined
+    }
+  }
   topbarRuntime.setConnectionState(value)
   settings.setConnected(connected)
   renderControls()
@@ -573,6 +586,8 @@ function renderControls(): void {
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
     control.disabled = recoveryDisabled()
   const canStartDraft = draftingNew && selectedWorkspace?.available === true
+  const permissionUnknown =
+    current !== undefined && (permissionRefreshPending || sessionYoloEnabled === undefined)
   const selectedRecord = runtimeModels.find(
     (m) => m.route === knownSessionModel?.route && m.id === knownSessionModel?.id,
   )
@@ -585,8 +600,14 @@ function renderControls(): void {
     connected,
     configured,
     hasSession: current !== undefined || draftingNew,
-    hint:
-      knownSessionModel && !selectedModelAvailable()
+    hint: permissionUnknown
+      ? {
+          kind: 'state',
+          text: permissionRefreshPending
+            ? '正在同步会话权限，请稍后发送'
+            : '请先选择本会话权限，确认后再发送',
+        }
+      : knownSessionModel && !selectedModelAvailable()
         ? { kind: 'state', text: '当前模型已不可用，请重新选择模型' }
         : composerHintPresentation({
             connected,
@@ -628,9 +649,14 @@ function renderControls(): void {
       : {}),
     permission: {
       disabled:
-        !available || (!current && !draftingNew) || busy || sessionPending || initialSubmissionPending,
-      pending: permissionChangePending,
-      selected: permissionMode,
+        !available ||
+        (!current && !draftingNew) ||
+        busy ||
+        sessionPending ||
+        initialSubmissionPending ||
+        permissionRefreshPending,
+      pending: permissionChangePending || permissionRefreshPending,
+      selected: permissionUnknown ? null : permissionMode,
     },
     sending,
     send: {
@@ -642,7 +668,9 @@ function renderControls(): void {
         !hasInput ||
         sending ||
         stopping ||
-        sessionPending,
+        sessionPending ||
+        permissionChangePending ||
+        permissionUnknown,
       label: action.label,
       mode: action.mode,
       title: action.title,
@@ -715,6 +743,16 @@ function render(): void {
   // 上一会话：此时屏幕上保留的正是上一会话画面，任何重绘都会把旧投影的
   // 模型、标题、审批卡写进新会话的控件。等投影换代后再渲染。
   if (!current || projection.sessionId !== current.id) return
+  if (
+    typeof projection.yolo === 'boolean' &&
+    !permissionChangePending &&
+    !permissionRefreshPending &&
+    projection.upto >= permissionSelectionSeq
+  ) {
+    sessionYoloEnabled = projection.yolo
+    if (initialPermissionPending === undefined)
+      permissionMode = projection.yolo ? 'full' : permissionMode === 'view' ? 'view' : 'workspace'
+  }
   if (
     projection.usage?.model &&
     !modelChangePending &&
@@ -957,7 +995,11 @@ async function open(
   // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
   current = undefined
   clientModules.session.setSession(undefined)
-  sessionYoloEnabled = false
+  sessionYoloEnabled = options.created ? false : undefined
+  permissionRefreshPending = false
+  initialPermissionPending = options.created ? permissionMode : undefined
+  permissionSelectionSeq = 0
+  permissionChangePending = false
   stopping = false
   if (!options.preserveSending) {
     sending = false
@@ -1032,6 +1074,17 @@ async function open(
     const liveProjection = createLiveProjection(loaded, client, {
       timeline(value, window) {
         if (!selected()) return
+        // The SDK discards projections from older connections; history cannot confirm current permissions.
+        if (connected && window.reason !== 'history' && value.upto >= permissionSelectionSeq)
+          permissionRefreshPending = false
+        if (
+          window.reason === 'opening' &&
+          value.yolo === undefined &&
+          initialPermissionPending === undefined &&
+          !permissionChangePending &&
+          value.upto >= permissionSelectionSeq
+        )
+          sessionYoloEnabled = undefined
         windowAtStart = window.startIndex === 0
         // A reopened window may reach further back; look for a parked approval again.
         if (window.reason === 'opening' && approvalSearch !== 'searching') approvalSearch = 'idle'
@@ -1273,6 +1326,8 @@ async function beginNewDraft(showWorkspacePicker = true): Promise<void> {
   pendingSessionKey = crypto.randomUUID()
   knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
   permissionMode = inherited.permission
+  permissionRefreshPending = false
+  initialPermissionPending = undefined
   initialModelPending = undefined
   submissionGeneration++
   offPermission?.()
@@ -1352,7 +1407,7 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
   return models
 }
 async function selectPermission(mode: PermissionMode): Promise<boolean> {
-  if (sessionPending || permissionChangePending) return false
+  if (!connected || sessionPending || permissionChangePending || permissionRefreshPending) return false
   if (!current && draftingNew) {
     permissionMode = mode
     rememberWebComposer({ permission: mode })
@@ -1364,17 +1419,28 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   if (!current) return false
   const session = current
   const epoch = selection
+  const connectionEpoch = permissionConnectionEpoch
   const requestedYolo = yoloEnabled(mode)
   permissionChangePending = true
   renderControls()
   try {
-    if (requestedYolo !== sessionYoloEnabled) await session.setYolo(requestedYolo)
-    if (current !== session || selection !== epoch || sessionPending) return false
+    const applied = await session.setYolo(requestedYolo)
+    if (
+      current !== session ||
+      selection !== epoch ||
+      sessionPending ||
+      connectionEpoch !== permissionConnectionEpoch
+    )
+      return false
+    permissionSelectionSeq = applied.effectiveFromSeq
+    initialPermissionPending = undefined
     sessionYoloEnabled = requestedYolo
     permissionMode = mode
     rememberWebComposer({ permission: mode })
     notice.textContent =
-      mode === 'full' ? '本会话已跳过其余审批。' : `本会话权限已设为「${permissionLabel(mode)}」。`
+      mode === 'full'
+        ? '本会话已开启完全权限，可读写工作区内外文件。'
+        : `本会话权限已设为「${permissionLabel(mode)}」。`
     notice.dataset.kind = ''
     return true
   } catch (error) {
@@ -1383,7 +1449,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   } finally {
     if (current === session && selection === epoch && !sessionPending) {
       permissionChangePending = false
-      renderControls()
+      render()
     }
   }
 }
@@ -1742,6 +1808,9 @@ function submitComposer(): void {
     !input ||
     !configured ||
     !selectedModelAvailable() ||
+    permissionChangePending ||
+    permissionRefreshPending ||
+    (session && sessionYoloEnabled === undefined) ||
     (!session && (!draftingNew || !selectedWorkspace?.available)) ||
     !canSubmitComposer({ connected, hasSession: true, sending, stopping, loading: sessionPending })
   )
@@ -1749,6 +1818,7 @@ function submitComposer(): void {
   notice.textContent = ''
   notice.dataset.kind = ''
   const submission = ++submissionGeneration
+  const connectionEpoch = permissionConnectionEpoch
   let ownedSelection = selection
   const busy = projection?.opState !== null && projection?.opState !== undefined
   sending = true
@@ -1795,11 +1865,24 @@ function submitComposer(): void {
       initialModelPending = undefined
       renderControls()
     }
-    if (yoloEnabled(permissionMode) && !sessionYoloEnabled) {
-      await session.setYolo(true)
+    if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
+      throw new Error('连接已变化，请等待权限同步后重新发送。')
+    if (initialPermissionPending !== undefined) {
+      const selectedPermission = initialPermissionPending
+      const enabled = yoloEnabled(selectedPermission)
+      const applied = await session.setYolo(enabled)
       if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
-      sessionYoloEnabled = true
+      if (connectionEpoch !== permissionConnectionEpoch)
+        throw new Error('连接已变化，请等待权限同步后重新发送。')
+      permissionSelectionSeq = applied.effectiveFromSeq
+      sessionYoloEnabled = enabled
+      permissionMode = selectedPermission
+      initialPermissionPending = undefined
     }
+    if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
+      throw new Error('连接已变化，请等待权限同步后重新发送。')
+    if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
+    if (sessionYoloEnabled === undefined) throw new Error('请先选择本会话权限，确认后再发送。')
     const result = await (busy ? session.followUp(input) : session.prompt(input))
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
@@ -1809,6 +1892,11 @@ function submitComposer(): void {
   void work
     .catch((error: unknown) => {
       if (submission === submissionGeneration && ownedSelection === selection) {
+        if (connectionEpoch !== permissionConnectionEpoch) {
+          initialPermissionPending = undefined
+          sessionYoloEnabled = undefined
+          render()
+        }
         if (!composerRuntime.getDraft()) {
           composerRuntime.setDraft(input)
           sessionStorage.setItem(composerDraftKey, input)

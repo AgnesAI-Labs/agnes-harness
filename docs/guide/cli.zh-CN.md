@@ -41,7 +41,7 @@ node packages/cli/dist/local/agnes.mjs
 
 TUI `/package` 与 shell `package` 的子命令集合不完全相同，例如更新可以从 TUI/Web 发起，shell `package update` 当前没有实现。以[生命周期指南](packages.zh-CN.md)为准。
 
-审批卡显示后检查工具、参数和授权范围，再选当前提供的 allow/deny/abort 等选项。`/yolo` 会让当前会话剩余部分跳过审批，开启后不能在该会话撤销；不作为新手默认路径，且它不等于解除沙箱和其他权限约束。
+审批卡显示后检查工具、参数和授权范围，再选当前提供的 allow/deny/abort 等选项。`/yolo` 为当前会话启用完全权限：跳过工具审批，允许读写工作区内外的文件。策略中的明确禁令、操作系统权限和已配置的命令沙箱限制仍然有效。新会话会沿用已保存的权限选择。TUI 当前没有关闭完全权限的命令。
 
 ## 退出码
 

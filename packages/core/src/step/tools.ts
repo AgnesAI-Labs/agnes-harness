@@ -963,6 +963,7 @@ export async function approveAndExecute(
           generationDepth: s.generationDepth,
           actor: s.d.actor,
           cwd: s.d.cwd,
+          fullAccess: s.yolo,
           runtime: s.d.runtime,
           preset: s.preset,
           children: s.d.children,
