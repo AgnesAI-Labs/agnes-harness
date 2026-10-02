@@ -277,6 +277,50 @@ describe('Task 5 production workspace acceptance', () => {
     }
   })
 
+  it('keeps a pinned secrets directory outside the home read-only under full access', async () => {
+    const dataDir = tempDir()
+    const root = realpathSync.native(dataDir)
+    // Not <home>/secrets: only the profile's own pin names this directory.
+    const secrets = join(realpathSync.native(tempDir()), 'vault')
+    mkdirSync(secrets, { recursive: true })
+    writeFileSync(join(secrets, 'token'), 'CANARY-PINNED')
+    const { host } = await createTestHost({
+      dataDir,
+      profileInputs: { user: { name: 'local-dev', adapters: { secrets: { kind: 'file', path: secrets } } } },
+      disableSessionTitle: true,
+    })
+    try {
+      const session = await host.createSession({
+        key: 'pinned-secrets',
+        binding: host.acceptWorkspaceBinding(
+          {
+            version: 1,
+            sessionKey: 'pinned-secrets',
+            workspaceId: 'd'.repeat(64),
+            revision: 1,
+            canonicalRoot: root,
+          },
+          'pinned-secrets',
+        ),
+      })
+      const invocation = session.d.workspaceInvocation
+      if (!invocation) throw new Error('test session needs a workspace invocation')
+      await session.setYolo(true, session.d.actor)
+      await expect(invocation.run((view) => view.fs().read(join(secrets, 'token')))).resolves.toEqual(
+        new TextEncoder().encode('CANARY-PINNED'),
+      )
+      await expect(
+        invocation.run((view) => view.fs().write(join(secrets, 'token'), new TextEncoder().encode('x'))),
+      ).rejects.toMatchObject({ code: 'E_FS_DENIED', message: expect.stringContaining('denied by policy') })
+      await expect(
+        invocation.run((view) => view.fs().write(join(secrets, 'fresh'), new TextEncoder().encode('x'))),
+      ).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+      expect(readFileSync(join(secrets, 'token'), 'utf8')).toBe('CANARY-PINNED')
+    } finally {
+      await host.close()
+    }
+  })
+
   it('recovers stale child creation attempts during production startup and close', async () => {
     const dataDir = tempDir()
     await seedCreatingAttempt(dataDir, 'startup-parent', 'startup-child', 'startup')
