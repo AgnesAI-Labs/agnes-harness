@@ -71,6 +71,8 @@ export const LEGACY_PROFILE_PATHS = [
   '/provider/routes[]/models[]/cost/cacheWrite',
   '/provider/routes[]/models[]/cost/input',
   '/provider/routes[]/models[]/cost/output',
+  '/provider/routes[]/models[]/defaultSettings/contextWindow',
+  '/provider/routes[]/models[]/defaultSettings/thinking',
   '/provider/routes[]/models[]/headers',
   '/provider/routes[]/models[]/id',
   '/provider/routes[]/models[]/input[]',

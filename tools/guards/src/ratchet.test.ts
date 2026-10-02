@@ -2649,7 +2649,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Constrained network and secret providers. Measured 63169, exact, no spare.
   // Default interaction provider over the State approval entries. Measured 63248, exact, no spare (+79).
   // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9), exact cap.
-  'packages/host/src': 63457,
+  'packages/host/src': 63470,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

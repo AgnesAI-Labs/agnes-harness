@@ -1232,8 +1232,19 @@ function applyRoutes(layer: LegacyLayer, value: unknown, state: ProfileApply): v
     message: 'provider configuration is preserved until its package digest exists',
   })
   for (const path of legacyPaths('profile')) {
-    if (path.startsWith('/provider/') && readPath({ provider: value }, path).present) {
+    if (!path.startsWith('/provider/')) continue
+    const found = readPath({ provider: value }, path)
+    if (found.present) {
       state.origins.set(path, { layer, source: 'document' })
+      if (path.startsWith('/provider/routes[]/models[]/defaultSettings/')) {
+        state.provider.preserved = state.provider.preserved.filter((item) => item.path !== path)
+        state.provider.preserved.push({ path, value: found.value, reason: 'target_schema_missing' })
+        state.diagnostics.push({
+          code: 'target_schema_missing',
+          path,
+          message: `${path} has no field on the published provider parameters`,
+        })
+      }
     }
   }
 }
