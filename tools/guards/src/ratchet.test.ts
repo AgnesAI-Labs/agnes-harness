@@ -2691,7 +2691,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Cancelling a child's creation also settles its execution state in the same statement. Measured
   // 5017, exact, no spare (+3).
   // First-cause timedOut in exec and exec-win32. Measured 5034 (+9), exact cap.
-  'packages/host/src/adapters': 5034,
+  // The fence refuses writes to the installation's own state under full file access. Measured 5053,
+  // exact, no spare (+19).
+  'packages/host/src/adapters': 5053,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.

@@ -68,7 +68,7 @@
   "packages/base/tools/build-isolation-runner": 74,
   "packages/base/tools/package-isolation-runtime": 171,
   "packages/host/src/profile": 1187,
-  "packages/host/src/adapters": 5034,
+  "packages/host/src/adapters": 5053,
   "packages/host/src/adapters/storage-sqlite": 635,
   "packages/base/extensions/principals-local": 60,
   "packages/base/extensions/artifacts-local": 624,

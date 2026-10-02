@@ -53,7 +53,18 @@ export const writeTool = defineTool({
           ],
           isError: true,
         }
-      await ctx.fs.write(args.path, args.content)
+      try {
+        await ctx.fs.write(args.path, args.content)
+      } catch (e) {
+        // A file the fence lets the model read but not replace fails here, not at the read above.
+        // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
+        // outcome is unknown, and nothing in it would say the policy said no.
+        if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
+        return {
+          content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
+          isError: true,
+        }
+      }
       return {
         content: [
           {
