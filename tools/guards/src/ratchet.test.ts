@@ -1385,7 +1385,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Test container refusals match production feature and cell checks, and the runtime barrel
   // exports are sorted. Measured 3475, exact, no spare.
   // Workspace and file contract cases join the aggregate. Measured 3634, exact, no spare.
-  'packages/extension-api/testkit': 3721,
+  // Network and secret contract cases join the aggregate. Measured 3871, exact, no spare.
+  'packages/extension-api/testkit': 3871,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2577,7 +2578,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
   // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
   // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
-  'packages/host/src': 62098,
+  // Constrained network and secret providers. Measured 63169, exact, no spare.
+  'packages/host/src': 63169,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
