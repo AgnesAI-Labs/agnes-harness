@@ -1,5 +1,6 @@
 import { hash } from 'node:crypto'
 import type { SchemaRef, StateAuthorityRef } from '@agnes/extension-api/runtime'
+import { RuntimeSchemaRefs, RuntimeStateLegacyReaders } from '@agnes/protocol/runtime'
 import { canonicalJson } from './canonical-json.js'
 import { noteSha, profiling } from './profile.js'
 
@@ -9,7 +10,7 @@ export const STATE_COMMIT_EVENT = 'runtime/state-commit'
 export const LEDGER_INTEGRITY_ALGORITHM = 'agnes-ledger-jcs-sha256-v1'
 export const FORMAT_VERSION = 2
 export const RUNTIME_SCHEMA_MAJOR = 1
-export const MIN_READER = 1
+export const MIN_READER = 2
 
 export type RecordOwner = {
   authority: StateAuthorityRef
@@ -108,7 +109,7 @@ export type RuntimeCommitData = {
 export type FormatEventData = {
   formatVersion: 2
   runtimeSchemaMajor: 1
-  minReader: 1
+  minReader: 1 | 2
   previousFormat: 1 | 2
   legacyThroughSeq: number
   sourceHeadDigest: string | null
@@ -145,91 +146,6 @@ export const RUNTIME_ACTOR: LedgerEvent['actor'] = {
   role: 'system',
   deptPath: [],
   attrs: {},
-}
-
-const sessionIdentitySchema = {
-  $id: 'agh.runtime/session-identity-record.value',
-  type: 'object',
-  additionalProperties: false,
-  required: ['sessionId', 'workspaceId', 'formatVersion', 'runtimeSchemaMajor', 'minReader', 'parent'],
-  properties: {
-    sessionId: { type: 'string' },
-    workspaceId: { type: 'string' },
-    formatVersion: { const: 2 },
-    runtimeSchemaMajor: { const: 1 },
-    minReader: { type: 'integer', minimum: 0 },
-    parent: {},
-  },
-}
-
-const runRecordSchema = {
-  $id: 'agh.runtime/run-record.value',
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'runId',
-    'sessionId',
-    'lane',
-    'admissionTicketId',
-    'bindingId',
-    'input',
-    'conversation',
-    'deadline',
-    'revision',
-    'state',
-    'continuation',
-    'writerEpoch',
-    'waitId',
-    'cancellation',
-    'terminal',
-    'suspension',
-  ],
-  properties: {
-    runId: { type: 'string' },
-    sessionId: { type: 'string' },
-    lane: { type: 'string' },
-    admissionTicketId: { type: 'string' },
-    bindingId: { type: 'string' },
-    input: {},
-    conversation: {},
-    deadline: { type: 'string' },
-    revision: { type: 'integer', minimum: 0 },
-    state: {
-      enum: [
-        'admitted',
-        'runnable',
-        'waiting',
-        'failing',
-        'cancelling',
-        'draining',
-        'succeeded',
-        'failed',
-        'cancelled',
-        'frozen',
-        'migrating',
-        'blocked_incompatible',
-        'blocked_integrity',
-      ],
-    },
-    continuation: {},
-    writerEpoch: { type: 'integer', minimum: 0 },
-    waitId: {},
-    cancellation: {},
-    terminal: {},
-    suspension: {},
-  },
-}
-
-const runTaintSchema = {
-  $id: 'agh.runtime/run-taint-record.value',
-  type: 'object',
-  additionalProperties: false,
-  required: ['runId', 'sourceSeq', 'clearedThroughSeq'],
-  properties: {
-    runId: { type: 'string' },
-    sourceSeq: { type: 'integer', minimum: 0 },
-    clearedThroughSeq: { type: 'integer', minimum: 0 },
-  },
 }
 
 export function digestOf(value: unknown): string {
@@ -278,63 +194,32 @@ export function storedMutationNextJson(recordRevision: number, digest: string, s
   return `{"digest":${JSON.stringify(digest)},"recordRevision":${JSON.stringify(recordRevision)},"schema":${schemaJson}}`
 }
 
-function schemaRef(typeId: string, document: unknown): SchemaRef {
-  return { typeId, revision: 1, digest: digestOf(document) }
-}
-
-function recordSchema(id: string, required: readonly string[]) {
-  const properties: Record<string, { type: 'string' }> = {}
-  for (const key of required) properties[key] = { type: 'string' }
-  return {
-    $id: id,
-    type: 'object' as const,
-    additionalProperties: false,
-    required: [...required],
-    properties,
-  }
-}
-
-const actionRecordSchema = recordSchema('agh.runtime/action-record.value', ['actionId', 'runId'])
-const attemptRecordSchema = recordSchema('agh.runtime/attempt-record.value', ['attemptId', 'actionId'])
-const runQuotaSchema = recordSchema('agh.runtime/run-quota.value', ['runId'])
-const invocationSchema = recordSchema('agh.runtime/invocation.value', ['invocationId', 'runId'])
-const prepareQuotaSchema = recordSchema('agh.runtime/prepare-query-quota.value', ['prepareId', 'runId'])
-const queryGrantSchema = recordSchema('agh.runtime/query-grant.value', ['grantId', 'invocationId'])
-const dispatchAdmissionSchema = recordSchema('agh.runtime/dispatch-admission.value', ['admissionId'])
-const receiptRecordSchema = recordSchema('agh.runtime/receipt-record.value', ['receipt'])
-const quotaMirrorSchema = recordSchema('agh.runtime/quota-mirror.value', ['reservationId'])
-const signalRecordSchema = recordSchema('agh.runtime/signal-record.value', ['signalId'])
-const actionVisibilitySchema = recordSchema('agh.runtime/action-visibility.value', [
-  'actionId',
-  'sourceReceiptId',
-])
-const usageMirrorSchema = recordSchema('agh.runtime/usage-mirror.value', ['usageId'])
-const outboxRecordSchema = recordSchema('agh.runtime/outbox-record.value', ['eventId'])
-const referenceRecordSchema = recordSchema('agh.runtime/reference-record.value', ['referenceId'])
-
-export const SESSION_IDENTITY_SCHEMA = schemaRef(
-  'agh.runtime/session-identity-record@1',
-  sessionIdentitySchema,
-)
-export const RUN_RECORD_SCHEMA = schemaRef('agh.runtime/run-record@1', runRecordSchema)
-export const RUN_TAINT_SCHEMA = schemaRef('agh.runtime/run-taint-record@1', runTaintSchema)
-export const ACTION_SCHEMA = schemaRef('agh.runtime/action-record@1', actionRecordSchema)
-export const ATTEMPT_SCHEMA = schemaRef('agh.runtime/attempt-record@1', attemptRecordSchema)
-export const RUN_QUOTA_SCHEMA = schemaRef('agh.runtime/run-quota@1', runQuotaSchema)
-export const INVOCATION_SCHEMA = schemaRef('agh.runtime/invocation@1', invocationSchema)
-export const PREPARE_QUOTA_SCHEMA = schemaRef('agh.runtime/prepare-query-quota@1', prepareQuotaSchema)
-export const QUERY_GRANT_SCHEMA = schemaRef('agh.runtime/query-grant@1', queryGrantSchema)
-export const DISPATCH_ADMISSION_SCHEMA = schemaRef(
-  'agh.runtime/dispatch-admission@1',
-  dispatchAdmissionSchema,
-)
-export const RECEIPT_SCHEMA = schemaRef('agh.runtime/receipt-record@1', receiptRecordSchema)
-export const QUOTA_MIRROR_SCHEMA = schemaRef('agh.runtime/quota-mirror@1', quotaMirrorSchema)
-export const SIGNAL_SCHEMA = schemaRef('agh.runtime/signal-record@1', signalRecordSchema)
-export const VISIBILITY_SCHEMA = schemaRef('agh.runtime/action-visibility@1', actionVisibilitySchema)
-export const USAGE_MIRROR_SCHEMA = schemaRef('agh.runtime/usage-mirror@1', usageMirrorSchema)
-export const OUTBOX_SCHEMA = schemaRef('agh.runtime/outbox-record@1', outboxRecordSchema)
-export const REFERENCE_SCHEMA = schemaRef('agh.runtime/reference-record@1', referenceRecordSchema)
+export const SESSION_IDENTITY_SCHEMA = RuntimeSchemaRefs.SessionIdentityValue
+export const RUN_RECORD_SCHEMA = RuntimeSchemaRefs.RunRecordValue
+export const RUN_TAINT_SCHEMA = RuntimeSchemaRefs.RunTaintRecordValue
+export const ACTION_SCHEMA = RuntimeSchemaRefs.ActionRecordValue
+export const ATTEMPT_SCHEMA = RuntimeSchemaRefs.AttemptRecordValue
+export const RUN_QUOTA_SCHEMA = RuntimeSchemaRefs.RunQuotaValue
+export const INVOCATION_SCHEMA = RuntimeSchemaRefs.InvocationValue
+export const PREPARE_QUOTA_SCHEMA = RuntimeSchemaRefs.PrepareQueryQuotaValue
+export const QUERY_GRANT_SCHEMA = RuntimeSchemaRefs.QueryGrantValue
+export const DISPATCH_ADMISSION_SCHEMA = RuntimeSchemaRefs.DispatchAdmissionRecordValue
+export const RECEIPT_SCHEMA = RuntimeSchemaRefs.ReceiptRecordValue
+export const QUOTA_MIRROR_SCHEMA = RuntimeSchemaRefs.QuotaReservationMirrorValue
+export const SIGNAL_SCHEMA = RuntimeSchemaRefs.SignalRecordValue
+export const VISIBILITY_SCHEMA = RuntimeSchemaRefs.ActionVisibilityValue
+export const USAGE_MIRROR_SCHEMA = RuntimeSchemaRefs.UsageMirrorValue
+export const OUTBOX_SCHEMA = RuntimeSchemaRefs.OutboxRecord
+export const REFERENCE_SCHEMA = RuntimeSchemaRefs.ReferenceRecordValue
+export const STATE_LEASE_SCHEMA = RuntimeSchemaRefs.StateLeaseRecordValue
+export const STATE_OPEN_PROOF_SCHEMA = RuntimeSchemaRefs.StateWriteOpenProofValue
+export const STATE_LEASE_PROOF_SCHEMA = RuntimeSchemaRefs.StateLeaseProofValue
+export const INTERACTION_SCHEMA = RuntimeSchemaRefs.InteractionRecord
+export const INBOX_SCHEMA = RuntimeSchemaRefs.InboxRecord
+export const APPROVAL_TAINT_ACK_SCHEMA = RuntimeSchemaRefs.ApprovalTaintAckRecordValue
+export const AUTHORIZATION_PREPARATION_SCHEMA = RuntimeSchemaRefs.AuthorizationPreparation
+export const APPROVAL_RESPONSE_SOURCE_SCHEMA = RuntimeSchemaRefs.ApprovalRespondRequest
+export const CONTROL_REQUEST_SOURCE_SCHEMA = RuntimeSchemaRefs.CommitControlRequest
 
 const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [SESSION_IDENTITY_SCHEMA.typeId]: SESSION_IDENTITY_SCHEMA,
@@ -354,6 +239,15 @@ const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [USAGE_MIRROR_SCHEMA.typeId]: USAGE_MIRROR_SCHEMA,
   [OUTBOX_SCHEMA.typeId]: OUTBOX_SCHEMA,
   [REFERENCE_SCHEMA.typeId]: REFERENCE_SCHEMA,
+  [STATE_LEASE_SCHEMA.typeId]: STATE_LEASE_SCHEMA,
+  [STATE_OPEN_PROOF_SCHEMA.typeId]: STATE_OPEN_PROOF_SCHEMA,
+  [STATE_LEASE_PROOF_SCHEMA.typeId]: STATE_LEASE_PROOF_SCHEMA,
+  [INTERACTION_SCHEMA.typeId]: INTERACTION_SCHEMA,
+  [INBOX_SCHEMA.typeId]: INBOX_SCHEMA,
+  [APPROVAL_TAINT_ACK_SCHEMA.typeId]: APPROVAL_TAINT_ACK_SCHEMA,
+  [AUTHORIZATION_PREPARATION_SCHEMA.typeId]: AUTHORIZATION_PREPARATION_SCHEMA,
+  [APPROVAL_RESPONSE_SOURCE_SCHEMA.typeId]: APPROVAL_RESPONSE_SOURCE_SCHEMA,
+  [CONTROL_REQUEST_SOURCE_SCHEMA.typeId]: CONTROL_REQUEST_SOURCE_SCHEMA,
 }
 
 export function sessionIdentityRecordId(sessionId: string): string {
@@ -627,39 +521,44 @@ export function knownSchema(typeId: string): SchemaRef | undefined {
   return SCHEMAS[typeId]
 }
 
-const knownSchemaCanonical = new Map<string, string>()
+const registeredSchemas = [
+  ...Object.values(SCHEMAS),
+  ...RuntimeStateLegacyReaders.entries.map((entry) => entry.source),
+]
+const registeredSchemaTexts = new Set(registeredSchemas.map((schema) => canonicalJson(schema)))
 
-function canonicalSchemaText(typeId: string): string | undefined {
-  const known = SCHEMAS[typeId]
-  if (!known) return undefined
-  let canonical = knownSchemaCanonical.get(typeId)
-  if (canonical === undefined) {
-    canonical = canonicalJson(known)
-    knownSchemaCanonical.set(typeId, canonical)
-  }
-  return canonical
-}
-
-/** True when `schema` is exactly one of the registered runtime record schemas. */
+/** Exact fullref matching includes historical provenance, without treating tag documents as payload codecs. */
 export function matchesKnownSchema(schema: unknown): boolean {
-  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
-  const record = schema as { typeId?: unknown; revision?: unknown; digest?: unknown }
-  if (typeof record.typeId !== 'string' || Object.keys(schema).length !== 3) return false
-  const known = SCHEMAS[record.typeId]
-  if (!known) return false
-  return (
-    record.typeId === known.typeId && record.revision === known.revision && record.digest === known.digest
+  if (
+    schema === null ||
+    typeof schema !== 'object' ||
+    Array.isArray(schema) ||
+    Object.keys(schema).length !== 3
+  )
+    return false
+  const value = schema as SchemaRef
+  return registeredSchemas.some(
+    (ref) => ref.typeId === value.typeId && ref.revision === value.revision && ref.digest === value.digest,
   )
 }
-
-/** True when stored schema JSON is one of the registered schemas, including a non-canonical spelling. */
 export function matchesKnownSchemaText(text: string): boolean {
-  for (const typeId of Object.keys(SCHEMAS)) if (text === canonicalSchemaText(typeId)) return true
+  if (registeredSchemaTexts.has(text)) return true
   try {
-    return matchesKnownSchema(JSON.parse(text) as unknown)
+    return matchesKnownSchema(JSON.parse(text))
   } catch {
     return false
   }
+}
+export function stateSchemaReader(schema: SchemaRef): 1 | 2 {
+  return RuntimeStateLegacyReaders.entries.some((entry) => sameJson(entry.source, schema)) ? 1 : 2
+}
+const stateDefinitions = new Map<string, keyof typeof RuntimeSchemaRefs>(
+  Object.entries(RuntimeSchemaRefs)
+    .filter(([_name, ref]) => SCHEMAS[ref.typeId])
+    .map(([name, ref]) => [canonicalJson(ref), name as keyof typeof RuntimeSchemaRefs]),
+)
+export function stateSchemaDefinition(schema: SchemaRef): keyof typeof RuntimeSchemaRefs | undefined {
+  return stateDefinitions.get(canonicalJson(schema))
 }
 
 export function sameJson(left: unknown, right: unknown): boolean {

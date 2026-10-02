@@ -8,6 +8,7 @@ import { generateRuntimeArtifactArtifacts } from './gen-runtime-artifacts.js'
 import { normalizeRuntimeCatalog } from './gen-runtime-catalog.js'
 import { loadRuntimeSchemaGraph } from './gen-runtime-graph.js'
 import { emitRuntimeReferences } from './gen-runtime-refs.js'
+import { validateStateRuntimeMetadata } from './gen-runtime-state.js'
 
 type Json = Record<string, unknown>
 const header = '// generated from schema/runtime by tools/gen-runtime.ts — do not edit\n'
@@ -357,9 +358,18 @@ export function generateFullRuntimeArtifacts(directory: string): Record<string, 
   )
     throw new Error('invalid approval intent binding policy')
   validateLegacyIdentityMetadata(publicDocument, new Set(names))
+  validateStateRuntimeMetadata(
+    document,
+    publicDocument,
+    localMetadata as unknown as Json,
+    JSON.parse(readFileSync(join(directory, 'state85-legacy-schema-documents.json'), 'utf8')),
+  )
   const metadataTables: Record<string, unknown> = {
     RuntimeServiceCatalog: catalog,
     RuntimeConfigurationSchemas: configurationNames,
+    RuntimeStateQueryMethods: (publicDocument['x-state-query-api'] as Json).methods,
+    RuntimeStateOpenRetryPolicy: publicDocument['x-state-open-retry-policy'],
+    RuntimeStateLegacyReaders: publicDocument['x-state-legacy-readers'],
     RuntimeAuthorityTransferAPI: publicDocument['x-authority-transfer-api'],
     RuntimeEventsOutboxAPI: publicDocument['x-events-outbox-api'],
   }
@@ -426,6 +436,9 @@ export function generateFullRuntimeArtifacts(directory: string): Record<string, 
             'RuntimeEventsOutboxAPI',
             'RuntimeApprovalIntentPolicy',
             'RuntimeIdentityLegacySchemas',
+            'RuntimeStateQueryMethods',
+            'RuntimeStateOpenRetryPolicy',
+            'RuntimeStateLegacyReaders',
           ].includes(name)
             ? `export const ${name} = ${frozenLiteral(value)}\n`
             : `export const ${name} = ${JSON.stringify(value, null, 2)} as const\n`,

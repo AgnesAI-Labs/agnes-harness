@@ -15,7 +15,9 @@ import type {
   StateCommitReceipt,
   StateStoreControl,
 } from '@agnes/extension-api/runtime'
+import type { InteractionRecord, InteractionResponseStatus } from '@agnes/protocol/runtime'
 import { validateRuntime } from '@agnes/protocol/runtime'
+import type { ApprovalPreparationInput, ApprovalResolutionInput } from '../state/approval.js'
 import { enterPhase, leavePhase, profiling } from '../state/profile.js'
 import {
   openRuntimeStateDatabase,
@@ -59,6 +61,9 @@ export type UnimplementedStateMethod = (typeof UNIMPLEMENTED_STATE_METHODS)[numb
 export type RuntimeStateStore = StateStoreControl & {
   close(): void
   durability(): RuntimeDurability
+  /** Host-private default-provider composition in the original State transaction. */
+  prepareApproval(input: ApprovalPreparationInput): Promise<Outcome<InteractionRecord>>
+  resolveApproval(input: ApprovalResolutionInput): Promise<Outcome<InteractionResponseStatus>>
   /** Host-internal. Not part of StateStoreControl. One state-commit covers admit, close, and advance. */
   commitPreparedAdvance(
     commitId: string,
@@ -115,7 +120,11 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
     ok: false,
     error: error(code, detailCode, message),
   })
-  const run = async <T>(context: CallContext, body: () => T | Promise<T>): Promise<Outcome<T>> => {
+  const run = async <T>(
+    context: CallContext,
+    body: () => T | Promise<T>,
+    approvalError = false,
+  ): Promise<Outcome<T>> => {
     if (context.signal.aborted) return failure('cancelled', 'aborted', 'call was cancelled')
     try {
       return { ok: true, value: await body() }
@@ -125,6 +134,10 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
           ok: false,
           error: error(caught.failure.code, caught.failure.detailCode, caught.failure.message),
         })
+      if (approvalError) {
+        const checked = validateRuntime('RuntimeError', caught)
+        if (checked.ok) return { ok: false, error: checked.value }
+      }
       return Promise.resolve(failure('internal', 'fault', 'state store failed'))
     }
   }
@@ -142,6 +155,8 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
       : failure('conflict', 'authority', 'authority does not match this store')
 
   const store: RuntimeStateStore = {
+    prepareApproval: (input) => run(input.context, () => database.prepareApproval(input), true),
+    resolveApproval: (input) => run(input.context, () => database.resolveApproval(input), true),
     open: (request, context) => {
       const result = validateRuntime('StateOpenRequest', request)
       if (!result.ok)

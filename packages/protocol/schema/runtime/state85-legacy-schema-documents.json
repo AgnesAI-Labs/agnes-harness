@@ -1,0 +1,293 @@
+{
+  "SessionIdentityValue": {
+    "$id": "agh.runtime/session-identity-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["sessionId", "workspaceId", "formatVersion", "runtimeSchemaMajor", "minReader", "parent"],
+    "properties": {
+      "sessionId": {
+        "type": "string"
+      },
+      "workspaceId": {
+        "type": "string"
+      },
+      "formatVersion": {
+        "const": 2
+      },
+      "runtimeSchemaMajor": {
+        "const": 1
+      },
+      "minReader": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "parent": {}
+    }
+  },
+  "RunRecordValue": {
+    "$id": "agh.runtime/run-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "runId",
+      "sessionId",
+      "lane",
+      "admissionTicketId",
+      "bindingId",
+      "input",
+      "conversation",
+      "deadline",
+      "revision",
+      "state",
+      "continuation",
+      "writerEpoch",
+      "waitId",
+      "cancellation",
+      "terminal",
+      "suspension"
+    ],
+    "properties": {
+      "runId": {
+        "type": "string"
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "lane": {
+        "type": "string"
+      },
+      "admissionTicketId": {
+        "type": "string"
+      },
+      "bindingId": {
+        "type": "string"
+      },
+      "input": {},
+      "conversation": {},
+      "deadline": {
+        "type": "string"
+      },
+      "revision": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "state": {
+        "enum": [
+          "admitted",
+          "runnable",
+          "waiting",
+          "failing",
+          "cancelling",
+          "draining",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "frozen",
+          "migrating",
+          "blocked_incompatible",
+          "blocked_integrity"
+        ]
+      },
+      "continuation": {},
+      "writerEpoch": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "waitId": {},
+      "cancellation": {},
+      "terminal": {},
+      "suspension": {}
+    }
+  },
+  "RunTaintRecordValue": {
+    "$id": "agh.runtime/run-taint-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["runId", "sourceSeq", "clearedThroughSeq"],
+    "properties": {
+      "runId": {
+        "type": "string"
+      },
+      "sourceSeq": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "clearedThroughSeq": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "ActionRecordValue": {
+    "$id": "agh.runtime/action-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["actionId", "runId"],
+    "properties": {
+      "actionId": {
+        "type": "string"
+      },
+      "runId": {
+        "type": "string"
+      }
+    }
+  },
+  "AttemptRecordValue": {
+    "$id": "agh.runtime/attempt-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["attemptId", "actionId"],
+    "properties": {
+      "attemptId": {
+        "type": "string"
+      },
+      "actionId": {
+        "type": "string"
+      }
+    }
+  },
+  "RunQuotaValue": {
+    "$id": "agh.runtime/run-quota.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["runId"],
+    "properties": {
+      "runId": {
+        "type": "string"
+      }
+    }
+  },
+  "InvocationValue": {
+    "$id": "agh.runtime/invocation.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["invocationId", "runId"],
+    "properties": {
+      "invocationId": {
+        "type": "string"
+      },
+      "runId": {
+        "type": "string"
+      }
+    }
+  },
+  "PrepareQueryQuotaValue": {
+    "$id": "agh.runtime/prepare-query-quota.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["prepareId", "runId"],
+    "properties": {
+      "prepareId": {
+        "type": "string"
+      },
+      "runId": {
+        "type": "string"
+      }
+    }
+  },
+  "QueryGrantValue": {
+    "$id": "agh.runtime/query-grant.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["grantId", "invocationId"],
+    "properties": {
+      "grantId": {
+        "type": "string"
+      },
+      "invocationId": {
+        "type": "string"
+      }
+    }
+  },
+  "DispatchAdmissionRecordValue": {
+    "$id": "agh.runtime/dispatch-admission.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["admissionId"],
+    "properties": {
+      "admissionId": {
+        "type": "string"
+      }
+    }
+  },
+  "ReceiptRecordValue": {
+    "$id": "agh.runtime/receipt-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["receipt"],
+    "properties": {
+      "receipt": {
+        "type": "string"
+      }
+    }
+  },
+  "QuotaReservationMirrorValue": {
+    "$id": "agh.runtime/quota-mirror.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["reservationId"],
+    "properties": {
+      "reservationId": {
+        "type": "string"
+      }
+    }
+  },
+  "SignalRecordValue": {
+    "$id": "agh.runtime/signal-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["signalId"],
+    "properties": {
+      "signalId": {
+        "type": "string"
+      }
+    }
+  },
+  "ActionVisibilityValue": {
+    "$id": "agh.runtime/action-visibility.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["actionId", "sourceReceiptId"],
+    "properties": {
+      "actionId": {
+        "type": "string"
+      },
+      "sourceReceiptId": {
+        "type": "string"
+      }
+    }
+  },
+  "UsageMirrorValue": {
+    "$id": "agh.runtime/usage-mirror.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["usageId"],
+    "properties": {
+      "usageId": {
+        "type": "string"
+      }
+    }
+  },
+  "OutboxRecord": {
+    "$id": "agh.runtime/outbox-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["eventId"],
+    "properties": {
+      "eventId": {
+        "type": "string"
+      }
+    }
+  },
+  "ReferenceRecordValue": {
+    "$id": "agh.runtime/reference-record.value",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["referenceId"],
+    "properties": {
+      "referenceId": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -203,6 +203,15 @@ export type {
   RuntimePromptPreload,
   RuntimePromptPreloader,
 } from './runtime/current.js'
+export type {
+  InteractionClock,
+  InteractionEvidence,
+  InteractionStorage,
+  InteractionTransaction,
+  StoredInteractionResponse,
+  StoredInteractionWake,
+} from './runtime/interaction/authority.js'
+export { createInteractionAuthority } from './runtime/interaction/authority.js'
 export type { SessionOverlayPort } from './runtime/overlay.js'
 export { approvalDeadlineMs } from './step/approval-callback.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './step/compaction.js'

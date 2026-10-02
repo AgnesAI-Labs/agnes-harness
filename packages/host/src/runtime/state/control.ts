@@ -31,19 +31,31 @@ import type {
   Receipt,
   ReceiptIntakeRequest,
   ReceiptIntakeResult,
+  ReceiptRecordValue,
+  RetentionRef,
   RuntimeError,
   SchemaRef,
   Signal,
+  SignalRecordValue,
   StateAuthorityRef,
   StateCommitReceipt,
   UsageFact,
 } from '@agnes/extension-api/runtime'
-import { validateRuntime } from '@agnes/protocol/runtime'
+import type {
+  ActionRecordValue,
+  AuthorizationPreparation,
+  InboxRecord,
+  InteractionRecord,
+  PolicyDecision,
+  TrustedPolicyFacts,
+} from '@agnes/protocol/runtime'
+import { RuntimeMethodSchemaRefs, RuntimeStateLegacyReaders, validateRuntime } from '@agnes/protocol/runtime'
 import { canonicalJson } from './canonical-json.js'
 import { noteJsonParse, profiling } from './profile.js'
 import {
   ACTION_SCHEMA,
   ATTEMPT_SCHEMA,
+  AUTHORIZATION_PREPARATION_SCHEMA,
   actionRecordId,
   attemptRecordId,
   type CommitSideEntry,
@@ -51,6 +63,7 @@ import {
   digestOf,
   dispatchRecordId,
   grantRecordId,
+  INTERACTION_SCHEMA,
   INVOCATION_SCHEMA,
   type IntegrityState,
   invocationRecordId,
@@ -160,6 +173,16 @@ export type WriteCommitInput = {
 
 export type Committed<T> = { result: T; sessionId: string; verified?: SessionView }
 
+export type ApprovalAskCommand = Extract<
+  CommitControlRequest['command'],
+  { kind: 'authorize_action'; decision: 'ask' | 'deny' }
+>
+export type VerifiedApprovalAsk = {
+  preparationId: string
+  decision: PolicyDecision
+  interaction: InteractionRecord
+}
+
 export interface ControlPorts {
   now(): number
   authority: StateAuthorityRef
@@ -171,6 +194,25 @@ export interface ControlPorts {
   replayRequest<T>(method: string, requestId: string, fingerprint: string): T | undefined
   rememberRequest(method: string, requestId: string, fingerprint: string, result: unknown): void
   loadHead(recordId: string): StoredHead | undefined
+  reserveCommitEventId(commitId: string): string
+  verifyUsageSettlement?(
+    fact: UsageFact,
+    receipt: Receipt,
+    evidence: readonly DataRef[],
+  ): { settlementRef: string | null } | undefined
+  verifyRetentionPin?(pin: RetentionRef, receipt: Receipt, evidence: readonly DataRef[]): boolean
+  /** Selected synchronous C24 owner verifies the complete original preparation/fingerprint, policy/Hook DataRef provenance and current authority. */
+  verifyAuthorizationPreparation?(
+    preparation: AuthorizationPreparation,
+    action: ActionRecordValue,
+    guard: CommitGuard,
+  ): TrustedPolicyFacts | undefined
+  /** Selected owners prove actual Policy ask and current Interaction question membership, never a self-authored DTO. */
+  verifyApprovalAsk?(
+    command: ApprovalAskCommand,
+    action: ActionRecordValue,
+    guard: CommitGuard,
+  ): VerifiedApprovalAsk | undefined
   writeCommit(input: WriteCommitInput): { receipt: StateCommitReceipt; verified: SessionView }
   assertReceipt(sessionId: string, receipt: StateCommitReceipt, fingerprint: string): void
   noteWrite(): void
@@ -429,7 +471,7 @@ function taintOf(ports: ControlPorts, runId: string): TaintSnapshot {
   }
 }
 
-function actionInputDigest(action: ActionValue): string {
+function actionInputDigest(action: Pick<ActionValue, 'intent'>): string {
   const intent = action.intent as { input?: unknown }
   if (intent.input === undefined) refuse('invalid_input', 'action_input', 'action input is missing')
   return digestOf(intent.input)
@@ -502,23 +544,9 @@ function loadQuota(ports: ControlPorts, runId: string): { head?: StoredHead; val
   return head ? { head, value: storedValue<RunQuotaValue>(head) } : {}
 }
 
-type SignalRecordValue = {
-  signal: Signal
-  targetRevisionAtCreation: number
-  consumedByCommitId: string | null
-  sourceReceiptId: string
-}
+type StoredReceiptValue = ReceiptRecordValue
 
-type StoredReceiptValue = {
-  receipt: Receipt
-  evidenceRefs: readonly DataRef[]
-  acceptedBy: string
-  acceptedAt: string
-  intakeId?: string | null
-  contentFingerprint?: string | null
-}
-
-type StoredOutbox = OutboxRecord & { sessionId: string; sourceReceiptId: string }
+type StoredOutbox = OutboxRecord
 
 type DeliveryRow = {
   event_id: string
@@ -563,6 +591,83 @@ function dataRef(value: unknown): DataRef {
     digest: digestOf(value),
     bytes: Buffer.byteLength(canonicalJson(value)),
   }
+}
+
+const INTAKE_SOURCE_SCHEMA = RuntimeMethodSchemaRefs['agh.state'].intakeReceipt.input
+
+function intakeSourceEvidence(request: ReceiptIntakeRequest): DataRef {
+  if (request.evidence.some((item) => item.schema.typeId === INTAKE_SOURCE_SCHEMA.typeId))
+    refuse('invalid_input', 'receipt_intake', 'caller evidence cannot claim the accepted intake source')
+  const evidence: DataRef = { ...dataRef(request), schema: INTAKE_SOURCE_SCHEMA }
+  if (!validateRuntime('DataRef', evidence).ok)
+    refuse('invalid_input', 'receipt_intake', 'accepted intake source cannot be represented')
+  return evidence
+}
+
+function acceptedIntakeSource(stored: StoredReceiptValue): ReceiptIntakeRequest | undefined {
+  const candidates = stored.evidenceRefs.filter((item) => item.schema.typeId === INTAKE_SOURCE_SCHEMA.typeId)
+  if (candidates.length !== 1) return undefined
+  const evidence = candidates[0]
+  if (
+    evidence?.kind !== 'inline' ||
+    !sameJson(evidence.schema, INTAKE_SOURCE_SCHEMA) ||
+    !validateRuntime('DataRef', evidence).ok ||
+    evidence.digest !== digestOf(evidence.value) ||
+    evidence.bytes !== Buffer.byteLength(canonicalJson(evidence.value))
+  )
+    integrity('accepted intake source evidence is invalid')
+  const checked = validateRuntime('ReceiptIntakeRequest', evidence.value)
+  if (
+    !checked.ok ||
+    !sameJson(checked.value.receipt, stored.receipt) ||
+    !sameJson([...checked.value.evidence, evidence], stored.evidenceRefs) ||
+    checked.value.evidence.some((item) => item.schema.typeId === INTAKE_SOURCE_SCHEMA.typeId)
+  )
+    integrity('accepted intake source evidence does not match its receipt')
+  return checked.value
+}
+
+function acceptedIntakeId(head: StoredHead, request: ReceiptIntakeRequest, fingerprint: string): string {
+  const stored = storedValue<StoredReceiptValue>(head)
+  const source = acceptedIntakeSource(stored)
+  const legacy = RuntimeStateLegacyReaders.entries.some(
+    (entry) =>
+      entry.targetDefinition === 'ReceiptRecordValue' && sameJson(entry.source, parseJson(head.schema_json)),
+  )
+    ? storedValue<Record<string, unknown>>(head)
+    : undefined
+  const originalIntakeId = source?.intakeId ?? legacy?.intakeId
+  const originalFingerprint = source ? intakeFingerprint(source) : legacy?.contentFingerprint
+  if (
+    typeof originalIntakeId !== 'string' ||
+    originalIntakeId.length === 0 ||
+    originalFingerprint !== fingerprint ||
+    (source && source.sourceAuthorizationRef !== request.sourceAuthorizationRef)
+  )
+    refuse('conflict', 'receipt_conflict', 'receipt was already accepted with different content')
+  return originalIntakeId
+}
+
+function requireUsageSettlement(
+  ports: ControlPorts,
+  fact: UsageFact,
+  receipt: Receipt,
+  evidence: readonly DataRef[],
+): string | null {
+  const proof = ports.verifyUsageSettlement?.(fact, receipt, evidence)
+  if (!proof) refuse('conflict', 'usage_source', 'usage settlement has no verified current source')
+  return proof.settlementRef
+}
+
+function requireRetentionPin(
+  ports: ControlPorts,
+  pin: RetentionRef,
+  receipt: Receipt,
+  evidence: readonly DataRef[],
+): RetentionRef {
+  if (!ports.verifyRetentionPin?.(pin, receipt, evidence))
+    refuse('conflict', 'retention_source', 'retention pin has no verified current source')
+  return pin
 }
 
 function intakeFingerprint(request: ReceiptIntakeRequest): string {
@@ -664,9 +769,7 @@ function insertOutboxDelivery(
 
 function outboxValue(
   ports: ControlPorts,
-  sessionId: string,
   commitId: string,
-  receiptId: string,
   eventId: string,
   destination: string,
   typeId: string,
@@ -688,8 +791,6 @@ function outboxValue(
     claim: null,
     ackRef: null,
     lastError: null,
-    sessionId,
-    sourceReceiptId: receiptId,
   }
 }
 
@@ -773,8 +874,7 @@ function publishNoHook(
     usage: readonly UsageFact[]
     evidence: readonly DataRef[]
     acceptedBy: string
-    intakeId: string | null
-    contentFingerprint: string | null
+    intakeRequest?: ReceiptIntakeRequest
     actionHead?: StoredHead
     attemptHead?: StoredHead
     includeReceipt: boolean
@@ -783,16 +883,19 @@ function publishNoHook(
   const creates: StoredRecord[] = []
   const updates: RecordUpdate[] = []
   const sides: CommitSideEntry[] = []
-  const { commitId, stamp, owner, receipt } = input
+  const { stamp, owner, receipt } = input
+  const commitId = attestedCommitId(ports, input.commitId)
+  if (!sameJson(owner.authority, ports.authority))
+    integrity('publication authority does not match record owner')
   if (input.includeReceipt) {
     creates.push(
       record(receiptRecordId(receipt.receiptId), RECEIPT_SCHEMA, 1, owner, {
         receipt,
-        evidenceRefs: input.evidence,
+        evidenceRefs: input.intakeRequest
+          ? [...input.evidence, intakeSourceEvidence(input.intakeRequest)]
+          : [...input.evidence],
         acceptedBy: input.acceptedBy,
         acceptedAt: stamp,
-        intakeId: input.intakeId,
-        contentFingerprint: input.contentFingerprint,
       } satisfies StoredReceiptValue),
     )
     sides.push({ commitId, kind: 'receipt-created', receiptId: receipt.receiptId })
@@ -820,20 +923,28 @@ function publishNoHook(
     )
   }
   updates.push(...releaseHeldMirrors(ports, input.run.runId, input.action.actionId, stamp))
-  const seenOrigins = new Set<string>()
+  const seenOrigins = new Map<string, UsageFact>()
   for (const fact of input.usage) {
     const identity = `${ports.authority.authorityId}\0${fact.originKey}`
-    if (seenOrigins.has(identity)) continue
-    seenOrigins.add(identity)
+    const seen = seenOrigins.get(identity)
+    if (seen) {
+      if (!sameJson(seen, fact)) refuse('conflict', 'usage_source', 'usage origin has conflicting facts')
+      continue
+    }
+    seenOrigins.set(identity, fact)
     const usageId = stableId('use', identity)
-    if (ports.loadHead(usageMirrorRecordId(usageId))) continue
+    const existing = ports.loadHead(usageMirrorRecordId(usageId))
+    if (existing) {
+      if (!sameJson(storedValue<{ usage: UsageFact }>(existing).usage, fact))
+        refuse('conflict', 'usage_source', 'usage origin was recorded with different content')
+      continue
+    }
     creates.push(
       record(usageMirrorRecordId(usageId), USAGE_MIRROR_SCHEMA, 1, owner, {
-        usageId,
-        sourceAuthorityId: ports.authority.authorityId,
-        originKey: fact.originKey,
         usage: fact,
-        status: 'recorded',
+        sourceAuthorityRef: owner.authority,
+        sourceEventId: ports.reserveCommitEventId(attestedCommitId(ports, commitId)),
+        settlementRef: requireUsageSettlement(ports, fact, receipt, input.evidence),
       }),
     )
     sides.push({
@@ -848,8 +959,10 @@ function publishNoHook(
     creates.push(
       record(referenceRecordId(referenceId), REFERENCE_SCHEMA, 1, owner, {
         referenceId,
+        sourceRecordId: receiptRecordId(receipt.receiptId),
         status: 'confirmed',
-        target: pin,
+        target: { kind: 'retained', retention: requireRetentionPin(ports, pin, receipt, input.evidence) },
+        releaseReason: null,
       }),
     )
   }
@@ -879,7 +992,6 @@ function publishNoHook(
       signal,
       targetRevisionAtCreation: input.run.revision,
       consumedByCommitId: null,
-      sourceReceiptId: receipt.receiptId,
     } satisfies SignalRecordValue),
   )
   const view = resultView(receipt)
@@ -907,9 +1019,7 @@ function publishNoHook(
         owner,
         outboxValue(
           ports,
-          input.sessionId,
-          commitId,
-          receipt.receiptId,
+          attestedCommitId(ports, commitId),
           eventId,
           destination,
           typeId,
@@ -1939,8 +2049,6 @@ export async function dispatchAdmissionTx(
       usage: [],
       evidence: [],
       acceptedBy: request.guard.writerId,
-      intakeId: null,
-      contentFingerprint: null,
       includeReceipt: false,
     })
     input.creates.push(...published.creates)
@@ -1990,6 +2098,212 @@ function mergeExternal(
   return appended.length === 0 ? [...stored] : [...stored, ...appended]
 }
 
+function authorizationPreparationId(preparationId: string): string {
+  return `authorization-preparation:${preparationId}`
+}
+function approvalAskId(actionId: string, preparationId: string): string {
+  return `approval-ask:${actionId}:${preparationId}`
+}
+function approvalAction(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  actionId: string,
+  revision: number,
+) {
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  const head = requireHead(ports, actionRecordId(actionId), 'action_absent', 'approval action is unavailable')
+  const parsed = validateRuntime('ActionRecordValue', storedValue(head))
+  if (!parsed.ok || parsed.value.runId !== request.guard.runId)
+    integrity('approval action original source differs')
+  if (head.record_revision !== revision)
+    refuse('conflict', 'action_revision', 'approval action revision differs')
+  if (parsed.value.state !== 'prepared' && parsed.value.state !== 'awaiting-approval')
+    refuse('conflict', 'action_state', 'approval action is no longer awaiting authorization')
+  return { guarded, head, action: parsed.value, owner: ownerOf(head) }
+}
+function verifiedPreparationFacts(
+  ports: ControlPorts,
+  preparation: AuthorizationPreparation,
+  action: ActionRecordValue,
+  guard: CommitGuard,
+): TrustedPolicyFacts {
+  const source = ports.verifyAuthorizationPreparation?.(preparation, action, guard)
+  const parsed = validateRuntime('TrustedPolicyFacts', source)
+  if (!parsed.ok)
+    refuse(
+      'incompatible',
+      'unproven_approval_policy',
+      'original verified approval policy source is unavailable',
+    )
+  const facts = parsed.value
+  if (
+    facts.actionId !== action.actionId ||
+    facts.inputDigest !== actionInputDigest(action) ||
+    preparation.actionId !== action.actionId ||
+    preparation.inputDigest !== facts.inputDigest ||
+    preparation.approvalRequest.inputDigest !== facts.inputDigest ||
+    preparation.approvalRequest.actionRef !== action.actionId ||
+    !sameJson(
+      preparation.approvalRequest.scope,
+      ownerOf(
+        requireHead(ports, actionRecordId(action.actionId), 'action_absent', 'approval action unavailable'),
+      ).scope,
+    ) ||
+    facts.taint.runId !== guard.runId ||
+    !sameJson(facts.taint.captured, action.taintSnapshot) ||
+    !sameJson(facts.taint.current, taintOf(ports, guard.runId)) ||
+    digestOf(facts) !==
+      (preparation.policyFactsRef.kind === 'blob'
+        ? preparation.policyFactsRef.blob.digest
+        : preparation.policyFactsRef.digest)
+  )
+    refuse(
+      'conflict',
+      'approval_policy_source',
+      'approval policy facts differ from actual action or current State cutoff',
+    )
+  if (
+    !guard.readGuards.some(
+      (item) =>
+        item.recordId === taintRecordId(guard.runId) &&
+        item.expectedRecordRevision === facts.taint.current.recordRevision,
+    )
+  )
+    refuse('conflict', 'read_guard', 'approval cutoff has no original State read guard')
+  return facts
+}
+async function approvalControlTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  if (!validateRuntime('CommitControlRequest', request).ok)
+    refuse('invalid_input', 'approval_control', 'invalid approval control request')
+  const command = request.command
+  if (
+    command.kind !== 'prepare_authorization' &&
+    !(command.kind === 'authorize_action' && command.decision === 'ask')
+  )
+    refuse('internal', 'unsupported', CONTROL_COMMAND)
+  const loaded = approvalAction(ports, request, command.actionId, command.expectedActionRevision)
+  const creates: StoredRecord[] = []
+  const updates: RecordUpdate[] = []
+  const flushed = request.guard.queryUsage
+    ? planQueryFlush(ports, loaded.guarded.invocation, request.guard.queryUsage)
+    : undefined
+  if (flushed) {
+    const quotaHead = requireHead(
+      ports,
+      runQuotaRecordId(request.guard.runId),
+      'quota_absent',
+      'run quota record is missing',
+    )
+    updates.push(
+      updated(flushed.prepareHead, PREPARE_QUOTA_SCHEMA, ownerOf(flushed.prepareHead), flushed.prepare),
+      updated(flushed.grantHead, QUERY_GRANT_SCHEMA, ownerOf(flushed.grantHead), flushed.grant),
+      updated(
+        quotaHead,
+        RUN_QUOTA_SCHEMA,
+        ownerOf(quotaHead),
+        applyQueryDelta(storedValue(quotaHead), flushed.delta),
+      ),
+    )
+  }
+  if (command.kind === 'prepare_authorization') {
+    const preparation = command.preparation
+    if (Date.parse(preparation.approvalRequest.expiresAt) <= ports.now())
+      refuse('invalid_input', 'approval_expired', 'approval question is expired')
+    verifiedPreparationFacts(ports, preparation, loaded.action, request.guard)
+    const id = authorizationPreparationId(preparation.preparationId),
+      prior = ports.loadHead(id)
+    if (prior) {
+      if (
+        !sameJson(parseJson(prior.schema_json), AUTHORIZATION_PREPARATION_SCHEMA) ||
+        !sameJson(storedValue(prior), preparation) ||
+        !sameJson(ownerOf(prior), loaded.owner)
+      )
+        refuse('conflict', 'idempotency_conflict', 'original approval preparation differs')
+    } else creates.push(record(id, AUTHORIZATION_PREPARATION_SCHEMA, 1, loaded.owner, preparation))
+  } else {
+    const source = ports.verifyApprovalAsk?.(command, loaded.action, request.guard)
+    // The selected owner resolves the actual question to its original preparation identity.
+    if (!source)
+      refuse('incompatible', 'unproven_approval_ask', 'actual approval ask authority source is unavailable')
+    const interaction = validateRuntime('InteractionRecord', source.interaction),
+      decision = validateRuntime('PolicyDecision', source.decision)
+    if (!interaction.ok || !decision.ok || interaction.value.request.kind !== 'approval')
+      integrity('approval ask source is invalid')
+    const question = interaction.value.request
+    if (!validateRuntime('Id', source.preparationId).ok)
+      integrity('approval ask preparation identity is invalid')
+    const preparationHead = requireHead(
+      ports,
+      authorizationPreparationId(source.preparationId),
+      'approval_preparation_absent',
+      'ask original preparation is unavailable',
+    )
+    const parsedPreparation = validateRuntime('AuthorizationPreparation', storedValue(preparationHead))
+    if (
+      !sameJson(parseJson(preparationHead.schema_json), AUTHORIZATION_PREPARATION_SCHEMA) ||
+      !parsedPreparation.ok ||
+      parsedPreparation.value.actionId !== command.actionId ||
+      !sameJson(parsedPreparation.value.approvalRequest, question) ||
+      !sameJson(ownerOf(preparationHead), loaded.owner)
+    )
+      integrity('ask differs from its original immutable preparation')
+    const preparation = parsedPreparation.value
+    verifiedPreparationFacts(ports, preparation, loaded.action, request.guard)
+    const currentInteraction = interaction.value,
+      policy = decision.value
+    if (
+      currentInteraction.status !== 'pending' ||
+      currentInteraction.interactionId !== command.interactionId ||
+      currentInteraction.owner.runId !== request.guard.runId ||
+      currentInteraction.owner.actionId !== command.actionId ||
+      policy.decision !== 'ask' ||
+      policy.inputDigest !== preparation.inputDigest ||
+      policy.validUntil !== command.validUntil ||
+      Date.parse(command.validUntil) <= ports.now() ||
+      Date.parse(question.expiresAt) <= ports.now() ||
+      !sameJson(policy.scope, loaded.owner.scope) ||
+      !sameJson(policy.approvalSpec, question) ||
+      (command.decisionRef.kind === 'blob' ? command.decisionRef.blob.digest : command.decisionRef.digest) !==
+        digestOf(policy)
+    )
+      refuse(
+        'conflict',
+        'approval_ask_source',
+        'approval ask does not match the actual pending question or policy decision',
+      )
+    const id = approvalAskId(command.actionId, preparation.preparationId),
+      prior = ports.loadHead(id)
+    if (prior) refuse('conflict', 'approval_ask_exists', 'approval ask already exists with another request')
+    creates.push(
+      record(id, RuntimeMethodSchemaRefs['agh.state'].commitControl.input, 1, loaded.owner, request),
+    )
+    updates.push(
+      updated(loaded.head, ACTION_SCHEMA, loaded.owner, { ...loaded.action, state: 'awaiting-approval' }),
+    )
+  }
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      attestedCommitId(ports, request.commitId),
+      at(ports),
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      loaded.guarded.value.revision,
+    ),
+    creates,
+    updates,
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
 export async function commitControlTx(
   ports: ControlPorts,
   request: CommitControlRequest,
@@ -2001,6 +2315,11 @@ export async function commitControlTx(
     ports.assertReceipt(request.guard.sessionId, stored, fingerprint)
     return { result: stored, sessionId: request.guard.sessionId }
   }
+  if (
+    request.command.kind === 'prepare_authorization' ||
+    (request.command.kind === 'authorize_action' && request.command.decision === 'ask')
+  )
+    return approvalControlTx(ports, request, verified, fingerprint)
   if (request.command.kind !== 'mark_running') refuse('internal', 'unsupported', CONTROL_COMMAND)
   const command = request.command
   const guarded = assertGuard(ports, request.guard, 'follow')
@@ -2078,6 +2397,10 @@ export async function intakeReceiptTx(
   ports: ControlPorts,
   request: ReceiptIntakeRequest,
 ): Promise<Committed<ReceiptIntakeResult>> {
+  const checkedRequest = validateRuntime('ReceiptIntakeRequest', request)
+  if (!checkedRequest.ok)
+    refuse('invalid_input', 'receipt_intake', 'receipt intake does not match its schema')
+  request = checkedRequest.value
   assertNoHookHandling(request.resultHandling.kind)
   const actionHead = requireHead(
     ports,
@@ -2096,7 +2419,24 @@ export async function intakeReceiptTx(
     request.intakeId,
     fingerprint,
   )
-  if (replayed) return { result: replayed, sessionId: loaded.value.sessionId }
+  if (replayed) {
+    const head = requireHead(
+      ports,
+      receiptRecordId(request.receipt.receiptId),
+      'receipt_absent',
+      'accepted receipt source is missing',
+    )
+    const originalIntakeId = acceptedIntakeId(head, request, fingerprint)
+    if (replayed.intakeId !== originalIntakeId)
+      integrity('receipt replay identity differs from its original source')
+    return {
+      result: {
+        intakeId: originalIntakeId,
+        state: request.intakeId === originalIntakeId ? 'accepted' : 'duplicate',
+      },
+      sessionId: loaded.value.sessionId,
+    }
+  }
   const attemptHead = requireHead(
     ports,
     attemptRecordId(request.receipt.attemptId),
@@ -2106,16 +2446,16 @@ export async function intakeReceiptTx(
   const attempt = storedValue<AttemptValue>(attemptHead)
   const receiptHead = ports.loadHead(receiptRecordId(request.receipt.receiptId))
   if (receiptHead) {
-    const stored = storedValue<StoredReceiptValue>(receiptHead)
-    if (stored.contentFingerprint !== fingerprint || !stored.intakeId)
-      refuse('conflict', 'receipt_conflict', 'receipt was already accepted with different content')
+    const originalIntakeId = acceptedIntakeId(receiptHead, request, fingerprint)
     assertLiveEpoch(ports, loaded.value.sessionId, attempt.writerEpoch)
     const original = ports.replayRequest<Remembered<ReceiptIntakeResult>>(
       'intakeReceipt',
-      stored.intakeId,
+      originalIntakeId,
       fingerprint,
     )
-    if (!original) integrity('stored receipt intake is missing')
+    if (!original || original.receipt.commitId !== receiptHead.last_commit_id)
+      integrity('stored receipt intake is missing')
+    ports.assertReceipt(loaded.value.sessionId, original.receipt, fingerprint)
     const result: ReceiptIntakeResult = { intakeId: original.result.intakeId, state: 'duplicate' }
     ports.rememberRequest('intakeReceipt', request.intakeId, fingerprint, {
       result,
@@ -2146,7 +2486,11 @@ export async function intakeReceiptTx(
   if (request.sourceAuthorizationRef !== attempt.authorizationRef)
     refuse('conflict', 'authorization', 'source authorization does not match the attempt')
   for (const fact of request.usage) {
-    if (fact.actionId !== action.actionId || fact.attemptId !== attempt.attemptId)
+    if (
+      fact.actionId !== action.actionId ||
+      fact.attemptId !== attempt.attemptId ||
+      !request.receipt.usageRefs.includes(fact.usageId)
+    )
       refuse('invalid_input', 'usage', 'usage fact does not match the attempt')
   }
   const lease = loadLease(ports, loaded.value.sessionId)
@@ -2170,8 +2514,7 @@ export async function intakeReceiptTx(
     usage: request.usage,
     evidence: request.evidence,
     acceptedBy: lease.writer_id,
-    intakeId: request.intakeId,
-    contentFingerprint: fingerprint,
+    intakeRequest: request,
     actionHead,
     attemptHead,
     includeReceipt: true,
@@ -2480,7 +2823,14 @@ type AdmissionNote = {
   result: DispatchAdmissionResult
 }
 
-type ReceiptOutcome = { outcome: string; actionId: string; errorCode: string | null }
+type ReceiptOutcome = {
+  outcome: string
+  actionId: string
+  attemptId: string
+  producer: unknown
+  authorityId: string
+  errorCode: string | null
+}
 
 type ViewNote = {
   revision: number
@@ -2506,7 +2856,15 @@ export type ControlScan = {
   admissions: Map<string, AdmissionNote>
   quotas: Map<string, QuotaNote>
   views: Map<string, ViewNote>
+  interactionSources: Map<string, { record: InteractionRecord; owner: RecordOwner; commitId: string }>
+  approvalInboxes: Map<string, { recordId: string; value: InboxRecord; owner: RecordOwner; commitId: string }>
+  approvalSignals: Map<string, { signal: Signal; owner: RecordOwner; commitId: string }>
   signalsByReceipt: Set<string>
+  signalSources: Map<string, { receiptId: string; commitId: string; authorityId: string; signal: Signal }>
+  outboxSources: Map<
+    string,
+    { receiptId: string; commitId: string; authorityId: string; value: StoredOutbox }
+  >
   signalConsumed: Map<string, number>
   outboxes: Map<string, string>
   outboxSides: Map<string, string>
@@ -2523,6 +2881,8 @@ export type ControlVersionNote = {
   record_revision: number
   commit_id: string
   value_json: string
+  owner_json?: string
+  event_id?: string
 }
 
 export type ControlEvidence = {
@@ -2549,7 +2909,12 @@ export function createControlScan(): ControlScan {
     quotas: new Map(),
     receiptOutcomes: new Map(),
     views: new Map(),
+    interactionSources: new Map(),
+    approvalInboxes: new Map(),
+    approvalSignals: new Map(),
     signalsByReceipt: new Set(),
+    signalSources: new Map(),
+    outboxSources: new Map(),
     signalConsumed: new Map(),
     outboxes: new Map(),
     outboxSides: new Map(),
@@ -2590,7 +2955,9 @@ function noteLatest<T extends { revision: number }>(map: Map<string, T>, id: str
 
 export function noteControlVersion(scan: ControlScan, version: ControlVersionNote): void {
   const id = version.record_id
-  if (id.startsWith('action:')) noteActionVersion(scan, version)
+  if (id.startsWith('interaction:')) noteApprovalInteractionVersion(scan, version)
+  else if (id.startsWith('approval-inbox-')) noteApprovalInboxVersion(scan, version)
+  else if (id.startsWith('action:')) noteActionVersion(scan, version)
   else if (id.startsWith('attempt:')) noteAttemptVersion(scan, version)
   else if (id.startsWith('dispatch:')) noteAdmissionVersion(scan, version)
   else if (id.startsWith('receipt:')) noteReceiptVersion(scan, version)
@@ -2669,6 +3036,11 @@ function noteReceiptVersion(scan: ControlScan, version: ControlVersionNote): voi
   scan.receiptOutcomes.set(receiptId, {
     outcome: typeof receiptRecord?.outcome === 'string' ? receiptRecord.outcome : '',
     actionId: typeof receiptRecord?.actionId === 'string' ? receiptRecord.actionId : '',
+    attemptId: typeof receiptRecord?.attemptId === 'string' ? receiptRecord.attemptId : '',
+    producer: objectRecord(receiptRecord?.provenance)?.producer,
+    authorityId: version.owner_json
+      ? (parseJson(version.owner_json) as RecordOwner).authority.authorityId
+      : '',
     errorCode: errorCodeOf(receiptRecord?.error),
   })
 }
@@ -2728,11 +3100,98 @@ function noteVisibilityVersion(scan: ControlScan, version: ControlVersionNote): 
   })
 }
 
+function inlineSourcePayload(value: unknown): Record<string, unknown> {
+  const checked = validateRuntime('DataRef', value)
+  if (
+    !checked.ok ||
+    checked.value.kind !== 'inline' ||
+    checked.value.digest !== digestOf(checked.value.value) ||
+    checked.value.bytes !== Buffer.byteLength(canonicalJson(checked.value.value))
+  )
+    integrity('publication source payload is not a canonical inline reference')
+  const body = objectRecord(checked.value.value)
+  if (!body) integrity('publication source payload is not an object')
+  return body
+}
+
+function sourceAuthority(version: ControlVersionNote): string {
+  if (!version.owner_json) integrity('publication source has no physical owner')
+  const checked = validateRuntime('RecordOwner', parseJson(version.owner_json))
+  if (!checked.ok) integrity('publication source owner is invalid')
+  return checked.value.authority.authorityId
+}
+
+function approvalVersionOwner(version: ControlVersionNote): RecordOwner {
+  if (!version.owner_json) integrity('approval source has no physical owner')
+  const owner = validateRuntime('RecordOwner', parseJson(version.owner_json))
+  if (!owner.ok) integrity('approval source owner is invalid')
+  return owner.value
+}
+function noteApprovalInteractionVersion(scan: ControlScan, version: ControlVersionNote): void {
+  const checked = validateRuntime('InteractionRecord', parseJson(version.value_json))
+  if (!checked.ok || version.record_id !== `interaction:${checked.value.interactionId}`)
+    integrity('approval domain source record identity differs')
+  const key = `${checked.value.interactionId}@${checked.value.version}`,
+    prior = scan.interactionSources.get(key)
+  if (prior && (prior.commitId !== version.commit_id || !sameJson(prior.record, checked.value)))
+    integrity('approval domain version has conflicting original sources')
+  scan.interactionSources.set(key, {
+    record: checked.value,
+    owner: approvalVersionOwner(version),
+    commitId: version.commit_id,
+  })
+}
+function noteApprovalInboxVersion(scan: ControlScan, version: ControlVersionNote): void {
+  if (version.record_revision !== 1) integrity('approval inbox immutable source was rewritten')
+  const checked = validateRuntime('InboxRecord', parseJson(version.value_json))
+  if (!checked.ok || checked.value.appliedCommitId !== version.commit_id)
+    integrity('approval inbox source commit differs')
+  if (scan.approvalInboxes.has(version.record_id)) integrity('approval inbox source is duplicated')
+  scan.approvalInboxes.set(version.record_id, {
+    recordId: version.record_id,
+    value: checked.value,
+    owner: approvalVersionOwner(version),
+    commitId: version.commit_id,
+  })
+}
+
 function noteSignalVersion(scan: ControlScan, version: ControlVersionNote): void {
   const body = bodyRecord(version.value_json)
-  const sourceReceiptId = typeof body.sourceReceiptId === 'string' ? body.sourceReceiptId : ''
-  if (sourceReceiptId !== '') scan.signalsByReceipt.add(sourceReceiptId)
   const signal = objectRecord(body.signal)
+  if (version.record_revision === 1) {
+    const payload = inlineSourcePayload(signal?.payload)
+    if (sameJson(signal?.schema, INTERACTION_SCHEMA)) {
+      const checked = validateRuntime('Signal', signal),
+        interaction = validateRuntime('InteractionRecord', payload)
+      if (
+        !checked.ok ||
+        !interaction.ok ||
+        !sameJson(checked.value.payload.schema, INTERACTION_SCHEMA) ||
+        checked.value.typeId !== INTERACTION_SCHEMA.typeId ||
+        version.record_id !== signalRecordId(checked.value.signalId)
+      )
+        integrity('approval wake signal source is invalid')
+      scan.approvalSignals.set(version.record_id, {
+        signal: checked.value,
+        owner: approvalVersionOwner(version),
+        commitId: version.commit_id,
+      })
+    } else {
+      const receiptId = typeof payload.receiptId === 'string' ? payload.receiptId : ''
+      if (receiptId === '' || (body.sourceReceiptId !== undefined && body.sourceReceiptId !== receiptId))
+        integrity('signal source receipt does not match its payload')
+      const checked = validateRuntime('Signal', signal)
+      if (!checked.ok || version.record_id !== signalRecordId(checked.value.signalId))
+        integrity('signal source record is invalid')
+      scan.signalsByReceipt.add(receiptId)
+      scan.signalSources.set(version.record_id, {
+        receiptId,
+        commitId: version.commit_id,
+        authorityId: sourceAuthority(version),
+        signal: checked.value,
+      })
+    }
+  }
   const target = signal?.targetActionId
   const seq = wholeNumber(signal?.seq)
   noteLatest(scan.signalHeads, version.record_id, {
@@ -2748,13 +3207,42 @@ function noteOutboxVersion(scan: ControlScan, version: ControlVersionNote): void
   const body = bodyRecord(version.value_json)
   const eventId = typeof body.eventId === 'string' ? body.eventId : version.record_id.slice('outbox:'.length)
   scan.outboxes.set(eventId, version.commit_id)
+  const payload = inlineSourcePayload(body.payload)
+  const receiptId = typeof payload.receiptId === 'string' ? payload.receiptId : ''
+  if (
+    receiptId === '' ||
+    body.sourceCommitId !== version.commit_id ||
+    (body.sourceReceiptId !== undefined && body.sourceReceiptId !== receiptId) ||
+    body.fingerprint !== digestOf(payload)
+  )
+    integrity('outbox source receipt does not match its payload')
+  scan.outboxSources.set(eventId, {
+    receiptId,
+    commitId: version.commit_id,
+    authorityId: sourceAuthority(version),
+    value: body as StoredOutbox,
+  })
 }
 
 function noteUsageVersion(scan: ControlScan, version: ControlVersionNote): void {
   if (version.record_revision !== 1) return
   const body = bodyRecord(version.value_json)
-  const authorityId = typeof body.sourceAuthorityId === 'string' ? body.sourceAuthorityId : ''
-  const originKey = typeof body.originKey === 'string' ? body.originKey : ''
+  const authority = objectRecord(body.sourceAuthorityRef)
+  const usage = objectRecord(body.usage)
+  const authorityId =
+    typeof authority?.authorityId === 'string'
+      ? authority.authorityId
+      : typeof body.sourceAuthorityId === 'string'
+        ? body.sourceAuthorityId
+        : ''
+  if (authority && (body.sourceEventId !== version.event_id || authorityId !== sourceAuthority(version)))
+    integrity('usage source is not its actual State event')
+  const originKey =
+    typeof usage?.originKey === 'string'
+      ? usage.originKey
+      : typeof body.originKey === 'string'
+        ? body.originKey
+        : ''
   scan.usages.set(`${authorityId}\0${originKey}`, version.commit_id)
 }
 
@@ -2837,6 +3325,106 @@ function assertRejectionPublished(scan: ControlScan, commitId: string, receiptId
 }
 
 function assertPublication(scan: ControlScan): void {
+  for (const source of scan.approvalSignals.values()) {
+    const signal = source.signal,
+      payload = validateRuntime('InteractionRecord', inlineSourcePayload(signal.payload))
+    if (!payload.ok || payload.value.status !== 'answered')
+      integrity('approval wake has no actual answered domain source')
+    const record = payload.value,
+      key = `${record.interactionId}@${record.version}`,
+      domain = scan.interactionSources.get(key)
+    if (
+      !domain ||
+      domain.commitId !== source.commitId ||
+      !sameJson(domain.record, record) ||
+      signal.causation.interactionId !== record.interactionId ||
+      signal.causation.externalEventId !== key ||
+      signal.causation.actionId !== record.owner.actionId ||
+      signal.targetActionId !== record.owner.actionId ||
+      signal.runId !== record.owner.runId ||
+      !sameJson(signal.source, domain.owner.ownerBinding)
+    )
+      integrity('approval wake differs from its original Interaction domain commit')
+    const consumerId = source.owner.ownerBinding.bindingId
+    const inboxId = stableId(
+        'approval-inbox',
+        canonicalJson({
+          authority: domain.owner.authority,
+          binding: domain.owner.ownerBinding,
+          scope: domain.owner.scope,
+          id: key,
+        }),
+      ),
+      inbox = scan.approvalInboxes.get(inboxId)
+    const fingerprint = digestOf({
+      deliveryKey: key,
+      interactionId: record.interactionId,
+      owner: record.owner,
+      version: record.version,
+      status: record.status,
+      responseId: record.resolution.responseId,
+    })
+    if (
+      !inbox ||
+      inbox.commitId !== source.commitId ||
+      !sameJson(inbox.owner, source.owner) ||
+      inbox.value.sourceAuthorityId !== domain.owner.authority.authorityId ||
+      inbox.value.eventId !== key ||
+      inbox.value.consumerId !== consumerId ||
+      inbox.value.fingerprint !== fingerprint ||
+      !sameJson(inbox.value.acknowledgement, signal.payload) ||
+      signal.signalId !==
+        stableId(
+          'approval-signal',
+          canonicalJson({ sourceAuthorityId: domain.owner.authority.authorityId, eventId: key, consumerId }),
+        )
+    )
+      integrity('approval wake has no matching original inbox application proof')
+  }
+
+  for (const source of scan.signalSources.values()) {
+    const receipt = scan.receiptOutcomes.get(source.receiptId)
+    const signal = source.signal
+    const targetKey = signal.targetActionId === null ? 'run' : signal.targetActionId
+    if (
+      !receipt ||
+      scan.receiptSides.get(source.receiptId) !== source.commitId ||
+      receipt.authorityId !== source.authorityId ||
+      signal.signalId !== stableId('sig', `${source.authorityId}\0${source.receiptId}\0${targetKey}`) ||
+      signal.causation.actionId !== receipt.actionId ||
+      signal.causation.attemptId !== receipt.attemptId ||
+      !sameJson(signal.source, receipt.producer) ||
+      !sameJson(signal.schema, signal.payload.schema) ||
+      inlineSourcePayload(signal.payload).outcome !== receipt.outcome
+    )
+      integrity('signal source is not the receipt in its original commit')
+  }
+  for (const [eventId, source] of scan.outboxSources) {
+    const receipt = scan.receiptOutcomes.get(source.receiptId),
+      value = source.value
+    const payload = inlineSourcePayload(value.payload)
+    const suffix =
+      value.typeId === RESULT_TYPE
+        ? `result\0${source.receiptId}`
+        : value.typeId === STREAM_END_TYPE && typeof payload.streamId === 'string'
+          ? `stream-end\0${source.receiptId}\0${payload.streamId}`
+          : undefined
+    if (
+      !receipt ||
+      scan.receiptSides.get(source.receiptId) !== source.commitId ||
+      receipt.authorityId !== source.authorityId ||
+      value.sourceAuthorityId !== source.authorityId ||
+      suffix === undefined ||
+      eventId !== stableId('obx', `${source.commitId}\0${suffix}`) ||
+      value.destination !== stableId('obxdst', source.authorityId) ||
+      (value.typeId === RESULT_TYPE &&
+        (payload.actionId !== receipt.actionId ||
+          payload.attemptId !== receipt.attemptId ||
+          payload.outcome !== receipt.outcome)) ||
+      (value.typeId === STREAM_END_TYPE && payload.status !== receipt.outcome)
+    )
+      integrity('outbox source is not the receipt in its original commit')
+  }
   for (const count of scan.signalConsumed.values()) {
     if (count > 1) integrity('signal was consumed more than once')
   }

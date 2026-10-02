@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import {
   canonicalJsonDigest,
   defineGeneratedAuthorSchema,
@@ -5,6 +6,8 @@ import {
   runtimeAuthorSchemas,
 } from '@agnes/extension-api/runtime'
 import { describe, expect, it } from 'vitest'
+import { validateRuntime } from '../../../protocol/src/runtime/public.js'
+import { normalizeAuthorSchemaDocument } from '../../../protocol/tools/author-schema-document.js'
 
 function codec() {
   return defineGeneratedAuthorSchema<Readonly<{ message: string }>>({
@@ -72,6 +75,30 @@ describe('generated author codecs', () => {
     expect(encoded.value.digest).toBe(canonicalJsonDigest({ message: '😀' }))
     expect(schema.parse({ message: 1 }).ok).toBe(false)
     expect(schema.parse({ message: 'okay', extra: true }).ok).toBe(false)
+  })
+  it('consumes the canonical empty authority with a scoped codec through the formal DataRef validator', () => {
+    const document = normalizeAuthorSchemaDocument(
+      JSON.parse(
+        readFileSync(
+          new URL('../../../protocol/schema/runtime/empty-config.schema.json', import.meta.url),
+          'utf8',
+        ),
+      ),
+      'RuntimeEmptyConfig',
+    )
+    const schema = defineGeneratedAuthorSchema<Record<string, never>>({
+      ownerPackageId: '@example/plugin',
+      name: 'RuntimeEmptyConfig',
+      typeId: '@example/plugin/runtime-empty@1',
+      revision: 1,
+      document,
+    })
+    const encoded = schema.encode({})
+    if (!encoded.ok) throw new Error('empty encode failed')
+    expect(validateRuntime('SchemaRef', schema.ref).ok).toBe(true)
+    expect(validateRuntime('DataRef', encoded.value).ok).toBe(true)
+    expect(schema.parse({ extra: true }).ok).toBe(false)
+    expect(schema.ref.typeId).toBe('@example/plugin/runtime-empty@1')
   })
   it('fails oversized encoding without manufacturing Blob references or doing IO', () => {
     const schema = codec(),
