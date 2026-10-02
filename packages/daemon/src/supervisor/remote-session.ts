@@ -82,7 +82,12 @@ export class RemoteSession {
     o.signal.addEventListener('abort', onAbort, { once: true })
     let completed = false
     try {
-      const result = (await this.link.command('run', { runId, until: o.until })) as {
+      const running = this.link.command('run', { runId, until: o.until })
+      // A cancel that landed while the prompt was still being enqueued fired before the listener
+      // above existed, and an abort event is never replayed. Deliver it now, behind the run frame
+      // it refers to, or the turn would never hear it and a second cancel could not help either.
+      if (o.signal.aborted) onAbort()
+      const result = (await running) as {
         reason: string
         lastSeq: number
         error?: unknown
