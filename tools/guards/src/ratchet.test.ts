@@ -1394,7 +1394,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Workspace and file contract cases join the aggregate. Measured 3634, exact, no spare.
   // Merged with the aggregate contract exports and the workspace and files cases on the integration
   // base. Measured 4894, exact, no spare.
-  'packages/extension-api/testkit': 4894,
+  // Projection contract cases join the contract aggregate, which keeps the blob callContext helper.
+  // Measured 4896, exact, no spare.
+  'packages/extension-api/testkit': 4896,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
