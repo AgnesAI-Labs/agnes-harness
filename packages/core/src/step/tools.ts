@@ -956,6 +956,9 @@ export async function approveAndExecute(
     firstDispatchCommitted = call.executionDomain === 'workspace'
   }
   const timeoutMs = s.preset.tools.timeouts[call.name] ?? s.preset.tools.timeoutMs
+  // The tool is told a limit a grace short of the one enforced below, so a tool that honours it can
+  // return its own result (partial output, the cause) before the kernel cuts the call off.
+  const softTimeoutMs = timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10))
   const ac = new AbortController()
   const nestedParks: EventInput[] = []
   const onAbort = () => ac.abort()
@@ -1012,7 +1015,7 @@ export async function approveAndExecute(
           toolUseId: call.toolUseId,
           name: call.name,
           signal: ac.signal,
-          timeoutMs,
+          timeoutMs: softTimeoutMs,
           outputMaxBytes: s.preset.tools.outputMaxBytes,
         },
       )

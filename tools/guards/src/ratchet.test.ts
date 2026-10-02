@@ -942,7 +942,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // tool as `ctx.outputMaxBytes`. Measured 25723 (+8), exact cap without spare allocation.
   // A mutating tool cut short by its deadline or a cancel names that cause in its unknown-outcome result
   // text instead of reading as a lost transport. Measured 25741 (+18), exact cap.
-  'packages/core/src': 25741,
+  // The soft deadline handed to a tool is a grace short of the kernel cut-off. Measured 25742 (+1), exact cap.
+  'packages/core/src': 25742,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

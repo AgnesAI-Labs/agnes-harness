@@ -82,7 +82,10 @@ export const readTool = (
   }) as never
 
 export const shellTool = (
-  fn: (args: unknown) => Promise<{ content: Array<{ type: 'text'; text: string }> }> = async () => ({
+  fn: (
+    args: unknown,
+    ctx: ToolContext,
+  ) => Promise<{ content: Array<{ type: 'text'; text: string }> }> = async () => ({
     content: [{ type: 'text' as const, text: 'ran' }],
   }),
 ) =>
