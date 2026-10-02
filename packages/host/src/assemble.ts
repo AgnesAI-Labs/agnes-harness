@@ -137,6 +137,7 @@ import { serviceInvoker } from './ext-host/service-invocation.js'
 import { ServiceRegistry } from './ext-host/services.js'
 import { ExtensionSessions } from './ext-host/session-bindings.js'
 import { Rollback } from './lifecycle.js'
+import { ownStateRoots } from './paths.js'
 import { resolvePreset } from './presets/resolve.js'
 import type { PresetDoc } from './presets/types.js'
 import { createPrivateArtifactStore } from './private-artifact-store.js'
@@ -480,6 +481,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const adapters = await openAdapters(profile, {
       dataDir,
       skillReadRoots: () => skillReadRoots(),
+      fullAccessReadOnlyRoots: () =>
+        ownStateRoots({
+          profileDir: deps.profileDir,
+          dataDir,
+          secretsDir: profile.adapters.secrets.path,
+        }),
       modules,
       signal: ac.signal,
       workspaceRoot,

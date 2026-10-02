@@ -213,6 +213,18 @@ describe('Task 5 production workspace acceptance', () => {
       await expect(invocation.run((view) => view.fs().read('.git/config'))).rejects.toMatchObject({
         code: 'E_FS_DENIED',
       })
+      // The test home is the workspace, so its profiles are inside the allow rule; full access still
+      // reads them but may not rewrite them.
+      const profileYaml = join(root, 'profiles', 'local-dev', 'profile.yaml')
+      mkdirSync(join(root, 'profiles', 'local-dev'), { recursive: true })
+      writeFileSync(profileYaml, 'name: local-dev\n')
+      await expect(invocation.run((view) => view.fs().read(profileYaml))).resolves.toEqual(
+        new TextEncoder().encode('name: local-dev\n'),
+      )
+      await expect(
+        invocation.run((view) => view.fs().write(profileYaml, new TextEncoder().encode('approvals: off'))),
+      ).rejects.toMatchObject({ code: 'E_FS_DENIED', message: expect.stringContaining('denied by policy') })
+      expect(readFileSync(profileYaml, 'utf8')).toBe('name: local-dev\n')
       const saved = await invocation.run((view) => view.checkpointContext().snapshot([path], 'external'))
       const allowed = await results(session)
       expect(allowed).toHaveLength(calls.length)

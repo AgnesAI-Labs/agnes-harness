@@ -1174,8 +1174,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
-  // A returning package must not be served a cached generation bound to revoked leases. Measured 4200, exact (+7).
-  'packages/host/src/assemble': 4200,
+  // A returning package must not be served a cached generation bound to revoked leases (+7), and the full-access
+  // read-only roots reach the fence from the assembly (+7). Combined, measured 4207, exact, no spare.
+  'packages/host/src/assemble': 4207,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2171,8 +2172,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // MCP catalog validation skips each tool the model cannot be shown and reports it in the catalog
   // info instead of failing the server. Measured 932, exact, no spare (+60).
   // MCP result text is capped at what read can give back (4 MiB per call) and a stored multi-block
-  // set carries its whole locator. Measured 980, exact, no spare (+48).
-  'packages/base/src/mcp': 980,
+  // set carries its whole locator (+48), and a stray stdout line no longer drops the connection (+2).
+  // Combined, measured 982, exact, no spare.
+  'packages/base/src/mcp': 982,
   // 2026-09-12: I7 Base Tasks 34/35 introduce the privacy extension. Its first slice measures 214
   // counted lines; the universal fixed extension ceiling remains 800 rather than growing Base.
   'packages/base/extensions/privacy': 800,
@@ -2521,8 +2523,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
   // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9).
-  // Generation views are pruned before each candidate builds its session views. Measured 38319, exact (+13).
-  'packages/host/src': 38319,
+  // Generation views are pruned before each candidate builds its session views (+13), and installation state stays
+  // read-only under full file access: the fence guard, the roots helper and their wiring (+40). Combined, measured 38359, exact.
+  'packages/host/src': 38359,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2687,7 +2690,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Cancelling a child's creation also settles its execution state in the same statement. Measured
   // 5017, exact, no spare (+3).
   // First-cause timedOut in exec and exec-win32. Measured 5034 (+9), exact cap.
-  'packages/host/src/adapters': 5034,
+  // The fence refuses writes to the installation's own state under full file access. Measured 5053,
+  // exact, no spare (+19).
+  'packages/host/src/adapters': 5053,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
