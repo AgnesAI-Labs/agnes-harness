@@ -1,5 +1,5 @@
 import { checkToolDef } from '@agnes/extension-api'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { OUTPUT_LIMITS } from '../src/guards/output.js'
 import { SHELL_SENTINEL, shellTool } from '../src/tools/shell.js'
@@ -166,6 +166,103 @@ describe('shell does not widen what it executes', () => {
       expect(ctx.calls.execOpts[before]?.timeoutMs, String(t)).toBe(1000)
     }
   })
+})
+
+// The executor's own deadline is the first cause when it says so. The model is told what was captured,
+// how long the limit was, that the processes were killed, and what it can do about it; there is no
+// exit line, because the exit code of a killed command says nothing and the UI reads `[exit N]` last.
+describe('shell timeout', () => {
+  afterEach(() => vi.restoreAllMocks())
+  const marker = (ms: number): string =>
+    `[timed out after ${ms}ms: the command and the processes it started were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`
+
+  it.each([
+    ['the captured output, then the marker', { code: -1, stdout: 'part', stderr: '' }, 'part\n'],
+    ['stderr before the marker', { code: -1, stdout: 'o', stderr: 'e' }, 'o\n[stderr]\ne\n'],
+    ['no output at all, just the marker', { code: -1, stdout: '', stderr: '' }, ''],
+    [
+      'the marker even when the command trapped the kill and exited 0',
+      { code: 0, stdout: 'x', stderr: '' },
+      'x\n',
+    ],
+    [
+      'a sandbox truncation note before the marker',
+      { code: -1, stdout: 'x', stderr: '', truncated: true },
+      'x\n[output truncated by sandbox]\n',
+    ],
+  ])('reports %s', async (_name, result, before) => {
+    const ctx = fakeToolContext({ timeoutMs: 1000, exec: () => ({ ...result, timedOut: true }) })
+    const r = await shellTool.execute({ command: 'sleep 9' }, ctx)
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toBe(`${before}${marker(1000)}`)
+    expect(textOf(r)).not.toMatch(/\[exit /)
+    expect(textOf(r)).not.toContain('background=true')
+  })
+
+  it('names the limit that was actually passed to the executor', async () => {
+    const ctx = fakeToolContext({
+      timeoutMs: 1000,
+      exec: () => ({ code: -1, stdout: '', stderr: '', timedOut: true }),
+    })
+    const r = await shellTool.execute({ command: 'sleep 9', timeoutMs: 250 }, ctx)
+    expect(textOf(r)).toContain('[timed out after 250ms:')
+  })
+
+  it('keeps the marker last when long output is cut by the guard', async () => {
+    const ctx = fakeToolContext({
+      timeoutMs: 1000,
+      exec: () => ({ code: -1, stdout: 'z'.repeat(OUTPUT_LIMITS.maxBytes + 1), stderr: '', timedOut: true }),
+    })
+    const text = textOf(await shellTool.execute({ command: 'yes' }, ctx))
+    expect(text).toContain('[truncated')
+    expect(text.endsWith(marker(1000))).toBe(true)
+  })
+
+  it('does not call a command that finished on its own a timeout', async () => {
+    const ctx = fakeToolContext({
+      timeoutMs: 1000,
+      exec: () => ({ code: 2, stdout: 'o', stderr: '', timedOut: false }),
+    })
+    const r = await shellTool.execute({ command: 'false' }, ctx)
+    expect(textOf(r)).toBe('o\n[exit 2]')
+  })
+
+  it('trusts an executor that says the deadline was not the cause, however long the call took', async () => {
+    let now = 5000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const ctx = fakeToolContext({
+      timeoutMs: 1000,
+      exec: () => {
+        now += 1000
+        return { code: -1, stdout: 'o', stderr: '', timedOut: false }
+      },
+    })
+    expect(textOf(await shellTool.execute({ command: 'x' }, ctx))).toBe('o\n[exit -1]')
+  })
+
+  // An exec that never says (a third-party seam, an older host) still has the kernel's cut-off behind
+  // it, so a killed-looking result that took the whole limit is read as the timeout it was.
+  it.each([
+    ['killed after the whole limit', -1, 1000, true],
+    ['killed early by something else', -1, 10, false],
+    ['a late ordinary failure', 2, 1000, false],
+    ['a late success', 0, 1000, false],
+  ])(
+    'infers a timeout only when the field is absent and the result looks like one: %s',
+    async (_name, code, took, expected) => {
+      let now = 5000
+      vi.spyOn(Date, 'now').mockImplementation(() => now)
+      const ctx = fakeToolContext({
+        timeoutMs: 1000,
+        exec: () => {
+          now += took
+          return { code, stdout: 'o', stderr: '' }
+        },
+      })
+      const r = await shellTool.execute({ command: 'x' }, ctx)
+      expect(textOf(r).includes('[timed out after 1000ms:')).toBe(expected)
+    },
+  )
 })
 
 describe('shell background jobs', () => {
