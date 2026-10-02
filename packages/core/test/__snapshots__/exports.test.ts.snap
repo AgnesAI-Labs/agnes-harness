@@ -67,6 +67,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "contextWindowFor",
   "createAuxiliaryVisionEffectPort",
   "createEnvelopeCache",
+  "createInteractionAuthority",
   "createWorkspaceInvocationPort",
   "decideFsPath",
   "defaultIds",

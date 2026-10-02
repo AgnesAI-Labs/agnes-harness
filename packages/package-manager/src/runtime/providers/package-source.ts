@@ -1,8 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import type { RuntimeWireTypes } from '@agnes/protocol/runtime'
 import {
   acceptWire,
@@ -13,7 +12,6 @@ import {
   hasPartialArchive,
   type IdentifiedPackage,
   identifyPackage,
-  installedDir,
   manifestDataRef,
   PACKAGE_SOURCE_CONTRACT,
   type PackageOutcome,
@@ -763,58 +761,4 @@ function admitGit(
   return { ok: true, value: null }
 }
 
-function holdFetch(cacheDir: string, treeDigest: string, bytesFile: string): void {
-  const bytes = readFileSync(bytesFile)
-  writePartialArchive(
-    cacheDir,
-    treeDigest,
-    bytes.subarray(0, Math.min(8, bytes.length)),
-    DEFAULT_SOURCE_PROVIDER_ID,
-  )
-  process.stdout.write('READY\n')
-  setInterval(() => undefined, 1000)
-}
-
-function recoverFetch(cacheDir: string, treeDigest: string, bytesFile: string): void {
-  const bytes = readFileSync(bytesFile)
-  writeVerifiedArchive(cacheDir, treeDigest, bytes, DEFAULT_SOURCE_PROVIDER_ID)
-  if (existsSync(installedDir(cacheDir))) {
-    process.stderr.write('installed package appeared\n')
-    process.exitCode = 1
-    return
-  }
-  process.stdout.write(`STAGED ${treeDigest} ${sha256Hex(bytes)}\n`)
-}
-
-function invokedDirectly(): boolean {
-  const entry = process.argv[1]
-  if (entry === undefined) return false
-  return import.meta.url === pathToFileURL(entry).href
-}
-
-if (invokedDirectly()) {
-  const command = process.argv[2]
-  const cacheDir = process.argv[3]
-  const treeDigest = process.argv[4]
-  const bytesFile = process.argv[5]
-  if (
-    command === 'hold-fetch' &&
-    cacheDir !== undefined &&
-    treeDigest !== undefined &&
-    bytesFile !== undefined
-  ) {
-    holdFetch(cacheDir, treeDigest, bytesFile)
-  } else if (
-    command === 'recover-fetch' &&
-    cacheDir !== undefined &&
-    treeDigest !== undefined &&
-    bytesFile !== undefined
-  ) {
-    recoverFetch(cacheDir, treeDigest, bytesFile)
-  } else {
-    process.stderr.write('unknown package source command\n')
-    process.exitCode = 1
-  }
-}
-
-export { installedDir }
+export { installedDir } from '../source-snapshot.js'

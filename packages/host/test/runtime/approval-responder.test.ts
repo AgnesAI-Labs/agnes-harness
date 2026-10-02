@@ -61,17 +61,18 @@ async function fixture() {
     () => sourceLive,
   )
   close.push(() => authority.close())
+  const fixtureSigningKey = Buffer.from('isolated test signing material')
   const header = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url')
   const body = Buffer.from(JSON.stringify({ iss: 'fixture', sub: 'person', exp: now / 1000 + 60 })).toString(
     'base64url',
   )
   const input = `${header}.${body}`
-  const token = `${input}.${createHmac('sha256', 'fixture-jwt-secret').update(input).digest('base64url')}`
+  const token = `${input}.${createHmac('sha256', fixtureSigningKey).update(input).digest('base64url')}`
   const verified = verifyIdentityJwt(token, {
     now: () => now,
     generation: 'source-generation',
     nonces: createIdentityNonceOwner(db),
-    jwt: { issuer: 'fixture', secret: 'fixture-jwt-secret' },
+    jwt: { issuer: 'fixture', secret: fixtureSigningKey.toString() },
   })
   if (!verified.ok) throw new Error('real jwt refused')
   const lifetime = new AbortController()

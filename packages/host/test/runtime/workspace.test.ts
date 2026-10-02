@@ -3,9 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
+import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
+import { inlineData } from '../../src/runtime/maintenance/authority-publication.js'
+import {
+  createAuthorityDirectoryProvider,
+  createDirectoryAnchor,
+} from '../../src/runtime/providers/authority-directory.js'
 import { createWorkspaceService } from '../../src/runtime/providers/workspace.js'
-import { openWorkspaceStore, runtimeError } from '../../src/runtime/workspace-leases.js'
+import { openWorkspaceStore } from '../../src/runtime/workspace-leases.js'
 
 const roots: string[] = []
 
@@ -218,68 +224,117 @@ describe('workspace leases', () => {
     reopened.close()
   })
 
-  it('honors a directory stand-in and reports authority transfer as unsupported', async () => {
+  it('reads real deployment routes, rejects missing, foreign, or unavailable routes, and reopens durably', async () => {
     const directory = scratch()
-    const work = join(directory, 'work')
     const { mkdirSync } = await import('node:fs')
-    mkdirSync(work)
-    const locations = new Map<string, string | 'missing' | 'down'>([
-      ['ws-1', 'ws-1'],
-      ['ws-2', 'elsewhere'],
-      ['ws-3', 'missing'],
-      ['ws-4', 'down'],
-    ])
+    const maintenance = call('ws-1', {
+      principalRef: 'deployer',
+      scope: { kind: 'installation', installationId: 'install-1' },
+    })
+    const authority = { authorityId: 'directory-1', tenantId: 'tenant-1', authorityEpoch: 1 }
+    const options = { directory: join(directory, 'routes'), anchor: join(directory, 'anchor'), authority }
+    expect(
+      createDirectoryAnchor(
+        options.anchor,
+        {
+          directoryId: authority.authorityId,
+          providerLockRef: inlineData({}, 'agh.directory/lock@1'),
+          endpointRef: options.directory,
+          epoch: 1,
+          revision: 1,
+          cutoverId: 'bootstrap',
+        },
+        maintenance.principalRef,
+      ).ok,
+    ).toBe(true)
+    let routing = createAuthorityDirectoryProvider(options)
+    const routes: Wire.AuthorityRoute[] = []
+    for (const [id, tenant, location] of [
+      ['ws-1', 'tenant-1', 'ws-1'],
+      ['ws-2', 'tenant-1', 'elsewhere'],
+      ['ws-3', 'other-tenant', 'ws-3'],
+    ]) {
+      const route: Wire.AuthorityRoute = {
+        logicalAuthorityId: id!,
+        tenantId: tenant!,
+        authorityEpoch: 1,
+        locationRef: location!,
+        providerBinding: {
+          bindingId: 'workspace-binding',
+          contract: 'agh.workspace',
+          logicalName: 'workspace',
+          providerId: 'agh.default/workspace',
+        },
+        cohortDigest: canonicalJsonDigest({ workspace: id! }),
+        cutoverId: 'seed-' + id,
+        previous: null,
+        checkpoint: {
+          authorityId: id!,
+          authorityEpoch: 1,
+          checkpointId: 'checkpoint-' + id,
+          snapshotDigest: canonicalJsonDigest({ workspace: id! }),
+          recordCount: 1,
+          bridgeWatermarks: [],
+        },
+      }
+      expect((await routing.seedRoute(route, maintenance)).ok).toBe(true)
+      routes.push(route)
+    }
     const service = createWorkspaceService({
       directory: join(directory, 'store'),
       authorityId: 'authority-1',
       tenantId: 'tenant-1',
-      directoryRead: {
-        async read(request) {
-          if (request.kind !== 'authority') return { ok: false, error: runtimeError('not_found', 'absent') }
-          const location = locations.get(request.logicalAuthorityId)
-          if (location === 'missing' || location === undefined)
-            return { ok: false, error: runtimeError('not_found', 'absent') }
-          if (location === 'down')
-            return { ok: false, error: runtimeError('blocked', 'directory unavailable') }
-          return {
-            ok: true,
-            value: {
-              kind: 'authority',
-              route: { locationRef: location },
-            } as Wire.AuthorityDirectoryReadResult,
-          }
-        },
-      },
+      directoryRead: { read: (request) => routing.read(request, maintenance) },
     })
-    expect((await service.bind('ws-1', work)).ok).toBe(true)
-    expect((await service.bind('ws-2', join(directory, 'other'))).ok).toBe(false)
-    const { mkdirSync: mkdir } = await import('node:fs')
-    mkdir(join(directory, 'other'))
-    expect((await service.bind('ws-2', join(directory, 'other'))).ok).toBe(true)
-    expect((await service.bind('ws-3', join(directory, 'third'))).ok).toBe(false)
-    mkdir(join(directory, 'third'))
-    expect((await service.bind('ws-3', join(directory, 'third'))).ok).toBe(true)
-    expect(
-      detail(
-        await service.acquire({ workspaceId: 'ws-1', mode: 'read', expectedRevision: null }, call('ws-1')),
-      ),
-    ).toBe('ok')
-    expect(
-      detail(
-        await service.acquire({ workspaceId: 'ws-2', mode: 'read', expectedRevision: null }, call('ws-2')),
-      ),
-    ).toBe('permission_denied')
-    expect(
-      detail(
-        await service.acquire({ workspaceId: 'ws-3', mode: 'read', expectedRevision: null }, call('ws-3')),
-      ),
-    ).toBe('ok')
-    expect(
-      detail(
-        await service.acquire({ workspaceId: 'ws-4', mode: 'read', expectedRevision: null }, call('ws-4')),
-      ),
-    ).toBe('permission_denied')
-    expect(detail(await service.authorityFence({}, call('ws-1')))).toBe('unsupported')
-    service.close()
+    try {
+      for (const id of ['ws-1', 'ws-2', 'ws-3', 'ws-4']) {
+        const work = join(directory, id)
+        mkdirSync(work)
+        expect((await service.bind(id, work)).ok).toBe(true)
+        expect(
+          detail(await service.acquire({ workspaceId: id, mode: 'read', expectedRevision: null }, call(id))),
+        ).toBe(id === 'ws-1' ? 'ok' : 'permission_denied')
+      }
+      const before = await routing.read({ kind: 'authority', logicalAuthorityId: 'ws-1' }, maintenance)
+      await routing.dispose()
+      expect(
+        detail(
+          await service.acquire({ workspaceId: 'ws-1', mode: 'read', expectedRevision: null }, call('ws-1')),
+        ),
+      ).toBe('permission_denied')
+      routing = createAuthorityDirectoryProvider(options)
+      expect(await routing.read({ kind: 'authority', logicalAuthorityId: 'ws-1' }, maintenance)).toEqual(
+        before,
+      )
+      expect(
+        detail(
+          await service.acquire({ workspaceId: 'ws-1', mode: 'read', expectedRevision: null }, call('ws-1')),
+        ),
+      ).toBe('ok')
+      // authority-directory-stand-in: isolate a rejected reader promise without corrupting live storage.
+      const unavailable = createWorkspaceService({
+        store: service.store,
+        authorityId: 'authority-1',
+        tenantId: 'tenant-1',
+        directoryRead: {
+          async read() {
+            throw new Error('isolated directory outage')
+          },
+        },
+      })
+      expect(
+        detail(
+          await unavailable.acquire(
+            { workspaceId: 'ws-1', mode: 'read', expectedRevision: null },
+            call('ws-1'),
+          ),
+        ),
+      ).toBe('permission_denied')
+      unavailable.close()
+      expect(detail(await service.authorityFence({}, call('ws-1')))).toBe('unsupported')
+    } finally {
+      service.close()
+      await routing.dispose()
+    }
   })
 })

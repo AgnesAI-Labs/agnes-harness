@@ -1,6 +1,18 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { builtinModules, findPackageJSON } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { importEdges, quoted, scanTokens } from './module-edges.js'
 import { isTestFile, repoRoot } from './repo.js'
@@ -494,6 +506,107 @@ function referenceProblems(base: string): string[] {
   return problems
 }
 
+function browserTarget(value: unknown, mode: 'import' | 'require'): string | undefined {
+  if (typeof value === 'string') return value
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  for (const [condition, target] of Object.entries(value)) {
+    if (condition === 'browser' || condition === mode || condition === 'default') {
+      const matched = browserTarget(target, mode)
+      if (matched !== undefined) return matched
+    }
+  }
+  return undefined
+}
+
+function browserImports(file: string, specifier: string): string[] {
+  let targets: string[]
+  if (specifier.startsWith('.')) targets = [resolve(dirname(file), specifier)]
+  else {
+    const manifest = findPackageJSON(specifier, pathToFileURL(file))
+    if (!manifest) throw new Error(`missing package for ${specifier}`)
+    const json = JSON.parse(read(manifest)) as {
+      name: string
+      exports?: Record<string, unknown> | string
+      browser?: unknown
+      module?: string
+      main?: string
+    }
+    const subpath = `.${specifier.slice(json.name.length)}`
+    const exports = json.exports
+    // The scanner does not distinguish require edges; check both browser condition sets.
+    const entries = (['import', 'require'] as const).flatMap((mode) => {
+      const entry =
+        exports === undefined
+          ? (browserTarget(json.browser, mode) ?? json.module ?? json.main ?? './index.js')
+          : browserTarget(
+              typeof exports === 'object' && Object.keys(exports).some((key) => key.startsWith('.'))
+                ? exports[subpath]
+                : subpath === '.'
+                  ? exports
+                  : undefined,
+              mode,
+            )
+      return entry === undefined ? [] : [entry]
+    })
+    if (entries.length === 0) throw new Error(`missing browser export for ${specifier}`)
+    targets = [...new Set(entries)].map((entry) => resolve(dirname(manifest), entry))
+  }
+  return targets.map((target) => {
+    const candidates = [
+      target.replace(/\.js$/, '.ts'),
+      target.replace(/\.js$/, '.tsx'),
+      target.replace(/\.mjs$/, '.mts'),
+      target.replace(/\.cjs$/, '.cts'),
+      target,
+    ]
+    const found = candidates.find((path) => statSync(path, { throwIfNoEntry: false })?.isFile())
+    if (!found) throw new Error(`unresolved browser import ${specifier}`)
+    return realpathSync(found)
+  })
+}
+
+function referenceClientProblems(base: string): string[] {
+  const dir = realpathSync(join(base, REFERENCE_DIR))
+  const json = JSON.parse(read(join(dir, 'package.json'))) as { exports?: Record<string, unknown> }
+  const entry = json.exports?.['./client']
+  if (entry !== './src/client/index.ts') return ['reference browser entry is missing']
+  const forbiddenRoot = join(dir, 'src/index.ts')
+  const providers = `${join(dir, 'src/providers')}${sep}`
+  const seen = new Set<string>()
+  const problems: string[] = []
+  const visit = (file: string): void => {
+    file = realpathSync(file)
+    if (seen.has(file)) return
+    seen.add(file)
+    if (file === forbiddenRoot || file.startsWith(providers) || file.endsWith('.node')) {
+      problems.push(`browser entry reaches ${repoRel(file, base)}`)
+      return
+    }
+    const source = read(file)
+    const tokens = scanTokens(source)
+    for (let index = 0; index < tokens.length; index++) {
+      const call = tokens[index] === 'import' || (tokens[index] === 'require' && tokens[index - 1] !== '.')
+      if (!call || tokens[index + 1] !== '(') continue
+      if (quoted(tokens[index + 2] ?? '') === undefined || ![')', ','].includes(tokens[index + 3] ?? '')) {
+        problems.push(`${repoRel(file, base)}: computed module import cannot be checked`)
+      }
+    }
+    for (const edge of importEdges(source)) {
+      if (edge.specifier.startsWith('node:') || builtinModules.includes(edge.specifier)) {
+        problems.push(`${repoRel(file, base)}: imports ${edge.specifier}`)
+        continue
+      }
+      try {
+        for (const target of browserImports(file, edge.specifier)) visit(target)
+      } catch (error) {
+        problems.push(`${repoRel(file, base)}: ${String(error)}`)
+      }
+    }
+  }
+  visit(resolve(dir, entry))
+  return problems
+}
+
 function packageDirsNamed(base: string, name: string): string[] {
   return packageDocs(base)
     .filter((pkg) => pkg.name === name)
@@ -823,6 +936,65 @@ describe('product packages do not depend on the reference package', () => {
       },
     )
   })
+})
+
+describe('reference client entry stays browser-only', () => {
+  it('keeps backend entries, providers and Node modules out of the entire import graph', () => {
+    const problems = referenceClientProblems(root)
+    expect(problems, problems.join('\n')).toEqual([])
+  })
+
+  it.each([
+    ["export * from '../index.js'", 'src/index.ts'],
+    ["export * from '../providers/renderer.js'", 'src/providers/renderer.ts'],
+    ["export * from 'node:fs'", 'node:fs'],
+    ["const read = import('node:crypto')", 'node:crypto'],
+    ["const fs = require('fs')", 'imports fs'],
+    ["const path = '../index.js'; const load = import(path)", 'computed module import'],
+    ["const fs = require('node:' + 'fs')", 'computed module import'],
+  ])('rejects a transitive browser dependency: %s', (source, expected) => {
+    withTemp(
+      'agnes-reference-client-',
+      {
+        [`${REFERENCE_DIR}/package.json`]: JSON.stringify({
+          exports: { './client': './src/client/index.ts' },
+        }),
+        [`${REFERENCE_DIR}/src/client/index.ts`]: "export * from './bridge.js'\n",
+        [`${REFERENCE_DIR}/src/client/bridge.ts`]: source,
+        [`${REFERENCE_DIR}/src/index.ts`]: 'export const backend = true\n',
+        [`${REFERENCE_DIR}/src/providers/renderer.ts`]: 'export const provider = true\n',
+      },
+      (base) => expect(referenceClientProblems(base).join('\n')).toContain(expected),
+    )
+  })
+})
+
+it.each([
+  [{ default: './node.js', browser: './safe.js' }, true],
+  [{ import: './safe.js', require: './node.js' }, true],
+  [{ browser: { import: './safe.js' }, default: './node.js' }, true],
+  [{ browser: './safe.js', default: './node.js' }, false],
+])('reference follows ordered browser import and require conditions: %j', (exports, denied) => {
+  withTemp(
+    'agnes-reference-conditions-',
+    {
+      [`${REFERENCE_DIR}/package.json`]: JSON.stringify({
+        exports: { './client': './src/client/index.ts' },
+      }),
+      [`${REFERENCE_DIR}/src/client/index.ts`]: "export * from 'browser-choice'\n",
+      [`${REFERENCE_DIR}/node_modules/browser-choice/package.json`]: JSON.stringify({
+        name: 'browser-choice',
+        exports,
+      }),
+      [`${REFERENCE_DIR}/node_modules/browser-choice/safe.ts`]: "export * from '../../src/client/index.js'\n",
+      [`${REFERENCE_DIR}/node_modules/browser-choice/node.ts`]: "export * from 'node:fs'\n",
+    },
+    (base) => {
+      const problems = referenceClientProblems(base)
+      if (denied) expect(problems.join('\n')).toContain('imports node:fs')
+      else expect(problems).toEqual([])
+    },
+  )
 })
 
 describe('sdk and daemon only type-import the extension api', () => {

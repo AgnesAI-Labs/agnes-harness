@@ -1,8 +1,8 @@
 /**
  * Projects locked provider bindings as ScopedDependencies.
  * One fixed Cordis assembly is the root. This module does not open a second
- * container, and process startup does not call this factory. Release publication
- * owns wiring into the host process.
+ * container. Host startup is the sole production construction site; release
+ * publication uses the same controlled lifecycle.
  */
 import type {
   BindingRef,

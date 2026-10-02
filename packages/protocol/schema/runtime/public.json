@@ -36811,7 +36811,7 @@
           "const": "agh.domain/command-runtime-acceptance-result@1"
         },
         "revision": {
-          "const": 1
+          "const": 2
         },
         "digest": {
           "$ref": "prototype.json#/$defs/Digest"
@@ -40429,9 +40429,9 @@
     "ClientBootstrapResult": 3,
     "ClientCatalogPageResult": 3,
     "ClientCommandCall": 3,
-    "ClientCommandReply": 3,
+    "ClientCommandReply": 4,
     "ClientCommandRequest": 3,
-    "ClientCommandValue": 3,
+    "ClientCommandValue": 4,
     "ClientConversationSnapshot": 3,
     "ClientConversationSubscriptionFrame": 3,
     "ClientDomainSnapshot": 3,
@@ -40441,16 +40441,16 @@
     "ClientInteractionsSubscriptionFrame": 3,
     "ClientModule": 3,
     "ClientQueryCall": 3,
-    "ClientQueryReply": 3,
+    "ClientQueryReply": 4,
     "ClientQueryRequest": 3,
-    "ClientQueryValue": 3,
+    "ClientQueryValue": 4,
     "ClientReadSubscriptionResult": 3,
     "ClientSubscribeRequest": 3,
     "ClientSubscribeResult": 3,
     "ClientSubscriptionFrame": 3,
-    "ClientTransportFrame": 3,
+    "ClientTransportFrame": 4,
     "ClientWelcome": 3,
-    "CommandHandle": 3,
+    "CommandHandle": 4,
     "CommitControlRequest": 3,
     "CompactionApplyRequest": 3,
     "CompactionExecuteRequest": 3,
@@ -40671,7 +40671,7 @@
     "DomainDispatch": 2,
     "DomainCommandPlan": 2,
     "CommandRuntimeAcceptanceResult": 2,
-    "CommandRuntimeAcceptanceDataRef": 2,
+    "CommandRuntimeAcceptanceDataRef": 3,
     "ShellViewState": 2,
     "PluginAuthorMetadata": 2,
     "NetworkRequest": 2,

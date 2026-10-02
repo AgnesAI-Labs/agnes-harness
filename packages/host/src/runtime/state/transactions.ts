@@ -51,9 +51,11 @@ import {
 import {
   type DataRef,
   type InboxRecord,
+  type InteractionClientPendingRequest,
   type InteractionRecord,
   type InteractionResponseStatus,
   type JsonValue,
+  type PageInteractionRecord,
   RuntimeMethodSchemaRefs,
   RuntimeSchemaRefs,
   RuntimeStateLegacyReaders,
@@ -97,6 +99,13 @@ import {
   type StoredHead,
   type WriteCommitInput,
 } from './control.js'
+import {
+  createInteractionReads,
+  type InteractionReadCut,
+  type InteractionReader,
+  interactionCutIdentity,
+  type RuntimeInteractionReadOwner,
+} from './interaction-read.js'
 import {
   createLegacyStateDecoder,
   type LegacySourceVerifier,
@@ -711,6 +720,7 @@ export type RuntimeStateDatabaseOptions = {
   file: string
   authority: StateAuthorityRef
   approvalJoint?: RuntimeApprovalJointOwner
+  interactionRead?: RuntimeInteractionReadOwner
   now?: () => number
   verifyLegacySource?: LegacySourceVerifier
   legacySourcePolicy?: Pick<LegacySourcePorts, 'currentRead' | 'sourceProfile'>
@@ -798,6 +808,7 @@ export class RuntimeStateDatabase {
   private readonly verifyUsageSettlement: ControlPorts['verifyUsageSettlement']
   private readonly verifyRetentionPin: ControlPorts['verifyRetentionPin']
   private readonly approvalJoint: RuntimeApprovalJointOwner | undefined
+  private readonly interactionRead: RuntimeInteractionReadOwner | undefined
   private readonly reservedCommitEvents = new Map<string, string>()
   private readonly beforeCommit: (() => void) | undefined
   private readonly onCommit: ((commit: CommitNotice) => void) | undefined
@@ -840,6 +851,7 @@ export class RuntimeStateDatabase {
           )),
     )
     this.approvalJoint = options.approvalJoint
+    this.interactionRead = options.interactionRead
     this.verifyUsageSettlement = options.verifyUsageSettlement
     this.verifyRetentionPin = options.verifyRetentionPin
     this.beforeCommit = options.beforeCommit
@@ -1236,6 +1248,411 @@ export class RuntimeStateDatabase {
       },
     )
     return this.finishControl(result)
+  }
+
+  async readInteraction(interactionId: string, context: CallContext): Promise<InteractionRecord> {
+    return this.interactionQueries(context).read(interactionId, context)
+  }
+
+  async readInteractionResponseStatus(
+    responseId: string,
+    context: CallContext,
+  ): Promise<InteractionResponseStatus> {
+    return this.interactionQueries(context).responseStatus(responseId, context)
+  }
+
+  async pendingInteractions(
+    request: InteractionClientPendingRequest,
+    context: CallContext,
+  ): Promise<PageInteractionRecord> {
+    return this.interactionQueries(context).pending(request, context)
+  }
+
+  private interactionQueries(context: CallContext) {
+    const source = this.interactionRead
+    if (
+      !source ||
+      !validateRuntime('RecordOwner', source.owner).ok ||
+      source.owner.ownerBinding.contract !== 'agh.interaction' ||
+      context.bindingId !== source.owner.ownerBinding.bindingId ||
+      !sameJson(context.scope, source.owner.scope)
+    )
+      refuse('denied', 'interaction_owner', 'current selected interaction read owner is unavailable')
+    const selectedOwner = canonicalJson(source.owner)
+    let lastReader: InteractionReader | undefined
+    let absentRealm: string | undefined
+    const scopeSession = (reader: InteractionReader): string => {
+      if (reader.scope.kind !== 'session')
+        refuse('conflict', 'interaction_unavailable', 'complete workspace membership source is unavailable')
+      const sourceScope = source.owner.scope as Record<string, unknown>
+      const readerScope = reader.scope as Record<string, unknown>
+      if (Object.entries(sourceScope).some(([key, value]) => key !== 'kind' && readerScope[key] !== value))
+        refuse('denied', 'interaction_scope', 'reader realm differs from the selected source owner')
+      return reader.scope.sessionId
+    }
+    const verify = async (reader: InteractionReader) => {
+      lastReader = reader
+      const sessionId = scopeSession(reader)
+      const meta = this.sessionMeta(sessionId)
+      if (!meta)
+        refuse('conflict', 'interaction_unavailable', 'authoritative response session is unavailable')
+      const verified = await this.verifySessionFully(meta)
+      if (verified.workspaceId !== reader.scope.workspaceId)
+        refuse('denied', 'interaction_scope', 'physical State workspace differs from the reader realm')
+      return { sessionId, verified }
+    }
+    const original = (
+      id: string,
+      schema: SchemaRef,
+      sessionId: string,
+      revision?: number,
+    ): VersionRow | undefined => {
+      const selected =
+        revision === undefined
+          ? this.get<{ record_revision: number }>(
+              'SELECT record_revision FROM runtime_record_heads WHERE record_id=?',
+              id,
+            )
+          : this.get<{ record_revision: number }>(
+              'SELECT record_revision FROM runtime_record_versions WHERE record_id=? AND record_revision=?',
+              id,
+              revision,
+            )
+      if (!selected) return undefined
+      const version = this.recordVersion(id, selected.record_revision)
+      if (
+        !sameJson(this.parseJson(version.schema_json, 'interaction source schema invalid'), schema) ||
+        !sameJson(this.parseJson(version.owner_json, 'interaction source owner invalid'), source.owner)
+      )
+        refuse('denied', 'interaction_source', 'interaction does not belong to the selected reader source')
+      if (this.approvalEvent(version.commit_id).session_key !== sessionId)
+        refuse('denied', 'interaction_scope', 'interaction original commit belongs to another session')
+      return version
+    }
+    const sourceId = (prefix: string, id: string) =>
+      stableId(
+        prefix,
+        canonicalJson({
+          authority: source.owner.authority,
+          binding: source.owner.ownerBinding,
+          scope: source.owner.scope,
+          id,
+        }),
+      )
+    const readRecord = (version: VersionRow): InteractionRecord => {
+      const parsed = validateRuntime(
+        'InteractionRecord',
+        this.parseJson(version.value_json, 'interaction original record invalid'),
+      )
+      if (
+        !parsed.ok ||
+        version.record_id !== `interaction:${parsed.value.interactionId}` ||
+        version.record_revision !== parsed.value.version
+      )
+        integrity('interaction original identity or version differs')
+      return parsed.value
+    }
+    return createInteractionReads(source, {
+      snapshot: (body) =>
+        this.interactionReadSnapshot(body, () => {
+          const finalReader = source.current(context, lastReader?.scope)
+          if (lastReader && !sameJson(finalReader, lastReader))
+            refuse('denied', 'interaction_reader', 'interaction reader changed before read completion')
+          if (absentRealm !== undefined && source.responseRealmComplete?.(context, absentRealm) !== true)
+            refuse(
+              'conflict',
+              'interaction_unavailable',
+              'complete response realm changed before read completion',
+            )
+          // No owner callbacks remain after this synchronous tail fence and before COMMIT.
+          const at = source.now()
+          const owner = canonicalJson(source.owner)
+          if (context.signal.aborted || !(Date.parse(context.deadline) > at) || owner !== selectedOwner)
+            refuse('denied', 'interaction_current', 'interaction reader source is no longer current')
+        }),
+      read: async (id, reader) => {
+        const { sessionId } = await verify(reader)
+        const version = original(`interaction:${id}`, RuntimeSchemaRefs.InteractionRecord, sessionId)
+        return version ? readRecord(version) : undefined
+      },
+      response: async (id, reader) => {
+        const { sessionId } = await verify(reader)
+        const raw = original(
+          sourceId('approval-response-source', id),
+          RuntimeSchemaRefs.ApprovalRespondRequest,
+          sessionId,
+          1,
+        )
+        if (!raw) {
+          // An answered interaction without this known raw source is not authoritative absence.
+          const other = this.all<{ record_id: string; record_revision: number }>(
+            "SELECT v.record_id,v.record_revision FROM runtime_record_versions v JOIN events e ON json_extract(e.data,'$.commitId')=v.commit_id WHERE e.type=? AND e.session_key=?",
+            STATE_COMMIT_EVENT,
+            sessionId,
+          )
+          for (const candidate of other) {
+            const version = this.recordVersion(candidate.record_id, candidate.record_revision)
+            if (
+              !sameJson(
+                this.parseJson(version.schema_json, 'interaction candidate schema invalid'),
+                RuntimeSchemaRefs.InteractionRecord,
+              ) ||
+              !sameJson(
+                this.parseJson(version.owner_json, 'interaction candidate owner invalid'),
+                source.owner,
+              )
+            )
+              continue
+            const record = readRecord(version)
+            if (record.status === 'answered' && record.resolution.responseId === id)
+              refuse(
+                'conflict',
+                'interaction_unavailable',
+                'response identity exists without a supported complete source',
+              )
+          }
+          return undefined
+        }
+        const request = validateRuntime(
+          'ApprovalRespondRequest',
+          this.parseJson(raw.value_json, 'interaction response raw source invalid'),
+        )
+        if (!request.ok || request.value.responseId !== id)
+          integrity('interaction raw response identity differs')
+        const answer = original(
+          `interaction:${request.value.interactionId}`,
+          RuntimeSchemaRefs.InteractionRecord,
+          sessionId,
+          request.value.expectedVersion + 1,
+        )
+        if (!answer || answer.commit_id !== raw.commit_id)
+          integrity('interaction original response membership differs')
+        const record = readRecord(answer)
+        if (record.status !== 'answered' || record.resolution.responseId !== id)
+          integrity('interaction answer does not prove this response')
+        const expectedAnswer =
+          request.value.decision === 'approve'
+            ? {
+                decision: 'approve',
+                intentDigest: request.value.intentDigest,
+                grantScope: request.value.grantScope ?? 'once',
+              }
+            : { decision: 'deny', intentDigest: request.value.intentDigest }
+        if (
+          !sameJson(record.resolution.answer, {
+            kind: 'inline',
+            schema: RuntimeSchemaRefs.ApprovalAnswer,
+            value: expectedAnswer,
+            digest: digestOf(expectedAnswer),
+            bytes: Buffer.byteLength(canonicalJson(expectedAnswer)),
+          })
+        )
+          integrity('interaction original response differs from its raw request')
+        const deliveryKey = `${record.interactionId}@${record.version}`
+        const inboxRow = this.get<{ record_revision: number }>(
+          'SELECT record_revision FROM runtime_record_heads WHERE record_id=?',
+          sourceId('approval-inbox', deliveryKey),
+        )
+        let runtimeAdmission: 'pending' | 'acknowledged' = 'pending'
+        if (inboxRow) {
+          const inboxVersion = this.recordVersion(
+            sourceId('approval-inbox', deliveryKey),
+            inboxRow.record_revision,
+          )
+          const inbox = validateRuntime(
+            'InboxRecord',
+            this.parseJson(inboxVersion.value_json, 'interaction inbox original invalid'),
+          )
+          const runHead = this.controlPorts().loadHead(runRecordId(record.owner.runId))
+          if (!runHead || !inbox.ok) integrity('interaction required target inbox is invalid')
+          const runOwner = this.parseJson<RecordOwner>(runHead.owner_json, 'interaction target owner invalid')
+          const wake = {
+            deliveryKey,
+            interactionId: record.interactionId,
+            owner: record.owner,
+            version: record.version,
+            status: record.status,
+            responseId: id,
+          }
+          const payload = {
+            kind: 'inline',
+            schema: RuntimeSchemaRefs.InteractionRecord,
+            value: record,
+            digest: digestOf(record),
+            bytes: Buffer.byteLength(canonicalJson(record)),
+          }
+          if (
+            !sameJson(
+              this.parseJson(inboxVersion.schema_json, 'interaction inbox schema invalid'),
+              RuntimeSchemaRefs.InboxRecord,
+            ) ||
+            !sameJson(this.parseJson(inboxVersion.owner_json, 'interaction inbox owner invalid'), runOwner) ||
+            inboxVersion.commit_id !== raw.commit_id ||
+            inbox.value.appliedCommitId !== raw.commit_id ||
+            inbox.value.sourceAuthorityId !== source.owner.authority.authorityId ||
+            inbox.value.eventId !== deliveryKey ||
+            inbox.value.consumerId !== runOwner.ownerBinding.bindingId ||
+            inbox.value.fingerprint !== digestOf(wake) ||
+            !sameJson(inbox.value.acknowledgement, payload)
+          )
+            integrity('interaction Runtime acknowledgement provenance differs')
+          const signalId = stableId(
+            'approval-signal',
+            canonicalJson({
+              sourceAuthorityId: inbox.value.sourceAuthorityId,
+              eventId: deliveryKey,
+              consumerId: inbox.value.consumerId,
+            }),
+          )
+          const signalExists = this.get<{ record_id: string }>(
+            'SELECT record_id FROM runtime_record_versions WHERE record_id=? AND record_revision=1',
+            signalRecordId(signalId),
+          )
+          if (!signalExists) integrity('interaction inbox has no original target signal')
+          const signalVersion = this.recordVersion(signalRecordId(signalId), 1)
+          if (
+            signalVersion.commit_id !== raw.commit_id ||
+            !sameJson(
+              this.parseJson(signalVersion.schema_json, 'interaction signal schema invalid'),
+              RuntimeSchemaRefs.SignalRecordValue,
+            ) ||
+            !sameJson(this.parseJson(signalVersion.owner_json, 'interaction signal owner invalid'), runOwner)
+          )
+            integrity('interaction inbox has no same-commit original target signal')
+          const signal = this.parseJson<{ signal: Signal }>(
+            signalVersion.value_json,
+            'interaction target signal invalid',
+          ).signal
+          if (
+            !signal ||
+            signal.signalId !== signalId ||
+            signal.runId !== record.owner.runId ||
+            signal.targetActionId !== record.owner.actionId ||
+            !sameJson(signal.source, source.owner.ownerBinding) ||
+            !sameJson(signal.payload, payload) ||
+            signal.causation?.interactionId !== record.interactionId ||
+            signal.causation?.externalEventId !== deliveryKey
+          )
+            integrity('interaction Runtime signal acknowledgement differs')
+          runtimeAdmission = 'acknowledged'
+        }
+        return {
+          status: {
+            interactionId: record.interactionId,
+            responseId: id,
+            status: 'accepted' as const,
+            version: record.version,
+            result: record,
+            error: null,
+          },
+          runtimeAdmission,
+        }
+      },
+      responseRealmComplete: async (reader) => {
+        const { sessionId } = await verify(reader)
+        const complete = source.responseRealmComplete?.(context, sessionId) === true
+        if (complete) absentRealm = sessionId
+        return complete
+      },
+      cut: async (scope, reader) => {
+        const { sessionId, verified } = await verify(reader)
+        const membership = {
+          stateAuthority: this.authority,
+          sessionId,
+          throughSeq: verified.lastSeq,
+          headDigest: verified.headDigest,
+        }
+        return { scope, snapshot: interactionCutIdentity(membership), membership }
+      },
+      recordsAt: async (cut: InteractionReadCut, reader) => {
+        const { sessionId, verified } = await verify(reader)
+        const membership = validateRuntime('JsonValue', cut.membership)
+        if (
+          !membership.ok ||
+          !cut.membership ||
+          typeof cut.membership !== 'object' ||
+          Array.isArray(cut.membership)
+        )
+          integrity('interaction cut membership is invalid')
+        const watermark = cut.membership as {
+          stateAuthority?: unknown
+          sessionId?: unknown
+          throughSeq?: unknown
+          headDigest?: unknown
+        }
+        if (
+          !sameJson(watermark.stateAuthority, this.authority) ||
+          watermark.sessionId !== sessionId ||
+          typeof watermark.throughSeq !== 'number' ||
+          !Number.isSafeInteger(watermark.throughSeq) ||
+          watermark.throughSeq < 1 ||
+          watermark.throughSeq > verified.lastSeq ||
+          interactionCutIdentity(cut.membership) !== cut.snapshot
+        )
+          integrity('interaction cut has no original State watermark')
+        const prefix = this.get<{ integrity_digest: string | null }>(
+          'SELECT integrity_digest FROM events WHERE session_key=? AND seq=?',
+          sessionId,
+          watermark.throughSeq,
+        )
+        if (!prefix || prefix.integrity_digest !== watermark.headDigest)
+          integrity('interaction cut original ledger prefix differs')
+        const changes = this.all<ManifestRow>(
+          `SELECT m.commit_id,m.record_id,m.previous_revision,m.next_json FROM runtime_mutation_manifests m JOIN events e ON json_extract(e.data,'$.commitId')=m.commit_id WHERE e.type=? AND e.session_key=? AND e.seq<=? ORDER BY e.seq DESC,m.record_id`,
+          STATE_COMMIT_EVENT,
+          sessionId,
+          watermark.throughSeq,
+        )
+        const records: InteractionRecord[] = []
+        const seen = new Set<string>()
+        for (const change of changes) {
+          if (seen.has(change.record_id)) continue
+          seen.add(change.record_id)
+          if (change.next_json === null) continue
+          const next = this.parseJson<MutationNext>(change.next_json, 'interaction cut last mutation invalid')
+          if (!sameJson(next.schema, RuntimeSchemaRefs.InteractionRecord)) continue
+          const version = this.recordVersion(change.record_id, next.recordRevision)
+          if (
+            version.commit_id !== change.commit_id ||
+            version.digest !== next.digest ||
+            !sameJson(this.parseJson(version.schema_json, 'interaction cut schema invalid'), next.schema)
+          )
+            integrity('interaction cut version differs from its last original mutation')
+          if (!sameJson(this.parseJson(version.owner_json, 'interaction cut owner invalid'), source.owner))
+            continue
+          records.push(readRecord(version))
+        }
+        return records
+      },
+    })
+  }
+
+  private interactionReadSnapshot<T>(body: () => Promise<T>, finalCheck: () => void): Promise<T> {
+    const run = this.writeChain.then(async () => {
+      if (this.closed) refuse('internal', 'closed', 'State store is closed')
+      const queryOnly = this.get<{ query_only: number }>('PRAGMA query_only')?.query_only ?? 0
+      this.db.exec('PRAGMA query_only=ON')
+      let opened = false
+      try {
+        this.execBoundary('BEGIN DEFERRED', 'begin')
+        opened = true
+        const result = await body()
+        finalCheck()
+        this.execBoundary('COMMIT', 'commit')
+        opened = false
+        return result
+      } catch (error) {
+        if (opened) this.db.exec('ROLLBACK')
+        throw error
+      } finally {
+        this.db.exec(queryOnly ? 'PRAGMA query_only=ON' : 'PRAGMA query_only=OFF')
+      }
+    })
+    this.writeChain = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
   }
 
   private requireApprovalOwner(context: CallContext, sessionId: string): RuntimeApprovalJointOwner {
