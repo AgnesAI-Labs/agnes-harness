@@ -1,7 +1,8 @@
 import { checkToolDef, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
-import { fakeToolContext } from '../../../testkit/tool-context.js'
-import { MAX_READ_BYTES } from '../../tools-core/src/tools/read.js'
+import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-context.js'
+import { spillLocator } from '../../tools-core/src/guards/output.js'
+import { MAX_READ_BYTES, readTool } from '../../tools-core/src/tools/read.js'
 import { findTool } from '../src/tools/find.js'
 import { grepTool } from '../src/tools/grep.js'
 import { lsTool } from '../src/tools/ls.js'
@@ -342,5 +343,69 @@ describe('ls', () => {
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('ls failed')
     expect(textOf(r)).toContain('EACCES')
+  })
+})
+
+describe('grep in an artifact the output guard stored', () => {
+  const store = async (ctx: FakeToolContext, text: string | Uint8Array): Promise<string> =>
+    spillLocator(
+      await ctx.artifacts.put(typeof text === 'string' ? new TextEncoder().encode(text) : text, {
+        mime: 'text/plain',
+      }),
+    )
+
+  it('reports line numbers that are the offsets read pages by, with context and a limit', async () => {
+    const ctx = fakeToolContext()
+    const wrapped = `${'a'.repeat(5000)}NEEDLE${'b'.repeat(500)}`
+    const lines = Array.from({ length: 133 }, (_, i) => `line ${i + 1} ${'x'.repeat(70)}`)
+    const path = await store(ctx, [...lines, wrapped, 'HIT 1', 'HIT 2'].join('\n'))
+    for (const [pattern, shows] of [
+      ['line 100 ', 'line 100 '],
+      ['NEEDLE', 'NEEDLE'],
+    ] as const) {
+      const found = textOf(await grepTool.execute({ pattern, path }, ctx))
+      const n = Number(/^artifact:\/\/[0-9a-f]{12}:(\d+):/.exec(found)?.[1])
+      // A long line is reported where it begins; the match is in the rows that follow it.
+      expect(textOf(await readTool.execute({ path, offset: n, limit: 4 }, ctx))).toContain(shows)
+    }
+    const limited = textOf(
+      await grepTool.execute({ pattern: 'HIT', context: 1, limit: 1, glob: '*.ts', path }, ctx),
+    )
+    expect(limited).toMatch(/-\d+-.*\n.*:\d+:HIT 1\n.*-\d+-HIT 2\n\[limit 1 reached/)
+    expect(textOf(await grepTool.execute({ pattern: 'ZZZ', path }, ctx))).toBe('no matches')
+  })
+
+  it('finds a match that straddles a fold, and says when only part of a large output was searched', async () => {
+    const ctx = fakeToolContext()
+    // The fold falls inside NEEDLE. Lines are searched whole and reported at the row where they begin.
+    const folded = await store(ctx, `x\n${'a'.repeat(2046)}NEEDLE${'b'.repeat(10)}`)
+    expect(textOf(await grepTool.execute({ pattern: 'NEEDLE', literal: true, path: folded }, ctx))).toMatch(
+      /:2:a+/,
+    )
+    expect(textOf(await readTool.execute({ path: folded, offset: 2, limit: 1 }, ctx))).toMatch(/^2\ta+/)
+    // Past the byte ceiling nothing was searched, and a bare "no matches" would claim otherwise.
+    const large = await store(ctx, `${'a\n'.repeat(MAX_READ_BYTES / 2 + 10)}NEEDLE\n`)
+    expect(textOf(await grepTool.execute({ pattern: 'NEEDLE', path: large }, ctx))).toContain(
+      `only the first ${MAX_READ_BYTES} bytes`,
+    )
+  })
+
+  it.each([
+    ['malformed', 'artifact://abc', 0],
+    ['not stored', `artifact://${'a'.repeat(64)}?size=3`, 1],
+  ])('refuses a locator that is %s', async (_why, path, asked) => {
+    const ctx = fakeToolContext()
+    const r = await grepTool.execute({ pattern: 'x', path }, ctx)
+    expect(r.isError).toBe(true)
+    expect(ctx.calls.artifactGets).toHaveLength(asked)
+  })
+
+  it('does not search binary content', async () => {
+    const ctx = fakeToolContext()
+    const r = await grepTool.execute(
+      { pattern: 'foo', path: await store(ctx, new Uint8Array([102, 0, 111])) },
+      ctx,
+    )
+    expect(r.isError).toBe(true)
   })
 })
