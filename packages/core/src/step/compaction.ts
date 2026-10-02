@@ -554,6 +554,16 @@ function elides(
 }
 
 /**
+ * The context a compaction leaves behind, from the reading it started at: the masked span goes, the
+ * summary comes. It anchors the context reading until the next request measures it, so it must not
+ * be the usage of the summary request, which carried a different conversation.
+ */
+function tokensAfter(a: Attempt, text: string): number {
+  const summary = estimateTokens(text)
+  return Math.max(summary, a.tokensBefore - spanTokens(a) + summary)
+}
+
+/**
  * Where a completed compaction resumes. A checkpoint resumes as already checked against the
  * threshold: until the next request reports its real size, the context count still reflects what
  * was just masked, and checking it again would compact or quote a second time on a stale number.
@@ -671,7 +681,7 @@ async function elide(
     ...(call ? [s.ev('cost/ledger', call.spend), call.effect.settle('error')] : []),
     beginEvent(s, a, id, { mode: 'elided', cause }),
     replaceEvent(s, a, text, 'system'),
-    s.ev('x/core/compaction-end', id, { ignorable: true }),
+    s.ev('x/core/compaction-end', { ...id, tokensAfter: tokensAfter(a, text) }, { ignorable: true }),
   ]
   return commitReplace(s, a, events, events.length - 2)
 }
@@ -1003,7 +1013,11 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
     replaceEvent(s, attempt, summary, 'model'),
     s.ev('cost/ledger', spend),
     effect.settle('ok'),
-    s.ev('x/core/compaction-end', { effectId: effect.effectId }, { ignorable: true }),
+    s.ev(
+      'x/core/compaction-end',
+      { effectId: effect.effectId, tokensAfter: tokensAfter(attempt, summary) },
+      { ignorable: true },
+    ),
   ]
   return commitReplace(s, attempt, events, 1)
 }

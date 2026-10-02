@@ -180,6 +180,25 @@ describe('reducer', () => {
     )
     expect(s.creditsUsed).toBe(3.5)
     expect(s.lastLedgerTokens).toEqual(contextAnchor)
+    // A compaction's own request (failed rows are all zero) is not the context the next request carries.
+    s = reduce(
+      s,
+      ev('cost/ledger', {
+        purpose: 'compaction',
+        effectId: 'compaction-1',
+        tokens: { input: 9000, output: 900, cacheRead: 0, cacheWrite: 0 },
+        credits: 1,
+        creditSource: 'gateway',
+        model: 'summary-model',
+      }),
+    )
+    expect(s.creditsUsed).toBe(4.5)
+    expect(s.lastLedgerTokens).toEqual(contextAnchor)
+    // What the compaction leaves behind is anchored by its own end row, as a cold-cache estimate.
+    s = reduce(s, ev('x/core/compaction-end', { tokensAfter: 321 }, { ignorable: true }))
+    expect(s.lastLedgerTokens).toMatchObject({ total: 321, input: 321, cacheRead: 0 })
+    s = reduce(s, ev('x/core/compaction-end', {}, { ignorable: true }))
+    expect(s.lastLedgerTokens).toMatchObject({ total: 321 })
     s = reduce(s, ev('effect/settled', { effectId: 'e2', outcome: 'ok' }))
     s = reduce(s, ev('approval/decided', { requestId: 'a1', verdict: 'allowed-once', via: 'sync' }))
     s = reduce(s, ev('step/end', { turn: 1, step: 1 }))

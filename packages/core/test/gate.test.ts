@@ -48,7 +48,7 @@ describe('contextTokens', () => {
     const { session } = await openSession({ provider: fakeProvider([]) })
     await session.append([
       session.ev('cost/ledger', {
-        purpose: 'compaction',
+        purpose: 'inference',
         effectId: 'cached',
         tokens: { input: 2, output: 3, cacheRead: 5, cacheWrite: 7 },
         creditSource: 'estimated',

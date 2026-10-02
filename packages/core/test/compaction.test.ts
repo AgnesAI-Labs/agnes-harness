@@ -5,7 +5,8 @@ import { HookBlockedError } from '../src/hooks/block.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { boundWireInputTokens, discloseTools, resolveModel } from '../src/step/inference.js'
+import { contextTokens } from '../src/step/gate.js'
+import { boundWireInputTokens, discloseTools, estimateTokens, resolveModel } from '../src/step/inference.js'
 import { withPhase } from '../src/step/op-state.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { fakeProvider, type Script, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -1601,7 +1602,10 @@ describe('routing a summary that is unavailable', () => {
   // A broken or exhausted compaction route has to show up as a failure, not as a lossy fallback.
   describe.each(['threshold', 'overflow', 'requested'] as const)('from a %s compaction', (reason) => {
     const reported = async (h: Awaited<ReturnType<typeof toolHistory>>, code: RegExp) => {
+      const reading = contextTokens(h.session)
       const outcome = await h.enter(reason)
+      // The failed call's all-zero spend row is not a measurement of the context.
+      expect(contextTokens(h.session)).toBe(reading)
       expect(outcome).toEqual(reason === 'overflow' ? { phase: 'failure_drain' } : { phase: 'checkpoint' })
       const o = await h.outcome()
       expect(o.replaces).toEqual([])
@@ -1749,9 +1753,8 @@ describe('routing a summary that is unavailable', () => {
     expect((o.failed[0]?.data as { reason?: string } | undefined)?.reason).toBe('compaction cancelled')
   })
 
-  it('does not check the threshold again before the next request refreshes the context count', async () => {
-    // The summary request itself was large, so its spend row leaves a context anchor far over the
-    // threshold until the next ordinary request replaces it.
+  it('reads the context from what the compaction left, not from the summary request that made it', async () => {
+    // The summary request itself was large. It is billed, but it is not what the next request carries.
     const heavy: Script = [
       sent(),
       { type: 'text_delta', delta: 'Goal: read three files. Progress: done.' },
@@ -1763,14 +1766,24 @@ describe('routing a summary that is unavailable', () => {
       },
       { type: 'done', reason: 'stop' },
     ]
-    const h = await toolHistory([heavy])
+    const h = await toolHistory([heavy], {}, 5000)
     expect(await h.enter('overflow')).toEqual({ phase: 'checkpoint' })
-    expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     const o = await h.outcome()
-    expect(o.begins).toHaveLength(1)
+    expect(o.spends[0]?.data).toMatchObject({ tokens: { input: 150_000 } })
+    const before = (o.begins[0]?.data as { tokensBefore?: number } | undefined)?.tokensBefore ?? 0
+    expect(before).toBeGreaterThan(0)
+    const summary = estimateTokens('Goal: read three files. Progress: done.')
+    // Before the compaction, minus the span it masked, plus the summary that replaced it.
+    const after = Math.max(summary, before - h.planned() + summary)
+    expect(after).toBeLessThan(before)
+    expect(o.ends[0]?.data).toMatchObject({ tokensAfter: after })
+    expect(contextTokens(h.session)).toBe(after)
+    expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const o2 = await h.outcome()
+    expect(o2.begins).toHaveLength(1)
     expect(h.provider.requests.filter((req) => req.kind === 'summary')).toHaveLength(1)
     expect(
-      o.rows.filter(
+      o2.rows.filter(
         (row) => row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'budget',
       ),
     ).toEqual([])
