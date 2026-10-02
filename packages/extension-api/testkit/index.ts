@@ -51,6 +51,7 @@ export function defineFixture(fixture: ExtensionFixture): ExtensionFixture {
 }
 export { projectionFixture } from './fixtures/projections.js'
 export { serviceFixture } from './fixtures/services.js'
+export * from './runtime/contracts/policy.js'
 export type {
   AssertionInput,
   AssertionRecord,
@@ -111,3 +112,9 @@ export {
   type TransportContractCase,
   type TransportFixture,
 } from './transport-contract.js'
+
+export type { AuditContractAssertion, AuditContractDriver, AuditContractInstance, AuditConformanceBinding } from './runtime/contracts/audit.js'
+export { registerAuditContract, runAuditContractScenario } from './runtime/contracts/audit.js'
+
+export type { IdentityContractFixture, IdentityCredentialCase } from './runtime/index.js'
+export { IDENTITY_CREDENTIAL_CASES, registerIdentityContract, runIdentityContractCase } from './runtime/index.js'

@@ -17,6 +17,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import {
   createPrivateFileSync,
   hasPrivateDaclSync,
+  renameWriteThrough,
   renameWriteThroughSync,
   windowsEnsurePrivateDirectorySync,
   windowsWritePrivateFile,
@@ -36,6 +37,8 @@ export const MUTATION_LOCK_TIMEOUT_MS = 30_000
 
 export type PrivateArtifactStore = Readonly<{
   put(sha256: string, bytes: Uint8Array): Promise<void>
+  /** Like `put` for an object of `size` bytes written chunk by chunk, so it is never held whole. */
+  putChunks(sha256: string, size: number, chunks: Iterable<Uint8Array>): Promise<void>
   putComputerUseMetadata(sha256: string, bytes: Uint8Array): Promise<void>
 }>
 
@@ -182,24 +185,47 @@ async function writePrivate(
     await windowsWritePrivateFile(target, bytes)
     return
   }
+  await writePrivateChunks(dataDir, platform, target, [bytes])
+}
+
+/** Writes the chunks in order to a private temporary file, syncs it, then renames it into place. */
+async function writePrivateChunks(
+  dataDir: string,
+  platform: PrivatePlatform,
+  target: string,
+  chunks: Iterable<Uint8Array>,
+): Promise<void> {
   const shard = dirname(target)
-  ensurePosixPrivateDirectory(join(dataDir, 'artifacts'))
-  ensurePosixPrivateDirectory(dirname(shard))
-  ensurePosixPrivateDirectory(shard)
-  const temporary = join(shard, `.${randomUUID()}.tmp`)
+  let temporary: string
+  if (platform === 'win32') {
+    windowsEnsurePrivateDirectorySync(shard)
+    temporary = `${target}.${randomUUID()}.tmp`
+  } else {
+    ensurePosixPrivateDirectory(join(dataDir, 'artifacts'))
+    ensurePosixPrivateDirectory(dirname(shard))
+    ensurePosixPrivateDirectory(shard)
+    temporary = join(shard, `.${randomUUID()}.tmp`)
+  }
   const handle = createPrivateFileSync(temporary)
   let committed = false
   try {
     try {
-      writeFileSync(handle, bytes)
+      for (const chunk of chunks) writeFileSync(handle, chunk)
       fsyncSync(handle)
     } finally {
       closeSync(handle)
     }
-    renameWriteThroughSync(temporary, target)
+    if (platform === 'win32') await renameWriteThrough(temporary, target)
+    else renameWriteThroughSync(temporary, target)
     committed = true
   } finally {
-    if (!committed) rmSync(temporary, { force: true })
+    if (!committed) {
+      try {
+        rmSync(temporary, { force: true })
+      } catch {
+        /* preserve the write/commit error */
+      }
+    }
   }
 }
 
@@ -233,21 +259,25 @@ export async function writeComputerUseTombstoneLocked(
 /** Host-only private writer bound to the CU content-addressed store and retention marker tree. */
 export function createPrivateArtifactStore(dataDir: string, platform: PrivatePlatform): PrivateArtifactStore {
   const root = join(dataDir, 'artifacts', 'sha256')
+  const publish = async (sha256: string, size: number, write: (target: string) => Promise<void>) => {
+    if (!SHA256.test(sha256)) throw new Error('Computer Use private artifact digest is invalid')
+    await withComputerUseArtifactMutation(dataDir, async () => {
+      const target = join(root, sha256.slice(0, 2), sha256)
+      if (platform === 'win32') windowsEnsurePrivateDirectorySync(root)
+      const metadata = computerUseMarkerPath(dataDir, sha256)
+      // Bytes first: until they exist a reclaim tombstone must stay, or the digest would read as
+      // lost instead of reclaimed. Then a digest classified by any earlier screenshot is refreshed
+      // to v1 with a new age, so GC cannot delete a newly returned reference by its old age.
+      await write(target)
+      if (pathEntryExists(metadata))
+        await writePrivate(dataDir, platform, metadata, computerUseMetadata(sha256, size))
+    })
+  }
   return Object.freeze({
-    async put(sha256: string, bytes: Uint8Array): Promise<void> {
-      if (!SHA256.test(sha256)) throw new Error('Computer Use private artifact digest is invalid')
-      await withComputerUseArtifactMutation(dataDir, async () => {
-        const target = join(root, sha256.slice(0, 2), sha256)
-        if (platform === 'win32') windowsEnsurePrivateDirectorySync(root)
-        const metadata = computerUseMarkerPath(dataDir, sha256)
-        // Bytes first: until they exist a reclaim tombstone must stay, or the digest would read as
-        // lost instead of reclaimed. Then a digest classified by any earlier screenshot is refreshed
-        // to v1 with a new age, so GC cannot delete a newly returned reference by its old age.
-        await writePrivate(dataDir, platform, target, bytes)
-        if (pathEntryExists(metadata))
-          await writePrivate(dataDir, platform, metadata, computerUseMetadata(sha256, bytes.byteLength))
-      })
-    },
+    put: (sha256: string, bytes: Uint8Array) =>
+      publish(sha256, bytes.byteLength, (target) => writePrivate(dataDir, platform, target, bytes)),
+    putChunks: (sha256: string, size: number, chunks: Iterable<Uint8Array>) =>
+      publish(sha256, size, (target) => writePrivateChunks(dataDir, platform, target, chunks)),
     async putComputerUseMetadata(sha256: string, bytes: Uint8Array): Promise<void> {
       if (!SHA256.test(sha256)) throw new Error('Computer Use private metadata digest is invalid')
       await withComputerUseArtifactMutation(dataDir, async () => {

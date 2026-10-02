@@ -73,6 +73,15 @@ describe.skipIf(!privateArtifactDeleteAvailable())('private artifact store', () 
       ),
     ).toBe(bytes.byteLength)
     expect(existsSync(target)).toBe(false)
+
+    // An object written chunk by chunk lands as the same content-addressed file.
+    const chunks = [new Uint8Array([1, 2, 3]), new Uint8Array(0), new Uint8Array([4, 5])]
+    const joined = new Uint8Array([1, 2, 3, 4, 5])
+    const chunked = createHash('sha256').update(joined).digest('hex')
+    await store.putChunks(chunked, joined.byteLength, chunks)
+    expect(
+      new Uint8Array(readFileSync(join(dataDir, 'artifacts', 'sha256', chunked.slice(0, 2), chunked))),
+    ).toEqual(joined)
   })
 
   it('rejects an invalid digest before constructing a path', async () => {

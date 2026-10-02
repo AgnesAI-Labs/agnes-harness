@@ -312,7 +312,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 5763 -> 5770; approved feature scope, no spare allocation.
   // Windows stale-lock reclamation added 17 counted lines; exact baseline total, no spare.
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
-  'packages/package-manager/src': 5796,
+  // Immutable package snapshots and the lock resolver. Measured 7836, exact, no spare.
+  'packages/package-manager/src': 7836,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -933,7 +934,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 26066 (+588), exact, no spare.
   // Default projection provider: reader policy, incremental fold and the conversation window.
   // Measured 26639 (+573), exact, no spare.
-  'packages/core/src': 26639,
+  // Merged with the policy and integrity providers on the integration base. Measured 28132, exact, no spare.
+  'packages/core/src': 28132,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1375,9 +1377,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with the effects peer on the config-case base. Measured 1513, exact, no spare.
   // Config registration records the requested provider id. Measured 1515, exact, no spare.
   // Config evidence records deployment reuse for each scenario. Measured 1527, exact, no spare.
+  // Package source and resolver scenario registration on that base. Measured 1679, exact, no spare.
+  // Unsupported reference source kinds register as not-advertised. Measured 1683, exact, no spare.
+  // Shared blob and artifact access suites with their scenario registration, and blob selection
+  // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
   // Projection conformance suite with its fixture domain, Host checks and native conversation.
   // Measured 2629 (+1102), exact, no spare.
-  'packages/extension-api/testkit': 2629,
+  // Merged with the identity, policy, audit and integrity contract cases. Measured 4551, exact, no spare.
+  'packages/extension-api/testkit': 4551,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2554,9 +2561,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined measured 50715.
   // Scoped dependency projection over one fixed Cordis root.
   // Re-measured with this guard's countLines(): 51097, exact cap, no spare.
-  // An aborted file refresh is refused before the loader runs.
-  // Re-measured with this guard's countLines(): 51099, exact cap, no spare.
-  'packages/host/src': 51099,
+  // An aborted file refresh is refused before the loader runs. Measured 51099.
+  // Default blob and artifacts services: uploads, pins and gc in one SQLite store, publication,
+  // grants and download tickets in another, reads through the selected blob service.
+  // Re-measured with this guard's countLines(): 52711, exact cap, no spare.
+  // Seal streams stored chunks into the private store, and closed services refuse with one code.
+  // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
+  // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
+  'packages/host/src': 55418,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
