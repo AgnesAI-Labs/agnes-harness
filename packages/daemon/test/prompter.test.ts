@@ -65,6 +65,53 @@ describe('PrompterRouter', () => {
     expect(log.map((x) => x.via)).toEqual(['absent', 'answered'])
   })
 
+  it.each([
+    ['read', 'read'],
+    ['write', 'edit'],
+    ['edit', 'edit'],
+    ['shell', 'execute'],
+    ['run_code', 'execute'],
+    ['web_fetch', 'fetch'],
+    ['subagent_spawn', 'other'],
+    ['mcp__db__query', 'other'],
+    // Names that are properties of every object must not read a kind off the prototype.
+    ['constructor', 'other'],
+    ['__proto__', 'other'],
+  ])('%s is shown as kind %s, a value the outbound validation accepts', async (tool, kind) => {
+    const { ep, r } = mk()
+    ep.conn.capabilities.permission = true
+    const it = ep.notifications[Symbol.asyncIterator]()
+    const p = r.ask({ ...req, tool: { ...req.tool, name: tool } } as never, { signal: never })
+    // An invalid kind never reaches the wire: the endpoint refuses it and the router fails closed.
+    const m = (await Promise.race([
+      it.next().then((n) => n.value),
+      p.then((verdict) => {
+        throw new Error(`refused before anyone was asked: ${verdict}`)
+      }),
+    ])) as { id: string; params: { toolCall: { kind: string; _meta: unknown } } }
+    expect(m.params.toolCall.kind).toBe(kind)
+    expect(m.params.toolCall._meta).toEqual({ 'ai.agnes.harness': { tool } })
+    await ep.handle({
+      jsonrpc: '2.0',
+      id: m.id,
+      result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
+    })
+    await expect(p).resolves.toBe('allowed-once')
+  })
+
+  it('a request that is not about a tool is kind other and names no tool', async () => {
+    const { ep, r } = mk()
+    ep.conn.capabilities.permission = true
+    const it = ep.notifications[Symbol.asyncIterator]()
+    const { tool: _tool, ...rest } = req
+    const p = r.ask({ ...rest, kind: 'budget' } as never, { signal: never })
+    const m = (await it.next()).value as { id: string; params: { toolCall: Record<string, unknown> } }
+    expect(m.params.toolCall.kind).toBe('other')
+    expect(m.params.toolCall._meta).toBeUndefined()
+    await ep.handle({ jsonrpc: '2.0', id: m.id, result: { outcome: { outcome: 'cancelled' } } })
+    await expect(p).resolves.toBe('cancelled')
+  })
+
   it('routes to an attached connection when the originator cannot answer', async () => {
     // The chosen connection has to decide the endpoint. Computing candidates and then posting to a
     // fixed endpoint regardless makes the capability filter decoration.

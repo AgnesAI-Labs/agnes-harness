@@ -28,6 +28,8 @@ Ordinary third-party Cordis plugins are trusted in-process code. Trusting one ma
 
 The default interactive flow shows the tool and available decisions when needed. One-time approval, session approval, persistent grants, and denial have different scopes. The backend makes the final decision using current credentials and policy. On expiry, disconnection, or competing clients, the decision stored by the backend is authoritative.
 
+The Web approval card shows locating fields such as the path or command first and states how many characters of a long value are shown. Session approval covers every later call of the same tool in that session, and the button names the tool. When the call cannot be shown in full, the card says so and does not offer session approval; only one-time approval or denial remains.
+
 `approvals.mode` accepts `manual`, `smart`, and `off`. Web **Full permissions** (`完全权限`) and TUI `/yolo` skip remaining approvals in the current session and allow file tools to read and write outside the selected workspace. The workspace remains the default directory for relative paths. Explicit security denials, protected secret paths, operating-system permissions, and command sandbox constraints still apply. Do not make skipped approvals a beginner example or automation default.
 
 Web **Workspace edits** (`工作区内修改`) limits file access to the selected workspace; command execution still follows the approval policy. A path outside that workspace is refused with guidance to switch to Full permissions or select its directory as the workspace, without opening an additional approval request.

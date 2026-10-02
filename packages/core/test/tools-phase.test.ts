@@ -342,6 +342,8 @@ describe('tools phase', () => {
     const asked = await ok.log.scan({ type: 'approval/asked', limit: 5 })
     expect(asked).toHaveLength(1)
     expect(asked[0]?.data).toMatchObject({ kind: 'tool', risk: 'destructive' })
+    // The line the approver reads is built by summarizeCall: command in front, nothing cut silently.
+    expect(asked[0]?.data).toMatchObject({ summary: 'shell rm' })
     expect((await ok.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
       verdict: 'allowed-once',
       via: 'sync',
