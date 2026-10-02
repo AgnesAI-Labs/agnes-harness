@@ -496,3 +496,28 @@ export async function bindReferenceConfigContract(
   }
   registerConfigContract(harness, binding)
 }
+
+function configProviderIds(providers: readonly string[]): string[] {
+  return providers.filter(
+    (providerId) =>
+      providerId === 'default' || providerId === 'agh.default/config' || providerId === 'reference',
+  )
+}
+
+export async function bindConformance(
+  harness: ConformanceHarness,
+  request: {
+    readonly command: string
+    readonly contracts: readonly string[] | 'all'
+    readonly providers: readonly string[]
+  },
+): Promise<{ readonly contracts: readonly string[]; readonly providers: readonly string[] }> {
+  const selected = request.contracts === 'all' || request.contracts.includes('agh.config')
+  if (!selected) return { contracts: [], providers: [] }
+  const providerIds = configProviderIds(request.providers)
+  for (const providerId of providerIds) {
+    if (providerId === 'reference') await bindReferenceConfigContract(harness, request.command, providerId)
+    else await bindConfigContract(harness, request.command, providerId)
+  }
+  return { contracts: ['agh.config'], providers: providerIds }
+}

@@ -1,18 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import {
-  createConformanceHarness,
-  discoverContracts,
-  judgeReport,
-  providerFileForContract,
-  SCENARIOS,
-} from '@agnes/extension-api/testkit'
+import { readFileSync } from 'node:fs'
+import { discoverContracts, providerFileForContract, SCENARIOS } from '@agnes/extension-api/testkit'
 import { describe, expect, it } from 'vitest'
+import { runConformance } from '../../../tools/acceptance/runtime/run-conformance.js'
 import { createReferenceRegistry } from './index.js'
 import { loadReferencePlugin } from './plugin.js'
 import { configReferenceProvider, exerciseReferenceConfig } from './providers/config.js'
-import { SAMPLE_CONTRACT, SAMPLE_PROVIDER_ID, sampleContractCases } from './sample-contract.js'
+import { SAMPLE_CONTRACT, SAMPLE_PROVIDER_ID } from './sample-contract.js'
 
 describe('reference registry', () => {
   it('opens one empty slot for every generated contract', () => {
@@ -70,51 +63,21 @@ describe('reference registry', () => {
   })
 
   it('runs the copyable sample across the six scenarios', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'reference-sample-'))
-    const sample = sampleContractCases(join(directory, 'notes.sqlite'))
-    try {
-      const harness = createConformanceHarness()
-      const clock = {
+    const run = await runConformance({
+      contracts: [SAMPLE_CONTRACT],
+      providers: [SAMPLE_PROVIDER_ID],
+      command: 'sample-contract',
+      clock: {
         startedAt: '2026-10-01T00:00:00.000Z',
         finishedAt: '2026-10-01T00:00:01.000Z',
-      } as const
-      const assertions = []
-      for (const registration of sample.cases) {
-        const input = await registration.run({
-          contract: registration.contract,
-          scenario: registration.scenario,
-          qualification: registration.qualification,
-          providerId: registration.providerId,
-          clock,
-          container: harness.container,
-          inbox: harness.inbox,
-        })
-        assertions.push({
-          ...input,
-          contract: registration.contract,
-          scenario: registration.scenario,
-          qualification: registration.qualification,
-          providerId: registration.providerId,
-          startedAt: clock.startedAt,
-          finishedAt: clock.finishedAt,
-        })
-      }
-      const report = judgeReport({
-        contracts: [SAMPLE_CONTRACT],
-        providers: [SAMPLE_PROVIDER_ID],
-        unknownContracts: [],
-        command: 'sample-contract',
-        startedAt: clock.startedAt,
-        finishedAt: clock.finishedAt,
-        assertions,
-      })
-      expect(report.assertions.map((item) => item.scenario)).toEqual([...SCENARIOS])
-      expect(report.assertions.every((item) => item.status === 'passed')).toBe(true)
-      expect(report.status).toBe('passed')
-      expect(report.failures).toEqual([])
-    } finally {
-      sample.close()
-      rmSync(directory, { recursive: true, force: true })
-    }
+      },
+      reportPath: null,
+    })
+    const rows = run.report.assertions.filter((item) => item.contract === SAMPLE_CONTRACT)
+    expect(rows.map((item) => item.scenario)).toEqual([...SCENARIOS])
+    expect(rows.every((item) => item.status === 'passed')).toBe(true)
+    expect(run.report.failures).toEqual([
+      { code: 'missing-evidence', detail: `unknown contract ${SAMPLE_CONTRACT}` },
+    ])
   })
 })

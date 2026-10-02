@@ -588,7 +588,7 @@ describe('default artifacts assembly', () => {
           }),
         ),
       ),
-    ).toBe('service_not_registered')
+    ).toBe('feature_missing')
     expect(
       refused(
         assemble((container) => container.register({ requirement: BLOB_REQUIREMENT, binding: BLOB_BINDING })),
