@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -302,6 +303,83 @@ describe('createMcpRowRuntime keeps a row live against the real tool registry', 
     // The bound session's tool is the re-registered one, served by the new connection.
     await run(`${ALPHA_PREFIX}ping`)
     expect(served).toEqual([2])
+  })
+
+  it('stores an oversized MCP result as an artifact the model can read back (single block and many blocks)', async () => {
+    const host = await testHost()
+    const big = Array.from({ length: 400 }, (_, i) => `line ${i} ${'x'.repeat(60)}`).join('\n')
+    let content: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: big }]
+    const opener: McpServerOpener = {
+      async connect(definition) {
+        const connection: McpConnection = {
+          id: definition.serverId,
+          async listTools() {
+            return [{ name: 'dump', description: 'dump', inputSchema: { type: 'object' } }]
+          },
+          async callTool() {
+            return { content }
+          },
+          async close() {},
+          onClose: () => () => undefined,
+          onToolsChanged: () => () => undefined,
+        }
+        return connection
+      },
+    }
+    await createMcpRowRuntime({ host, opener }).apply([entry('alpha')])
+    const session = await host.createSession({ key: 'bound-spill', cwd: hostDir })
+    // A content-addressed in-memory store standing in for the artifact seam; what is under test is
+    // that the Host lets the MCP row reach it at all.
+    const store = new Map<string, Uint8Array>()
+    const run = (name: string, args: unknown) =>
+      (
+        session.currentTools().resolve(name) as unknown as {
+          execute(
+            args: unknown,
+            ctx: unknown,
+          ): Promise<{ content: Array<{ type: string; text?: string; ref?: { sha256: string } }> }>
+        }
+      ).execute(args, {
+        signal: new AbortController().signal,
+        session: { key: session.key, lane: session.lane, workspaceRoot: hostDir },
+        outputMaxBytes: 8192,
+        artifacts: {
+          async put(bytes: Uint8Array, meta?: { mime?: string }) {
+            const sha256 = createHash('sha256').update(bytes).digest('hex')
+            store.set(sha256, bytes)
+            return { sha256, size: bytes.byteLength, mime: meta?.mime ?? 'text/plain' }
+          },
+          async get(ref: { sha256: string }) {
+            const bytes = store.get(ref.sha256)
+            if (!bytes) throw new Error('missing artifact')
+            return bytes
+          },
+        },
+      })
+    const textOf = (result: Awaited<ReturnType<typeof run>>) =>
+      result.content.map((block) => block.text ?? '').join('\n')
+    await vi.waitFor(() => expect(session.currentTools().resolve(`${ALPHA_PREFIX}dump`)).toBeDefined())
+
+    const single = await run(`${ALPHA_PREFIX}dump`, {})
+    expect(textOf(single)).not.toContain('E_CAPABILITY_UNDECLARED')
+    expect(textOf(single)).not.toContain('could not be stored')
+    const locator = /artifact:\/\/[0-9a-f]{64}\?size=\d+/.exec(textOf(single))?.[0]
+    expect(locator).toBeDefined()
+    const readBack = await run('read', { path: locator, offset: 390 })
+    // The line the inline view cut away (the tail window starts after it) is reachable.
+    expect(textOf(readBack)).toContain('line 399')
+
+    // Many small blocks: each fits on its own, the call as a whole does not.
+    content = Array.from({ length: 20 }, (_, i) => ({
+      type: 'text' as const,
+      text: `row ${i} ${'y'.repeat(7000)}`,
+    }))
+    const many = await run(`${ALPHA_PREFIX}dump`, {})
+    expect(textOf(many)).toContain('full text set stored as artifact')
+    expect(textOf(many)).not.toContain('could not be stored')
+    const setRef = many.content.find((block) => block.type === 'ref')?.ref
+    expect(setRef).toBeDefined()
+    expect(JSON.parse(new TextDecoder().decode(store.get(setRef?.sha256 as string)))).toHaveLength(20)
   })
 })
 

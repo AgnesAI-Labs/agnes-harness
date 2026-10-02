@@ -55,14 +55,14 @@ describe('mcpServerRowsFromDefinitions', () => {
     expect(rows[0]?.spec.id).not.toBe(rows[1]?.spec.id)
   })
 
-  it('declares exactly what its one server registers: its own tool prefix and the mcp resource kind', () => {
+  it('declares exactly what its one server uses: its own tool prefix, the mcp resource kind, and the artifact store for spilled output', () => {
     const { rows } = mcpServerRowsFromDefinitions([stdioEntry('gh'), stdioEntry('my.server-2')], fakeOpener)
     // The prefix is register.ts's tool naming for that server id -- both call the same
     // mcpLocalToolPrefix() (design 2026-09-23-mcp-tool-name-collision-design.md §0.4), so the ext
     // host lets this row register its own server's tools and nothing else.
     expect(rows.map((row) => row.manifest.capabilities)).toEqual([
-      { tools: { prefix: mcpLocalToolPrefix('gh') }, resources: ['mcp'] },
-      { tools: { prefix: mcpLocalToolPrefix('my.server-2') }, resources: ['mcp'] },
+      { tools: { prefix: mcpLocalToolPrefix('gh') }, resources: ['mcp'], artifacts: true },
+      { tools: { prefix: mcpLocalToolPrefix('my.server-2') }, resources: ['mcp'], artifacts: true },
     ])
   })
 
