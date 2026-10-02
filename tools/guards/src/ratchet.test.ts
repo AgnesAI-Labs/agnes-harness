@@ -1456,7 +1456,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
-  'packages/sdk/src': 5130,
+  // Runtime client wire adapter (bootstrap, catalog paging, write gate, command journal and status
+  // recovery) and the verified artifact range and stream reader. Merged total: 5668, exact, no spare.
+  'packages/sdk/src': 5668,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
