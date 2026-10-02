@@ -946,6 +946,31 @@ describe('connectMcp', () => {
     expect(heardAfterClose).toEqual([])
   })
 
+  it('treats a stdio transport error (a stray non-JSON stdout line) as noise, and only the process exit as a disconnect', async () => {
+    const { deps, transports } = fakeSdk()
+    const conn = await connectMcp({ ...stdio, cmd: ['gh-mcp', '--stdio'] }, deps)
+    const lost = vi.fn()
+    conn.onClose?.(lost)
+    const transport = transports[0] as { onerror?: (error: Error) => void; onclose?: () => void }
+    // The SDK reports a line that is not a JSON-RPC message through onerror and keeps reading.
+    transport.onerror?.(new SyntaxError('Unexpected token S in JSON at position 0'))
+    expect(lost).not.toHaveBeenCalled()
+    transport.onclose?.()
+    expect(lost).toHaveBeenCalledOnce()
+  })
+
+  it('still treats an HTTP transport error as a lost connection', async () => {
+    const { deps, transports } = fakeSdk()
+    const conn = await connectMcp(
+      { id: 'web', transport: 'http', url: 'https://mcp.example/mcp', defer: false },
+      deps,
+    )
+    const lost = vi.fn()
+    conn.onClose?.(lost)
+    ;(transports[0] as { onerror?: (error: Error) => void }).onerror?.(new Error('stream failed'))
+    expect(lost).toHaveBeenCalledOnce()
+  })
+
   it('builds the HTTP transport, follows tool-list pagination, and forwards call cancellation', async () => {
     const first = {
       tools: [{ name: 'first', inputSchema: { type: 'object' as const } }],
