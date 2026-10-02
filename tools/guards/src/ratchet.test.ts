@@ -946,7 +946,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // The preset-wide default timeout reaches a tool as ctx.defaultTimeoutMs. Measured 25751 (+9), exact cap.
   // A cancel that lands before the turn opens is recorded once it does, and a cancel that cuts a
   // fail-closed hook ends the turn aborted. Measured 25769 (+18 over the preceding cap), exact cap.
-  'packages/core/src': 25769,
+  // Compaction: a summary route that cannot work is retried at growing intervals, and stops the turn
+  // with the reason once the window is nearly full (+34); the kept tail is sized net of the fixed
+  // prefix, so the first request after a compaction lands below the threshold (+8).
+  // Measured 25811, exact cap.
+  'packages/core/src': 25811,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1176,8 +1180,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
-  // A returning package must not be served a cached generation bound to revoked leases. Measured 4200, exact (+7).
-  'packages/host/src/assemble': 4200,
+  // A returning package must not be served a cached generation bound to revoked leases (+7), and the
+  // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
+  'packages/host/src/assemble': 4207,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2525,8 +2530,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
   // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9).
-  // Generation views are pruned before each candidate builds its session views. Measured 38319, exact (+13).
-  'packages/host/src': 38319,
+  // Generation views are pruned before each candidate builds its session views (+13). Installation state stays
+  // read-only under full file access: the fence guard, the roots helper and their wiring (+40).
+  // Measured 38359, exact.
+  'packages/host/src': 38359,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
