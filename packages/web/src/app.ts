@@ -1,5 +1,6 @@
 import {
   type ConfigSnapshot,
+  type ModelSettings,
   type PageSessionMeta,
   readSessionTitle,
   type UITimeline,
@@ -279,6 +280,7 @@ const clientModules = await startClientModules({
     onDraftChange: handleComposerDraftChange,
     onError: showError,
     onModelSelect: selectModel,
+    onModelSettingsChange: selectModelSettings,
     onPermissionSelect: selectPermission,
     onSubmit: submitComposer,
     onWorkspace: handleComposerWorkspace,
@@ -368,12 +370,14 @@ let workspacePickerReady: boolean | undefined
 let workspacePickerBusy = false
 let stopAfterSeq = 0
 let approvalBusy = false
-let runtimeModels: Array<{ route: string; id: string; label?: string }> = []
+let runtimeModels: ModelPickerOption[] = []
 let accountLabels = new Map<string, string>()
 let accountProvider: { route?: string; id?: string; model?: string } | null = null
 let knownSessionModel: KnownSessionModel | undefined
 let initialModelPending: KnownSessionModel | undefined
 let modelChangePending = false
+let modelSelectionSeq = 0
+let draftModelSettingsEdited = false
 let permissionMode: PermissionMode = 'workspace'
 let permissionChangePending = false
 let sessionYoloEnabled = false
@@ -569,6 +573,9 @@ function renderControls(): void {
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
     control.disabled = recoveryDisabled()
   const canStartDraft = draftingNew && selectedWorkspace?.available === true
+  const selectedRecord = runtimeModels.find(
+    (m) => m.route === knownSessionModel?.route && m.id === knownSessionModel?.id,
+  )
   const composerView: ComposerView = {
     cancel: {
       disabled: !connected || !busy || stopping || sessionPending,
@@ -609,6 +616,16 @@ function renderControls(): void {
       pending: modelChangePending,
       ...(knownSessionModel ? { selected: knownSessionModel } : {}),
     },
+    ...(knownSessionModel && selectedRecord?.contextWindow
+      ? {
+          modelSettings: {
+            key: current?.id ?? 'draft',
+            settings: knownSessionModel.settings ?? modelDefaults(knownSessionModel).settings ?? {},
+            contextWindow: selectedRecord.contextWindow,
+            thinkingLevelMap: selectedRecord.thinkingLevelMap,
+          },
+        }
+      : {}),
     permission: {
       disabled:
         !available || (!current && !draftingNew) || busy || sessionPending || initialSubmissionPending,
@@ -698,8 +715,20 @@ function render(): void {
   // 上一会话：此时屏幕上保留的正是上一会话画面，任何重绘都会把旧投影的
   // 模型、标题、审批卡写进新会话的控件。等投影换代后再渲染。
   if (!current || projection.sessionId !== current.id) return
-  if (projection.usage?.model && !knownSessionModel && !modelChangePending && !initialModelPending) {
-    knownSessionModel = { route: projection.usage.model.route, id: projection.usage.model.id }
+  if (
+    projection.usage?.model &&
+    !modelChangePending &&
+    !initialModelPending &&
+    projection.upto >= modelSelectionSeq
+  ) {
+    knownSessionModel = {
+      route: projection.usage.model.route,
+      id: projection.usage.model.id,
+      settings: projection.usage.model.settings ?? {
+        contextWindow: projection.usage.context.window,
+        thinking: projection.usage.model.thinking,
+      },
+    }
     rememberWebComposer({ model: knownSessionModel })
   }
   const receipt = current ? receipts.get(current.id) : undefined
@@ -936,6 +965,7 @@ async function open(
   }
   knownSessionModel = undefined
   initialModelPending = options.initialModel
+  modelSelectionSeq = 0
   selectedWorkspace = undefined
   modelChangePending = false
   renderControls()
@@ -1239,8 +1269,9 @@ async function beginNewDraft(showWorkspacePicker = true): Promise<void> {
   clientModules.session.setSession(undefined)
   projection = undefined
   draftingNew = true
+  draftModelSettingsEdited = false
   pendingSessionKey = crypto.randomUUID()
-  knownSessionModel = inherited.model
+  knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
   permissionMode = inherited.permission
   initialModelPending = undefined
   submissionGeneration++
@@ -1303,18 +1334,17 @@ function selectedModelAvailable(): boolean {
 async function refreshModels(): Promise<ModelPickerOption[]> {
   const generation = ++modelReadGeneration
   const apis = await client.apis()
-  const models = (apis.profile.models ?? []).map(({ route, id }) => ({
-    route,
-    id,
-    ...(accountLabels.has(route) ? { label: accountLabels.get(route) as string } : {}),
+  const models = (apis.profile.models ?? []).map((model) => ({
+    ...model,
+    ...(accountLabels.has(model.route) ? { label: accountLabels.get(model.route) as string } : {}),
   }))
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
     configured = runtimeModels.length > 0
-    if (draftingNew && !modelChangePending && !permissionChangePending) {
+    if (draftingNew && !draftModelSettingsEdited && !modelChangePending && !permissionChangePending) {
       const next = selectionFromMemory(runtimeModels, accountProvider)
-      knownSessionModel = next.model
+      knownSessionModel = next.model ? modelDefaults(next.model) : undefined
       permissionMode = next.permission
     }
     renderControls()
@@ -1357,13 +1387,46 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     }
   }
 }
-async function selectModel(option: ModelPickerOption): Promise<boolean> {
+function modelDefaults(option: ModelPickerOption): KnownSessionModel {
+  const record = runtimeModels.find((m) => m.route === option.route && m.id === option.id)
+  return {
+    route: option.route,
+    id: option.id,
+    settings: {
+      ...record?.defaultSettings,
+      ...(record?.contextWindow
+        ? { contextWindow: record.defaultSettings?.contextWindow ?? record.contextWindow }
+        : {}),
+    },
+  }
+}
+async function selectModelSettings(settings: ModelSettings): Promise<boolean> {
+  if (!knownSessionModel) return false
+  return selectModel(knownSessionModel, settings)
+}
+async function selectModel(option: ModelPickerOption, settings?: ModelSettings): Promise<boolean> {
+  const sameModel = knownSessionModel?.route === option.route && knownSessionModel.id === option.id
+  const window =
+    settings?.contextWindow ??
+    runtimeModels.find((m) => m.route === option.route && m.id === option.id)?.contextWindow
+  const selected: KnownSessionModel =
+    settings === undefined
+      ? sameModel && knownSessionModel
+        ? knownSessionModel
+        : modelDefaults(option)
+      : {
+          route: option.route,
+          id: option.id,
+          settings: { ...settings, ...(window === undefined ? {} : { contextWindow: window }) },
+        }
   const session = current
   if (sessionPending || modelChangePending) return false
   if (!session && draftingNew) {
-    knownSessionModel = { route: option.route, id: option.id }
+    if (settings !== undefined) draftModelSettingsEdited = true
+    else if (!sameModel) draftModelSettingsEdited = false
+    knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
-    notice.textContent = '新会话将使用所选模型。'
+    notice.textContent = '新会话将使用所选模型与配置。'
     notice.dataset.kind = ''
     renderControls()
     return true
@@ -1373,12 +1436,19 @@ async function selectModel(option: ModelPickerOption): Promise<boolean> {
   modelChangePending = true
   renderControls()
   try {
-    await session.setModel({ slot: 'primary', route: option.route, model: option.id })
+    const applied = await session.setModel({
+      slot: 'primary',
+      route: option.route,
+      model: option.id,
+      thinking: selected.settings?.thinking ?? null,
+      contextWindow: selected.settings?.contextWindow ?? null,
+    })
     if (current !== session || selection !== epoch || sessionPending) return false
-    knownSessionModel = { route: option.route, id: option.id }
+    modelSelectionSeq = applied.effectiveFromSeq
+    knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
-    notice.textContent = '模型已更新，后续请求将使用所选模型。'
+    notice.textContent = '模型配置已保存，后续请求将使用新的思考强度和上下文窗口。'
     notice.dataset.kind = ''
     live?.refresh()
     return true
@@ -1712,8 +1782,15 @@ function submitComposer(): void {
     if (!session) throw new Error('会话创建失败。')
     if (initialModelPending) {
       const selectedModel = initialModelPending
-      await session.setModel({ slot: 'primary', route: selectedModel.route, model: selectedModel.id })
+      const applied = await session.setModel({
+        slot: 'primary',
+        route: selectedModel.route,
+        model: selectedModel.id,
+        thinking: selectedModel.settings?.thinking ?? null,
+        contextWindow: selectedModel.settings?.contextWindow ?? null,
+      })
       if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
+      modelSelectionSeq = applied.effectiveFromSeq
       knownSessionModel = selectedModel
       initialModelPending = undefined
       renderControls()

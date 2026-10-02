@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import type { StorageAdapter } from '../src/log/storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { CompactionRunner } from '../src/step/compaction.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { Operation, SlotOperation } from '../src/step/session.js'
 import { fakeProvider, type Script, sent, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
@@ -849,7 +850,7 @@ describe('setModel', () => {
     expect(rows[0]?.data).toEqual({
       slot: 'primary',
       from: { route: 'default', model: null },
-      to: { route: 'r', model: 'm' },
+      to: { route: 'r', model: 'm', contextWindow: 8192 },
     })
   })
 
@@ -870,15 +871,69 @@ describe('setModel', () => {
       models: () => [{ ...modelRecord('r', 'm'), reasoning: true, thinkingLevelMap: { high: 'high' } }],
     })
     const { session, log } = await openSession({ provider })
-    await session.setModel({ slot: 'primary', route: 'r', model: 'm', thinking: 'high' })
+    await session.setModel({ slot: 'primary', route: 'r', model: 'm', thinking: 'high', contextWindow: 4096 })
     expect(session.preset.model.thinking.primary).toBe('high')
+    expect(session.preset.model.contextWindow?.primary).toBe(4096)
     const rows = await log.scan({ type: 'x/core/model-switch', limit: 5 })
     expect(rows[0]?.data).toEqual({
       slot: 'primary',
       from: { route: 'default', model: null },
-      to: { route: 'r', model: 'm', thinking: 'high' },
+      to: { route: 'r', model: 'm', thinking: 'high', contextWindow: 4096 },
     })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(provider.requests[0]?.sampling?.thinking).toBe('high')
+    const usage = (await session.projectUI()).usage
+    expect(usage?.context.window).toBe(4096)
+    expect(usage?.model.settings).toEqual({ thinking: 'high', contextWindow: 4096 })
+    for (const contextWindow of [0, 100, 2047, 1.5, 8193]) {
+      await expect(
+        session.setModel({ slot: 'primary', route: 'r', model: 'm', contextWindow }),
+      ).rejects.toMatchObject({ code: 'E_MODEL_UNKNOWN' })
+    }
+    await session.setModel({ slot: 'primary', route: 'r', model: 'm', thinking: null, contextWindow: null })
+    expect(session.preset.model.thinking.primary).toBeUndefined()
+    expect(session.preset.model.contextWindow?.primary).toBe(8192)
   })
+
+  it.each([100, 4096].flatMap((window) => ['inference', 'compaction'].map((mode) => ({ window, mode }))))(
+    'refuses an unusable saved context budget ($window) before $mode',
+    async ({ window, mode }) => {
+      const provider = fakeProvider([textTurn('unused')])
+      Object.assign(provider, { models: () => [modelRecord('r', 'm')] })
+      const registry = new ToolRegistry()
+      for (let index = 0; index < 8; index++)
+        registry.add(
+          {
+            ...(readTool() as ToolDef),
+            name: `budget_read_${index}`,
+            description: 'fixed instructions '.repeat(180),
+          },
+          { source: 'test', trust: 'builtin' },
+        )
+      const { session } = await openSession({ provider, registry })
+      await session.setModel({ slot: 'primary', route: 'r', model: 'm' })
+      // Old ledgers can carry values which new configuration writes no longer accept.
+      session.preset.model.contextWindow = { primary: window }
+      if (mode === 'compaction') {
+        session.compaction = new CompactionRunner({
+          plan: async () => null,
+          onCompact: async () => undefined,
+        })
+        await session.requestCompaction({ actor, admissionId: 'unusable-budget' })
+      } else await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hello' }], actor })
+      expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'budget',
+        error: { code: 'BUDGET_EXCEEDED' },
+      })
+      expect(provider.requests).toHaveLength(0)
+      expect(session.surface().some((node) => node.kind === 'user')).toBe(true)
+      expect((await session.projectUI()).turns?.at(-1)).toMatchObject({
+        status: 'failed',
+        error: { code: 'BUDGET_EXCEEDED', message: expect.stringContaining('context budget') },
+      })
+    },
+  )
 
   it('omitting thinking leaves the slot at whatever level it already had', async () => {
     const provider = fakeProvider([textTurn('a'), textTurn('b')])

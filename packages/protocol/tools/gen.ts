@@ -41,7 +41,12 @@ const TARGETS: Array<{
       { from: 'schema/session-v1.json', defs: ['JsonValue'] },
     ],
   },
-  { schema: 'schema/session-v1.json', out: 'gen/ts/session-v1.ts', module: 'SessionV1' },
+  {
+    schema: 'schema/session-v1.json',
+    out: 'gen/ts/session-v1.ts',
+    module: 'SessionV1',
+    imports: [{ from: 'schema/model.json', defs: ['ModelSettings', 'ThinkingLevel'] }],
+  },
   {
     schema: 'schema/agnes-v1.json',
     out: 'gen/ts/agnes-v1.ts',
@@ -157,7 +162,7 @@ const TARGETS: Array<{
       { from: 'schema/jobs.json', defs: ['Schedule', 'JobSpec', 'JobStatus'] },
       // SessionSetModelParams.slot reuses the one closed SlotName enum (model.json) rather than
       // retyping the seven-value set a second time.
-      { from: 'schema/model.json', defs: ['SlotName', 'ThinkingLevel', 'TokenCounts'] },
+      { from: 'schema/model.json', defs: ['SlotName', 'ThinkingLevel', 'ModelSettings', 'TokenCounts'] },
     ],
   },
   { schema: 'schema/acp/schema.json', out: 'gen/ts/acp.ts', module: 'Acp' },
@@ -245,7 +250,15 @@ const TARGETS: Array<{
     imports: [
       {
         from: 'schema/model.json',
-        defs: ['RouteDecl', 'ModelRecord', 'ModelCost', 'DecodeRule', 'SlotName'],
+        defs: [
+          'RouteDecl',
+          'ModelRecord',
+          'ModelSettings',
+          'ThinkingLevel',
+          'ModelCost',
+          'DecodeRule',
+          'SlotName',
+        ],
       },
       { from: 'schema/session-v1.json', defs: ['JsonValue'] },
     ],

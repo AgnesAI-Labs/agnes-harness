@@ -13,6 +13,8 @@ export type PresetView = {
     promptSections?: readonly string[]
     route: Record<string, string>
     thinking: Partial<Record<string, ThinkingLevel>>
+    /** Durable per-session windows, keyed by model slot. */
+    contextWindow?: Partial<Record<string, number>>
     /**
      * The model id a slot asks its route for, when the assembly pins one. A route names an
      * endpoint; a model id names what that endpoint is asked to run, and the two are different

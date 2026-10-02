@@ -32,7 +32,9 @@ import type {
   ConfigTestInput,
   ConfigTestResult,
   ModelRecord,
+  ModelSettings,
 } from '@agnes/protocol'
+import { minimumContextBudget } from '@agnes/protocol'
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { subscriptionCredentials } from './adapters/codex-credentials.js'
 import {
@@ -43,6 +45,13 @@ import {
 import { createWin32Platform } from './adapters/platform.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
 import { withConfigurationLock } from './configuration-lock.js'
+import {
+  applyModelConfiguration,
+  configModel,
+  normalizeConfigModel,
+  normalizeModelSettings,
+  supportsModelSettings,
+} from './configuration-models.js'
 import type { RuntimeProfileManifest } from './profile/types.js'
 
 type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry
@@ -325,6 +334,7 @@ function parseSaveInput(value: unknown): {
         'label',
         'enabled',
         'makeDefault',
+        'defaultSettings',
       ].includes(key),
     )
   )
@@ -345,48 +355,6 @@ function parseSaveInput(value: unknown): {
     model,
     ...(input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision as number }),
   }
-}
-
-const THINKING_LEVEL_NAMES = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
-
-/**
- * `false` disables reasoning outright; a non-empty dict of level -> wire value declares exactly
- * which levels this deployment has verified for the model, replacing whatever the installed
- * catalogue claims. An empty dict is rejected rather than silently treated as "no override" or
- * "reasoning with no levels" - either `false` or a real declaration is required, matching the
- * stored config's fail-closed decode discipline everywhere else in this file.
- */
-function normalizeThinkingEfforts(value: unknown): false | Record<string, string> | undefined {
-  if (value === false) return false
-  if (!isRecord(value)) return undefined
-  const keys = Object.keys(value)
-  if (keys.length === 0) return undefined
-  for (const key of keys) {
-    if (!THINKING_LEVEL_NAMES.has(key)) return undefined
-    const wire = value[key]
-    if (typeof wire !== 'string' || wire.length === 0) return undefined
-  }
-  return value as Record<string, string>
-}
-
-function normalizeModel(value: unknown): ConfigModel | undefined {
-  if (
-    !isRecord(value) ||
-    (!exactKeys(value, ['id', 'name']) && !exactKeys(value, ['id', 'name', 'thinkingEfforts']))
-  )
-    return undefined
-  if (typeof value.id !== 'string' || !MODEL.test(value.id)) return undefined
-  if (
-    typeof value.name !== 'string' ||
-    value.name.length === 0 ||
-    value.name.length > 256 ||
-    !SAFE_TEXT.test(value.name)
-  )
-    return undefined
-  if (!('thinkingEfforts' in value)) return { id: value.id, name: value.name }
-  const thinkingEfforts = normalizeThinkingEfforts(value.thinkingEfforts)
-  if (thinkingEfforts === undefined) return undefined
-  return { id: value.id, name: value.name, thinkingEfforts }
 }
 
 function decodeConfiguration(value: unknown, profile: string): StoredConfigurationV1 | undefined {
@@ -415,7 +383,7 @@ function decodeConfiguration(value: unknown, profile: string): StoredConfigurati
     provider.models.length > MAX_MODELS
   )
     return undefined
-  const models = provider.models.map(normalizeModel)
+  const models = provider.models.map(normalizeConfigModel)
   if (models.some((model) => model === undefined)) return undefined
   const normalized = models as ConfigModel[]
   if (new Set(normalized.map((model) => model.id)).size !== normalized.length) return undefined
@@ -554,30 +522,23 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
   }
 }
 
+function checkedDefaults(model: ConfigModel, value: unknown): ModelSettings {
+  const settings = normalizeModelSettings(value)
+  if (
+    !settings ||
+    !supportsModelSettings(model, settings) ||
+    (settings.contextWindow !== undefined &&
+      settings.contextWindow < minimumContextBudget(model.contextWindow))
+  )
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  return settings
+}
+
 function cloneRecord(record: ModelRecord, baseUrl: string, route: string): ModelRecord {
   return { ...structuredClone(record), baseUrl, route }
 }
 
 const windowsDirectories = createWin32Platform().matches()
-
-/**
- * A deployment's declared `thinkingEfforts` always wins over whatever the installed catalogue
- * (pi-ai's bundled data today) says about a model's reasoning capability — not a patch over gaps,
- * a full replacement, in both directions: `false` turns off a model the catalogue wrongly marks as
- * reasoning-capable, and a declared map turns one on that the catalogue wrongly marks as not. Absent
- * entirely (the common case), the catalogue's own `reasoning`/`thinkingLevelMap` passes through untouched.
- */
-function applyThinkingEfforts(
-  record: ModelRecord,
-  thinkingEfforts: ConfigModel['thinkingEfforts'],
-): ModelRecord {
-  if (thinkingEfforts === undefined) return record
-  if (thinkingEfforts === false) {
-    const { thinkingLevelMap: _drop, ...rest } = record
-    return { ...rest, reasoning: false }
-  }
-  return { ...record, reasoning: true, thinkingLevelMap: thinkingEfforts }
-}
 
 async function ensureDirectory(path: string): Promise<void> {
   try {
@@ -785,7 +746,14 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
         route: row.route,
         baseUrl: row.baseUrl,
         model: row.model,
-        models: structuredClone(row.models),
+        models: await staticCatalogue(providerFor(row.id, row.authType))
+          .catch(() => ({ records: [] as ModelRecord[] }))
+          .then(({ records }) =>
+            row.models.map((saved) => {
+              const record = records.find((m) => m.id === saved.id)
+              return record ? configModel(record, saved) : structuredClone(saved)
+            }),
+          ),
         enabled: row.enabled,
         authType: row.authType,
         credentialConfigured: await configuredCredential(
@@ -862,10 +830,12 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
     if (changedEndpoint && parsed.apiKey === undefined)
       throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
     const storedCredential = row ? await readCredential(row.credentialRef) : null
-    let models = (await staticCatalogue(parsed.entry)).records.map((record) => ({
-      id: record.id,
-      name: record.name,
-    }))
+    let models = (await staticCatalogue(parsed.entry)).records.map((record) =>
+      configModel(
+        record,
+        row?.models.find((m) => m.id === record.id),
+      ),
+    )
     if (row?.authType === 'oauth' && parsed.apiKey === undefined) {
       const provider = getSubscriptionProvider(row.id)
       if (!provider || !isSubscriptionCredential(storedCredential, row.id)) return { models, verified: false }
@@ -874,7 +844,12 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
         const store = subscriptionCredentials(home, row.credentialRef, provider.id)
         const runtime = subscriptionAuth(provider.id, store)
         const auth = await runtime.resolve(signal)
-        models = (await runtime.available(signal)).map((record) => ({ id: record.id, name: record.name }))
+        models = (await runtime.available(signal)).map((record) =>
+          configModel(
+            record,
+            row.models.find((m) => m.id === record.id),
+          ),
+        )
         const model = parsed.model ?? row.model
         if (!models.some((entry) => entry.id === model))
           throw new ConfigurationError('CONFIG_SUBSCRIPTION_MODEL')
@@ -949,7 +924,12 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
         : providerEndpoint(entry, input.baseUrl)
     const result = oauthEntry
       ? {
-          models: (await staticCatalogue(entry)).records.map((m) => ({ id: m.id, name: m.name })),
+          models: (await staticCatalogue(entry)).records.map((record) =>
+            configModel(
+              record,
+              existing?.models.find((m) => m.id === record.id),
+            ),
+          ),
           verified: true,
         }
       : await test({
@@ -993,7 +973,16 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
       route: existing?.route ?? (input.accountId === undefined ? entry.route : `account-${id}`),
       baseUrl,
       model: parsed.model,
-      models: result.models,
+      models: result.models.map((model) => {
+        const defaults =
+          model.id === parsed.model && input.defaultSettings !== undefined
+            ? input.defaultSettings
+            : model.defaultSettings
+        return {
+          ...model,
+          ...(defaults === undefined ? {} : { defaultSettings: checkedDefaults(model, defaults) }),
+        }
+      }),
       credentialRef: ref,
       enabled,
       authType: oauth ? 'oauth' : 'api-key',
@@ -1121,7 +1110,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
             },
           }
         : {}),
-    async commit(input, credential, model, signal) {
+    async commit(input, credential, model, signal, defaultSettings) {
       if (((await loadState())?.revision ?? 0) !== input.expectedRevision)
         throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
       signal.throwIfAborted()
@@ -1143,10 +1132,18 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
           accountRef(providerFor(input.providerId, 'oauth'), profile, input.accountId, revision) +
           '-g' +
           randomUUID().replaceAll('-', '')
-        const models = subscriptionModels(input.providerId, credential).map((m) => ({
-          id: m.id,
-          name: m.name,
-        }))
+        const models = subscriptionModels(input.providerId, credential).map((record) => {
+          const projected = configModel(
+            record,
+            existing?.models.find((m) => m.id === record.id),
+          )
+          const defaults =
+            record.id === model && defaultSettings !== undefined ? defaultSettings : projected.defaultSettings
+          return {
+            ...projected,
+            ...(defaults === undefined ? {} : { defaultSettings: checkedDefaults(projected, defaults) }),
+          }
+        })
         if (!models.some((m) => m.id === model)) throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
         const store = subscriptionCredentials(home, ref, input.providerId)
         await store.modify(input.providerId, async () => credential, { signal })
@@ -1233,9 +1230,12 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
               .filter(({ record }) =>
                 row.authType === 'oauth' && 'api' in record ? record.api === api : entry.api === api,
               )
-              .map(({ record, model }) =>
-                applyThinkingEfforts(cloneRecord(record, row.baseUrl, route), model.thinkingEfforts),
-              )
+              .map(({ record, model }) => {
+                const effective = applyModelConfiguration(cloneRecord(record, row.baseUrl, route), model)
+                if (effective.defaultSettings && !supportsModelSettings(effective, effective.defaultSettings))
+                  throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
+                return effective
+              })
             models.sort((a, b) => (a.id === row.model ? -1 : b.id === row.model ? 1 : 0))
             return {
               route,

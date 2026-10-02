@@ -314,16 +314,20 @@ describe('web session selection', () => {
       JSON.stringify({ model: { route: 'local', id: 'model-b' }, permission: 'full' }),
     )
     const fresh = session('fresh', async () => idleTimeline('fresh'))
+    const draftModel = {
+      route: 'local',
+      id: 'model-b',
+      contextWindow: 128000,
+      thinkingLevelMap: { low: 'low', high: 'high' },
+      defaultSettings: { thinking: 'high', contextWindow: 64000 },
+    }
     sdk.createClient.mockReturnValue({
       initialize: vi.fn(async () => undefined),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
       apis: vi.fn(async () => ({
         profile: {
-          models: [
-            { route: 'local', id: 'model-a' },
-            { route: 'local', id: 'model-b' },
-          ],
+          models: [{ route: 'local', id: 'model-a' }, draftModel],
         },
       })),
       config: {
@@ -361,6 +365,41 @@ describe('web session selection', () => {
       expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
     })
     expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
+    const settingsButton = document.getElementById('composer-model-settings') as HTMLButtonElement
+    settingsButton.click()
+    await vi.waitFor(() =>
+      expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('64000'),
+    )
+    const thinking = document.getElementById('session-model-thinking') as HTMLSelectElement
+    expect(thinking.value).toBe('high')
+    thinking.value = 'low'
+    thinking.dispatchEvent(new Event('change', { bubbles: true }))
+    const windowInput = document.getElementById('session-model-window') as HTMLInputElement
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(windowInput, '32000')
+    windowInput.dispatchEvent(new Event('input', { bubbles: true }))
+    const dialogButton = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('.agnes-ui-dialog button')].find(
+        (b) => b.textContent?.replace(/\s/g, '') === label,
+      )
+    dialogButton('应用到本会话')?.click()
+    await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
+    draftModel.defaultSettings.contextWindow = 96000
+    model.click()
+    document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+    await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
+    await configurationCallback.saved?.({
+      profile: 'local',
+      revision: 1,
+      configured: true,
+      provider: null,
+      effect: 'new-sessions',
+    })
+    settingsButton.click()
+    await vi.waitFor(() =>
+      expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('32000'),
+    )
+    expect((document.getElementById('session-model-thinking') as HTMLSelectElement).value).toBe('low')
+    dialogButton('取消')?.click()
     const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
     cwd.value = '/workspace/agnes'
     document
@@ -376,7 +415,13 @@ describe('web session selection', () => {
       .getElementById('composer')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(fresh.setModel).toHaveBeenCalled())
-    expect(fresh.setModel).toHaveBeenCalledWith({ slot: 'primary', route: 'local', model: 'model-b' })
+    expect(fresh.setModel).toHaveBeenCalledWith({
+      slot: 'primary',
+      route: 'local',
+      model: 'model-b',
+      thinking: 'low',
+      contextWindow: 32000,
+    })
     expect(fresh.setYolo).toHaveBeenCalledWith(true)
   }, 20_000)
 
@@ -726,7 +771,13 @@ describe('web session selection', () => {
     const option = document.querySelector<HTMLElement>('[role="option"]')
     option?.click()
     await vi.waitFor(() =>
-      expect(old.setModel).toHaveBeenCalledWith({ slot: 'primary', route: 'local', model: 'model-a' }),
+      expect(old.setModel).toHaveBeenCalledWith({
+        slot: 'primary',
+        route: 'local',
+        model: 'model-a',
+        thinking: null,
+        contextWindow: null,
+      }),
     )
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-a')
     expect(model.title).toBe('当前会话模型：model-a')

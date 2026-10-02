@@ -52,6 +52,7 @@ import {
   type ProviderCountAttempt,
   quoteBudget,
 } from './calibrate.js'
+import { contextBudgetError } from './gate.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
 import { type OpStateObj, type ToolCallState, withPhase } from './op-state.js'
 import { runCoreReplacement, runSlot } from './reentry.js'
@@ -681,6 +682,11 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   // provider never sees. Tools, system, and messages are all on that wire; omitting any of them
   // lets a legal request reserve below the bytes that actually ship.
   let wire = toProviderRequest(out.request, { sessionKey: s.key, derivedHash: out.header.derived_hash })
+  const contextError = contextBudgetError(s, slot, { system: wire.system, tools: wire.tools })
+  if (contextError) {
+    await s.endTurn('budget', { error: contextError })
+    return { phase: 'terminal', reason: 'budget' }
+  }
   const estimate = (s.latest('budget.state') as BudgetState | undefined)?.lastPreflight?.tokens ?? 0
   let earlyCount: ProviderCountAttempt | undefined
   const imageCount = wireImageCount(wire)

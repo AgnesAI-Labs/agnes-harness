@@ -1,4 +1,4 @@
-import type { Billing, ModelRecord, ThinkingLevel, UsageView } from '@agnes/protocol'
+import type { Billing, ModelRecord, ModelSettings, ThinkingLevel, UsageView } from '@agnes/protocol'
 import type { CostLedger } from '../reduce/shapes.js'
 import type { Event, Seq } from '../types.js'
 import { applyCacheHealthEvent, cacheHealthView, initialCacheHealthState } from './cache-health.js'
@@ -11,6 +11,7 @@ export type UsageProjectionInput = {
   route: string
   model: Pick<ModelRecord, 'id' | 'contextWindow'> & Partial<Pick<ModelRecord, 'maxTokens'>>
   thinking: ThinkingLevel
+  settings?: ModelSettings
   contextTokens: number
   autoCompact: boolean
 }
@@ -152,6 +153,7 @@ export function projectUsage(input: UsageProjectionInput): UsageView {
       route: input.route,
       id: input.model.id,
       thinking: input.thinking,
+      ...(input.settings ? { settings: input.settings } : {}),
       ...(input.model.maxTokens ? { maxTokens: input.model.maxTokens } : {}),
     },
     ...(Object.keys(cacheHealthView(cacheHealth)).length > 0 ? { cache: cacheHealthView(cacheHealth) } : {}),

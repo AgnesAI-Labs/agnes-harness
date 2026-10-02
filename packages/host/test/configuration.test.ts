@@ -66,7 +66,20 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
     baseUrl: server.baseUrl,
     apiKey: 'sk-test-value',
   })
-  expect(result).toEqual({ models: [{ id: model, name: expect.any(String) }], verified: true })
+  expect(result).toMatchObject({
+    models: [
+      {
+        id: model,
+        name: expect.any(String),
+        contextWindow: expect.any(Number),
+        reasoning: expect.any(Boolean),
+      },
+    ],
+    verified: true,
+  })
+  const capacity = result.models[0]?.contextWindow
+  if (!capacity) throw new Error('model capacity missing')
+  const defaultSettings = { contextWindow: Math.floor(capacity / 2) }
   expect(requestsHeaders(server.requests)[0]?.authorization).toBe('Bearer sk-test-value')
 
   const saved = await service.save({
@@ -75,9 +88,11 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
     apiKey: 'sk-test-value',
     model,
     expectedRevision: 0,
+    defaultSettings,
   })
   expect(saved).toMatchObject({ profile: 'local-dev', revision: 1, configured: true, effect: 'new-sessions' })
   expect(await service.get()).toEqual(saved)
+  expect(saved.accounts?.[0]?.models[0]?.defaultSettings).toEqual(defaultSettings)
 
   const overlay = await service.profileInput()
   expect(overlay.provider?.catalog).toEqual({ include: [] })
@@ -86,6 +101,7 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
     route: 'openai',
     baseUrl: server.baseUrl,
   })
+  expect(overlay.provider?.routes?.[0]?.models?.[0]?.defaultSettings).toEqual(defaultSettings)
   const ref = overlay.provider?.routes?.[0]?.credentialRef
   expect(ref).toMatch(/^secret:\/\/openai\/account-[0-9a-f]{24}-r1$/)
   expect(JSON.stringify(overlay)).not.toContain('sk-test-value')
@@ -101,11 +117,26 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
   const other = createConfigurationService({ home: root, profile: 'local-dev' })
   const second = await service.save({ providerId: 'openai', model, expectedRevision: 1 })
   expect(second.revision).toBe(2)
+  expect(second.accounts?.[0]?.models[0]?.defaultSettings).toEqual(defaultSettings)
   await expect(other.get()).resolves.toMatchObject({ revision: 2, configured: true })
   const secondRef = (await service.profileInput()).provider?.routes?.[0]?.credentialRef
   expect(secondRef).toMatch(/^secret:\/\/openai\/account-[0-9a-f]{24}-r2$/)
   expect(secondRef).not.toBe(ref)
   await expect(createCredentialStore({ root }).read(ref)).resolves.toMatchObject({ value: 'sk-test-value' })
+  for (const invalid of [
+    { contextWindow: capacity + 1 },
+    { contextWindow: 1.5 },
+    { contextWindow: 100 },
+    { thinking: 'unknown' },
+    { thinking: 'high' },
+  ]) {
+    await expect(
+      service.save({ providerId: 'openai', model, defaultSettings: invalid as never }),
+    ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+    expect((await service.get()).revision).toBe(2)
+  }
+  const reset = await service.save({ providerId: 'openai', model, defaultSettings: {}, expectedRevision: 2 })
+  expect(reset.accounts?.[0]?.models[0]?.defaultSettings).toEqual({})
 })
 
 it('discovers, saves and reloads the current DeepSeek Flash id', async () => {
@@ -113,14 +144,15 @@ it('discovers, saves and reloads the current DeepSeek Flash id', async () => {
   const root = await home()
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
   const input = { providerId: 'deepseek', baseUrl: server.baseUrl, apiKey: 'sk-test-value' }
-  expect(await service.test(input)).toEqual({
+  expect(await service.test(input)).toMatchObject({
     models: [{ id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash' }],
     verified: true,
   })
-  await service.save({ ...input, model: 'deepseek-flash', expectedRevision: 0 })
+  const defaultSettings = { thinking: 'low' as const, contextWindow: 64000 }
+  await service.save({ ...input, model: 'deepseek-flash', defaultSettings, expectedRevision: 0 })
   const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
   expect((await reloaded.profileInput()).provider?.routes?.[0]?.models).toEqual([
-    expect.objectContaining({ id: 'deepseek-flash', input: ['text', 'image'] }),
+    expect.objectContaining({ id: 'deepseek-flash', input: ['text', 'image'], defaultSettings }),
   ])
 })
 
@@ -155,10 +187,12 @@ it('tests Kimi Coding Plan through its Anthropic-compatible catalogue and fails 
     }),
   )
 
-  await expect(service.test({ providerId: 'kimi-coding', apiKey: 'kimi-test-value' })).resolves.toEqual({
-    models: [{ id: model.id, name: model.name }],
-    verified: true,
-  })
+  await expect(service.test({ providerId: 'kimi-coding', apiKey: 'kimi-test-value' })).resolves.toMatchObject(
+    {
+      models: [{ id: model.id, name: model.name }],
+      verified: true,
+    },
+  )
   expect(requests[0]?.url).toBe('https://api.kimi.com/coding/v1/models')
   expect(requests[0]?.headers.get('x-api-key')).toBe('kimi-test-value')
   expect(requests[0]?.headers.get('anthropic-version')).toBe('2023-06-01')

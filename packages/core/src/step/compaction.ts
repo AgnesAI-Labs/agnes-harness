@@ -14,7 +14,9 @@ import { CoreError, type EventInput, type Seq } from '../types.js'
 import { quoteBudget } from './calibrate.js'
 import { elideSpan } from './compaction-elide.js'
 import {
+  compactionSettingsFor,
   compactionTriggerTokens,
+  contextBudgetError,
   contextTokens,
   contextWindowFor,
   lastCacheHint,
@@ -539,6 +541,7 @@ function elides(
   phase: CompactionPhase,
   failure: SummaryFailure,
   contextWindow: number,
+  reserveTokens: number,
 ): boolean {
   if (failure !== 'permanent' && failure !== 'retryable') return false
   if (failure === 'permanent' || phase.reason === 'overflow') return true
@@ -546,7 +549,7 @@ function elides(
   const runner = s.compaction as CompactionRunner
   return (
     runner.transientFailures + 1 >= MAX_TRANSIENT_FAILURES ||
-    contextWindow - compactionTriggerTokens(s) < s.preset.compaction.reserveTokens / 2
+    contextWindow - compactionTriggerTokens(s) < reserveTokens / 2
   )
 }
 
@@ -673,7 +676,7 @@ async function elide(
   return commitReplace(s, a, events, events.length - 2)
 }
 
-/** Executes one compaction attempt. It never closes the turn and writes at most one replace. */
+/** Executes one compaction attempt and writes at most one replace. */
 export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const op = s.op()
   if (op?.phase.kind !== 'compaction') return { phase: 'checkpoint' }
@@ -689,6 +692,7 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const tokensBefore = contextTokens(s)
   const primary = resolveModel(s, 'primary')
   const contextWindow = contextWindowFor(s, primary.route, primary.model)
+  const { reserveTokens, keepRecentTokens } = compactionSettingsFor(s, contextWindow)
   const previous = surface.find((node) => node.kind === 'summary')?.seq
   const custom =
     phase.plan && typeof phase.plan === 'object' && !Array.isArray(phase.plan)
@@ -707,7 +711,7 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const payload: BeforeCompactPayload & { toolCalls: Array<{ name: string; args: unknown }> } = {
     contextTokens: tokensBefore,
     contextWindow,
-    reserveTokens: s.preset.compaction.reserveTokens,
+    reserveTokens,
     reason: phase.reason,
     ...(previous === undefined ? {} : { previousSummarySeq: previous }),
     ...(typeof custom === 'string' ? { customInstructions: custom } : {}),
@@ -727,25 +731,49 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
       selected.kind === 'handled'
         ? selected.plan
         : await s.compaction.options.plan(payload, {
-            keepRecentTokens: s.preset.compaction.keepRecentTokens,
+            keepRecentTokens,
           })
   } catch (error) {
     return leaveWithoutEffect(s, op, error instanceof Error ? error.message : String(error))
   }
+  await s.ensureEnvelopeEpochs()
+  let currentPrefix: Prefix
+  try {
+    // Even an empty plan must check the fixed prompt cost before quoting a budget exception.
+    // When a primary request already ran, this just returns its saved prefix.
+    currentPrefix = await primaryPrefix(s)
+  } catch (error) {
+    if (!(error instanceof HookBlockedError)) throw error
+    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: error.reason } })
+    return { phase: 'terminal', reason: 'blocked' }
+  }
+  const contextError = contextBudgetError(s, 'primary', {
+    system: currentPrefix.sections.map((section) => section.text).join('\n\n'),
+    tools: currentPrefix.tools,
+  })
+  if (contextError) {
+    await s.endTurn('budget', { error: contextError })
+    return { phase: 'terminal', reason: 'budget' }
+  }
   if (!plan) {
     const cache = lastCacheHint(s)
+    const triggerTokens = compactionTriggerTokens(s)
     const stillOver =
       phase.reason === 'overflow' ||
       s.compaction.shouldCompact({
-        contextTokens: compactionTriggerTokens(s),
+        contextTokens: triggerTokens,
         contextWindow,
-        reserveTokens: s.preset.compaction.reserveTokens,
+        reserveTokens,
         ...(cache ? { cache } : {}),
       })
     if (stillOver) {
       const quoted = await quoteBudget(
         s,
-        `context ${tokensBefore} tokens exceeds the ${contextWindow} token window and cannot be compacted`,
+        `${
+          phase.reason === 'overflow'
+            ? 'Provider rejected the request as too large'
+            : `context ${triggerTokens} tokens reached the ${contextWindow - reserveTokens}-token compaction threshold (${contextWindow}-token session budget, ${reserveTokens} reserved)`
+        }; no earlier messages can be safely compacted. Increase the context budget or reset it to automatic.`,
       )
       if (quoted !== 'ok') return { phase: 'terminal', reason: quoted.reason }
     }
@@ -786,27 +814,20 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   }
   if (
     plan.previousSummarySeq !== undefined &&
-    !surface.some((node) => node.kind === 'summary' && node.seq === plan.previousSummarySeq)
+    !surface.some((node) => node.kind === 'summary' && node.seq === selectedPlan.previousSummarySeq)
   )
     return leaveWithoutEffect(s, op, 'previousSummarySeq is not the current summary')
 
-  await s.ensureEnvelopeEpochs()
   const target = resolveModel(s, 'compaction')
-  const window = contextWindowFor(s, target.route, target.model)
+  const window = contextWindowFor(s, target.route, target.model, 'compaction')
+  const outputCap = s.d.provider
+    .models()
+    .find((record) => record.route === target.route && record.id === target.model)?.maxTokens
+  if (outputCap && outputCap > 0) plan = { ...plan, maxTokens: Math.min(plan.maxTokens, outputCap) }
   const from = surface.findIndex((node) => node.seq === replace.start)
   const primaryTarget = resolveModel(s, 'primary')
   const turn = s.turn
   if (!turn) throw new CoreError('E_RELATION', 'compaction outside an active turn')
-  let currentPrefix: Prefix
-  try {
-    // Even a narrow or differently routed summary must run the cold prompt gate before sending.
-    // When a primary request already ran, this just returns its saved prefix.
-    currentPrefix = await primaryPrefix(s)
-  } catch (error) {
-    if (!(error instanceof HookBlockedError)) throw error
-    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: error.reason } })
-    return { phase: 'terminal', reason: 'blocked' }
-  }
   const prefix: Prefix =
     from === 0 && primaryTarget.route === target.route && primaryTarget.model === target.model
       ? currentPrefix
@@ -953,7 +974,8 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
     const message = s.ac.signal.aborted
       ? 'compaction cancelled'
       : `summary request failed${cause ? `: ${cause}` : ''}`
-    if (elides(s, phase, failure, contextWindow)) return elide(s, attempt, cause ?? failure, message, call)
+    if (elides(s, phase, failure, contextWindow, reserveTokens))
+      return elide(s, attempt, cause ?? failure, message, call)
     if (failure === 'retryable' && phase.reason === 'threshold') s.compaction.transientFailures++
     return settleFailed(s, phase, call, s.ac.signal.aborted ? 'aborted' : 'error', message)
   }

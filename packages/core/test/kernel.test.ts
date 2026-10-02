@@ -306,7 +306,8 @@ describe('Kernel default children', () => {
     // opening the same writer a second time (which would also install a second lease timer).
     expect(open).toHaveBeenCalledTimes(2)
     expect(parent.d.children.get?.(child.key)).toBe(child)
-    expect(await child.status()).toMatchObject({ state: 'running', lastSeq: 5 })
+    const childHead = (await storage.scan(child.key, { fromSeq: 1, limit: 100 })).at(-1)?.seq
+    expect(await child.status()).toMatchObject({ state: 'running', lastSeq: childHead })
 
     await expect(child.run('what?')).resolves.toMatchObject({ text: 'child says hi' })
     expect(await child.status()).toMatchObject({ state: 'done', text: 'child says hi' })
