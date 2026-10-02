@@ -944,7 +944,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // text instead of reading as a lost transport. Measured 25741 (+18), exact cap.
   // The soft deadline handed to a tool is a grace short of the kernel cut-off. Measured 25742 (+1), exact cap.
   // The preset-wide default timeout reaches a tool as ctx.defaultTimeoutMs. Measured 25751 (+9), exact cap.
-  'packages/core/src': 25751,
+  // A cancel that lands before the turn opens is recorded once it does, and a cancel that cuts a
+  // fail-closed hook ends the turn aborted. Measured 25769 (+18 over the preceding cap), exact cap.
+  'packages/core/src': 25769,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1799,7 +1801,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
-  'packages/daemon/src': 26505,
+  // A cancel that arrived before the worker run began is forwarded after it. Measured 26507 (+2), exact.
+  'packages/daemon/src': 26507,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
