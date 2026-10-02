@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS placements (
   event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, position INTEGER NOT NULL,
   anchor INTEGER NOT NULL, turn_id TEXT
 );
+CREATE INDEX IF NOT EXISTS placements_by_session ON placements (session_id, position);
 CREATE TABLE IF NOT EXISTS commands (request_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, handle TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS command_state (one INTEGER PRIMARY KEY CHECK (one = 1), revision INTEGER NOT NULL, value TEXT);
 `
@@ -217,8 +218,14 @@ export function openProjectionStore(path: string, options: ReferenceProjectionOp
     operation: rule.operation,
   }))
   const db = new DatabaseSync(path)
-  db.exec('PRAGMA journal_mode = WAL')
-  db.exec(TABLES)
+  try {
+    db.exec('PRAGMA journal_mode = WAL')
+    db.exec(TABLES)
+  } catch (error) {
+    // A file that is not this store, or one it cannot set up, must not keep the handle open.
+    db.close()
+    throw error
+  }
   const macKey = randomBytes(32)
   const salt = randomBytes(16).toString('hex')
   const memory = new Map<string, Remembered>()
@@ -580,6 +587,8 @@ export function openProjectionStore(path: string, options: ReferenceProjectionOp
       },
       readContext(context, state.revision),
     )
+    // A plan that arrives after the caller gave up is dropped; the request stays not-accepted.
+    if (context.signal.aborted) stop('cancelled', 'call was cancelled while the command was prepared')
     const plan = parse('DomainCommandPlan', must(prepared))
     if (plan.expectedRevision !== state.revision)
       stop('revision_conflict', 'plan was made for another revision')
@@ -678,20 +687,15 @@ export function openProjectionStore(path: string, options: ReferenceProjectionOp
     const grant = granted.value
     if (page && (page.who !== grant.readerId || page.as !== grant.role))
       stop('resync_required', 'reader access changed')
-    const placedRows = db
-      .prepare('SELECT event_id, position, anchor, turn_id FROM placements WHERE session_id = ?')
-      .all(sessionId) as { event_id: string; position: number; anchor: number; turn_id: string | null }[]
-    const placed = new Map<string, Placed>(
-      placedRows.map((row) => [
-        row.event_id,
-        { position: row.position, anchor: row.anchor, turnId: row.turn_id },
-      ]),
+    // Only the placements of the listed views' events, so a long session history is never loaded whole.
+    const placedAt = db.prepare(
+      'SELECT position, anchor, turn_id AS turnId FROM placements WHERE event_id = ? AND session_id = ?',
     )
     const listed = await viewsAt(rebuild(), listingQuery(scope), context)
     const entries = listed.shown
       .map((view) => {
         const first = view.source.eventIds
-          .map((eventId) => placed.get(eventId))
+          .map((eventId) => placedAt.get(eventId, sessionId) as Placed | undefined)
           .reduce<Placed | undefined>(
             (best, next) => (next && (!best || next.position < best.position) ? next : best),
             undefined,

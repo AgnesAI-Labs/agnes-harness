@@ -1,11 +1,18 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { mkdtempSync, rmSync, writeSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import type { CallContext } from '@agnes/extension-api/runtime'
+import {
+  type BuildIdentity,
+  type ConformanceHarness,
+  createConformanceHarness,
+  SCENARIOS,
+  type TestServiceBinding,
+} from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
@@ -19,7 +26,8 @@ import {
 
 /**
  * This file is also the child process: with CHILD set it opens the projection over a SQLite command
- * store, does one step, and can stop dead at a marked point so the parent kills it there.
+ * store, does one step, and can stop dead at a marked point so the parent kills it there. The shared
+ * projection suite runs here as well, because its recover scenario kills such processes.
  */
 const CHILD = 'AGH_DOMAIN_COMMAND_RECOVERY_CHILD'
 const NO_READS = {
@@ -36,13 +44,18 @@ const BINDING = {
   providerId: 'default',
 }
 
+type Fixture = {
+  domain: ProjectionDomain & { commandStateSchema: Wire.SchemaRef }
+  gate: ProjectionAccess
+  native: NativeConversation
+  turnOf(event: Wire.DomainEvent): string | null
+  prepared(): number
+}
+type Crash = { events: readonly Wire.DomainEvent[]; hold: unknown }
+
+/** The shared suite lives outside this package's build, so it is loaded by URL. Only what is used is typed. */
 type Suite = {
-  createProjectionFixture(): {
-    domain: ProjectionDomain & { commandStateSchema: Wire.SchemaRef }
-    gate: ProjectionAccess
-    native: NativeConversation
-    prepared(): number
-  }
+  createProjectionFixture(): Fixture
   domainEvent(
     eventId: string,
     type: string,
@@ -52,7 +65,14 @@ type Suite = {
   callContext(): CallContext
   listQuery(sessionId: string, limit: number): Wire.DomainQuery
   renameRequest(viewId: string, viewRevision: number, requestId: string, expectedRevision: number): unknown
+  crashProjection(subject: object, crash: Crash, stop: () => void): Promise<void>
+  projectionContractPort(subject: object): Record<string, (context: unknown) => Promise<unknown>>
+  registerProjectionContract(harness: ConformanceHarness, binding: object): void
 }
+const loadSuite = async () =>
+  (await import(
+    new URL('../../../extension-api/testkit/runtime/contracts/projection.ts', import.meta.url).href
+  )) as Suite
 
 /** Writes a mark and blocks this thread until the parent kills the process. */
 function stopAt(mark: string): void {
@@ -119,12 +139,8 @@ function sqliteStorage(db: DatabaseSync, point: string): DomainCommandStorage {
   }
 }
 
-async function child(step: string, database: string, point: string): Promise<void> {
-  const suite = (await import(
-    new URL('../../../extension-api/testkit/runtime/contracts/projection.ts', import.meta.url).href
-  )) as Suite
-  const fixture = suite.createProjectionFixture()
-  const db = new DatabaseSync(database)
+function openStorage(path: string): DatabaseSync {
+  const db = new DatabaseSync(path)
   db.exec('PRAGMA journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, record TEXT NOT NULL);
@@ -133,57 +149,31 @@ async function child(step: string, database: string, point: string): Promise<voi
     CREATE TABLE IF NOT EXISTS dispatches (command_id TEXT NOT NULL, key TEXT NOT NULL, body TEXT NOT NULL,
       PRIMARY KEY (command_id, key));
   `)
-  if (step === 'seed') {
-    const event = suite.domainEvent('recovery-added', 'added', SESSION, {
-      taskId: TASK,
-      board: 'open',
-      title: 'Before',
-    })
-    const record = {
-      event,
-      authorityId: 'recovery-authority',
-      sequence: 1,
-      aggregate: {
-        authorityId: 'recovery-authority',
-        typeId: 'conformance.tasks/board@1',
-        id: 'board',
-        revision: 1,
-      },
-      fingerprint: canonicalJsonDigest(event.eventId),
-    }
-    db.prepare('INSERT INTO events (seq, record) VALUES (1, ?)').run(JSON.stringify(record))
-    process.stdout.write('RESULT {}\n')
-    return
-  }
-  const domain =
-    point === 'prepare'
-      ? {
-          ...fixture.domain,
-          commands: new Map(
-            [...fixture.domain.commands].map(([name, command]) => [
-              name,
-              {
-                ...command,
-                handler: {
-                  prepare: (
-                    frame: Wire.DomainCommandFrame,
-                    context: Parameters<typeof command.handler.prepare>[1],
-                  ) => {
-                    stopAt('PREPARING')
-                    return command.handler.prepare(frame, context)
-                  },
-                },
-              },
-            ]),
-          ),
-        }
-      : fixture.domain
-  const provider = createProjectionProvider({
+  return db
+}
+
+const record = (event: Wire.DomainEvent, sequence: number): Wire.DomainEventRecord => ({
+  event,
+  authorityId: 'recovery-authority',
+  sequence,
+  aggregate: {
+    authorityId: 'recovery-authority',
+    typeId: 'conformance.tasks/board@1',
+    id: 'board',
+    revision: sequence,
+  },
+  fingerprint: canonicalJsonDigest(event.eventId),
+})
+
+/** The default provider over one SQLite connection, as one process opens it. */
+function openDefault(db: DatabaseSync, fixture: Fixture, point = 'none', domain = fixture.domain) {
+  return createProjectionProvider({
     binding: BINDING,
     reads: NO_READS,
     domain,
     access: fixture.gate,
     native: fixture.native,
+    turnOf: fixture.turnOf,
     journal: async (after, limit) =>
       (
         db.prepare('SELECT record FROM events WHERE seq > ? ORDER BY seq LIMIT ?').all(after, limit) as {
@@ -201,6 +191,90 @@ async function child(step: string, database: string, point: string): Promise<voi
       clock: { now: () => '2026-10-01T00:00:00Z', newId: () => randomUUID() },
     },
   })
+}
+
+/**
+ * The default provider as the shared suite drives it. Its storage is the host's: `db` outlives every
+ * provider instance here, over a SQLite file that a provider process started by `crash` opens too.
+ */
+function defaultSubject(path: string, db: DatabaseSync, fixture: Fixture) {
+  let current = openDefault(db, fixture)
+  const binding: TestServiceBinding = {
+    requirement: {
+      contract: 'agh.projection',
+      major: 1,
+      logicalName: 'tasks',
+      features: [],
+      scope: 'workspace',
+      optional: false,
+    },
+    binding: BINDING,
+    query: (request, context) => current.query(request, context),
+  }
+  return {
+    binding,
+    fixture,
+    service: () => current,
+    async append(events: readonly Wire.DomainEvent[]) {
+      await sqliteStorage(db, 'none').transaction((tx) => {
+        for (const event of events) tx.putEvent(record(event, tx.lastSequence() + 1))
+      })
+      await current.refresh()
+    },
+    async crash(crash: Crash) {
+      current.close()
+      try {
+        const killed = await run('crash', path, 'none', JSON.stringify(crash))
+        return { signal: killed.signal, pid: killed.pid }
+      } finally {
+        current = openDefault(db, fixture)
+      }
+    },
+    async close() {
+      current.close()
+    },
+    remains: () => (db.prepare('SELECT COUNT(*) AS count FROM events').get() as { count: number }).count > 0,
+    mountRefused() {
+      // Creating the default acquires nothing: no storage of its own, listener or timer. It fails at
+      // creation only by refusing a reader policy it cannot apply, here over the host's storage.
+      const rules = [{ pointer: '/tasks/*x/title', resourcePointer: '', operation: 'read' }]
+      try {
+        openDefault(db, fixture, 'none', {
+          ...fixture.domain,
+          readerPolicy: { ...fixture.domain.readerPolicy, rules },
+        })
+        return false
+      } catch {
+        return true
+      }
+    },
+    remount() {
+      current = openDefault(db, fixture)
+      current.close()
+    },
+  }
+}
+
+async function child(step: string, database: string, point: string, crash: string): Promise<void> {
+  const suite = await loadSuite()
+  const fixture = suite.createProjectionFixture()
+  const db = openStorage(database)
+  if (step === 'crash') {
+    const subject = defaultSubject(database, db, fixture)
+    await suite.crashProjection(subject, JSON.parse(crash) as Crash, () => stopAt('PREPARING'))
+    return
+  }
+  if (step === 'seed') {
+    const event = suite.domainEvent('recovery-added', 'added', SESSION, {
+      taskId: TASK,
+      board: 'open',
+      title: 'Before',
+    })
+    db.prepare('INSERT INTO events (seq, record) VALUES (1, ?)').run(JSON.stringify(record(event, 1)))
+    process.stdout.write('RESULT {}\n')
+    return
+  }
+  const provider = openDefault(db, fixture, point)
   const context = suite.callContext()
   const handle =
     step === 'submit'
@@ -223,17 +297,23 @@ type Result = {
 const self = fileURLToPath(import.meta.url)
 const root = fileURLToPath(new URL('../../../..', import.meta.url))
 
+/** Runs one child step; settles once its pipes have closed, so no handle of it outlives the call. */
 function run(
   step: string,
   database: string,
   point = 'none',
-): Promise<{ signal: NodeJS.Signals | null; result: Result | null }> {
+  crash = '',
+): Promise<{ signal: NodeJS.Signals | null; pid: number | null; result: Result | null }> {
   return new Promise((resolve, reject) => {
-    const proc: ChildProcess = spawn(process.execPath, ['--import', 'tsx', self, step, database, point], {
-      cwd: root,
-      env: { ...process.env, [CHILD]: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    const proc: ChildProcess = spawn(
+      process.execPath,
+      ['--import', 'tsx', self, step, database, point, crash],
+      {
+        cwd: root,
+        env: { ...process.env, [CHILD]: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
     let stdout = ''
     let stderr = ''
     const timer = setTimeout(() => {
@@ -250,43 +330,28 @@ function run(
       stderr += chunk
     })
     proc.on('error', reject)
-    proc.on('exit', (code, signal) => {
+    proc.on('close', (code, signal) => {
       clearTimeout(timer)
       const line = stdout.split('\n').find((text) => text.startsWith('RESULT '))
       if (code !== 0 && signal === null) reject(new Error(`recovery child failed\n${stderr}`))
-      else resolve({ signal, result: line ? (JSON.parse(line.slice('RESULT '.length)) as Result) : null })
+      else
+        resolve({
+          signal,
+          pid: proc.pid ?? null,
+          result: line ? (JSON.parse(line.slice('RESULT '.length)) as Result) : null,
+        })
     })
   })
 }
 
 if (process.env[CHILD]) {
-  const [step = '', database = '', point = 'none'] = process.argv.slice(2)
-  await child(step, database, point)
+  const [step = '', database = '', point = 'none', crash = ''] = process.argv.slice(2)
+  await child(step, database, point, crash)
 } else {
+  const database = () => join(mkdtempSync(join(tmpdir(), 'domain-command-recovery-')), 'domain.sqlite')
+  const clean = (path: string) => rmSync(join(path, '..'), { recursive: true, force: true })
+
   describe('domain command recovery across a killed process', () => {
-    const database = () => join(mkdtempSync(join(tmpdir(), 'domain-command-recovery-')), 'domain.sqlite')
-    const clean = (path: string) => rmSync(join(path, '..'), { recursive: true, force: true })
-
-    it('accepts nothing when killed while prepare runs, and the retry prepares once', async () => {
-      const path = database()
-      try {
-        await run('seed', path)
-        expect((await run('submit', path, 'prepare')).signal).toBe('SIGKILL')
-        const after = (await run('status', path)).result
-        expect(after?.handle.value.status).toBe('not-accepted')
-        expect([after?.title, after?.events]).toEqual(['Before', 1])
-        const retried = (await run('submit', path)).result
-        expect(retried?.handle.value).toMatchObject({ status: 'succeeded', completion: 'domain-commit' })
-        expect(retried?.prepared).toBe(1)
-        const again = (await run('submit', path)).result
-        expect(again?.handle).toEqual(retried?.handle)
-        expect(again?.prepared).toBe(0)
-        expect(again?.title).toBe(`${TASK} renamed`)
-      } finally {
-        clean(path)
-      }
-    }, 120_000)
-
     it('rolls the whole commit back when killed inside the transaction', async () => {
       const path = database()
       try {
@@ -317,5 +382,58 @@ if (process.env[CHILD]) {
         clean(path)
       }
     }, 120_000)
+  })
+
+  const BUILD: BuildIdentity = {
+    codeSha: 'core-test',
+    buildDigest: 'core-test-build',
+    lockDigest: 'core-test-lock',
+    specVersion: 'core-test-spec',
+    sdkVersion: 'core-test-sdk',
+    sdkDigest: 'core-test-sdk-digest',
+    platform: 'core-test-platform',
+  }
+  const fileDigest = (path: string) =>
+    createHash('sha256')
+      .update(readFileSync(new URL(path, import.meta.url)))
+      .digest('hex')
+  // Each run starts two provider processes; the default timeout leaves too little room on slow hosts.
+  const CONTRACT_TIMEOUT_MS = 30_000
+
+  describe('default projection provider: conformance', () => {
+    it(
+      'passes the shared projection suite in all six scenarios',
+      async () => {
+        const suite = await loadSuite()
+        const path = database()
+        const db = openStorage(path)
+        try {
+          const harness = createConformanceHarness()
+          suite.registerProjectionContract(harness, {
+            providerId: 'default',
+            recipe: 'packages/core/src/runtime/providers/projection.ts',
+            command: 'core-projection-conformance',
+            build: BUILD,
+            providerDigest: fileDigest('../../src/runtime/providers/projection.ts'),
+            configDigest: canonicalJsonDigest({ retainedRevisions: 64 }),
+            releaseSetDigest: fileDigest('../../package.json'),
+            port: suite.projectionContractPort(defaultSubject(path, db, suite.createProjectionFixture())),
+          })
+          const report = await harness.run({
+            contracts: ['agh.projection'],
+            providers: ['default'],
+            command: 'core-projection-conformance',
+            clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
+          })
+          expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
+            SCENARIOS.map((scenario) => [scenario, 'passed']),
+          )
+        } finally {
+          db.close()
+          clean(path)
+        }
+      },
+      CONTRACT_TIMEOUT_MS,
+    )
   })
 }

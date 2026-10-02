@@ -935,7 +935,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default projection provider: reader policy, incremental fold and the conversation window.
   // Measured 26639 (+573), exact, no spare.
   // Merged with the policy and integrity providers on the integration base. Measured 28132, exact, no spare.
-  'packages/core/src': 28132,
+  // A domain command cancelled while its prepare runs commits nothing. Measured 28134, exact, no spare.
+  'packages/core/src': 28134,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1384,7 +1385,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Projection conformance suite with its fixture domain, Host checks and native conversation.
   // Measured 2629 (+1102), exact, no spare.
   // Merged with the identity, policy, audit and integrity contract cases. Measured 4551, exact, no spare.
-  'packages/extension-api/testkit': 4551,
+  // Projection cases judge real kills, failed mounts and running cancels. Measured 4709, exact, no spare.
+  'packages/extension-api/testkit': 4709,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

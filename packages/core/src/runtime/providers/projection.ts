@@ -381,7 +381,7 @@ export function createProjectionProvider(options: ProjectionProviderOptions) {
           resultSchema: command.resultSchema,
           completion: command.completion,
           // ponytail: the frame carries the wire context only, so prepare cannot see the caller's
-          // abort signal; the provider refuses an already cancelled call before it gets here.
+          // abort signal; a call cancelled before or during prepare is refused before it commits.
           prepare: (frame) =>
             command.handler.prepare(
               frame,

@@ -1,13 +1,7 @@
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import {
-  type BuildIdentity,
-  type ConformanceHarness,
-  createConformanceHarness,
   createRuntimeInboxFixture,
   RUNTIME_INBOX_FIXTURE,
-  SCENARIOS,
   type TestServiceBinding,
 } from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
@@ -565,18 +559,6 @@ describe('authorized domain projection', () => {
     expect(second).toMatchObject({ complete: true, nextPageCursor: null, projectionRevision: 1 })
   })
 
-  it('drops a view whose resource the reader cannot read, fallback text included', async () => {
-    const { env, projection } = projectionHarness()
-    env.views = [
-      domainView('secret', { resources: [reserved('art-secret')], fallbackText: 'salary table' }),
-      domainView('b'),
-    ]
-    env.hidden.add('art-secret')
-    const page = await firstPage(projection, { limit: 10 })
-    expect(page.items.map((view) => view.viewId)).toEqual(['b'])
-    expect(JSON.stringify(page)).not.toContain('salary table')
-  })
-
   it.each([
     [
       'state uses another schema',
@@ -744,8 +726,8 @@ describe('authorized domain projection', () => {
 /** The shared suite lives outside this package's build, so it is loaded by URL. Only what is used is typed. */
 type SuiteFixture = {
   domain: ProjectionDomain & { commandStateSchema: Wire.SchemaRef }
-  gate: ProjectionAccess & { revokeReader(principal: string): void; closeBoard(board: string): void }
-  native: NativeConversation & { say(sessionId: string, count: number): void }
+  gate: ProjectionAccess
+  native: NativeConversation
   turnOf(event: Wire.DomainEvent): string | null
 }
 type ProjectionSuite = {
@@ -759,27 +741,12 @@ type ProjectionSuite = {
   callContext(): CallContext
   listQuery(sessionId: string, limit: number, cursor?: string | null): Wire.DomainQuery
   renameRequest(viewId: string, viewRevision: number, requestId: string, expectedRevision: number): unknown
-  projectionContractPort(subject: object): Record<string, (context: unknown) => Promise<unknown>>
-  registerProjectionContract(harness: ConformanceHarness, binding: object): void
 }
 const loadSuite = async () =>
   (await import(
     new URL('../../../extension-api/testkit/runtime/contracts/projection.ts', import.meta.url).href
   )) as ProjectionSuite
 
-const BUILD: BuildIdentity = {
-  codeSha: 'core-test',
-  buildDigest: 'core-test-build',
-  lockDigest: 'core-test-lock',
-  specVersion: 'core-test-spec',
-  sdkVersion: 'core-test-sdk',
-  sdkDigest: 'core-test-sdk-digest',
-  platform: 'core-test-platform',
-}
-const fileDigest = (path: string) =>
-  createHash('sha256')
-    .update(readFileSync(new URL(path, import.meta.url)))
-    .digest('hex')
 const NO_READS = {
   query: async () => fail('unsupported', 'no selector reads in this test'),
   resolveData: async () => fail('unsupported', 'no selector reads in this test'),
@@ -833,7 +800,6 @@ function defaultProjection(fixture: SuiteFixture, retainedRevisions?: number) {
   return {
     store,
     binding,
-    fixture,
     service: () => current,
     async append(events: readonly Wire.DomainEvent[]) {
       await store.storage.transaction((tx) => {
@@ -859,41 +825,8 @@ function defaultProjection(fixture: SuiteFixture, retainedRevisions?: number) {
       current.close()
       current = open()
     },
-    async close() {
-      current.close()
-    },
-    remains: () => store.db.events.length > 0,
   }
 }
-
-const CLOCK = { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' }
-
-describe('default projection provider: conformance', () => {
-  it('passes the shared projection suite in all six scenarios', async () => {
-    const suite = await loadSuite()
-    const subject = defaultProjection(suite.createProjectionFixture())
-    const harness = createConformanceHarness()
-    suite.registerProjectionContract(harness, {
-      providerId: 'default',
-      recipe: 'packages/core/src/runtime/providers/projection.ts',
-      command: 'core-projection-conformance',
-      build: BUILD,
-      providerDigest: fileDigest('../../src/runtime/providers/projection.ts'),
-      configDigest: canonicalJsonDigest({ retainedRevisions: 64 }),
-      releaseSetDigest: fileDigest('../../package.json'),
-      port: suite.projectionContractPort(subject),
-    })
-    const report = await harness.run({
-      contracts: ['agh.projection'],
-      providers: ['default'],
-      command: 'core-projection-conformance',
-      clock: CLOCK,
-    })
-    expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
-      SCENARIOS.map((scenario) => [scenario, 'passed']),
-    )
-  })
-})
 
 describe('default projection provider', () => {
   async function provider(retainedRevisions?: number) {

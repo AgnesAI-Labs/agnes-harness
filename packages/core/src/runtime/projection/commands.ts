@@ -285,6 +285,9 @@ export function createDomainCommands(owner: DomainCommandOwner) {
         context: wireContext(context),
         commandSchema,
       })
+      // A plan that arrives after the caller gave up is dropped; the request stays not-accepted.
+      if (context.signal.aborted)
+        return fail('cancelled', 'call was cancelled while the command was prepared')
       if (!prepared.ok) return prepared
       const planned = validateRuntime('DomainCommandPlan', prepared.value)
       if (!planned.ok) return fail('invalid_request', 'command plan does not match its schema')

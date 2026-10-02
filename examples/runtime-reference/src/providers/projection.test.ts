@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Outcome } from '@agnes/extension-api/runtime'
-import { createConformanceHarness, SCENARIOS } from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -11,12 +10,11 @@ import {
   createProjectionFixture,
   inline,
   listQuery,
-  type ProjectionContractPort,
   sessionScope,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/projection.js'
 import { createReferenceRegistry } from '../index.js'
 import { PROJECTION_PROVIDER } from './projection.js'
-import { bindProjectionContract, openReferenceProjection } from './projection-contract.js'
+import { openReferenceProjection } from './projection-contract.js'
 
 const directories: string[] = []
 afterEach(() => {
@@ -108,7 +106,7 @@ describe('reference projection: checkpoint and tail', () => {
   })
 })
 
-describe('reference projection: conformance', () => {
+describe('reference projection: registry and window scope', () => {
   it('fills the projection slot of the reference registry', () => {
     const slot = createReferenceRegistry([PROJECTION_PROVIDER]).find(
       (item) => item.contract === 'agh.projection',
@@ -116,43 +114,6 @@ describe('reference projection: conformance', () => {
     expect(slot?.provider).toEqual(PROJECTION_PROVIDER)
     expect(slot?.providerFile).toBe('examples/runtime-reference/src/providers/projection.ts')
     expect(existsSync(new URL(`../../../../${slot?.providerFile}`, import.meta.url))).toBe(true)
-  })
-
-  async function runContract(change: (port: ProjectionContractPort) => ProjectionContractPort) {
-    const harness = createConformanceHarness()
-    const bound = bindProjectionContract(harness, 'reference-projection-conformance', { change })
-    try {
-      return await harness.run({
-        contracts: ['agh.projection'],
-        providers: [PROJECTION_PROVIDER.id],
-        command: 'reference-projection-conformance',
-        clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
-      })
-    } finally {
-      bound.close()
-    }
-  }
-
-  it('passes select, normal, deny, cancel, recover and dispose', async () => {
-    const report = await runContract((port) => port)
-    expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
-      SCENARIOS.map((scenario) => [scenario, 'passed']),
-    )
-    expect(report.status).toBe('passed')
-    expect(report.failures).toEqual([])
-  })
-
-  it('fails exactly the scenario whose observation leaks a resync', async () => {
-    const report = await runContract((port) => ({
-      ...port,
-      deny: async (context) => {
-        const seen = await port.deny(context)
-        return { ...seen, refusals: seen.refusals.map((code) => (code === 'resync_required' ? '' : code)) }
-      },
-    }))
-    expect(report.assertions.filter((item) => item.status === 'failed').map((item) => item.scenario)).toEqual(
-      ['deny'],
-    )
   })
 
   it('reads the window scope from the caller and refuses a session outside it', async () => {

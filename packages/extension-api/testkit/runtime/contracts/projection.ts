@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from 'node:fs'
+import { pid } from 'node:process'
 import type {
   CallContext,
   DomainCommandHandler,
@@ -290,6 +292,13 @@ const selector: DomainSelector = {
     const tasks = ((input.state.value as { tasks?: Partial<Task>[] }).tasks ?? []).filter(
       (task): task is Task => typeof task.taskId === 'string',
     )
+    // Any field the reader policy did not release goes into the fallback text, so a provider that lets
+    // one reach the selector discloses it there.
+    const unreleased = (task: Task) =>
+      Object.entries(task)
+        .filter(([key]) => !READ_FIELDS.includes(key))
+        .map(([key, value]) => ` [unreleased ${key}: ${JSON.stringify(value)}]`)
+        .join('')
     const items = tasks.map(
       (task): Wire.DomainView => ({
         kind: 'domain',
@@ -302,7 +311,7 @@ const selector: DomainSelector = {
         source: { eventIds: task.eventIds, projectionRevision: input.projectionRevision },
         phase: task.phase,
         stream: task.stream,
-        fallbackText: `Task ${task.title} (${task.phase})`,
+        fallbackText: `Task ${task.title} (${task.phase})${unreleased(task)}`,
         data: { title: task.title },
         resources: task.artifact
           ? [
@@ -354,15 +363,31 @@ export interface ProjectionFixture {
   readonly native: NativeConversationFixture
   /** The native turn evidence for an event: its run names the session's first turn. */
   turnOf(event: Wire.DomainEvent): string | null
-  /** Prepare runs so far, which is also the command state revision. */
+  /** Prepare runs so far, held ones included. */
   prepared(): number
+  /** The command state revision once every prepare but the held ones has committed. */
+  revision(): number
+  /**
+   * Holds the next prepare: `started` settles when it begins, and its plan is returned only after
+   * `release`. A release before the prepare begins takes the hold back.
+   */
+  holdPrepare(): { readonly started: Promise<void>; release(): void }
 }
 
 export function createProjectionFixture(): ProjectionFixture {
   let prepared = 0
+  let held = 0
+  let hold: { start(): void; gate: Promise<void> } | null = null
   const handler: DomainCommandHandler = {
     async prepare(frame) {
       prepared++
+      const waiting = hold
+      hold = null
+      if (waiting) {
+        held++
+        waiting.start()
+        await waiting.gate
+      }
       const title =
         frame.input.kind === 'inline' ? (frame.input.value as { title?: string }).title : undefined
       const renames =
@@ -433,6 +458,26 @@ export function createProjectionFixture(): ProjectionFixture {
         ? `${event.scope.sessionId}-turn-1`
         : null,
     prepared: () => prepared,
+    revision: () => prepared - held,
+    holdPrepare() {
+      let start!: () => void
+      let release!: () => void
+      const started = new Promise<void>((resolve) => {
+        start = resolve
+      })
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const armed = { start, gate }
+      hold = armed
+      return {
+        started,
+        release() {
+          if (hold === armed) hold = null
+          release()
+        },
+      }
+    },
   }
 }
 
@@ -481,20 +526,56 @@ export interface ProjectionMethods {
   listConversations: Handler<Wire.PageConversationSummary>
 }
 
+/** What a provider process does before the suite kills it: commit `events`, then submit `hold`. */
+export type ProjectionCrash = Readonly<{ events: readonly Wire.DomainEvent[]; hold: unknown }>
+
 /** One projection provider as the suite drives it, wired to the fixture it was given. */
 export interface ProjectionSubject {
   /** The binding the provider offers, carrying its query entry. */
   readonly binding: TestServiceBinding
   readonly fixture: ProjectionFixture
-  /** The methods of the instance open now; a reopen replaces it. */
+  /** The methods of the instance open now; a crash or a remount replaces it. */
   service(): ProjectionMethods
   /** Commits events to the provider's own journal in order and returns once the projection took them. */
   append(events: readonly Wire.DomainEvent[]): Promise<void>
-  /** Closes the provider and opens it again over the same storage. */
-  reopen(): Promise<void>
+  /**
+   * Closes the provider here, starts a provider process over the same storage that runs
+   * `crashProjection` with `crash` and kills it with SIGKILL where that stops, then opens the provider
+   * here again. Resolves to the killed process's exit signal and pid.
+   */
+  crash(crash: ProjectionCrash): Promise<{ signal: string | null; pid: number | null }>
   close(): Promise<void>
   /** Whether the provider's stored data is still there. */
   remains(): boolean
+  /**
+   * Mounts the provider in a way that fails partway, after whatever the mount acquires first, if it
+   * acquires anything, and says whether the mount was refused. Synchronous, so open descriptors can
+   * be counted around it.
+   */
+  mountRefused(): boolean
+  /** Opens the provider over its storage and closes it again, synchronously. */
+  remount(): void
+}
+
+/**
+ * The provider process side of `ProjectionSubject.crash`: commits the events, submits the held
+ * command and calls `stop` once its prepare has begun. `stop` must not return, since the process is
+ * killed there: the events are committed and the command is not. Throws when the command settles
+ * before its prepare begins.
+ */
+export async function crashProjection(
+  subject: Pick<ProjectionSubject, 'fixture' | 'service' | 'append'>,
+  crash: ProjectionCrash,
+  stop: () => void,
+): Promise<void> {
+  await subject.append(crash.events)
+  const held = subject.fixture.holdPrepare()
+  const settled = await Promise.race([
+    held.started.then(() => null),
+    subject.service().command(crash.hold, callContext()),
+  ])
+  if (settled) throw new Error(`the held command settled before its prepare: ${JSON.stringify(settled)}`)
+  stop()
 }
 
 export type Fact<T> = T | { readonly refused: string }
@@ -548,21 +629,36 @@ export interface ProjectionObservations {
     readonly prepared: number
     readonly outputs: readonly string[]
   }
-  /** Snapshot, changes, command, status, window open and history with an aborted signal, then status. */
+  /**
+   * Session `cancel`. `refusals` are the codes of a snapshot, changes, a command, a status, a window
+   * open and a history page sent with an aborted signal, then of a command aborted while its prepare
+   * runs, whose plan arrives only after the abort. `statuses` are those two commands' statuses read
+   * afterwards; `untouched` is a snapshot after them. `retried` is the rename sent again under a new
+   * request id, twice; `renamed` a snapshot after it.
+   */
   readonly cancel: {
     readonly refusals: readonly string[]
-    readonly status: Handle
+    readonly statuses: readonly Handle[]
+    readonly untouched: Snapshot
+    readonly retried: readonly Handle[]
+    readonly renamed: Snapshot
     readonly prepared: number
   }
   /**
-   * Session `recover`: a snapshot and a two-item window, a rename and an interruption, a snapshot, then
-   * a reopen. `stale` is the old delta cursor and old history page after it; `replay` the rename before
-   * and after. `later` follows a progressed event; `stalled` follows an event the reducer refuses and a
-   * settle behind it, read before and after another reopen.
+   * Session `recover`: a snapshot and a two-item window, a rename, then `committed`. A provider process
+   * commits an interruption of r1 and is killed with SIGKILL while it prepares a rename of r2. `stale`
+   * is the old delta cursor and old history page after the restart and `after` a snapshot; `replay` is
+   * the first rename before and after, then the killed process's rename sent again. `later` follows a
+   * progressed event. `stalled` follows an event the reducer refuses and a settle behind it, and again
+   * after a second process committed one more event behind them and was killed preparing a rename.
+   * `lost` are the statuses of the two renames the killed processes were preparing, read after each
+   * restart. `kills` holds each exit signal and pid, in that order.
    */
   readonly recover: {
+    readonly kills: readonly { readonly signal: string | null; readonly pid: number | null }[]
     readonly committed: Snapshot
     readonly after: Snapshot
+    readonly lost: readonly Handle[]
     readonly stale: readonly string[]
     readonly replay: readonly Handle[]
     readonly windows: readonly Window[]
@@ -570,8 +666,23 @@ export interface ProjectionObservations {
     readonly stalled: readonly Snapshot[]
     readonly prepared: number
   }
-  /** Refusal codes of a snapshot, a window open, a command and a status after close; storage kept. */
-  readonly dispose: { readonly refusals: readonly string[]; readonly remains: boolean }
+  /**
+   * `refused` are the codes of a snapshot, a window open, a command and a status after close, and
+   * `storeRemains` whether the stored data is still there. `mountRefused` is whether a mount that fails
+   * partway was refused. `handles` counts open file descriptors with no provider open, after the
+   * refused mount and after the provider is opened and closed again. The counts are null only where
+   * the platform offers nothing to count them with, which means not measurable there, never passed.
+   */
+  readonly dispose: {
+    readonly refused: readonly string[]
+    readonly storeRemains: boolean
+    readonly mountRefused: boolean
+    readonly handles: {
+      readonly baseline: number | null
+      readonly afterFailedMount: number | null
+      readonly afterClose: number | null
+    }
+  }
 }
 
 export type ProjectionContractPort = {
@@ -591,6 +702,9 @@ const code = (fact: unknown): string =>
   fact !== null && typeof fact === 'object' && 'refused' in fact && typeof fact.refused === 'string'
     ? fact.refused
     : ''
+
+/** Open descriptors of this process, or null where there is no `/dev/fd` to list them (Windows). */
+const openHandles = () => (existsSync('/dev/fd') ? readdirSync('/dev/fd').length : null)
 
 export const listQuery = (sessionId: string, limit: number, cursor: string | null = null) => ({
   domainType: TASKS_DOMAIN,
@@ -699,7 +813,7 @@ export function projectionContractPort(subject: ProjectionSubject): ProjectionCo
         'normal-a',
         revisionOf(first, 'normal-a'),
         'normal-rename',
-        fixture.prepared(),
+        fixture.revision(),
       )
       const handles = [
         await call.command(rename),
@@ -799,42 +913,71 @@ export function projectionContractPort(subject: ProjectionSubject): ProjectionCo
       const live = await call.snapshot(listQuery('cancel', 1))
       const window = await call.open('cancel', 1)
       const aborted = reader(true)
+      const rename = (requestId: string) =>
+        renameRequest('cancel-k', revisionOf(live, 'cancel-k'), requestId, fixture.revision())
       const refusals = [
         await call.snapshot(listQuery('cancel', 1), aborted),
         await call.changes(
           { query: listQuery('cancel', 1), afterCursor: 'refused' in live ? '' : live.cursor, limit: 1 },
           aborted,
         ),
-        await call.command(
-          renameRequest('cancel-k', revisionOf(live, 'cancel-k'), 'cancel-rename', fixture.prepared()),
-          aborted,
-        ),
+        await call.command(rename('cancel-rename'), aborted),
         await call.status('cancel-rename', aborted),
         await call.open('cancel', 1, aborted),
         await call.history('cancel', 'refused' in window ? '' : (window.nextPageCursor ?? ''), 1, aborted),
-      ].map(code)
-      return { refusals, status: await call.status('cancel-rename'), prepared: fixture.prepared() - before }
+      ]
+      // Aborted while its prepare runs; the plan is handed back only after the abort.
+      const running = new AbortController()
+      const held = fixture.holdPrepare()
+      const pending = call.command(rename('cancel-running'), { ...reader(), signal: running.signal })
+      await Promise.race([held.started, pending])
+      running.abort()
+      held.release()
+      refusals.push(await pending)
+      const statuses = [await call.status('cancel-rename'), await call.status('cancel-running')]
+      const untouched = await call.snapshot(listQuery('cancel', 1))
+      const retry = rename('cancel-retry')
+      const retried = [await call.command(retry), await call.command(retry)]
+      return {
+        refusals: refusals.map(code),
+        statuses,
+        untouched,
+        retried,
+        renamed: await call.snapshot(listQuery('cancel', 1)),
+        prepared: fixture.prepared() - before,
+      }
     },
     async recover() {
       const call = drive([])
       const before = fixture.prepared()
+      const read = () => call.snapshot(listQuery('recover', 10))
       fixture.native.say('recover', 3)
       await subject.append([
         add('recover', 'r1', { board: 'open', title: 'Romeo' }, 'run-1'),
         add('recover', 'r2', { board: 'open', title: 'Sierra' }),
       ])
-      const first = await call.snapshot(listQuery('recover', 10))
+      const first = await read()
       const window = await call.open('recover', 2)
       const rename = renameRequest(
         'recover-r1',
         revisionOf(first, 'recover-r1'),
         'recover-rename',
-        fixture.prepared(),
+        fixture.revision(),
       )
       const replay = [await call.command(rename)]
-      await subject.append([touch('recover', 'r1', 'settled', 1, { phase: 'interrupted' })])
-      const committed = await call.snapshot(listQuery('recover', 10))
-      await subject.reopen()
+      const committed = await read()
+      const lost = renameRequest(
+        'recover-r2',
+        revisionOf(committed, 'recover-r2'),
+        'recover-lost',
+        fixture.revision(),
+      )
+      const kills = [
+        await subject.crash({
+          events: [touch('recover', 'r1', 'settled', 1, { phase: 'interrupted' })],
+          hold: lost,
+        }),
+      ]
       const stale = [
         await call.changes({
           query: listQuery('recover', 10),
@@ -843,21 +986,35 @@ export function projectionContractPort(subject: ProjectionSubject): ProjectionCo
         }),
         await call.history('recover', 'refused' in window ? '' : (window.nextPageCursor ?? ''), 2),
       ].map(code)
-      const after = await call.snapshot(listQuery('recover', 10))
-      replay.push(await call.command(rename))
+      const after = await read()
+      const statuses = [await call.status('recover-lost')]
+      replay.push(await call.command(rename), await call.command(lost))
       const windows = [window, await call.open('recover', 2)]
       await subject.append([touch('recover', 'r2', 'progressed', 1)])
-      const later = await call.snapshot(listQuery('recover', 10))
+      const later = await read()
       await subject.append([
         touch('recover', 'r2', 'broken', 1),
         touch('recover', 'r2', 'settled', 1, { phase: 'finalized' }),
       ])
-      const stalled = [await call.snapshot(listQuery('recover', 10))]
-      await subject.reopen()
-      stalled.push(await call.snapshot(listQuery('recover', 10)))
+      const stalled = [await read()]
+      kills.push(
+        await subject.crash({
+          events: [touch('recover', 'r2', 'progressed', 2)],
+          hold: renameRequest(
+            'recover-r2',
+            revisionOf(later, 'recover-r2'),
+            'recover-stalled',
+            fixture.revision(),
+          ),
+        }),
+      )
+      stalled.push(await read())
+      statuses.push(await call.status('recover-stalled'))
       return {
+        kills,
         committed,
         after,
+        lost: statuses,
         stale,
         replay,
         windows,
@@ -870,13 +1027,25 @@ export function projectionContractPort(subject: ProjectionSubject): ProjectionCo
       const call = drive([])
       await subject.append([add('dispose', 'z', { board: 'open', title: 'Zulu' })])
       await subject.close()
-      const refusals = [
+      const refused = [
         await call.snapshot(listQuery('dispose', 1)),
         await call.open('dispose', 1),
-        await call.command(renameRequest('dispose-z', 1, 'dispose-rename', fixture.prepared())),
+        await call.command(renameRequest('dispose-z', 1, 'dispose-rename', fixture.revision())),
         await call.status('dispose-rename'),
       ].map(code)
-      return { refusals, remains: subject.remains() }
+      const storeRemains = subject.remains()
+      // Counted synchronously: no provider is open and no call or child process is in flight.
+      const baseline = openHandles()
+      const mountRefused = subject.mountRefused()
+      const afterFailedMount = openHandles()
+      subject.remount()
+      const afterClose = openHandles()
+      return {
+        refused,
+        storeRemains,
+        mountRefused,
+        handles: { baseline, afterFailedMount, afterClose },
+      }
     },
   }
 }
@@ -894,12 +1063,34 @@ const ids = (fact: Snapshot | undefined) => items(fact).map((view) => view.viewI
 const view = (fact: Snapshot | undefined, viewId: string) =>
   items(fact).find((item) => item.viewId === viewId)
 
-/** No output names a private field, a closed-board task or a task behind a hidden artifact. */
+/**
+ * No output, fallback text included, names a field the reader policy did not release, a closed-board
+ * task or a task behind a hidden artifact.
+ */
 const clean = (outputs: readonly string[]) =>
   outputs.length > 0 &&
   outputs.every(
-    (text) => !text.includes('private-') && !text.includes('Vault plan') && !text.includes('Hidden artifact'),
+    (text) =>
+      !text.includes('private-') &&
+      !text.includes('[unreleased ') &&
+      !text.includes('Vault plan') &&
+      !text.includes('Hidden artifact'),
   )
+
+/** Every count back at the baseline, or no count at all where descriptors cannot be counted. */
+function returned({ baseline, afterFailedMount, afterClose }: ProjectionObservations['dispose']['handles']) {
+  return baseline === null
+    ? afterFailedMount === null && afterClose === null
+    : afterFailedMount === baseline && afterClose === baseline
+}
+
+/** A valid handle in the given status, for the given request. */
+const handled = (fact: Handle | undefined, status: string, requestId: string) =>
+  valid('CommandHandle', fact) &&
+  fact !== undefined &&
+  !('refused' in fact) &&
+  fact.status === status &&
+  fact.requestId === requestId
 
 /** Pages from newest to oldest share one epoch and chain to a complete last page. */
 function chained(windows: readonly Window[]): Wire.RuntimeConversationWindow[] | null {
@@ -1073,25 +1264,43 @@ const JUDGE: Judge = {
     seen.prepared === 0 &&
     clean(seen.outputs),
   cancel: (seen) =>
-    same(seen.refusals, Array(6).fill('cancelled')) &&
-    valid('CommandHandle', seen.status) &&
-    !('refused' in seen.status) &&
-    seen.status.status === 'not-accepted' &&
-    seen.prepared === 0,
+    same(seen.refusals, Array(7).fill('cancelled')) &&
+    seen.statuses.length === 2 &&
+    seen.statuses.every((status, index) =>
+      handled(status, 'not-accepted', ['cancel-rename', 'cancel-running'][index] ?? ''),
+    ) &&
+    same(view(seen.untouched, 'cancel-k')?.data, { title: 'Kilo' }) &&
+    handled(seen.retried[0], 'succeeded', 'cancel-retry') &&
+    same(seen.retried[1], seen.retried[0]) &&
+    same(view(seen.renamed, 'cancel-k')?.data, { title: 'cancel-k renamed' }) &&
+    seen.prepared === 2,
   recover(seen) {
-    const [handle, replayed] = seen.replay
+    const [handle, replayed, retried] = seen.replay
     const [before, after] = seen.windows
     const [stalledBefore, stalledAfter] = seen.stalled
+    const r1 = (fact: Snapshot) => view(fact, 'recover-r1')
     const r2 = view(seen.later, 'recover-r2')
+    const untouched = view(seen.after, 'recover-r2')
     return (
+      seen.kills.length === 2 &&
+      seen.kills.every((kill) => kill.signal === 'SIGKILL' && kill.pid !== null && kill.pid !== pid) &&
       valid('ProjectionSnapshot', seen.committed) &&
-      same(view(seen.committed, 'recover-r1')?.data, { title: 'recover-r1 renamed' }) &&
-      view(seen.committed, 'recover-r1')?.phase === 'interrupted' &&
-      same(items(seen.after), items(seen.committed)) &&
+      same(r1(seen.committed)?.data, { title: 'recover-r1 renamed' }) &&
+      r1(seen.committed)?.phase === 'provisional' &&
+      valid('ProjectionSnapshot', seen.after) &&
+      same(r1(seen.after)?.data, { title: 'recover-r1 renamed' }) &&
+      r1(seen.after)?.phase === 'interrupted' &&
+      same(untouched?.data, { title: 'Sierra' }) &&
+      untouched?.revision === view(seen.committed, 'recover-r2')?.revision &&
+      seen.lost.length === 2 &&
+      seen.lost.every((status, index) =>
+        handled(status, 'not-accepted', ['recover-lost', 'recover-stalled'][index] ?? ''),
+      ) &&
       same(seen.stale, ['resync_required', 'resync_required']) &&
       valid('CommandHandle', handle) &&
       same(replayed, handle) &&
-      seen.prepared === 1 &&
+      handled(retried, 'succeeded', 'recover-lost') &&
+      seen.prepared === 2 &&
       valid('RuntimeConversationWindow', before) &&
       valid('RuntimeConversationWindow', after) &&
       !('refused' in (before ?? { refused: '' })) &&
@@ -1112,9 +1321,11 @@ const JUDGE: Judge = {
     )
   },
   dispose: (seen) =>
-    seen.refusals.length === 4 &&
-    seen.refusals.every((detail) => Object.hasOwn(RuntimeErrorDetails, detail)) &&
-    seen.remains,
+    seen.refused.length === 4 &&
+    seen.refused.every((detail) => Object.hasOwn(RuntimeErrorDetails, detail)) &&
+    seen.storeRemains &&
+    seen.mountRefused &&
+    returned(seen.handles),
 }
 
 const FEATURES: Record<ScenarioName, readonly string[]> = {
@@ -1122,7 +1333,7 @@ const FEATURES: Record<ScenarioName, readonly string[]> = {
   normal: ['snapshot', 'changes', 'openConversation', 'conversationHistory', 'command', 'commandStatus'],
   deny: ['snapshot', 'changes', 'openConversation', 'command', 'listConversations'],
   cancel: ['snapshot', 'changes', 'openConversation', 'conversationHistory', 'command', 'commandStatus'],
-  recover: ['snapshot', 'changes', 'openConversation', 'conversationHistory', 'command'],
+  recover: ['snapshot', 'changes', 'openConversation', 'conversationHistory', 'command', 'commandStatus'],
   dispose: ['snapshot', 'openConversation', 'command', 'commandStatus'],
 }
 
