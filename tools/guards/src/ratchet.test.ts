@@ -2169,7 +2169,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Single-resident-worker P2: catalogInfoOf now also returns the sorted tool list, reused by both a row's ready status and resourceMcpTools pagination. Re-measured: 872, exact.
   // MCP catalog validation skips each tool the model cannot be shown and reports it in the catalog
   // info instead of failing the server. Measured 932, exact, no spare (+60).
-  'packages/base/src/mcp': 932,
+  // MCP result text is capped at what read can give back (4 MiB per call) and a stored multi-block
+  // set carries its whole locator. Measured 980, exact, no spare (+48).
+  'packages/base/src/mcp': 980,
   // 2026-09-12: I7 Base Tasks 34/35 introduce the privacy extension. Its first slice measures 214
   // counted lines; the universal fixed extension ceiling remains 800 rather than growing Base.
   'packages/base/extensions/privacy': 800,
