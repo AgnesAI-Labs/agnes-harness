@@ -13,6 +13,7 @@ import type {
 } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import { inlineData } from '../../src/runtime/maintenance/authority-publication.js'
+import { readStageZero } from '../../src/runtime/maintenance/bootstrap-locator.js'
 import {
   type AuthorityDirectoryProvider,
   createAuthorityDirectoryProvider,
@@ -145,7 +146,7 @@ async function prepared(): Promise<{
   proof: DataRef
   request: AuthorityDirectoryCompareAndSwapRequest
 }> {
-  const tree = mkdtempSync('/tmp/p04-e2e-')
+  const tree = mkdtempSync('/tmp/authority-directory-e2e-')
   const directory = join(tree, 'dir')
   const anchor = join(tree, 'anchor')
   const created = createDirectoryAnchor(
@@ -331,6 +332,55 @@ describe('authority directory process durability', () => {
       }
     }
   }, 120_000)
+
+  it('lets exactly one deployment publisher replace the same external locator revision', async () => {
+    const opened = await prepared()
+    const go = join(opened.root, 'locator-go')
+    const children: ChildProcess[] = []
+    try {
+      const view = readStageZero(opened.anchor)
+      expect(view.ok && view.value).toBeTruthy()
+      if (!view.ok || !view.value) return
+      const racers = ['locator-left', 'locator-right'].map((cutoverId) => {
+        const payload = join(opened.root, `${cutoverId}.json`)
+        writeFileSync(
+          payload,
+          JSON.stringify({
+            implementation: 'default',
+            authority: AUTHORITY,
+            principalRef: PRINCIPAL,
+            phase: null,
+            request: opened.request,
+            locatorPublication: {
+              expectedRevision: 1,
+              next: { ...view.value?.locator, epoch: 2, revision: 2, cutoverId },
+            },
+          }),
+        )
+        const racer = startChild(['race', opened.directory, opened.anchor, payload, go])
+        children.push(racer.child)
+        return racer
+      })
+      await Promise.all(racers.map((racer) => racer.ready))
+      writeFileSync(go, 'go')
+      const results = await Promise.all(racers.map((racer) => racer.done))
+      expect(
+        results.flatMap((result) => result.stdout.split('\n').filter((line) => line === 'WIN')),
+      ).toHaveLength(1)
+      expect(
+        results.flatMap((result) =>
+          result.stdout.split('\n').filter((line) => line === 'LOSE conflict/locator_revision'),
+        ),
+      ).toHaveLength(1)
+      const current = readStageZero(opened.anchor)
+      expect(current.ok && current.value?.locator.revision).toBe(2)
+      expect(current.ok && current.value?.locator.cutoverId).toMatch(/^locator-(left|right)$/)
+    } finally {
+      for (const child of children)
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+      rmSync(opened.root, { recursive: true, force: true })
+    }
+  }, 30_000)
 
   it('lets exactly one of two processes publish a different cutover of the same revision', async () => {
     const opened = await prepared()

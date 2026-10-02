@@ -130,7 +130,7 @@ async function prepared(): Promise<{
   proof: DataRef
   request: AuthorityDirectoryCompareAndSwapRequest
 }> {
-  const tree = mkdtempSync('/tmp/p04-ref-e2e-')
+  const tree = mkdtempSync('/tmp/authority-directory-ref-e2e-')
   const directory = join(tree, 'dir')
   const anchor = join(tree, 'anchor')
   const created = createReferenceAnchor(
@@ -171,7 +171,6 @@ async function prepared(): Promise<{
 
 function runChild(
   args: readonly string[],
-  onReady?: (child: ChildProcess) => void,
 ): Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', fixture, ...args], {
@@ -198,7 +197,6 @@ function runChild(
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk
-      if (onReady !== undefined && stdout.includes('READY\n')) onReady(child)
     })
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk
@@ -265,7 +263,7 @@ async function revisionAt(directory: string, anchor: string): Promise<number> {
 
 describe('reference authority directory process durability', () => {
   it('keeps a committed route when killed after the sqlite commit and the old route before it', async () => {
-    for (const phase of ['commit', 'notify'] as const) {
+    for (const phase of ['transaction', 'commit', 'notify'] as const) {
       const opened = await prepared()
       const payload = join(opened.root, 'payload.json')
       try {
@@ -281,7 +279,8 @@ describe('reference authority directory process durability', () => {
         )
         const killed = await runChild(['kill', opened.directory, opened.anchor, payload])
         expect(killed.signal, `${phase}\n${killed.stderr}\n${killed.stdout}`).toBe('SIGKILL')
-        expect(await revisionAt(opened.directory, opened.anchor)).toBe(2)
+        expect(await revisionAt(opened.directory, opened.anchor)).toBe(phase === 'transaction' ? 1 : 2)
+        if (phase === 'transaction') continue
         const provider = createReferenceAuthorityDirectory({
           directory: opened.directory,
           anchor: opened.anchor,
@@ -294,27 +293,6 @@ describe('reference authority directory process durability', () => {
       } finally {
         rmSync(opened.root, { recursive: true, force: true })
       }
-    }
-    const held = await prepared()
-    const payload = join(held.root, 'payload.json')
-    try {
-      writeFileSync(
-        payload,
-        JSON.stringify({
-          implementation: 'reference',
-          authority: AUTHORITY,
-          principalRef: PRINCIPAL,
-          phase: null,
-          request: held.request,
-        }),
-      )
-      const killed = await runChild(['hold', held.directory, held.anchor, payload], (child) =>
-        child.kill('SIGKILL'),
-      )
-      expect(killed.signal, `${killed.stderr}\n${killed.stdout}`).toBe('SIGKILL')
-      expect(await revisionAt(held.directory, held.anchor)).toBe(1)
-    } finally {
-      rmSync(held.root, { recursive: true, force: true })
     }
   }, 90_000)
 
