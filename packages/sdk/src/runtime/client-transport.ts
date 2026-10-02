@@ -1,17 +1,22 @@
 // The client side of the runtime client wire: bootstrap, the complete module catalog, and
-// validated HTTP calls. Routes, limits and per-operation metadata come from the generated
-// protocol tables; nothing here restates them. A command leaves this client only while the
-// catalog is complete and current, and a command carrying a business id is journaled before
-// its first byte is sent. Nothing is ever resent automatically.
+// validated calls over HTTP or the push socket. Routes, limits and per-operation metadata come
+// from the generated protocol tables; nothing here restates them. A command leaves this client
+// only while the catalog is complete and current, and a command carrying a business id is
+// journaled before its first byte is sent. Nothing is ever resent automatically, not even after
+// the socket reconnects.
 import { jcs } from '@agnes/protocol'
 import {
   type ClientBootstrapRejected,
   type ClientCallHeader,
   type ClientCatalogPageResult,
+  type ClientCommandRequest,
   type ClientHello,
   type ClientJsonOperation,
   type ClientModule,
   type ClientOperationTypes,
+  type ClientQueryRequest,
+  type ClientSubscriptionFrame,
+  type ClientTransportRequestFrame,
   type ClientWelcome,
   RuntimeClientOperations,
   RuntimeClientTransportPolicy,
@@ -23,10 +28,10 @@ import {
   utf8ByteLength,
   validateClientBootstrap,
   validateClientCatalogPage,
-  validateClientCommandRequest,
-  validateClientQueryRequest,
   validateClientReply,
   validateClientTransportFrame,
+  validateClientTransportReplyFrame,
+  validateClientTransportRequestFrame,
   validateRuntimeErrorDetail,
 } from '@agnes/protocol/runtime'
 import { ProtocolViolation } from '../errors.js'
@@ -38,6 +43,23 @@ const { routes } = RuntimeClientTransportWire
 export const RUNTIME_JOURNAL_KEY = 'agh.runtime.client'
 
 export type RuntimeFetch = (url: string, init: RequestInit) => Promise<Response>
+/** The part of the WHATWG WebSocket that browsers and the `ws` package both provide. */
+export type RuntimeSocket = {
+  readonly protocol: string
+  send(data: string): void
+  close(code?: number, reason?: string): void
+  addEventListener(
+    type: 'open' | 'message' | 'close' | 'error',
+    listener: (event: { readonly type: string; readonly data?: unknown }) => void,
+  ): void
+}
+/** `headers` carries `authorization` only when a credential is set: a browser cannot send headers
+ * on a WebSocket and relies on its session cookie. */
+export type RuntimeWebSocketFactory = (
+  url: string,
+  protocol: string,
+  headers: Record<string, string>,
+) => RuntimeSocket
 export type RuntimeClientOptions = {
   /** Deployment origin plus its mount prefix; the generated route paths are appended to it. */
   baseUrl: string
@@ -46,7 +68,13 @@ export type RuntimeClientOptions = {
   /** Sent as `Authorization: Bearer`. A browser leaves it out and relies on its session cookie. */
   credential?: string
   fetch?: RuntimeFetch
+  /** Opens the push socket after each successful bootstrap. Without one, calls stay on HTTP and
+   * subscriptions poll; no platform default is picked here. */
+  webSocket?: RuntimeWebSocketFactory
 }
+/** What subscriptions hear: a validated frame of the current session, the push socket closing
+ * (poll from here on), or the session ending. */
+export type PushEvent = ClientSubscriptionFrame | 'socket-closed' | 'session-replaced'
 export type RuntimeClientMode = 'disconnected' | ClientWelcome['mode']
 export type LocalRefusal =
   | 'disconnected'
@@ -70,6 +98,18 @@ type Session = {
   modules: Map<string, ClientModule>
   schemas: Map<string, SchemaRef>
   complete: boolean
+}
+type Push = {
+  socket: RuntimeSocket
+  session: Session
+  open: boolean
+  /** Calls awaiting their reply frame, by call id. */
+  calls: Map<
+    string,
+    { request: ClientQueryRequest | ClientCommandRequest; settle: (outcome: Outcome | null) => void }
+  >
+  settled: Promise<void>
+  settle: () => void
 }
 
 // Typed refusals returned before admission. Every other failure code may hide an effect, so a
@@ -144,7 +184,10 @@ function statusInput(operation: ClientJsonOperation, id: string, input: Record<s
 export class RuntimeClientTransport {
   /** The last typed refusal from bootstrap or catalog paging, kept for diagnostics and upgrade prompts. */
   refusal: ClientBootstrapRejected | RuntimeError | null = null
+  /** Subscription sinks; each hears every PushEvent and keeps only its own frames. */
+  readonly listeners = new Set<(event: PushEvent) => void>()
   private session: Session | null = null
+  private push: Push | null = null
   private incompatible = false
   private connecting: Promise<void> | null = null
   private readonly base: string
@@ -173,25 +216,31 @@ export class RuntimeClientTransport {
     )
   }
 
+  /** While the current session's push socket is open, calls travel on it and subscriptions are pushed. */
+  get pushOpen(): boolean {
+    return this.push?.open === true && this.push.session === this.session
+  }
+
   /** A fresh call header for the current session, or null when nothing may be read. */
   header(): ClientCallHeader | null {
     return this.session && { ...this.session.base, callId: randomId() }
   }
 
-  /** Bootstrap and read the catalog to completion; concurrent callers share one attempt. */
+  /** Bootstrap, read the catalog to completion, then open the push socket; concurrent callers share
+   * one bootstrap. Settles once the socket is open or has failed, which leaves calls on HTTP. */
   connect(): Promise<void> {
     this.connecting ??= this.bootstrap().finally(() => {
       this.connecting = null
     })
-    return this.connecting
+    return this.connecting.then(() => this.openPush())
   }
 
   /** One authenticated POST to a generated route; the artifact reader sends through it too. */
   post(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
-    const headers: Record<string, string> = {
+    const headers = {
       'content-type': `${RuntimeClientTransportWire.jsonMime}; charset=utf-8`,
+      ...this.auth(),
     }
-    if (this.options.credential !== undefined) headers.authorization = `Bearer ${this.options.credential}`
     const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(body) }
     return this.fetch(this.base + path, signal ? { ...init, signal } : init)
   }
@@ -216,14 +265,16 @@ export class RuntimeClientTransport {
     >
   }
 
-  /** A catalog-changed frame for the current session drops the catalog and bootstraps again.
-   * The push reader's own call id is not tracked yet, so any call id of the current session matches;
-   * frames of an older session, and every other kind, are ignored here. */
+  /** A pushed frame of the current session: catalog-changed drops the catalog and bootstraps again,
+   * a subscription frame goes to the listeners. The wire does not say which call id a pushed frame
+   * carries, so any call id of the current session matches; frames of an older session, and every
+   * other kind, are ignored here. */
   handleFrame(value: unknown): Promise<void> {
     const session = this.session
     const callId = record(value) && record(value.header) ? value.header.callId : undefined
     if (!session || typeof callId !== 'string') return Promise.resolve()
     const frame = validateClientTransportFrame({ ...session.base, callId }, value)
+    if (frame.ok && frame.value.kind === 'subscription') this.emit(frame.value.frame)
     return frame.ok && frame.value.kind === 'catalog-changed' ? this.invalidate() : Promise.resolve()
   }
 
@@ -253,11 +304,124 @@ export class RuntimeClientTransport {
     return reports
   }
 
-  /** Closes writes at once and reads a fresh catalog. Callers on a reply path ignore a failed
-   * bootstrap: it leaves the client disconnected, so later calls are refused until connect() works. */
-  private invalidate(): Promise<void> {
-    this.session = null
+  /** Closes writes at once, ends the push socket and every subscription, and reads a fresh catalog.
+   * Callers on a reply path ignore a failed bootstrap: it leaves the client disconnected, so later
+   * calls are refused until connect() works. */
+  invalidate(): Promise<void> {
+    this.drop()
     return this.connect()
+  }
+
+  /** The session ends: subscriptions hear it first, then the socket closes with its calls unknown. */
+  private drop(): void {
+    this.session = null
+    this.emit('session-replaced')
+    this.listeners.clear()
+    if (this.push) this.closePush(this.push)
+  }
+
+  private emit(event: PushEvent): void {
+    for (const listener of this.listeners) listener(event)
+  }
+
+  private auth(): Record<string, string> {
+    const { credential } = this.options
+    return credential === undefined ? {} : { authorization: `Bearer ${credential}` }
+  }
+
+  /** Opens the current session's push socket; settles once it is open or has failed. */
+  private openPush(): Promise<void> {
+    const session = this.session
+    const factory = this.options.webSocket
+    if (!session || !factory) return Promise.resolve()
+    if (this.push?.session === session) return this.push.settled
+    // ponytail: no handshake timeout of its own, so a stalled upgrade holds connect() until the
+    // platform gives up; add one if a deployment's proxy is seen holding upgrades open.
+    const { path, subprotocol } = routes.websocket
+    let socket: RuntimeSocket
+    try {
+      socket = factory(this.base.replace(/^http/, 'ws') + path, subprotocol, this.auth())
+    } catch {
+      return Promise.resolve()
+    }
+    let settle: () => void = () => undefined
+    const settled = new Promise<void>((resolve) => {
+      settle = resolve
+    })
+    const push: Push = { socket, session, open: false, calls: new Map(), settled, settle }
+    this.push = push
+    socket.addEventListener('open', () => {
+      if (this.push !== push || socket.protocol !== subprotocol) return this.closePush(push)
+      push.open = true
+      settle()
+    })
+    socket.addEventListener('message', (event) => this.receive(push, event.data))
+    socket.addEventListener('close', () => this.closePush(push))
+    socket.addEventListener('error', () => this.closePush(push))
+    return settled
+  }
+
+  /** Every call still waiting on the socket becomes unknown and is never resent; subscriptions of a
+   * still current session fall back to polling. */
+  // ponytail: no reconnect loop. After a drop, calls use HTTP and subscriptions poll until an explicit
+  // connect(); add a backoff reconnect when push latency after a drop matters.
+  private closePush(push: Push): void {
+    push.open = false
+    push.socket.close()
+    push.settle()
+    for (const call of push.calls.values()) call.settle(null)
+    if (this.push !== push) return
+    this.push = null
+    if (this.session === push.session) this.emit('socket-closed')
+  }
+
+  /** A binary frame is outside this wire and ends the socket. Text that is oversized, malformed or
+   * not a valid answer to a waiting call is dropped and never advances state. */
+  private receive(push: Push, data: unknown) {
+    if (this.push !== push) return
+    if (typeof data !== 'string') return this.closePush(push)
+    let value: unknown
+    try {
+      if (!utf8ByteLength(data, RuntimeClientTransportPolicy.maxJsonBytes).ok) return
+      value = JSON.parse(data)
+    } catch {
+      return
+    }
+    if (!record(value) || (value.kind !== 'reply' && value.kind !== 'error')) {
+      void this.handleFrame(value).catch(() => undefined)
+      return
+    }
+    const header = record(value.result) ? value.result.header : value.header
+    const call =
+      record(header) && typeof header.callId === 'string' ? push.calls.get(header.callId) : undefined
+    if (!call) return
+    const frame = validateClientTransportReplyFrame(call.request, value)
+    if (!frame.ok) return
+    if (frame.value.kind === 'reply') call.settle({ ok: true, value: frame.value.result })
+    else if (frame.value.kind === 'error') call.settle({ ok: false, error: frame.value.error })
+  }
+
+  /** One frame on the push socket, answered by its validated reply or error frame. A closed socket or
+   * an abort rejects, which leaves the call unknown and a journaled command pending. */
+  private viaPush(push: Push, frame: ClientTransportRequestFrame, signal?: AbortSignal): Promise<Outcome> {
+    const callId = frame.request.header.callId
+    return new Promise((resolve, reject) => {
+      const settle = (outcome: Outcome | null) => {
+        push.calls.delete(callId)
+        signal?.removeEventListener('abort', abort)
+        if (outcome) resolve(outcome)
+        else reject(new Error('no reply'))
+      }
+      const abort = () => settle(null)
+      if (signal?.aborted) return abort()
+      push.calls.set(callId, { request: frame.request, settle })
+      signal?.addEventListener('abort', abort, { once: true })
+      try {
+        push.socket.send(JSON.stringify(frame))
+      } catch {
+        settle(null)
+      }
+    })
   }
 
   private refuse(refusal: ClientBootstrapRejected | RuntimeError): void {
@@ -269,7 +433,7 @@ export class RuntimeClientTransport {
   private async bootstrap(): Promise<void> {
     // ponytail: three attempts, then stop chasing a catalog that never holds still between pages.
     attempts: for (let attempt = 0; attempt < 3; attempt++) {
-      this.session = null
+      this.drop()
       this.incompatible = false
       const outcome = await readOutcome(await this.post(routes.bootstrap.path, this.options.hello))
       if (!outcome) throw new ProtocolViolation('invalid bootstrap reply')
@@ -305,7 +469,7 @@ export class RuntimeClientTransport {
         page = next.value
       }
     }
-    this.session = null
+    this.drop()
     throw new ProtocolViolation('catalog changed on every bootstrap attempt')
   }
 
@@ -350,10 +514,13 @@ export class RuntimeClientTransport {
     const header = { ...session.base, callId: randomId() }
     // Transport management queries repeat the call header inside their input.
     const value = entry.backendContract === 'agh.transport' && record(input) ? { ...input, header } : input
-    const request = { header, call: { operation, input: value } }
-    const valid =
-      kind === 'query' ? validateClientQueryRequest(request) : validateClientCommandRequest(request)
+    // Validated as the socket frame on either channel, so its canonical size bound covers the request.
+    const valid = validateClientTransportRequestFrame({
+      kind,
+      request: { header, call: { operation, input: value } },
+    })
     if (entry.kind !== kind || !valid.ok) return { state: 'refused', reason: 'invalid-request' }
+    const { request } = valid.value
 
     const journal = this.options.journal
     const id = 'identityField' in entry && record(value) ? value[entry.identityField] : undefined
@@ -370,10 +537,15 @@ export class RuntimeClientTransport {
       }
     }
 
+    // Both channels settle below: a reply or error frame is the same Outcome as the HTTP body.
     let outcome: Outcome | null
     try {
+      const push = this.push
       const route = kind === 'query' ? routes.clientQuery : routes.clientCommand
-      outcome = await readOutcome(await this.post(route.path, request, signal))
+      outcome =
+        push?.open && push.session === session
+          ? await this.viaPush(push, valid.value, signal)
+          : await readOutcome(await this.post(route.path, request, signal))
     } catch {
       return { state: 'unknown', reason: 'no reply' }
     }
@@ -386,7 +558,7 @@ export class RuntimeClientTransport {
         await journal.clearPending(RUNTIME_JOURNAL_KEY, id)
       return { state: 'failed', error: outcome.error }
     }
-    const reply = validateClientReply(valid.value, outcome.value)
+    const reply = validateClientReply(request, outcome.value)
     if (!reply.ok) return { state: 'unknown', reason: 'reply does not match the call' }
     const result = reply.value.reply.value
     if (typeof id === 'string' && admitted(result)) await journal.clearPending(RUNTIME_JOURNAL_KEY, id)
