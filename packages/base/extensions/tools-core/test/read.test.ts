@@ -1,8 +1,8 @@
 import { checkToolDef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
-import { fakeToolContext } from '../../../testkit/tool-context.js'
-import { byteLength, OUTPUT_LIMITS } from '../src/guards/output.js'
-import { MAX_READ_BYTES, readTool } from '../src/tools/read.js'
+import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-context.js'
+import { byteLength, OUTPUT_LIMITS, spillLocator } from '../src/guards/output.js'
+import { MAX_ARTIFACT_READ_BYTES, MAX_READ_BYTES, readTool } from '../src/tools/read.js'
 
 const textOf = (r: { content: { type: string }[] }): string =>
   (r.content[0] as { type: 'text'; text: string }).text
@@ -141,5 +141,85 @@ describe('read', () => {
     const r = await readTool.execute({ path: 'a.txt' }, ctx)
     expect(r.isError).toBeUndefined()
     expect(textOf(r)).toContain('A')
+  })
+})
+
+describe('read of an artifact the output guard stored', () => {
+  const enc = new TextEncoder()
+  const store = async (ctx: FakeToolContext, text: string | Uint8Array): Promise<string> =>
+    spillLocator(
+      await ctx.artifacts.put(typeof text === 'string' ? enc.encode(text) : text, { mime: 'text/plain' }),
+    )
+  const sha = 'a'.repeat(64)
+
+  // Reads to the end the way a model would: follow the continuation hint until there is none. Every
+  // page has to fit the output limit.
+  async function readAll(ctx: FakeToolContext, path: string): Promise<string[]> {
+    const rows: string[] = []
+    for (let offset = 1; ; ) {
+      const text = textOf(await readTool.execute({ path, offset }, ctx))
+      expect(byteLength(text)).toBeLessThanOrEqual(OUTPUT_LIMITS.maxBytes)
+      rows.push(
+        ...text
+          .split('\n')
+          .filter((l) => /^\d+\t/.test(l))
+          .map((l) => l.replace(/^\d+\t/, '')),
+      )
+      const next = /offset=(\d+) to continue\]$/.exec(text)
+      if (!next) return rows
+      offset = Number(next[1])
+    }
+  }
+
+  it('pages a stored output back in full: many lines, a few huge lines, wide characters', async () => {
+    const ctx = fakeToolContext()
+    const many = Array.from({ length: 133 }, (_, i) => `line ${i + 1} ${'x'.repeat(70)}`).join('\n')
+    expect((await readAll(ctx, await store(ctx, many))).join('\n')).toBe(many)
+    // A JSON result is tens of KB on a handful of lines: paging by line alone would leave most of it
+    // out of reach, so long lines are shown as several.
+    const huge = Array.from({ length: 8 }, (_, i) => `${i}:${'ab'.repeat(2400)}`).join('\n')
+    expect((await readAll(ctx, await store(ctx, huge))).join('')).toBe(huge.replaceAll('\n', ''))
+    const wide = '中'.repeat(5000)
+    expect((await readAll(ctx, await store(ctx, wide))).join('')).toBe(wide)
+    expect(ctx.calls.read).toHaveLength(0)
+    expect(ctx.calls.artifacts).toHaveLength(3) // the pages were not put back into the store
+  })
+
+  it('honours offset and limit and reports a range past the end', async () => {
+    const ctx = fakeToolContext()
+    const path = await store(ctx, 'a\nb\nc\nd')
+    expect(textOf(await readTool.execute({ path, offset: 2, limit: 2 }, ctx))).toBe('2\tb\n3\tc')
+    expect(textOf(await readTool.execute({ path, offset: 9 }, ctx))).toBe(
+      '[no lines at offset 9; the artifact has 4 lines]',
+    )
+  })
+
+  it.each([
+    ['a locator without its size', `artifact://${sha}`, 'artifact locator', 0],
+    ['a locator with a stray parameter', `artifact://${sha}?size=3&x=1`, 'artifact locator', 0],
+    ['a size no number holds exactly', `artifact://${sha}?size=99999999999999999999`, 'artifact locator', 0],
+    ['an artifact that is not stored', `artifact://${sha}?size=3`, 'artifact not found', 1],
+    [
+      'an artifact too large to hold',
+      `artifact://${sha}?size=${MAX_ARTIFACT_READ_BYTES + 1}`,
+      'too large',
+      0,
+    ],
+  ])('refuses %s', async (_why, path, message, asked) => {
+    const ctx = fakeToolContext()
+    const r = await readTool.execute({ path }, ctx)
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toContain(message)
+    // A refusal that can be decided from the locator alone never reaches the store.
+    expect(ctx.calls.artifactGets).toHaveLength(asked)
+  })
+
+  it('refuses a stored size that is wrong and content that is not text', async () => {
+    const ctx = fakeToolContext()
+    const wrongSize = (await store(ctx, 'hello')).replace(/size=5$/, 'size=6')
+    expect(textOf(await readTool.execute({ path: wrongSize }, ctx))).toContain('size mismatch')
+    const binary = await readTool.execute({ path: await store(ctx, new Uint8Array([97, 0, 98])) }, ctx)
+    expect(binary.isError).toBe(true)
+    expect(textOf(binary)).toContain('binary')
   })
 })

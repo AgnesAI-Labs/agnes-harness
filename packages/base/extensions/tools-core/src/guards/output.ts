@@ -80,6 +80,43 @@ function describeFailure(e: unknown): string {
   }
 }
 
+// What the model is given to get back to text the guard cut. `size` is part of the locator because
+// the artifact store checks the stored size against the one asked for, so a digest alone cannot be
+// turned back into a reference. Digest and size travel together, exactly as the note writes them.
+const SPILL_LOCATOR = /^artifact:\/\/([0-9a-f]{64})\?size=(\d{1,16})$/
+
+export function spillLocator(ref: ArtifactRef): string {
+  return `artifact://${ref.sha256}?size=${ref.size}`
+}
+
+/** The reference a locator names, or `undefined` for anything that is not exactly one. */
+export function parseSpillLocator(path: string): ArtifactRef | undefined {
+  const m = SPILL_LOCATOR.exec(path)
+  if (m === null) return undefined
+  const size = Number(m[2])
+  return Number.isSafeInteger(size) ? { sha256: m[1] as string, size, mime: 'text/plain' } : undefined
+}
+
+/**
+ * Splits `text` into pieces of at most `maxBytes` UTF-8 bytes. Every cut is moved back to a
+ * character boundary, so no piece starts or ends inside a multi-byte character.
+ */
+export function splitByBytes(text: string, maxBytes: number): string[] {
+  const bytes = encoder.encode(text)
+  if (bytes.length <= maxBytes) return [text]
+  const pieces: string[] = []
+  let start = 0
+  while (start < bytes.length) {
+    let end = Math.min(start + maxBytes, bytes.length)
+    while (end < bytes.length && end > start && isContinuation(bytes[end] as number)) end--
+    // A budget smaller than one character still has to make progress.
+    if (end === start) end = Math.min(start + 4, bytes.length)
+    pieces.push(decoder.decode(bytes.subarray(start, end)))
+    start = end
+  }
+  return pieces
+}
+
 function reason(bytes: number, lines: number): string {
   const over: string[] = []
   if (bytes > OUTPUT_LIMITS.maxBytes) over.push(`${OUTPUT_LIMITS.maxBytes}-byte`)
@@ -100,7 +137,7 @@ export async function guardOutput(
   let stored: string
   try {
     ref = await ctx.artifacts.put(new TextEncoder().encode(text), { mime })
-    stored = `full output stored as artifact ${ref.sha256.slice(0, 12)}`
+    stored = `full output stored at ${spillLocator(ref)}. To read the rest, call read with that path and an offset/limit, or grep that path to search it`
   } catch (e) {
     // Truncate anyway. Handing back the untruncated text because the store is unavailable would
     // turn a storage failure into an unbounded context, which is the failure this guard exists to

@@ -1,6 +1,6 @@
 import { defineTool, type ToolResult } from '@agnes/extension-api'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
-import { isBinary, MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
+import { isBinary, loadSpilledLines, MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { GrepParams } from '../../../tools-core/src/tools/schemas.js'
 import { globToRegExp, newWalkReport, SEARCH_META, toolError, walk, walkNotes } from './walk.js'
 
@@ -19,7 +19,7 @@ function clip(s: string): string {
 export const grepTool = defineTool({
   name: 'grep',
   description:
-    'Search file contents under a directory with a regular expression, or with a literal string when literal is true. Returns path:line:text, with context lines marked path-line-text. Build and dependency directories, binary files and paths policy denies are passed over, and the result says which.',
+    'Search file contents under a directory with a regular expression, or with a literal string when literal is true. Returns path:line:text, with context lines marked path-line-text. Build and dependency directories, binary files and paths policy denies are passed over, and the result says which. The path may also be an artifact:// path from a truncated output note, to search that output; the line numbers match what read shows.',
   parameters: GrepParams,
   meta: SEARCH_META,
   async execute(args, ctx): Promise<ToolResult> {
@@ -38,6 +38,36 @@ export const grepTool = defineTool({
     const out: string[] = []
     let matches = 0
     let atLimit = false
+    const context = args.context ?? 0
+    // Matches one file's lines, as `label` and a 1-based line number. Shared by a file in the tree
+    // and a stored output, so both are reported the same way and stop at the same limit.
+    const searchLines = (label: string, lines: string[]): void => {
+      for (let i = 0; i < lines.length; i++) {
+        if (!re.test(lines[i] as string)) continue
+        if (matches >= limit) {
+          atLimit = true
+          return
+        }
+        matches++
+        for (let j = Math.max(0, i - context); j < i; j++)
+          out.push(`${label}-${j + 1}-${clip(lines[j] as string)}`)
+        out.push(`${label}:${i + 1}:${clip(lines[i] as string)}`)
+        for (let j = i + 1; j <= Math.min(lines.length - 1, i + context); j++)
+          out.push(`${label}-${j + 1}-${clip(lines[j] as string)}`)
+      }
+    }
+    if (args.path?.startsWith('artifact://')) {
+      // A stored output is one file, whatever glob says. Its lines are the ones read pages through,
+      // so a line number found here is the offset to read from.
+      const spilled = await loadSpilledLines(ctx, args.path)
+      if (!spilled.ok) return toolError(spilled.message)
+      searchLines(
+        `artifact://${args.path.slice('artifact://'.length, 'artifact://'.length + 12)}`,
+        spilled.lines,
+      )
+      const notes = atLimit ? [`[limit ${limit} reached; there may be more matches]`] : []
+      return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
+    }
     for await (const f of walk(ctx, args.path ?? ctx.cwd, report, { maxEntries: MAX_ENTRIES })) {
       if (atLimit) break
       if (f.kind !== 'file' || (glob && !glob.test(f.rel))) continue
@@ -59,21 +89,7 @@ export const grepTool = defineTool({
         continue
       }
       if (isBinary(bytes)) continue
-      const lines = dec.decode(bytes).split('\n')
-      const context = args.context ?? 0
-      for (let i = 0; i < lines.length; i++) {
-        if (!re.test(lines[i] as string)) continue
-        if (matches >= limit) {
-          atLimit = true
-          break
-        }
-        matches++
-        for (let j = Math.max(0, i - context); j < i; j++)
-          out.push(`${f.rel}-${j + 1}-${clip(lines[j] as string)}`)
-        out.push(`${f.rel}:${i + 1}:${clip(lines[i] as string)}`)
-        for (let j = i + 1; j <= Math.min(lines.length - 1, i + context); j++)
-          out.push(`${f.rel}-${j + 1}-${clip(lines[j] as string)}`)
-      }
+      searchLines(f.rel, dec.decode(bytes).split('\n'))
     }
     const notes = walkNotes(report, MAX_ENTRIES)
     if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)

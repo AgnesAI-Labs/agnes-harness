@@ -1,3 +1,4 @@
+import type { ArtifactRef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import {
@@ -7,10 +8,16 @@ import {
   guardOutput,
   guardOutputSet,
   OUTPUT_LIMITS,
+  parseSpillLocator,
   refBlock,
+  spillLocator,
 } from '../src/guards/output.js'
 
 const { maxBytes, maxLines, headBytes, tailBytes } = OUTPUT_LIMITS
+
+// What the note may add to a cut result. It carries the locator and the way back to the text, so it
+// is longer than a bare "stored as artifact"; the bound is on the note, not on the cut text.
+const NOTE_ROOM = 320
 
 describe('guardOutput', () => {
   it('passes small output through without touching the artifact store', async () => {
@@ -66,7 +73,7 @@ describe('guardOutput', () => {
     const many = '\n'.repeat(maxLines)
     const r = await guardOutput(ctx, many)
     expect(r.truncated).toBe(true)
-    expect(r.text.length).toBeLessThan(many.length + 200)
+    expect(r.text.length).toBeLessThan(many.length + NOTE_ROOM)
     expect(r.text.replaceAll('\n', '').startsWith('[truncated')).toBe(true)
   })
 
@@ -77,7 +84,7 @@ describe('guardOutput', () => {
     expect(r.text).not.toContain('B')
     expect(r.text.startsWith('A'.repeat(headBytes))).toBe(true)
     expect(r.text.endsWith('C'.repeat(tailBytes))).toBe(true)
-    expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + 200)
+    expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + NOTE_ROOM)
   })
 
   it('stores the whole text, not the truncated view', async () => {
@@ -87,7 +94,14 @@ describe('guardOutput', () => {
     const stored = new TextDecoder().decode(ctx.calls.artifacts[0]?.bytes as Uint8Array)
     expect(stored).toBe(text)
     expect(ctx.calls.artifacts[0]?.mime).toBe('text/plain')
-    expect(r.text).toContain(r.ref?.sha256.slice(0, 12) as string)
+    // The note names the stored text by the locator read and grep accept, and says how to use it.
+    const ref = r.ref as ArtifactRef
+    expect(r.text).toContain(`full output stored at ${spillLocator(ref)}. To read the rest, call read`)
+    expect(parseSpillLocator(spillLocator(ref))).toEqual({
+      sha256: ref.sha256,
+      size: ref.size,
+      mime: 'text/plain',
+    })
   })
 
   it('passes an explicit mime through to the artifact store', async () => {
@@ -113,7 +127,7 @@ describe('guardOutput', () => {
     const r = await guardOutput(ctx, big)
     expect(r.truncated).toBe(true)
     expect(r.ref).toBeUndefined()
-    expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + 200)
+    expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + NOTE_ROOM)
     expect(r.text).toContain('could not be stored')
     expect(r.text).toContain('artifact store offline')
   })
@@ -333,7 +347,7 @@ describe('guardOutputSet', () => {
     expect(out.omitted).toBe(0)
     const textBlock = out.blocks.find((b) => b.type === 'text')
     expect(textBlock).toBeDefined()
-    expect(byteLength((textBlock as { text: string }).text)).toBeLessThan(headBytes + tailBytes + 200)
+    expect(byteLength((textBlock as { text: string }).text)).toBeLessThan(headBytes + tailBytes + NOTE_ROOM)
   })
 
   it('still bounds the result when the full-set artifact store is unavailable', async () => {
