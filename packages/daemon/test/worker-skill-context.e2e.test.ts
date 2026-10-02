@@ -17,7 +17,7 @@ const roots: string[] = []
 // discovery and read tools remain available for the loaded and generic turns alike.
 // Pagination changes both read-tool schemas; pin the merged, model-visible tool set.
 // The write description also includes the incremental-generation guidance shipped with the tools.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'f356613f68c2599244a16876b06a809bae589949de18040205a3d5062f937686'
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '57e3ba3c3970361eb45deda61e96602fdae891311f04fc658db5d1bebff24ee5'
 const expectedToolNames = [
   'compact',
   'edit',
