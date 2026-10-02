@@ -19,7 +19,7 @@ import {
 
 /** 断言目录结果：与 boot 同源的 zh-CN 目录 + LocaleService 同款插值。 */
 const zhT: Translate = (key, vars) => {
-  const template = webLocaleCatalog['zh-CN'][key] ?? webLocaleCatalog.en[key] ?? key
+  const template = webLocaleCatalog['zh-CN']?.[key] ?? webLocaleCatalog.en?.[key] ?? key
   if (!vars) return template
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
     Object.hasOwn(vars, name) ? String(vars[name]) : match,
@@ -199,12 +199,19 @@ describe('web presentation controls', () => {
     expect(errorNotice('INTERNAL_ERROR (-32603)', id, undefined, undefined, undefined, zhT)).toContain(
       `诊断编号：${id}`,
     )
-    expect(errorNotice('INTERNAL_ERROR (-32603)', '<script>secret</script>', undefined, undefined, undefined, zhT)).toBe(
-      '后台未能完成请求，请稍后重试。',
-    )
+    expect(
+      errorNotice('INTERNAL_ERROR (-32603)', '<script>secret</script>', undefined, undefined, undefined, zhT),
+    ).toBe('后台未能完成请求，请稍后重试。')
     expect(errorNotice('normal error', id, undefined, undefined, undefined, zhT)).toBe('normal error')
     // A session an older build wrote: said plainly, with no diagnostic wording to chase.
-    const legacy = errorNotice('SEMANTIC_REJECTED (-32011)', id, undefined, undefined, 'legacy-ledger-format', zhT)
+    const legacy = errorNotice(
+      'SEMANTIC_REJECTED (-32011)',
+      id,
+      undefined,
+      undefined,
+      'legacy-ledger-format',
+      zhT,
+    )
     expect(legacy).toBe('该会话由旧版本创建，当前版本无法打开，请新建会话。')
     expect(legacy).not.toContain('诊断')
     expect(errorNotice('SEMANTIC_REJECTED (-32011)', id, undefined, undefined, 'other', zhT)).toBe(
@@ -226,15 +233,22 @@ describe('web presentation controls', () => {
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'RATE_LIMIT', undefined, zhT)).toBe(
       '模型服务返回限流错误（HTTP 429）。请稍后重试；若持续出现，请检查该账号的服务额度或联系模型服务方。',
     )
-    expect(errorNotice('配置已被其他客户端修改，请重新打开设置后再试。', undefined, undefined, undefined, undefined, zhT)).toBe(
-      '配置已被其他客户端修改，请重新打开设置后再试。',
-    )
+    expect(
+      errorNotice(
+        '配置已被其他客户端修改，请重新打开设置后再试。',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        zhT,
+      ),
+    ).toBe('配置已被其他客户端修改，请重新打开设置后再试。')
   })
 
   it('maps workspace validation reasons and hides raw RPC fallbacks', () => {
-    expect(
-      workspaceErrorNotice({ data: { code: 'WORKSPACE_INVALID', reason: 'not-found' } }, zhT),
-    ).toBe('工作目录不存在，请检查路径后重试。')
+    expect(workspaceErrorNotice({ data: { code: 'WORKSPACE_INVALID', reason: 'not-found' } }, zhT)).toBe(
+      '工作目录不存在，请检查路径后重试。',
+    )
     expect(workspaceErrorNotice(new Error('SEMANTIC_REJECTED (-32011)'), zhT)).toBe(
       '无法使用此工作目录，请检查路径是否存在及访问权限。',
     )

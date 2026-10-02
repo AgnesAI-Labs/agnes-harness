@@ -81,7 +81,7 @@ const TRANSCRIPT_DEPENDENCIES: TranscriptDependencies = {
   createRenderer: createTimelineRenderer,
   observeCards: observeSlotCards,
 }
-const COMPOSER_DEPENDENCIES: ComposerDependencies = {
+const COMPOSER_DEPENDENCIES: Omit<ComposerDependencies, 'translate'> = {
   createModelPicker,
   createPermissionPicker,
   createUsagePanel,
@@ -189,7 +189,11 @@ const SETTINGS_DSH_GLOBAL_SLOT_NAMES = new Set([
   'settings.section',
 ])
 
-function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => string }): ReturnType<typeof createElement> {
+function EmptyStateBuiltin({
+  t = (key) => key,
+}: {
+  t?: (key: string) => string
+}): ReturnType<typeof createElement> {
   return createElement(
     'div',
     { 'data-agnes-region-owner': 'builtin', 'data-agnes-region-unit': 'empty-state' },
@@ -372,9 +376,7 @@ export function mountSettingsPaneRegion(
     root.render(
       createElement(SettingsBuiltin, {
         ref: handle,
-        options: locale
-          ? { ...options, translate: (key: string) => locale.t(key) }
-          : options,
+        options: locale ? { ...options, translate: (key: string) => locale.t(key) } : options,
       }),
     )
   })
@@ -733,7 +735,9 @@ function DocumentPreviewBuiltin({
           input: {
             kind: 'text',
             content:
-              error instanceof ClientResourceReclaimedError ? t('app.doc.reclaimed') : t('app.doc.unavailable'),
+              error instanceof ClientResourceReclaimedError
+                ? t('app.doc.reclaimed')
+                : t('app.doc.unavailable'),
           },
         })
       })
@@ -741,7 +745,7 @@ function DocumentPreviewBuiltin({
       active = false
       resource?.release()
     }
-  }, [request, resources])
+  }, [request, resources, t])
   // A changed owner must never paint the previous resource while its replacement is loading.
   const input =
     loaded && loaded.request === request && loaded.resources === resources
@@ -783,7 +787,11 @@ function RightbarDocumentTab({
   )
 }
 
-function RightbarGuideTab({ t = (key) => key }: { t?: (key: string) => string }): ReturnType<typeof createElement> {
+function RightbarGuideTab({
+  t = (key) => key,
+}: {
+  t?: (key: string) => string
+}): ReturnType<typeof createElement> {
   return createElement(
     'section',
     { className: 'rightbar-tab-content', 'data-rightbar-tab': 'guide' },
@@ -1243,10 +1251,13 @@ export function mountConversationRegion(
     () =>
       createElement(Conversation, {
         ref: handle,
-        onMount: options.onMount,
-        onUnmount: options.onUnmount,
+        ...(options.onMount ? { onMount: options.onMount } : {}),
+        ...(options.onUnmount ? { onUnmount: options.onUnmount } : {}),
         ...(options.locale
-          ? { translate: (key: string, vars?: Record<string, string | number>) => options.locale!.t(key, vars) }
+          ? {
+              translate: (key: string, vars?: Record<string, string | number>) =>
+                options.locale?.t(key, vars) ?? key,
+            }
           : {}),
         slots: {
           session: createElement(SlotOutlet, { name: 'conversation.session', hideWhenEmpty: true }),
@@ -1569,7 +1580,7 @@ export function mountEmptyStateRegion(
   if (!registry.spec(EMPTY_STATE_SLOT))
     registry.declare(EMPTY_STATE_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   // Priority 0 is the built-in. Third-party entries can explicitly shadow it with a lower value.
-  const translate = services.locale ? (key: string) => services.locale!.t(key) : undefined
+  const translate = services.locale ? (key: string) => services.locale?.t(key) ?? key : undefined
   const removeBuiltin = registry.register(
     {
       name: EMPTY_STATE_SLOT as string,

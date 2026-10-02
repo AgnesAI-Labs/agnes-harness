@@ -2,8 +2,8 @@
 import type { UINode, UsageView } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
-import { zhLocaleService, zhT } from './helpers/locale.js'
 import { costDetails, costSummary, createUsagePanel, type UsagePanelUpdater } from '../src/usage.js'
+import { zhLocaleService, zhT } from './helpers/locale.js'
 
 const panels: UsagePanelUpdater[] = []
 function mountUsage(parent: HTMLElement) {
@@ -40,10 +40,13 @@ const usage: UsageView = {
 it('shows per-call values and known timing, without double counting reasoning or fabricating dollars', () => {
   expect(costSummary(call, zhT)).toBe('输入 120 · 输出 50 · $0.000125（估算）')
   expect(
-    costSummary({
-      ...call,
-      billing: { usdMicros: 125, source: 'gateway', subscription: false },
-    }),
+    costSummary(
+      {
+        ...call,
+        billing: { usdMicros: 125, source: 'gateway', subscription: false },
+      },
+      zhT,
+    ),
   ).toContain('（网关记录）')
   expect(costDetails(call, zhT)).toContainEqual(['额度', '0.000206 credits · 估算'])
   expect(costDetails(call, zhT)).toContainEqual(['推理 Token（输出的子集）', '20'])
@@ -55,7 +58,8 @@ it('shows per-call values and known timing, without double counting reasoning or
 })
 it('keeps a call disclosure open on replacement and renders model names as text', () => {
   const transcript = document.createElement('section')
-  const timeline = createTimelineRenderer({ locale: zhLocaleService(), 
+  const timeline = createTimelineRenderer({
+    locale: zhLocaleService(),
     transcript,
     newContentButton: document.createElement('button'),
   })
@@ -156,7 +160,7 @@ it('preserves zero and missing values and separate dollar/credit provenance in p
 
 it('treats unknown and object-prototype purpose names as the generic single-call scope', () => {
   for (const purpose of ['unknown', '__proto__', 'constructor', 'toString']) {
-    expect(costDetails({ ...call, purpose })[0]).toEqual(['记录范围', '单次费用记录'])
+    expect(costDetails({ ...call, purpose }, zhT)[0]).toEqual(['记录范围', '单次费用记录'])
   }
 })
 

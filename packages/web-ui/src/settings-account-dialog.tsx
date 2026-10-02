@@ -36,16 +36,20 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                 placeholder={t('accounts.namePlaceholder')}
               />
             </Field>
-            <Field className="form-field" label="Provider">
+            <Field className="form-field" label={t('accounts.providerLabel')}>
               <SettingsOptionSelect id="config-provider" />
             </Field>
-            <Field className="form-field form-field-wide" id="config-auth-method-field" label={t('settings.oauth.methodLabel')}>
+            <Field
+              className="form-field form-field-wide"
+              id="config-auth-method-field"
+              label={t('settings.oauth.methodLabel')}
+            >
               <SettingsOptionSelect id="config-auth-method" />
             </Field>
-            <Field className="form-field form-field-wide" label="Base URL">
+            <Field className="form-field form-field-wide" label={t('accounts.baseUrlLabel')}>
               <input id="config-base-url" autoComplete="url" />
             </Field>
-            <Field className="form-field form-field-wide" label="API Key">
+            <Field className="form-field form-field-wide" label={t('accounts.apiKeyLabel')}>
               <input
                 id="config-api-key"
                 type="password"

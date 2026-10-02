@@ -1,5 +1,15 @@
 import type { UINode, UsageView } from '@agnes/protocol'
 import { formatTokenCount, formatUsdMicros } from './format-usage.js'
+import { type ExtendedKey, tt } from './locale-extended.js'
+
+const CACHE_INVALIDATION_CAUSE_KEYS = {
+  compaction: 'usage.cacheCause.compaction',
+  'system-changed': 'usage.cacheCause.systemChanged',
+  'history-changed': 'usage.cacheCause.historyChanged',
+} as const satisfies Record<
+  NonNullable<NonNullable<UsageView['cache']>['lastInvalidation']>['cause'],
+  ExtendedKey
+>
 
 /** Only formats daemon projection values; no client-side accounting or currency conversion. */
 export function formatCallUsage(node: Extract<UINode, { kind: 'cost' }>): string {

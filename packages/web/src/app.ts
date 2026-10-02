@@ -15,7 +15,6 @@ import {
   type Session,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
-import { setLocaleTranslator } from './locale-bridge.js'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
@@ -35,6 +34,7 @@ import {
   findApproval,
   type LiveProjection,
 } from './live-projection.js'
+import { setLocaleTranslator } from './locale-bridge.js'
 import { applyDocumentLocale, readLocalePreference, writeLocalePreference } from './locale-preference.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
@@ -126,9 +126,7 @@ function renderReconnect(phase: ReconnectPhase): void {
   if (phase !== 'stalled') {
     setConnection('reconnecting')
     reconnectNotice.textContent =
-      phase === 'waiting'
-        ? t('app.reconnect.waiting')
-        : t('app.reconnect.reloading')
+      phase === 'waiting' ? t('app.reconnect.waiting') : t('app.reconnect.reloading')
     return
   }
   setConnection('closed')
@@ -232,7 +230,8 @@ const clientModules = await startClientModules({
     })
     if (!response.ok) throw new Error(t('app.plugin.effectUnavailable'))
     const body: unknown = await response.json().catch(() => undefined)
-    if (!body || typeof body !== 'object' || !('output' in body)) throw new Error(t('app.plugin.effectInvalid'))
+    if (!body || typeof body !== 'object' || !('output' in body))
+      throw new Error(t('app.plugin.effectInvalid'))
     return (body as { output: unknown }).output
   },
   authorizeCommand: ({ owner, command }) =>
@@ -553,8 +552,7 @@ function renderSessionRecovery(message = ''): void {
   notice.dataset.kind = 'session-recovery'
   const description = notice.querySelector<HTMLElement>('[data-recovery-message]')
   const secondary = notice.querySelector<HTMLElement>('[data-recovery-error]')
-  if (description)
-    description.textContent = t('app.recovery.hint', { message: sessionRecovery.message })
+  if (description) description.textContent = t('app.recovery.hint', { message: sessionRecovery.message })
   if (secondary) secondary.textContent = message ? ` ${message}` : ''
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
     control.disabled = recoveryDisabled()
@@ -653,8 +651,12 @@ function renderControls(): void {
     usage: projection?.usage,
     workspace: {
       disabled: !available || sending || sessionPending,
-      label: selectedWorkspace?.name ?? (current ? t('composer.workspace.current') : t('composer.workspace.select')),
-      title: selectedWorkspace?.path ?? (current ? t('composer.workspace.currentTitle') : t('composer.workspace.select')),
+      label:
+        selectedWorkspace?.name ??
+        (current ? t('composer.workspace.current') : t('composer.workspace.select')),
+      title:
+        selectedWorkspace?.path ??
+        (current ? t('composer.workspace.currentTitle') : t('composer.workspace.select')),
     },
   }
   composerRuntime.render(composerView)
@@ -775,7 +777,9 @@ function renderApproval(): void {
       title: searching ? t('app.approval.searching') : t('app.approval.parkedTitle'),
       summary: t('app.approval.parkedSummary', { expiresAt: parked.expiresAt }),
       impact: searching ? t('app.approval.searchingImpact') : t('app.approval.locateImpact'),
-      actions: searching ? [] : [{ id: 'locate', label: t('app.approval.locate'), onSelect: () => searchApproval() }],
+      actions: searching
+        ? []
+        : [{ id: 'locate', label: t('app.approval.locate'), onSelect: () => searchApproval() }],
       disabled: !connected,
     })
     if (stick) renderer.pinToBottom()
@@ -792,7 +796,8 @@ function renderApproval(): void {
   }
 
   const liveTitle = liveApproval?.request.toolCall.title
-  const summary = typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? t('app.approval.defaultSummary'))
+  const summary =
+    typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? t('app.approval.defaultSummary'))
   const kind = liveApproval?.request.toolCall.kind
   const risks = {
     destructive: t('app.risk.destructive'),
@@ -1150,11 +1155,17 @@ async function forkTurn(turn: UITurn): Promise<void> {
 function renderNewSessionControls(): void {
   newSessionCreate.disabled =
     !connected || sessionPending || newSessionCreating || workspacePickerBusy || !newSessionCwd.value.trim()
-  setButtonLabel(newSessionCreate, newSessionCreating ? t('app.newSession.verifying') : t('app.newSession.useWorkspace'))
+  setButtonLabel(
+    newSessionCreate,
+    newSessionCreating ? t('app.newSession.verifying') : t('app.newSession.useWorkspace'),
+  )
   workspacePick.disabled =
     !connected || sessionPending || newSessionCreating || workspacePickerBusy || !workspacePickerReady
   workspacePick.hidden = workspacePickerReady === false
-  setButtonLabel(workspacePick, workspacePickerBusy ? t('app.newSession.opening') : t('app.newSession.pickFolder'))
+  setButtonLabel(
+    workspacePick,
+    workspacePickerBusy ? t('app.newSession.opening') : t('app.newSession.pickFolder'),
+  )
   workspacePickerState.textContent = workspacePickerBusy
     ? t('app.newSession.pickSystemHint')
     : workspacePickerReady === undefined
@@ -1325,15 +1336,13 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
   const apis = await client.apis()
   // 思考能力必须原样带到前端：模型选择器的第二层完全靠 reasoning / thinkingLevelMap
   // 决定「要不要问档位、能问哪几档」，丢掉它们就等于没有思考强度可选。
-  const models = (apis.profile.models ?? []).map(
-    ({ route, id, reasoning, thinkingLevelMap }) => ({
-      route,
-      id,
-      ...(accountLabels.has(route) ? { label: accountLabels.get(route) as string } : {}),
-      ...(reasoning === undefined ? {} : { reasoning }),
-      ...(thinkingLevelMap === undefined ? {} : { thinkingLevelMap }),
-    }),
-  )
+  const models = (apis.profile.models ?? []).map(({ route, id, reasoning, thinkingLevelMap }) => ({
+    route,
+    id,
+    ...(accountLabels.has(route) ? { label: accountLabels.get(route) as string } : {}),
+    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(thinkingLevelMap === undefined ? {} : { thinkingLevelMap }),
+  }))
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
@@ -1486,7 +1495,7 @@ const appearance = bindAppearance({
       writeLocalePreference(appearanceStorage, value)
       applyDocumentLocale(document.documentElement, value)
       clientModules.locale.setLocale(value)
-      window.dispatchEvent(new CustomEvent('agnes:locale-changed'))
+      window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
     },
     text: (key) => clientModules.locale.t(key),
   },
@@ -1769,14 +1778,16 @@ function submitComposer(): void {
         model: selectedModel.id,
         ...(selectedModel.thinking ? { thinking: selectedModel.thinking } : {}),
       })
-      if (current !== session || selection !== ownedSelection) throw new Error(t('app.session.selectionChanged'))
+      if (current !== session || selection !== ownedSelection)
+        throw new Error(t('app.session.selectionChanged'))
       knownSessionModel = selectedModel
       initialModelPending = undefined
       renderControls()
     }
     if (yoloEnabled(permissionMode) && !sessionYoloEnabled) {
       await session.setYolo(true)
-      if (current !== session || selection !== ownedSelection) throw new Error(t('app.session.selectionChanged'))
+      if (current !== session || selection !== ownedSelection)
+        throw new Error(t('app.session.selectionChanged'))
       sessionYoloEnabled = true
     }
     const result = await (busy ? session.followUp(input) : session.prompt(input))
@@ -1831,9 +1842,7 @@ client.on('closed', () => {
   titleRefresh.close()
   setConnection('closed')
   // While the page recovers by itself, the notice only states the fact; the recovery status says what happens next.
-  const message = intentionalClose
-    ? t('app.connection.closedIntentional')
-    : t('app.connection.lost')
+  const message = intentionalClose ? t('app.connection.closedIntentional') : t('app.connection.lost')
   if (sessionRecovery) renderSessionRecovery(message)
   else {
     notice.textContent = message

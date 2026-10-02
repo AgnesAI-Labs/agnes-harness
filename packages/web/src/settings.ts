@@ -1,4 +1,3 @@
-import { tr } from './locale-bridge.js'
 import type {
   ConfigAccount,
   ConfigAccountInput,
@@ -10,6 +9,7 @@ import type {
 import type { Client } from '@agnes/sdk/browser'
 import { renderRegion, SettingsAccounts, setSettingsSelectOptions, unmountRegion } from '@agnes/web-ui'
 import { createElement } from 'react'
+import { tr } from './locale-bridge.js'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 
@@ -116,7 +116,9 @@ function readElements(): SettingsElements {
 const option = (label: string, value: string) => ({ label, value })
 
 function errorText(error: unknown, secret: string, t: (key: string) => string): string {
-  const message = configurationReason(error, tr) ?? (error instanceof Error ? error.message : tr('settings.config.requestFailed'))
+  const message =
+    configurationReason(error, t) ??
+    (error instanceof Error ? error.message : t('settings.config.requestFailed'))
   return secret ? message.split(secret).join('[redacted]') : message
 }
 
@@ -200,7 +202,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const oauth = oauthControls(ui.oauthMount, options.client.config, {
     input: () => {
       const provider = providers.find((row) => row.id === providerId())
-      if (!configuration || !editingId || !accountName || !provider) throw new Error(tr('settings.account.notLoaded'))
+      if (!configuration || !editingId || !accountName || !provider)
+        throw new Error(tr('settings.account.notLoaded'))
       const label = accountName.value.trim() || provider.label
       if (!accountName.value.trim()) suggestedAccountLabel = label
       accountName.value = label
@@ -331,8 +334,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         .map((provider) =>
           option(
             method === 'oauth'
-        ? `${provider.label.replace(/\s*订阅$/, '')}${tr('settings.provider.subscriptionLoginSuffix')}`
-        : provider.label,
+              ? `${provider.label.replace(/\s*订阅$/, '')}${tr('settings.provider.subscriptionLoginSuffix')}`
+              : provider.label,
             providerValue(provider, method),
           ),
         ),
@@ -349,7 +352,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
     setSettingsSelectOptions(
       ui.authMethod,
-      methods.map((method) => option(method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key', method)),
+      methods.map((method) =>
+        option(method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key', method),
+      ),
     )
     const saved = savedProvider()
     const savedAuth = saved && 'authType' in saved ? saved.authType : undefined
@@ -450,9 +455,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       providers = [...result.providers].sort((a, b) => +(b.id === 'agnes-ai') - +(a.id === 'agnes-ai'))
       tested = undefined
       ui.error.textContent = ''
-      ui.state.textContent = snapshot.configured
-        ? tr('settings.step.loadedSaved')
-        : tr('settings.step.first')
+      ui.state.textContent = snapshot.configured ? tr('settings.step.loadedSaved') : tr('settings.step.first')
       renderProviders()
       renderModels()
       setLoadPhase(snapshot.accounts?.length ? 'ready' : 'empty')
@@ -546,7 +549,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     let request: ReturnType<typeof input>
     try {
       request = input()
-      if (accountName && editingId && !accountName.value.trim()) throw new Error(tr('settings.account.nameRequired'))
+      if (accountName && editingId && !accountName.value.trim())
+        throw new Error(tr('settings.account.nameRequired'))
     } catch (error) {
       setError(error)
       return
@@ -620,12 +624,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     renderProviders()
     resetTest()
     renderAccounts()
-    ui.state.textContent = id
-      ? tr('settings.account.editingHint')
-      : tr('settings.account.addingHint')
-    if (accountDialogTitle) accountDialogTitle.textContent = id ? tr('settings.account.detailsTitle') : tr('settings.account.addTitle')
+    ui.state.textContent = id ? tr('settings.account.editingHint') : tr('settings.account.addingHint')
+    if (accountDialogTitle)
+      accountDialogTitle.textContent = id
+        ? tr('settings.account.detailsTitle')
+        : tr('settings.account.addTitle')
     if (accountDialogContext)
-      accountDialogContext.textContent = id ? tr('settings.account.editContext') : tr('settings.account.addContext')
+      accountDialogContext.textContent = id
+        ? tr('settings.account.editContext')
+        : tr('settings.account.addContext')
     openAccountDialog()
   }
 
@@ -709,6 +716,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         disabled: !connected || loadPhase === 'loading' || testPending || savePending,
         editingId,
         removingId,
+        t: tr,
         onEdit: editAccount,
         onAction: (row, action) => void accountAction(row, action),
         onCancelRemove: () => {
@@ -746,7 +754,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
     setSettingsSelectOptions(
       ui.authMethod,
-      methods.map((method) => option(method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key', method)),
+      methods.map((method) =>
+        option(method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key', method),
+      ),
     )
     ui.authMethod.value = ui.provider.value.endsWith(':oauth') ? 'oauth' : (methods[0] ?? 'api-key')
     ui.authMethodField.hidden = methods.length < 2

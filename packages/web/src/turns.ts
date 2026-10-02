@@ -50,7 +50,7 @@ function processChevron(): SVGSVGElement {
   return svg
 }
 
-function makeTurnEntry(onFork?: (turn: UITurn) => Promise<void>): TurnEntry {
+function makeTurnEntry(onFork: ((turn: UITurn) => Promise<void>) | undefined, t: Translate): TurnEntry {
   const element = document.createElement('section')
   element.className = 'conversation-turn'
   const user = document.createElement('div')
@@ -97,6 +97,7 @@ function makeTurnEntry(onFork?: (turn: UITurn) => Promise<void>): TurnEntry {
   final.className = 'turn-final'
   const actions = createConversationMessageActions({
     ...(onFork ? { onFork } : {}),
+    t,
   })
   response.append(identity, status, process, attention, final, actions.element)
   element.append(user, response)
@@ -125,6 +126,7 @@ export function createTurnProjector(options: {
   transcript: HTMLElement
   onFork?: (turn: UITurn) => Promise<void>
   translate: Translate
+  localeTag?: () => string
 }) {
   const t = options.translate
   const turnEntries = new Map<string, TurnEntry>()
@@ -167,7 +169,7 @@ export function createTurnProjector(options: {
       for (const [index, turn] of turns.entries()) {
         let shell = turnEntries.get(turn.id)
         if (!shell) {
-          shell = makeTurnEntry(options.onFork)
+          shell = makeTurnEntry(options.onFork, t)
           shell.element.dataset.turnId = turn.id
           turnEntries.set(turn.id, shell)
           changed = true
@@ -258,7 +260,7 @@ export function createTurnProjector(options: {
         shell.attention.hidden = shell.attention.childElementCount === 0
         const settled =
           turn.status !== 'running' && turn.status !== 'waiting' && Boolean(turn.finalAssistantId)
-        shell.actions.update({ turn, finalText, settled })
+        shell.actions.update({ turn, finalText, settled, localeTag: options.localeTag?.() ?? 'en-US' })
         shell.element.dataset.status = turn.status
         shell.element.dataset.inherited = String(turn.inherited)
         const child = options.transcript.children[index]

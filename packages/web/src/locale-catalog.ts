@@ -20,7 +20,7 @@ const WEB_DICTS = [
 ] as const
 
 const mergeLocale = (locale: 'en' | 'zh-CN'): Record<string, string> =>
-  Object.fromEntries(WEB_DICTS.flatMap((dict) => Object.entries(dict[locale])))
+  Object.fromEntries(WEB_DICTS.flatMap((dict) => Object.entries(dict[locale] ?? {})))
 
 export const webLocaleCatalog: LocaleCatalog = {
   en: {

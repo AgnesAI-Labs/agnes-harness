@@ -12,7 +12,13 @@ const ALL_CATALOGS = [webLocaleCatalog, webUnitsLocaleCatalog, webUiLocaleCatalo
 function catalogT(locale: 'en' | 'zh-CN'): Translate {
   return (key, vars) => {
     let template: string | undefined
-    for (const catalog of ALL_CATALOGS) template ??= catalog[locale][key] ?? catalog.en[key]
+    for (const catalog of ALL_CATALOGS) {
+      const dictionary = catalog[locale] ?? {}
+      const english = catalog.en ?? {}
+      template ??=
+        (Object.hasOwn(dictionary, key) ? dictionary[key] : undefined) ??
+        (Object.hasOwn(english, key) ? english[key] : undefined)
+    }
     template ??= key
     if (!vars) return template
     return template.replace(/\{(\w+)\}/g, (match, name: string) =>

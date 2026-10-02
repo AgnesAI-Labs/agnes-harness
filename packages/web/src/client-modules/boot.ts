@@ -23,12 +23,8 @@ import {
   ThemeService,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
-import { WEB_UI_LOCALE_NAMESPACE, createAntdRoot, webUiLocaleCatalog } from '@agnes/web-ui'
-import {
-  BuiltinWebUnitRegistry,
-  WEB_UNITS_LOCALE_NAMESPACE,
-  webUnitsLocaleCatalog,
-} from '@agnes/web-units'
+import { createAntdRoot, WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from '@agnes/web-ui'
+import { BuiltinWebUnitRegistry, WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
 import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
 import { createElement } from 'react'
@@ -36,9 +32,11 @@ import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '../locale-catalog.js'
 import {
   applyDocumentLocale,
   applyLocaleText,
+  isUiLocale,
   LOCALE_STORAGE_KEY,
   readLocalePreference,
   syncLocaleRadios,
+  type UiLocale,
 } from '../locale-preference.js'
 import { COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog } from '../locales/computer-use.js'
 import { SERVER_ERROR_LOCALE_NAMESPACE, serverErrorCatalog } from '../locales/server-errors.js'
@@ -181,17 +179,19 @@ export async function startClientModules(options: {
   window.addEventListener('agnes:theme-changed', () => {
     theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
   })
-  const applyStoredLocale = (): void => {
-    const next = readLocalePreference(safeThemeStorage())
+  const applyLocale = (next: UiLocale): void => {
     applyDocumentLocale(document.documentElement, next)
     locale.setLocale(next)
     syncLocaleRadios(document, next)
     applyLocaleText(document, (key) => locale.t(key))
   }
   window.addEventListener('storage', (event) => {
-    if (event.key === LOCALE_STORAGE_KEY) applyStoredLocale()
+    if (event.key === LOCALE_STORAGE_KEY) applyLocale(readLocalePreference(safeThemeStorage()))
   })
-  window.addEventListener('agnes:locale-changed', applyStoredLocale)
+  window.addEventListener('agnes:locale-changed', (event) => {
+    const next = (event as CustomEvent<unknown>).detail
+    if (isUiLocale(next)) applyLocale(next)
+  })
 
   // workbench.panel 挂载点：宿主划定的容器 + React root（WC8）。
   const panelRoots: AntdRoot[] = []

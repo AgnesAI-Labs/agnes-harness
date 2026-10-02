@@ -9,7 +9,8 @@ const usd = (n: number) => `$${(n / 1e6).toFixed(6).replace(/0+$/, '').replace(/
 const credits = (n: number) => n.toFixed(8).replace(/\.?0+$/, '')
 const source = (value: 'gateway' | 'estimated', t: Translate) =>
   t(value === 'estimated' ? 'cost.source.estimated' : 'cost.source.gateway')
-const time = (n: number, t: Translate) => (n < 1000 ? `${n} ms` : t('cost.time.s', { n: (n / 1000).toFixed(2) }))
+const time = (n: number, t: Translate) =>
+  n < 1000 ? `${n} ms` : t('cost.time.s', { n: (n / 1000).toFixed(2) })
 type Rows = Array<[string, string]>
 const purposeKeys: Record<string, string> = {
   inference: 'cost.purpose.inference',
@@ -22,7 +23,10 @@ const purposeKeys: Record<string, string> = {
 
 export function costSummary(node: CostNode, t: Translate = fallbackT): string {
   const parts = node.tokens
-    ? [t('cost.summary.input', { n: compact(node.tokens.input) }), t('cost.summary.output', { n: compact(node.tokens.output) })]
+    ? [
+        t('cost.summary.input', { n: compact(node.tokens.input) }),
+        t('cost.summary.output', { n: compact(node.tokens.output) }),
+      ]
     : []
   const amount = node.billing
     ? t('cost.billing.usd', { usd: usd(node.billing.usdMicros), source: source(node.billing.source, t) })
@@ -38,27 +42,28 @@ function tokenRows(tokens: NonNullable<CostNode['tokens']>, t: Translate): Rows 
     [t('cost.rows.tokensOutReasoning'), count(tokens.output)],
     [t('cost.rows.cacheRead'), count(tokens.cacheRead)],
     [t('cost.rows.cacheWrite'), count(tokens.cacheWrite)],
-    [t('cost.rows.reasoning'), tokens.reasoning === undefined ? t('cost.rows.notProvided') : count(tokens.reasoning)],
+    [
+      t('cost.rows.reasoning'),
+      tokens.reasoning === undefined ? t('cost.rows.notProvided') : count(tokens.reasoning),
+    ],
   ]
 }
 
 export function costDetails(node: CostNode, t: Translate = fallbackT): Rows {
-  const purposeKey = purposeKeys[node.purpose ?? '']
+  const purpose = node.purpose ?? ''
+  const purposeKey = Object.hasOwn(purposeKeys, purpose) ? purposeKeys[purpose] : undefined
   return [
-    [
-      t('cost.rows.range'),
-      purposeKey === undefined ? t('cost.rows.singleRecord') : t(purposeKey),
-    ],
+    [t('cost.rows.range'), purposeKey === undefined ? t('cost.rows.singleRecord') : t(purposeKey)],
     ...(node.model ? [[t('cost.rows.model'), node.model] as [string, string]] : []),
     ...(node.tokens
       ? tokenRows(node.tokens, t)
       : [[t('cost.rows.tokenDetail'), t('cost.rows.notProvided')] as [string, string]]),
     ...(node.billing
       ? [
-          [
-            t('cost.rows.usd'),
-            `${usd(node.billing.usdMicros)} · ${source(node.billing.source, t)}`,
-          ] as [string, string],
+          [t('cost.rows.usd'), `${usd(node.billing.usdMicros)} · ${source(node.billing.source, t)}`] as [
+            string,
+            string,
+          ],
         ]
       : []),
     [
@@ -73,6 +78,8 @@ export function costDetails(node: CostNode, t: Translate = fallbackT): Rows {
     ...(node.timing?.durationMs !== undefined
       ? [[t('cost.rows.requestDuration'), time(node.timing.durationMs, t)] as [string, string]]
       : []),
-    ...(node.interrupted ? [[t('cost.rows.status'), t('cost.rows.interruptedNote')] as [string, string]] : []),
+    ...(node.interrupted
+      ? [[t('cost.rows.status'), t('cost.rows.interruptedNote')] as [string, string]]
+      : []),
   ]
 }

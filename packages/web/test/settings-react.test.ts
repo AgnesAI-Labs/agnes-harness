@@ -10,13 +10,12 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { createSettingsController } from '../src/settings.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { createSettingsController } from '../src/settings.js'
 import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)
-
 
 const stylePath = resolve(import.meta.dirname, '../public/style.css')
 
@@ -129,5 +128,19 @@ it('operates the React settings pane and account dialog without losing native fo
       unmountRegion(host)
     paneRoot.unmount()
     shellRoot.unmount()
+  }
+})
+
+it('translates static settings pane text and placeholders when the pane is first mounted', () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'archived', translate: zhT })))
+    expect(host.querySelector('#archived-settings-pane h2')?.textContent).toBe('已归档会话')
+    expect(host.querySelector<HTMLInputElement>('#archived-search')?.placeholder).toBe('搜索已归档会话')
+  } finally {
+    root.unmount()
+    host.remove()
   }
 })

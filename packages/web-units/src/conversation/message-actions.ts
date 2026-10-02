@@ -3,6 +3,7 @@ import { ConversationTurnActions, type ConversationTurnFeedback } from '@agnes/w
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
+import type { Translate } from '../locales/index.js'
 import type { ConversationFeedback } from './feedback.js'
 
 export interface ConversationMessageActions {
@@ -16,10 +17,13 @@ export interface ConversationMessageActionState {
   readonly turn: UITurn
   readonly finalText: string
   readonly settled: boolean
+  readonly localeTag?: string
 }
 
 export interface ConversationMessageActionOptions {
   onFork?(turn: UITurn): Promise<void>
+  /** Locale-bound translator supplied by the owning transcript. */
+  t?: Translate
   /** Compatibility override; otherwise the renderer owns outside-click dismissal and cleanup. */
   bindAutoDismiss?(element: HTMLDetailsElement): void
 }
@@ -62,13 +66,15 @@ export function createConversationMessageActions(
     doc.addEventListener('click', dismiss)
     stopDismiss = () => doc.removeEventListener('click', dismiss)
   }
-  const render = ({ turn, finalText, settled }: ConversationMessageActionState) =>
+  const render = ({ turn, finalText, settled, localeTag }: ConversationMessageActionState) =>
     flushSync(() =>
       root.render(
         createElement(ConversationTurnActions, {
           turn,
           finalText,
           settled,
+          ...(options.t ? { t: options.t } : {}),
+          ...(localeTag ? { localeTag } : {}),
           ...(options.onFork ? { onFork: options.onFork } : {}),
           bindAutoDismiss,
           feedbackRef,

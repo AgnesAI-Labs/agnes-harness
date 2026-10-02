@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  normalizeRuntimeError,
+  type PluginRuntimeState,
+  RuntimeStatusStore,
+} from '../src/client-modules/runtime-status.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)
-
-  normalizeRuntimeError,
-  type PluginRuntimeState,
-  RuntimeStatusStore,
-} from '../src/client-modules/runtime-status.js'
 
 describe('client module runtime status', () => {
   it('publishes bounded state updates and returns an isolated snapshot', () => {

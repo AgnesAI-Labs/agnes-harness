@@ -1,3 +1,5 @@
+import { tr } from './locale-bridge.js'
+
 export type WorkspacePickerResult =
   | { status: 'selected'; path: string }
   | { status: 'cancelled' }

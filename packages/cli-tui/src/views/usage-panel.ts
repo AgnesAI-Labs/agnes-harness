@@ -1,21 +1,22 @@
-import { tt } from '../locale-extended.js'
 import type { Ansi } from '../ansi.js'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { Box } from '../components/box.js'
 import { parseKey } from '../keys.js'
+import { tt } from '../locale-extended.js'
 
 /** Read-only command report. Consumes keys until dismissed without sending a prompt. */
 export class UsagePanel implements Component {
   private report: string | undefined
-  private title = 'Session usage'
+  private title = ''
   private offset = 0
   private total = 0
   private height = 1
-  constructor(private readonly options: { ansi: Ansi; locale?: string; maxRows(): number; changed(): void }) {}
+  constructor(
+    private readonly options: { ansi: Ansi; locale?: string; maxRows(): number; changed(): void },
+  ) {}
   show(text: string, title?: string): void {
     this.title = title ?? tt('usagePanel.title', this.options.locale ?? 'en')
     this.report = escapeControl(text)
-    this.title = title
     this.offset = 0
     this.options.changed()
   }
@@ -45,7 +46,10 @@ export class UsagePanel implements Component {
     this.total = lines.length
     this.offset = Math.max(0, Math.min(this.offset, this.total - this.height))
     const body = {
-      render: () => [...lines.slice(this.offset, this.offset + this.height), tt('usagePanel.scrollHint', this.options.locale ?? 'en')],
+      render: () => [
+        ...lines.slice(this.offset, this.offset + this.height),
+        tt('usagePanel.scrollHint', this.options.locale ?? 'en'),
+      ],
       invalidate() {},
     }
     return new Box(body, { title: this.title, rounded: true, border: this.options.ansi.dim }).render(width)

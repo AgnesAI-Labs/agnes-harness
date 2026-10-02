@@ -197,7 +197,7 @@ function compactionSummary(node: Extract<UINode, { kind: 'compaction' }>, t: Tra
   return node.summary ?? t('timeline.compactionFallback', { range: node.range.join('–') })
 }
 
-function createEntry(node: UINode, t: Translate): Entry {
+function createEntry(node: UINode, t: Translate, entryFingerprint: string): Entry {
   const element = article(node)
 
   if (node.kind === 'user') {
@@ -206,7 +206,7 @@ function createEntry(node: UINode, t: Translate): Entry {
     return {
       kind: node.kind,
       element,
-      fingerprint: fingerprint(node),
+      fingerprint: entryFingerprint,
       update(next) {
         if (next.kind !== 'user') return
         updateText(title, t('timeline.userLabel'))
@@ -252,7 +252,7 @@ function createEntry(node: UINode, t: Translate): Entry {
       kind: node.kind,
       element,
       thinking,
-      fingerprint: fingerprint(node),
+      fingerprint: entryFingerprint,
       // 思考块固定排在 `.node-body` 之前（标题之后）。归属容器取 `body` 的实际父节点：
       // DSH 宿主会把原生内容整体搬进 `[data-agnes-timeline-native]`，写死 `element` 会让
       // 插入参照物不在同一父节点上而抛错。
@@ -266,7 +266,7 @@ function createEntry(node: UINode, t: Translate): Entry {
         if (next.kind !== 'assistant') return
         element.dataset.streaming = String(next.streaming === true)
         updateText(title, 'Agnes')
-        updateText(thinkingSummary, t('timeline.thinkingSummary'))
+        thinkingSummary.textContent = t('timeline.thinkingSummary')
         thinking.hidden = !next.thinking?.trim()
         const active = thinkingActive(next)
         // 只在「思考结束」的那一刻收起一次，不会反复覆盖用户此后的手动开合。
@@ -289,7 +289,7 @@ function createEntry(node: UINode, t: Translate): Entry {
     return {
       kind: node.kind,
       element,
-      fingerprint: fingerprint(node),
+      fingerprint: entryFingerprint,
       update(next) {
         if (next.kind !== 'tool') return
         card.update(next)
@@ -311,7 +311,7 @@ function createEntry(node: UINode, t: Translate): Entry {
     return {
       kind: node.kind,
       element,
-      fingerprint: fingerprint(node),
+      fingerprint: entryFingerprint,
       update(next) {
         if (next.kind !== 'approval') return
         updateText(title, t('timeline.approvalTitle'))
@@ -329,7 +329,7 @@ function createEntry(node: UINode, t: Translate): Entry {
     return {
       kind: node.kind,
       element,
-      fingerprint: fingerprint(node),
+      fingerprint: entryFingerprint,
       update(next) {
         if (next.kind === 'cost') update(next)
       },
@@ -342,7 +342,7 @@ function createEntry(node: UINode, t: Translate): Entry {
     return {
       kind: node.kind,
       element,
-      fingerprint: fingerprint(node),
+      fingerprint: entryFingerprint,
       update(next) {
         if (next.kind !== 'artifact') return
         updateText(title, t('timeline.artifactLabel'))
@@ -357,7 +357,7 @@ function createEntry(node: UINode, t: Translate): Entry {
     return {
       kind: node.kind,
       element,
-      fingerprint: fingerprint(node),
+      fingerprint: entryFingerprint,
       update(next) {
         if (next.kind !== 'compaction') return
         updateText(title, t('timeline.compactionLabel'))
@@ -373,7 +373,7 @@ function createEntry(node: UINode, t: Translate): Entry {
     return {
       kind: node.kind,
       element,
-      fingerprint: fingerprint(node),
+      fingerprint: entryFingerprint,
       update(next) {
         if (next.kind !== 'slot') return
         mount.update(next)
@@ -389,14 +389,17 @@ function createEntry(node: UINode, t: Translate): Entry {
   const update = (next: UINode) => {
     if (next.kind !== 'contribute-conflict') return
     updateText(title, t('timeline.conflictLabel'))
-    updateText(body, `${next.key}${t('timeline.conflictJoiner')}${next.ops.join(t('timeline.conflictOpsJoiner'))}`)
+    updateText(
+      body,
+      `${next.key}${t('timeline.conflictJoiner')}${next.ops.join(t('timeline.conflictOpsJoiner'))}`,
+    )
     element.setAttribute('role', 'note')
   }
   update(node)
   return {
     kind: node.kind,
     element,
-    fingerprint: fingerprint(node),
+    fingerprint: entryFingerprint,
     update,
   }
 }
@@ -676,15 +679,15 @@ function restoreTranscriptSelection(transcript: HTMLElement, saved: SavedSelecti
 export function createTimelineRenderer(options: TimelineRendererOptions): TimelineRenderer {
   const scrollContainer = options.scrollContainer ?? options.transcript
   // 渲染时取词：t 只在渲染/更新瞬间调用；locale 变化经订阅触发一次带滚动保持的全量重渲染。
-  const t: Translate = options.locale ? (key, vars) => options.locale!.t(key, vars) : (key) => key
-  const localeVersion = options.locale
-    ? () => options.locale!.getSnapshot()
-    : (): string => 'en'
+  const locale = options.locale
+  const t: Translate = locale ? (key, vars) => locale.t(key, vars) : (key) => key
+  const localeVersion = locale ? () => locale.getSnapshot() : (): string => 'en'
   const entries = new Map<string, Entry>()
   const turnProjector = createTurnProjector({
     transcript: options.transcript,
     ...(options.onFork ? { onFork: options.onFork } : {}),
     translate: t,
+    localeTag: () => (options.locale?.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en-US'),
   })
   // 贴底跟随是**粘性**的：只有用户主动滚动（滚轮/触摸/拖滚动条）才解除，
   // 程序写入的滚动不算。判定依据是"位置是否等于程序最后一次写入的位置"：
@@ -710,13 +713,13 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
   // Node objects are immutable once rendered, so an unchanged object keeps its fingerprint.
   // The current locale joins the fingerprint: switching languages invalidates every entry so the
   // next render (the subscription below forces one) refreshes all rendered copy in place.
-  const fingerprints = new WeakMap<UINode, string>()
+  const fingerprints = new WeakMap<UINode, { locale: string; value: string }>()
   const fingerprintOf = (node: UINode): string => {
-    let value = fingerprints.get(node)
-    if (value === undefined) {
-      value = `${localeVersion()}|${fingerprint(node)}`
-      fingerprints.set(node, value)
-    }
+    const locale = localeVersion()
+    const cached = fingerprints.get(node)
+    if (cached?.locale === locale) return cached.value
+    const value = `${locale}|${fingerprint(node)}`
+    fingerprints.set(node, { locale, value })
     return value
   }
   // "Load earlier" sits above the content, outside the node container the entries own.
@@ -777,7 +780,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
         old?.dispose?.()
         old?.dshNode?.dispose()
         old?.element.remove()
-        entry = createEntry(node, t)
+        entry = createEntry(node, t, nextFingerprint)
         entry.dshNode = mountDshNode(entry, node, options)
         entries.set(node.id, entry)
         changed = true
@@ -841,7 +844,11 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     turns?: readonly UITurn[],
     nextMeta?: TimelineMeta,
   ): void => {
-    lastRender = { nodes, turns, meta: nextMeta }
+    lastRender = {
+      nodes,
+      ...(turns === undefined ? {} : { turns }),
+      ...(nextMeta === undefined ? {} : { meta: nextMeta }),
+    }
     render(nodes, turns, nextMeta)
   }
   options.locale?.subscribe(() => {

@@ -1,4 +1,3 @@
-import { tt, type ExtendedKey } from './locale-extended.js'
 import { readdirSync } from 'node:fs'
 import type {
   ComputerUseDoctorResult,
@@ -10,6 +9,7 @@ import type {
 import type { Session } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
+import { type ExtendedKey, tt } from './locale-extended.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { TuiThemeName } from './theme.js'
@@ -159,6 +159,7 @@ async function listSessionChoices(session: Session, resumableFrom?: string): Pro
 /** Dispatches one slash line against the session/client the app currently holds. */
 export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> {
   const [cmd = '', ...args] = line.trim().split(/\s+/)
+  const locale = app.locale
   // Refused before the daemon creates, forks or loads a session this app would then not switch to. A bare
   // /resume only opens the picker, which refuses the choice itself.
   const opens = cmd === '/new' || cmd === '/rewind' || (cmd === '/resume' && args.length > 0)
@@ -224,9 +225,10 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       const usageWidth = Math.max(...usages.map((usage) => usage.length))
       return {
         text: [
-          'Slash commands',
+          tt('commands.helpHeading', locale),
           ...SLASH_COMMANDS.map(
-            (command, index) => `  ${(usages[index] as string).padEnd(usageWidth + 2)}${command.description}`,
+            (command, index) =>
+              `  ${(usages[index] as string).padEnd(usageWidth + 2)}${tt(command.descriptionKey, locale)}`,
           ),
         ].join('\n'),
         presentation: 'transcript',
@@ -253,7 +255,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         cwd: app.cwd,
         sessionKey: freshTuiSessionKey(app.profile),
       })
-      const inherited = await inheritFreshSession(created, app.composerSelectionPath)
+      const inherited = await inheritFreshSession(created, app.composerSelectionPath, undefined, locale)
       return {
         switchSession: created,
         ...(inherited.notice ? { text: inherited.notice } : {}),
@@ -283,11 +285,15 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/cost':
     case '/usage': {
       const result = await s.projectUIOpening({ surface: 'tui', maxNodes: 1 })
-      return { text: formatUsageReport(result.timeline.usage), details: true }
+      return { text: formatUsageReport(result.timeline.usage, locale), details: true }
     }
     case '/context': {
       const result = await s.projectUIOpening({ surface: 'tui' })
-      return { text: formatContextBreakdown(result.timeline.nodes, locale), details: true, title: tt('usage.context.breakdownTitle', locale) }
+      return {
+        text: formatContextBreakdown(result.timeline.nodes, locale),
+        details: true,
+        title: tt('usage.context.breakdownTitle', locale),
+      }
     }
     case '/rewind': {
       const at = Number(args[0])

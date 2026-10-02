@@ -313,7 +313,12 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   }
 
   function fail(rowId: string, state: PackageState, stage: RuntimeErrorStage): void {
-    setPhase(rowId, state, 'failed', normalizeRuntimeError(stage, undefined, (key) => locale.t(key)))
+    setPhase(
+      rowId,
+      state,
+      'failed',
+      normalizeRuntimeError(stage, undefined, (key) => locale?.t(key) ?? key),
+    )
   }
 
   function registrationOwner(rowId: string, state: PackageState): string {

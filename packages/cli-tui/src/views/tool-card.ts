@@ -1,9 +1,9 @@
-import { tt } from '../locale-extended.js'
 import type { UINode } from '@agnes/protocol'
 import { type Ansi, createAnsi } from '../ansi.js'
 import { type Component, escapeControl, padLine, Text, VStack } from '../component.js'
 import { Box } from '../components/box.js'
 import { fitLine } from '../components/line.js'
+import { tt } from '../locale-extended.js'
 import { displayWidth } from '../terminal.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
@@ -69,19 +69,27 @@ const STATUS_GLYPH: Record<string, string> = {
   error: '◆',
   planned: '◇',
 }
-const STATUS_KEYS: Record<string, 'tool.status.completed' | 'tool.status.running' | 'tool.status.failed' | 'tool.status.error' | 'tool.status.planned'> = {
+const STATUS_KEYS: Record<
+  string,
+  | 'tool.status.completed'
+  | 'tool.status.running'
+  | 'tool.status.failed'
+  | 'tool.status.error'
+  | 'tool.status.planned'
+> = {
   completed: 'tool.status.completed',
   running: 'tool.status.running',
   failed: 'tool.status.failed',
   error: 'tool.status.error',
   planned: 'tool.status.planned',
 }
-const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.name.edit' | 'tool.name.shell'> = {
-  read: 'tool.name.read',
-  write: 'tool.name.write',
-  edit: 'tool.name.edit',
-  shell: 'tool.name.shell',
-}
+const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.name.edit' | 'tool.name.shell'> =
+  {
+    read: 'tool.name.read',
+    write: 'tool.name.write',
+    edit: 'tool.name.edit',
+    shell: 'tool.name.shell',
+  }
 
 export class ToolCard implements Component {
   private readonly box: Box
@@ -98,9 +106,10 @@ export class ToolCard implements Component {
     this.onAction = options.onAction ?? (() => {})
     const locale = options.locale ?? 'en'
     const summary = node.summary.replace(/\s+/g, ' ').trim()
-    const name = node.name in TOOL_KEYS ? tt(TOOL_KEYS[node.name], locale) : escapeControl(node.name)
-    const status =
-      node.status in STATUS_KEYS ? tt(STATUS_KEYS[node.status], locale) : escapeControl(node.status)
+    const toolKey = TOOL_KEYS[node.name]
+    const name = toolKey ? tt(toolKey, locale) : escapeControl(node.name)
+    const statusKey = STATUS_KEYS[node.status]
+    const status = statusKey ? tt(statusKey, locale) : escapeControl(node.status)
     const colour = STATUS_COLOR[node.status]
     const paint = colour === undefined ? (s: string) => s : ansi.fg.bind(ansi, colour)
     const glyph = paint(STATUS_GLYPH[node.status] ?? '·')

@@ -1,15 +1,15 @@
 import type { ContentBlock, UINode, UITimeline } from '@agnes/protocol'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi, xterm256 } from './ansi.js'
-import { slashCommandFor, attachmentsFrom, completeToken, runSlash, type SessionChoice, slashCommand } from './commands.js'
+import { attachmentsFrom, completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
 import { formatTurnSummary } from './format-usage.js'
 import { parseKey } from './keys.js'
-import { tt } from './locale-extended.js'
 import { type Locale, t } from './locale.js'
+import { tt } from './locale-extended.js'
 import { renderMarkdown } from './markdown.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
@@ -250,6 +250,7 @@ export class TuiApp {
     this.timeline = new Timeline({
       rows: () => o.term.size().rows,
       reservedRows: () => this.reservedRows,
+      locale,
       // The welcome banner rides at the top of the timeline: it is built once here, so a session
       // switch (`/new`, `/resume`, `/rewind`) reuses it. It scrolls inside the fullscreen
       // viewport, never into the shell's history.
@@ -334,6 +335,7 @@ export class TuiApp {
     this.editor.setKitty(o.term.caps.kittyKeyboard)
     this.modelPicker = new ModelPicker({
       ansi,
+      locale,
       maxRows: () => Math.max(4, o.term.size().rows - 6),
       onChoose: (choice) => void this.chooseModel(choice),
       changed: () => {
@@ -345,6 +347,7 @@ export class TuiApp {
     })
     this.sessionPicker = new SessionPicker({
       ansi,
+      locale,
       maxRows: () => Math.max(4, o.term.size().rows - 6),
       onChoose: (choice) => void this.chooseSession(choice),
       changed: () => {
@@ -495,6 +498,10 @@ export class TuiApp {
     return this.o.session
   }
 
+  get locale(): Locale {
+    return this.o.locale ?? 'en'
+  }
+
   get profile(): string {
     return this.o.profile ?? this.o.header ?? 'local-dev'
   }
@@ -532,8 +539,8 @@ export class TuiApp {
     this.editor.invalidate()
     if (!this.stopped) this.renderer.requestRender()
     return saveTheme(this.o.themePreferencePath, name)
-      ? tt('app.themeSaved', locale, { name })
-      : tt('app.themeEphemeral', locale, { name })
+      ? tt('app.themeSaved', this.locale, { name })
+      : tt('app.themeEphemeral', this.locale, { name })
   }
 
   /** Resource control is supplied only by the Node CLI bootstrap, never the chat/session client. */

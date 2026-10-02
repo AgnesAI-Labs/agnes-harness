@@ -1,3 +1,5 @@
+import { tr } from './locale-bridge.js'
+
 /** Use persisted metadata before a provisional label, consistently across header and navigation. */
 export function sessionTitle(saved: string | undefined, prompt?: string): string {
   return saved || (prompt ? Array.from(prompt).slice(0, 56).join('') : tr('sessionTitle.fallback'))

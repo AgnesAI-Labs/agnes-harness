@@ -75,6 +75,7 @@ export function createConversationToolCard(
         createElement(ReactToolCard, {
           node: next,
           icon,
+          t: options.translate,
           onExpandedChange: (expanded: boolean) => {
             element.dataset.expanded = String(expanded)
           },

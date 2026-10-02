@@ -1,13 +1,14 @@
 import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
 import { pluginAdminShellLocaleCatalog } from './admin/plugins/locales/shell.js'
-import { indexShellLocaleCatalog as workbenchShellLocaleCatalog } from './locales/index-shell.js'
 import {
   applyDocumentLocale,
   applyLocaleText,
+  isUiLocale,
   LOCALE_STORAGE_KEY,
   readLocalePreference,
   type UiLocale,
 } from './locale-preference.js'
+import { indexShellLocaleCatalog as workbenchShellLocaleCatalog } from './locales/index-shell.js'
 import {
   applySkinTokens,
   readSkinCache,
@@ -42,6 +43,7 @@ import {
  */
 
 const storage = safeThemeStorage(window)
+let currentLocale = readLocalePreference(storage)
 /** 一次性覆盖（`?skin=none|<id>`）只在本次加载生效，不写缓存。 */
 const override = skinOverride(window.location.search)
 let writtenSkinTokens: Set<string> = new Set()
@@ -64,7 +66,7 @@ function paintStaticShell(locale: UiLocale): void {
       'DOMContentLoaded',
       () => {
         shellLocaleBootScheduled = false
-        paintStaticShell(readLocalePreference(storage))
+        paintStaticShell(currentLocale)
       },
       { once: true },
     )
@@ -72,7 +74,7 @@ function paintStaticShell(locale: UiLocale): void {
   }
   const catalog = staticShellCatalog()
   if (!catalog) return
-  applyLocaleText(document, (key) => catalog[locale][key] ?? catalog.en[key] ?? key)
+  applyLocaleText(document, (key) => catalog[locale]?.[key] ?? catalog.en?.[key] ?? key)
 }
 
 /**
@@ -96,15 +98,18 @@ const paintSkin = (mode: ResolvedTheme): void => {
   }
 }
 
+const paintLocale = (): void => {
+  applyDocumentLocale(document.documentElement, currentLocale)
+  paintStaticShell(currentLocale)
+}
+
 /** 每次都重读偏好：这样系统主题变化时能按「当时的」偏好决定是否跟随。 */
 const paint = (): void => {
   const mode = resolveTheme(readThemePreference(storage), systemPrefersDark(window))
   applyTheme(document.documentElement, mode)
   // 字号同样在首帧前定好，避免先按 100% 排一次版再跳。
   applyFontScale(document.documentElement, readFontScale(storage))
-  const locale = readLocalePreference(storage)
-  applyDocumentLocale(document.documentElement, locale)
-  paintStaticShell(locale)
+  paintLocale()
   paintSkin(mode)
 }
 
@@ -116,11 +121,20 @@ watchSystemTheme(window, paint)
 // 同源的其他文档改了偏好或换了皮肤时同步（设置对话框里嵌的 admin / resources iframe）。
 // storage 事件只在「其他」文档触发，所以这里不会与自身写入形成回环。
 window.addEventListener('storage', (event) => {
-  if (event.key !== THEME_STORAGE_KEY && event.key !== SKIN_STORAGE_KEY && event.key !== LOCALE_STORAGE_KEY)
+  if (event.key === LOCALE_STORAGE_KEY) {
+    currentLocale = readLocalePreference(storage)
+    paintLocale()
     return
+  }
+  if (event.key !== THEME_STORAGE_KEY && event.key !== SKIN_STORAGE_KEY) return
   paint()
 })
 
 // Same-document preference changes do not emit a storage event. Repaint skin tokens too.
 window.addEventListener('agnes:theme-changed', paint)
-window.addEventListener('agnes:locale-changed', paint)
+window.addEventListener('agnes:locale-changed', (event) => {
+  const next = (event as CustomEvent<unknown>).detail
+  if (!isUiLocale(next)) return
+  currentLocale = next
+  paintLocale()
+})

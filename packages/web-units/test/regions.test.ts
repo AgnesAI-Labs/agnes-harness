@@ -112,6 +112,7 @@ describe('independent core web-unit implementations', () => {
           ref,
           state: EMPTY_SIDEBAR_STATE,
           dependencies: {
+            translate: (key) => key,
             renderNavigation: ({ nav }) => {
               rendered++
               nav.textContent = 'navigation'

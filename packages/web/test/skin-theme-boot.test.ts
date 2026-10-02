@@ -30,7 +30,7 @@ it('repaints skin tokens on same-page theme changes and removes them when the sk
   window.dispatchEvent(new StorageEvent('storage', { key: LOCALE_STORAGE_KEY }))
   expect(document.documentElement.lang).toBe('zh-CN')
   localStorage.setItem(LOCALE_STORAGE_KEY, 'fr')
-  window.dispatchEvent(new CustomEvent('agnes:locale-changed'))
+  window.dispatchEvent(new StorageEvent('storage', { key: LOCALE_STORAGE_KEY, newValue: 'fr' }))
   expect(document.documentElement.lang).toBe('en')
   localStorage.clear()
 })
