@@ -10,8 +10,9 @@ import {
   SlotRegistry,
   ThemeService,
 } from '@agnes/web-client'
+import { Window } from 'happy-dom'
 import { createElement } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type ClientRoster,
   createReconciler,
@@ -1016,5 +1017,195 @@ describe('client reconciler（WC10 前端状态机）', () => {
     expect(log.disposed).toEqual(['dispose:b'])
     expect(performance.now() - started).toBeLessThan(120)
     await slow
+  })
+})
+
+const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+const digestOf = (byte: string): string => byte.repeat(32)
+const sri = (hex: string): string => `sha256-${Buffer.from(hex, 'hex').toString('base64')}`
+
+function pinnedMod(packageId: string, revision: string, files: Array<[string, string]>): ReadyClientModule {
+  return {
+    ...mod(packageId, revision),
+    styles: files.map(([name, assetDigest]) => ({ url: `/${packageId}/${revision}/${name}`, assetDigest })),
+  }
+}
+
+describe('default stylesheet preparer in a document', () => {
+  let win: Window
+  const missing = new Set<string>()
+
+  beforeEach(() => {
+    win = new Window({
+      url: 'http://agnes.test/',
+      settings: {
+        fetch: {
+          interceptor: {
+            // Every stylesheet is served locally; a listed path answers 404 like a missing or tampered file.
+            beforeAsyncRequest: async ({ request }) =>
+              new win.Response('', { status: missing.has(new URL(request.url).pathname) ? 404 : 200 }),
+          },
+        },
+      },
+    })
+    vi.stubGlobal('document', win.document)
+  })
+
+  afterEach(async () => {
+    missing.clear()
+    await win.happyDOM.abort()
+    vi.unstubAllGlobals()
+  })
+
+  function links(packageId: string) {
+    return [...win.document.head.querySelectorAll(`link[data-plugin="${packageId}"]`)].map((link) => ({
+      href: link.getAttribute('href'),
+      media: link.getAttribute('media'),
+      integrity: (link as unknown as { integrity?: string }).integrity,
+      digest: link.getAttribute('data-asset-digest'),
+    }))
+  }
+
+  it('appends pinned stylesheets in declared order with integrity and asset digest', async () => {
+    const h = await harness()
+    stubPlugin(h.ctx, { loaded: [], disposed: [] })
+    const [first, second, third] = [digestOf('0f'), EMPTY_SHA256, digestOf('a1')]
+    const pinned = {
+      ...pinnedMod('a', 'v1', [
+        ['z.css', first],
+        ['m.css', second],
+        ['a.css', third],
+      ]),
+      styleUrls: ['/a/v1/legacy.css'],
+    }
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list: async () => roster([pinned, styledMod('legacy', 'v1')]) },
+      importer: h.importer,
+    })
+
+    await reconciler.reconcileNow()
+
+    expect(links('a')).toEqual([
+      { href: '/a/v1/z.css', media: 'all', integrity: sri(first), digest: first },
+      { href: '/a/v1/m.css', media: 'all', integrity: sri(second), digest: second },
+      { href: '/a/v1/a.css', media: 'all', integrity: sri(third), digest: third },
+    ])
+    expect(links('legacy')).toEqual([
+      { href: '/legacy/v1/index.css', media: 'all', integrity: undefined, digest: null },
+    ])
+  })
+
+  it('keeps the active version when one pinned stylesheet fails and retries the same revision', async () => {
+    const h = await harness()
+    const log = { loaded: [] as string[], disposed: [] as string[] }
+    stubPlugin(h.ctx, log)
+    let current = roster([pinnedMod('a', 'v1', [['a.css', digestOf('01')]])])
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list: async () => current },
+      importer: h.importer,
+    })
+    await reconciler.reconcileNow()
+    const active = links('a')
+    expect(active).toMatchObject([{ href: '/a/v1/a.css', media: 'all' }])
+
+    missing.add('/a/v2/b.css')
+    current = roster([
+      pinnedMod('a', 'v2', [
+        ['a.css', digestOf('02')],
+        ['b.css', digestOf('03')],
+      ]),
+    ])
+    await reconciler.invalidate()
+    expect(reconciler.snapshot().get('a')).toMatchObject({
+      phase: 'failed',
+      revision: 'v1',
+      error: { code: 'CLIENT_MODULE_STYLES_FAILED' },
+    })
+    expect(log.disposed).toEqual([])
+    expect(links('a')).toEqual(active)
+
+    missing.clear()
+    await reconciler.invalidate()
+    expect(reconciler.snapshot().get('a')).toMatchObject({ phase: 'active', revision: 'v2' })
+    expect(links('a')).toMatchObject([
+      { href: '/a/v2/a.css', media: 'all' },
+      { href: '/a/v2/b.css', media: 'all' },
+    ])
+  })
+
+  it.each<[string, Array<[string, string]>]>([
+    ['an uppercase digest', [['a.css', digestOf('AB')]]],
+    ['a short digest', [['a.css', 'ab'.repeat(31)]]],
+    ['a non-hex digest', [['a.css', 'z'.repeat(64)]]],
+    [
+      'a repeated digest',
+      [
+        ['a.css', digestOf('04')],
+        ['b.css', digestOf('04')],
+      ],
+    ],
+  ])('rejects %s before any stylesheet link is inserted', async (_label, files) => {
+    const h = await harness()
+    const log = { loaded: [] as string[], disposed: [] as string[] }
+    stubPlugin(h.ctx, log)
+    let current = roster([pinnedMod('a', 'v1', [['a.css', digestOf('01')]])])
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list: async () => current },
+      importer: h.importer,
+    })
+    await reconciler.reconcileNow()
+    const active = links('a')
+    const mutations: unknown[] = []
+    const observer = new win.MutationObserver((records) => mutations.push(...records))
+    observer.observe(win.document.head, { childList: true })
+
+    current = roster([pinnedMod('a', 'v2', files)])
+    await reconciler.invalidate()
+    mutations.push(...observer.takeRecords())
+    observer.disconnect()
+
+    expect(mutations).toEqual([])
+    expect(reconciler.snapshot().get('a')).toMatchObject({
+      phase: 'failed',
+      revision: 'v1',
+      error: { code: 'CLIENT_MODULE_STYLES_FAILED' },
+    })
+    expect(log.disposed).toEqual([])
+    expect(links('a')).toEqual(active)
+  })
+
+  it.each([
+    ['a new revision', 'v2'],
+    ['a same-revision rebuild with the same URL', 'v1'],
+  ])('disposing the old stylesheets during %s leaves the new links in place', async (_label, revision) => {
+    const h = await harness()
+    stubPlugin(h.ctx, { loaded: [], disposed: [] })
+    const digest = digestOf('05')
+    let current = roster([pinnedMod('a', 'v1', [['a.css', digest]])])
+    let beforeActivation: ReturnType<typeof links> = []
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list: async () => current },
+      importer: h.importer,
+      // 'refresh' runs after the old handle's dispose and before the new links are activated.
+      onLifecycleStep: (step) => {
+        if (step === 'refresh') beforeActivation = links('a')
+      },
+    })
+    await reconciler.reconcileNow()
+    const [oldLink] = win.document.head.querySelectorAll('link')
+
+    current = roster([pinnedMod('a', revision, [['a.css', digest]])])
+    if (revision === 'v1') await reconciler.reload('a', 'v1')
+    else await reconciler.invalidate()
+
+    const next = { href: `/a/${revision}/a.css`, integrity: sri(digest), digest }
+    expect(beforeActivation).toEqual([{ ...next, media: 'not all' }])
+    expect(links('a')).toEqual([{ ...next, media: 'all' }])
+    expect(oldLink?.isConnected).toBe(false)
+    expect(reconciler.snapshot().get('a')).toMatchObject({ phase: 'active', revision })
   })
 })
