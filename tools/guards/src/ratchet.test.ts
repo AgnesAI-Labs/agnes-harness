@@ -937,7 +937,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merged with the policy and integrity providers on the integration base. Measured 27386, exact, no spare.
   // Shared interaction authority and its public exports: exact measured 27310 (+339).
   // Merged with the shared interaction authority on the integration base. Measured 27395, exact, no spare.
-  'packages/core/src': 27395,
+  // Interaction wake delivery bridge removed: an approval answer now commits its inbox and signal in
+  // the State transaction. Measured 27310, exact, no spare.
+  'packages/core/src': 27310,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1390,7 +1392,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Test container refusals match production feature and cell checks, and the runtime barrel
   // exports are sorted. Measured 3475, exact, no spare.
   // Merged with the aggregate contract exports on the integration base. Measured 3690, exact, no spare.
-  'packages/extension-api/testkit': 3690,
+  // Interaction contract cases join the contract aggregate. Measured 3691, exact, no spare.
+  'packages/extension-api/testkit': 3691,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
