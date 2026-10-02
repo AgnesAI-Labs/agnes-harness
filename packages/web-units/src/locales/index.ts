@@ -7,6 +7,7 @@ export type Translate = (key: string, vars?: Record<string, string | number>) =>
 
 import { composerLocaleCatalog } from './composer.js'
 import { conversationLocaleCatalog } from './conversation.js'
+import { settingsShellLocaleCatalog } from './settings-shell.js'
 import { sidebarLocaleCatalog } from './sidebar.js'
 import { toolLocaleCatalog } from './tool.js'
 import { topbarLocaleCatalog } from './topbar.js'
@@ -17,6 +18,7 @@ export const WEB_UNITS_LOCALE_NAMESPACE = '@agnes/web-units'
 const DICTS = [
   composerLocaleCatalog,
   conversationLocaleCatalog,
+  settingsShellLocaleCatalog,
   sidebarLocaleCatalog,
   toolLocaleCatalog,
   topbarLocaleCatalog,
