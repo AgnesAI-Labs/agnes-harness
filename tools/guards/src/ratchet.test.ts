@@ -1377,7 +1377,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Shared blob and artifact access suites with their scenario registration, and blob selection
   // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
   // Contract cases re-export from one aggregate. Measured 3459, exact, no spare.
-  'packages/extension-api/testkit': 3459,
+  // Test container refusals match production feature and cell checks, and the runtime barrel
+  // exports are sorted. Measured 3475, exact, no spare.
+  'packages/extension-api/testkit': 3475,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
