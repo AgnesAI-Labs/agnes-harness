@@ -1,4 +1,5 @@
 import type { ConfigAccount, ConfigAccountInput } from '@agnes/protocol'
+import { fallbackT, type Translate } from './locales/index.js'
 
 export type SettingsAccountsProps = {
   accounts: readonly ConfigAccount[]
@@ -9,6 +10,7 @@ export type SettingsAccountsProps = {
   onEdit(id: string): void
   onAction(account: ConfigAccount, action: ConfigAccountInput['action']): void
   onCancelRemove(): void
+  t?: Translate
 }
 
 export function SettingsAccounts({
@@ -20,6 +22,7 @@ export function SettingsAccounts({
   onEdit,
   onAction,
   onCancelRemove,
+  t = fallbackT,
 }: SettingsAccountsProps) {
   return accounts.map((account) => {
     const isDefault = defaultAccountId === account.accountId
@@ -27,9 +30,9 @@ export function SettingsAccounts({
       (other) => other.enabled && other.accountId !== account.accountId,
     )
     const actions: Array<[ConfigAccountInput['action'], string]> = [
-      [account.enabled ? 'disable' : 'enable', account.enabled ? '停用' : '启用'],
-      ['default', '设为默认'],
-      ['remove', removingId === account.accountId ? '确认删除' : '删除'],
+      [account.enabled ? 'disable' : 'enable', account.enabled ? t('accounts.disable') : t('accounts.enable')],
+      ['default', t('accounts.makeDefault')],
+      ['remove', removingId === account.accountId ? t('accounts.confirmRemove') : t('accounts.remove')],
     ]
     return (
       <div
@@ -52,22 +55,22 @@ export function SettingsAccounts({
             {account.providerId} · {account.model}
           </span>
           <span className="config-account-status" data-tone={account.enabled ? 'success' : 'neutral'}>
-            {account.enabled ? '已启用' : '已停用'}
+            {account.enabled ? t('accounts.enabled') : t('accounts.disabled')}
           </span>
           {isDefault && (
             <span className="config-account-status" data-tone="brand">
-              默认
+              {t('accounts.defaultBadge')}
             </span>
           )}
         </span>
         <div className="config-account-actions">
           <button
             type="button"
-            aria-label={`编辑 ${account.label}`}
+            aria-label={t('accounts.editAria', { label: account.label })}
             disabled={disabled}
             onClick={() => onEdit(account.accountId)}
           >
-            编辑
+            {t('accounts.edit')}
           </button>
           {actions.map(([action, label]) => {
             if (action === 'default' && (!account.enabled || isDefault)) return null
@@ -86,7 +89,7 @@ export function SettingsAccounts({
           })}
           {removingId === account.accountId && (
             <button type="button" disabled={disabled} onClick={onCancelRemove}>
-              取消删除
+              {t('accounts.cancelRemove')}
             </button>
           )}
         </div>
