@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
+import type { CallContext } from '@agnes/extension-api/runtime'
 import {
   createFilesService,
   type FilesService,
@@ -12,30 +12,7 @@ import { runtimeError } from '../../../../packages/host/src/runtime/workspace-le
 import type * as Wire from '../../../../packages/protocol/src/runtime/index.ts'
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
 
-/**
- * Stand-in reader for the authority directory contract.
- * It answers from the map it was given. It is not the directory service.
- */
-export function authorityDirectoryStandIn(locations: ReadonlyMap<string, string>): {
-  readonly kind: 'authority-directory-stand-in'
-  read(request: Wire.AuthorityDirectoryReadRequest): Promise<Outcome<Wire.AuthorityDirectoryReadResult>>
-} {
-  return {
-    kind: 'authority-directory-stand-in',
-    async read(request) {
-      if (request.kind !== 'authority') return { ok: false, error: runtimeError('not_found', 'absent') }
-      const location = locations.get(request.logicalAuthorityId)
-      if (location === undefined) return { ok: false, error: runtimeError('not_found', 'absent') }
-      return {
-        ok: true,
-        value: {
-          kind: 'authority',
-          route: { locationRef: location },
-        } as Wire.AuthorityDirectoryReadResult,
-      }
-    },
-  }
-}
+import { workspaceDirectory } from './workspace-directory.ts'
 
 /** Hide a committed write so the caller has to reconcile the same invocation. */
 export function dropFirstCommittedWrite(files: FilesService): FilesService {
@@ -125,13 +102,12 @@ export async function proveRemoteWorkspace(): Promise<void> {
     const work = join(directory, 'work')
     const { mkdirSync } = await import('node:fs')
     mkdirSync(work)
-    const standIn = authorityDirectoryStandIn(new Map([['ws-1', 'ws-1']]))
-    assert.equal(standIn.kind, 'authority-directory-stand-in')
+    const routing = await workspaceDirectory(directory)
     const workspace = createWorkspaceService({
       directory: join(directory, 'store'),
       authorityId: 'authority-1',
       tenantId: 'tenant-1',
-      directoryRead: standIn,
+      directoryRead: routing.reader,
     })
     assert.equal((await workspace.bind('ws-1', work)).ok, true)
     const acquired = await workspace.acquire(
@@ -193,6 +169,7 @@ export async function proveRemoteWorkspace(): Promise<void> {
     assert.equal(readFileSync(join(work, 'notes.txt'), 'utf8'), 'kept')
     files.close()
     workspace.close()
+    await routing.close()
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

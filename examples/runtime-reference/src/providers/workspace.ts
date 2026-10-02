@@ -280,18 +280,22 @@ export function createReferenceWorkspace(options: {
         if (workspaceOf(context.scope) !== body.workspaceId)
           throw new Halt('permission_denied', 'workspace is outside the caller scope')
         if (options.directoryRead) {
-          const looked = await options.directoryRead.read({
-            kind: 'authority',
-            logicalAuthorityId: body.workspaceId,
-          })
-          if (!looked.ok) {
-            if (looked.error.detailCode !== 'not_found')
+          try {
+            const looked = await options.directoryRead.read({
+              kind: 'authority',
+              logicalAuthorityId: body.workspaceId,
+            })
+            if (
+              !looked.ok ||
+              !validateRuntime('AuthorityDirectoryReadResult', looked.value).ok ||
+              looked.value.kind !== 'authority' ||
+              looked.value.route.logicalAuthorityId !== body.workspaceId ||
+              looked.value.route.tenantId !== options.tenantId ||
+              looked.value.route.locationRef !== body.workspaceId
+            )
               throw new Halt('permission_denied', 'authority location does not match the workspace')
-          } else if (
-            looked.value.kind !== 'authority' ||
-            looked.value.route.locationRef !== body.workspaceId
-          ) {
-            throw new Halt('permission_denied', 'authority location does not match the workspace')
+          } catch {
+            throw new Halt('permission_denied', 'authority directory is unavailable or incompatible')
           }
         }
         const shot = fold(options.desk)

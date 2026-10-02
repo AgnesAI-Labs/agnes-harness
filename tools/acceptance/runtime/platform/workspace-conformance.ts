@@ -46,6 +46,8 @@ import { WORKSPACE_SECRET_DIRS } from '../../../../packages/protocol/src/constan
 import type * as Wire from '../../../../packages/protocol/src/runtime/index.ts'
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
 
+import { workspaceDirectory } from '../fixtures/workspace-directory.ts'
+
 type Kind = 'default' | 'reference'
 type WorkspaceApi = WorkspaceService | ReferenceWorkspace
 type FilesApi = FilesService | ReferenceFiles
@@ -135,11 +137,11 @@ type Session = {
   readonly work: string
   workspace: WorkspaceApi
   files: FilesApi
-  reopen(): void
-  close(): void
+  reopen(): Promise<void>
+  close(): Promise<void>
 }
 
-function openSession(kind: Kind): Session {
+async function openSession(kind: Kind): Promise<Session> {
   const directory = mkdtempSync(join(tmpdir(), 'workspace-conformance-'))
   const work = join(directory, 'work')
   const home = join(directory, 'home')
@@ -148,6 +150,7 @@ function openSession(kind: Kind): Session {
   mkdirSync(work)
   mkdirSync(home)
   mkdirSync(data)
+  const routing = await workspaceDirectory(directory)
   let store: WorkspaceStore | undefined
   let desk: ReferenceDesk | undefined
   const places = {
@@ -160,7 +163,8 @@ function openSession(kind: Kind): Session {
     work,
     workspace: undefined as unknown as WorkspaceApi,
     files: undefined as unknown as FilesApi,
-    reopen() {
+    async reopen() {
+      await routing.reopen()
       if (session.files) session.files.close()
       if (session.workspace) session.workspace.close()
       if (kind === 'default') {
@@ -170,6 +174,7 @@ function openSession(kind: Kind): Session {
           store,
           authorityId: 'authority-1',
           tenantId: 'tenant-1',
+          directoryRead: routing.reader,
         })
         session.files = createFilesService({
           store,
@@ -184,6 +189,7 @@ function openSession(kind: Kind): Session {
           desk,
           authorityId: 'authority-1',
           tenantId: 'tenant-1',
+          directoryRead: routing.reader,
         })
         session.files = createReferenceFiles({
           desk,
@@ -193,7 +199,8 @@ function openSession(kind: Kind): Session {
         })
       }
     },
-    close() {
+    async close() {
+      await routing.close()
       session.files.close()
       session.workspace.close()
       store?.close()
@@ -201,7 +208,7 @@ function openSession(kind: Kind): Session {
       rmSync(directory, { recursive: true, force: true })
     },
   } satisfies Omit<Session, 'workspace' | 'files'> & { workspace: WorkspaceApi; files: FilesApi }
-  session.reopen()
+  await session.reopen()
   return session
 }
 
@@ -252,7 +259,7 @@ async function workspacePort(kind: Kind): Promise<WorkspacePort> {
   return {
     recipe,
     async select() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -265,11 +272,11 @@ async function workspacePort(kind: Kind): Promise<WorkspacePort> {
         assert.equal(released.ok && released.value.released, true)
         return evidence(session.workspace.providerDigest, recipe, 'selected')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async normal() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -289,11 +296,11 @@ async function workspacePort(kind: Kind): Promise<WorkspacePort> {
         assert.equal(again.ok, true)
         return evidence(session.workspace.providerDigest, recipe, 'reacquired')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async deny() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const foreign = call()
@@ -316,11 +323,11 @@ async function workspacePort(kind: Kind): Promise<WorkspacePort> {
         )
         return evidence(session.workspace.providerDigest, recipe, 'permission_denied')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async cancel() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const aborted = new AbortController()
@@ -341,11 +348,11 @@ async function workspacePort(kind: Kind): Promise<WorkspacePort> {
         assert.equal(acquired.ok, true)
         return evidence(session.workspace.providerDigest, recipe, 'cancelled')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async recover() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -354,7 +361,7 @@ async function workspacePort(kind: Kind): Promise<WorkspacePort> {
         )
         assert.equal(acquired.ok, true)
         if (!acquired.ok) throw new Error('write lease was refused')
-        session.reopen()
+        await session.reopen()
         const blocked = await session.workspace.acquire(
           { workspaceId: 'ws-1', mode: 'write', expectedRevision: null },
           call(),
@@ -364,11 +371,11 @@ async function workspacePort(kind: Kind): Promise<WorkspacePort> {
         assert.equal(released.ok && released.value.released, true)
         return evidence(session.workspace.providerDigest, recipe, 'recovered')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async dispose() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         session.workspace.close()
@@ -384,7 +391,7 @@ async function workspacePort(kind: Kind): Promise<WorkspacePort> {
         assert.equal(existsSync(session.work), true)
         return evidence(session.workspace.providerDigest, recipe, 'disposed')
       } finally {
-        session.close()
+        await session.close()
       }
     },
   }
@@ -395,7 +402,7 @@ async function filesPort(kind: Kind): Promise<FilesPort> {
   return {
     recipe,
     async select() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -411,11 +418,11 @@ async function filesPort(kind: Kind): Promise<FilesPort> {
         assert.equal(listed.ok && listed.value.complete, true)
         return evidence(session.files.providerDigest, recipe, 'selected')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async normal() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -447,11 +454,11 @@ async function filesPort(kind: Kind): Promise<FilesPort> {
         assert.equal(loaded.ok && Buffer.from(loaded.value).toString(), 'hello')
         return evidence(session.files.providerDigest, recipe, 'round-trip')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async deny() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -479,11 +486,11 @@ async function filesPort(kind: Kind): Promise<FilesPort> {
         )
         return evidence(session.files.providerDigest, recipe, 'invalid_request')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async cancel() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -514,11 +521,11 @@ async function filesPort(kind: Kind): Promise<FilesPort> {
         assert.equal(existsSync(join(session.work, 'notes.txt')), false)
         return evidence(session.files.providerDigest, recipe, 'cancelled')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async recover() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -542,7 +549,7 @@ async function filesPort(kind: Kind): Promise<FilesPort> {
         assert.equal(wrote.ok, true)
         const mount = acquired.value.mountRef
         const bytesRef = staged.value
-        session.reopen()
+        await session.reopen()
         const read = await session.files.read(
           { mountRef: mount, path: 'notes.txt', range: null, expectedVersion: 1 },
           call(),
@@ -554,11 +561,11 @@ async function filesPort(kind: Kind): Promise<FilesPort> {
         void bytesRef
         return evidence(session.files.providerDigest, recipe, 'recovered')
       } finally {
-        session.close()
+        await session.close()
       }
     },
     async dispose() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         assert.equal((await session.workspace.bind('ws-1', session.work)).ok, true)
         const acquired = await session.workspace.acquire(
@@ -580,7 +587,7 @@ async function filesPort(kind: Kind): Promise<FilesPort> {
         assert.equal(existsSync(session.work), true)
         return evidence(session.files.providerDigest, recipe, 'disposed')
       } finally {
-        session.close()
+        await session.close()
       }
     },
   }
@@ -612,7 +619,7 @@ function authorityWorkspace(kind: Kind): WorkspacePort {
     scenarios: ['deny'],
     ...unusedWorkspace(recipe),
     async deny() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         const outcome = await session.workspace.authorityFence({}, call())
         assert.equal(outcome.ok, false)
@@ -620,7 +627,7 @@ function authorityWorkspace(kind: Kind): WorkspacePort {
         assert.equal(outcome.error.detailCode, 'unsupported')
         return evidence(session.workspace.providerDigest, recipe, 'authority transfer is not supported')
       } finally {
-        session.close()
+        await session.close()
       }
     },
   }
@@ -634,7 +641,7 @@ function authorityFiles(kind: Kind): FilesPort {
     scenarios: ['deny'],
     ...unusedFiles(recipe),
     async deny() {
-      const session = openSession(kind)
+      const session = await openSession(kind)
       try {
         const outcome = await session.files.authorityFence({}, call())
         assert.equal(outcome.ok, false)
@@ -642,7 +649,7 @@ function authorityFiles(kind: Kind): FilesPort {
         assert.equal(outcome.error.detailCode, 'unsupported')
         return evidence(session.files.providerDigest, recipe, 'authority transfer is not supported')
       } finally {
-        session.close()
+        await session.close()
       }
     },
   }
