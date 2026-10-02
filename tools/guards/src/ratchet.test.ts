@@ -1174,7 +1174,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
-  'packages/host/src/assemble': 4193,
+  // Full-access read-only roots reach the fence from the assembly. Measured 4200, exact, no spare (+7).
+  'packages/host/src/assemble': 4200,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2518,7 +2519,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
   // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9), exact cap.
-  'packages/host/src': 38306,
+  // Installation state stays read-only under full file access: the fence guard, the roots helper and
+  // their wiring. Measured 38346, exact, no spare (+40 over the preceding cap).
+  'packages/host/src': 38346,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2683,7 +2686,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Cancelling a child's creation also settles its execution state in the same statement. Measured
   // 5017, exact, no spare (+3).
   // First-cause timedOut in exec and exec-win32. Measured 5034 (+9), exact cap.
-  'packages/host/src/adapters': 5034,
+  // The fence refuses writes to the installation's own state under full file access. Measured 5053,
+  // exact, no spare (+19).
+  'packages/host/src/adapters': 5053,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
