@@ -34,6 +34,11 @@ export interface ReadyClientModule {
   revision: string
   entryUrl: string
   styleUrls: string[]
+  /**
+   * Ordered stylesheets pinned by SHA-256 (64 lowercase hex); when present they replace
+   * `styleUrls`. Skin entries carry token data rather than a URL and are not mapped here.
+   */
+  styles?: readonly { url: string; assetDigest: string }[]
   slots: string[]
   /** Required for DSH-aligned slots; omitted for the legacy Agnes slot set. */
   slotCatalogVersion?: string
@@ -182,17 +187,35 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+/** Subresource Integrity value for a validated hex SHA-256 digest, without Node APIs. */
+function sriSha256(hex: string): string {
+  const bytes = hex.match(/../g)?.map((byte) => String.fromCharCode(Number.parseInt(byte, 16))) ?? []
+  return `sha256-${btoa(bytes.join(''))}`
+}
+
 async function prepareDocumentStyles(
   target: ReadyClientModule,
   timeoutMs: number,
 ): Promise<PreparedClientStyles> {
-  if (target.styleUrls.length === 0) return { activate() {}, dispose() {} }
-  const links = target.styleUrls.map((href) => {
+  // A malformed or repeated digest is not a pin: reject before the document is touched.
+  const digests = target.styles?.map((style) => style.assetDigest) ?? []
+  if (digests.some((digest) => !SHA256_HEX.test(digest)) || new Set(digests).size !== digests.length)
+    throw new Error(`styles ${target.packageId} carry an invalid or repeated asset digest`)
+  const sheets: readonly { url: string; assetDigest?: string }[] =
+    target.styles ?? target.styleUrls.map((url) => ({ url }))
+  if (sheets.length === 0) return { activate() {}, dispose() {} }
+  const links = sheets.map(({ url, assetDigest }) => {
     const link = document.createElement('link')
     link.rel = 'stylesheet'
-    link.href = href
+    link.href = url
     link.media = 'not all'
     link.dataset.plugin = target.packageId
+    if (assetDigest !== undefined) {
+      link.integrity = sriSha256(assetDigest)
+      link.dataset.assetDigest = assetDigest
+    }
     return link
   })
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -205,6 +228,7 @@ async function prepareDocumentStyles(
             link.addEventListener('error', () => reject(new Error(`stylesheet failed: ${link.href}`)), {
               once: true,
             })
+            // Executors run synchronously, so document order is the declared order.
             document.head.append(link)
           }),
       ),

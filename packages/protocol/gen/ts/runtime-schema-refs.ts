@@ -3740,8 +3740,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.supervisor/submitConversation.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "cancelConversation": {
@@ -3752,8 +3752,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.supervisor/cancelConversation.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "conversationCommandStatus": {
@@ -3764,8 +3764,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.supervisor/conversationCommandStatus.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "readSessionControl": {
@@ -4406,8 +4406,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.jobs/acceptCreateDefinition.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "acceptUpdateDefinition": {
@@ -4418,8 +4418,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.jobs/acceptUpdateDefinition.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "acceptCancelDefinition": {
@@ -4430,8 +4430,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.jobs/acceptCancelDefinition.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "clientCommandStatus": {
@@ -4442,8 +4442,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.jobs/clientCommandStatus.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "authorityFence": {
@@ -5830,8 +5830,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/command.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "openConversation": {
@@ -5866,8 +5866,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/acceptCommand.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "commandStatus": {
@@ -5878,8 +5878,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/commandStatus.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "listConversations": {
@@ -6024,8 +6024,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/command.response@1",
-        "revision": 3,
-        "digest": "1fad2dc8ce2fd70c5225a5c6c82180c1ed3d5b9b8c417e83b0be09c2b039c6b2"
+        "revision": 4,
+        "digest": "96381f3d2b3d476a35f2b80491e2fa38606494f47bcc78a19c036cb61e58112a"
       }
     },
     "bootstrap": {
@@ -6048,8 +6048,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/clientQuery.response@1",
-        "revision": 3,
-        "digest": "5c8f1524bdcd66007c14211d54e976705060d395374b52588e60712e1d1e217f"
+        "revision": 4,
+        "digest": "3e989f6d45c1068b0a1424c6cdcae505fbb7cc7163b82000eab0f9b10bbbaf14"
       }
     },
     "clientCommand": {
@@ -6060,8 +6060,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/clientCommand.response@1",
-        "revision": 3,
-        "digest": "b7ee458e645de09e1a752049ba0fda31d7b6c404565457e141336f634b242ada"
+        "revision": 4,
+        "digest": "f0f58da2a28a04d46e762859a808b814d40d6d0ba95b492e001e748e1454b44f"
       }
     },
     "catalogPage": {

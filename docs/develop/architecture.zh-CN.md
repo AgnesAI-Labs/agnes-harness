@@ -52,6 +52,8 @@ Seam 是必要执行位置的实现，例如审批、账本、沙箱；缺失必
 
 受信后端 Cordis 行可贡献工具、hook 和受约束的服务等能力；浏览器模块是绑定该行的另一运行面，详见[插件边界](plugins.zh-CN.md)。前后端的 Context 不共享内存；普通 `ctx.provide()` 不是跨进程代理。浏览器通过已声明的 relay 调用行服务，不直接获取 Host 管理对象。
 
+Host 启动还会打开一个固定 Cordis 服务根，受信 Host 代码通过只读 `runtimeServices` 访问器使用它。初始默认服务为 `agh.package-source` 查询与 `agh.package-resolver` 计算，共用隔离且初始为空的包缓存，没有获准的本地根、网络来源或维护操作。未登记合同返回 `service_not_registered`。该根与现有 Kernel、SQLite 会话存储、审计 sink 和 secrets 组合并行存在。初始化失败走启动回滚；Host 关闭时先释放解析器，再释放包来源并删除缓存。见 [Host 服务选择](../../packages/host/src/runtime/host-services.ts)与[启动测试](../../packages/host/test/host.test.ts)。
+
 ## Runtime target 与热更新
 
 PackageManager 产生已核验快照和治理状态；runtime target 组合普通行、资源行与平台合成的客户端行。`web:` 行不在 Host 普通树执行。Host 在受限事务中协调可变行、依赖和实际状态，合格变更增量应用；静态边界、失败补偿或污染处理可能要求重建。
