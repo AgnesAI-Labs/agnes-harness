@@ -217,12 +217,10 @@ const IMPLEMENTATIONS: Record<string, Impl> = {
 // These boundaries validate canonical paths but are not FsOps implementations, so they cannot run
 // through describe.each(IMPLEMENTATIONS). Keep their dedicated behavioral test visible to this
 // repository-wide inventory instead of silently exempting their source file from the scan.
-const AUXILIARY_PATH_GUARDS: Record<string, { test: string; evidence: RegExp[] }> = {
-  'packages/base/extensions/fs-checkpoint/src/seam.ts': {
-    test: 'packages/base/extensions/fs-checkpoint/test/seam.test.ts',
-    evidence: [/E_FS_DENIED/, /symlink/],
-  },
-}
+// The checkpoint seam used to be one: it refused paths outside the workspace itself. It no longer
+// does, because the host's file fence decides what a session may reach and the seam follows it, so
+// its row is gone rather than left naming a file that refuses nothing.
+const AUXILIARY_PATH_GUARDS: Record<string, { test: string; evidence: RegExp[] }> = {}
 
 /** The spellings of one file under a denied directory. Each one used to reach the bytes. */
 function spellings(root: string, deny: string, file: string): Array<[string, string]> {

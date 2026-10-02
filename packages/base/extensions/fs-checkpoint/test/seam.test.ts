@@ -228,7 +228,9 @@ describe('filesystem checkpoint seam', () => {
     const ctx = context(h.workspace, h.data)
     ctx.adapters.fs = {
       async realpath(path) {
-        const target = resolve(workspace, path)
+        // The seam names the workspace as the caller spelled it. The real spelling can differ (macOS
+        // /var -> /private/var, Windows short names), so the virtual one resolves it to the real root.
+        const target = path === h.workspace ? workspace : resolve(workspace, path)
         if (target === workspace || target === volume || files.has(target)) return target
         throw missing()
       },
