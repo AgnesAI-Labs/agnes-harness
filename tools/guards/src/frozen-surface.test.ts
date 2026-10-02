@@ -147,10 +147,50 @@ function interfaceMethodNames(source: string, name: string): string[] {
   return names
 }
 
+function stateQueryNames(source: string): string[] {
+  const marker = source.indexOf('export const RuntimeStateQueryMethods')
+  if (marker < 0) return []
+  const array = /=\s*(?:Object\.freeze\()?\s*(\[[^\]]*\])/.exec(source.slice(marker))
+  if (!array) throw new Error('missing generated State query declaration')
+  const names: unknown = JSON.parse(array[1] ?? '')
+  if (
+    !Array.isArray(names) ||
+    names.length !== 2 ||
+    names.some((name) => typeof name !== 'string') ||
+    new Set(names).size !== 2
+  )
+    throw new Error('invalid generated State query declaration')
+  return names as string[]
+}
+
 function methodSetProblems(catalogSource: string, interfaceSource: string): string[] {
-  // Feature-gated operations carry requiredFeature and are published on their own
-  // generated interfaces. StateStoreControl is the remaining catalog method set.
-  const catalog = catalogMethodNames(catalogSource, STATE_CONTRACT, true)
+  // Separate only the explicit generated Q-only set. Existing Local query-like methods remain.
+  let queries: string[]
+  try {
+    queries = stateQueryNames(catalogSource)
+  } catch {
+    return ['invalid generated State query declaration']
+  }
+  const methods = catalogValue(catalogSource)[STATE_CONTRACT]?.methods ?? {}
+  const wireSource = read(join(root, 'packages/protocol/gen/ts/runtime-wire-types.ts'))
+  for (const name of queries) {
+    const operation = methods[name] as Record<string, unknown> | undefined
+    if (
+      operation?.kind !== 'query' ||
+      operation.sameAttemptBrokerAllowed !== false ||
+      operation.local === true ||
+      typeof operation.input !== 'string' ||
+      typeof operation.output !== 'string' ||
+      operation.inputTypeId !== `${STATE_CONTRACT}/${name}.request@1` ||
+      operation.outputTypeId !== `${STATE_CONTRACT}/${name}.response@1` ||
+      !wireSource.includes(`  ${operation.input}: Schemas.${operation.input}`) ||
+      !wireSource.includes(`  ${operation.output}: Schemas.${operation.output}`)
+    )
+      return [`invalid Q-only State method ${name}`]
+  }
+  const catalog = catalogMethodNames(catalogSource, STATE_CONTRACT, true).filter(
+    (name) => !queries.includes(name),
+  )
   const face = interfaceMethodNames(interfaceSource, 'StateStoreControl')
   if (catalog.length === 0) return ['generated state catalog has no methods']
   if (face.length === 0) return ['public state interface has no methods']
@@ -535,6 +575,7 @@ describe('public state methods follow the generated catalog', () => {
     ])
     const catalogSource = read(catalogs[0] ?? '')
     const interfaceSource = read(faces[0] ?? '')
+    expect(catalogSource).toContain('export const RuntimeStateQueryMethods')
     const problems = methodSetProblems(catalogSource, interfaceSource)
     expect(problems, problems.join('\n')).toEqual([])
     const published = new Set(catalogMethodNames(catalogSource, STATE_CONTRACT, true))
@@ -548,6 +589,65 @@ describe('public state methods follow the generated catalog', () => {
     expect(batches.length).toBeGreaterThan(0)
     expect(batches.filter((name) => catalogMethods.has(name))).toEqual([])
     expect(interfaceSource.split(/\r?\n/)[0]).toContain('do not edit')
+  })
+
+  it('rejects ghost Q methods, broker/control mutations, missing catalog methods and Local copies', () => {
+    const source = read(join(root, 'packages/protocol/gen/ts/runtime-catalog.ts'))
+    const face = interfaceFiles(root).map(read).join('\n')
+    const queryEntry = (kind = 'query', broker = false) => ({
+      kind,
+      input: 'StateScanRequest',
+      output: 'StateScanResult',
+      inputTypeId: 'agh.state/scan.request@1',
+      outputTypeId: 'agh.state/scan.response@1',
+      sameAttemptBrokerAllowed: broker,
+    })
+    const make = (change: (methods: Record<string, unknown>) => void, names = ['scan', 'probeCommit']) => {
+      const catalog = catalogValue(source)
+      change(catalog[STATE_CONTRACT]?.methods ?? {})
+      return `export const RuntimeServiceCatalog = ${JSON.stringify(catalog)} as const\nexport const RuntimeStateQueryMethods = Object.freeze(${JSON.stringify(names)} as const)`
+    }
+    expect(
+      methodSetProblems(
+        make((m) => {
+          m.scan = queryEntry('control')
+        }),
+        face,
+      ).join('\n'),
+    ).toContain('invalid Q-only')
+    expect(
+      methodSetProblems(
+        make((m) => {
+          m.scan = queryEntry('query', true)
+        }),
+        face,
+      ).join('\n'),
+    ).toContain('invalid Q-only')
+    expect(
+      methodSetProblems(
+        make((m) => {
+          delete m.scan
+        }),
+        face,
+      ).join('\n'),
+    ).toContain('invalid Q-only')
+    expect(
+      methodSetProblems(
+        make(() => {}, ['scan', 'ghost']),
+        face,
+      ).join('\n'),
+    ).toContain('invalid Q-only')
+    expect(
+      methodSetProblems(
+        make(() => {}, ['scan', 'scan']),
+        face,
+      ).join('\n'),
+    ).toContain('invalid generated')
+    const extra = face.replace(
+      'export interface StateStoreControl {',
+      'export interface StateStoreControl {\n scan(request: string): void',
+    )
+    expect(methodSetProblems(source, extra).join('\n')).toContain('adds scan')
   })
 
   it('rejects an interface that drops or adds a catalog method', () => {

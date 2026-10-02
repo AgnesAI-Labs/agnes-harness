@@ -1,5 +1,5 @@
 export type StateFailure = {
-  code: 'invalid_input' | 'conflict' | 'incompatible' | 'internal'
+  code: 'invalid_input' | 'denied' | 'conflict' | 'incompatible' | 'internal'
   detailCode: string
   message: string
 }

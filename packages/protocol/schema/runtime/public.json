@@ -18673,7 +18673,10 @@
           "const": 1
         },
         "minReader": {
-          "const": 1
+          "enum": [
+            1,
+            2
+          ]
         },
         "previousFormat": {
           "enum": [1, 2]
@@ -36875,6 +36878,180 @@
         "localGate",
         "proof"
       ]
+    },
+    "StateScanResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "prototype.json#/$defs/DataRef"
+          },
+          "maxItems": 500
+        },
+        "snapshot": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items",
+        "snapshot",
+        "nextCursor",
+        "complete"
+      ]
+    },
+    "StateProbeCommitRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commitId": {
+          "$ref": "prototype.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "commitId"
+      ]
+    },
+    "StateProbeCommitResult": {
+      "anyOf": [
+        {
+          "$ref": "prototype.json#/$defs/StateCommitReceipt"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "StateLeaseRecordValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "lastWriterEpoch": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "claim": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/WriterClaim"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "lastWriterEpoch",
+        "claim"
+      ]
+    },
+    "StateLeaseProofValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "$ref": "prototype.json#/$defs/StateLeaseRequest"
+        },
+        "requestFingerprint": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "evaluatedAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "sessionIdentityVersion": {
+          "$ref": "prototype.json#/$defs/ReadGuard"
+        },
+        "previousLeaseVersion": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/ReadGuard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "leaseVersion": {
+          "$ref": "prototype.json#/$defs/ReadGuard"
+        }
+      },
+      "required": [
+        "request",
+        "requestFingerprint",
+        "evaluatedAt",
+        "sessionIdentityVersion",
+        "previousLeaseVersion",
+        "leaseVersion"
+      ]
+    },
+    "StateWriteOpenProofValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "$ref": "prototype.json#/$defs/StateOpenRequest/anyOf/1"
+        },
+        "requestFingerprint": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "evaluatedAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "sessionIdentityVersion": {
+          "$ref": "prototype.json#/$defs/ReadGuard"
+        },
+        "previousLeaseVersion": {
+          "anyOf": [
+            {
+              "$ref": "prototype.json#/$defs/ReadGuard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "leaseVersion": {
+          "$ref": "prototype.json#/$defs/ReadGuard"
+        },
+        "snapshotId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "snapshotExpiresAt": {
+          "$ref": "prototype.json#/$defs/Timestamp"
+        },
+        "snapshotCommitId": {
+          "$ref": "prototype.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "request",
+        "requestFingerprint",
+        "evaluatedAt",
+        "sessionIdentityVersion",
+        "previousLeaseVersion",
+        "leaseVersion",
+        "snapshotId",
+        "snapshotExpiresAt",
+        "snapshotCommitId"
+      ]
     }
   },
   "x-service-catalog": {
@@ -39222,6 +39399,22 @@
           "inputTypeId": "agh.state/cancelAdmission.request@1",
           "outputTypeId": "agh.state/cancelAdmission.response@1",
           "sameAttemptBrokerAllowed": false
+        },
+        "scan": {
+          "kind": "query",
+          "input": "StateScanRequest",
+          "output": "StateScanResult",
+          "inputTypeId": "agh.state/scan.request@1",
+          "outputTypeId": "agh.state/scan.response@1",
+          "sameAttemptBrokerAllowed": false
+        },
+        "probeCommit": {
+          "kind": "query",
+          "input": "StateProbeCommitRequest",
+          "output": "StateProbeCommitResult",
+          "inputTypeId": "agh.state/probeCommit.request@1",
+          "outputTypeId": "agh.state/probeCommit.response@1",
+          "sameAttemptBrokerAllowed": false
         }
       }
     },
@@ -39411,7 +39604,33 @@
     "ApprovalAnswer": "agh.interaction/approval-answer@1",
     "CommandRuntimeAcceptanceResult": "agh.domain/command-runtime-acceptance-result@1",
     "LegacyIdentityCredentialEnvelope": "agh.identity/legacy-credential@1",
-    "LegacyIdentityTransportEvidence": "agh.identity/legacy-transport-evidence@1"
+    "LegacyIdentityTransportEvidence": "agh.identity/legacy-transport-evidence@1",
+    "StateLeaseRecordValue": "agh.runtime/state-lease-record@1",
+    "StateWriteOpenProofValue": "agh.runtime/state-write-open-proof@1",
+    "StateLeaseProofValue": "agh.runtime/state-lease-proof@1",
+    "SessionIdentityValue": "agh.runtime/session-identity-record@1",
+    "RunRecordValue": "agh.runtime/run-record@1",
+    "RunTaintRecordValue": "agh.runtime/run-taint-record@1",
+    "ActionRecordValue": "agh.runtime/action-record@1",
+    "AttemptRecordValue": "agh.runtime/attempt-record@1",
+    "RunQuotaValue": "agh.runtime/run-quota@1",
+    "InvocationValue": "agh.runtime/invocation@1",
+    "PrepareQueryQuotaValue": "agh.runtime/prepare-query-quota@1",
+    "QueryGrantValue": "agh.runtime/query-grant@1",
+    "DispatchAdmissionRecordValue": "agh.runtime/dispatch-admission@1",
+    "ReceiptRecordValue": "agh.runtime/receipt-record@1",
+    "QuotaReservationMirrorValue": "agh.runtime/quota-mirror@1",
+    "SignalRecordValue": "agh.runtime/signal-record@1",
+    "ActionVisibilityValue": "agh.runtime/action-visibility@1",
+    "UsageMirrorValue": "agh.runtime/usage-mirror@1",
+    "OutboxRecord": "agh.runtime/outbox-record@1",
+    "ReferenceRecordValue": "agh.runtime/reference-record@1",
+    "InteractionRecord": "agh.interaction/interaction-record@1",
+    "InboxRecord": "agh.runtime/inbox-record@1",
+    "ApprovalTaintAckRecordValue": "agh.runtime/approval-taint-ack-record@1",
+    "AuthorizationPreparation": "agh.runtime/authorization-preparation@1",
+    "ApprovalRespondRequest": "agh.interaction/approval-respond-request@1",
+    "CommitControlRequest": "agh.state/commitControl.request@1"
   },
   "x-author-capabilities": {
     "rawToolResult": {
@@ -40180,7 +40399,7 @@
     "maxBinaryMetadataBytes": 8192
   },
   "x-schema-revisions": {
-    "ApprovalRequest": 2,
+    "ApprovalRequest": 3,
     "ApprovalRespondRequest": 2,
     "ArtifactClientOpenDownloadRequest": 2,
     "ArtifactClientOpenStreamRequest": 2,
@@ -40189,132 +40408,441 @@
     "ArtifactDownloadTicket": 2,
     "ArtifactOpenDownloadRequest": 2,
     "ArtifactRef": 2,
-    "ArtifactReservation": 2,
+    "ArtifactReservation": 3,
     "ArtifactViewRef": 2,
     "ArtifactsPublishRequest": 2,
     "ArtifactsQueryRequest": 2,
-    "ArtifactsReserveRequest": 2,
+    "ArtifactsReserveRequest": 3,
     "ArtifactsRevokeRequest": 2,
-    "AssemblyDrainResult": 2,
-    "AuditAppend": 2,
-    "AuthorizationPreparation": 2,
-    "BlobGcResult": 2,
+    "AssemblyDrainResult": 3,
+    "AuditAppend": 3,
+    "AuthorizationPreparation": 3,
+    "BlobGcResult": 3,
     "BlobInspectRequest": 2,
-    "BlobInspectResult": 2,
-    "BlobPinRequest": 2,
+    "BlobInspectResult": 3,
+    "BlobPinRequest": 3,
     "ChannelMessage": 2,
-    "ClaimOutboxResult": 2,
+    "ClaimOutboxResult": 3,
     "ClientArtifactOpenStreamRequest": 2,
     "ClientArtifactReadRangeRequest": 2,
-    "ClientBootstrapAccepted": 2,
-    "ClientBootstrapResult": 2,
-    "ClientCatalogPageResult": 2,
-    "ClientCommandCall": 2,
-    "ClientCommandReply": 2,
-    "ClientCommandRequest": 2,
-    "ClientCommandValue": 2,
-    "ClientConversationSnapshot": 2,
-    "ClientConversationSubscriptionFrame": 2,
-    "ClientDomainSnapshot": 2,
-    "ClientDomainSubscriptionFrame": 2,
-    "ClientInteractionChange": 2,
-    "ClientInteractionsSnapshot": 2,
-    "ClientInteractionsSubscriptionFrame": 2,
-    "ClientModule": 2,
-    "ClientQueryCall": 2,
-    "ClientQueryReply": 2,
-    "ClientQueryRequest": 2,
-    "ClientQueryValue": 2,
-    "ClientReadSubscriptionResult": 2,
-    "ClientSubscribeRequest": 2,
-    "ClientSubscribeResult": 2,
-    "ClientSubscriptionFrame": 2,
-    "ClientTransportFrame": 2,
-    "ClientWelcome": 2,
-    "CommandHandle": 2,
-    "CommitControlRequest": 2,
-    "CompactionApplyRequest": 2,
-    "CompactionExecuteRequest": 2,
-    "CompactionExpandResult": 2,
-    "CompactionPlan": 2,
-    "CompactionPlanRequest": 2,
-    "CompactionPreparePlanRequest": 2,
-    "CompactionResult": 2,
-    "ContextItem": 2,
-    "ContextPrepareViewRequest": 2,
-    "ContextRefreshRequest": 2,
-    "ContextRefreshResult": 2,
-    "ContextView": 2,
-    "ContextViewRequest": 2,
-    "DeletionReceipt": 2,
-    "DomainCommandClientSubmitRequest": 2,
-    "DomainCommandFrame": 2,
-    "DomainCommandRequest": 2,
-    "DomainEvent": 2,
-    "DomainEventRecord": 2,
-    "DomainQuery": 2,
-    "DomainReducerReduceRequest": 2,
-    "DomainSelectorSelectAuthorizedRequest": 2,
-    "DomainSelectorSelectAuthorizedResult": 2,
-    "DomainTimelineEntry": 2,
-    "DomainView": 2,
-    "EventsPublishRequest": 2,
-    "EventsPublishResult": 2,
-    "EventsSubscribeResult": 2,
-    "InboxRecord": 2,
+    "ClientBootstrapAccepted": 3,
+    "ClientBootstrapResult": 3,
+    "ClientCatalogPageResult": 3,
+    "ClientCommandCall": 3,
+    "ClientCommandReply": 3,
+    "ClientCommandRequest": 3,
+    "ClientCommandValue": 3,
+    "ClientConversationSnapshot": 3,
+    "ClientConversationSubscriptionFrame": 3,
+    "ClientDomainSnapshot": 3,
+    "ClientDomainSubscriptionFrame": 3,
+    "ClientInteractionChange": 3,
+    "ClientInteractionsSnapshot": 3,
+    "ClientInteractionsSubscriptionFrame": 3,
+    "ClientModule": 3,
+    "ClientQueryCall": 3,
+    "ClientQueryReply": 3,
+    "ClientQueryRequest": 3,
+    "ClientQueryValue": 3,
+    "ClientReadSubscriptionResult": 3,
+    "ClientSubscribeRequest": 3,
+    "ClientSubscribeResult": 3,
+    "ClientSubscriptionFrame": 3,
+    "ClientTransportFrame": 3,
+    "ClientWelcome": 3,
+    "CommandHandle": 3,
+    "CommitControlRequest": 3,
+    "CompactionApplyRequest": 3,
+    "CompactionExecuteRequest": 3,
+    "CompactionExpandResult": 3,
+    "CompactionPlan": 3,
+    "CompactionPlanRequest": 3,
+    "CompactionPreparePlanRequest": 3,
+    "CompactionResult": 3,
+    "ContextItem": 3,
+    "ContextPrepareViewRequest": 3,
+    "ContextRefreshRequest": 3,
+    "ContextRefreshResult": 3,
+    "ContextView": 3,
+    "ContextViewRequest": 3,
+    "DeletionReceipt": 3,
+    "DomainCommandClientSubmitRequest": 3,
+    "DomainCommandFrame": 3,
+    "DomainCommandRequest": 3,
+    "DomainEvent": 3,
+    "DomainEventRecord": 3,
+    "DomainQuery": 3,
+    "DomainReducerReduceRequest": 3,
+    "DomainSelectorSelectAuthorizedRequest": 3,
+    "DomainSelectorSelectAuthorizedResult": 3,
+    "DomainTimelineEntry": 3,
+    "DomainView": 3,
+    "EventsPublishRequest": 3,
+    "EventsPublishResult": 3,
+    "EventsSubscribeResult": 3,
+    "InboxRecord": 3,
     "InteractionCancelRequest": 2,
-    "InteractionClientPendingResult": 2,
+    "InteractionClientPendingResult": 3,
     "InteractionExpireRequest": 2,
-    "InteractionRecord": 2,
-    "InteractionRequest": 2,
-    "InteractionResponseStatus": 2,
-    "MaintenanceStoreCommitRequest": 2,
-    "MediaPlan": 2,
-    "MemoryForgetResult": 2,
-    "MemoryGetResult": 2,
-    "MemoryItem": 2,
-    "MemoryRememberRequest": 2,
-    "ModelPrepareRequest": 2,
-    "ModelPrepareRequestRequest": 2,
-    "OutboxRecord": 2,
-    "PageContextItem": 2,
-    "PageDomainEventRecord": 2,
-    "PageInteractionRecord": 2,
-    "PageResourceDescriptor": 2,
-    "PageRetrievalHit": 2,
-    "PolicyDecision": 2,
-    "PolicyEvaluateRequest": 2,
-    "PreparedMedia": 2,
-    "PreparedModelRequest": 2,
-    "ProjectionChange": 2,
-    "ProjectionChanges": 2,
-    "ProjectionChangesRequest": 2,
-    "ProjectionSnapshot": 2,
-    "PublicRef": 2,
-    "Ref": 2,
-    "ResourceDescriptor": 2,
-    "ResourcesListResult": 2,
-    "ResourcesRegisterRequest": 2,
-    "ResourcesRetainRequest": 2,
-    "RetrievalHit": 2,
-    "RetrievalSearchRemoteResult": 2,
-    "RetrievalSearchResult": 2,
-    "RunTaintSourceRecordValue": 2,
-    "RuntimeControlCommand": 2,
-    "RuntimeConversationChange": 2,
-    "RuntimeConversationWindow": 2,
-    "ShellSnapshot": 2,
-    "SignalDelivery": 2,
-    "SimpleContextValue": 2,
-    "SimpleObservation": 2,
-    "SimplePromptPayload": 2,
-    "SimpleStepView": 2,
-    "StateStoreControlClaimOutboxResult": 2,
-    "StateStoreControlCommitControlRequest": 2,
-    "SupervisorInspectResult": 2,
-    "ToolModelResult": 2,
-    "ToolResult": 2,
-    "TrustedPolicyFacts": 2
+    "InteractionRecord": 3,
+    "InteractionRequest": 3,
+    "InteractionResponseStatus": 3,
+    "MaintenanceStoreCommitRequest": 3,
+    "MediaPlan": 3,
+    "MemoryForgetResult": 3,
+    "MemoryGetResult": 3,
+    "MemoryItem": 3,
+    "MemoryRememberRequest": 3,
+    "ModelPrepareRequest": 3,
+    "ModelPrepareRequestRequest": 3,
+    "OutboxRecord": 3,
+    "PageContextItem": 3,
+    "PageDomainEventRecord": 3,
+    "PageInteractionRecord": 3,
+    "PageResourceDescriptor": 3,
+    "PageRetrievalHit": 3,
+    "PolicyDecision": 3,
+    "PolicyEvaluateRequest": 3,
+    "PreparedMedia": 3,
+    "PreparedModelRequest": 3,
+    "ProjectionChange": 3,
+    "ProjectionChanges": 3,
+    "ProjectionChangesRequest": 3,
+    "ProjectionSnapshot": 3,
+    "PublicRef": 3,
+    "Ref": 3,
+    "ResourceDescriptor": 3,
+    "ResourcesListResult": 3,
+    "ResourcesRegisterRequest": 3,
+    "ResourcesRetainRequest": 3,
+    "RetrievalHit": 3,
+    "RetrievalSearchRemoteResult": 3,
+    "RetrievalSearchResult": 3,
+    "RunTaintSourceRecordValue": 3,
+    "RuntimeControlCommand": 3,
+    "RuntimeConversationChange": 3,
+    "RuntimeConversationWindow": 3,
+    "ShellSnapshot": 3,
+    "SignalDelivery": 3,
+    "SimpleContextValue": 3,
+    "SimpleObservation": 3,
+    "SimplePromptPayload": 3,
+    "SimpleStepView": 3,
+    "StateStoreControlClaimOutboxResult": 3,
+    "StateStoreControlCommitControlRequest": 3,
+    "SupervisorInspectResult": 3,
+    "ToolModelResult": 3,
+    "ToolResult": 3,
+    "TrustedPolicyFacts": 3,
+    "TypeId": 2,
+    "SchemaRef": 2,
+    "DataRef": 2,
+    "AckOutboxRequest": 2,
+    "ActionResultView": 2,
+    "ActionVisibilityValue": 2,
+    "VersionedState": 2,
+    "PreparedAction": 2,
+    "WaitClause": 2,
+    "WaitCondition": 2,
+    "NextStep": 2,
+    "ProviderTransition": 2,
+    "AdvanceProviderRequest": 2,
+    "ConversationContribution": 2,
+    "LoopTransition": 2,
+    "AdvanceRunRequest": 2,
+    "HookResultSet": 2,
+    "DomainReference": 2,
+    "ApprovalTaintAck": 2,
+    "CloseInvocationRequest": 2,
+    "ConversationAdmission": 2,
+    "DispatchBudgetPlan": 2,
+    "DispatchAdmissionRequest": 2,
+    "HookStageRequest": 2,
+    "InlineResultHookEvaluation": 2,
+    "ProbeActionResultResult": 2,
+    "Receipt": 2,
+    "UsageFact": 2,
+    "ReceiptResultHandling": 2,
+    "ReceiptIntakeRequest": 2,
+    "ResultVisibilityCommit": 2,
+    "RunAdmission": 2,
+    "CapabilityRequirement": 2,
+    "OperationDescriptor": 2,
+    "StateCodecRef": 2,
+    "ProviderDescriptor": 2,
+    "ConfigValue": 2,
+    "RendererDescriptor": 2,
+    "ConversationRecord": 2,
+    "ServiceOperation": 2,
+    "ActionSpec": 2,
+    "InputPreparationRequired": 2,
+    "HookEvaluationRecordValue": 2,
+    "LegacyBridgeRequest": 2,
+    "ToolExecutionConstraints": 2,
+    "ToolDefinition": 2,
+    "DomainObjectRef": 2,
+    "ToolDeferredRef": 2,
+    "ToolCall": 2,
+    "PromptContributionSnapshot": 2,
+    "ToolCatalog": 2,
+    "SessionParameterRevision": 2,
+    "SessionControlState": 2,
+    "AgentSpawnRequest": 2,
+    "AgentSnapshot": 2,
+    "PreparedHookInput": 2,
+    "ServiceCommandAdmission": 2,
+    "ServiceCommandRecord": 2,
+    "ConversationImportRequest": 2,
+    "AuthenticatedIdentity": 2,
+    "TelemetryExportRequest": 2,
+    "ResourceChangePlan": 2,
+    "ChangeProposalRequest": 2,
+    "ResolvedProviderBinding": 2,
+    "VersionedRef": 2,
+    "ContentRef": 2,
+    "ReleaseSet": 2,
+    "ReleasePlan": 2,
+    "ChangeProposal": 2,
+    "ProviderBindingSnapshot": 2,
+    "RunBinding": 2,
+    "CommunityOperationDescriptor": 2,
+    "CommunityContractDefinition": 2,
+    "InterceptorRegistration": 2,
+    "QuestionField": 2,
+    "QuestionRequest": 2,
+    "ModelOutput": 2,
+    "ApprovalTaintAckRecordValue": 2,
+    "SimpleModelRequest": 2,
+    "SimpleVisibleResult": 2,
+    "SimpleModelObservation": 2,
+    "SimpleSignal": 2,
+    "SimpleDecisionObservation": 2,
+    "SimpleQuestion": 2,
+    "SimpleStepDecision": 2,
+    "SimpleLoopCheckpoint": 2,
+    "SimpleLoopFixture": 2,
+    "ServiceQuery": 2,
+    "QueryReply": 2,
+    "ActionRequest": 2,
+    "OutputRef": 2,
+    "Signal": 2,
+    "PageSignal": 2,
+    "RunFrame": 2,
+    "ActionFrame": 2,
+    "EffectResult": 2,
+    "ReconcileResult": 2,
+    "StreamChunkInput": 2,
+    "StreamChunk": 2,
+    "StreamEnd": 2,
+    "TransportEnd": 2,
+    "RecordMeta": 2,
+    "RecordVersionRef": 2,
+    "CommitMutationManifest": 2,
+    "RunTermination": 2,
+    "RunRecordValue": 2,
+    "ActionRecordValue": 2,
+    "ProviderStateValue": 2,
+    "SignalRecordValue": 2,
+    "WaitRecordValue": 2,
+    "InvocationValue": 2,
+    "ReceiptRecordValue": 2,
+    "ResolutionRecordValue": 2,
+    "ReconciliationCheckValue": 2,
+    "UsageMirrorValue": 2,
+    "QuotaReservationMirrorValue": 2,
+    "StateScanRequest": 2,
+    "MaintenanceEnvelopeJsonValue": 2,
+    "MaintenanceMutation": 2,
+    "MigrationTarget": 2,
+    "MigrationRequest": 2,
+    "MigrationInvariants": 2,
+    "MigrationPlan": 2,
+    "UpgradeCheckpoint": 2,
+    "MigrationCandidate": 2,
+    "MigrationValidation": 2,
+    "AuthorityExport": 2,
+    "AuthorityExportPart": 2,
+    "JointDispatchMigrationMapping": 2,
+    "AuthorityDirectoryReadResult": 2,
+    "AuthorityPublication": 2,
+    "ViewAction": 2,
+    "DomainEventIntent": 2,
+    "DomainViewChange": 2,
+    "DomainDispatch": 2,
+    "DomainCommandPlan": 2,
+    "CommandRuntimeAcceptanceResult": 2,
+    "CommandRuntimeAcceptanceDataRef": 2,
+    "ShellViewState": 2,
+    "PluginAuthorMetadata": 2,
+    "NetworkRequest": 2,
+    "EffectPermit": 2,
+    "QuotaReservation": 2,
+    "NewRunSpec": 2,
+    "ScheduleTarget": 2,
+    "SchedulerDelivery": 2,
+    "JobDefinition": 2,
+    "JobEdit": 2,
+    "DetachedAcceptance": 2,
+    "BudgetReservation": 2,
+    "UsageMeasurement": 2,
+    "BillingEntry": 2,
+    "TraceSpan": 2,
+    "PackageLockEntry": 2,
+    "PackageLock": 2,
+    "AssemblyGraph": 2,
+    "ChannelDelivery": 2,
+    "AuthenticatedCallback": 2,
+    "RoutingSelectInput": 2,
+    "EffectPortsInvokeRequest": 2,
+    "EffectPortsStreamRequest": 2,
+    "StateStoreControlReadServiceCommandResult": 2,
+    "StateStoreControlCloseInvocationRequest": 2,
+    "StateStoreControlAppendStreamRequest": 2,
+    "StateStoreControlAckOutboxRequest": 2,
+    "StateStoreControlBeginReconciliationRequest": 2,
+    "StateStoreControlCompleteReconciliationRequest": 2,
+    "StateStoreControlAdvanceRunRequest": 2,
+    "StateStoreControlAdvanceProviderRequest": 2,
+    "StateStoreControlProbeActionResultResult": 2,
+    "StateStoreControlCommitMigratedRunRequest": 2,
+    "PageAuthorityExportPart": 2,
+    "AuthorityTransferControlExportPageResult": 2,
+    "AuthorityTransferControlImportRequest": 2,
+    "AuthorityTransferControlImportResult": 2,
+    "AuthorityTransferControlVerifyRequest": 2,
+    "AuthorityTransferControlActivateRequest": 2,
+    "AuthorityTransferControlAbortRequest": 2,
+    "UIRegistryResolveRequest": 2,
+    "SessionJobsClientCreateRequest": 2,
+    "SessionJobsClientUpdateRequest": 2,
+    "SessionJobsClientInspectResult": 2,
+    "InteractionClientRespondRequest": 2,
+    "ModelPrepareResult": 2,
+    "ModelPrepareRequestResult": 2,
+    "ModelInferRequest": 2,
+    "ModelAdapterInvokeRequest": 2,
+    "ModelAdapterReconcileRequest": 2,
+    "McpConnectResult": 2,
+    "McpCallRequest": 2,
+    "McpCallResult": 2,
+    "McpReadRequest": 2,
+    "McpReadResult": 2,
+    "ToolsInspectResult": 2,
+    "ToolsClassifyRequest": 2,
+    "ToolsCatalogRequest": 2,
+    "ToolsReconcileRequest": 2,
+    "MemoryRememberResult": 2,
+    "RetrievalSearchRequest": 2,
+    "EmbeddingEncodeRequest": 2,
+    "EmbeddingEncodeResult": 2,
+    "IdentityAuthenticateRequest": 2,
+    "NetworkRequestResult": 2,
+    "InteractionRespondRequest": 2,
+    "RecoveryInspectRequest": 2,
+    "RecoveryInspectResult": 2,
+    "RecoveryRestoreRequest": 2,
+    "RecoveryRestoreResult": 2,
+    "SupervisorSignalRequest": 2,
+    "SupervisorSessionParametersResult": 2,
+    "SchedulerEnqueueRequest": 2,
+    "SchedulerEnqueueResult": 2,
+    "SchedulerClaimResult": 2,
+    "AgentsSpawnResult": 2,
+    "AgentsSendRequest": 2,
+    "AgentsResumeRequest": 2,
+    "AgentsCancelRequest": 2,
+    "AgentsRetireRequest": 2,
+    "AgentsInspectRequest": 2,
+    "JobsRequestCreateRequest": 2,
+    "JobsRequestUpdateRequest": 2,
+    "JobsRequestCancelResult": 2,
+    "JobsReserveDetachedRequest": 2,
+    "JobsInspectResult": 2,
+    "BudgetReserveRequest": 2,
+    "BudgetReserveResult": 2,
+    "BudgetSettleRequest": 2,
+    "BudgetSettleResult": 2,
+    "BudgetReconcileRequest": 2,
+    "BudgetReconcileResult": 2,
+    "BudgetReleaseQuotaRequest": 2,
+    "UsageRecordRequest": 2,
+    "PageUsageFact": 2,
+    "UsageQueryResult": 2,
+    "BillingPostRequest": 2,
+    "BillingRefundRequest": 2,
+    "BillingReconcileRequest": 2,
+    "AuditExportResult": 2,
+    "TraceRecordRequest": 2,
+    "EventsSubscribeRequest": 2,
+    "ChannelReconcileRequest": 2,
+    "ChannelCallbackRequest": 2,
+    "ChannelCallbackResult": 2,
+    "PagePackageLockEntry": 2,
+    "PackageSourceDiscoverResult": 2,
+    "PackageSourceResolveMetadataResult": 2,
+    "PackageSourceFetchResult": 2,
+    "PackageSourceRefreshCatalogResult": 2,
+    "PackageResolverResolveRequest": 2,
+    "PackageResolverResolveResult": 2,
+    "PackageInstallerPrepareRequest": 2,
+    "PackageInstallerPrepareResult": 2,
+    "PackageInstallerActivateRequest": 2,
+    "PackageInstallerActivateResult": 2,
+    "PackageInstallerRepairRequest": 2,
+    "PackageInstallerApplyResourceChangeRequest": 2,
+    "PackageInstallerApplyResourceChangeResult": 2,
+    "ConfigReadResult": 2,
+    "AssemblyPlanRequest": 2,
+    "AssemblyPrepareRequest": 2,
+    "AssemblyPrepareResult": 2,
+    "AssemblyPublishRequest": 2,
+    "AssemblyPublishResult": 2,
+    "MigrationPrepareResult": 2,
+    "MigrationValidateRequest": 2,
+    "MigrationValidateResult": 2,
+    "MigrationCutoverRequest": 2,
+    "IntegrityVerifyPackageRequest": 2,
+    "IntegrityVerifyPackageResult": 2,
+    "JobsCreateDefinitionRequest": 2,
+    "JobsUpdateDefinitionRequest": 2,
+    "JobsCancelDefinitionRequest": 2,
+    "SupervisorServiceCommandStatusResult": 2,
+    "SupervisorActionReceiptResult": 2,
+    "AuthorityDirectoryCompareAndSwapRequest": 2,
+    "IntegrityVerifyRequest": 2,
+    "RuntimeProfile": 2,
+    "ConfigProfileSnapshot": 2,
+    "RuntimePreset": 2,
+    "ConfigPresetSnapshot": 2,
+    "RuntimeProfilePolicy": 2,
+    "ConfigManagedPolicy": 2,
+    "RuntimePresetRestrictions": 2,
+    "ConfigWorkspaceOverlay": 2,
+    "ConfigSessionOverlay": 2,
+    "ConfigResolveRequest": 2,
+    "ConfigResolveResult": 2,
+    "ClientTransportRequestFrame": 2,
+    "LegacyArtifactMappingValue": 2,
+    "OutboxDeadLetterItem": 2,
+    "PageOutboxDeadLetterItem": 2,
+    "RuntimePluginManifest": 2,
+    "RuntimeSimpleLoopCheckpoint": 2,
+    "StateLeaseRecordValue": 1,
+    "StateWriteOpenProofValue": 1,
+    "StateLeaseProofValue": 1,
+    "SessionIdentityValue": 2,
+    "RunTaintRecordValue": 2,
+    "AttemptRecordValue": 2,
+    "RunQuotaValue": 2,
+    "PrepareQueryQuotaValue": 2,
+    "QueryGrantValue": 2,
+    "DispatchAdmissionRecordValue": 2,
+    "ReferenceRecordValue": 2,
+    "RuntimeFormatData": 2,
+    "StateScanResult": 1,
+    "StateProbeCommitRequest": 1,
+    "StateProbeCommitResult": 1,
+    "StateWriteOpenRequest": 1
   },
   "x-client-transport-wire": {
     "feature": "client-transport-wire.v2",
@@ -40681,5 +41209,215 @@
     "hostOnlyEvidence": true,
     "ephemeralOnly": true,
     "method": "initialize"
+  },
+  "x-state-query-api": {
+    "contract": "agh.state",
+    "methods": [
+      "scan",
+      "probeCommit"
+    ]
+  },
+  "x-state-open-retry-policy": {
+    "contract": "agh.state",
+    "method": "open",
+    "requestDefinition": "StateOpenRequest",
+    "byMode": {
+      "read": "fresh-verified-snapshot",
+      "write": "immutable-original-result"
+    }
+  },
+  "x-state-legacy-readers": {
+    "formatVersion": 2,
+    "sourceMinReader": 1,
+    "targetMinReader": 2,
+    "entries": [
+      {
+        "source": {
+          "typeId": "agh.runtime/session-identity-record@1",
+          "revision": 1,
+          "digest": "7ec7c1537611de4eb08059f1c42f64f9fb8c03f40ec28548c24b1466a346adf4"
+        },
+        "targetDefinition": "SessionIdentityValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-session-identity-record",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/run-record@1",
+          "revision": 1,
+          "digest": "216ea2f58a0c15bb39144a10bb38328994eee08e0a162fa7088e38cc2705d8ad"
+        },
+        "targetDefinition": "RunRecordValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-run-record",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/run-taint-record@1",
+          "revision": 1,
+          "digest": "845804f529591c2dba479548eb8a843d01a12b2b43d3f8e2e1ac6620fc87d1bf"
+        },
+        "targetDefinition": "RunTaintRecordValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-run-taint-record",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/action-record@1",
+          "revision": 1,
+          "digest": "51ef448cda21025f9ff78afdc64709be487de7b29bf8c30def6943eef6d1b775"
+        },
+        "targetDefinition": "ActionRecordValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-action-record",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/attempt-record@1",
+          "revision": 1,
+          "digest": "4fe0f6be3ba68b5bd8832f3fcf9b014e79f093d867f0dd5d2459a3081e73f683"
+        },
+        "targetDefinition": "AttemptRecordValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-attempt-record",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/run-quota@1",
+          "revision": 1,
+          "digest": "7b17543dfed6f3a08b193577640c8c84a5a272032352e1353c793e0b27a51ada"
+        },
+        "targetDefinition": "RunQuotaValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-run-quota",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/invocation@1",
+          "revision": 1,
+          "digest": "54f3fd636fd51a48607bf0aaa6b6b72e97eb20f7f7cb7bdcd29a7c6fb35efb07"
+        },
+        "targetDefinition": "InvocationValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-invocation",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/prepare-query-quota@1",
+          "revision": 1,
+          "digest": "4553fa87db5f137265c8e3c4f73a4af83b0d152d0b0f9a9a082cda9076a86a63"
+        },
+        "targetDefinition": "PrepareQueryQuotaValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-prepare-query-quota",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/query-grant@1",
+          "revision": 1,
+          "digest": "86d7eb4aaaa78cf2b75e7ad815e4af9339e7781fe5e9ef147f0937bb2c062740"
+        },
+        "targetDefinition": "QueryGrantValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-query-grant",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/dispatch-admission@1",
+          "revision": 1,
+          "digest": "3be02540bf213c619e315e252888d80eb00db7632e0907b50b84f688ae18d61d"
+        },
+        "targetDefinition": "DispatchAdmissionRecordValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-dispatch-admission",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/receipt-record@1",
+          "revision": 1,
+          "digest": "8f57ddecc7563a47c3f36b4ed9f1b78e50fc64bd36e96a0bf1d962de291cafe2"
+        },
+        "targetDefinition": "ReceiptRecordValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-receipt-record",
+        "conversionRule": "R"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/quota-mirror@1",
+          "revision": 1,
+          "digest": "b645592b3569e69fe16bedcd120f470cbc6e9a660216458a0d975c19c2f6804a"
+        },
+        "targetDefinition": "QuotaReservationMirrorValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-quota-mirror",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/signal-record@1",
+          "revision": 1,
+          "digest": "a78c1f7831d35351dcf6e911a850a351b691bca21a77b43b6eafc0b18e6909d9"
+        },
+        "targetDefinition": "SignalRecordValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-signal-record",
+        "conversionRule": "S"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/action-visibility@1",
+          "revision": 1,
+          "digest": "ee52fff1916ab45837c6aa92257063490fe868350e3f3dfd2f35aa75a91dd163"
+        },
+        "targetDefinition": "ActionVisibilityValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-action-visibility",
+        "conversionRule": "V"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/usage-mirror@1",
+          "revision": 1,
+          "digest": "b2cc7521110a0eb4fc86828a276a8fad640ea5afcb6bbb36564bf9b8432ceb47"
+        },
+        "targetDefinition": "UsageMirrorValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-usage-mirror",
+        "conversionRule": "U"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/outbox-record@1",
+          "revision": 1,
+          "digest": "0bc62ce19c1158892f0b056b3dc572937985e2234999051fb9ff2bc2967ecf22"
+        },
+        "targetDefinition": "OutboxRecord",
+        "targetRevision": 3,
+        "decoderProfile": "state85-outbox-created",
+        "conversionRule": "O"
+      },
+      {
+        "source": {
+          "typeId": "agh.runtime/reference-record@1",
+          "revision": 1,
+          "digest": "d10efa3a4dcba2ee36363ce19bf9c6a60a33fbb3b2a8a7fa92f197a6b7337fee"
+        },
+        "targetDefinition": "ReferenceRecordValue",
+        "targetRevision": 2,
+        "decoderProfile": "state85-reference-record",
+        "conversionRule": "F"
+      }
+    ]
   }
 }

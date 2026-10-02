@@ -540,6 +540,17 @@ function unsupportedSource(recipe: 'npm' | 'git'): PackageSourcePort {
   }
 }
 
+export function claimedPackageProviders(
+  providers: readonly string[],
+  selected: { readonly source: boolean; readonly resolver: boolean },
+): string[] {
+  return providers.filter((token) => {
+    if (selected.source && sourceToken(token) !== null) return true
+    if (selected.resolver && resolverToken(token) !== null) return true
+    return false
+  })
+}
+
 export async function bindPackageContracts(
   harness: ConformanceHarness,
   command: string,

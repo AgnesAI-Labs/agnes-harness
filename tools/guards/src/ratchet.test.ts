@@ -935,7 +935,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Interaction wake delivery: retries with backoff, dead letters and redrive under the original key.
   // Measured 25893, exact, no spare (+106).
   // Merged with the policy and integrity providers on the integration base. Measured 27386, exact, no spare.
-  'packages/core/src': 27386,
+  // Shared interaction authority and its public exports: exact measured 27310 (+339).
+  // Merged with the shared interaction authority on the integration base. Measured 27395, exact, no spare.
+  'packages/core/src': 27395,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1244,8 +1246,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // tree: 2201, exact.
   // Runtime public schema exports and generated authority SPI: measured 2452, no spare allocation.
   // Bounded schema codecs and client transport validation: exact measured 2985, no spare.
-  // Reviewed runtime contracts plus the generated legacy identity metadata export: measured 3444 (+1), exact.
-  'packages/protocol/src': 3444,
+  // Reviewed runtime contracts with generated State metadata exports: measured 3459, exact.
+  'packages/protocol/src': 3459,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1384,7 +1386,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Interaction contract cases judge six scenarios for any provider. Measured 1688, exact, no spare.
   // Merged with the identity, policy, audit and integrity contract cases. Measured 3622, exact, no spare.
   // Interaction cases judge late answers, real kills and failed mounts. Measured 3664, exact, no spare.
-  'packages/extension-api/testkit': 3664,
+  // Contract cases re-export from one aggregate. Measured 3459, exact, no spare.
+  // Test container refusals match production feature and cell checks, and the runtime barrel
+  // exports are sorted. Measured 3475, exact, no spare.
+  // Merged with the aggregate contract exports on the integration base. Measured 3690, exact, no spare.
+  'packages/extension-api/testkit': 3690,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1451,7 +1457,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
-  'packages/sdk/src': 5127,
+  // Runtime client wire adapter (bootstrap, catalog paging, write gate, command journal and status
+  // recovery) and the verified artifact range and stream reader. Measured 5665, exact, no spare.
+  // Runtime client push socket (WebSocket uplink sharing the HTTP settle path, push frame routing)
+  // and subscriptions (push delivery, polling fallback, reader queue bound). Measured 6020, exact,
+  // no spare.
+  'packages/sdk/src': 6020,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2567,7 +2578,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Seal streams stored chunks into the private store, and closed services refuse with one code.
   // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
-  'packages/host/src': 55418,
+  // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
+  'packages/host/src': 57869,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
