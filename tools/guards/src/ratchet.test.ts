@@ -2572,7 +2572,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
   // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
   // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
-  'packages/host/src': 60898,
+  'packages/host/src': 60888,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

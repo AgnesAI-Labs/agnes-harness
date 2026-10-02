@@ -419,17 +419,9 @@ export {
   readStageZero,
   type StageZeroView,
 } from './runtime/maintenance/bootstrap-locator.js'
-export {
-  type ActivationNote,
-  AUTHORITY_DIRECTORY_CONTRACT,
-  AUTHORITY_DIRECTORY_PROVIDER_ID,
-  type AuthorityDirectoryOpenOptions,
-  type AuthorityDirectoryProvider,
-  createAuthorityDirectoryProvider,
-  createDirectoryAnchor,
-  type DurabilityPhase,
-  type UpgradeApproval,
-} from './runtime/providers/authority-directory.js'
+// The directory provider factory stays off the package root. Selected services are reached
+// through the scoped dependencies; only the anchor helper is needed before any plugin loads.
+export { createDirectoryAnchor } from './runtime/providers/authority-directory.js'
 export {
   createHostScopedDependencies,
   type HostPermissionGrant,
