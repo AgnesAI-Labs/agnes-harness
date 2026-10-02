@@ -136,7 +136,7 @@ export interface SeamWorkspace {
       maxOutputBytes?: number
       sandbox: Readonly<{ policyDigest: string; backend: SandboxExecBackend }>
     },
-  ) => Promise<{ code: number; stdout: string; stderr: string; truncated: boolean }>
+  ) => Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
   readonly binding: () => Readonly<{ policyDigest: string | null }>
 }
 
@@ -153,7 +153,7 @@ export interface SandboxSeam {
       signal?: AbortSignal
       maxOutputBytes?: number
     },
-  ): Promise<{ code: number; stdout: string; stderr: string; truncated: boolean }>
+  ): Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
   // Wraps one argv into a confined argv. `exec` uses it internally, and it is the same opening a
   // tool that spawns its own process reaches through ToolContext.sandbox.
   confine(argv: string[]): Promise<string[]>

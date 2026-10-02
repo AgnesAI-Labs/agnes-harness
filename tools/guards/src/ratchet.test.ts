@@ -260,7 +260,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host/src/adapters/powershell-file': 47,
   'packages/host/src/adapters/powershell-temporary': 43,
   'packages/host/src/adapters/process-identity-win32': 18,
-  'packages/host/src/adapters/exec-win32': 78,
+  'packages/host/src/adapters/exec-win32': 84,
   'packages/host/src/adapters/exec-output': 32,
   'packages/host/src/adapters/secrets-win32': 25,
   // WIN-TITLE-REPAIR: +3 for peer-only rejection backoff; no counting exclusions changed.
@@ -942,7 +942,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // tool as `ctx.outputMaxBytes`. Measured 25723 (+8), exact cap without spare allocation.
   // A mutating tool cut short by its deadline or a cancel names that cause in its unknown-outcome result
   // text instead of reading as a lost transport. Measured 25741 (+18), exact cap.
-  'packages/core/src': 25741,
+  // The soft deadline handed to a tool is a grace short of the kernel cut-off. Measured 25742 (+1), exact cap.
+  'packages/core/src': 25742,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1365,7 +1366,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported. Measured 978, exact, no spare (+41).
   // `ToolContext.outputMaxBytes` and the three bounds of the Preset key `tools.output_max_bytes`,
   // exported as constants. Measured 981 (+3), exact, no spare.
-  'packages/extension-api/src': 981, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
+  'packages/extension-api/src': 987, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2513,7 +2515,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
-  'packages/host/src': 38297,
+  // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9), exact cap.
+  'packages/host/src': 38306,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2677,7 +2680,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+11).
   // Cancelling a child's creation also settles its execution state in the same statement. Measured
   // 5017, exact, no spare (+3).
-  'packages/host/src/adapters': 5025,
+  // First-cause timedOut in exec and exec-win32. Measured 5034 (+9), exact cap.
+  'packages/host/src/adapters': 5034,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.

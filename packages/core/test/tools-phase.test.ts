@@ -534,6 +534,61 @@ describe('tools phase', () => {
     })
   })
 
+  // The kernel cuts a call off at the limit, but hands the tool a limit a grace short of it, so a tool
+  // that honours ctx.timeoutMs can return its own result before the cut.
+  it('hands a tool a soft deadline short of the kernel cut-off, so a tool that honours it returns normally', async () => {
+    let seen = 0
+    const s = await atTools(
+      [toolTurn('shell', { command: 'x' })],
+      withTool(
+        shellTool(async (_args, ctx) => {
+          seen = ctx.timeoutMs
+          await new Promise((resolve) => setTimeout(resolve, ctx.timeoutMs))
+          return { content: [{ type: 'text' as const, text: 'stopped itself' }] }
+        }),
+      ),
+    )
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, timeoutMs: 400, timeouts: {} },
+    }
+    await s.session.runToolsPhase()
+    expect(seen).toBe(360)
+    expect((await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
+      isError: false,
+      content: [{ text: 'stopped itself' }],
+    })
+    expect((await s.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
+      outcome: 'ok',
+    })
+  })
+
+  it('hands ctx.exec results to the tool untouched, including the executor timedOut fact', async () => {
+    const s = await atTools(
+      [toolTurn('shell', { command: 'x' })],
+      withTool(
+        shellTool(async (_args, ctx) => {
+          const r = await ctx.exec(['x'])
+          return { content: [{ type: 'text' as const, text: JSON.stringify(r) }] }
+        }),
+      ),
+      fakeSeams({
+        sandbox: {
+          exec: async () => ({ code: -1, stdout: 'part', stderr: '', truncated: false, timedOut: true }),
+        },
+      }),
+    )
+    await s.session.runToolsPhase()
+    const row = (await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data as
+      | { content: Array<{ text: string }> }
+      | undefined
+    expect(JSON.parse(row?.content[0]?.text ?? '{}')).toMatchObject({
+      code: -1,
+      stdout: 'part',
+      timedOut: true,
+    })
+  })
+
   it('a mutating tool that runs past its deadline stays unknown but says it timed out', async () => {
     const s = await atTools(
       [toolTurn('shell', { command: 'sleep 130' })],

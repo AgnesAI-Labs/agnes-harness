@@ -64,6 +64,7 @@ export const shellTool = defineTool({
         ? Math.min(asked, ctx.timeoutMs)
         : ctx.timeoutMs
     let r: Awaited<ReturnType<typeof ctx.exec>>
+    const startedAt = Date.now()
     try {
       r = await ctx.exec([SHELL_SENTINEL, args.command], { cwd, timeoutMs })
     } catch (e) {
@@ -77,6 +78,18 @@ export const shellTool = defineTool({
     const parts: string[] = []
     if (r.stdout) parts.push(r.stdout.replace(/\n$/, ''))
     if (r.stderr) parts.push(`[stderr]\n${r.stderr.replace(/\n$/, '')}`)
+    // An executor that reports nothing (a third-party seam) still has the kernel's cut-off behind it,
+    // so only then is a killed-looking result that took the whole limit read as the timeout it was.
+    const timedOut = r.timedOut ?? (r.code < 0 && Date.now() - startedAt >= timeoutMs)
+    if (timedOut) {
+      // Last line on purpose, and no exit line: the code of a killed command says nothing, and the UI
+      // reads an `[exit N]` line only when it ends the text.
+      if (r.truncated) parts.push('[output truncated by sandbox]')
+      parts.push(
+        `[timed out after ${timeoutMs}ms: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,
+      )
+      return { ...(await guardedResult(ctx, parts.join('\n'))), isError: true }
+    }
     parts.push(`[exit ${r.code}]${r.truncated ? ' [output truncated by sandbox]' : ''}`)
     const out = await guardedResult(ctx, parts.join('\n'))
     // Strictly zero, not "not positive": a process killed by a signal is reported with a negative

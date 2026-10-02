@@ -47,6 +47,8 @@
 | 10 | **harness** `propose` | 无；Q2：`tools.invoke('harness_propose')` | 不动 | 已拍板 |
 | 11 | **Provider** `infer / models / count` | 无；门是 `ctx.subagent.fork / spawn`（`caps.subagent`） | 不动；`infer / models / count` 直连都不给 | 直连绕过账本、契约戳、计费；`ModelRecord.headers` 里有密钥，`models()` 也不能裸给 |
 
+`ctx.exec` 的结果可带可选字段 `timedOut`：执行器自己的截止时间是**第一个**切断命令的原因时为真（此时进程已被杀、输出是已捕获的部分，与调用方取消互斥）；缺省表示实现没有说，调用方不得把缺省当作"未超时"的证明。`ctx.timeoutMs` 是软截止：内核在其后一小段宽限（`min(2000, 硬上限/10)` 毫秒）再强制截止，所以一个遵守 `ctx.timeoutMs` 的工具能在被强制截止前自己返回。
+
 ## 关闭项与不给的成员
 
 **数一下：** 11 个里 8 个第三方有路可走（1、2、3、4、5、9、10、11），3 个完全不给（6、7、8）。
