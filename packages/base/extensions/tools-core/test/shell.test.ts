@@ -174,7 +174,7 @@ describe('shell does not widen what it executes', () => {
 describe('shell timeout', () => {
   afterEach(() => vi.restoreAllMocks())
   const marker = (ms: number): string =>
-    `[timed out after ${ms}ms: the command and the processes it started were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`
+    `[timed out after ${ms}ms: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`
 
   it.each([
     ['the captured output, then the marker', { code: -1, stdout: 'part', stderr: '' }, 'part\n'],

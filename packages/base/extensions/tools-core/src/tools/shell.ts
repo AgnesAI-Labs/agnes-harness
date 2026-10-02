@@ -86,7 +86,7 @@ export const shellTool = defineTool({
       // reads an `[exit N]` line only when it ends the text.
       if (r.truncated) parts.push('[output truncated by sandbox]')
       parts.push(
-        `[timed out after ${timeoutMs}ms: the command and the processes it started were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,
+        `[timed out after ${timeoutMs}ms: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,
       )
       return { ...(await guardedResult(ctx, parts.join('\n'))), isError: true }
     }

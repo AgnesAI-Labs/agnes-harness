@@ -242,7 +242,7 @@ describe('W3b projected message DOM', () => {
         shell(
           'timeout',
           'shell',
-          'part\n[exit 1]\n[timed out after 118000ms: the command and the processes it started were killed]',
+          'part\n[exit 1]\n[timed out after 118000ms: the command and the processes in its process group were killed]',
         ),
         shell('done', 'shell', 'fine\n[exit 0]', 'completed'),
       ],
