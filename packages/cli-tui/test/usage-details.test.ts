@@ -12,12 +12,12 @@ const baseUsage: UsageView = {
 
 describe('formatUsageReport cache section', () => {
   it('shows the cumulative hit rate as a percentage', () => {
-    const text = formatUsageReport({ ...baseUsage, cache: { hitRate: 0.5 } })
+    const text = formatUsageReport({ ...baseUsage, cache: { hitRate: 0.5 } }, 'zh-CN')
     expect(text).toContain('缓存命中率（累计）：50.0%')
   })
 
   it('says no data yet when the provider has never reported a cache row', () => {
-    const text = formatUsageReport(baseUsage)
+    const text = formatUsageReport(baseUsage, 'zh-CN')
     expect(text).toContain('缓存命中率（累计）：暂无数据')
   })
 
@@ -25,14 +25,14 @@ describe('formatUsageReport cache section', () => {
     const text = formatUsageReport({
       ...baseUsage,
       cache: { hitRate: 0.1, lastInvalidation: { seq: 42, reprocessedTokens: 9500, cause: 'compaction' } },
-    })
+    }, 'zh-CN')
     expect(text).toContain('最近一次缓存失效：seq 42 · 原因 压缩 · 重新处理 9500 token')
   })
 })
 
 describe('formatContextBreakdown', () => {
   it('says nothing has been recorded yet when there is no context-sections node', () => {
-    expect(formatContextBreakdown([])).toBe('尚无上下文分段记录：本会话还没有发起过正式请求。')
+    expect(formatContextBreakdown([], 'zh-CN')).toBe('尚无上下文分段记录：本会话还没有发起过正式请求。')
   })
 
   it('lists sections ordered by order, with token share, using the most recent snapshot', () => {
@@ -57,7 +57,7 @@ describe('formatContextBreakdown', () => {
         ],
       },
     ]
-    const text = formatContextBreakdown(nodes)
+    const text = formatContextBreakdown(nodes, 'zh-CN')
     expect(text).toContain('截至 seq 5')
     expect(text).toContain('共 600 token')
     const envelopeLine = text.split('\n').find((l) => l.includes('core:untrusted-envelope'))
@@ -76,7 +76,7 @@ describe('formatContextBreakdown', () => {
       },
       { kind: 'contribute-conflict', id: 'c', seq: 6, key: 'tools:sdk', ops: ['code-mode', 'skills'] },
     ]
-    const text = formatContextBreakdown(nodes)
+    const text = formatContextBreakdown(nodes, 'zh-CN')
     expect(text).toContain('发现 1 处贡献冲突')
     expect(text).toContain('tools:sdk: code-mode, skills')
   })

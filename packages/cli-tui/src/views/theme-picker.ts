@@ -1,3 +1,4 @@
+import { tt } from '../locale-extended.js'
 import type { Ansi } from '../ansi.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
@@ -8,13 +9,15 @@ export class ThemePicker implements Component {
   private box: Box | undefined
   constructor(
     private readonly ansi: Ansi,
+    private readonly locale: string,
     private readonly choose: (name: TuiThemeName) => void,
   ) {}
   show(current: TuiThemeName): void {
+    const locale = this.locale
     const names: TuiThemeName[] = ['light', 'dark', 'mono']
-    const labels = ['明亮 · 白底深字', '深色 · 炭灰底浅字', '无色 · 终端默认色']
+    const labels = [tt('theme.light', locale), tt('theme.dark', locale), tt('theme.mono', locale)]
     const select = new Select({
-      options: names.map((id, i) => ({ id, label: `${labels[i]}${id === current ? ' ✓ 当前' : ''}` })),
+      options: names.map((id, i) => ({ id, label: `${labels[i]}${id === current ? tt('theme.current', locale) : ''}` })),
       onChoose: (id) => {
         this.close()
         this.choose(id as TuiThemeName)
@@ -23,7 +26,7 @@ export class ThemePicker implements Component {
     })
     for (let i = 0; i < names.indexOf(current); i++) select.handleInput('\x1b[B')
     this.box = new Box(select, {
-      title: '主题 · ↑↓ 选择 / Enter 确认 / Esc 取消',
+      title: tt('theme.pickerTitle', locale),
       rounded: true,
       border: this.ansi.dim,
     })

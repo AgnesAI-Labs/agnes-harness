@@ -1,3 +1,6 @@
+import { tt } from '@agnes/cli-tui'
+
+const TITLE = (): string => tt('picker.chooseWorkspace', process.env.AGNES_LOCALE ?? 'en')
 import { spawn } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access } from 'node:fs/promises'
@@ -32,7 +35,7 @@ const macScript = `
 tell application "Finder"
   activate
   try
-    set chosenFolder to choose folder with prompt "选择 Agnes 工作区"
+    set chosenFolder to choose folder with prompt TITLE()
     return "selected" & linefeed & POSIX path of chosenFolder
   on error number -128
     return "cancelled"
@@ -45,7 +48,7 @@ $ErrorActionPreference = 'Stop'
 try {
   Add-Type -AssemblyName System.Windows.Forms
   $dialog = [System.Windows.Forms.FolderBrowserDialog]::new()
-  $dialog.Description = '选择 Agnes 工作区'
+  $dialog.Description = TITLE()
   $dialog.ShowNewFolderButton = $true
   if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     $result = @{ status = 'selected'; path = $dialog.SelectedPath }
@@ -234,14 +237,14 @@ export function createNativeWorkspacePicker(options: NativeWorkspacePickerOption
         if (zenity)
           return {
             executable: zenity,
-            args: ['--file-selection', '--directory', '--title=选择 Agnes 工作区'],
+            args: ['--file-selection', '--directory', '--title=' + TITLE()],
             decode: desktopResult,
           }
         const kdialog = await find(['kdialog'])
         if (kdialog)
           return {
             executable: kdialog,
-            args: ['--getexistingdirectory', env.HOME ?? '/', '--title', '选择 Agnes 工作区'],
+            args: ['--getexistingdirectory', env.HOME ?? '/', '--title', TITLE()],
             decode: desktopResult,
           }
       }

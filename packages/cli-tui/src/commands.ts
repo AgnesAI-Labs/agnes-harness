@@ -1,3 +1,4 @@
+import { tt, type ExtendedKey } from './locale-extended.js'
 import { readdirSync } from 'node:fs'
 import type {
   ComputerUseDoctorResult,
@@ -18,47 +19,57 @@ export type SlashCommand = {
   name: string
   /** Argument shape shown dimmed next to the name in the slash menu, e.g. `<seq>`. */
   args?: string
-  /** One-line description shown dimmed under the menu for the highlighted command. */
-  description: string
+  /** Locale key of the one-line description; translated when the menu renders. */
+  descriptionKey: ExtendedKey
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
-  { name: '/help', description: '列出全部斜杆命令及用法' },
-  { name: '/quit', description: '退出 TUI' },
-  { name: '/new', description: '新建会话并切换过去' },
-  { name: '/resume', args: '[id]', description: '恢复指定会话；缺省时打开会话选择器' },
-  { name: '/sessions', description: '列出最近的会话' },
-  { name: '/cost', description: '显示本会话累计用量和费用' },
-  { name: '/usage', description: '查看 Token、缓存、推理和上下文估算' },
-  { name: '/computer-use', args: 'status', description: '查看 Computer Use 的只读准入状态' },
-  { name: '/doctor', args: 'computer-use', description: '查看 Computer Use 的只读诊断状态' },
-  { name: '/rewind', args: '<seq>', description: '从指定序号分叉出新会话' },
-  { name: '/compact', args: '[instructions]', description: '通过当前压缩策略手动压缩上下文' },
-  { name: '/preset', args: '<name>', description: '切换预设' },
-  { name: '/theme', args: '[light|dark|mono]', description: '切换当前 TUI 的明亮、深色或无色主题' },
+  { name: '/help', descriptionKey: 'commands.help' },
+  { name: '/quit', descriptionKey: 'commands.quit' },
+  { name: '/new', descriptionKey: 'commands.new' },
+  { name: '/resume', args: '[id]', descriptionKey: 'commands.resume' },
+  { name: '/sessions', descriptionKey: 'commands.sessions' },
+  { name: '/cost', descriptionKey: 'commands.cost' },
+  { name: '/usage', descriptionKey: 'commands.usage' },
+  { name: '/computer-use', args: 'status', descriptionKey: 'commands.computerUse' },
+  { name: '/doctor', args: 'computer-use', descriptionKey: 'commands.doctor' },
+  { name: '/rewind', args: '<seq>', descriptionKey: 'commands.rewind' },
+  { name: '/compact', args: '[instructions]', descriptionKey: 'commands.compact' },
+  { name: '/preset', args: '<name>', descriptionKey: 'commands.preset' },
+  { name: '/theme', args: '[light|dark|mono]', descriptionKey: 'commands.theme' },
   {
     name: '/model',
     args: '[<slot> <route>/<model> [<thinking>]]',
-    description: '列出可用模型并选择，或直接切换指定槽位（可选带上 thinking 档）',
+    descriptionKey: 'commands.model',
   },
-  { name: '/yolo', description: '本会话剩余部分跳过全部审批，一旦开启不可撤销' },
-  { name: '/export', description: '导出当前会话' },
-  { name: '/refine', description: '查看精炼提案（尚未投影到时间线）' },
-  { name: '/packages', description: '查看已安装插件及其期望/实际状态' },
-  { name: '/install', args: '<source>|confirm|cancel', description: '预览、确认或取消插件安装' },
+  { name: '/yolo', descriptionKey: 'commands.yolo' },
+  { name: '/export', descriptionKey: 'commands.export' },
+  { name: '/refine', descriptionKey: 'commands.refine' },
+  { name: '/packages', descriptionKey: 'commands.packages' },
+  { name: '/install', args: '<source>|confirm|cancel', descriptionKey: 'commands.install' },
   {
     name: '/package',
     args: '[status|catalog|inspect|trust|enable|disable|update|rollback|remove|operation|cancel] ...',
-    description: '管理插件生命周期并查询或取消持久化操作',
+    descriptionKey: 'commands.package',
   },
-  { name: '/skills', description: '查看 Skill 的信任、期望与实际状态' },
-  { name: '/skill', args: 'refresh|trust ...', description: '刷新或确认 Skill 修订' },
-  { name: '/mcp', args: '<action> ...', description: '管理 MCP 定义、连接和工具目录' },
-  { name: '/context', description: '按分段查看当前上下文占用与已知贡献冲突' },
+  { name: '/skills', descriptionKey: 'commands.skills' },
+  { name: '/skill', args: 'refresh|trust ...', descriptionKey: 'commands.skill' },
+  { name: '/mcp', args: '<action> ...', descriptionKey: 'commands.mcp' },
+  { name: '/context', descriptionKey: 'commands.context' },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
   return SLASH_COMMANDS.find((c) => c.name === name)
+}
+
+/** 描述在渲染期翻译：编辑器菜单每次重绘都会经此取词。 */
+export function slashCommandFor(
+  name: string,
+  locale: string,
+): (SlashCommand & { description: string }) | undefined {
+  const command = slashCommand(name)
+  if (!command) return undefined
+  return { ...command, description: tt(command.descriptionKey, locale) }
 }
 
 export type ModelChoice = {
@@ -276,7 +287,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     }
     case '/context': {
       const result = await s.projectUIOpening({ surface: 'tui' })
-      return { text: formatContextBreakdown(result.timeline.nodes), details: true, title: '上下文分解' }
+      return { text: formatContextBreakdown(result.timeline.nodes, locale), details: true, title: tt('usage.context.breakdownTitle', locale) }
     }
     case '/rewind': {
       const at = Number(args[0])

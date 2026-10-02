@@ -1,13 +1,14 @@
 import type { ContentBlock, UINode, UITimeline } from '@agnes/protocol'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi, xterm256 } from './ansi.js'
-import { attachmentsFrom, completeToken, runSlash, type SessionChoice, slashCommand } from './commands.js'
+import { slashCommandFor, attachmentsFrom, completeToken, runSlash, type SessionChoice, slashCommand } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
 import { formatTurnSummary } from './format-usage.js'
 import { parseKey } from './keys.js'
+import { tt } from './locale-extended.js'
 import { type Locale, t } from './locale.js'
 import { renderMarkdown } from './markdown.js'
 import { PackageController } from './package-controller.js'
@@ -244,6 +245,7 @@ export class TuiApp {
       ...(o.model ? { model: o.model } : {}),
       branding,
       ansi,
+      locale,
     })
     this.timeline = new Timeline({
       rows: () => o.term.size().rows,
@@ -257,6 +259,7 @@ export class TuiApp {
           const card = new ToolCard(node, {
             collapsed: this.toolCards.get(node.id)?.collapsed ?? true,
             ansi,
+            locale: this.o.locale ?? 'en',
             onAction: (actionId) => this.dispatchAction(actionId),
           })
           this.toolCards.set(node.id, card)
@@ -315,7 +318,7 @@ export class TuiApp {
     )
     this.editor = new Editor({
       maxRows: () => Math.max(1, Math.floor(o.term.size().rows / 3)),
-      placeholder: '想做点什么？从一句话开始。',
+      placeholder: tt('app.composerPlaceholder', locale),
       dim: (s) => ansi.dim(s),
       promptStyle: (s) => ansi.bold(ansi.fg(141, s)),
       menuStyle: (s) => this.theme.menu(ansi, s),
@@ -326,7 +329,7 @@ export class TuiApp {
         void this.cancel().catch((error) => this.showError(error))
       },
       complete: (prefix) => completeToken(prefix, this.cwd),
-      menuInfo: (name) => slashCommand(name),
+      menuInfo: (name) => slashCommandFor(name, this.o.locale ?? 'en'),
     })
     this.editor.setKitty(o.term.caps.kittyKeyboard)
     this.modelPicker = new ModelPicker({
@@ -337,7 +340,7 @@ export class TuiApp {
         if (!this.stopped) this.renderer.requestRender()
       },
     })
-    this.themePicker = new ThemePicker(ansi, (name) => {
+    this.themePicker = new ThemePicker(ansi, locale, (name) => {
       this.statusBar.setNotice(this.setTheme(name))
     })
     this.sessionPicker = new SessionPicker({
@@ -350,6 +353,7 @@ export class TuiApp {
     })
     this.usagePanel = new UsagePanel({
       ansi,
+      locale,
       maxRows: () => Math.max(4, o.term.size().rows - 7),
       changed: () => {
         if (!this.stopped) this.renderer.requestRender()
@@ -528,8 +532,8 @@ export class TuiApp {
     this.editor.invalidate()
     if (!this.stopped) this.renderer.requestRender()
     return saveTheme(this.o.themePreferencePath, name)
-      ? `theme ${name} · 已保存`
-      : `theme ${name} · 未能保存偏好，仅本次生效`
+      ? tt('app.themeSaved', locale, { name })
+      : tt('app.themeEphemeral', locale, { name })
   }
 
   /** Resource control is supplied only by the Node CLI bootstrap, never the chat/session client. */
