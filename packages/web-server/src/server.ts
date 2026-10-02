@@ -87,6 +87,8 @@ export type WebServerOptions = {
   port?: number
   /** Exact page origin selected by the daemon. Defaults to http://127.0.0.1:<port>. */
   origin?: string
+  /** Add the source-development reload client and event stream. Disabled for ordinary serve runs. */
+  developmentReload?: boolean
   /**
    * Optional fixed admin-surface BFF. It receives matching requests before static routing and
    * returns true only when it wrote the response itself.
@@ -157,6 +159,7 @@ export type WorkspacePicker = {
 
 export type WebServer = {
   url: string
+  reloadDevelopmentClients?(): void
   close(): Promise<void>
 }
 
@@ -301,15 +304,16 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
   let pickerPending = false
   let activePicker: AbortController | undefined
   const pluginEventClients = new Set<ServerResponse>()
+  const developmentReloadClients = new Set<ServerResponse>()
   const watchedPluginBuilds = new Map<string, WatchedPluginBuild>()
   let pluginBuildPoller: ReturnType<typeof setInterval> | undefined
   let pluginBuildPollInFlight = false
-  const writePluginEvent = (response: ServerResponse, event: string, data: unknown): void => {
+  const writeSseEvent = (response: ServerResponse, event: string, data: unknown): void => {
     if (!response.writableEnded) response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
   }
   const emitPluginRebuilt = (event: PluginRebuiltEvent): void => {
     for (const response of pluginEventClients)
-      writePluginEvent(response, 'rebuilt', { type: 'rebuilt', id: event.packageId, rev: event.revision })
+      writeSseEvent(response, 'rebuilt', { type: 'rebuilt', id: event.packageId, rev: event.revision })
   }
   const rememberPluginBuild = async (pathname: string, file: string, bytes: Buffer): Promise<void> => {
     const segments = pathname.split('/').filter(Boolean)
@@ -463,6 +467,55 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         }
         return
       }
+      if (request.url === '/__agnes/dev/reload.js') {
+        if (!options.developmentReload) {
+          response.writeHead(404).end()
+          return
+        }
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          response.writeHead(405, { Allow: 'GET, HEAD' }).end()
+          return
+        }
+        response.writeHead(200, {
+          'Content-Type': 'text/javascript; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Content-Security-Policy': contentSecurityPolicy,
+          'Referrer-Policy': 'no-referrer',
+          'X-Content-Type-Options': 'nosniff',
+        })
+        response.end(
+          request.method === 'HEAD'
+            ? undefined
+            : `const events = new EventSource('/__agnes/dev/events');\nevents.addEventListener('reload', () => location.reload());\n`,
+        )
+        return
+      }
+      if (request.url === '/__agnes/dev/events') {
+        if (!options.developmentReload) {
+          response.writeHead(404).end()
+          return
+        }
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end()
+          return
+        }
+        response.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-store',
+          Connection: 'keep-alive',
+          'Content-Security-Policy': contentSecurityPolicy,
+          'Referrer-Policy': 'no-referrer',
+          'X-Content-Type-Options': 'nosniff',
+        })
+        response.flushHeaders()
+        developmentReloadClients.add(response)
+        const close = (): void => {
+          developmentReloadClients.delete(response)
+        }
+        request.once('aborted', close)
+        response.once('close', close)
+        return
+      }
       if (options.handleAdmin && (await options.handleAdmin(request, response))) return
       if (request.url === '/plugins/events') {
         if (request.method !== 'GET') {
@@ -480,7 +533,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         response.flushHeaders()
         pluginEventClients.add(response)
         // A graph marker establishes the stream boundary without exposing an installed-package list.
-        writePluginEvent(response, 'graph', { type: 'graph' })
+        writeSseEvent(response, 'graph', { type: 'graph' })
         const close = (): void => {
           pluginEventClients.delete(response)
         }
@@ -602,6 +655,14 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         if (occurrences !== 1) throw new Error('Web document is missing its CSP nonce marker')
         body = Buffer.from(html.replace(marker, documentNonce))
       }
+      if (options.developmentReload && file.endsWith('.html')) {
+        const html = body.toString()
+        const marker = '</body>'
+        if (!html.includes(marker)) throw new Error('Web document is missing its body marker')
+        body = Buffer.from(
+          html.replace(marker, '<script type="module" src="/__agnes/dev/reload.js"></script></body>'),
+        )
+      }
       // Only the workbench consumes local image/PDF resource URLs; other pages keep the base policy.
       const documentCsp =
         file === 'index.html'
@@ -642,6 +703,9 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
   let closing: Promise<void> | undefined
   return {
     url: actualOrigin,
+    reloadDevelopmentClients: () => {
+      for (const response of developmentReloadClients) writeSseEvent(response, 'reload', {})
+    },
     close: () =>
       (closing ??= new Promise<void>((resolve, reject) => {
         activePicker?.abort()
@@ -649,6 +713,8 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         if (pluginBuildPoller !== undefined) clearInterval(pluginBuildPoller)
         for (const response of pluginEventClients) response.end()
         pluginEventClients.clear()
+        for (const response of developmentReloadClients) response.end()
+        developmentReloadClients.clear()
         for (const socket of sockets) socket.destroy()
         server.close((error) => (error ? reject(error) : resolve()))
       })),
