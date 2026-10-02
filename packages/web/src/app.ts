@@ -245,7 +245,7 @@ const clientModules = await startClientModules({
   sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
   sidebar: {
     actions: {
-      newSession: () => run(beginNewDraft),
+      newSession: (workspace) => run(() => beginNewDraft(workspace === undefined, workspace)),
       addWorkspace: () =>
         run(async () => {
           if (!draftingNew) await beginNewDraft()
@@ -421,6 +421,7 @@ function updateSidebar(): void {
     sessions: sessionRows,
     workspaces: workspaceRows,
     labels: sessionLabels,
+    locale: clientModules.locale.getSnapshot(),
     ...(current ? { currentId: current.id } : {}),
     ...(sessionNext ? { next: sessionNext } : {}),
     sessionPending,
@@ -1240,8 +1241,9 @@ async function pickWorkspace(): Promise<void> {
     renderNewSessionControls()
   }
 }
-async function beginNewDraft(showWorkspacePicker = true): Promise<void> {
+async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   if (sessionPending || sending) return
+  if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
   const epoch = ++selection
   const previous = current

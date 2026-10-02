@@ -18,11 +18,14 @@ export interface SidebarNavigationOptions {
   workspaces: readonly WorkspaceEntry[]
   currentId?: string
   activeId?: string
+  activeWorkspace?: string
   labels: ReadonlyMap<string, string>
   disabled?: boolean
+  newDisabled?: boolean
   next?: string
   loadMore?(cursor: string): void
   action?(action: SessionAction, id: string, title: string, trigger: HTMLElement): void
+  newSession(workspace: WorkspaceEntry): void
   open(id: string): void
 }
 
@@ -43,6 +46,7 @@ export interface SidebarState {
   sessions: PageSessionMeta['items']
   workspaces: readonly WorkspaceEntry[]
   labels: ReadonlyMap<string, string>
+  locale?: string
   currentId?: string
   next?: string
   sessionPending: boolean
@@ -50,7 +54,7 @@ export interface SidebarState {
 }
 
 export interface SidebarActions {
-  newSession(): void
+  newSession(workspace?: WorkspaceEntry): void
   addWorkspace(): void
   openSettings(): void
   openSession(id: string): void
@@ -111,6 +115,7 @@ function navigationSignature(state: SidebarState): string {
     }),
     state.workspaces.map((workspace) => [workspace.path, workspace.name, workspace.available]),
     labels,
+    state.locale ?? null,
     state.currentId ?? null,
     state.next ?? null,
     state.sessionPending,
@@ -176,10 +181,12 @@ const SidebarBuiltin = forwardRef<
     (next: SidebarState): boolean => {
       const navElement = nav.current
       if (!navElement || !dependencies) return false
-      const active =
+      const focused =
         navElement.contains(document.activeElement) && document.activeElement instanceof HTMLElement
-          ? document.activeElement.dataset.session
+          ? document.activeElement
           : undefined
+      const active = focused?.dataset.session
+      const activeWorkspace = focused?.dataset.workspaceNewSession
       dependencies.renderNavigation({
         nav: navElement,
         sessions: next.sessions,
@@ -187,10 +194,13 @@ const SidebarBuiltin = forwardRef<
         labels: next.labels,
         ...(next.currentId ? { currentId: next.currentId } : {}),
         ...(active ? { activeId: active } : {}),
+        ...(activeWorkspace ? { activeWorkspace } : {}),
         disabled: next.sessionPending,
+        newDisabled: next.newDisabled,
         ...(next.next ? { next: next.next } : {}),
         loadMore: actions.loadMore,
         action: actions.sessionAction,
+        newSession: actions.newSession,
         open: actions.openSession,
       })
       return true

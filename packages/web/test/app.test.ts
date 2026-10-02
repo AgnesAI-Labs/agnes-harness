@@ -403,6 +403,70 @@ describe('web session selection', () => {
     expect(fresh.setYolo).toHaveBeenCalledWith(true)
   }, 20_000)
 
+  it('starts a draft in the workspace chosen from its sidebar action', async () => {
+    installPublicFixture()
+    const alpha = {
+      path: '/workspace/alpha',
+      name: 'Alpha',
+      lastUsedAt: null,
+      sessionCount: 1,
+      available: true,
+    }
+    const beta = {
+      path: '/workspace/beta',
+      name: 'Beta',
+      lastUsedAt: null,
+      sessionCount: 0,
+      available: true,
+    }
+    const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const fresh = session('fresh', async () => idleTimeline('fresh', { route: 'local', id: 'model-a' }))
+    const create = vi.fn(async () => fresh)
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      approval: { decide: vi.fn(async () => undefined) },
+      workspace: { list: vi.fn(async () => ({ items: [alpha, beta] })) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: 'old', cwd: alpha.path }] })),
+        load: vi.fn(async () => old),
+        new: create,
+      },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+      session: selected,
+      offPermission: vi.fn(),
+    }))
+
+    await import('../src/app.js')
+    const createInBeta = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>('[aria-label="New session in “Beta”"]')
+      expect(button).toBeTruthy()
+      expect(button?.disabled).toBe(false)
+      return button as HTMLButtonElement
+    })
+    createInBeta.click()
+
+    await vi.waitFor(() => expect(document.querySelector('[data-workspace-label]')?.textContent).toBe('Beta'))
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
+    expect(create).not.toHaveBeenCalled()
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+
+    submit('create in beta')
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
+    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('create in beta'))
+  })
+
   it('keeps controls usable after a pending model update and refreshes both old and new drafts', async () => {
     installPublicFixture()
     let models = [{ route: 'local', id: 'model-a' }]

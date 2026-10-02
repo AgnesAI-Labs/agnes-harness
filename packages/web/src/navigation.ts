@@ -14,10 +14,13 @@ const FOLDER_CLOSED =
 const FOLDER_OPEN =
   'M14.8882 7.43937C14.7797 7.27754 14.6048 7.18094 14.4203 7.18094H13.0118V5.05978C13.0118 4.71287 12.7519 4.43062 12.4324 4.43062H7.94002L6.90381 3.20368C6.79449 3.07423 6.63884 3 6.47679 3H2.57931C2.25988 3 2 3.28223 2 3.62914V13.5309C2 13.784 2.19469 13.9892 2.43501 13.9894L12.5436 14C12.7867 14 13.0064 13.8332 13.0902 13.5849L14.9642 8.03053C15.0313 7.83148 15.003 7.61049 14.8882 7.43937ZM2.86667 12.1904V3.91258H6.34273L7.37891 5.1395C7.48823 5.26896 7.64389 5.3432 7.80597 5.3432H12.1451V7.18094H5.33423C5.1065 7.18094 4.89848 7.32662 4.80427 7.5521L2.86667 12.1904V12.1904ZM12.3382 13.0874H3.43876L5.52489 8.0935H14.0232L12.3382 13.0874V13.0874Z'
 
-function folderSvg(shape: string, className: string): SVGSVGElement {
+const PLUS =
+  'M6 1.16797C6.26487 1.16807 6.48024 1.38262 6.48047 1.64746V5.64062H10.4736C10.7383 5.64111 10.9531 5.8563 10.9531 6.12109C10.953 6.38576 10.7382 6.60108 10.4736 6.60156H6.48047V10.5938C6.48046 10.8588 6.265 11.0741 6 11.0742C5.73491 11.0742 5.51954 10.8588 5.51953 10.5938V6.60156H1.52734C1.26235 6.60156 1.04704 6.38605 1.04688 6.12109C1.04688 5.856 1.26225 5.64062 1.52734 5.64062H5.51953V1.64746C5.51976 1.38256 5.73504 1.16797 6 1.16797Z'
+
+function svgIcon(shape: string, className: string, viewBox = '0 0 16 16'): SVGSVGElement {
   const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   icon.setAttribute('class', className)
-  icon.setAttribute('viewBox', '0 0 16 16')
+  icon.setAttribute('viewBox', viewBox)
   icon.setAttribute('aria-hidden', 'true')
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
   path.setAttribute('d', shape)
@@ -25,14 +28,18 @@ function folderSvg(shape: string, className: string): SVGSVGElement {
   return icon
 }
 
+function plusSvg(): SVGSVGElement {
+  return svgIcon(PLUS, 'icon icon-fill', '0 0 12 12')
+}
+
 /** 非切换场合（选择工作区、新建会话对话框）用收起态。 */
-const folderIcon = () => folderSvg(FOLDER_CLOSED, 'icon icon-folder')
+const folderIcon = () => svgIcon(FOLDER_CLOSED, 'icon icon-folder')
 
 /** 工作区分组标题用两态字形，由 `.workspace-heading[aria-expanded]` 切换显示。 */
 function folderPair(): [SVGSVGElement, SVGSVGElement] {
   return [
-    folderSvg(FOLDER_CLOSED, 'icon icon-folder icon-folder-closed'),
-    folderSvg(FOLDER_OPEN, 'icon icon-folder icon-folder-open'),
+    svgIcon(FOLDER_CLOSED, 'icon icon-folder icon-folder-closed'),
+    svgIcon(FOLDER_OPEN, 'icon icon-folder icon-folder-open'),
   ]
 }
 
@@ -84,11 +91,14 @@ export function renderSessionNavigation(
     workspaces: readonly WorkspaceEntry[]
     currentId?: string
     activeId?: string
+    activeWorkspace?: string
     labels: ReadonlyMap<string, string>
     disabled?: boolean
+    newDisabled?: boolean
     next?: string
     loadMore?(cursor: string): void
     action?(action: 'rename' | 'fork' | 'archive', id: string, title: string, trigger: HTMLElement): void
+    newSession(workspace: WorkspaceEntry): void
     open(id: string): void
   },
   t: Translate,
@@ -117,6 +127,23 @@ export function renderSessionNavigation(
     name.className = 'workspace-name'
     name.textContent = workspace?.name ?? t('session.uncategorized')
     heading.append(...folderPair(), name)
+    const headingRow = document.createElement('div')
+    headingRow.className = 'workspace-heading-row'
+    headingRow.append(heading)
+    if (workspace) {
+      const create = document.createElement('button')
+      create.type = 'button'
+      create.className = 'icon-button workspace-new-session'
+      create.dataset.workspaceNewSession = workspace.path
+      create.disabled = (options.newDisabled ?? false) || !workspace.available
+      create.setAttribute('aria-label', t('nav.newSessionInWorkspace', { name: workspace.name }))
+      create.title = t('nav.newSessionInWorkspace', { name: workspace.name })
+      create.append(plusSvg())
+      create.addEventListener('click', () => options.newSession(workspace))
+      if (workspace.path === options.activeWorkspace && !create.disabled)
+        queueMicrotask(() => create.focus({ preventScroll: true }))
+      headingRow.append(create)
+    }
     const children = document.createElement('div')
     children.className = 'workspace-sessions'
     children.hidden = collapsed
@@ -163,7 +190,7 @@ export function renderSessionNavigation(
       if (expanded) collapsedGroups.add(path)
       else collapsedGroups.delete(path)
     })
-    group.append(heading, children)
+    group.append(headingRow, children)
     fragments.push(group)
   }
   closeSessionMenu()
