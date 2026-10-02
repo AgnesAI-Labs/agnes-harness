@@ -34,6 +34,8 @@ import {
   createDirectoryAnchor,
 } from '../../../../packages/host/src/runtime/providers/authority-directory.ts'
 
+import { createHostScopedDependencies } from '../../../../packages/host/src/runtime/scoped-dependencies.ts'
+
 type Recipe = 'default' | 'reference'
 
 const PRINCIPAL = 'maintainer'
@@ -260,11 +262,23 @@ async function seeded(provider: DirectoryProvider): Promise<AuthorityRoute> {
 }
 
 function providerDigest(recipe: Recipe): string {
-  return documentDigest({
-    providerId:
-      recipe === 'default' ? 'agh.default/authority-directory' : 'agh.reference/authority-directory',
-    contract: 'agh.authority-directory',
-  })
+  const files =
+    recipe === 'default'
+      ? [
+          'packages/host/src/runtime/providers/authority-directory.ts',
+          'packages/host/src/runtime/maintenance/authority-publication.ts',
+          'packages/host/src/runtime/maintenance/bootstrap-locator.ts',
+          'packages/host/src/configuration-lock.ts',
+        ]
+      : ['examples/runtime-reference/src/providers/authority-directory.ts']
+  const hash = createHash('sha256')
+  for (const path of files)
+    hash
+      .update(path)
+      .update('\0')
+      .update(readFileSync(join(repoRoot(), path)))
+      .update('\0')
+  return hash.digest('hex')
 }
 
 function evidence(
@@ -310,11 +324,57 @@ async function select(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidenc
       assert.equal(provider.features.includes('sqlite-immediate'), true)
       assert.equal(provider.unsupported.includes('local-fs-rename'), true)
     }
+    const host = createHostScopedDependencies([])
+    const binding = {
+      bindingId: 'directory-binding',
+      contract: 'agh.authority-directory',
+      logicalName: 'directory',
+      providerId: provider.providerId,
+    }
+    const digest = providerDigest(recipe)
+    const selected = await host.publish({
+      generationId: 'directory-selection',
+      providers: [
+        {
+          binding,
+          major: 1,
+          scope: 'installation',
+          features: ['read', 'compareAndSwap', ...provider.features],
+          packageDigest: digest,
+          ownerId: provider.providerId,
+          permissions: [],
+          close: () => provider.dispose(),
+        },
+      ],
+    })
+    assert.equal(selected.bindings[0]?.providerId, provider.providerId)
+    assert.equal(selected.bindings[0]?.packageDigest, digest)
+    const service = must(
+      host.dependencies.get({
+        contract: binding.contract,
+        major: 1,
+        logicalName: binding.logicalName,
+        scope: 'installation',
+        features: ['read', 'compareAndSwap'],
+        optional: false,
+      }),
+    )
+    assert.deepEqual(service.binding, binding)
+    const missing = host.dependencies.get({
+      contract: binding.contract,
+      major: 1,
+      logicalName: binding.logicalName,
+      scope: 'installation',
+      features: ['distributed-multiwriter'],
+      optional: false,
+    })
+    assert.equal(refusal(missing), 'incompatible/feature_missing')
     await seeded(provider)
     const read = must(await provider.read({ kind: 'authority', logicalAuthorityId: 'state-auth' }, context()))
     assert.equal(read.kind, 'authority')
     if (read.kind !== 'authority') throw new Error('authority read')
     assert.equal(read.revision, 1)
+    await host.close('directory-selection')
     return evidence(
       recipe,
       documentDigest({ revision: read.revision }),
