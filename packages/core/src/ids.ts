@@ -16,6 +16,9 @@ function hex(bytes: Uint8Array): string {
   return s
 }
 
+/** `bytes` random bytes as lowercase hex, for keys and salts that live only in this process. */
+export const randomHex = (bytes: number): string => hex(randomBytes(bytes))
+
 function encodeTime(ms: number): string {
   let t = ms
   let s = ''

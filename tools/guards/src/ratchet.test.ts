@@ -935,8 +935,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
+  // Domain command journal rules and the authorized projection with owner-issued cursors.
+  // Measured 26066 (+588), exact, no spare.
+  // Default projection provider: reader policy, incremental fold and the conversation window.
+  // Measured 26639 (+573), exact, no spare.
+  // Merged with the policy and integrity providers on the integration base. Measured 28132, exact, no spare.
+  // A domain command cancelled while its prepare runs commits nothing. Measured 28134, exact, no spare.
   // Shared interaction authority and its public exports: exact measured 27310 (+339).
-  'packages/core/src': 27310,
+  // Merged with the shared interaction authority on the integration base. Measured 28471, exact, no spare.
+  'packages/core/src': 28471,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1382,12 +1389,21 @@ const INITIAL_CEILING: Record<string, number> = {
   // Unsupported reference source kinds register as not-advertised. Measured 1683, exact, no spare.
   // Shared blob and artifact access suites with their scenario registration, and blob selection
   // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
+  // Projection conformance suite with its fixture domain, Host checks and native conversation.
+  // Measured 2629 (+1102), exact, no spare.
+  // Merged with the identity, policy, audit and integrity contract cases. Measured 4551, exact, no spare.
+  // Projection cases judge real kills, failed mounts and running cancels. Measured 4709, exact, no spare.
   // Contract cases re-export from one aggregate. Measured 3459, exact, no spare.
   // Test container refusals match production feature and cell checks, and the runtime barrel
   // exports are sorted. Measured 3475, exact, no spare.
   // Workspace and file contract cases join the aggregate. Measured 3634, exact, no spare.
   // Network and secret contract cases join the aggregate. Measured 3871, exact, no spare.
-  'packages/extension-api/testkit': 3871,
+  // Merged with the aggregate contract exports and the workspace and files cases on the integration
+  // base. Measured 4894, exact, no spare.
+  // Projection contract cases join the contract aggregate, which keeps the blob callContext helper.
+  // Measured 4896, exact, no spare.
+  // Merged with the network and secret cases on the integration base. Measured 5133, exact, no spare.
+  'packages/extension-api/testkit': 5133,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1819,7 +1835,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
   // Stored public configuration uses canonical JSON and existing credential checks: exact 26512.
-  'packages/daemon/src': 26535,
+  // Durable domain store with outbox delivery, dead letters and redrive; measured 27055 (+543), exact.
+  // Merged with the integration base at 26535; measured 27078, exact.
+  'packages/daemon/src': 27078,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
