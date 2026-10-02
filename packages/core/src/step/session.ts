@@ -294,6 +294,8 @@ export const noopHooks: HookPort = {
 export type CompactionPort = {
   /** Absent is treated as false so older policy-only adapters cannot accidentally disclose a stub. */
   readonly runnable?: boolean
+  /** Whether threshold compaction is held back this turn because the summary route failed outright. */
+  suspended?(turn: number): boolean
   shouldCompact(p: {
     contextTokens: number
     contextWindow: number

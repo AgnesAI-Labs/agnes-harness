@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest'
 import { HookBlockedError } from '../src/hooks/block.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { canonicalJson } from '../src/request/hash.js'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { boundWireInputTokens, discloseTools, resolveModel } from '../src/step/inference.js'
+import { contextTokens } from '../src/step/gate.js'
+import { boundWireInputTokens, discloseTools, estimateTokens, resolveModel } from '../src/step/inference.js'
 import { withPhase } from '../src/step/op-state.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { fakeProvider, type Script, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -113,7 +115,11 @@ describe('production compaction phase', () => {
       session.compaction = new CompactionRunner({
         plan: async (payload, config) => {
           expect(payload.reserveTokens).toBe(8000)
-          expect(config.keepRecentTokens).toBe(12000)
+          // Half of what is left below the 24000 trigger line once the fixed prefix is paid.
+          const first = provider.requests[0]
+          const fixed = estimateTokens(canonicalJson({ system: first?.system, tools: first?.tools }))
+          expect(fixed).toBeGreaterThan(0)
+          expect(config.keepRecentTokens).toBe(Math.floor((24000 - fixed) / 2))
           return { ...plan(payload), maxTokens: Math.floor(0.8 * payload.reserveTokens) }
         },
         onCompact: async () => undefined,
@@ -128,6 +134,66 @@ describe('production compaction phase', () => {
       )
     },
   )
+
+  describe('with tool schemas in the fixed prefix', () => {
+    // Sixteen tools of about a thousand tokens each (a description is capped at 4096 characters).
+    const bulky = Array.from(
+      { length: 16 },
+      (_, i) => ({ ...(readTool() as object), name: `bulky_${i}`, description: 'x'.repeat(4000) }) as never,
+    )
+
+    async function reducedBudget(tools: boolean, window: number) {
+      const provider = fakeProvider([textTurn('old answer'), textTurn('SUMMARY'), textTurn('done')])
+      provider.models = () => [{ ...model('answer-model', 'primary', 1_000_000), maxTokens: 4096 }]
+      const registry = new ToolRegistry()
+      if (tools) for (const tool of bulky) registry.add(tool, { source: 'agnes/base', trust: 'builtin' })
+      const { session, log } = await openSession({ provider, registry })
+      session.preset.model.id.primary = 'answer-model'
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'history '.repeat(25000) }],
+        actor,
+      })
+      await session.run({ until: 'turn-end', signal: signal() })
+      await session.setModel({
+        slot: 'primary',
+        route: 'default',
+        model: 'answer-model',
+        contextWindow: window,
+      })
+      let keep: number | undefined
+      session.compaction = new CompactionRunner({
+        plan: async (payload, config) => {
+          keep = config.keepRecentTokens
+          return { ...plan(payload), maxTokens: 100 }
+        },
+        onCompact: async () => undefined,
+      })
+      await session.requestCompaction({ actor, admissionId: 'with-tools' })
+      const ended = await session.run({ until: 'turn-end', signal: signal() })
+      return { provider, log, keep, ended }
+    }
+
+    it('keeps a smaller tail so the schemas still fit next to it', async () => {
+      const plain = await reducedBudget(false, 32000)
+      const tooled = await reducedBudget(true, 32000)
+      const request = tooled.provider.requests[0]
+      expect(request?.tools).toHaveLength(16)
+      const fixed = estimateTokens(canonicalJson({ system: request?.system, tools: request?.tools }))
+      expect(tooled.keep).toBe(Math.floor((24000 - fixed) / 2))
+      // The tools alone cost about 16000 tokens, which come off the kept tail at half rate.
+      expect(plain.keep).toBeGreaterThan((tooled.keep ?? 0) + 6000)
+    })
+
+    it('refuses a compaction when the schemas leave no room below the reserve', async () => {
+      // Without the schemas the fixed prefix and the 5000-token reserve fit in 20000 tokens.
+      expect((await reducedBudget(false, 20000)).ended.reason).toBe('completed')
+      const tooled = await reducedBudget(true, 20000)
+      expect(tooled.ended.reason).toBe('budget')
+      expect((await tooled.log.scan({ type: 'turn/end', limit: 10 })).at(-1)?.data).toMatchObject({
+        error: { code: 'BUDGET_EXCEEDED' },
+      })
+    })
+  })
 
   it('settles an internal context-first block before sending a cold summary', async () => {
     const { session, provider, log } = await history()
@@ -656,6 +722,11 @@ describe('production compaction phase', () => {
 
   it('uses the default planner only when no hook handles the attempt and passes the live preset', async () => {
     const { session, provider } = await history()
+    // The window has to leave room for the fixed prefix; the preset's own keep is then the bound.
+    provider.models = () => [
+      model('answer-model', 'primary', 10_000),
+      model('summary-model', 'compaction', 1000),
+    ]
     session.preset.compaction.keepRecentTokens = 37
     let config: { keepRecentTokens: number } | undefined
     session.compaction = new CompactionRunner({
@@ -665,6 +736,7 @@ describe('production compaction phase', () => {
       },
       onCompact: async () => undefined,
     })
+    session.compaction.shouldCompact = () => true
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'x'.repeat(40) }], actor })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(config).toEqual({ keepRecentTokens: 37 })
@@ -1601,7 +1673,10 @@ describe('routing a summary that is unavailable', () => {
   // A broken or exhausted compaction route has to show up as a failure, not as a lossy fallback.
   describe.each(['threshold', 'overflow', 'requested'] as const)('from a %s compaction', (reason) => {
     const reported = async (h: Awaited<ReturnType<typeof toolHistory>>, code: RegExp) => {
+      const reading = contextTokens(h.session)
       const outcome = await h.enter(reason)
+      // The failed call's all-zero spend row is not a measurement of the context.
+      expect(contextTokens(h.session)).toBe(reading)
       expect(outcome).toEqual(reason === 'overflow' ? { phase: 'failure_drain' } : { phase: 'checkpoint' })
       const o = await h.outcome()
       expect(o.replaces).toEqual([])
@@ -1609,6 +1684,9 @@ describe('routing a summary that is unavailable', () => {
       expect(o.failed).toHaveLength(1)
       expect((o.failed[0]?.data as { reason?: string } | undefined)?.reason).toMatch(code)
       expect(h.runner.transientFailures).toBe(0)
+      // Only a threshold compaction backs off; a requested or overflow one is always attempted.
+      const turn = (h.session.op() as { meta: { turn: number } }).meta.turn
+      expect(h.runner.suspended(turn)).toBe(reason === 'threshold')
     }
 
     it.each([
@@ -1749,9 +1827,8 @@ describe('routing a summary that is unavailable', () => {
     expect((o.failed[0]?.data as { reason?: string } | undefined)?.reason).toBe('compaction cancelled')
   })
 
-  it('does not check the threshold again before the next request refreshes the context count', async () => {
-    // The summary request itself was large, so its spend row leaves a context anchor far over the
-    // threshold until the next ordinary request replaces it.
+  it('reads the context from what the compaction left, not from the summary request that made it', async () => {
+    // The summary request itself was large. It is billed, but it is not what the next request carries.
     const heavy: Script = [
       sent(),
       { type: 'text_delta', delta: 'Goal: read three files. Progress: done.' },
@@ -1763,16 +1840,131 @@ describe('routing a summary that is unavailable', () => {
       },
       { type: 'done', reason: 'stop' },
     ]
-    const h = await toolHistory([heavy])
+    const h = await toolHistory([heavy], {}, 5000)
     expect(await h.enter('overflow')).toEqual({ phase: 'checkpoint' })
-    expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     const o = await h.outcome()
-    expect(o.begins).toHaveLength(1)
+    expect(o.spends[0]?.data).toMatchObject({ tokens: { input: 150_000 } })
+    const before = (o.begins[0]?.data as { tokensBefore?: number } | undefined)?.tokensBefore ?? 0
+    expect(before).toBeGreaterThan(0)
+    const summary = estimateTokens('Goal: read three files. Progress: done.')
+    // Before the compaction, minus the span it masked, plus the summary that replaced it.
+    const after = Math.max(summary, before - h.planned() + summary)
+    expect(after).toBeLessThan(before)
+    expect(o.ends[0]?.data).toMatchObject({ tokensAfter: after })
+    expect(contextTokens(h.session)).toBe(after)
+    expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const o2 = await h.outcome()
+    expect(o2.begins).toHaveLength(1)
     expect(h.provider.requests.filter((req) => req.kind === 'summary')).toHaveLength(1)
     expect(
-      o.rows.filter(
+      o2.rows.filter(
         (row) => row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'budget',
       ),
     ).toEqual([])
+  })
+
+  it('keeps trying an unavailable route every turn once the window is nearly full, and stops each time', async () => {
+    const provider = fakeProvider([
+      textTurn('ok').map((event) =>
+        event.type === 'usage' ? { ...event, tokens: { ...event.tokens, input: 95_000 } } : event,
+      ),
+    ])
+    provider.models = () => [
+      model('answer-model', 'primary', 100_000),
+      model('summary-model', 'compaction', 100_000),
+    ]
+    const infer = provider.infer.bind(provider)
+    let attempts = 0
+    provider.infer = async function* (req, options) {
+      if (req.kind !== 'summary') return yield* infer(req, options)
+      attempts++
+      yield* errorOf('AUTH', false)
+    }
+    const { session, log } = await openSession({ provider })
+    delete session.preset.model.contextWindow
+    session.preset.model.id.compaction = 'summary-model'
+    session.compaction = runner()
+    const reasons: string[] = []
+    for (const turn of [1, 2, 3, 4]) {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: `turn ${turn}` }], actor })
+      reasons.push((await session.run({ until: 'turn-end', signal: signal() })).reason)
+    }
+    // Turn 1 already answered when its compaction failed, so it finishes; later ones stop before asking.
+    expect(reasons).toEqual(['completed', 'error', 'error', 'error'])
+    expect(attempts).toBe(4)
+    expect((await log.scan({ type: 'turn/end', limit: 10 })).at(-1)?.data).toMatchObject({
+      error: { code: 'COMPACTION_UNAVAILABLE' },
+    })
+  })
+
+  it('lifts the back-off once a compaction succeeds', async () => {
+    const h = await toolHistory([
+      errorOf('AUTH', false),
+      textTurn('Goal: read three files. Progress: done.'),
+      errorOf('AUTH', false),
+    ])
+    await h.enter('threshold')
+    const turn = (h.session.op() as { meta: { turn: number } }).meta.turn
+    expect(h.runner.suspended(turn)).toBe(true)
+    // Manual compaction is never held back; its success shows the route works again.
+    await h.enter('requested')
+    expect((await h.outcome()).replaces).toHaveLength(1)
+    expect(h.runner.suspended(turn)).toBe(false)
+    expect(h.runner.unavailableFailures).toBe(0)
+    // The escalation starts over: the next failure spares one turn again, not two.
+    await h.enter('threshold')
+    expect(h.runner.suspendedThrough).toBe(turn + 1)
+  })
+
+  it('spares 1, 2, 4, 8, 8, ... turns after consecutive failures', () => {
+    const r = runner()
+    const spared: number[] = []
+    for (let i = 0; i < 6; i++) {
+      r.suspend(100)
+      spared.push(r.suspendedThrough - 100)
+    }
+    expect(spared).toEqual([1, 2, 4, 8, 8, 8])
+    expect(r.suspended(r.suspendedThrough)).toBe(true)
+    expect(r.suspended(r.suspendedThrough + 1)).toBe(false)
+  })
+
+  it.each(['AUTH', 'QUOTA'])(
+    'ends the turn with an explicit error when a %s route leaves the window nearly full',
+    async (code) => {
+      const h = await toolHistory([errorOf(code, false)], { primary: 5000 }, 4500)
+      expect(await h.enter('threshold')).toEqual({ phase: 'failure_drain' })
+      expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('error')
+      expect((await h.outcome()).rows.filter((row) => row.type === 'turn/end').at(-1)?.data).toMatchObject({
+        reason: 'error',
+        error: { code: 'COMPACTION_UNAVAILABLE', message: expect.stringContaining(code) },
+      })
+    },
+  )
+
+  it('backs off a summary route that cannot work instead of retrying it every turn', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    provider.models = () => [
+      model('answer-model', 'primary', 100_000),
+      model('summary-model', 'compaction', 100_000),
+    ]
+    const infer = provider.infer.bind(provider)
+    let turn = 0
+    const attempts: number[] = []
+    provider.infer = async function* (req, options) {
+      if (req.kind !== 'summary') return yield* infer(req, options)
+      attempts.push(turn)
+      yield* errorOf('AUTH', false)
+    }
+    const { session } = await openSession({ provider })
+    delete session.preset.model.contextWindow
+    session.preset.model.id.compaction = 'summary-model'
+    session.compaction = runner()
+    session.compaction.shouldCompact = () => true
+    for (turn = 1; turn <= 12; turn++) {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: `turn ${turn}` }], actor })
+      expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    }
+    // The failure is retried later and later, not every turn: each attempt spares the next 1, 2, 4 turns.
+    expect(attempts).toEqual([1, 3, 6, 11])
   })
 })
