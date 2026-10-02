@@ -1,3 +1,4 @@
+import { fallbackT, type Translate } from './locales/index.js'
 import { listboxIntent, positionPopover } from './popover.js'
 
 const optionLabel = (item: HTMLOptionElement): string => item.getAttribute('label') || item.textContent || ''
@@ -7,6 +8,8 @@ export type SelectPickerOptions = {
   label: string
   includeEmpty?: boolean
   formatOption?: (label: string) => string
+  /** Locale-bound translate for the empty-selection placeholder; defaults to a readable fallback. */
+  translate?: Translate
 }
 
 /** Presentation only. Call sync after programmatic value/options/disabled changes, destroy on unmount. */
@@ -58,7 +61,9 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   function sync(): void {
     close()
     const selected = select.options[select.selectedIndex]
-    label.textContent = selected ? optionLabel(selected) : `选择${options.label}`
+    label.textContent = selected
+    ? optionLabel(selected)
+    : (options.translate ?? fallbackT)('settings.selectPicker.fallback', { label: options.label })
     trigger.title = label.textContent
     trigger.setAttribute('aria-label', `${options.label}：${label.textContent}`)
     trigger.disabled = select.disabled || !Array.from(select.options).some(available)
