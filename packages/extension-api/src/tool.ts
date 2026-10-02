@@ -87,7 +87,17 @@ export interface ToolResult {
   structured?: unknown // machine-readable payload alongside content; mirrors tool/result.data.structured on the wire
 }
 
-export type ExecResult = { code: number; stdout: string; stderr: string; truncated: boolean }
+export type ExecResult = {
+  code: number
+  stdout: string
+  stderr: string
+  truncated: boolean
+  /**
+   * True when the executor's own deadline was the first cause to cut the command short: the process
+   * was killed and the output is what it had printed so far. Absent means the executor did not say.
+   */
+  timedOut?: boolean
+}
 export type FsEntry = { name: string; kind: 'file' | 'dir' | 'symlink' | 'other' }
 export type FsStat = { kind: FsEntry['kind']; size: number; mtimeMs: number }
 export type FetchInit = {
@@ -230,6 +240,7 @@ export interface ToolContext {
   requestCompaction(instructions?: string): void
   progress(note: string): void
   readonly signal: AbortSignal
+  /** Soft deadline for this call; the kernel cuts the call off a short grace later (see CHANGELOG). */
   readonly timeoutMs: number
   /** Bytes of one result's text the model sees before the output guard cuts it (preset `tools.output_max_bytes`). */
   readonly outputMaxBytes: number

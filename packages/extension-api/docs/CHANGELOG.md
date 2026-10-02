@@ -4,6 +4,15 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ExecResult` gains the optional `timedOut`: true when the executor's own deadline was the first cause to cut
+the command short, so the process was killed and the output is what it had printed so far. It is mutually
+exclusive with a caller cancel (whichever came first is the cause), and absent means the executor did not
+say, so an `exec` implementation or test double that never sets it keeps conforming. `ToolContext.timeoutMs`
+is now documented as a soft deadline: the kernel hands a tool the call's limit minus a short grace
+(`min(2000, limit / 10)` ms) and cuts the call off at the full limit, so a tool that honours
+`ctx.timeoutMs` can return its own result before the kernel's cut-off. The value a tool sees only gets
+smaller; no limit is raised.
+
 `ToolContext` gains the read-only `outputMaxBytes`: the most text of one tool result the model sees before
 the output guard cuts it. The kernel fills it from the Preset key `tools.output_max_bytes` (integer,
 4096 to 1048576, default 32768 where it was a fixed 8192), next to `timeoutMs`. A tool that sizes its own
