@@ -1,10 +1,20 @@
 import { randomUUID } from 'node:crypto'
-import { closeSync, existsSync, fsyncSync, mkdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statfsSync,
+  writeFileSync,
+} from 'node:fs'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Outcome } from '@agnes/extension-api/runtime'
 import type { DataRef, JsonValue } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import { createPrivateDirectorySync, createPrivateFileSync, renameWriteThroughSync } from '@agnes/system-node'
+import { withConfigurationLockSync } from '../../configuration-lock.js'
 
 export interface BootstrapLocator {
   readonly directoryId: string
@@ -34,7 +44,10 @@ export interface BootstrapAnchor {
   readJournal(id: string): Outcome<JsonValue | null>
 }
 
-const NFS_MAGIC = 0x6969
+// Known local filesystem identities. Network and unknown filesystems fail closed.
+const LOCAL_FILESYSTEMS = new Set([
+  1, 4, 17, 26, 0xef53, 0x58465342, 0x9123683e, 0x01021994, 0x794c7630, 0x2fc12fc1,
+])
 
 export function filesystemSupportsLocalRename(directory: string): boolean {
   let probe = resolve(directory)
@@ -44,19 +57,32 @@ export function filesystemSupportsLocalRename(directory: string): boolean {
       if (parent === probe) return false
       probe = parent
     }
-    return statfsSync(probe).type !== NFS_MAGIC
+    return LOCAL_FILESYSTEMS.has(statfsSync(probe).type)
   } catch {
     return false
   }
 }
 
 export function pathsAreSeparate(left: string, right: string): boolean {
-  const first = resolve(left)
-  const second = resolve(right)
+  const first = physicalPath(left)
+  const second = physicalPath(right)
   if (first === second) return false
   const forward = relative(first, second)
   const backward = relative(second, first)
-  return forward.startsWith('..') && backward.startsWith('..')
+  return (
+    (forward === '..' || forward.startsWith(`..${sep}`) || isAbsolute(forward)) &&
+    (backward === '..' || backward.startsWith(`..${sep}`) || isAbsolute(backward))
+  )
+}
+
+function physicalPath(path: string): string {
+  let parent = resolve(path)
+  while (!existsSync(parent)) {
+    const next = dirname(parent)
+    if (next === parent) break
+    parent = next
+  }
+  return resolve(realpathSync(parent), relative(parent, resolve(path)))
 }
 
 export function createBootstrapAnchor(
@@ -116,20 +142,13 @@ function openAnchor(directory: string): BootstrapAnchor {
       return { ok: true as const, value: current.value }
     },
     compareAndSwap(expectedRevision, next) {
-      const current = readStageZero(directory)
-      if (!current.ok) return current
-      if (!current.value) return fail('incompatible', 'anchor_absent')
-      const checked = checkedLocator(next)
-      if (!checked.ok) return checked
-      if (current.value.locator.revision !== expectedRevision) return fail('conflict', 'locator_revision')
-      if (checked.value.revision !== expectedRevision + 1) return fail('invalid_input', 'locator_revision')
-      if (checked.value.epoch !== current.value.locator.epoch + 1)
-        return fail('invalid_input', 'epoch_not_increasing')
-      if (checked.value.directoryId !== current.value.locator.directoryId)
-        return fail('invalid_input', 'route_identity')
-      const wrote = publishView(directory, { locator: checked.value, credential: current.value.credential })
-      if (!wrote.ok) return wrote
-      return { ok: true, value: checked.value }
+      try {
+        return withConfigurationLockSync(resolve(directory, 'locator-lock.sqlite'), () =>
+          swap(expectedRevision, next),
+        )
+      } catch {
+        return fail('retryable', 'anchor_busy')
+      }
     },
     writeJournal(id, body) {
       if (!validateRuntime('Id', id).ok) return fail('invalid_input', 'schema')
@@ -150,6 +169,23 @@ function openAnchor(directory: string): BootstrapAnchor {
         return fail('incompatible', 'anchor_unreadable')
       }
     },
+  }
+
+  function swap(expectedRevision: number, next: BootstrapLocator): Outcome<BootstrapLocator> {
+    const current = readStageZero(directory)
+    if (!current.ok) return current
+    if (!current.value) return fail('incompatible', 'anchor_absent')
+    const checked = checkedLocator(next)
+    if (!checked.ok) return checked
+    if (current.value.locator.revision !== expectedRevision) return fail('conflict', 'locator_revision')
+    if (checked.value.revision !== expectedRevision + 1) return fail('invalid_input', 'locator_revision')
+    if (checked.value.epoch !== current.value.locator.epoch + 1)
+      return fail('invalid_input', 'epoch_not_increasing')
+    if (checked.value.directoryId !== current.value.locator.directoryId)
+      return fail('invalid_input', 'route_identity')
+    const wrote = publishView(directory, { locator: checked.value, credential: current.value.credential })
+    if (!wrote.ok) return wrote
+    return { ok: true, value: checked.value }
   }
 }
 

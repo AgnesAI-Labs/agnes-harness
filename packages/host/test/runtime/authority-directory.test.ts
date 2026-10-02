@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type {
@@ -13,7 +13,7 @@ import type {
   StateAuthorityRef,
 } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { inlineData } from '../../src/runtime/maintenance/authority-publication.js'
 import { openBootstrapAnchor, readStageZero } from '../../src/runtime/maintenance/bootstrap-locator.js'
 import {
@@ -22,6 +22,22 @@ import {
   createDirectoryAnchor,
   type DurabilityPhase,
 } from '../../src/runtime/providers/authority-directory.js'
+
+const durabilityFault = vi.hoisted(() => ({ failSync: false, fsType: null as number | null }))
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return {
+    ...fs,
+    statfsSync: (path: Parameters<typeof fs.statfsSync>[0]) => {
+      const stats = fs.statfsSync(path)
+      return durabilityFault.fsType === null ? stats : { ...stats, type: durabilityFault.fsType }
+    },
+    fsyncSync: (fd: number) => {
+      if (durabilityFault.failSync) throw Object.assign(new Error('Injected fsync failure'), { code: 'EIO' })
+      fs.fsyncSync(fd)
+    },
+  }
+})
 
 const PRINCIPAL = 'maintainer'
 const AUTHORITY: StateAuthorityRef = {
@@ -208,7 +224,7 @@ async function approve(
 
 describe('authority directory', () => {
   it('seeds, publishes one revision, and replays the original result after a later publication', async () => {
-    const opened = fresh('p04-replay')
+    const opened = fresh('authority-directory-replay')
     try {
       const route = await seed(opened.provider, 'state-auth')
       const proof = validation()
@@ -243,6 +259,15 @@ describe('authority directory', () => {
       expect(detail(await opened.provider.compareAndSwap(second, context()))).toBe('ok')
       const replay = await opened.provider.compareAndSwap(first, context())
       expect(replay).toEqual(published)
+      const unauthorizedReplay = await opened.provider.compareAndSwap(first, context('other-principal'))
+      expect(detail(unauthorizedReplay)).toBe('denied/maintenance_principal')
+      await opened.provider.dispose()
+      const reopened = createAuthorityDirectoryProvider({
+        directory: opened.directory,
+        anchor: opened.anchor,
+        authority: AUTHORITY,
+      })
+      expect(await reopened.compareAndSwap(first, context())).toEqual(published)
       const stale = {
         ...first,
         publication: {
@@ -250,16 +275,17 @@ describe('authority directory', () => {
           validationRef: inlineData({ accepted: false } as JsonValue, 'agh.maintenance/validation@1'),
         },
       }
-      expect(detail(await opened.provider.compareAndSwap(stale, context()))).toBe(
+      expect(detail(await reopened.compareAndSwap(stale, context()))).toBe(
         'conflict/cutover_identity_conflict',
       )
+      await reopened.dispose()
     } finally {
       rmSync(opened.root, { recursive: true, force: true })
     }
   })
 
   it('publishes nothing when a second member revision does not match', async () => {
-    const opened = fresh('p04-zero')
+    const opened = fresh('authority-directory-zero')
     try {
       const state = await seed(opened.provider, 'state-auth')
       const budget = await seed(opened.provider, 'budget-auth')
@@ -293,7 +319,7 @@ describe('authority directory', () => {
   })
 
   it('lets exactly one of two cutovers win the same revision', async () => {
-    const opened = fresh('p04-race')
+    const opened = fresh('authority-directory-race')
     try {
       const route = await seed(opened.provider, 'state-auth')
       const proof = validation()
@@ -318,8 +344,8 @@ describe('authority directory', () => {
   })
 
   it('refuses a bad principal, a cancelled call, a disposed handle, and an unsupported filesystem', async () => {
-    const opened = fresh('p04-refuse')
-    const unsupportedRoot = mkdtempSync('/tmp/p04-nfs-')
+    const opened = fresh('authority-directory-refuse')
+    const unsupportedRoot = mkdtempSync('/tmp/authority-directory-nfs-')
     try {
       const route = makeRoute('state-auth', 1, 'seed-state-auth', null)
       expect(detail(await opened.provider.seedRoute(route, context('other-principal')))).toBe(
@@ -333,7 +359,7 @@ describe('authority directory', () => {
       expect(readFileSync.bind(null, join(opened.directory, 'current'))).toThrow()
       await opened.provider.dispose()
       expect(detail(await opened.provider.seedRoute(route, context()))).toBe('denied/directory_disposed')
-      const sibling = openAt(mkdtempSync('/tmp/p04-sibling-'))
+      const sibling = openAt(mkdtempSync('/tmp/authority-directory-sibling-'))
       expect(detail(await sibling.provider.seedRoute(route, context()))).toBe('ok')
       rmSync(join(sibling.directory, '..'), { recursive: true, force: true })
 
@@ -360,14 +386,50 @@ describe('authority directory', () => {
       })
       expect(provider.features).not.toContain('local-fs-rename')
       expect(detail(await provider.seedRoute(route, context()))).toBe('incompatible/filesystem_unsupported')
+      for (const fsType of [2, 0x6969, 0xff534d42, 0x1234]) {
+        durabilityFault.fsType = fsType
+        const network = createAuthorityDirectoryProvider({
+          directory: opened.directory,
+          anchor: opened.anchor,
+          authority: AUTHORITY,
+        })
+        expect(
+          detail(await network.seedRoute(makeRoute('network-route', 1, 'seed-network', null), context())),
+        ).toBe('incompatible/filesystem_unsupported')
+        await network.dispose()
+      }
     } finally {
+      durabilityFault.fsType = null
       rmSync(opened.root, { recursive: true, force: true })
       rmSync(unsupportedRoot, { recursive: true, force: true })
     }
   })
 
+  it('refuses an anchor physically nested through a symlink or a dot-prefixed child', async () => {
+    const opened = fresh('authority-separation')
+    try {
+      const nested = join(opened.directory, '..anchor')
+      cpSync(opened.anchor, nested, { recursive: true })
+      const alias = join(opened.root, 'anchor-alias')
+      symlinkSync(nested, alias, 'junction')
+      for (const anchor of [nested, alias]) {
+        const provider = createAuthorityDirectoryProvider({
+          directory: opened.directory,
+          anchor,
+          authority: AUTHORITY,
+        })
+        expect(
+          detail(await provider.read({ kind: 'authority', logicalAuthorityId: 'state-auth' }, context())),
+        ).toBe('incompatible/anchor_nested')
+        await provider.dispose()
+      }
+    } finally {
+      rmSync(opened.root, { recursive: true, force: true })
+    }
+  })
+
   it('stops control writes when the locator epoch is uncertain and still diagnoses from the anchor', async () => {
-    const opened = fresh('p04-anchor')
+    const opened = fresh('authority-directory-anchor')
     try {
       const route = await seed(opened.provider, 'state-auth')
       const diagnosed = readStageZero(opened.anchor)
@@ -417,7 +479,7 @@ describe('authority directory', () => {
 
   it('keeps the previous route when a pre-commit phase fails and the new route when commit or notify fails', async () => {
     for (const phase of ['temp', 'fsync', 'rename'] as const) {
-      const opened = fresh(`p04-${phase}`)
+      const opened = fresh(`authority-${phase}`)
       try {
         const route = await seed(opened.provider, 'state-auth')
         const proof = validation()
@@ -430,7 +492,8 @@ describe('authority directory', () => {
             if (current === phase) throw new Error(`stop ${current}`)
           },
         })
-        const request = requestFor([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', proof)
+        const cutoverId = `approval:${canonicalJsonDigest('upgrade-1')}`
+        const request = requestFor([advance(route, cutoverId, 1)], 'upgrade-1', cutoverId, proof)
         expect(detail(await crashing.compareAndSwap(request, context()))).toBe('retryable/durability_failed')
         const reread = createAuthorityDirectoryProvider({
           directory: opened.directory,
@@ -444,8 +507,31 @@ describe('authority directory', () => {
         rmSync(opened.root, { recursive: true, force: true })
       }
     }
+    const syncFailed = fresh('authority-fsync-failure')
+    try {
+      const route = await seed(syncFailed.provider, 'state-auth')
+      const proof = validation()
+      await approve(syncFailed.provider, 'upgrade-1', proof, ['state-auth'])
+      const request = requestFor([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', proof)
+      durabilityFault.failSync = true
+      expect(detail(await syncFailed.provider.compareAndSwap(request, context()))).toBe(
+        'retryable/durability_failed',
+      )
+      durabilityFault.failSync = false
+      const read = await syncFailed.provider.read(
+        { kind: 'authority', logicalAuthorityId: 'state-auth' },
+        context(),
+      )
+      expect(read.ok && read.value.kind === 'authority' && read.value.revision).toBe(1)
+      const absent = await syncFailed.provider.probeCutover('cutover-1', context())
+      expect(absent.ok && absent.value).toEqual({ state: 'absent' })
+    } finally {
+      durabilityFault.failSync = false
+      rmSync(syncFailed.root, { recursive: true, force: true })
+    }
+
     for (const phase of ['commit', 'notify'] as const) {
-      const opened = fresh(`p04-${phase}`)
+      const opened = fresh(`authority-directory-${phase}`)
       try {
         const route = await seed(opened.provider, 'state-auth')
         const proof = validation()
@@ -476,7 +562,7 @@ describe('authority directory', () => {
   })
 
   it('maps a joint cohort only after both members are activated', async () => {
-    const opened = fresh('p04-joint')
+    const opened = fresh('authority-directory-joint')
     try {
       const state = await seed(opened.provider, 'state-auth')
       const budget = await seed(opened.provider, 'budget-auth')
@@ -548,22 +634,81 @@ describe('authority directory', () => {
       expect(mapped.ok && mapped.value.kind === 'joint-dispatch' && mapped.value.resolution.state).toBe(
         'mapped',
       )
+      let previousState = stateChange.next
+      let previousBudget = budgetChange.next
+      let previousDomain = to
+      for (let epoch = 3; epoch <= 6; epoch += 1) {
+        const upgradeId = `upgrade-${epoch}`
+        const cutoverId = `cutover-${epoch}`
+        await approve(opened.provider, upgradeId, proof, ['state-auth', 'budget-auth'])
+        const stateNext = advance(previousState, cutoverId, epoch - 1, NEXT_COHORT)
+        const budgetNext = advance(previousBudget, cutoverId, epoch - 1, NEXT_COHORT)
+        const domainNext = {
+          ...previousDomain,
+          revision: epoch,
+          stateAuthority: { ...previousDomain.stateAuthority, authorityEpoch: epoch },
+          budgetAuthority: { ...previousDomain.budgetAuthority, authorityEpoch: epoch },
+        }
+        expect(
+          detail(
+            await opened.provider.compareAndSwap(
+              requestFor([stateNext, budgetNext], upgradeId, cutoverId, proof, [
+                {
+                  domainId: 'domain-1',
+                  from: previousDomain,
+                  to: domainNext,
+                  cohortDigest: NEXT_COHORT,
+                  validationRef: proof,
+                },
+              ]),
+              context(),
+            ),
+          ),
+        ).toBe('ok')
+        for (const logicalAuthorityId of ['state-auth', 'budget-auth'])
+          expect(
+            detail(
+              await opened.provider.recordActivation(
+                { logicalAuthorityId, authorityEpoch: epoch, cutoverId },
+                context(),
+              ),
+            ),
+          ).toBe('ok')
+        previousState = stateNext.next
+        previousBudget = budgetNext.next
+        previousDomain = domainNext
+      }
+      await opened.provider.dispose()
+      const recovered = createAuthorityDirectoryProvider({
+        directory: opened.directory,
+        anchor: opened.anchor,
+        authority: AUTHORITY,
+      })
+      const currentMapping = await recovered.read(
+        { kind: 'joint-dispatch', domainId: 'domain-1', from },
+        context(),
+      )
+      expect(
+        currentMapping.ok &&
+          currentMapping.value.kind === 'joint-dispatch' &&
+          currentMapping.value.resolution.state === 'mapped' &&
+          currentMapping.value.resolution.qualification,
+      ).toEqual(previousDomain)
+      expect(await recovered.compareAndSwap(request, context())).toEqual(published)
       const stranger = { ...from, revision: 9 }
       expect(
         detail(
-          await opened.provider.read(
-            { kind: 'joint-dispatch', domainId: 'domain-1', from: stranger },
-            context(),
-          ),
+          await recovered.read({ kind: 'joint-dispatch', domainId: 'domain-1', from: stranger }, context()),
         ),
       ).toBe('incompatible/joint_chain_broken')
+      await recovered.dispose()
     } finally {
       rmSync(opened.root, { recursive: true, force: true })
     }
   })
 
   it('moves the directory onto the external anchor and adopts that route after a lost activation', async () => {
-    const opened = fresh('p04-move')
+    const opened = fresh('authority-directory-move')
     try {
       await seed(opened.provider, 'state-auth')
       const proof = lockRef()
@@ -619,7 +764,7 @@ describe('authority directory', () => {
   })
 
   it('adopts the copied directory when the locator moves before the new store is activated', async () => {
-    const opened = fresh('p04-adopt')
+    const opened = fresh('authority-directory-adopt')
     try {
       await seed(opened.provider, 'state-auth')
       expect(detail(await opened.provider.freeze(context()))).toBe('ok')

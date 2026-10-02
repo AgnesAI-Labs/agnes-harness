@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import {
   closeSync,
-  cpSync,
+  constants,
+  copyFileSync,
   existsSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
+  opendirSync,
   readdirSync,
   readFileSync,
   unlinkSync,
@@ -27,10 +30,15 @@ import type {
   StateAuthorityRef,
 } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
-import { createPrivateDirectorySync, createPrivateFileSync, renameWriteThroughSync } from '@agnes/system-node'
+import {
+  createPrivateDirectorySync,
+  createPrivateFileSync,
+  renameWriteThroughSync,
+  syncDirectorySync,
+  syncFileSync,
+} from '@agnes/system-node'
 import {
   activateHead,
-  approveHead,
   type DirectoryHead,
   decidePublication,
   decideRead,
@@ -111,6 +119,8 @@ interface GenerationDocument {
   readonly head: DirectoryHead
   readonly fingerprint: string | null
   readonly result: AuthorityDirectoryCompareAndSwapResult | null
+  readonly approval?: UpgradeApproval
+  readonly origins?: readonly { readonly domainId: string; readonly digest: string }[]
 }
 
 interface HeldGeneration {
@@ -199,7 +209,19 @@ export function createAuthorityDirectoryProvider(
     return adoptPublishedHead(directory, anchor, loaded.value, view.locator, options.onPhase)
   }
 
-  function aligned(current: HeldGeneration, locator: BootstrapLocator): Outcome<DirectoryHead> {
+  function aligned(
+    current: HeldGeneration,
+    locator: BootstrapLocator,
+    context: CallContext,
+  ): Outcome<DirectoryHead> {
+    const live = authorize(context)
+    if (!live.ok) return live
+    if (
+      live.value.locator.epoch !== locator.epoch ||
+      live.value.locator.revision !== locator.revision ||
+      live.value.locator.endpointRef !== locator.endpointRef
+    )
+      return refused({ code: 'conflict', detailCode: 'locator_uncertain' })
     const head = current.head
     if (
       head.authority.authorityId !== options.authority.authorityId ||
@@ -236,9 +258,13 @@ export function createAuthorityDirectoryProvider(
       if (!gated.ok) return gated
       const prepared = prepareHead(gated.value)
       if (!prepared.ok) return prepared
-      const decision = decideRead(prepared.value, request)
-      if (decision.kind === 'refuse') return refused(decision.refusal)
-      return { ok: true, value: decision.value }
+      return mutate(directory, blankHead(gated.value.locator), (current) => {
+        const head = aligned(current, gated.value.locator, context)
+        if (!head.ok) return head
+        const decision = decideRead(head.value, request, (id, digest) => hasOrigin(directory, id, digest))
+        if (decision.kind === 'refuse') return refused(decision.refusal)
+        return { ok: true as const, value: decision.value }
+      })
     },
     async compareAndSwap(request, context) {
       const gated = await gate(context, request, 'AuthorityDirectoryCompareAndSwapRequest')
@@ -249,19 +275,30 @@ export function createAuthorityDirectoryProvider(
         readonly published: boolean
         readonly result: AuthorityDirectoryCompareAndSwapResult
       }>(directory, blankHead(gated.value.locator), (current) => {
-        const head = aligned(current, gated.value.locator)
+        const head = aligned(current, gated.value.locator, context)
         if (!head.ok) return head
         const existing = readCommitted(directory, request.publication.cutoverId)
-        const decision = decidePublication(head.value, request, existing)
+        const decision = decidePublication(
+          head.value,
+          request,
+          existing,
+          readApproval(directory, request.publication.upgradeId),
+        )
         if (decision.kind === 'refuse') return refused(decision.refusal)
         if (decision.kind === 'replay') {
           return { ok: true as const, value: { published: false as const, result: decision.result } }
         }
         const written = publish(current.id, {
-          id: request.publication.cutoverId,
+          id: `publication:${request.publication.cutoverId}`,
           head: decision.head,
           fingerprint: decision.fingerprint,
           result: decision.result,
+          origins: request.publication.jointDispatchMappings.flatMap((mapping) =>
+            [mapping.from, mapping.to].map((qualification) => ({
+              domainId: mapping.domainId,
+              digest: canonicalJsonDigest(JSON.parse(JSON.stringify(qualification)) as JsonValue),
+            })),
+          ),
         })
         if (!written.ok) return written
         return { ok: true as const, value: { published: true as const, result: decision.result } }
@@ -292,7 +329,7 @@ export function createAuthorityDirectoryProvider(
       }
       const prepared = prepareHead(gated.value)
       if (!prepared.ok) return prepared
-      return publishDirectoryMove(directory, anchor, options, gated.value, request, refused)
+      return publishDirectoryMove(directory, anchor, options, gated.value, request, context, refused)
     },
     async seedRoute(route, context) {
       const gated = await gate(context, route, 'AuthorityRoute')
@@ -300,11 +337,12 @@ export function createAuthorityDirectoryProvider(
       const prepared = prepareHead(gated.value)
       if (!prepared.ok) return prepared
       return mutate(directory, blankHead(gated.value.locator), (current) => {
-        const head = aligned(current, gated.value.locator)
+        const head = aligned(current, gated.value.locator, context)
         if (!head.ok) return head
+        if (head.value.fenced) return refused({ code: 'conflict', detailCode: 'directory_fenced' })
         const seeded = seedHead(head.value, route)
         if (!isHead(seeded)) return refused(seeded)
-        const id = `seed-${canonicalJsonDigest(route.logicalAuthorityId).slice(0, 32)}`
+        const id = `seed:${canonicalJsonDigest(route.logicalAuthorityId)}`
         const written = publish(current.id, { id, head: seeded, fingerprint: null, result: null })
         if (!written.ok) return written
         return { ok: true as const, value: { revision: 1 } }
@@ -318,12 +356,25 @@ export function createAuthorityDirectoryProvider(
       const prepared = prepareHead(gated.value)
       if (!prepared.ok) return prepared
       return mutate(directory, blankHead(gated.value.locator), (current) => {
-        const head = aligned(current, gated.value.locator)
+        const head = aligned(current, gated.value.locator, context)
         if (!head.ok) return head
-        const approved = approveHead(head.value, input.upgradeId, input.validationRef, input.authorityIds)
-        if (!isHead(approved)) return refused(approved)
-        const id = `approve-${canonicalJsonDigest(input.upgradeId).slice(0, 32)}`
-        const written = publish(current.id, { id, head: approved, fingerprint: null, result: null })
+        if (head.value.fenced) return refused({ code: 'conflict', detailCode: 'directory_fenced' })
+        if (readApproval(directory, input.upgradeId))
+          return refused({ code: 'conflict', detailCode: 'upgrade_exists' })
+        if (
+          input.authorityIds.length === 0 ||
+          new Set(input.authorityIds).size !== input.authorityIds.length
+        ) {
+          return refused({ code: 'invalid_input', detailCode: 'journal_authorities' })
+        }
+        const id = `approval:${canonicalJsonDigest(input.upgradeId)}`
+        const written = publish(current.id, {
+          id,
+          head: head.value,
+          approval: input,
+          fingerprint: null,
+          result: null,
+        })
         if (!written.ok) return written
         return { ok: true as const, value: { upgradeId: input.upgradeId } }
       })
@@ -334,8 +385,9 @@ export function createAuthorityDirectoryProvider(
       const prepared = prepareHead(gated.value)
       if (!prepared.ok) return prepared
       return mutate(directory, blankHead(gated.value.locator), (current) => {
-        const head = aligned(current, gated.value.locator)
+        const head = aligned(current, gated.value.locator, context)
         if (!head.ok) return head
+        if (head.value.fenced) return refused({ code: 'conflict', detailCode: 'directory_fenced' })
         const next = activateHead(head.value, input)
         if (!isHead(next)) return refused(next)
         if (next === head.value) return { ok: true as const, value: { recorded: true as const } }
@@ -351,12 +403,12 @@ export function createAuthorityDirectoryProvider(
       const prepared = prepareHead(gated.value)
       if (!prepared.ok) return prepared
       return mutate(directory, blankHead(gated.value.locator), (current) => {
-        const head = aligned(current, gated.value.locator)
+        const head = aligned(current, gated.value.locator, context)
         if (!head.ok) return head
         const next = fenceHead(head.value)
         if (next === head.value) return { ok: true as const, value: { fenced: true as const } }
         const written = publish(current.id, {
-          id: `fence-${String(head.value.directoryEpoch)}`,
+          id: `fence-${randomUUID()}`,
           head: next,
           fingerprint: null,
           result: null,
@@ -373,12 +425,14 @@ export function createAuthorityDirectoryProvider(
       const prepared = prepareHead(gated.value)
       if (!prepared.ok) return prepared
       return mutate(directory, blankHead(gated.value.locator), (current) => {
-        const head = aligned(current, gated.value.locator)
+        const head = aligned(current, gated.value.locator, context)
         if (!head.ok) return head
+        if (head.value.migrationId !== null)
+          return refused({ code: 'conflict', detailCode: 'directory_fenced' })
         const next = unfenceHead(head.value)
         if (next === head.value) return { ok: true as const, value: { fenced: false as const } }
         const written = publish(current.id, {
-          id: `unfence-${String(head.value.directoryEpoch)}`,
+          id: `unfence-${randomUUID()}`,
           head: next,
           fingerprint: null,
           result: null,
@@ -416,6 +470,7 @@ function publishDirectoryMove(
   options: AuthorityDirectoryOpenOptions,
   view: StageZeroView,
   migration: MigrationRequest,
+  context: CallContext,
   refused: <T>(refusal: PublicationRefusal) => Outcome<T>,
 ): Outcome<MigrationReceipt> {
   if (migration.target.kind !== 'directory')
@@ -426,7 +481,11 @@ function publishDirectoryMove(
   if (view.locator.endpointRef !== directory)
     return refused({ code: 'conflict', detailCode: 'locator_uncertain' })
   const standby = resolve(directory, '..', 'standby', target.targetLocationRef)
-  if (!pathsAreSeparate(directory, standby) || !pathsAreSeparate(directory, anchor)) {
+  if (
+    !pathsAreSeparate(directory, standby) ||
+    !pathsAreSeparate(directory, anchor) ||
+    !pathsAreSeparate(standby, anchor)
+  ) {
     return refused({ code: 'incompatible', detailCode: 'anchor_nested' })
   }
   const frozen = mutate<DirectoryHead>(
@@ -435,8 +494,16 @@ function publishDirectoryMove(
     (current) => {
       if (current.head.locatorEpoch !== view.locator.epoch)
         return refused({ code: 'conflict', detailCode: 'locator_uncertain' })
-      const next = fenceHead(current.head)
-      if (next === current.head) return { ok: true as const, value: next }
+      const live = readStageZero(anchor)
+      if (!live.ok) return live
+      if (!live.value || live.value.credential.principalRef !== context.principalRef)
+        return refused({ code: 'denied', detailCode: 'maintenance_principal' })
+      if (live.value.locator.epoch !== view.locator.epoch || live.value.locator.endpointRef !== directory)
+        return refused({ code: 'conflict', detailCode: 'locator_uncertain' })
+      if (current.head.migrationId !== null && current.head.migrationId !== migration.upgradeId)
+        return refused({ code: 'conflict', detailCode: 'directory_fenced' })
+      const next = { ...fenceHead(current.head), migrationId: migration.upgradeId }
+      if (current.head.migrationId === migration.upgradeId) return { ok: true as const, value: next }
       const written = writeGeneration(
         directory,
         current.id,
@@ -450,6 +517,7 @@ function publishDirectoryMove(
   if (!frozen.ok) return frozen
   const headDigest = canonicalJsonDigest(JSON.parse(JSON.stringify(frozen.value)) as JsonValue)
   try {
+    if (existsSync(standby)) return refused({ code: 'incompatible', detailCode: 'target_exists' })
     copyStore(directory, standby)
   } catch {
     return refused({ code: 'retryable', detailCode: 'durability_failed' })
@@ -577,6 +645,19 @@ function mutate<T>(
   fallback: DirectoryHead,
   body: (current: HeldGeneration) => Outcome<T>,
 ): Outcome<T> {
+  try {
+    return mutateStore(directory, fallback, body)
+  } catch (error) {
+    if (error instanceof PhaseStop) throw error
+    return { ok: false, error: refusal('retryable', 'directory_unavailable') }
+  }
+}
+
+function mutateStore<T>(
+  directory: string,
+  fallback: DirectoryHead,
+  body: (current: HeldGeneration) => Outcome<T>,
+): Outcome<T> {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   const db = new DatabaseSync(join(directory, 'lock.db'))
   try {
@@ -619,7 +700,9 @@ function writeGeneration(
   const folder = join(directory, 'generations')
   ensurePrivateDir(folder)
   const name = fileName(document.id)
-  const temp = join(folder, `.${name}.${randomUUID()}.tmp`)
+  const staging = join(directory, 'staging')
+  ensurePrivateDir(staging)
+  const temp = join(staging, `.${name}.${randomUUID()}.tmp`)
   const finalPath = join(folder, name)
   let descriptor: number | undefined
   try {
@@ -637,8 +720,9 @@ function writeGeneration(
   try {
     renameWriteThroughSync(temp, finalPath)
     fire(onPhase, 'rename')
+    publishOrigins(directory, document)
     if (previousId !== null) seal(directory, previousId)
-    const pointerTemp = join(directory, `.current.${randomUUID()}.tmp`)
+    const pointerTemp = join(staging, `.current.${randomUUID()}.tmp`)
     const pointerFd = createPrivateFileSync(pointerTemp)
     try {
       writeFileSync(pointerFd, document.id)
@@ -649,7 +733,7 @@ function writeGeneration(
     renameWriteThroughSync(pointerTemp, join(directory, 'current'))
     fire(onPhase, 'commit')
   } catch (error) {
-    if (pointerShows(directory, document.id)) throw error
+    if (pointerShows(directory, document.id)) throw new PhaseStop('commit')
     return { ok: false, error: refusal('retryable', 'durability_failed') }
   }
   return { ok: true, value: true }
@@ -660,7 +744,7 @@ function seal(directory: string, id: string): void {
   ensurePrivateDir(folder)
   const finalPath = join(folder, fileName(id))
   if (existsSync(finalPath)) return
-  const temp = join(folder, `.${fileName(id)}.${randomUUID()}.tmp`)
+  const temp = join(directory, 'staging', `.${fileName(id)}.${randomUUID()}.tmp`)
   const descriptor = createPrivateFileSync(temp)
   try {
     writeFileSync(descriptor, id)
@@ -671,12 +755,67 @@ function seal(directory: string, id: string): void {
   renameWriteThroughSync(temp, finalPath)
 }
 
+function readApproval(
+  directory: string,
+  upgradeId: string,
+): { validationDigest: string; authorityIds: readonly string[] } | null {
+  const id = `approval:${canonicalJsonDigest(upgradeId)}`
+  if (!isCommitted(directory, id)) return null
+  const approval = readGeneration(directory, id)?.approval
+  return approval
+    ? {
+        validationDigest: canonicalJsonDigest(
+          JSON.parse(JSON.stringify(approval.validationRef)) as JsonValue,
+        ),
+        authorityIds: approval.authorityIds,
+      }
+    : null
+}
+
+function originName(domainId: string, digest: string): string {
+  return canonicalJsonDigest({ domainId, digest })
+}
+
+function hasOrigin(directory: string, domainId: string, digest: string): boolean {
+  try {
+    const id = readFileSync(join(directory, 'origins', originName(domainId, digest)), 'utf8')
+    if (!isCommitted(directory, id)) return false
+    return (
+      readGeneration(directory, id)?.origins?.some(
+        (origin) => origin.domainId === domainId && origin.digest === digest,
+      ) === true
+    )
+  } catch {
+    return false
+  }
+}
+
+function publishOrigins(directory: string, document: GenerationDocument): void {
+  if (!document.origins?.length) return
+  const folder = join(directory, 'origins')
+  ensurePrivateDir(folder)
+  for (const origin of document.origins) {
+    if (hasOrigin(directory, origin.domainId, origin.digest)) continue
+    const name = originName(origin.domainId, origin.digest)
+    const temp = join(directory, 'staging', `.${name}.${randomUUID()}.tmp`)
+    const fd = createPrivateFileSync(temp)
+    try {
+      writeFileSync(fd, document.id)
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
+    renameWriteThroughSync(temp, join(folder, name))
+  }
+}
+
 function readCommitted(
   directory: string,
   id: string,
 ): { readonly fingerprint: string; readonly result: AuthorityDirectoryCompareAndSwapResult } | null {
-  if (!isCommitted(directory, id)) return null
-  const document = readGeneration(directory, id)
+  const key = `publication:${id}`
+  if (!isCommitted(directory, key)) return null
+  const document = readGeneration(directory, key)
   if (!document?.fingerprint || !document.result) return null
   return { fingerprint: document.fingerprint, result: document.result }
 }
@@ -710,20 +849,79 @@ function readGeneration(directory: string, id: string): GenerationDocument | nul
     const parsed = JSON.parse(
       readFileSync(join(directory, 'generations', fileName(id)), 'utf8'),
     ) as GenerationDocument
-    if (!parsed || typeof parsed !== 'object' || !parsed.head) return null
+    if (!parsed || typeof parsed !== 'object' || !validHead(parsed.head)) return null
     return parsed
   } catch {
     return null
   }
 }
 
+function validHead(head: DirectoryHead): boolean {
+  if (
+    !head ||
+    !validateRuntime('StateAuthorityRef', head.authority).ok ||
+    ![head.writerEpoch, head.directoryEpoch, head.locatorEpoch].every(
+      (value) => validateRuntime('UInt53', value).ok && value >= 1,
+    ) ||
+    typeof head.fenced !== 'boolean' ||
+    (head.migrationId !== null && typeof head.migrationId !== 'string') ||
+    !head.routes ||
+    !head.domains ||
+    !Array.isArray(head.activations)
+  )
+    return false
+  for (const value of Object.values(head.routes))
+    if (
+      !value ||
+      !validateRuntime('UInt53', value.revision).ok ||
+      !validateRuntime('AuthorityRoute', value.route).ok
+    )
+      return false
+  for (const value of Object.values(head.domains))
+    if (
+      !value ||
+      !validateRuntime('UInt53', value.revision).ok ||
+      !validateRuntime('JointDispatchMigrationMapping', value.current).ok
+    )
+      return false
+  return head.activations.every(
+    (value) =>
+      value &&
+      validateRuntime('Id', value.logicalAuthorityId).ok &&
+      validateRuntime('UInt53', value.authorityEpoch).ok &&
+      validateRuntime('Id', value.cutoverId).ok,
+  )
+}
+
 function copyStore(from: string, to: string): void {
-  mkdirSync(to, { recursive: true, mode: 0o700 })
-  for (const name of ['current', 'generations', 'seals']) {
+  mkdirSync(resolve(to, '..'), { recursive: true, mode: 0o700 })
+  mkdirSync(to, { mode: 0o700 })
+  for (const name of ['current', 'generations', 'seals', 'origins']) {
     const source = join(from, name)
-    if (!existsSync(source)) continue
-    cpSync(source, join(to, name), { recursive: true })
+    if (existsSync(source)) copyTree(source, join(to, name))
   }
+  syncDirectorySync(to)
+  syncDirectorySync(resolve(to, '..'))
+  syncDirectorySync(resolve(to, '../..'))
+}
+
+function copyTree(from: string, to: string): void {
+  const kind = lstatSync(from)
+  if (kind.isFile()) {
+    copyFileSync(from, to, constants.COPYFILE_EXCL)
+    syncFileSync(to)
+    return
+  }
+  if (!kind.isDirectory()) throw new Error('Directory candidate contains a non-regular entry')
+  mkdirSync(to, { mode: 0o700 })
+  const folder = opendirSync(from)
+  try {
+    for (let entry = folder.readSync(); entry !== null; entry = folder.readSync())
+      copyTree(join(from, entry.name), join(to, entry.name))
+  } finally {
+    folder.closeSync()
+  }
+  syncDirectorySync(to)
 }
 
 function ensurePrivateDir(folder: string): void {
@@ -732,7 +930,7 @@ function ensurePrivateDir(folder: string): void {
 }
 
 function reclaimTemps(directory: string): void {
-  for (const folder of [directory, join(directory, 'generations'), join(directory, 'seals')]) {
+  for (const folder of [join(directory, 'staging')]) {
     if (!existsSync(folder)) continue
     for (const name of readdirSync(folder)) {
       if (!name.startsWith('.') || !name.endsWith('.tmp')) continue

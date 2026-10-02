@@ -21,7 +21,7 @@ export interface StoredRoute {
 
 export interface StoredDomain {
   readonly revision: number
-  readonly chain: readonly JointDispatchMigrationMapping[]
+  readonly current: JointDispatchMigrationMapping
 }
 
 export interface Activation {
@@ -35,12 +35,10 @@ export interface DirectoryHead {
   readonly writerEpoch: number
   readonly directoryEpoch: number
   readonly locatorEpoch: number
+  readonly migrationId: string | null
   readonly fenced: boolean
   readonly authority: StateAuthorityRef
   readonly routes: Readonly<Record<string, StoredRoute>>
-  readonly journals: Readonly<
-    Record<string, { readonly validationDigest: string; readonly authorityIds: readonly string[] }>
-  >
   readonly domains: Readonly<Record<string, StoredDomain>>
   readonly activations: readonly Activation[]
 }
@@ -68,9 +66,9 @@ export function emptyHead(authority: StateAuthorityRef, locatorEpoch: number): D
     directoryEpoch: authority.authorityEpoch,
     locatorEpoch,
     fenced: false,
+    migrationId: null,
     authority,
     routes: {},
-    journals: {},
     domains: {},
     activations: [],
   }
@@ -111,6 +109,7 @@ export function decidePublication(
   head: DirectoryHead,
   request: AuthorityDirectoryCompareAndSwapRequest,
   existing: { readonly fingerprint: string; readonly result: AuthorityDirectoryCompareAndSwapResult } | null,
+  journal: { readonly validationDigest: string; readonly authorityIds: readonly string[] } | null,
 ): PublicationDecision {
   if (request.transactionId !== request.publication.cutoverId) {
     return refuse('invalid_input', 'cutover_transaction_mismatch')
@@ -123,9 +122,8 @@ export function decidePublication(
   if (head.fenced) return refuse('conflict', 'directory_fenced')
   if (!sameAuthority(head.authority, request.authority)) return refuse('conflict', 'directory_authority')
   if (request.expectedWriterEpoch !== head.writerEpoch) return refuse('conflict', 'writer_epoch')
-  const journal = head.journals[request.publication.upgradeId]
   if (!journal) return refuse('incompatible', 'upgrade_not_journaled')
-  if (journal.validationDigest !== request.publication.validationRef.schema.digest) {
+  if (journal.validationDigest !== canonicalJsonDigest(cloneJson(request.publication.validationRef))) {
     return refuse('incompatible', 'validation_mismatch')
   }
   const structural = inspectPublication(head, request.publication, journal.authorityIds)
@@ -140,11 +138,12 @@ export function decidePublication(
 export function decideRead(
   head: DirectoryHead,
   request: AuthorityDirectoryReadRequest,
+  hasOrigin: (domainId: string, digest: string) => boolean,
 ):
   | { readonly kind: 'value'; readonly value: AuthorityDirectoryReadResult }
   | { readonly kind: 'refuse'; readonly refusal: PublicationRefusal } {
   if (request.kind === 'authority') {
-    const stored = head.routes[request.logicalAuthorityId]
+    const stored = own(head.routes, request.logicalAuthorityId)
     if (!stored) return refuse('incompatible', 'route_absent')
     return {
       kind: 'value',
@@ -157,15 +156,13 @@ export function decideRead(
     }
   }
   if (request.domainId !== request.from.domainId) return refuse('invalid_input', 'joint_domain')
-  const domain = head.domains[request.domainId]
-  if (!domain || domain.chain.length === 0) {
+  const domain = own(head.domains, request.domainId)
+  if (!domain) {
     return { kind: 'value', value: { kind: 'joint-dispatch', resolution: { state: 'unmapped' } } }
   }
-  const linked = linkedChain(domain.chain)
-  if (!linked) return refuse('incompatible', 'joint_chain_broken')
   const wanted = canonicalJsonDigest(cloneJson(request.from))
-  if (!linked.digests.has(wanted)) return refuse('incompatible', 'joint_chain_broken')
-  const current = linked.head
+  if (!hasOrigin(request.domainId, wanted)) return refuse('incompatible', 'joint_chain_broken')
+  const current = domain.current
   const stateRoute = memberRoute(head, current.to.stateAuthority.authorityId)
   const budgetRoute = memberRoute(head, current.to.budgetAuthority.authorityId)
   if (
@@ -202,7 +199,7 @@ export function decideRead(
 }
 
 export function seedHead(head: DirectoryHead, route: AuthorityRoute): DirectoryHead | PublicationRefusal {
-  if (head.routes[route.logicalAuthorityId]) return { code: 'conflict', detailCode: 'route_exists' }
+  if (own(head.routes, route.logicalAuthorityId)) return { code: 'conflict', detailCode: 'route_exists' }
   if (route.authorityEpoch < 1) return { code: 'invalid_input', detailCode: 'epoch_not_increasing' }
   return {
     ...head,
@@ -210,31 +207,11 @@ export function seedHead(head: DirectoryHead, route: AuthorityRoute): DirectoryH
   }
 }
 
-export function approveHead(
-  head: DirectoryHead,
-  upgradeId: string,
-  validationRef: DataRef,
-  authorityIds: readonly string[],
-): DirectoryHead | PublicationRefusal {
-  if (head.journals[upgradeId]) return { code: 'conflict', detailCode: 'upgrade_exists' }
-  const unique = new Set(authorityIds)
-  if (unique.size !== authorityIds.length || authorityIds.length === 0) {
-    return { code: 'invalid_input', detailCode: 'journal_authorities' }
-  }
-  return {
-    ...head,
-    journals: {
-      ...head.journals,
-      [upgradeId]: { validationDigest: validationRef.schema.digest, authorityIds: [...authorityIds] },
-    },
-  }
-}
-
 export function activateHead(
   head: DirectoryHead,
   activation: Activation,
 ): DirectoryHead | PublicationRefusal {
-  const stored = head.routes[activation.logicalAuthorityId]
+  const stored = own(head.routes, activation.logicalAuthorityId)
   if (!stored) return { code: 'incompatible', detailCode: 'route_absent' }
   if (
     stored.route.authorityEpoch !== activation.authorityEpoch ||
@@ -243,7 +220,13 @@ export function activateHead(
     return { code: 'conflict', detailCode: 'activation_mismatch' }
   }
   if (activated(head, stored.route)) return head
-  return { ...head, activations: [...head.activations, activation] }
+  return {
+    ...head,
+    activations: [
+      ...head.activations.filter((item) => item.logicalAuthorityId !== activation.logicalAuthorityId),
+      activation,
+    ],
+  }
 }
 
 export function fenceHead(head: DirectoryHead): DirectoryHead {
@@ -258,7 +241,7 @@ export function unfenceHead(head: DirectoryHead): DirectoryHead {
 
 /** The copied directory becomes writable at the new locator epoch. The source copy stays fenced. */
 export function retargetLocator(head: DirectoryHead, locatorEpoch: number): DirectoryHead {
-  return { ...head, locatorEpoch, directoryEpoch: locatorEpoch, fenced: false }
+  return { ...head, locatorEpoch, directoryEpoch: locatorEpoch, fenced: false, migrationId: null }
 }
 
 function inspectPublication(
@@ -282,11 +265,26 @@ function inspectPublication(
       return refuse('incompatible', 'journal_authority')
     }
   }
+  if (seen.size !== journalAuthorities.length) return refuse('incompatible', 'journal_authority')
   const fences = fenceSet(publication)
   if (fences.kind === 'refuse') return fences
   for (const change of publication.changes) {
     const key = fenceKey(change.previous)
     if (!fences.keys.has(key)) return refuse('incompatible', 'fence_incomplete')
+  }
+  if (fences.keys.size !== seen.size) return refuse('incompatible', 'fence_incomplete')
+  for (const change of publication.changes) {
+    const fence = publication.sourceFences.find(
+      (item) =>
+        fenceKey(change.previous) ===
+        `${item.source.authorityId}\0${item.source.tenantId}\0${item.source.authorityEpoch}`,
+    )
+    if (
+      !fence ||
+      canonicalJsonDigest(cloneJson(fence.checkpoint)) !==
+        canonicalJsonDigest(cloneJson(change.previous.checkpoint))
+    )
+      return refuse('incompatible', 'fence_checkpoint')
   }
   const domains = domainUpdates(head, publication)
   if (domains.kind === 'refuse') return domains
@@ -361,7 +359,7 @@ function revisionsMatch(
 ): { readonly kind: 'ok'; readonly revisions: ReadonlyMap<string, number> } | PublicationStop {
   const revisions = new Map<string, number>()
   for (const change of changes) {
-    const stored = head.routes[change.previous.logicalAuthorityId]
+    const stored = own(head.routes, change.previous.logicalAuthorityId)
     if (
       !stored ||
       stored.revision !== change.expectedRevision ||
@@ -393,7 +391,7 @@ function applyCommit(
   changes: readonly AuthorityPublication['changes'][number][],
   domains: DirectoryHead['domains'],
 ): DirectoryHead {
-  const routes = { ...head.routes }
+  const routes: Record<string, StoredRoute> = Object.assign(Object.create(null), head.routes)
   for (const change of changes) {
     const stored = routes[change.previous.logicalAuthorityId]
     routes[change.previous.logicalAuthorityId] = {
@@ -401,14 +399,21 @@ function applyCommit(
       route: change.next,
     }
   }
-  return { ...head, routes, domains }
+  return {
+    ...head,
+    routes,
+    domains,
+    activations: head.activations.filter(
+      (item) => !changes.some((change) => change.next.logicalAuthorityId === item.logicalAuthorityId),
+    ),
+  }
 }
 
 function domainUpdates(
   head: DirectoryHead,
   publication: AuthorityPublication,
 ): { readonly kind: 'ok'; readonly domains: DirectoryHead['domains'] } | PublicationStop {
-  const domains = { ...head.domains }
+  const domains: Record<string, StoredDomain> = Object.assign(Object.create(null), head.domains)
   const seen = new Set<string>()
   for (const mapping of publication.jointDispatchMappings) {
     if (seen.has(mapping.domainId)) return refuse('invalid_input', 'duplicate_authority')
@@ -430,9 +435,19 @@ function domainUpdates(
     ) {
       return refuse('incompatible', 'joint_binding')
     }
-    const prior = domains[mapping.domainId]
-    if (prior && prior.chain.length > 0) {
-      const tail = prior.chain[prior.chain.length - 1]
+    if (
+      !sameMember(state.previous, mapping.from.stateAuthority, mapping.from.stateBinding) ||
+      !sameMember(budget.previous, mapping.from.budgetAuthority, mapping.from.budgetBinding)
+    )
+      return refuse('incompatible', 'joint_chain_broken')
+    if (
+      canonicalJsonDigest(cloneJson(mapping.validationRef)) !==
+      canonicalJsonDigest(cloneJson(publication.validationRef))
+    )
+      return refuse('incompatible', 'validation_mismatch')
+    const prior = own(domains, mapping.domainId)
+    if (prior) {
+      const tail = prior.current
       if (!tail || canonicalJsonDigest(cloneJson(tail.to)) !== canonicalJsonDigest(cloneJson(mapping.from))) {
         return refuse('incompatible', 'joint_chain_broken')
       }
@@ -442,8 +457,7 @@ function domainUpdates(
     ) {
       return refuse('incompatible', 'joint_chain_broken')
     }
-    const chain = [...(prior?.chain ?? []), mapping]
-    domains[mapping.domainId] = { revision: (prior?.revision ?? 0) + 1, chain }
+    domains[mapping.domainId] = { revision: (prior?.revision ?? 0) + 1, current: mapping }
   }
   return { kind: 'ok', domains }
 }
@@ -455,7 +469,7 @@ function partialJoint(
 ): boolean {
   for (const change of publication.changes) {
     for (const [domainId, domain] of Object.entries(head.domains)) {
-      const tail = domain.chain[domain.chain.length - 1]
+      const tail = domain.current
       if (!tail) continue
       const ids = [tail.to.stateAuthority.authorityId, tail.to.budgetAuthority.authorityId]
       if (!ids.includes(change.previous.logicalAuthorityId)) continue
@@ -497,29 +511,8 @@ function memberMatches(
   )
 }
 
-function linkedChain(chain: readonly JointDispatchMigrationMapping[]): {
-  readonly head: JointDispatchMigrationMapping
-  readonly digests: ReadonlySet<string>
-} | null {
-  const digests = new Set<string>()
-  for (let index = 0; index < chain.length; index += 1) {
-    const mapping = chain[index]
-    if (!mapping) return null
-    if (index > 0) {
-      const prior = chain[index - 1]
-      if (!prior || canonicalJsonDigest(cloneJson(prior.to)) !== canonicalJsonDigest(cloneJson(mapping.from)))
-        return null
-    }
-    digests.add(canonicalJsonDigest(cloneJson(mapping.from)))
-    digests.add(canonicalJsonDigest(cloneJson(mapping.to)))
-  }
-  const head = chain[chain.length - 1]
-  if (!head) return null
-  return { head, digests }
-}
-
 function memberRoute(head: DirectoryHead, authorityId: string): StoredRoute | undefined {
-  return head.routes[authorityId]
+  return own(head.routes, authorityId)
 }
 
 function activated(head: DirectoryHead, route: AuthorityRoute): boolean {
@@ -545,6 +538,10 @@ function sameBinding(
 
 function refuse(code: PublicationRefusal['code'], detailCode: string): PublicationStop {
   return { kind: 'refuse', refusal: { code, detailCode } }
+}
+
+function own<T>(table: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined
 }
 
 function cloneJson<T>(value: T): JsonValue {

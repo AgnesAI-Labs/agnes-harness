@@ -1,5 +1,5 @@
-import { mkdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, realpathSync, statfsSync } from 'node:fs'
+import { basename, dirname, resolve, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type {
@@ -47,11 +47,11 @@ interface RouteHead {
   writerEpoch: number
   directoryEpoch: number
   locatorEpoch: number
+  moveOwner: string | null
   fenced: boolean
   authority: StateAuthorityRef
   routes: Record<string, { revision: number; route: AuthorityRoute }>
-  journals: Record<string, { validationDigest: string; authorityIds: string[] }>
-  domains: Record<string, { revision: number; chain: JointDispatchMigrationMapping[] }>
+  domains: Record<string, { revision: number; latest: JointDispatchMigrationMapping }>
   activations: { logicalAuthorityId: string; authorityEpoch: number; cutoverId: string }[]
 }
 
@@ -128,13 +128,13 @@ export function createReferenceAuthorityDirectory(options: {
   readonly anchor: string
   readonly authority: StateAuthorityRef
   readonly filesystem?: 'local' | 'unsupported'
-  readonly onPhase?: (phase: 'commit' | 'notify') => void
+  readonly onPhase?: (phase: 'transaction' | 'commit' | 'notify') => void
 }): ReferenceDirectory {
   const directory = resolve(options.directory)
   const anchor = resolve(options.anchor)
   const store = resolve(directory, 'routes.sqlite')
   let disposed = false
-  const blocked = options.filesystem === 'unsupported'
+  const blocked = options.filesystem === 'unsupported' || !localSqliteLocation(directory)
 
   function admit(
     context: CallContext,
@@ -155,9 +155,9 @@ export function createReferenceAuthorityDirectory(options: {
       directoryEpoch: options.authority.authorityEpoch,
       locatorEpoch: epoch,
       fenced: false,
+      moveOwner: null,
       authority: options.authority,
       routes: {},
-      journals: {},
       domains: {},
       activations: [],
     }
@@ -173,13 +173,27 @@ export function createReferenceAuthorityDirectory(options: {
     return adopt(store, anchor, loaded.value, view.locator, options.onPhase)
   }
 
-  function save(
-    head: RouteHead,
-    extra?: { id: string; fingerprint: string; result: AuthorityDirectoryCompareAndSwapResult },
+  function edit(
+    view: { locator: ReferenceLocator; credential: ReferenceCredential },
+    change: (head: RouteHead) => RouteHead | { stop: Stop },
+    allowFrozen = false,
   ): Outcome<true> {
     return immediate(store, (db) => {
-      putHead(db, head)
-      if (extra) putCutover(db, extra.id, extra.fingerprint, extra.result)
+      const live = loadAnchor(anchor, view.credential.principalRef)
+      if (!live.ok) return live
+      if (
+        live.value.locator.epoch !== view.locator.epoch ||
+        live.value.locator.revision !== view.locator.revision ||
+        live.value.locator.endpointRef !== directory
+      )
+        return halt('conflict', 'locator_uncertain')
+      const current = takeHead(db, blank(view.locator.epoch))
+      if (!current.ok) return current
+      if (current.value.locatorEpoch !== view.locator.epoch) return halt('conflict', 'locator_uncertain')
+      if (!allowFrozen && current.value.fenced) return halt('conflict', 'directory_fenced')
+      const next = change(current.value)
+      if ('stop' in next) return halt(next.stop.code, next.stop.detail)
+      putHead(db, next)
       return { ok: true, value: true }
     })
   }
@@ -201,9 +215,28 @@ export function createReferenceAuthorityDirectory(options: {
       if (!gated.ok) return gated
       const head = ready(gated.value)
       if (!head.ok) return head
-      const answer = answerRead(head.value, request)
-      if ('stop' in answer) return halt(answer.stop.code, answer.stop.detail)
-      return { ok: true, value: answer.value }
+      return immediate(store, (db) => {
+        const live = admit(context, null, null)
+        if (!live.ok) return live
+        if (
+          live.value.locator.epoch !== gated.value.locator.epoch ||
+          live.value.locator.revision !== gated.value.locator.revision ||
+          live.value.locator.endpointRef !== directory
+        )
+          return halt('conflict', 'locator_uncertain')
+        const current = takeHead(db, blank(gated.value.locator.epoch))
+        if (!current.ok) return current
+        const answer = answerRead(
+          current.value,
+          request,
+          (domain, fingerprint) =>
+            db
+              .prepare('SELECT 1 FROM domain_origin WHERE domain_id = ? AND qualification_digest = ?')
+              .get(domain, fingerprint) !== undefined,
+        )
+        if ('stop' in answer) return halt(answer.stop.code, answer.stop.detail)
+        return { ok: true as const, value: answer.value }
+      })
     },
     async compareAndSwap(request, context) {
       const gated = admit(context, request, 'AuthorityDirectoryCompareAndSwapRequest')
@@ -212,6 +245,14 @@ export function createReferenceAuthorityDirectory(options: {
       if (!opened.ok) return opened
       let wrote = false
       const outcome = immediate(store, (db) => {
+        const live = admit(context, null, null)
+        if (!live.ok) return live
+        if (
+          live.value.locator.epoch !== gated.value.locator.epoch ||
+          live.value.locator.revision !== gated.value.locator.revision ||
+          live.value.locator.endpointRef !== directory
+        )
+          return halt('conflict', 'locator_uncertain')
         const current = takeHead(db, blank(gated.value.locator.epoch))
         if (!current.ok) return current
         if (
@@ -220,11 +261,27 @@ export function createReferenceAuthorityDirectory(options: {
         ) {
           return halt('conflict', 'locator_uncertain')
         }
-        const verdict = judge(current.value, request, takeCutover(db, request.publication.cutoverId))
+        const verdict = judge(
+          current.value,
+          request,
+          takeCutover(db, request.publication.cutoverId),
+          takeApproval(db, request.publication.upgradeId),
+        )
         if (verdict.tag === 'stop') return halt(verdict.stop.code, verdict.stop.detail)
         if (verdict.tag === 'replay') return { ok: true as const, value: verdict.result }
         putHead(db, verdict.head)
+        const insertOrigin = db.prepare(
+          'INSERT OR IGNORE INTO domain_origin(domain_id, qualification_digest) VALUES (?, ?)',
+        )
+        for (const link of request.publication.jointDispatchMappings) {
+          for (const value of [link.from, link.to])
+            insertOrigin.run(
+              link.domainId,
+              canonicalJsonDigest(JSON.parse(JSON.stringify(value)) as JsonValue),
+            )
+        }
         putCutover(db, request.publication.cutoverId, verdict.fingerprint, verdict.result)
+        options.onPhase?.('transaction')
         wrote = true
         return { ok: true as const, value: verdict.result }
       })
@@ -258,6 +315,7 @@ export function createReferenceAuthorityDirectory(options: {
         options.authority,
         gated.value.locator,
         request,
+        context.principalRef,
         options.onPhase,
       )
     },
@@ -266,9 +324,7 @@ export function createReferenceAuthorityDirectory(options: {
       if (!gated.ok) return gated
       const opened = ready(gated.value)
       if (!opened.ok) return opened
-      const seeded = plant(opened.value, route)
-      if ('stop' in seeded) return halt(seeded.stop.code, seeded.stop.detail)
-      const wrote = save(seeded)
+      const wrote = edit(gated.value, (head) => plant(head, route))
       if (!wrote.ok) return wrote
       return afterWrite(true, { revision: 1 }, false)
     },
@@ -278,14 +334,38 @@ export function createReferenceAuthorityDirectory(options: {
       if (!validateRuntime('Id', input.upgradeId).ok) return halt('invalid_input', 'schema')
       const opened = ready(gated.value)
       if (!opened.ok) return opened
-      const noted = noteUpgrade(
-        opened.value,
-        input.upgradeId,
-        input.validationRef.schema.digest,
-        input.authorityIds,
-      )
-      if ('stop' in noted) return halt(noted.stop.code, noted.stop.detail)
-      const wrote = save(noted)
+      const wrote = immediate(store, (db) => {
+        const live = admit(context, null, null)
+        if (!live.ok) return live
+        if (
+          live.value.locator.epoch !== gated.value.locator.epoch ||
+          live.value.locator.revision !== gated.value.locator.revision ||
+          live.value.locator.endpointRef !== directory
+        )
+          return halt('conflict', 'locator_uncertain')
+        const current = takeHead(db, blank(gated.value.locator.epoch))
+        if (!current.ok) return current
+        if (current.value.locatorEpoch !== gated.value.locator.epoch)
+          return halt('conflict', 'locator_uncertain')
+        if (current.value.fenced) return halt('conflict', 'directory_fenced')
+        if (takeApproval(db, input.upgradeId)) return halt('conflict', 'upgrade_exists')
+        if (
+          input.authorityIds.length === 0 ||
+          new Set(input.authorityIds).size !== input.authorityIds.length
+        ) {
+          return halt('invalid_input', 'journal_authorities')
+        }
+        db.prepare('INSERT INTO route_approval(upgrade_key, payload) VALUES (?, ?)').run(
+          input.upgradeId,
+          JSON.stringify({
+            validationDigest: canonicalJsonDigest(
+              JSON.parse(JSON.stringify(input.validationRef)) as JsonValue,
+            ),
+            authorityIds: input.authorityIds,
+          }),
+        )
+        return { ok: true as const, value: true }
+      })
       if (!wrote.ok) return wrote
       return afterWrite(true, { upgradeId: input.upgradeId }, false)
     },
@@ -294,10 +374,7 @@ export function createReferenceAuthorityDirectory(options: {
       if (!gated.ok) return gated
       const opened = ready(gated.value)
       if (!opened.ok) return opened
-      const noted = noteActivation(opened.value, input)
-      if ('stop' in noted) return halt(noted.stop.code, noted.stop.detail)
-      if (noted === opened.value) return { ok: true, value: { recorded: true } }
-      const wrote = save(noted)
+      const wrote = edit(gated.value, (head) => noteActivation(head, input))
       if (!wrote.ok) return wrote
       return afterWrite(true, { recorded: true as const }, false)
     },
@@ -307,7 +384,7 @@ export function createReferenceAuthorityDirectory(options: {
       const opened = ready(gated.value)
       if (!opened.ok) return opened
       if (opened.value.fenced) return { ok: true, value: { fenced: true } }
-      const wrote = save({ ...opened.value, fenced: true })
+      const wrote = edit(gated.value, (head) => ({ ...head, fenced: true }), true)
       if (!wrote.ok) return wrote
       return afterWrite(true, { fenced: true as const }, false)
     },
@@ -318,7 +395,14 @@ export function createReferenceAuthorityDirectory(options: {
       const opened = ready(gated.value)
       if (!opened.ok) return opened
       if (!opened.value.fenced) return { ok: true, value: { fenced: false } }
-      const wrote = save({ ...opened.value, fenced: false })
+      const wrote = edit(
+        gated.value,
+        (head) =>
+          head.moveOwner !== null
+            ? { stop: { code: 'conflict', detail: 'directory_fenced' } }
+            : { ...head, fenced: false },
+        true,
+      )
       if (!wrote.ok) return wrote
       return afterWrite(true, { fenced: false as const }, false)
     },
@@ -452,7 +536,8 @@ function relocate(
   authority: StateAuthorityRef,
   locator: ReferenceLocator,
   migration: MigrationRequest,
-  onPhase: ((phase: 'commit' | 'notify') => void) | undefined,
+  principalRef: string,
+  onPhase: ((phase: 'transaction' | 'commit' | 'notify') => void) | undefined,
 ): Outcome<MigrationReceipt> {
   if (migration.target.kind !== 'directory') return halt('incompatible', 'transfer_kind_unsupported')
   const target = migration.target
@@ -465,16 +550,38 @@ function relocate(
   const frozen = immediate(store, (db) => {
     const current = takeHead(db, emptyOwned(authority, locator.epoch))
     if (!current.ok) return current
-    if (current.value.fenced) return { ok: true as const, value: current.value }
-    const next = { ...current.value, fenced: true }
+    const live = loadAnchor(anchor, principalRef)
+    if (!live.ok) return live
+    if (live.value.locator.epoch !== locator.epoch || live.value.locator.endpointRef !== directory)
+      return halt('conflict', 'locator_uncertain')
+    if (current.value.moveOwner !== null && current.value.moveOwner !== migration.upgradeId)
+      return halt('conflict', 'directory_fenced')
+    if (current.value.moveOwner === migration.upgradeId) return { ok: true as const, value: current.value }
+    const next = { ...current.value, fenced: true, moveOwner: migration.upgradeId }
     putHead(db, next)
     return { ok: true as const, value: next }
   })
   if (!frozen.ok) return frozen
   onPhase?.('commit')
   const digest = canonicalJsonDigest(JSON.parse(JSON.stringify(frozen.value)) as JsonValue)
+  if (existsSync(standby)) return halt('incompatible', 'target_exists')
   try {
+    mkdirSync(dirname(standby), { recursive: true, mode: 0o700 })
+    mkdirSync(standby, { mode: 0o700 })
     cloneRows(store, resolve(standby, 'routes.sqlite'))
+    for (const path of [
+      resolve(standby, 'routes.sqlite'),
+      standby,
+      dirname(standby),
+      dirname(dirname(standby)),
+    ]) {
+      const descriptor = openSync(path, 'r')
+      try {
+        fsyncSync(descriptor)
+      } finally {
+        closeSync(descriptor)
+      }
+    }
   } catch {
     return halt('retryable', 'durability_failed')
   }
@@ -518,7 +625,7 @@ function adopt(
   anchor: string,
   head: RouteHead,
   locator: ReferenceLocator,
-  onPhase: ((phase: 'commit' | 'notify') => void) | undefined,
+  onPhase: ((phase: 'transaction' | 'commit' | 'notify') => void) | undefined,
 ): Outcome<RouteHead> {
   const opened = openReferenceAnchor(anchor)
   if (!opened.ok) return opened
@@ -545,6 +652,7 @@ function adopt(
       locatorEpoch: locator.epoch,
       directoryEpoch: locator.epoch,
       fenced: false,
+      moveOwner: null,
     }
     putHead(db, next)
     return { ok: true as const, value: next }
@@ -558,6 +666,7 @@ function judge(
   head: RouteHead,
   request: AuthorityDirectoryCompareAndSwapRequest,
   existing: CutoverRow | null,
+  journal: { validationDigest: string; authorityIds: readonly string[] } | null,
 ): Verdict {
   if (request.transactionId !== request.publication.cutoverId)
     return { tag: 'stop', stop: { code: 'invalid_input', detail: 'cutover_transaction_mismatch' } }
@@ -570,9 +679,11 @@ function judge(
     return { tag: 'stop', stop: { code: 'conflict', detail: 'directory_authority' } }
   if (request.expectedWriterEpoch !== head.writerEpoch)
     return { tag: 'stop', stop: { code: 'conflict', detail: 'writer_epoch' } }
-  const journal = head.journals[request.publication.upgradeId]
   if (!journal) return { tag: 'stop', stop: { code: 'incompatible', detail: 'upgrade_not_journaled' } }
-  if (journal.validationDigest !== request.publication.validationRef.schema.digest)
+  if (
+    journal.validationDigest !==
+    canonicalJsonDigest(JSON.parse(JSON.stringify(request.publication.validationRef)) as JsonValue)
+  )
     return { tag: 'stop', stop: { code: 'incompatible', detail: 'validation_mismatch' } }
   const shaped = shapePublication(head, request.publication, journal.authorityIds)
   if ('stop' in shaped) return { tag: 'stop', stop: shaped.stop }
@@ -589,12 +700,25 @@ function judge(
       }))
       .sort((left, right) => orderId(left.logicalAuthorityId, right.logicalAuthorityId)),
   }
-  const routes = { ...head.routes }
+  const routes: RouteHead['routes'] = Object.assign(Object.create(null), head.routes)
   for (const change of shaped.changes) {
     const prior = routes[change.previous.logicalAuthorityId]
     routes[change.previous.logicalAuthorityId] = { revision: (prior?.revision ?? 0) + 1, route: change.next }
   }
-  return { tag: 'store', head: { ...head, routes, domains: shaped.domains }, result, fingerprint }
+  return {
+    tag: 'store',
+    head: {
+      ...head,
+      routes,
+      domains: shaped.domains,
+      activations: head.activations.filter(
+        (item) =>
+          !shaped.changes.some((change) => change.next.logicalAuthorityId === item.logicalAuthorityId),
+      ),
+    },
+    result,
+    fingerprint,
+  }
 }
 
 function shapePublication(
@@ -612,11 +736,24 @@ function shapePublication(
     if (!members.includes(change.previous.logicalAuthorityId))
       return { stop: { code: 'incompatible', detail: 'journal_authority' } }
   }
+  if (members.length !== seen.size) return { stop: { code: 'incompatible', detail: 'journal_authority' } }
   const fences = fenceKeys(publication)
   if ('stop' in fences) return fences
   for (const change of publication.changes) {
     const key = `${change.previous.logicalAuthorityId}\0${change.previous.tenantId}\0${String(change.previous.authorityEpoch)}`
     if (!fences.keys.has(key)) return { stop: { code: 'incompatible', detail: 'fence_incomplete' } }
+  }
+  if (fences.keys.size !== seen.size) return { stop: { code: 'incompatible', detail: 'fence_incomplete' } }
+  for (const change of publication.changes) {
+    const found = publication.sourceFences.find(
+      (fence) => fence.source.authorityId === change.previous.logicalAuthorityId,
+    )
+    if (
+      !found ||
+      canonicalJsonDigest(JSON.parse(JSON.stringify(found.checkpoint)) as JsonValue) !==
+        canonicalJsonDigest(JSON.parse(JSON.stringify(change.previous.checkpoint)) as JsonValue)
+    )
+      return { stop: { code: 'incompatible', detail: 'fence_checkpoint' } }
   }
   const domains = growDomains(head, publication)
   if ('stop' in domains) return domains
@@ -675,7 +812,7 @@ function matchRevisions(
 ): { values: Map<string, number> } | { stop: Stop } {
   const values = new Map<string, number>()
   for (const change of changes) {
-    const stored = head.routes[change.previous.logicalAuthorityId]
+    const stored = routeEntry(head, change.previous.logicalAuthorityId)
     const sameRoute =
       stored !== undefined &&
       canonicalJsonDigest(JSON.parse(JSON.stringify(stored.route)) as JsonValue) ===
@@ -693,7 +830,7 @@ function growDomains(
   head: RouteHead,
   publication: AuthorityPublication,
 ): { domains: RouteHead['domains'] } | { stop: Stop } {
-  const domains = { ...head.domains }
+  const domains: RouteHead['domains'] = Object.assign(Object.create(null), head.domains)
   const seen = new Set<string>()
   for (const mapping of publication.jointDispatchMappings) {
     if (seen.has(mapping.domainId)) return { stop: { code: 'invalid_input', detail: 'duplicate_authority' } }
@@ -715,9 +852,19 @@ function growDomains(
       !memberAligned(budget.next, mapping.to.budgetAuthority, mapping.to.budgetBinding, mapping.cohortDigest)
     )
       return { stop: { code: 'incompatible', detail: 'joint_binding' } }
-    const prior = domains[mapping.domainId]
-    if (prior && prior.chain.length > 0) {
-      const tail = prior.chain[prior.chain.length - 1]
+    if (
+      !memberIdentity(state.previous, mapping.from.stateAuthority, mapping.from.stateBinding) ||
+      !memberIdentity(budget.previous, mapping.from.budgetAuthority, mapping.from.budgetBinding)
+    )
+      return { stop: { code: 'incompatible', detail: 'joint_chain_broken' } }
+    if (
+      canonicalJsonDigest(JSON.parse(JSON.stringify(mapping.validationRef)) as JsonValue) !==
+      canonicalJsonDigest(JSON.parse(JSON.stringify(publication.validationRef)) as JsonValue)
+    )
+      return { stop: { code: 'incompatible', detail: 'validation_mismatch' } }
+    const prior = Object.hasOwn(domains, mapping.domainId) ? domains[mapping.domainId] : undefined
+    if (prior) {
+      const tail = prior.latest
       if (
         !tail ||
         canonicalJsonDigest(JSON.parse(JSON.stringify(tail.to)) as JsonValue) !==
@@ -733,7 +880,7 @@ function growDomains(
     }
     domains[mapping.domainId] = {
       revision: (prior?.revision ?? 0) + 1,
-      chain: [...(prior?.chain ?? []), mapping],
+      latest: mapping,
     }
   }
   return { domains }
@@ -746,7 +893,7 @@ function leavesCohort(
 ): boolean {
   return publication.changes.some((change) =>
     Object.entries(head.domains).some(([domainId, domain]) => {
-      const tail = domain.chain[domain.chain.length - 1]
+      const tail = domain.latest
       if (!tail) return false
       const members = [tail.to.stateAuthority.authorityId, tail.to.budgetAuthority.authorityId]
       return (
@@ -758,12 +905,21 @@ function leavesCohort(
   )
 }
 
+function routeEntry(head: RouteHead, key: string) {
+  return Object.hasOwn(head.routes, key) ? head.routes[key] : undefined
+}
+
+function domainEntry(head: RouteHead, key: string) {
+  return Object.hasOwn(head.domains, key) ? head.domains[key] : undefined
+}
+
 function answerRead(
   head: RouteHead,
   request: AuthorityDirectoryReadRequest,
+  originExists: (domain: string, fingerprint: string) => boolean,
 ): { value: AuthorityDirectoryReadResult } | { stop: Stop } {
   if (request.kind === 'authority') {
-    const stored = head.routes[request.logicalAuthorityId]
+    const stored = routeEntry(head, request.logicalAuthorityId)
     if (!stored) return { stop: { code: 'incompatible', detail: 'route_absent' } }
     return {
       value: {
@@ -776,17 +932,14 @@ function answerRead(
   }
   if (request.domainId !== request.from.domainId)
     return { stop: { code: 'invalid_input', detail: 'joint_domain' } }
-  const domain = head.domains[request.domainId]
-  if (!domain || domain.chain.length === 0)
-    return { value: { kind: 'joint-dispatch', resolution: { state: 'unmapped' } } }
-  const linked = walkChain(domain.chain)
-  if (!linked) return { stop: { code: 'incompatible', detail: 'joint_chain_broken' } }
-  if (!linked.digests.has(canonicalJsonDigest(JSON.parse(JSON.stringify(request.from)) as JsonValue))) {
+  const domain = domainEntry(head, request.domainId)
+  if (!domain) return { value: { kind: 'joint-dispatch', resolution: { state: 'unmapped' } } }
+  const fingerprint = canonicalJsonDigest(JSON.parse(JSON.stringify(request.from)) as JsonValue)
+  if (!originExists(request.domainId, fingerprint))
     return { stop: { code: 'incompatible', detail: 'joint_chain_broken' } }
-  }
-  const current = linked.head
-  const state = head.routes[current.to.stateAuthority.authorityId]
-  const budget = head.routes[current.to.budgetAuthority.authorityId]
+  const current = domain.latest
+  const state = routeEntry(head, current.to.stateAuthority.authorityId)
+  const budget = routeEntry(head, current.to.budgetAuthority.authorityId)
   if (
     !state ||
     !budget ||
@@ -819,60 +972,28 @@ function answerRead(
 }
 
 function plant(head: RouteHead, route: AuthorityRoute): RouteHead | { stop: Stop } {
-  if (head.routes[route.logicalAuthorityId]) return { stop: { code: 'conflict', detail: 'route_exists' } }
+  if (routeEntry(head, route.logicalAuthorityId))
+    return { stop: { code: 'conflict', detail: 'route_exists' } }
   if (route.authorityEpoch < 1) return { stop: { code: 'invalid_input', detail: 'epoch_not_increasing' } }
   return { ...head, routes: { ...head.routes, [route.logicalAuthorityId]: { revision: 1, route } } }
-}
-
-function noteUpgrade(
-  head: RouteHead,
-  upgradeId: string,
-  validationDigest: string,
-  authorityIds: readonly string[],
-): RouteHead | { stop: Stop } {
-  if (head.journals[upgradeId]) return { stop: { code: 'conflict', detail: 'upgrade_exists' } }
-  if (authorityIds.length === 0 || new Set(authorityIds).size !== authorityIds.length)
-    return { stop: { code: 'invalid_input', detail: 'journal_authorities' } }
-  return {
-    ...head,
-    journals: { ...head.journals, [upgradeId]: { validationDigest, authorityIds: [...authorityIds] } },
-  }
 }
 
 function noteActivation(
   head: RouteHead,
   input: { logicalAuthorityId: string; authorityEpoch: number; cutoverId: string },
 ): RouteHead | { stop: Stop } {
-  const stored = head.routes[input.logicalAuthorityId]
+  const stored = routeEntry(head, input.logicalAuthorityId)
   if (!stored) return { stop: { code: 'incompatible', detail: 'route_absent' } }
   if (stored.route.authorityEpoch !== input.authorityEpoch || stored.route.cutoverId !== input.cutoverId) {
     return { stop: { code: 'conflict', detail: 'activation_mismatch' } }
   }
   if (isActive(head, stored.route)) return head
-  return { ...head, activations: [...head.activations, input] }
-}
-
-function walkChain(
-  chain: readonly JointDispatchMigrationMapping[],
-): { head: JointDispatchMigrationMapping; digests: Set<string> } | null {
-  const digests = new Set<string>()
-  for (let index = 0; index < chain.length; index += 1) {
-    const mapping = chain[index]
-    if (!mapping) return null
-    if (index > 0) {
-      const prior = chain[index - 1]
-      if (
-        !prior ||
-        canonicalJsonDigest(JSON.parse(JSON.stringify(prior.to)) as JsonValue) !==
-          canonicalJsonDigest(JSON.parse(JSON.stringify(mapping.from)) as JsonValue)
-      )
-        return null
-    }
-    digests.add(canonicalJsonDigest(JSON.parse(JSON.stringify(mapping.from)) as JsonValue))
-    digests.add(canonicalJsonDigest(JSON.parse(JSON.stringify(mapping.to)) as JsonValue))
+  return {
+    ...head,
+    activations: head.activations
+      .filter((entry) => entry.logicalAuthorityId !== input.logicalAuthorityId)
+      .concat(input),
   }
-  const head = chain[chain.length - 1]
-  return head ? { head, digests } : null
 }
 
 function memberAligned(
@@ -966,9 +1087,9 @@ function emptyOwned(authority: StateAuthorityRef, epoch: number): RouteHead {
     directoryEpoch: authority.authorityEpoch,
     locatorEpoch: epoch,
     fenced: false,
+    moveOwner: null,
     authority,
     routes: {},
-    journals: {},
     domains: {},
     activations: [],
   }
@@ -985,7 +1106,44 @@ function takeHead(db: DatabaseSync, fallback: RouteHead): Outcome<RouteHead> {
   if (!row) return { ok: true, value: fallback }
   try {
     const head = JSON.parse(row.payload) as RouteHead
-    if (!head?.authority || !head.routes) return halt('incompatible', 'directory_corrupt')
+    if (
+      !head ||
+      !validateRuntime('StateAuthorityRef', head.authority).ok ||
+      typeof head.fenced !== 'boolean' ||
+      (head.moveOwner !== null && typeof head.moveOwner !== 'string') ||
+      !head.routes ||
+      !head.domains ||
+      !Array.isArray(head.activations) ||
+      ![head.writerEpoch, head.directoryEpoch, head.locatorEpoch].every(
+        (epoch) => Number.isSafeInteger(epoch) && epoch >= 1,
+      )
+    )
+      return halt('incompatible', 'directory_corrupt')
+    for (const row of Object.values(head.routes))
+      if (
+        !row ||
+        !validateRuntime('AuthorityRoute', row.route).ok ||
+        !Number.isSafeInteger(row.revision) ||
+        row.revision < 1
+      )
+        return halt('incompatible', 'directory_corrupt')
+    for (const entry of Object.values(head.domains))
+      if (
+        !entry ||
+        !validateRuntime('JointDispatchMigrationMapping', entry.latest).ok ||
+        !Number.isSafeInteger(entry.revision)
+      )
+        return halt('incompatible', 'directory_corrupt')
+    if (
+      head.activations.some(
+        (entry) =>
+          !entry ||
+          !validateRuntime('Id', entry.logicalAuthorityId).ok ||
+          !validateRuntime('UInt53', entry.authorityEpoch).ok ||
+          !validateRuntime('Id', entry.cutoverId).ok,
+      )
+    )
+      return halt('incompatible', 'directory_corrupt')
     return { ok: true, value: head }
   } catch {
     return halt('incompatible', 'directory_corrupt')
@@ -1014,6 +1172,16 @@ function takeCutover(db: DatabaseSync, id: string): CutoverRow | null {
   }
 }
 
+function takeApproval(
+  db: DatabaseSync,
+  key: string,
+): { validationDigest: string; authorityIds: string[] } | null {
+  const row = db.prepare('SELECT payload FROM route_approval WHERE upgrade_key = ?').get(key) as
+    | { payload: string }
+    | undefined
+  return row ? (JSON.parse(row.payload) as { validationDigest: string; authorityIds: string[] }) : null
+}
+
 function putHead(db: DatabaseSync, head: RouteHead): void {
   db.prepare(
     'INSERT INTO route_head(slot, payload) VALUES (1, ?) ON CONFLICT(slot) DO UPDATE SET payload = excluded.payload',
@@ -1038,23 +1206,25 @@ function cloneRows(from: string, to: string): void {
   const source = new DatabaseSync(from)
   const target = new DatabaseSync(to)
   try {
+    target.exec('PRAGMA synchronous=FULL')
     ensureStore(target)
     const head = source.prepare('SELECT payload FROM route_head WHERE slot = 1').get() as
       | { payload: string }
       | undefined
-    const cutovers = source
-      .prepare('SELECT cutover_key, fingerprint, result_json FROM route_cutover')
-      .all() as {
-      cutover_key: string
-      fingerprint: string
-      result_json: string
-    }[]
     target.exec('BEGIN IMMEDIATE')
     if (head) target.prepare('INSERT INTO route_head(slot, payload) VALUES (1, ?)').run(head.payload)
-    const insert = target.prepare(
-      'INSERT INTO route_cutover(cutover_key, fingerprint, result_json) VALUES (?, ?, ?)',
-    )
-    for (const row of cutovers) insert.run(row.cutover_key, row.fingerprint, row.result_json)
+    for (const [table, fields] of [
+      ['route_cutover', ['cutover_key', 'fingerprint', 'result_json']],
+      ['route_approval', ['upgrade_key', 'payload']],
+      ['domain_origin', ['domain_id', 'qualification_digest']],
+    ] as const) {
+      const insert = target.prepare(
+        `INSERT INTO ${table}(${fields.join(',')}) VALUES (${fields.map(() => '?').join(',')})`,
+      )
+      for (const row of source.prepare(`SELECT ${fields.join(',')} FROM ${table}`).iterate()) {
+        insert.run(...fields.map((field) => row[field] ?? null))
+      }
+    }
     target.exec('COMMIT')
   } finally {
     source.close()
@@ -1063,6 +1233,15 @@ function cloneRows(from: string, to: string): void {
 }
 
 function immediate<T>(file: string, body: (db: DatabaseSync) => Outcome<T>): Outcome<T> {
+  try {
+    return transact(file, body)
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('durability phase')) throw error
+    return halt('retryable', 'directory_unavailable')
+  }
+}
+
+function transact<T>(file: string, body: (db: DatabaseSync) => Outcome<T>): Outcome<T> {
   mkdirSync(resolve(file, '..'), { recursive: true, mode: 0o700 })
   const db = new DatabaseSync(file)
   try {
@@ -1116,6 +1295,11 @@ function immediateAnchor<T>(file: string, body: (db: DatabaseSync) => Outcome<T>
 }
 
 function ensureStore(db: DatabaseSync): void {
+  db.exec('CREATE TABLE IF NOT EXISTS route_approval (upgrade_key TEXT PRIMARY KEY, payload TEXT NOT NULL)')
+  db.exec(
+    'CREATE TABLE IF NOT EXISTS domain_origin (domain_id TEXT NOT NULL, qualification_digest TEXT NOT NULL, PRIMARY KEY(domain_id, qualification_digest))',
+  )
+
   db.exec(
     `CREATE TABLE IF NOT EXISTS route_head (slot INTEGER PRIMARY KEY CHECK (slot = 1), payload TEXT NOT NULL)`,
   )
@@ -1201,12 +1385,46 @@ function credential(principalRef: string, directoryId: string): ReferenceCredent
   }
 }
 
+function localSqliteLocation(directory: string): boolean {
+  try {
+    let parent = resolve(directory)
+    while (!existsSync(parent) && dirname(parent) !== parent) parent = dirname(parent)
+    switch (statfsSync(parent).type) {
+      case 1:
+      case 4:
+      case 17:
+      case 26:
+      case 0xef53:
+      case 0x58465342:
+      case 0x9123683e:
+      case 0x01021994:
+      case 0x794c7630:
+      case 0x2fc12fc1:
+        return true
+      default:
+        return false
+    }
+  } catch {
+    return false
+  }
+}
+
+function physicalLocation(value: string): string {
+  const tail: string[] = []
+  let prefix = resolve(value)
+  while (!existsSync(prefix) && dirname(prefix) !== prefix) {
+    tail.unshift(basename(prefix))
+    prefix = dirname(prefix)
+  }
+  return resolve(realpathSync(prefix), ...tail)
+}
+
 function separated(left: string, right: string): boolean {
-  const first = resolve(left)
-    .split('/')
+  const first = physicalLocation(left)
+    .split(sep)
     .filter((part) => part !== '')
-  const second = resolve(right)
-    .split('/')
+  const second = physicalLocation(right)
+    .split(sep)
     .filter((part) => part !== '')
   if (first.join('/') === second.join('/')) return false
   const nests = (outer: string[], inner: string[]) =>
