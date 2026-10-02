@@ -74,6 +74,23 @@ export function generationRegistries(
   return created
 }
 
+/**
+ * Forgets every cached generation except `keep`, the one open sessions are bound to.
+ *
+ * A generation is a snapshot of the registrations that were live when it was first needed, and the
+ * tools in it are bound to the leases of that moment.  Its revision names the content, not the
+ * instance: when a package is disabled and enabled again, or a version is rolled back, the same
+ * revision returns with new registrations and new leases, and the old snapshot would hand out
+ * wrappers whose leases were revoked.  Pruning before a candidate builds its session views makes
+ * every revision that is not published get a fresh snapshot, while the published one stays shared.
+ */
+export function retainGenerationRegistries(
+  cache: Map<string, GenerationRegistries>,
+  keep: string | undefined,
+): void {
+  for (const revision of [...cache.keys()]) if (revision !== keep) cache.delete(revision)
+}
+
 export function publishedSessionRuntime(
   input: Readonly<{
     /** New key: only changes that alter Core registries create a new generation. */
