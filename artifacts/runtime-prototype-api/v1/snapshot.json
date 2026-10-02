@@ -289,7 +289,7 @@
     },
     {
       "path": "third-party/build-dependencies.json",
-      "sha256": "880aa60a8eabeaac00bf466cb92c93f76eeb2f9e95557df9d2f05241f027dc99"
+      "sha256": "2bb355fee538c61f6adacad2c31c88476103c579b52de0e85ef9a61551c8cca4"
     }
   ],
   "generatedFiles": [
@@ -1368,11 +1368,11 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "sha256": "3569e8a493de1c8aff559e6e693f31138feb5edc7a1fdb3b880884ce09da8a2e"
+        "sha256": "5d6a6a9ddd57326b350e6a14cc7099920c0f14e6fff24033bb9ef53dde6866b9"
       },
       {
         "path": "third-party/build-dependencies.json",
-        "sha256": "880aa60a8eabeaac00bf466cb92c93f76eeb2f9e95557df9d2f05241f027dc99"
+        "sha256": "2bb355fee538c61f6adacad2c31c88476103c579b52de0e85ef9a61551c8cca4"
       },
       {
         "path": "tools/check-runtime-prototype-checkpoint.ts",
@@ -1395,9 +1395,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "95a44f9969b0056c1c961ccb09338d2d6eb13fa74ccda8fb36bbb7d3f8259114",
+    "inputDigest": "c861d79b713bf4ecb76c95dbe9a634c3e6a7e59c924190f9a6e56bc720a45024",
     "diagnostics": [],
-    "reportDigest": "69388265fa05f753e74d08c1278456ee4ba92433caaf2d9e04a1acd6a8bc4a39"
+    "reportDigest": "bc50e96641b6f34ae02de82fb32f766beb3a2c02c5244ef1972c7e0865962d4d"
   },
-  "snapshotDigest": "1439b277e5a389ccf4a21ff63309784a96d09002ef32c294b6af5fc7d2931053"
+  "snapshotDigest": "5101baa702e5bac698087c2c438732c70556cc1c6823b52238ef409df8b35850"
 }

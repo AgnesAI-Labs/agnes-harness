@@ -27,6 +27,7 @@
       "purpose": "Type declarations for React 18 used by the web workbench and public client author APIs.",
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
+        "examples/runtime-reference",
         "packages/extension-api",
         "packages/resource-control-web",
         "packages/web",
