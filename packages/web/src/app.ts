@@ -1897,7 +1897,9 @@ function submitComposer(): void {
           sessionYoloEnabled = undefined
           render()
         }
-        if (!composerRuntime.getDraft()) {
+        // Closing the connection on purpose (page unload, manual disconnect) rejects a prompt the daemon
+        // already accepted. That is not a failed send, so the sent text must not come back as a draft.
+        if (!intentionalClose && !composerRuntime.getDraft()) {
           composerRuntime.setDraft(input)
           sessionStorage.setItem(composerDraftKey, input)
           composerRuntime.resize()
