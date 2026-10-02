@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { fallbackT, type Translate } from '../locales/index.js'
+import { fallbackT, type Translate } from './locales/index.js'
 import { Button } from './ui/button.js'
 
 export function SettingsModelPane({
@@ -22,7 +22,10 @@ export function SettingsModelPane({
       </header>
       <div className="config-workspace">
         {beforeAccounts}
-        <section className="config-accounts-section config-card" aria-label={t('settings-shell.accountsAria')}>
+        <section
+          className="config-accounts-section config-card"
+          aria-label={t('settings-shell.accountsAria')}
+        >
           <div className="config-accounts-heading">
             <div>
               <h3>{t('settings-shell.accountsTitle')}</h3>

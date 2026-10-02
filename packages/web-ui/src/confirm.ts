@@ -1,3 +1,5 @@
+import { fallbackT, type Translate } from './locales/index.js'
+
 /**
  * Shared confirmation dialog for the admin surfaces.
  *
