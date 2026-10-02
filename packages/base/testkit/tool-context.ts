@@ -7,7 +7,7 @@ import type {
   ToolContext,
   ToolResult,
 } from '@agnes/extension-api'
-import { unavailableProjections } from '@agnes/extension-api'
+import { DEFAULT_OUTPUT_MAX_BYTES, unavailableProjections } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 
 // An in-memory stand-in for the context the kernel hands a tool. Everything a tool is allowed to
@@ -45,6 +45,8 @@ export type FakeToolContextOpts = {
   exec?: ExecFn
   invoke?: (name: string, args: JsonValue) => Promise<ToolResult>
   timeoutMs?: number
+  /** The `tools.output_max_bytes` a tool sees; a test that needs a small page or cut sets it. */
+  outputMaxBytes?: number
   /** Makes `artifacts.put` fail, which is how a tool's behaviour with no artifact store is tested. */
   artifactsFail?: string
   /**
@@ -225,6 +227,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
     progress: () => undefined,
     signal: new AbortController().signal,
     timeoutMs: opts.timeoutMs ?? 120000,
+    outputMaxBytes: opts.outputMaxBytes ?? DEFAULT_OUTPUT_MAX_BYTES,
     lease: { expiresAt: '2999-01-01T00:00:00Z', scope: {}, budget: { remaining: 1e9 } },
     log: { debug() {}, info() {}, warn() {}, error() {} },
   }

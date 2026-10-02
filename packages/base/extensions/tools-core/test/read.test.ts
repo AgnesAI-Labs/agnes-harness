@@ -1,7 +1,13 @@
 import { checkToolDef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-context.js'
-import { byteLength, OUTPUT_LIMITS, spillLocator } from '../src/guards/output.js'
+
+// These cases are sized against an 8 KiB limit, so they ask for it explicitly rather than taking the
+// deployment default.
+const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
+  fakeToolContext({ outputMaxBytes: 8192, ...o })
+
+import { byteLength, outputLimits, spillLocator } from '../src/guards/output.js'
 import { MAX_ARTIFACT_READ_BYTES, MAX_READ_BYTES, readTool } from '../src/tools/read.js'
 
 const textOf = (r: { content: { type: string }[] }): string =>
@@ -27,7 +33,7 @@ describe('read', () => {
   })
 
   it('returns numbered lines and honours offset/limit', async () => {
-    const ctx = fakeToolContext({ files: { 'a.txt': 'l1\nl2\nl3\nl4' } })
+    const ctx = ctxOf({ files: { 'a.txt': 'l1\nl2\nl3\nl4' } })
     const all = await readTool.execute({ path: 'a.txt' }, ctx)
     expect(all.content[0]).toEqual({ type: 'text', text: '1\tl1\n2\tl2\n3\tl3\n4\tl4' })
     const part = await readTool.execute({ path: 'a.txt', offset: 2, limit: 2 }, ctx)
@@ -35,26 +41,26 @@ describe('read', () => {
   })
 
   it('treats a trailing newline as ending the last line, not starting an empty one', async () => {
-    const ctx = fakeToolContext({ files: { 'a.txt': 'l1\nl2\n', 'b.txt': 'l1\nl2\n\n' } })
+    const ctx = ctxOf({ files: { 'a.txt': 'l1\nl2\n', 'b.txt': 'l1\nl2\n\n' } })
     expect(textOf(await readTool.execute({ path: 'a.txt' }, ctx))).toBe('1\tl1\n2\tl2')
     // A genuinely blank final line is still shown; only the terminator is dropped.
     expect(textOf(await readTool.execute({ path: 'b.txt' }, ctx))).toBe('1\tl1\n2\tl2\n3\t')
   })
 
   it('keeps carriage returns instead of guessing at line endings', async () => {
-    const ctx = fakeToolContext({ files: { 'a.txt': 'l1\r\nl2\r\n' } })
+    const ctx = ctxOf({ files: { 'a.txt': 'l1\r\nl2\r\n' } })
     expect(textOf(await readTool.execute({ path: 'a.txt' }, ctx))).toBe('1\tl1\r\n2\tl2\r')
   })
 
   it('reports a range past the end of the file instead of returning nothing', async () => {
-    const ctx = fakeToolContext({ files: { 'a.txt': 'l1\nl2' } })
+    const ctx = ctxOf({ files: { 'a.txt': 'l1\nl2' } })
     const r = await readTool.execute({ path: 'a.txt', offset: 9 }, ctx)
     expect(r.isError).toBeUndefined()
     expect(textOf(r)).toBe('[no lines at offset 9; the file has 2 lines]')
   })
 
   it('reports missing file and binary file as errors', async () => {
-    const ctx = fakeToolContext({ files: { 'b.bin': 'ab\u0000cd' } })
+    const ctx = ctxOf({ files: { 'b.bin': 'ab\u0000cd' } })
     const missing = await readTool.execute({ path: 'nope' }, ctx)
     expect(missing.isError).toBe(true)
     expect(textOf(missing)).toContain('ENOENT')
@@ -67,7 +73,7 @@ describe('read', () => {
   it('scans only the first 8 KB for the NUL that marks a binary file', async () => {
     // The bound is what keeps the check cheap on a large file. It is pinned rather than left
     // implicit: a NUL past it is not detected, and that is a known consequence, not an accident.
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: { 'late.bin': `${'a'.repeat(8192)}\u0000`, 'early.bin': `${'a'.repeat(8191)}\u0000` },
     })
     expect((await readTool.execute({ path: 'late.bin' }, ctx)).isError).toBeUndefined()
@@ -77,18 +83,18 @@ describe('read', () => {
   it('hands the filesystem the path it was given, unchanged', async () => {
     // Rewriting the path here would mean the layer that enforces the workspace boundary checks one
     // string while the tool opens another.
-    const ctx = fakeToolContext({ files: { '/work/proj/a.txt': 'x' } })
+    const ctx = ctxOf({ files: { '/work/proj/a.txt': 'x' } })
     await readTool.execute({ path: './a.txt' }, ctx)
     expect(ctx.calls.read[0]?.path).toBe('./a.txt')
   })
 
   it('bounds how many bytes it pulls off the filesystem', async () => {
-    const ctx = fakeToolContext({ files: { 'big.txt': 'a'.repeat(MAX_READ_BYTES + 100) } })
+    const ctx = ctxOf({ files: { 'big.txt': 'a'.repeat(MAX_READ_BYTES + 100) } })
     const r = await readTool.execute({ path: 'big.txt' }, ctx)
     // The read itself is capped, so the process never holds the whole file.
     expect(ctx.calls.read[0]?.opts?.limit).toBe(MAX_READ_BYTES + 1)
     expect(textOf(r)).toContain(`only the first ${MAX_READ_BYTES} bytes`)
-    expect(byteLength(textOf(r))).toBeLessThanOrEqual(OUTPUT_LIMITS.maxBytes)
+    expect(byteLength(textOf(r))).toBeLessThanOrEqual(outputLimits(8192).maxBytes)
   })
 
   it('cuts the byte-capped text back to a line boundary instead of showing a half line', async () => {
@@ -98,7 +104,7 @@ describe('read', () => {
     const line = 'x'.repeat(width - 1)
     const lastWhole = Math.floor(MAX_READ_BYTES / width)
     expect(Number.isInteger(MAX_READ_BYTES / width)).toBe(false)
-    const ctx = fakeToolContext({ files: { 'big.txt': `${line}\n`.repeat(lastWhole + 10) } })
+    const ctx = ctxOf({ files: { 'big.txt': `${line}\n`.repeat(lastWhole + 10) } })
     const page = textOf(await readTool.execute({ path: 'big.txt', offset: lastWhole - 2 }, ctx))
     expect(page.slice(page.lastIndexOf('\n') + 1)).toBe(`${lastWhole}\t${line}`)
     // The line the cap fell inside is absent entirely, not shown truncated.
@@ -107,9 +113,9 @@ describe('read', () => {
 
   it('pages a long file instead of cutting it, and never stores it', async () => {
     const lines = Array.from({ length: 400 }, (_, i) => `row ${i + 1} ${'a'.repeat(80)}`)
-    const ctx = fakeToolContext({ files: { 'long.txt': lines.join('\n') } })
+    const ctx = ctxOf({ files: { 'long.txt': lines.join('\n') } })
     const first = textOf(await readTool.execute({ path: 'long.txt' }, ctx))
-    expect(byteLength(first)).toBeLessThanOrEqual(OUTPUT_LIMITS.maxBytes)
+    expect(byteLength(first)).toBeLessThanOrEqual(outputLimits(8192).maxBytes)
     expect(first).not.toContain('[truncated')
     const next = Number(/call read again with offset=(\d+) to continue\]$/.exec(first)?.[1])
     // The next page starts at the line after the last one shown: nothing is lost in between.
@@ -118,10 +124,15 @@ describe('read', () => {
       `${next}\t${lines[next - 1]}`,
     )
     expect(ctx.calls.artifacts).toHaveLength(0)
+    // The page is as large as the context allows, not a fixed 8 KiB.
+    const wide = ctxOf({ outputMaxBytes: 16384, files: { 'long.txt': lines.join('\n') } })
+    const page = textOf(await readTool.execute({ path: 'long.txt' }, wide))
+    expect(byteLength(page)).toBeGreaterThan(8192)
+    expect(byteLength(page)).toBeLessThanOrEqual(16384)
   })
 
   it('cuts a line too long for a page and says so, keeping real line numbers', async () => {
-    const ctx = fakeToolContext({ files: { 'min.js': `a\n${'z'.repeat(5000)}\nc` } })
+    const ctx = ctxOf({ files: { 'min.js': `a\n${'z'.repeat(5000)}\nc` } })
     const page = textOf(await readTool.execute({ path: 'min.js' }, ctx))
     expect(page).toContain('2\tzzz')
     expect(page).toContain('[line cut at 2048 of 5000 bytes]')
@@ -129,13 +140,13 @@ describe('read', () => {
   })
 
   it('does not attach a ref when the output fits', async () => {
-    const ctx = fakeToolContext({ files: { 'a.txt': 'short' } })
+    const ctx = ctxOf({ files: { 'a.txt': 'short' } })
     const r = await readTool.execute({ path: 'a.txt' }, ctx)
     expect(r.content).toHaveLength(1)
   })
 
   it('decodes invalid utf-8 instead of throwing', async () => {
-    const ctx = fakeToolContext({ files: { 'a.txt': new Uint8Array([0xff, 0xfe, 0x41]) } })
+    const ctx = ctxOf({ files: { 'a.txt': new Uint8Array([0xff, 0xfe, 0x41]) } })
     const r = await readTool.execute({ path: 'a.txt' }, ctx)
     expect(r.isError).toBeUndefined()
     expect(textOf(r)).toContain('A')
@@ -156,7 +167,7 @@ describe('read of an artifact the output guard stored', () => {
     const rows: string[] = []
     for (let offset = 1; ; ) {
       const text = textOf(await readTool.execute({ path, offset }, ctx))
-      expect(byteLength(text)).toBeLessThanOrEqual(OUTPUT_LIMITS.maxBytes)
+      expect(byteLength(text)).toBeLessThanOrEqual(outputLimits(8192).maxBytes)
       rows.push(
         ...text
           .split('\n')
@@ -170,7 +181,7 @@ describe('read of an artifact the output guard stored', () => {
   }
 
   it('pages a stored output back in full: many lines, a few huge lines, wide characters', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const many = Array.from({ length: 133 }, (_, i) => `line ${i + 1} ${'x'.repeat(70)}`).join('\n')
     expect((await readAll(ctx, await store(ctx, many))).join('\n')).toBe(many)
     // A JSON result is tens of KB on a handful of lines: paging by line alone would leave most of it
@@ -184,7 +195,7 @@ describe('read of an artifact the output guard stored', () => {
   })
 
   it('honours offset and limit and reports a range past the end', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const path = await store(ctx, 'a\nb\nc\nd')
     expect(textOf(await readTool.execute({ path, offset: 2, limit: 2 }, ctx))).toBe('2\tb\n3\tc')
     expect(textOf(await readTool.execute({ path, offset: 9 }, ctx))).toBe(
@@ -204,7 +215,7 @@ describe('read of an artifact the output guard stored', () => {
       0,
     ],
   ])('refuses %s', async (_why, path, message, asked) => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const r = await readTool.execute({ path }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain(message)
@@ -213,7 +224,7 @@ describe('read of an artifact the output guard stored', () => {
   })
 
   it('refuses a stored size that is wrong and content that is not text', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const wrongSize = (await store(ctx, 'hello')).replace(/size=5$/, 'size=6')
     expect(textOf(await readTool.execute({ path: wrongSize }, ctx))).toContain('size mismatch')
     const binary = await readTool.execute({ path: await store(ctx, new Uint8Array([97, 0, 98])) }, ctx)

@@ -1,3 +1,4 @@
+import { DEFAULT_OUTPUT_MAX_BYTES } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { SEAM_NAMES, type SeamImplementations, type TestSeams } from '../src/effects/seams.js'
 import { presetDefaults, readPreset } from '../src/step/preset.js'
@@ -42,7 +43,7 @@ describe('preset view', () => {
       agentCallable: true,
     })
     expect(d.sandbox).toEqual({ onUnavailable: 'deny' })
-    expect(d.tools).toEqual({ timeoutMs: 120000, timeouts: {} })
+    expect(d.tools).toEqual({ timeoutMs: 120000, timeouts: {}, outputMaxBytes: DEFAULT_OUTPUT_MAX_BYTES })
     expect(d.verifier).toEqual({ timeoutMs: 30000, defaultTier: 0 })
     expect(d.repair).toEqual({ timeoutMs: 10000 })
     expect(d.completionGate).toEqual({ minItems: 3 })
@@ -113,7 +114,7 @@ describe('preset view', () => {
         budget: { preflight: 'count', per_request_cap: 13, on_exceed: 'deny', max_steps: 17 },
         approval: { timeout_ms: 19, on_unavailable: 'park', pending_ttl_ms: 23 },
         sandbox: { on_unavailable: 'allow' },
-        tools: { timeout_ms: 29, timeouts: { shell: 31 } },
+        tools: { timeout_ms: 29, output_max_bytes: 9000, timeouts: { shell: 31 } },
         verifier: { timeout_ms: 37, default_tier: 2 },
         repair: { timeout_ms: 41 },
         completion_gate: { min_items: 43 },
@@ -145,7 +146,7 @@ describe('preset view', () => {
       budget: { preflight: 'count', perRequestCap: 13, onExceed: 'deny', maxSteps: 17 },
       approval: { onTimeout: 'rejected', timeoutMs: 19, onUnavailable: 'park', pendingTtlMs: 23 },
       sandbox: { onUnavailable: 'allow' },
-      tools: { timeoutMs: 29, timeouts: { shell: 31 } },
+      tools: { timeoutMs: 29, outputMaxBytes: 9000, timeouts: { shell: 31 } },
       verifier: { timeoutMs: 37, defaultTier: 2 },
       repair: { timeoutMs: 41 },
       completionGate: { minItems: 43 },

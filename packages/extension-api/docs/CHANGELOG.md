@@ -4,6 +4,14 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ToolContext` gains the read-only `outputMaxBytes`: the most text of one tool result the model sees before
+the output guard cuts it. The kernel fills it from the Preset key `tools.output_max_bytes` (integer,
+4096 to 1048576, default 32768 where it was a fixed 8192), next to `timeoutMs`. A tool that sizes its own
+output against it follows the deployment instead of a constant. `DEFAULT_OUTPUT_MAX_BYTES`,
+`MIN_OUTPUT_MAX_BYTES` and `MAX_OUTPUT_MAX_BYTES` are new runtime exports. The addition is not breaking
+for tool authors; code that builds a `ToolContext` itself (test doubles, adapters) must now supply the
+field.
+
 The `before_provider_headers` hook event is removed: the kernel never dispatched it, so no handler could
 have run. The public table now has sixteen events, and registering the old name is refused with an
 invalid-registration error. This is a removal that would normally call for a major version; the project

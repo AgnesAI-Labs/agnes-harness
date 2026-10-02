@@ -11,11 +11,7 @@ import {
 } from '@agnes/extension-api'
 import { inspectJsonData, type McpStatus, validateResourceControlData } from '@agnes/protocol'
 import { decodeSafeImages, type SafeImage, type SafeImageLimits } from '@agnes/protocol-validation'
-import {
-  CALL_OUTPUT_LIMIT_BYTES,
-  guardOutput,
-  refBlock,
-} from '../../extensions/tools-core/src/guards/output.js'
+import { callOutputLimitBytes, guardOutput, refBlock } from '../../extensions/tools-core/src/guards/output.js'
 import { remoteInputSchema } from '../mcp-json-schema.js'
 import type { McpServerConfig } from './config.js'
 import { mcpLocalToolPrefix } from './naming.js'
@@ -264,7 +260,8 @@ function remoteDefinition(
         const allTexts = prepared.flatMap((item) => (item.kind === 'text' ? [item.text] : []))
         // Text and media have independent budgets. Do not predict Core's resource-link rendering
         // here: that would duplicate a cross-package wire contract and can drift silently.
-        let remainingTextBytes = CALL_OUTPUT_LIMIT_BYTES
+        const callLimit = callOutputLimitBytes(ctx)
+        let remainingTextBytes = callLimit
         let textExhausted = false
         let omittedTexts = 0
         for (const item of prepared) {
@@ -302,7 +299,7 @@ function remoteDefinition(
         if (omittedTexts > 0) {
           const stored = await storeOmittedTextSet(guardedCtx, allTexts)
           const note = () =>
-            `\n[omitted ${omittedTexts} of ${allTexts.length} text content blocks: over the ${CALL_OUTPUT_LIMIT_BYTES}-byte call limit; ${stored.note}]\n`
+            `\n[omitted ${omittedTexts} of ${allTexts.length} text content blocks: over the ${callLimit}-byte call limit; ${stored.note}]\n`
           // The omission note is itself text. Reclaim the latest admitted text blocks until the
           // complete returned text (including that note) remains inside the same 32 KiB budget.
           const noteCost = () => new TextEncoder().encode(note()).byteLength

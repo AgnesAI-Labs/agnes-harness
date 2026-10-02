@@ -116,7 +116,7 @@ export type ToolContextDeps = {
  */
 export function buildToolContext(
   d: ToolContextDeps,
-  call: { toolUseId: string; name: string; signal: AbortSignal; timeoutMs: number },
+  call: { toolUseId: string; name: string; signal: AbortSignal; timeoutMs: number; outputMaxBytes: number },
 ): ToolContext {
   const stepId = `${d.turn}/${d.step}`
   const publicFetch = d.publicFetch
@@ -324,6 +324,7 @@ export function buildToolContext(
     progress: (note) => d.progress(note),
     signal: call.signal,
     timeoutMs: call.timeoutMs,
+    outputMaxBytes: call.outputMaxBytes,
     lease: {
       expiresAt: new Date(Date.now() + d.lease.remainingMs()).toISOString(),
       scope: {},

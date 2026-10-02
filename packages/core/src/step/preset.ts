@@ -40,7 +40,7 @@ export type PresetView = {
     pendingTtlMs: number
   }
   sandbox: { onUnavailable: 'deny' | 'allow' }
-  tools: { timeoutMs: number; timeouts: Record<string, number> }
+  tools: { timeoutMs: number; timeouts: Record<string, number>; outputMaxBytes: number }
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
   repair: { timeoutMs: number }
   completionGate: { minItems: number }
@@ -73,7 +73,7 @@ export function presetDefaults(): PresetView {
     // be the path by which a destructive call proceeds.
     approval: { onTimeout: 'rejected', timeoutMs: 60000, onUnavailable: 'deny', pendingTtlMs: 86400000 },
     sandbox: { onUnavailable: 'deny' },
-    tools: { timeoutMs: 120000, timeouts: {} },
+    tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768 },
     verifier: { timeoutMs: 30000, defaultTier: 0 },
     repair: { timeoutMs: 10000 },
     completionGate: { minItems: 3 },
@@ -145,6 +145,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     tools: {
       timeoutMs: pick(raw, 'tools.timeout_ms', d.tools.timeoutMs),
       timeouts: pick(raw, 'tools.timeouts', d.tools.timeouts),
+      outputMaxBytes: pick(raw, 'tools.output_max_bytes', d.tools.outputMaxBytes),
     },
     verifier: {
       timeoutMs: pick(raw, 'verifier.timeout_ms', d.verifier.timeoutMs),

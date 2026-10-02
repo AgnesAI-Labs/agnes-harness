@@ -1,4 +1,9 @@
-import type { ArtifactRef, ToolContext, ToolResult } from '@agnes/extension-api'
+import {
+  type ArtifactRef,
+  DEFAULT_OUTPUT_MAX_BYTES,
+  type ToolContext,
+  type ToolResult,
+} from '@agnes/extension-api'
 
 // The bound on how much a tool result may put into the model's context. Whatever a tool produces
 // passes through here: over either limit, the whole text goes to the artifact store and the result
@@ -11,7 +16,23 @@ import type { ArtifactRef, ToolContext, ToolResult } from '@agnes/extension-api'
 // are also the closer stand-in for what this is really protecting, which is tokens: characters per
 // token swings widely by script while bytes per token barely moves. Every other content budget in
 // this repository is already in bytes.
-export const OUTPUT_LIMITS = { maxBytes: 8192, maxLines: 2000, headBytes: 4096, tailBytes: 1024 } as const
+//
+// The byte limit is a deployment setting (preset `tools.output_max_bytes`, handed to a tool as
+// `ctx.outputMaxBytes`). The head and tail kept when a result is cut follow it in the proportions the
+// limit has always had, half and an eighth, so one number moves all three together.
+export type OutputLimits = { maxBytes: number; maxLines: number; headBytes: number; tailBytes: number }
+
+export function outputLimits(maxBytes: number): OutputLimits {
+  return {
+    maxBytes,
+    maxLines: 2000,
+    headBytes: Math.floor(maxBytes / 2),
+    tailBytes: Math.floor(maxBytes / 8),
+  }
+}
+
+/** The limits of a deployment that set nothing. */
+export const OUTPUT_LIMITS = outputLimits(DEFAULT_OUTPUT_MAX_BYTES)
 
 export type GuardedOutput = { text: string; ref?: ArtifactRef; truncated: boolean }
 
@@ -117,10 +138,10 @@ export function splitByBytes(text: string, maxBytes: number): string[] {
   return pieces
 }
 
-function reason(bytes: number, lines: number): string {
+function reason(bytes: number, lines: number, limits: OutputLimits): string {
   const over: string[] = []
-  if (bytes > OUTPUT_LIMITS.maxBytes) over.push(`${OUTPUT_LIMITS.maxBytes}-byte`)
-  if (lines > OUTPUT_LIMITS.maxLines) over.push(`${OUTPUT_LIMITS.maxLines}-line`)
+  if (bytes > limits.maxBytes) over.push(`${limits.maxBytes}-byte`)
+  if (lines > limits.maxLines) over.push(`${limits.maxLines}-line`)
   return over.length === 2 ? `${over.join(' and ')} limits` : `${over[0]} limit`
 }
 
@@ -129,9 +150,10 @@ export async function guardOutput(
   text: string,
   opts: { mime?: string } = {},
 ): Promise<GuardedOutput> {
+  const limits = outputLimits(ctx.outputMaxBytes)
   const lines = text.split('\n').length
   const bytes = byteLength(text)
-  if (bytes <= OUTPUT_LIMITS.maxBytes && lines <= OUTPUT_LIMITS.maxLines) return { text, truncated: false }
+  if (bytes <= limits.maxBytes && lines <= limits.maxLines) return { text, truncated: false }
   const mime = opts.mime ?? 'text/plain'
   let ref: ArtifactRef | undefined
   let stored: string
@@ -144,12 +166,12 @@ export async function guardOutput(
     // prevent; the model is told the middle is gone for good.
     stored = `full output could not be stored: ${describeFailure(e)}`
   }
-  const head = cutHead(text, OUTPUT_LIMITS.headBytes)
+  const head = cutHead(text, limits.headBytes)
   // Start of the tail is clamped past the head, so the two never overlap. Without the clamp a text
   // that is over the line limit but shorter than head+tail would come back with its middle
   // duplicated — longer than what it replaced.
-  const tail = cutTail(text, Math.max(OUTPUT_LIMITS.headBytes, bytes - OUTPUT_LIMITS.tailBytes))
-  const note = `\n[truncated: ${bytes} bytes, ${lines} lines; over the ${reason(bytes, lines)}; ${stored}]\n`
+  const tail = cutTail(text, Math.max(limits.headBytes, bytes - limits.tailBytes))
+  const note = `\n[truncated: ${bytes} bytes, ${lines} lines; over the ${reason(bytes, lines, limits)}; ${stored}]\n`
   return ref === undefined
     ? { text: head + note + tail, truncated: true }
     : { text: head + note + tail, ref, truncated: true }
@@ -160,12 +182,12 @@ export function refBlock(ref: ArtifactRef, mime?: string): { type: 'ref'; ref: A
 }
 
 // The total one tool call may put into the model's context across every content block it returns,
-// once each block has already passed its own single-block guard above. This is a starting point,
-// not a measurement: the single-block limit is 8 KiB, so 32 KiB allows roughly four blocks at full
-// size before the call itself gets cut off, a similar ratio to claude-code's 200 KB whole-message cap
-// over its 50 KB single-item limit. Nothing here has been tuned against real MCP traffic yet; if a
-// later pass scales limits with the model's context window, this constant is where that plugs in.
-export const CALL_OUTPUT_LIMIT_BYTES = 32 * 1024
+// once each block has already passed its own single-block guard above: four single-block limits, so
+// roughly four blocks at full size fit before the call itself gets cut off, a similar ratio to
+// claude-code's 200 KB whole-message cap over its 50 KB single-item limit. Nothing here has been
+// tuned against real MCP traffic yet; this is where a later pass would plug in.
+export const callOutputLimitBytes = (ctx: Pick<ToolContext, 'outputMaxBytes'>): number =>
+  4 * ctx.outputMaxBytes
 
 // One block of a tool call's result, described so guardOutputSet can charge it against the call's
 // shared budget. A `text` block still gets guardOutput's own head/tail guard below, and it is the
@@ -206,7 +228,8 @@ export async function guardOutputSet(
   opts: { mime?: string } = {},
 ): Promise<GuardedSet> {
   const blocks: ToolResult['content'] = []
-  let remaining = CALL_OUTPUT_LIMIT_BYTES
+  const callLimit = callOutputLimitBytes(ctx)
+  let remaining = callLimit
   let omitted = 0
   let exhausted = false
   for (const block of input) {
@@ -256,7 +279,7 @@ export async function guardOutputSet(
     // unbounded result just because the pointer that would have replaced it could not be written.
     stored = `full set could not be stored: ${describeFailure(e)}`
   }
-  const note = `\n[omitted ${omitted} of ${input.length} content blocks: over the ${CALL_OUTPUT_LIMIT_BYTES}-byte call limit; ${stored}]\n`
+  const note = `\n[omitted ${omitted} of ${input.length} content blocks: over the ${callLimit}-byte call limit; ${stored}]\n`
   blocks.push({ type: 'text', text: note })
   // Same convention guardOutput uses for a single truncated block: the note names the artifact in
   // prose for a human reading the transcript, and a `ref` block carries the same pointer in the

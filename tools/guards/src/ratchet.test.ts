@@ -938,7 +938,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
-  'packages/core/src': 25715,
+  // Configurable tool output limit: the Preset key `tools.output_max_bytes` resolved and handed to each
+  // tool as `ctx.outputMaxBytes`. Measured 25723 (+8), exact cap without spare allocation.
+  'packages/core/src': 25723,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1359,7 +1361,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 936 -> 937; approved feature scope, no spare allocation.
   // checkToolDef bounds description length and parameter schema size and depth, with the three limits
   // exported. Measured 978, exact, no spare (+41).
-  'packages/extension-api/src': 978, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // `ToolContext.outputMaxBytes` and the three bounds of the Preset key `tools.output_max_bytes`,
+  // exported as constants. Measured 981 (+3), exact, no spare.
+  'packages/extension-api/src': 981, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
