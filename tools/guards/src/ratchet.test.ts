@@ -212,7 +212,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   // Plugin externals now list antd and @agnes/web-ui/assistant-ui, matching the page import map.
   // Measured 1716, exact, no spare (+2).
-  'packages/web-client/src': 1716,
+  // Conversation window merge state machine. Measured 1955, exact, no spare (+239).
+  'packages/web-client/src': 1955,
   'packages/web-slots/src': 605,
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
