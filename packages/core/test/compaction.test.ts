@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { HookBlockedError } from '../src/hooks/block.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { canonicalJson } from '../src/request/hash.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { contextTokens } from '../src/step/gate.js'
 import { boundWireInputTokens, discloseTools, estimateTokens, resolveModel } from '../src/step/inference.js'
@@ -114,7 +115,11 @@ describe('production compaction phase', () => {
       session.compaction = new CompactionRunner({
         plan: async (payload, config) => {
           expect(payload.reserveTokens).toBe(8000)
-          expect(config.keepRecentTokens).toBe(12000)
+          // Half of what is left below the 24000 trigger line once the fixed prefix is paid.
+          const first = provider.requests[0]
+          const fixed = estimateTokens(canonicalJson({ system: first?.system, tools: first?.tools }))
+          expect(fixed).toBeGreaterThan(0)
+          expect(config.keepRecentTokens).toBe(Math.floor((24000 - fixed) / 2))
           return { ...plan(payload), maxTokens: Math.floor(0.8 * payload.reserveTokens) }
         },
         onCompact: async () => undefined,
@@ -657,6 +662,11 @@ describe('production compaction phase', () => {
 
   it('uses the default planner only when no hook handles the attempt and passes the live preset', async () => {
     const { session, provider } = await history()
+    // The window has to leave room for the fixed prefix; the preset's own keep is then the bound.
+    provider.models = () => [
+      model('answer-model', 'primary', 10_000),
+      model('summary-model', 'compaction', 1000),
+    ]
     session.preset.compaction.keepRecentTokens = 37
     let config: { keepRecentTokens: number } | undefined
     session.compaction = new CompactionRunner({
@@ -666,6 +676,7 @@ describe('production compaction phase', () => {
       },
       onCompact: async () => undefined,
     })
+    session.compaction.shouldCompact = () => true
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'x'.repeat(40) }], actor })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(config).toEqual({ keepRecentTokens: 37 })

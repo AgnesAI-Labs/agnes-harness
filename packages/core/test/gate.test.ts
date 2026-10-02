@@ -1,7 +1,7 @@
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { compactionTriggerTokens, contextTokens } from '../src/step/gate.js'
+import { compactionSettingsFor, compactionTriggerTokens, contextTokens } from '../src/step/gate.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -188,6 +188,32 @@ describe('checkpointRoutine compaction threshold', () => {
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
     expect(seen).toEqual([128_000, 128_000])
   })
+})
+
+describe('compactionSettingsFor', () => {
+  // The recent tail is kept next to the fixed prefix and the summary, so it may take only half of
+  // what the trigger line leaves after the prefix: the first request after a compaction has to land
+  // below the line, not on it. A prefix of 0 gives the old "half of the window minus the reserve".
+  it.each([
+    // [model capacity, session window, fixed prefix tokens, reserve, keep]
+    [128_000, 128_000, 7000, 16_384, 20_000],
+    [128_000, 70_000, 7000, 16_384, 20_000],
+    [128_000, 20_000, 0, 5000, 7500],
+    [128_000, 20_000, 6800, 5000, 4100],
+    [128_000, 16_000, 6800, 4000, 2600],
+    [128_000, 10_000, 8000, 2500, 0],
+    // A model whose own window is small has no saved budget but the same arithmetic.
+    [32_000, 32_000, 7000, 16_384, 4308],
+  ])(
+    'fits a %s-token model at a %s-token window with a %s-token fixed prefix',
+    async (capacity, window, fixed, reserveTokens, keepRecentTokens) => {
+      const provider = fakeProvider([])
+      provider.models = () => [modelRecord('default', 'big-model', capacity)]
+      const { session } = await openSession({ provider })
+      await session.setModel({ slot: 'primary', route: 'default', model: 'big-model', contextWindow: window })
+      expect(compactionSettingsFor(session, window, fixed)).toMatchObject({ reserveTokens, keepRecentTokens })
+    },
+  )
 })
 
 describe('compactionTriggerTokens', () => {

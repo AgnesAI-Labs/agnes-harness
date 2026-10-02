@@ -19,6 +19,7 @@ import {
   contextBudgetError,
   contextTokens,
   contextWindowFor,
+  fixedPrefixTokens,
   lastCacheHint,
   nearlyFull,
   reserveTreeBudget,
@@ -729,7 +730,32 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const tokensBefore = contextTokens(s)
   const primary = resolveModel(s, 'primary')
   const contextWindow = contextWindowFor(s, primary.route, primary.model)
-  const { reserveTokens, keepRecentTokens } = compactionSettingsFor(s, contextWindow)
+  // The fixed prefix is needed before planning: the tail a plan keeps has to leave room for it.
+  await s.ensureEnvelopeEpochs()
+  let currentPrefix: Prefix
+  try {
+    // Even an empty plan must check the fixed prompt cost before quoting a budget exception.
+    // When a primary request already ran, this just returns its saved prefix.
+    currentPrefix = await primaryPrefix(s)
+  } catch (error) {
+    if (!(error instanceof HookBlockedError)) throw error
+    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: error.reason } })
+    return { phase: 'terminal', reason: 'blocked' }
+  }
+  const fixedInstructions = {
+    system: currentPrefix.sections.map((section) => section.text).join('\n\n'),
+    tools: currentPrefix.tools,
+  }
+  const contextError = contextBudgetError(s, 'primary', fixedInstructions)
+  if (contextError) {
+    await s.endTurn('budget', { error: contextError })
+    return { phase: 'terminal', reason: 'budget' }
+  }
+  const { reserveTokens, keepRecentTokens } = compactionSettingsFor(
+    s,
+    contextWindow,
+    fixedPrefixTokens(fixedInstructions),
+  )
   const previous = surface.find((node) => node.kind === 'summary')?.seq
   const custom =
     phase.plan && typeof phase.plan === 'object' && !Array.isArray(phase.plan)
@@ -772,25 +798,6 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
           })
   } catch (error) {
     return leaveWithoutEffect(s, op, error instanceof Error ? error.message : String(error))
-  }
-  await s.ensureEnvelopeEpochs()
-  let currentPrefix: Prefix
-  try {
-    // Even an empty plan must check the fixed prompt cost before quoting a budget exception.
-    // When a primary request already ran, this just returns its saved prefix.
-    currentPrefix = await primaryPrefix(s)
-  } catch (error) {
-    if (!(error instanceof HookBlockedError)) throw error
-    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: error.reason } })
-    return { phase: 'terminal', reason: 'blocked' }
-  }
-  const contextError = contextBudgetError(s, 'primary', {
-    system: currentPrefix.sections.map((section) => section.text).join('\n\n'),
-    tools: currentPrefix.tools,
-  })
-  if (contextError) {
-    await s.endTurn('budget', { error: contextError })
-    return { phase: 'terminal', reason: 'budget' }
   }
   if (!plan) {
     const cache = lastCacheHint(s)

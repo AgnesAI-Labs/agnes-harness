@@ -946,7 +946,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // The preset-wide default timeout reaches a tool as ctx.defaultTimeoutMs. Measured 25751 (+9), exact cap.
   // Compaction: a summary route that cannot work is retried at growing intervals, and stops the turn
   // with the reason once the window is nearly full. Measured 25785 (+34), exact cap.
-  'packages/core/src': 25785,
+  // Compaction keeps a tail sized net of the fixed prefix, so the first request after it lands below
+  // the threshold. Measured 25793 (+8), exact cap.
+  'packages/core/src': 25793,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
