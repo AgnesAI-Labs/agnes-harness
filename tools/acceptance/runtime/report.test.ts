@@ -94,6 +94,7 @@ describe('conformance report entry', () => {
     expect(empty.failures).toEqual([{ code: 'empty-run', detail: 'zero assertions' }])
   })
 
+  // The selection runs every bound reference case, and some of them kill real provider processes.
   it('writes the serialized report and runs a selection with an injected clock', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'conformance-report-'))
     try {
@@ -120,7 +121,7 @@ describe('conformance report entry', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 
   it('parses the command and returns usage without reading a library clock', async () => {
     expect(parseConformanceArgs(['--contracts', 'all', '--providers', 'reference'])).toEqual({
