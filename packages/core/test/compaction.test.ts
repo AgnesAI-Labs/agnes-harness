@@ -1613,6 +1613,9 @@ describe('routing a summary that is unavailable', () => {
       expect(o.failed).toHaveLength(1)
       expect((o.failed[0]?.data as { reason?: string } | undefined)?.reason).toMatch(code)
       expect(h.runner.transientFailures).toBe(0)
+      // Only a threshold compaction backs off; a requested or overflow one is always attempted.
+      const turn = (h.session.op() as { meta: { turn: number } }).meta.turn
+      expect(h.runner.suspended(turn)).toBe(reason === 'threshold')
     }
 
     it.each([
@@ -1787,5 +1790,94 @@ describe('routing a summary that is unavailable', () => {
         (row) => row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'budget',
       ),
     ).toEqual([])
+  })
+
+  it('keeps trying an unavailable route every turn once the window is nearly full, and stops each time', async () => {
+    const provider = fakeProvider([
+      textTurn('ok').map((event) =>
+        event.type === 'usage' ? { ...event, tokens: { ...event.tokens, input: 95_000 } } : event,
+      ),
+    ])
+    provider.models = () => [
+      model('answer-model', 'primary', 100_000),
+      model('summary-model', 'compaction', 100_000),
+    ]
+    const infer = provider.infer.bind(provider)
+    let attempts = 0
+    provider.infer = async function* (req, options) {
+      if (req.kind !== 'summary') return yield* infer(req, options)
+      attempts++
+      yield* errorOf('AUTH', false)
+    }
+    const { session, log } = await openSession({ provider })
+    delete session.preset.model.contextWindow
+    session.preset.model.id.compaction = 'summary-model'
+    session.compaction = runner()
+    const reasons: string[] = []
+    for (const turn of [1, 2, 3, 4]) {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: `turn ${turn}` }], actor })
+      reasons.push((await session.run({ until: 'turn-end', signal: signal() })).reason)
+    }
+    // Turn 1 already answered when its compaction failed, so it finishes; later ones stop before asking.
+    expect(reasons).toEqual(['completed', 'error', 'error', 'error'])
+    expect(attempts).toBe(4)
+    expect((await log.scan({ type: 'turn/end', limit: 10 })).at(-1)?.data).toMatchObject({
+      error: { code: 'COMPACTION_UNAVAILABLE' },
+    })
+  })
+
+  it('lifts the back-off once a compaction succeeds', async () => {
+    const h = await toolHistory([errorOf('AUTH', false), textTurn('Goal: read three files. Progress: done.')])
+    await h.enter('threshold')
+    const turn = (h.session.op() as { meta: { turn: number } }).meta.turn
+    expect(h.runner.suspended(turn)).toBe(true)
+    // Manual compaction is never held back; its success shows the route works again.
+    await h.enter('requested')
+    expect((await h.outcome()).replaces).toHaveLength(1)
+    expect(h.runner.suspended(turn)).toBe(false)
+  })
+
+  it.each(['AUTH', 'QUOTA'])(
+    'ends the turn with an explicit error when a %s route leaves the window nearly full',
+    async (code) => {
+      const h = await toolHistory([errorOf(code, false)], { primary: 5000 }, 4500)
+      expect(await h.enter('threshold')).toEqual({ phase: 'failure_drain' })
+      expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('error')
+      expect((await h.outcome()).rows.filter((row) => row.type === 'turn/end').at(-1)?.data).toMatchObject({
+        reason: 'error',
+        error: { code: 'COMPACTION_UNAVAILABLE', message: expect.stringContaining(code) },
+      })
+    },
+  )
+
+  it('backs off a summary route that cannot work instead of retrying it every turn', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    provider.models = () => [
+      model('answer-model', 'primary', 100_000),
+      model('summary-model', 'compaction', 100_000),
+    ]
+    const infer = provider.infer.bind(provider)
+    let turn = 0
+    const attempts: number[] = []
+    provider.infer = async function* (req, options) {
+      if (req.kind !== 'summary') return yield* infer(req, options)
+      attempts.push(turn)
+      yield* errorOf('AUTH', false)
+    }
+    const { session } = await openSession({ provider })
+    delete session.preset.model.contextWindow
+    session.preset.model.id.compaction = 'summary-model'
+    session.compaction = runner()
+    session.compaction.shouldCompact = () => true
+    for (turn = 1; turn <= 9; turn++) {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: `turn ${turn}` }], actor })
+      expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    }
+    // The failure is retried later and later, not every turn.
+    expect(attempts[0]).toBe(1)
+    expect(attempts).not.toContain(2)
+    expect(attempts.length).toBeLessThanOrEqual(3)
+    expect((attempts[2] ?? 0) - (attempts[1] ?? 0)).toBeGreaterThan((attempts[1] ?? 0) - (attempts[0] ?? 0))
+    expect(attempts.length).toBeGreaterThanOrEqual(2)
   })
 })

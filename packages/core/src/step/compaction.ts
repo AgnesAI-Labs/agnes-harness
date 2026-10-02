@@ -20,6 +20,7 @@ import {
   contextTokens,
   contextWindowFor,
   lastCacheHint,
+  nearlyFull,
   reserveTreeBudget,
 } from './gate.js'
 import {
@@ -45,6 +46,8 @@ type RunnerOptions = {
 }
 
 const HYSTERESIS_MARGIN_FRACTION = 0.5
+// The longest a route that failed outright is spared another threshold compaction, in turns.
+const MAX_SUSPENDED_TURNS = 8
 const CACHE_WARM_RATIO = 0.5
 const SUMMARY_NO_TOOLS_PREAMBLE =
   'Summarize the conversation only. Do not call any tool, emit a tool invocation, or delegate work. Return only the requested summary text.'
@@ -75,8 +78,25 @@ export class CompactionRunner implements CompactionPort {
   // compactions within one turn. A restart forgets them, which costs at most one more retry.
   transientFailures = 0
   transientTurn: number | undefined
+  // Not durable either: consecutive threshold compactions whose route could not work at all (bad
+  // credentials, exhausted quota, a misconfigured model), and the last turn that is spared another
+  // attempt. A restart forgets both, which costs one more failing request, never a missed overflow
+  // compaction, which is never held back.
+  unavailableFailures = 0
+  suspendedThrough = 0
 
   constructor(readonly options: RunnerOptions) {}
+
+  /** Whether threshold compaction is held back this turn after the route failed outright. */
+  suspended(turn: number): boolean {
+    return turn <= this.suspendedThrough
+  }
+
+  /** Spares the next 1, 2, 4, 8, 8, ... turns another attempt, so a broken route is retried ever more rarely. */
+  suspend(turn: number): void {
+    this.unavailableFailures++
+    this.suspendedThrough = turn + Math.min(2 ** (this.unavailableFailures - 1), MAX_SUSPENDED_TURNS)
+  }
 
   shouldCompact(p: {
     contextTokens: number
@@ -547,10 +567,7 @@ function elides(
   if (failure === 'permanent' || phase.reason === 'overflow') return true
   if (phase.reason === 'requested') return false
   const runner = s.compaction as CompactionRunner
-  return (
-    runner.transientFailures + 1 >= MAX_TRANSIENT_FAILURES ||
-    contextWindow - compactionTriggerTokens(s) < reserveTokens / 2
-  )
+  return runner.transientFailures + 1 >= MAX_TRANSIENT_FAILURES || nearlyFull(s, contextWindow, reserveTokens)
 }
 
 /**
@@ -614,7 +631,10 @@ async function commitReplace(
 ): Promise<StepOutcome> {
   const current = s.op() as OpStateObj
   const seqs = await s.transition(events, withPhase(current, resumed(a.phase)))
-  ;(s.compaction as CompactionRunner).transientFailures = 0
+  const runner = s.compaction as CompactionRunner
+  runner.transientFailures = 0
+  runner.unavailableFailures = 0
+  runner.suspendedThrough = 0
   const compactPayload: CompactPayload = {
     replaceSeq: seqs[replaceIndex] as Seq,
     range: [a.replace.start, a.replace.end],
@@ -638,6 +658,8 @@ async function settleFailed(
   call: SummaryCall,
   outcome: 'aborted' | 'error',
   message: string,
+  // When set, the turn stops on this error instead of resuming.
+  stop?: { code: string; message: string },
 ): Promise<StepOutcome> {
   const current = s.op() as OpStateObj
   await s.transition(
@@ -650,9 +672,14 @@ async function settleFailed(
         { ignorable: true },
       ),
     ],
-    withPhase(current, failedPhase(phase, message)),
+    withPhase(
+      current,
+      stop
+        ? { kind: 'failure_drain', error: stop, provenance: { kind: 'inference' } }
+        : failedPhase(phase, message),
+    ),
   )
-  return phase.reason === 'overflow' ? { phase: 'failure_drain' } : { phase: 'checkpoint' }
+  return stop || phase.reason === 'overflow' ? { phase: 'failure_drain' } : { phase: 'checkpoint' }
 }
 
 /**
@@ -987,7 +1014,23 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
     if (elides(s, phase, failure, contextWindow, reserveTokens))
       return elide(s, attempt, cause ?? failure, message, call)
     if (failure === 'retryable' && phase.reason === 'threshold') s.compaction.transientFailures++
-    return settleFailed(s, phase, call, s.ac.signal.aborted ? 'aborted' : 'error', message)
+    const unavailable = (failure === 'config' || failure === 'budget') && phase.reason === 'threshold'
+    // A route that cannot work will not start working by the next turn: retry it ever more rarely.
+    // Once the window is nearly full it is retried every turn, and a request about to be sent stops
+    // with the reason instead of growing into an overflow.
+    if (unavailable) s.compaction.suspend(op.meta.turn)
+    const next = phase.resumeAfter as OpStatePhase
+    const stop =
+      unavailable &&
+      next.kind === 'checkpoint' &&
+      next.continuation === 'need_assistant' &&
+      nearlyFull(s, contextWindow, reserveTokens)
+        ? {
+            code: 'COMPACTION_UNAVAILABLE',
+            message: `${message}; the context window is nearly full, so the turn stopped. Fix the compaction model or its credentials, or raise or reset the context budget.`,
+          }
+        : undefined
+    return settleFailed(s, phase, call, s.ac.signal.aborted ? 'aborted' : 'error', message, stop)
   }
 
   const [mainResult, prefixResult] = results

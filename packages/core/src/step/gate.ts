@@ -42,6 +42,11 @@ function tokensSince(s: SessionImpl, anchor: { seq: Seq; total: number } | null)
   return n
 }
 
+/** Whether less than half the reserve is left below the window, so waiting for a later attempt is not safe. */
+export function nearlyFull(s: SessionImpl, contextWindow: number, reserveTokens: number): boolean {
+  return contextWindow - compactionTriggerTokens(s) < reserveTokens / 2
+}
+
 export function contextTokens(s: SessionImpl): number {
   return tokensSince(s, s.state.lastLedgerTokens)
 }
@@ -492,7 +497,11 @@ export async function checkpointRoutine(s: SessionImpl): Promise<StepOutcome> {
     const contextWindow = contextWindowFor(s, route, model)
     const { reserveTokens } = compactionSettingsFor(s, contextWindow)
     const cache = lastCacheHint(s)
+    // A route that failed outright is spared attempts, but never once the window is nearly full.
+    const held =
+      s.compaction.suspended?.(op.meta.turn) === true && !nearlyFull(s, contextWindow, reserveTokens)
     if (
+      !held &&
       s.compaction.shouldCompact({
         contextTokens: compactionTriggerTokens(s),
         contextWindow,
