@@ -941,9 +941,19 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 26639 (+573), exact, no spare.
   // Merged with the policy and integrity providers on the integration base. Measured 28132, exact, no spare.
   // A domain command cancelled while its prepare runs commits nothing. Measured 28134, exact, no spare.
+  // Interaction domain rules: pending questions, one accepted answer per version and a wake per terminal
+  // change. Measured 25787, exact, no spare (+309).
+  // Interaction wake delivery: retries with backoff, dead letters and redrive under the original key.
+  // Measured 25893, exact, no spare (+106).
+  // Merged with the policy and integrity providers on the integration base. Measured 27386, exact, no spare.
   // Shared interaction authority and its public exports: exact measured 27310 (+339).
   // Merged with the shared interaction authority on the integration base. Measured 28471, exact, no spare.
-  'packages/core/src': 28471,
+  // Merged with the shared interaction authority on the integration base. Measured 27395, exact, no spare.
+  // Interaction wake delivery bridge restored until expiry, cancellation and question wakes have a
+  // State path. Measured 27395, exact, no spare.
+  // Merged with the domain command and projection providers on the integration base.
+  // Measured 28556, exact, no spare.
+  'packages/core/src': 28556,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1393,6 +1403,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 2629 (+1102), exact, no spare.
   // Merged with the identity, policy, audit and integrity contract cases. Measured 4551, exact, no spare.
   // Projection cases judge real kills, failed mounts and running cancels. Measured 4709, exact, no spare.
+  // Interaction contract cases judge six scenarios for any provider. Measured 1688, exact, no spare.
+  // Merged with the identity, policy, audit and integrity contract cases. Measured 3622, exact, no spare.
+  // Interaction cases judge late answers, real kills and failed mounts. Measured 3664, exact, no spare.
   // Contract cases re-export from one aggregate. Measured 3459, exact, no spare.
   // Test container refusals match production feature and cell checks, and the runtime barrel
   // exports are sorted. Measured 3475, exact, no spare.
@@ -1403,7 +1416,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Projection contract cases join the contract aggregate, which keeps the blob callContext helper.
   // Measured 4896, exact, no spare.
   // Merged with the network and secret cases on the integration base. Measured 5133, exact, no spare.
-  'packages/extension-api/testkit': 5133,
+  // Merged with the aggregate contract exports on the integration base. Measured 3690, exact, no spare.
+  // Interaction contract cases join the contract aggregate. Measured 3691, exact, no spare.
+  // Merged with the projection, network and secret cases on the integration base.
+  // Measured 5349, exact, no spare.
+  'packages/extension-api/testkit': 5349,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2598,7 +2615,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
   // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
   // Constrained network and secret providers. Measured 63169, exact, no spare.
-  'packages/host/src': 63169,
+  // Default interaction provider over the State approval entries. Measured 63248, exact, no spare (+79).
+  'packages/host/src': 63248,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

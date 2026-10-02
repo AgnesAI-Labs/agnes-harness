@@ -4,5 +4,6 @@ import { describe, expect, it } from 'vitest'
 describe('contract aggregate', () => {
   it('loads a contract case from the testkit entry', () => {
     expect(typeof contracts.registerPolicyContract).toBe('function')
+    expect(typeof contracts.registerInteractionContract).toBe('function')
   })
 })
