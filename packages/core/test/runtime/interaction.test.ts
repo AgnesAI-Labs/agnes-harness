@@ -372,7 +372,7 @@ describe('interaction authority: expiry, cancellation and atomicity', () => {
     expect([...store.wakes.values()].map((w) => w.wake.status)).toEqual(['expired'])
   })
 
-  it('cancels a pending question but not an answered one', async () => {
+  it('cancels a pending question, refuses a late answer to it and does not cancel an answered one', async () => {
     const first = await open(approvalRequest())
     const cancelled = await authority.terminate('cancel', {
       interactionId: first.interactionId,
@@ -380,6 +380,16 @@ describe('interaction authority: expiry, cancellation and atomicity', () => {
       reason: 'run aborted',
     })
     expect(cancelled.ok && cancelled.value.status).toBe('cancelled')
+    // One client had not seen the cancel yet; the other had already read the cancelled version.
+    for (const expectedVersion of [1, 2]) {
+      const late = await authority.respond(
+        approve(first.interactionId, { responseId: `late-${expectedVersion}`, expectedVersion }),
+      )
+      expect(late.ok ? undefined : late.error.detailCode).toBe('revision_conflict')
+    }
+    expect(store.records.get(first.interactionId)).toEqual(cancelled.ok && cancelled.value)
+    expect(store.responses.size).toBe(0)
+    expect(store.wakes.size).toBe(1)
 
     const second = await open(approvalRequest({ idempotencyKey: 'ask-2' }))
     await authority.respond(approve(second.interactionId))

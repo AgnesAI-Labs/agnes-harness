@@ -1383,7 +1383,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
   // Interaction contract cases judge six scenarios for any provider. Measured 1688, exact, no spare.
   // Merged with the identity, policy, audit and integrity contract cases. Measured 3622, exact, no spare.
-  'packages/extension-api/testkit': 3622,
+  // Interaction cases judge late answers, real kills and failed mounts. Measured 3664, exact, no spare.
+  'packages/extension-api/testkit': 3664,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

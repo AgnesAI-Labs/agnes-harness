@@ -1,3 +1,4 @@
+import { pid } from 'node:process'
 import type * as Wire from '@agnes/protocol/runtime'
 import { RuntimeSchemaRefs, RuntimeServiceCatalog, validateRuntime } from '@agnes/protocol/runtime'
 import { type BuildIdentity, type ReuseLifecycle, SCENARIOS, type ScenarioName } from '../evidence.js'
@@ -22,26 +23,60 @@ export interface InteractionObservations {
     readonly record: Wire.InteractionRecord
     readonly woken: number
   }
-  /** Wrong actor, forged intent and stale version, in that order, against one pending approval. */
+  /**
+   * Wrong actor, forged intent, stale version, a request with a field its schema does not define and a
+   * grant scope the question does not offer, in that order, against one pending approval.
+   */
   readonly deny: {
     readonly refusals: readonly (string | null)[]
     readonly record: Wire.InteractionRecord
     readonly woken: number
   }
-  /** One interaction cancelled and another expired once due, both read back and their wakes delivered. */
-  readonly cancel: { readonly records: readonly Wire.InteractionRecord[]; readonly woken: number }
   /**
-   * An answer whose wake reached the inbox without being acknowledged, read back after the store is
-   * reopened. Statuses are read before and after redelivery; pending wakes are counted before it.
+   * Three approvals due at the same moment: one cancelled, one expired once due and one left overdue
+   * without an expiry. Each then gets an answer at version 1, as a client that missed the change sends
+   * it. Records and the late responses' statuses are read after a restart once wakes are delivered;
+   * `woken` counts wakes for every version past the first.
    */
-  readonly recover: {
-    readonly record: Wire.InteractionRecord
+  readonly cancel: {
+    readonly records: readonly Wire.InteractionRecord[]
+    readonly refusals: readonly (string | null)[]
     readonly statuses: readonly string[]
-    readonly pendingWakes: number
     readonly woken: number
   }
-  /** Whether use after close was refused and the database file is still there. */
-  readonly dispose: { readonly refused: boolean; readonly storeRemains: boolean }
+  /**
+   * A provider process killed with SIGKILL after committing one answer while a second was still
+   * uncommitted, then a second process killed after handing the committed wake to the inbox but before
+   * recording the acknowledgement. `kills` holds each exit signal and pid, in that order. The rest is
+   * read after the store is rebuilt from disk: statuses of the committed response before and after
+   * redelivery, pending wakes before it, and how often the wake reached the inbox across both processes.
+   */
+  readonly recover: {
+    readonly kills: readonly { readonly signal: string | null; readonly pid: number | null }[]
+    readonly record: Wire.InteractionRecord
+    readonly uncommitted: Wire.InteractionRecord
+    readonly uncommittedStatus: string
+    readonly statuses: readonly string[]
+    readonly pendingWakes: number
+    readonly delivered: number
+    readonly woken: number
+  }
+  /**
+   * Whether use after close was refused, the database file is still there and a mount over a file that
+   * is not a store was refused. `handles` counts open file descriptors before any store is open, after
+   * the refused mount and after a store is opened and closed again. The counts are null only where the
+   * platform offers nothing to count them with, which means not measurable there, never passed.
+   */
+  readonly dispose: {
+    readonly refused: boolean
+    readonly storeRemains: boolean
+    readonly mountRefused: boolean
+    readonly handles: {
+      readonly baseline: number | null
+      readonly afterFailedMount: number | null
+      readonly afterClose: number | null
+    }
+  }
 }
 
 export type InteractionContractPort = {
@@ -79,6 +114,13 @@ function approvedOnce(record: Wire.InteractionRecord): boolean {
   )
 }
 
+/** Every count back at the baseline, or no count at all where descriptors cannot be counted. */
+function returned({ baseline, afterFailedMount, afterClose }: InteractionObservations['dispose']['handles']) {
+  return baseline === null
+    ? afterFailedMount === null && afterClose === null
+    : afterFailedMount === baseline && afterClose === baseline
+}
+
 function selected(binding: TestServiceBinding, context: CaseContext, providerId: string): boolean {
   const { requirement } = binding
   if (requirement.contract !== CONTRACT || requirement.major !== RuntimeServiceCatalog[CONTRACT].major)
@@ -108,29 +150,47 @@ const JUDGE: Judge = {
     approvedOnce(seen.record) &&
     seen.woken === 1,
   deny: (seen) =>
-    same(seen.refusals, ['permission_denied', 'invalid_request', 'revision_conflict']) &&
+    same(seen.refusals, [
+      'permission_denied',
+      'invalid_request',
+      'revision_conflict',
+      'invalid_request',
+      'invalid_request',
+    ]) &&
     at(seen.record, 'pending', 1) &&
     seen.woken === 0,
   cancel: (seen) =>
     same(
-      seen.records.map((record) => record.status),
-      ['cancelled', 'expired'],
+      seen.records.map((record) => [record.status, record.version]),
+      [
+        ['cancelled', 2],
+        ['expired', 2],
+        ['pending', 1],
+      ],
     ) &&
-    seen.records.every((record) => at(record, record.status, 2) && record.terminationReason !== null) &&
+    seen.records.every((record) => at(record, record.status, record.version)) &&
+    seen.records.slice(0, 2).every((record) => record.terminationReason !== null) &&
+    same(seen.refusals, ['revision_conflict', 'revision_conflict', 'blocked']) &&
+    same(seen.statuses, ['not-accepted', 'not-accepted', 'not-accepted']) &&
     seen.woken === 2,
   recover: (seen) =>
+    seen.kills.length === 2 &&
+    seen.kills.every((kill) => kill.signal === 'SIGKILL' && kill.pid !== null && kill.pid !== pid) &&
     at(seen.record, 'answered', 2) &&
+    at(seen.uncommitted, 'pending', 1) &&
+    seen.uncommittedStatus === 'not-accepted' &&
     same(seen.statuses, ['accepted', 'applied']) &&
     seen.pendingWakes === 1 &&
+    seen.delivered === 2 &&
     seen.woken === 1,
-  dispose: (seen) => seen.refused && seen.storeRemains,
+  dispose: (seen) => seen.refused && seen.storeRemains && seen.mountRefused && returned(seen.handles),
 }
 
 const FEATURES: Record<ScenarioName, readonly string[]> = {
   select: ['request'],
   normal: ['request', 'respondApproval', 'responseStatus'],
   deny: ['request', 'respondApproval'],
-  cancel: ['cancel', 'expire', 'read'],
+  cancel: ['cancel', 'expire', 'read', 'respondApproval', 'responseStatus'],
   recover: ['read', 'responseStatus'],
   dispose: ['read'],
 }

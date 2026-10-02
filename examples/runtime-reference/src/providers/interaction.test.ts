@@ -2,11 +2,10 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { createConformanceHarness, createRuntimeInboxFixture, SCENARIOS } from '@agnes/extension-api/testkit'
+import { createRuntimeInboxFixture } from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
 import { RuntimeSchemaRefs } from '@agnes/protocol/runtime'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { InteractionContractPort } from '../../../../packages/extension-api/testkit/runtime/contracts/interaction.js'
 import { createReferenceRegistry } from '../index.js'
 import {
   INTERACTION_PROVIDER,
@@ -17,7 +16,6 @@ import {
 import {
   approvalRequest,
   approve,
-  bindInteractionContract,
   code,
   deliverTo,
   human,
@@ -476,40 +474,5 @@ describe('reference interaction: conformance', () => {
     expect(slot?.provider).toEqual(INTERACTION_PROVIDER)
     expect(slot?.providerFile).toBe('examples/runtime-reference/src/providers/interaction.ts')
     expect(existsSync(new URL(`../../../../${slot?.providerFile}`, import.meta.url))).toBe(true)
-  })
-
-  async function runContract(change: (port: InteractionContractPort) => InteractionContractPort) {
-    const harness = createConformanceHarness()
-    const bound = bindInteractionContract(harness, 'reference-interaction-conformance', { change })
-    try {
-      return await harness.run({
-        contracts: ['agh.interaction'],
-        providers: [INTERACTION_PROVIDER.id],
-        command: 'reference-interaction-conformance',
-        clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
-      })
-    } finally {
-      bound.close()
-    }
-  }
-
-  it('passes select, normal, deny, cancel, recover and dispose', async () => {
-    const report = await runContract((port) => port)
-    expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
-      SCENARIOS.map((scenario) => [scenario, 'passed']),
-    )
-    expect(report.status).toBe('passed')
-    expect(report.failures).toEqual([])
-  })
-
-  it('fails a scenario whose observations break the contract', async () => {
-    const report = await runContract((port) => ({
-      ...port,
-      normal: async (context) => ({ ...(await port.normal(context)), woken: 2 }),
-    }))
-    expect(report.assertions.filter((item) => item.status === 'failed').map((item) => item.scenario)).toEqual(
-      ['normal'],
-    )
-    expect(report.status).toBe('failed')
   })
 })

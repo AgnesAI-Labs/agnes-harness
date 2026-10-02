@@ -1,113 +1,54 @@
-import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { createRuntimeInboxFixture } from '@agnes/extension-api/testkit'
+import { createConformanceHarness, SCENARIOS } from '@agnes/extension-api/testkit'
 import { describe, expect, it } from 'vitest'
-import { openInteractionStore } from './interaction.js'
+import type { InteractionContractPort } from '../../../../packages/extension-api/testkit/runtime/contracts/interaction.js'
+import { INTERACTION_PROVIDER } from './interaction.js'
+import { bindInteractionContract } from './interaction-contract.js'
 
-const provider = fileURLToPath(new URL('./interaction.ts', import.meta.url))
-const root = fileURLToPath(new URL('../../../..', import.meta.url))
+// Recover kills real provider processes with SIGKILL, so every run of the contract is heavy.
+// Each run starts two provider processes; the default timeout leaves too little room on slow hosts.
+const CONTRACT_TIMEOUT_MS = 30_000
 
-type Exit = { code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }
-
-/** Runs the provider CLI; `onOutput` sees stdout so far and may kill the child. */
-function runChild(
-  args: readonly string[],
-  onOutput?: (stdout: string, child: ChildProcess) => void,
-): Promise<Exit> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', provider, ...args], {
-      cwd: root,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      if (settled) return
-      settled = true
-      reject(new Error(`interaction child timed out\n${stderr}\n${stdout}`))
-    }, 15_000)
-    child.stdout.setEncoding('utf8')
-    child.stderr.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk
-      onOutput?.(stdout, child)
-    })
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk
-    })
-    child.on('error', (error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      reject(error)
-    })
-    child.on('exit', (code, signal) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      resolve({ code, signal, stdout, stderr })
-    })
-  })
-}
-
-describe('reference interaction durability', () => {
-  it('keeps committed answers and wakes across a kill, drops the open write and wakes the waiter once', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'reference-interaction-kill-'))
-    const database = join(directory, 'interaction.sqlite')
-    const inbox = createRuntimeInboxFixture()
-    let woken = 0
+describe('reference interaction: conformance', () => {
+  async function runContract(change: (port: InteractionContractPort) => InteractionContractPort) {
+    const harness = createConformanceHarness()
+    const bound = bindInteractionContract(harness, 'reference-interaction-conformance', { change })
     try {
-      const held = await runChild(['hold', database], (stdout, child) => {
-        if (stdout.includes('\n')) child.kill('SIGKILL')
+      return await harness.run({
+        contracts: ['agh.interaction'],
+        providers: [INTERACTION_PROVIDER.id],
+        command: 'reference-interaction-conformance',
+        clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
       })
-      expect(held.signal).toBe('SIGKILL')
-      expect(held.stdout).toMatch(/^READY \S+ \S+\n$/)
-      const [, a, b] = held.stdout.trim().split(' ')
-      const key = `${a}@2`
-      const read = async () => {
-        const result = await runChild(['read', database, a ?? '', b ?? ''])
-        expect(result.code).toBe(0)
-        return JSON.parse(result.stdout)
-      }
-      expect(await read()).toEqual({
-        a: 'answered@2',
-        b: 'pending@1',
-        responses: ['accepted', 'not-accepted'],
-        wakes: [`${key} pending`],
-      })
-
-      inbox.registerWaiter(key, () => void woken++)
-      const delivered = await runChild(['deliver', database], (stdout, child) => {
-        if (!stdout.includes(`DELIVERED ${key}\n`)) return
-        // The wake reached the inbox; the child dies before it records the acknowledgement.
-        inbox.notify(key)
-        child.kill('SIGKILL')
-      })
-      expect(delivered.signal).toBe('SIGKILL')
-      expect(woken).toBe(1)
-      expect((await read()).wakes).toEqual([`${key} pending`])
-
-      const store = openInteractionStore(database)
-      try {
-        const sink = async (wake: { deliveryKey: string }) => ({
-          ok: true as const,
-          value: { deliveryId: inbox.notify(wake.deliveryKey).deliveryId },
-        })
-        expect(await store.flush(sink)).toEqual({ acked: 1, retrying: 0, dead: 0 })
-        expect(await store.flush(sink)).toEqual({ acked: 0, retrying: 0, dead: 0 })
-        const status = store.responseStatus('resp-a')
-        expect(status.ok && status.value.status).toBe('applied')
-      } finally {
-        store.close()
-      }
-      expect(woken).toBe(1)
     } finally {
-      rmSync(directory, { recursive: true, force: true })
+      bound.close()
     }
-  })
+  }
+
+  it(
+    'passes select, normal, deny, cancel, recover and dispose',
+    async () => {
+      const report = await runContract((port) => port)
+      expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
+        SCENARIOS.map((scenario) => [scenario, 'passed']),
+      )
+      expect(report.status).toBe('passed')
+      expect(report.failures).toEqual([])
+    },
+    CONTRACT_TIMEOUT_MS,
+  )
+
+  it(
+    'fails a scenario whose observations break the contract',
+    async () => {
+      const report = await runContract((port) => ({
+        ...port,
+        normal: async (context) => ({ ...(await port.normal(context)), woken: 2 }),
+      }))
+      expect(
+        report.assertions.filter((item) => item.status === 'failed').map((item) => item.scenario),
+      ).toEqual(['normal'])
+      expect(report.status).toBe('failed')
+    },
+    CONTRACT_TIMEOUT_MS,
+  )
 })

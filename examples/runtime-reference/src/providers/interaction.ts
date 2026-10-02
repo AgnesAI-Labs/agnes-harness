@@ -232,12 +232,18 @@ export function openInteractionStore(path: string, options: InteractionStoreOpti
   const maxFailures = options.maxFailures ?? 20
   const batch = options.batch ?? 100
   const db = new DatabaseSync(path)
-  db.exec('PRAGMA journal_mode = WAL')
-  // An accepted answer has been reported to a client, so commits wait for the disk.
-  db.exec('PRAGMA synchronous = FULL')
-  db.exec('PRAGMA busy_timeout = 5000')
-  if (process.platform === 'darwin') db.exec('PRAGMA checkpoint_fullfsync = ON')
-  db.exec(TABLES)
+  try {
+    db.exec('PRAGMA journal_mode = WAL')
+    // An accepted answer has been reported to a client, so commits wait for the disk.
+    db.exec('PRAGMA synchronous = FULL')
+    db.exec('PRAGMA busy_timeout = 5000')
+    if (process.platform === 'darwin') db.exec('PRAGMA checkpoint_fullfsync = ON')
+    db.exec(TABLES)
+  } catch (error) {
+    // A file that is not this store, or one it cannot set up, must not keep the handle open.
+    db.close()
+    throw error
+  }
   let open = true
   let held = false
 

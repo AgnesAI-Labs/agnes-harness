@@ -1,7 +1,9 @@
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Outcome } from '@agnes/extension-api/runtime'
 import {
   type BuildIdentity,
@@ -107,6 +109,55 @@ const build: BuildIdentity = {
   platform: 'reference-platform',
 }
 
+const provider = fileURLToPath(new URL('./interaction.ts', import.meta.url))
+const root = fileURLToPath(new URL('../../../..', import.meta.url))
+
+type Killed = { signal: string | null; pid: number | null; stdout: string; stderr: string }
+
+/**
+ * Runs one provider CLI command and kills it with SIGKILL the first time `ready` accepts its output.
+ * Settles only once the child's pipes have closed, so neither the process nor its handles outlive the
+ * call; a child that never gets ready is killed after 15 seconds and the call rejects.
+ */
+function killWhenReady(args: readonly string[], ready: (stdout: string) => boolean): Promise<Killed> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', 'tsx', provider, ...args], {
+      cwd: root,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    let killed = false
+    let timedOut = false
+    const kill = () => {
+      killed = true
+      child.kill('SIGKILL')
+    }
+    const timer = setTimeout(() => {
+      timedOut = true
+      kill()
+    }, 15_000)
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk
+      if (!killed && ready(stdout)) kill()
+    })
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk
+    })
+    child.on('error', reject)
+    child.on('close', (_code, signal) => {
+      clearTimeout(timer)
+      if (timedOut) reject(new Error(`interaction child timed out\n${stderr}\n${stdout}`))
+      else resolve({ signal, pid: child.pid ?? null, stdout, stderr })
+    })
+  })
+}
+
+/** Open descriptors of this process, or null where there is no `/dev/fd` to list them (Windows). */
+const openHandles = () => (existsSync('/dev/fd') ? readdirSync('/dev/fd').length : null)
+
 /** Drives the reference store through the six scenarios; the contract module judges what it reports. */
 export function referenceInteractionPort(
   databasePath: string,
@@ -166,35 +217,79 @@ export function referenceInteractionPort(
         current.respond({ ...approve(interactionId, { responseId: 'deny-1' }), actorRef: 'mallory' }),
         current.respond(approve(interactionId, { responseId: 'deny-2', intentDigest: 'e'.repeat(64) })),
         current.respond(approve(interactionId, { responseId: 'deny-3', expectedVersion: 7 })),
+        current.respond(approve(interactionId, { responseId: 'deny-4', unknownField: true })),
+        current.respond(approve(interactionId, { responseId: 'deny-5', grantScope: 'permanent' })),
       ].map(code)
       await current.flush(deliverTo(inbox))
       return { refusals, record: must(current.read(interactionId)), woken: seen.woken }
     },
     async cancel({ inbox }) {
-      const asked = [ask('port-cancel'), ask('port-expire', { expiresAt: '2026-10-02T00:00:00Z' })]
-      const seen = asked.map((record) => waiter(inbox, `${record.interactionId}@2`))
+      const due = { expiresAt: '2026-10-02T00:00:00Z' }
+      const asked = ['port-cancel', 'port-expire', 'port-overdue'].map((key) => ask(key, due))
+      // Counts a wake for any later version, including one a wrongly accepted late answer would add.
+      const seen = asked.flatMap(({ interactionId }) =>
+        [2, 3].map((version) => waiter(inbox, `${interactionId}@${version}`)),
+      )
       const [first, second] = asked.map((record) => record.interactionId)
       must(current.cancel({ interactionId: first, expectedVersion: 1, reason: 'run aborted' }))
       at = '2026-10-02T00:00:00Z'
       must(current.expire({ interactionId: second, expectedVersion: 1, reason: 'timed out' }))
+      // Answers from a client that has not seen the change; the third is due but was never expired.
+      const { intentDigest } = approvalRequest(due)
+      const refusals = asked.map(({ interactionId }) =>
+        code(current.respond(approve(interactionId, { responseId: `late-${interactionId}`, intentDigest }))),
+      )
       restart()
       await current.flush(deliverTo(inbox))
-      const records = asked.map((record) => must(current.read(record.interactionId)))
-      return { records, woken: seen.reduce((sum, item) => sum + item.woken, 0) }
+      return {
+        records: asked.map(({ interactionId }) => must(current.read(interactionId))),
+        refusals,
+        statuses: asked.map(({ interactionId }) => status(`late-${interactionId}`)),
+        woken: seen.reduce((sum, item) => sum + item.woken, 0),
+      }
     },
     async recover({ inbox }) {
-      const { interactionId } = ask('port-recover')
-      const key = `${interactionId}@2`
+      // A store of its own: the provider processes run on the wall clock, not on this port's clock.
+      const file = `${databasePath}.recover`
+      const held = await killWhenReady(['hold', file], (stdout) => stdout.includes('\n'))
+      const [, committed, uncommitted] = /^READY (\S+) (\S+)\n$/.exec(held.stdout) ?? []
+      if (committed === undefined || uncommitted === undefined)
+        throw new Error(`interaction child did not get ready\n${held.stderr}`)
+      const key = `${committed}@2`
       const seen = waiter(inbox, key)
-      must(current.respond(approve(interactionId, { responseId: 'port-recover' })))
-      // The wake reached the inbox, but the process stopped before the acknowledgement was stored.
-      inbox.notify(key)
-      restart()
-      const statuses = [status('port-recover')]
-      const pendingWakes = current.wakes().filter((state) => state.delivery === 'pending').length
-      await current.flush(deliverTo(inbox))
-      statuses.push(status('port-recover'))
-      return { record: must(current.read(interactionId)), statuses, pendingWakes, woken: seen.woken }
+      let delivered = 0
+      const delivering = await killWhenReady(['deliver', file], (stdout) => {
+        if (!stdout.includes(`DELIVERED ${key}\n`)) return false
+        // The wake reached the inbox; the process dies before it records the acknowledgement.
+        inbox.notify(key)
+        delivered++
+        return true
+      })
+      const store = openInteractionStore(file)
+      try {
+        const relay = deliverTo(inbox)
+        const sink: WakeSink = (wake) => {
+          delivered++
+          return relay(wake)
+        }
+        const statuses = [must(store.responseStatus('resp-a')).status]
+        const pendingWakes = store.wakes().filter((state) => state.delivery === 'pending').length
+        await store.flush(sink)
+        await store.flush(sink)
+        statuses.push(must(store.responseStatus('resp-a')).status)
+        return {
+          kills: [held, delivering].map(({ signal, pid }) => ({ signal, pid })),
+          record: must(store.read(committed)),
+          uncommitted: must(store.read(uncommitted)),
+          uncommittedStatus: must(store.responseStatus('resp-b')).status,
+          statuses,
+          pendingWakes,
+          delivered,
+          woken: seen.woken,
+        }
+      } finally {
+        store.close()
+      }
     },
     async dispose() {
       current.close()
@@ -204,7 +299,25 @@ export function referenceInteractionPort(
       } catch (error) {
         refused = error instanceof Error && error.message === 'interaction store is closed'
       }
-      return { refused, storeRemains: existsSync(databasePath) }
+      const garbage = `${databasePath}.garbage`
+      writeFileSync(garbage, 'not an interaction store\n'.repeat(200))
+      // Counted synchronously; no child process or file operation from an earlier scenario is open.
+      const baseline = openHandles()
+      let mountRefused = false
+      try {
+        openInteractionStore(garbage, options).close()
+      } catch {
+        mountRefused = true
+      }
+      const afterFailedMount = openHandles()
+      openInteractionStore(databasePath, options).close()
+      const afterClose = openHandles()
+      return {
+        refused,
+        storeRemains: existsSync(databasePath),
+        mountRefused,
+        handles: { baseline, afterFailedMount, afterClose },
+      }
     },
   }
   return { port, close: () => current.close() }
