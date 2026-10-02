@@ -14,6 +14,11 @@ describe('shell', () => {
     expect(shellTool.description).not.toMatch(/bash|powershell|windows|posix/i)
   })
 
+  it('does not promise background execution while the job runner refuses every job', () => {
+    expect(shellTool.description).not.toMatch(/background=true|poll the returned job/i)
+    expect(shellTool.description).toMatch(/background.*unavailable/i)
+  })
+
   it('declares itself destructive, open-world and left to the command policy for approval', () => {
     expect(shellTool.meta).toEqual({
       isReadOnly: false,
@@ -188,5 +193,8 @@ describe('shell background jobs', () => {
     const r = await shellTool.execute({ command: 'sleep 100', background: true }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('job store offline')
+    // The advice has to be something the model can do today, and background=true is not.
+    expect(textOf(r)).toMatch(/background execution is unavailable here; run the command in the foreground/)
+    expect(textOf(r)).not.toContain('background=true')
   })
 })
