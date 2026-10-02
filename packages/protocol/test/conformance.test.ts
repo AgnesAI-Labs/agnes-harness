@@ -36,14 +36,14 @@ const COUNTS = {
   hooks: 32,
   slots: 8,
   model: 8,
-  preset: 144,
+  preset: 149,
   task20: 211,
   task21: 178,
   migrate: 1,
   sequences: 4,
   workerRuntimeTarget: 8,
 } as const
-const ALL_FIXTURE_COUNT = 1390
+const ALL_FIXTURE_COUNT = 1395
 
 describe('conformance fixtures', () => {
   it('all checked-in fixtures across the complete fixture tree pass', () => {

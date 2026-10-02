@@ -68,6 +68,7 @@ function setup(
       name: 'fixture',
       signal: over.parentSignal ?? new AbortController().signal,
       timeoutMs: 1_000,
+      outputMaxBytes: 32768,
     },
   )
   return { context, created, run, close }
@@ -208,7 +209,13 @@ describe('ToolContext subagent options', () => {
         artifactJobEvent: async () => undefined,
         lease: { remainingMs: () => 5 },
       },
-      { toolUseId: 'tool-1', name: 'fixture', signal: new AbortController().signal, timeoutMs: 1_000 },
+      {
+        toolUseId: 'tool-1',
+        name: 'fixture',
+        signal: new AbortController().signal,
+        timeoutMs: 1_000,
+        outputMaxBytes: 32768,
+      },
     )
     await expect(context.subagent.collect('child-1', { wait: true })).resolves.toMatchObject({
       childKey: 'child-1',
@@ -313,6 +320,7 @@ describe('ToolContext platform view and sandbox enforcement (spec 2026-09-15 §4
       'lease',
       'log',
       'net',
+      'outputMaxBytes',
       'plan',
       'platform',
       'progress',

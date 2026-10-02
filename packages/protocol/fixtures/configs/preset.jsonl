@@ -12,6 +12,11 @@
 {"id":"preset-timeout-park","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","approval":{"on_timeout":"park"}},"expect":{"errorCode":-32602}}
 {"id":"preset-timeout-zero","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","approval":{"timeout_ms":0}},"expect":{"errorCode":-32602}}
 {"id":"preset-timeout-fraction","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","approval":{"timeout_ms":1.5}},"expect":{"errorCode":-32602}}
+{"id":"preset-output-max-bytes-min","kind":"valid","target":"config","name":"preset","payload":{"name":"child","tools":{"output_max_bytes":4096}}}
+{"id":"preset-output-max-bytes-max","kind":"valid","target":"config","name":"preset","payload":{"name":"child","tools":{"output_max_bytes":1048576}}}
+{"id":"preset-output-max-bytes-below","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","tools":{"output_max_bytes":4095}},"expect":{"errorCode":-32602}}
+{"id":"preset-output-max-bytes-above","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","tools":{"output_max_bytes":1048577}},"expect":{"errorCode":-32602}}
+{"id":"preset-output-max-bytes-fraction","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","tools":{"output_max_bytes":5000.5}},"expect":{"errorCode":-32602}}
 {"id":"preset-runtime-no-state","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","code_runtime":{"language":"python"}},"expect":{"errorCode":-32602}}
 {"id":"preset-runtime-no-language","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","code_runtime":{"state":"persistent"}},"expect":{"errorCode":-32602}}
 {"id":"preset-route-no-primary","kind":"invalid","target":"config","name":"preset","payload":{"name":"child","model":{"route":{"fast":{"route":"r","model":"m"}}}},"expect":{"errorCode":-32602}}

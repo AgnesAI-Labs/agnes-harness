@@ -52,7 +52,8 @@ describe('web_fetch tool', () => {
     expect(output.structured).toBeUndefined()
   })
   it.each([false, true])('bounds source and model output even if artifacts fail: %s', async (fail) => {
-    const ctx = fakeToolContext(fail ? { artifactsFail: 'offline' } : {})
+    // The page is sized against an 8 KiB limit, so the case asks for it rather than the default.
+    const ctx = fakeToolContext({ outputMaxBytes: 8192, ...(fail ? { artifactsFail: 'offline' } : {}) })
     ctx.net.fetchPublic = async () => ({
       ...result('正文'.repeat(10_000), 'text'),
       truncation: { bytes: true, decoded: false },

@@ -517,7 +517,10 @@ describe('tools phase', () => {
 
   it('a tool that runs past its deadline yields a partial error result naming the deadline', async () => {
     const s = await atTools([toolTurn('read', {})], withTool(readTool(() => new Promise(() => undefined))))
-    s.session.preset = { ...s.session.preset, tools: { timeoutMs: 5, timeouts: {} } }
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, timeoutMs: 5, timeouts: {} },
+    }
     await s.session.runToolsPhase()
     const res = (await s.log.scan({ type: 'tool/result', limit: 5 }))[0]
     expect(res?.data).toMatchObject({
@@ -531,9 +534,24 @@ describe('tools phase', () => {
     })
   })
 
+  it('hands each tool the output limit the preset resolved', async () => {
+    let seen = 0
+    const tool = readTool(async (_args, ctx) => {
+      seen = ctx.outputMaxBytes
+      return { content: [{ type: 'text' as const, text: 'ok' }] }
+    })
+    const s = await atTools([toolTurn('read', {})], withTool(tool))
+    s.session.preset = { ...s.session.preset, tools: { ...s.session.preset.tools, outputMaxBytes: 9000 } }
+    await s.session.runToolsPhase()
+    expect(seen).toBe(9000)
+  })
+
   it('a per-tool timeout overrides the default', async () => {
     const s = await atTools([toolTurn('read', {})], withTool(readTool(() => new Promise(() => undefined))))
-    s.session.preset = { ...s.session.preset, tools: { timeoutMs: 60_000, timeouts: { read: 5 } } }
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, timeoutMs: 60_000, timeouts: { read: 5 } },
+    }
     await s.session.runToolsPhase()
     expect((await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
       code: 'CANCELLED',
@@ -954,7 +972,10 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     })
     // And a real cut still settles 'aborted', so the two are now distinguishable.
     const hang = await atTools([toolTurn('read', {})], withTool(readTool(() => new Promise(() => undefined))))
-    hang.session.preset = { ...hang.session.preset, tools: { timeoutMs: 5, timeouts: {} } }
+    hang.session.preset = {
+      ...hang.session.preset,
+      tools: { ...hang.session.preset.tools, timeoutMs: 5, timeouts: {} },
+    }
     await hang.session.runToolsPhase()
     expect((await hang.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
       outcome: 'aborted',

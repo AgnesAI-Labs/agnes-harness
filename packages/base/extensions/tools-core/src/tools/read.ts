@@ -1,11 +1,5 @@
 import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
-import {
-  byteLength,
-  describeFailure,
-  OUTPUT_LIMITS,
-  parseSpillLocator,
-  splitByBytes,
-} from '../guards/output.js'
+import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
 import { ReadParams } from './schemas.js'
 
 // Ceiling on how much of a file is pulled into memory for one call. Without it a single read of a
@@ -121,6 +115,7 @@ export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<
 // is the whole of what `read` hands back, for a file as for a stored output, so a result is never
 // cut into a head and a tail: the model reads on from the hint instead of losing the middle.
 function pageOfLines(
+  maxBytes: number,
   spilled: { lines: string[]; notes: string },
   offset: number,
   limit: number | undefined,
@@ -131,7 +126,7 @@ function pageOfLines(
   if (start >= lines.length)
     return `${notes}[no lines at offset ${offset}; the ${what} has ${lines.length} lines]`
   const end = limit === undefined ? lines.length : Math.min(lines.length, start + limit)
-  const budget = OUTPUT_LIMITS.maxBytes - HINT_RESERVE - byteLength(notes)
+  const budget = maxBytes - HINT_RESERVE - byteLength(notes)
   const rows: string[] = []
   let used = 0
   let at = start
@@ -174,7 +169,12 @@ export const readTool = defineTool({
       // A page is already within the output limit, and it is not put back into the store: the text
       // it came from is what the model reads on from, by offset.
       return {
-        content: [{ type: 'text', text: pageOfLines(spilled, args.offset ?? 1, args.limit, 'artifact') }],
+        content: [
+          {
+            type: 'text',
+            text: pageOfLines(ctx.outputMaxBytes, spilled, args.offset ?? 1, args.limit, 'artifact'),
+          },
+        ],
       }
     }
     let bytes: Uint8Array
@@ -210,7 +210,12 @@ export const readTool = defineTool({
     // than wrapped into extra numbers; a shell command reaches the rest of it.
     const lines = toLines(text).map(clipLine)
     return {
-      content: [{ type: 'text', text: pageOfLines({ lines, notes }, args.offset ?? 1, args.limit, 'file') }],
+      content: [
+        {
+          type: 'text',
+          text: pageOfLines(ctx.outputMaxBytes, { lines, notes }, args.offset ?? 1, args.limit, 'file'),
+        },
+      ],
     }
   },
 })

@@ -41,7 +41,7 @@ describe('toPresetView', () => {
       budget: { preflight: 'count', perRequestCap: 4000, onExceed: 'quote', maxSteps },
       approval: { onTimeout: 'rejected', timeoutMs: 1000, onUnavailable: 'park', pendingTtlMs: 5000 },
       sandbox: { onUnavailable: 'deny' },
-      tools: { timeoutMs: 120000, timeouts: { shell: 60000 } },
+      tools: { timeoutMs: 120000, outputMaxBytes: 32768, timeouts: { shell: 60000 } },
       verifier: { timeoutMs: 30000, defaultTier: 0 },
       repair: { timeoutMs: 10000 },
       completionGate: { minItems: 3 },

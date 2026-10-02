@@ -97,6 +97,7 @@ describe('preset matrix through the host resolver', () => {
     expect(doc.tools).toEqual({
       core: ['read', 'write', 'edit', 'shell', 'grep', 'find', 'ls', 'todo', 'web_fetch'],
       timeout_ms: 120000,
+      output_max_bytes: 32768,
       timeouts: { web_fetch: 30000, skill_helper_import: 240000 },
     })
   })
