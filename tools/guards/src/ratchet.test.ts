@@ -2570,7 +2570,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
   // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
-  'packages/host/src': 57869,
+  // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
+  'packages/host/src': 59163,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
