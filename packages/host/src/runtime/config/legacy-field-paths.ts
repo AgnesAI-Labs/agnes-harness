@@ -248,6 +248,7 @@ export const LEGACY_PRESET_PATHS = [
   '/telemetry/invariants',
   '/telemetry/timing',
   '/tools/core[]',
+  '/tools/output_max_bytes',
   '/tools/timeout_ms',
   '/tools/timeouts',
   '/verifier/default_tier',

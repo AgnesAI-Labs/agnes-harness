@@ -187,16 +187,24 @@ it('reads a bare string model route as that slot and keeps a separate model pin'
   expect(routeOnly.diagnostics.some((item) => item.code === 'schema_invalid')).toBe(true)
 })
 
-it('uses the default primary-decision budget when max_steps is omitted', () => {
+it('defaults missing step ceilings to null and tool output to 32768 bytes', () => {
   const result = presetOf({ name: 'bare' })
   expect(result.status).toBe('accepted')
-  expect(result.sessionParameters).toMatchObject({ budget: { max_steps: 50 } })
+  expect(result.sessionParameters).toMatchObject({
+    budget: { max_steps: null },
+    tools: { output_max_bytes: 32768 },
+  })
   expect(result.rows.find((row) => row.path === '/budget/max_steps')).toMatchObject({
     source: 'specified-default',
-    value: 50,
+    value: null,
     unit: 'primary-decision-steps',
   })
-  expect(result.features).toContain(MAX_STEPS_FEATURE)
+  expect(result.rows.find((row) => row.path === '/tools/output_max_bytes')).toMatchObject({
+    source: 'specified-default',
+    value: 32768,
+    unit: 'bytes',
+  })
+  expect(result.features).not.toContain(MAX_STEPS_FEATURE)
 })
 
 it('inherits a parent isolation and does not replace it with the bare default', () => {

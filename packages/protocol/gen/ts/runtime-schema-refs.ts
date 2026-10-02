@@ -5712,7 +5712,7 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/openConversation.response@1",
-        "revision": 2,
+        "revision": 3,
         "digest": "1400444d5cf61d19bd3b51c6c562e455c05d4f6e253e45fd35c0122645b81aa6"
       }
     },
@@ -5724,7 +5724,7 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/conversationHistory.response@1",
-        "revision": 2,
+        "revision": 3,
         "digest": "1400444d5cf61d19bd3b51c6c562e455c05d4f6e253e45fd35c0122645b81aa6"
       }
     },
@@ -5918,7 +5918,7 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/clientQuery.response@1",
-        "revision": 2,
+        "revision": 3,
         "digest": "e0da862164edb4c68ee81d70b3106379e403e63186bc1587c43cdd43c002b626"
       }
     },
@@ -5954,7 +5954,7 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/subscribe.response@1",
-        "revision": 2,
+        "revision": 3,
         "digest": "6d1d78c6d478357d0706882b60912bc0db68b2364e6695d3a440a185ed477023"
       }
     },
@@ -5966,7 +5966,7 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/readSubscription.response@1",
-        "revision": 2,
+        "revision": 3,
         "digest": "10685c4fe8b49535dad34a62ffda575d743d99800b3b33d1ae4b4c0f9702a851"
       }
     },

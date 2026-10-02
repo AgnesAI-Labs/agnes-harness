@@ -214,6 +214,8 @@ function presetField(path: string): LegacyField {
     return spec(path, 'RuntimePreset.extends', 'preset-digest', 'D', 'equivalent', 'identity', false)
   if (path === '/model/max_tokens')
     return spec(path, 'session.model.max_tokens', 'tokens', 'A', 'blocked', 'session', false)
+  if (path === '/tools/output_max_bytes')
+    return spec(path, 'session.tools.output_max_bytes', 'bytes', 'A', 'equivalent', 'session', true)
   if (path === '/budget/max_steps')
     return spec(
       path,

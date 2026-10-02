@@ -14991,6 +14991,11 @@
               "type": "integer",
               "minimum": 1000
             },
+            "output_max_bytes": {
+              "type": "integer",
+              "minimum": 4096,
+              "maximum": 1048576
+            },
             "timeouts": {
               "type": "object",
               "additionalProperties": {
@@ -15095,7 +15100,7 @@
               "enum": ["quote", "deny"]
             },
             "max_steps": {
-              "type": "integer",
+              "type": ["integer", "null"],
               "minimum": 1
             },
             "attribution": {
@@ -40213,8 +40218,8 @@
     "ClientCommandReply": 2,
     "ClientCommandRequest": 2,
     "ClientCommandValue": 2,
-    "ClientConversationSnapshot": 2,
-    "ClientConversationSubscriptionFrame": 2,
+    "ClientConversationSnapshot": 3,
+    "ClientConversationSubscriptionFrame": 3,
     "ClientDomainSnapshot": 2,
     "ClientDomainSubscriptionFrame": 2,
     "ClientInteractionChange": 2,
@@ -40222,14 +40227,14 @@
     "ClientInteractionsSubscriptionFrame": 2,
     "ClientModule": 2,
     "ClientQueryCall": 2,
-    "ClientQueryReply": 2,
+    "ClientQueryReply": 3,
     "ClientQueryRequest": 2,
-    "ClientQueryValue": 2,
-    "ClientReadSubscriptionResult": 2,
+    "ClientQueryValue": 3,
+    "ClientReadSubscriptionResult": 3,
     "ClientSubscribeRequest": 2,
-    "ClientSubscribeResult": 2,
-    "ClientSubscriptionFrame": 2,
-    "ClientTransportFrame": 2,
+    "ClientSubscribeResult": 3,
+    "ClientSubscriptionFrame": 3,
+    "ClientTransportFrame": 3,
     "ClientWelcome": 2,
     "CommandHandle": 2,
     "CommitControlRequest": 2,
@@ -40301,9 +40306,9 @@
     "RetrievalSearchResult": 2,
     "RunTaintSourceRecordValue": 2,
     "RuntimeControlCommand": 2,
-    "RuntimeConversationChange": 2,
-    "RuntimeConversationWindow": 2,
-    "ShellSnapshot": 2,
+    "RuntimeConversationChange": 3,
+    "RuntimeConversationWindow": 3,
+    "ShellSnapshot": 3,
     "SignalDelivery": 2,
     "SimpleContextValue": 2,
     "SimpleObservation": 2,
