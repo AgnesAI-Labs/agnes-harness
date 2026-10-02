@@ -2,6 +2,7 @@ import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateProjectionChanges, validateRuntime } from '@agnes/protocol/runtime'
+import { randomHex } from '../../ids.js'
 import { fail } from './commands.js'
 
 /** What the reader policy granted: the authorized domain and the role reading it. */
@@ -59,9 +60,7 @@ const resync = (message: string) => fail('resync_required', message)
  * process, so a cursor from before a restart always asks the reader to resynchronize.
  */
 export function createDomainProjection(ports: DomainProjectionPorts) {
-  const secret = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(32)), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
+  const secret = randomHex(32)
   // The secret sorts after the body, so this is a keyed digest rather than a length-extendable prefix.
   const sign = (body: string) => canonicalJsonDigest({ body, secret })
   // Cursor and limit stay out; reader, role and schema are bound beside it in every cursor.

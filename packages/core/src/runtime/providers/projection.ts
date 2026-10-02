@@ -9,6 +9,7 @@ import type {
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import { randomHex } from '../../ids.js'
 import {
   createDomainCommands,
   type DomainCommandOwner,
@@ -104,10 +105,7 @@ const PAGE = 500
 const SELECT_TRIES = 3
 const same = (left: unknown, right: unknown) => jcs(left) === jcs(right)
 const ok = <T>(value: T) => ({ ok: true as const, value })
-const random = () =>
-  Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
+const random = () => randomHex(16)
 const inline = (schema: Wire.SchemaRef, value: Wire.JsonValue): Wire.DataRef => ({
   kind: 'inline',
   schema,

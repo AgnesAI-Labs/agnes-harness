@@ -16,17 +16,22 @@ import { createReferenceRegistry } from '../index.js'
 import { PROJECTION_PROVIDER } from './projection.js'
 import { openReferenceProjection } from './projection-contract.js'
 
-const directories: string[] = []
+const opened: { directory: string; close(): void }[] = []
 afterEach(() => {
-  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+  // Windows refuses to remove a directory while the database inside it is still open.
+  for (const { directory, close } of opened.splice(0)) {
+    close()
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 function fresh() {
   const directory = mkdtempSync(join(tmpdir(), 'reference-projection-'))
-  directories.push(directory)
   const path = join(directory, 'projection.sqlite')
   const fixture = createProjectionFixture()
-  return { path, fixture, store: openReferenceProjection(path, fixture) }
+  const store = openReferenceProjection(path, fixture)
+  opened.push({ directory, close: () => store.current().close() })
+  return { path, fixture, store }
 }
 
 const added = (n: number, board = 'open', artifact?: string): Wire.DomainEvent => {
