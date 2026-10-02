@@ -2615,7 +2615,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
   // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
   // Constrained network and secret providers. Measured 63169, exact, no spare.
-  'packages/host/src': 63169,
+  // Default interaction provider over the State approval entries. Measured 63248, exact, no spare (+79).
+  'packages/host/src': 63248,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
