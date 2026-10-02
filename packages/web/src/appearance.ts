@@ -160,7 +160,7 @@ function skinOptions(props: SkinOptionsProps): ReactNode {
     'div',
     null,
     skinOption(NO_SKIN, tr('settings.appearance.followTheme'), tr('settings.appearance.followThemeHint'), props),
-    ...props.skins.map((skin) => skinOption(skin.id, skin.name, tr('settings.appearance.fromPackage', { package: skin.packageName }), props)),,
+    ...props.skins.map((skin) => skinOption(skin.id, skin.name, tr('settings.appearance.fromPackage', { package: skin.packageName }), props)),
     createElement('p', { className: 'appearance-option-hint', hidden: props.status === null }, props.status),
   )
 }
