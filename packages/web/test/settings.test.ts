@@ -7,6 +7,12 @@ import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
+
 
 // Picker interaction is covered by settings-accounts/settings-oauth; these cases exercise the
 // controller against real DOM nodes because the account and select subtrees are React-owned.

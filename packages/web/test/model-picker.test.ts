@@ -1,6 +1,12 @@
 /** @vitest-environment happy-dom */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createModelPicker, type ModelPickerOption, type ModelPickerState } from '../src/model-picker.js'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
+
 
 const models: readonly ModelPickerOption[] = [
   { route: 'openai', id: 'gpt-5.6' },

@@ -1,4 +1,5 @@
 import { renderRegion } from '@agnes/web-ui'
+import { tr } from './locale-bridge.js'
 import { createElement, type ReactNode } from 'react'
 import { applyLocaleText, isUiLocale, syncLocaleRadios, type UiLocale } from './locale-preference.js'
 import { readSkinCache } from './skin.js'
@@ -152,14 +153,14 @@ function skinOptions(props: SkinOptionsProps): ReactNode {
     return createElement(
       'p',
       { className: 'appearance-option-hint' },
-      '皮肤清单读取失败。',
-      createElement('button', { type: 'button', onClick: props.onRetry }, '重试'),
+      tr('settings.appearance.skinListFailed'),
+      createElement('button', { type: 'button', onClick: props.onRetry }, tr('settings.appearance.retry')),
     )
   return createElement(
     'div',
     null,
-    skinOption(NO_SKIN, '跟随主题（默认）', '只使用内置配色，不加载任何皮肤', props),
-    ...props.skins.map((skin) => skinOption(skin.id, skin.name, `来自 ${skin.packageName}`, props)),
+    skinOption(NO_SKIN, tr('settings.appearance.followTheme'), tr('settings.appearance.followThemeHint'), props),
+    ...props.skins.map((skin) => skinOption(skin.id, skin.name, tr('settings.appearance.fromPackage', { package: skin.packageName }), props)),,
     createElement('p', { className: 'appearance-option-hint', hidden: props.status === null }, props.status),
   )
 }
@@ -221,7 +222,7 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
       .catch(() => {
         // 选择没有生效：回到原选择，而不是把一个假的选中态留在界面上。
         selected = previous
-        status = '这份皮肤没有生效，已保留原选择。'
+        status = tr('settings.appearance.skinNotApplied')
         render()
       })
   }

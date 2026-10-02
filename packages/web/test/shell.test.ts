@@ -2,6 +2,12 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSidebar, showSettingsPane } from '../src/shell.js'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
+
 
 afterEach(() => document.body.replaceChildren())
 

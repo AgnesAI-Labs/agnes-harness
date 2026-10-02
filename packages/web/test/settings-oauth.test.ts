@@ -9,6 +9,12 @@ import { type HTMLButtonElement as HappyButton, type HTMLLabelElement as HappyLa
 import { afterEach, expect, it, vi } from 'vitest'
 import { createSettingsController, type SettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
+
 
 function must<T>(value: T | null | undefined): T {
   if (value == null) throw new Error('missing fixture element')

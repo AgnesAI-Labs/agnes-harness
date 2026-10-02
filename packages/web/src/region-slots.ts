@@ -189,7 +189,7 @@ const SETTINGS_DSH_GLOBAL_SLOT_NAMES = new Set([
   'settings.section',
 ])
 
-function EmptyStateBuiltin(): ReturnType<typeof createElement> {
+function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => string }): ReturnType<typeof createElement> {
   return createElement(
     'div',
     { 'data-agnes-region-owner': 'builtin', 'data-agnes-region-unit': 'empty-state' },
@@ -219,7 +219,7 @@ function EmptyStateBuiltin(): ReturnType<typeof createElement> {
     ),
     createElement('span', { className: 'agnes-mark empty-brand-mark', 'aria-hidden': 'true' }),
     createElement('h2', { id: 'empty-state-title', className: 'empty-state-heading' }, 'Agnes Harness'),
-    createElement('p', { className: 'empty-state-copy' }, '让每一个模型，都能成为会做事的智能体。'),
+    createElement('p', { className: 'empty-state-copy' }, t('app.emptyState.tagline')),
   )
 }
 
@@ -355,6 +355,7 @@ export function mountSettingsPaneRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: SettingsRegionOptions = {},
+  locale?: LocaleService,
 ): SettingsRegionMount {
   // The dialog/rail is a host scaffold. Every page below it is a separate row and separate
   // SlotOutlet, so disabling a single built-in or third-party replacement cannot reset siblings.
@@ -368,7 +369,14 @@ export function mountSettingsPaneRegion(
   const handle = { current: null as SettingsRegionHandle | null }
   const root = createAntdRoot(container)
   flushSync(() => {
-    root.render(createElement(SettingsBuiltin, { ref: handle, options }))
+    root.render(
+      createElement(SettingsBuiltin, {
+        ref: handle,
+        options: locale
+          ? { ...options, translate: (key: string) => locale.t(key) }
+          : options,
+      }),
+    )
   })
   const dshRoots = new Map<string, AntdRoot>()
   const dshPaneSlots = new Map<SettingsPane, string[]>()
@@ -406,7 +414,12 @@ export function mountSettingsPaneRegion(
         owner: SETTINGS_UNIT_OWNER[pane],
         priority: 0,
       },
-      () => createElement(SettingsPaneBuiltin, { pane, computerUse: options.computerUse }),
+      () =>
+        createElement(SettingsPaneBuiltin, {
+          pane,
+          computerUse: options.computerUse,
+          ...(locale ? { translate: (key: string) => locale.t(key) } : {}),
+        }),
     )
     removeBuiltin.set(pane, remove)
     flushSync(() => {
@@ -656,10 +669,13 @@ export interface RightbarDocument {
   readonly artifact?: ClientDocumentArtifact
 }
 
-function documentPreviewInput(document: RightbarDocument | undefined): DocumentPreviewInput {
+function documentPreviewInput(
+  document: RightbarDocument | undefined,
+  t: (key: string) => string = (key) => key,
+): DocumentPreviewInput {
   return {
     kind: document?.kind ?? 'text',
-    title: document?.title ?? '文档预览',
+    title: document?.title ?? t('app.doc.previewTitle'),
     content: document?.content ?? '',
     ...(document?.resourceUrl === undefined ? {} : { resourceUrl: document.resourceUrl }),
   }
@@ -668,9 +684,11 @@ function documentPreviewInput(document: RightbarDocument | undefined): DocumentP
 function DocumentPreviewBuiltin({
   document,
   resources,
+  t = (key) => key,
 }: {
   document: RightbarDocument | undefined
   resources?: ClientResourceService
+  t?: (key: string) => string
 }): ReturnType<typeof createElement> {
   const artifact = document?.artifact
   const laneId = document?.laneId
@@ -715,7 +733,7 @@ function DocumentPreviewBuiltin({
           input: {
             kind: 'text',
             content:
-              error instanceof ClientResourceReclaimedError ? '截图已按保留策略清理' : '文档资源暂不可用',
+              error instanceof ClientResourceReclaimedError ? t('app.doc.reclaimed') : t('app.doc.unavailable'),
           },
         })
       })
@@ -727,8 +745,8 @@ function DocumentPreviewBuiltin({
   // A changed owner must never paint the previous resource while its replacement is loading.
   const input =
     loaded && loaded.request === request && loaded.resources === resources
-      ? { ...documentPreviewInput(document), ...loaded.input }
-      : documentPreviewInput(document)
+      ? { ...documentPreviewInput(document, t), ...loaded.input }
+      : documentPreviewInput(document, t)
   return createElement(
     'div',
     {
@@ -742,9 +760,11 @@ function DocumentPreviewBuiltin({
 function RightbarDocumentTab({
   document,
   resources,
+  t = (key) => key,
 }: {
   document: RightbarDocument | undefined
   resources?: ClientResourceService
+  t?: (key: string) => string
 }): ReturnType<typeof createElement> {
   const kind = document?.kind ?? 'text'
   return createElement(
@@ -757,19 +777,20 @@ function RightbarDocumentTab({
       fallback: createElement(DocumentPreviewBuiltin, {
         document,
         ...(resources === undefined ? {} : { resources }),
+        t,
       }),
     }),
   )
 }
 
-function RightbarGuideTab(): ReturnType<typeof createElement> {
+function RightbarGuideTab({ t = (key) => key }: { t?: (key: string) => string }): ReturnType<typeof createElement> {
   return createElement(
     'section',
     { className: 'rightbar-tab-content', 'data-rightbar-tab': 'guide' },
     createElement(SlotOutlet, {
       name: 'sidebar.right.tab.guide',
       owner: { tabId: 'guide' },
-      fallback: '暂无指南',
+      fallback: t('app.guide.empty'),
     }),
     createElement(SlotOutlet, {
       name: 'sidebar.right.tab.guide.entry',
@@ -784,28 +805,32 @@ function RightbarTabBuiltin({
   tab,
   document,
   resources,
+  t = (key) => key,
 }: {
   tab: 'document' | 'guide'
   document: RightbarDocument | undefined
   resources?: ClientResourceService
+  t?: (key: string) => string
 }): ReturnType<typeof createElement> {
   return tab === 'document'
     ? createElement(RightbarDocumentTab, {
         document,
         ...(resources === undefined ? {} : { resources }),
       })
-    : createElement(RightbarGuideTab)
+    : createElement(RightbarGuideTab, { t })
 }
 
 function RightbarSessionBuiltin({
   document,
+  t = (key) => key,
 }: {
   document: RightbarDocument | undefined
+  t?: (key: string) => string
 }): ReturnType<typeof createElement> {
   const activeTab = document === undefined ? 'guide' : 'document'
   const owner = (tabId: 'document' | 'guide') => ({
     tabId,
-    title: tabId === 'document' ? (document?.title ?? '文档') : '指南',
+    title: tabId === 'document' ? (document?.title ?? t('app.doc.fallbackTitle')) : t('app.guide.title'),
     active: activeTab === tabId,
   })
   return createElement(
@@ -813,7 +838,7 @@ function RightbarSessionBuiltin({
     { id: 'rightbar-session', 'data-agnes-rightbar-session': true },
     createElement(
       'nav',
-      { className: 'rightbar-tabs', 'aria-label': '扩展面板' },
+      { className: 'rightbar-tabs', 'aria-label': t('app.rightbarTabs') },
       createElement(SlotOutlet, {
         name: 'sidebar.right.pane.tab',
         entryKey: 'document',
@@ -855,7 +880,9 @@ export function mountRightbarRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: RightbarRegionOptions = {},
+  locale?: LocaleService,
 ): RightbarRegionMount {
+  const t = locale ? (key: string) => locale.t(key) : undefined
   const rootSpec = dshSlotSpec('rightbar')
   const sessionSpec = dshSlotSpec('rightbar.session')
   if (!rootSpec || !sessionSpec) throw new Error('rightbar DSH slots are missing from the catalog')
@@ -878,7 +905,11 @@ export function mountRightbarRegion(
       priority: 1,
       children: RIGHTBAR_SESSION_CHILDREN,
     },
-    () => createElement(RightbarSessionBuiltin, { document: options.document }),
+    () =>
+      createElement(RightbarSessionBuiltin, {
+        document: options.document,
+        ...(t ? { t } : {}),
+      }),
   )
   const removeDocumentTab = registry.register(
     {
@@ -927,6 +958,7 @@ export function mountRightbarRegion(
           createElement(DocumentPreviewBuiltin, {
             document: owner ?? options.document,
             ...(options.resources === undefined ? {} : { resources: options.resources }),
+            ...(t ? { t } : {}),
           }),
       ),
     )
@@ -1537,6 +1569,7 @@ export function mountEmptyStateRegion(
   if (!registry.spec(EMPTY_STATE_SLOT))
     registry.declare(EMPTY_STATE_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   // Priority 0 is the built-in. Third-party entries can explicitly shadow it with a lower value.
+  const translate = services.locale ? (key: string) => services.locale!.t(key) : undefined
   const removeBuiltin = registry.register(
     {
       name: EMPTY_STATE_SLOT as string,
@@ -1545,7 +1578,7 @@ export function mountEmptyStateRegion(
       priority: 0,
       children: EMPTY_STATE_DSH_CHILDREN,
     },
-    EmptyStateBuiltin,
+    () => createElement(EmptyStateBuiltin, translate ? { t: translate } : {}),
   )
   container.replaceChildren()
   const root: AntdRoot = createAntdRoot(container)

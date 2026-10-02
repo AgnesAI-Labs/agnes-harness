@@ -61,7 +61,7 @@ export class AdminApiError extends Error {
   }
 }
 
-function safeError(value: unknown, fallback = '管理后台暂时不可用，请稍后重试。'): AdminError {
+function safeError(value: unknown, fallback = 'The admin backend is temporarily unavailable. Try again later.'): AdminError {
   if (!value || typeof value !== 'object') return { code: 'ADMIN_UNAVAILABLE', message: fallback }
   const error = value as ErrorResponse
   const code = typeof error.error?.code === 'string' ? error.error.code : 'ADMIN_UNAVAILABLE'
@@ -109,11 +109,11 @@ export class PluginAdminApi {
     })
     const body = await json(response)
     if (!response.ok)
-      throw new AdminApiError(safeError(body, response.status === 403 ? '没有插件管理权限。' : undefined))
+      throw new AdminApiError(safeError(body, response.status === 403 ? 'You do not have plugin admin permission.' : undefined))
     if (!isContext(body))
       throw new AdminApiError({
         code: 'ADMIN_CONTEXT_INVALID',
-        message: '管理上下文无效，请重新打开页面。',
+        message: 'The admin context is invalid; reopen the page.',
       })
     return body
   }
@@ -150,7 +150,7 @@ export class PluginAdminApi {
     if (!isSurfaceLinksResult(result))
       throw new AdminApiError({
         code: 'ADMIN_RESPONSE_INVALID',
-        message: '后台返回的数据无法确认。',
+        message: 'The backend returned data that cannot be verified.',
       })
     return result
   }
@@ -298,7 +298,7 @@ export class PluginAdminApi {
     if (!validatePackageAdminCall(method, 'params', body).ok)
       throw new AdminApiError({
         code: 'ADMIN_REQUEST_INVALID',
-        message: '管理请求参数无效。',
+        message: 'The admin request arguments are invalid.',
       })
     // Calling a stored native fetch as `this.#fetch(...)` rebinds its receiver to this facade.
     // Keep it unbound so browser fetch retains its required global receiver.
@@ -315,12 +315,12 @@ export class PluginAdminApi {
     const result = await json(response)
     if (!response.ok)
       throw new AdminApiError(
-        safeError(result, response.status === 403 ? '没有执行此操作的权限。' : undefined),
+        safeError(result, response.status === 403 ? 'You do not have permission to perform this action.' : undefined),
       )
     if (!validatePackageAdminCall(method, 'result', result).ok)
       throw new AdminApiError({
         code: 'ADMIN_RESPONSE_INVALID',
-        message: '后台返回的数据无法确认。',
+        message: 'The backend returned data that cannot be verified.',
       })
     return result as T
   }

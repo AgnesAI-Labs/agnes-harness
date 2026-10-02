@@ -315,11 +315,11 @@ export async function startClientModules(options: {
       : undefined
   if (trace) builtinUnits.mount('@agnes/web-trace', () => trace.dispose())
   const rightbar = options.rightbarContainer
-    ? mountRightbarRegion(registry, options.rightbarContainer, { session, resources })
+    ? mountRightbarRegion(registry, options.rightbarContainer, { session, resources }, locale)
     : undefined
   if (rightbar) builtinUnits.mount('@agnes/web-rightbar', () => rightbar.dispose())
   const settingsPane = options.settingsPaneContainer
-    ? mountSettingsPaneRegion(registry, options.settingsPaneContainer, options.settings)
+    ? mountSettingsPaneRegion(registry, options.settingsPaneContainer, options.settings, locale)
     : undefined
   if (settingsPane) {
     const settingsUnits = [
@@ -376,6 +376,7 @@ export async function startClientModules(options: {
 
   const reconciler = createReconciler({
     ctx,
+    locale,
     source: options.rosterSource ?? { list: async () => ({ revision: '', modules: [], statuses: [] }) },
     removeOwner: (packageId) => registry.removeOwner(packageId),
   })

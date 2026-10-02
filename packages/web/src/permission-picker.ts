@@ -1,4 +1,5 @@
 import * as webUi from '@agnes/web-ui'
+import { tr } from './locale-bridge.js'
 import { createElement, type ReactNode } from 'react'
 
 export type PermissionMode = 'view' | 'workspace' | 'full'
@@ -9,14 +10,27 @@ export type PermissionOption = {
   description: string
 }
 
+const PERMISSION_OPTION_LABEL_KEYS: Record<PermissionMode, string> = {
+  view: 'settings.picker.view',
+  workspace: 'settings.picker.workspace',
+  full: 'settings.picker.full',
+}
+
+const PERMISSION_OPTION_DESCRIPTION_KEYS: Record<PermissionMode, string> = {
+  view: 'settings.picker.viewDescription',
+  workspace: 'settings.picker.workspaceDescription',
+  full: 'settings.picker.fullDescription',
+}
+
+/** 静态 id 行：label/description 渲染时经 tr 取词，不在模块加载期写死。 */
 export const PERMISSION_OPTIONS: readonly PermissionOption[] = [
-  { id: 'view', label: '仅可查看', description: '本会话弹出的命令审批一律拒绝' },
-  { id: 'workspace', label: '工作区内修改', description: '工作区读写按默认策略；跑命令仍要审批' },
-  { id: 'full', label: '完全权限', description: '本会话跳过其余审批' },
+  { id: 'view', label: '', description: '' },
+  { id: 'workspace', label: '', description: '' },
+  { id: 'full', label: '', description: '' },
 ]
 
 export function permissionLabel(mode: PermissionMode): string {
-  return PERMISSION_OPTIONS.find((option) => option.id === mode)?.label ?? '工作区内修改'
+  return tr(PERMISSION_OPTION_LABEL_KEYS[mode] ?? 'settings.picker.workspaceFallback')
 }
 
 export function yoloEnabled(mode: PermissionMode): boolean {
@@ -72,7 +86,17 @@ function permissionOptions(
   onSelect: (index: number) => void,
 ): ReactNode[] {
   return PERMISSION_OPTIONS.map((option, index) =>
-    permissionOption(option, index, state, activeIndex, onSelect),
+    permissionOption(
+      {
+        ...option,
+        label: tr(PERMISSION_OPTION_LABEL_KEYS[option.id]),
+        description: tr(PERMISSION_OPTION_DESCRIPTION_KEYS[option.id]),
+      },
+      index,
+      state,
+      activeIndex,
+      onSelect,
+    ),
   )
 }
 
@@ -174,11 +198,11 @@ export function createPermissionPicker(options: {
     activeIndex = selectedIndex()
     popover = webUi.createRegionHost(document.body, 'section', 'permission-picker')
     popover.id = 'permission-picker-popover'
-    popover.setAttribute('aria-label', '选择本会话权限')
+    popover.setAttribute('aria-label', tr('settings.picker.aria'))
     listbox = webUi.createRegionHost(popover, 'div', 'permission-picker-list')
     listbox.id = 'permission-listbox'
     listbox.setAttribute('role', 'listbox')
-    listbox.setAttribute('aria-label', '本会话权限')
+    listbox.setAttribute('aria-label', tr('settings.picker.listAria'))
     listbox.tabIndex = -1
     webUi.bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)

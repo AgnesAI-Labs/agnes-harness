@@ -113,6 +113,8 @@ export type ClientStylePreparer = (
 export interface ReconcilerOptions {
   ctx: Context
   source: RosterSource
+  /** Locale for user-facing module failure copy; optional, falls back to message keys. */
+  locale?: import('@agnes/web-client').LocaleService
   /** Remove registrations owned by one browser row before/after its fiber teardown. */
   removeOwner?: (rowId: string) => void
   importer?: ModuleImporter
@@ -237,7 +239,7 @@ async function prepareDocumentStyles(
 }
 
 export function createReconciler(options: ReconcilerOptions): ClientReconciler {
-  const { ctx, source } = options
+  const { ctx, source, locale } = options
   const removeOwner =
     options.removeOwner ??
     ((packageId: string) => {
@@ -311,7 +313,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   }
 
   function fail(rowId: string, state: PackageState, stage: RuntimeErrorStage): void {
-    setPhase(rowId, state, 'failed', normalizeRuntimeError(stage, undefined))
+    setPhase(rowId, state, 'failed', normalizeRuntimeError(stage, undefined, (key) => locale.t(key)))
   }
 
   function registrationOwner(rowId: string, state: PackageState): string {

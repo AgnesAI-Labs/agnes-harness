@@ -1,4 +1,5 @@
 import type { ConfigModel, ConfigOAuthInput, ConfigProvider } from '@agnes/protocol'
+import { tr } from './locale-bridge.js'
 import { loginSubscription, type OAuthClient } from '@agnes/sdk/browser'
 import { Button, createRegionHost, Field, mountRegion } from '@agnes/web-ui'
 import { createElement } from 'react'
@@ -36,7 +37,7 @@ function uiField(parent: HTMLElement): UiField {
       host,
       createElement(
         Field,
-        { className: 'form-field oauth-prompt', hidden: true, label: '授权码或回调地址' },
+        { className: 'form-field oauth-prompt', hidden: true, label: tr('settings.oauth.prompt') },
         createElement('input', { autoComplete: 'off', type: 'password' }),
       ),
     )
@@ -48,7 +49,7 @@ function uiField(parent: HTMLElement): UiField {
   }
   const field = createRegionHost(parent, 'label') as HTMLLabelElement
   field.className = 'form-field oauth-prompt'
-  field.textContent = '授权码或回调地址'
+  field.textContent = tr('settings.oauth.prompt')
   const input = createRegionHost(field, 'input') as HTMLInputElement
   input.type = 'password'
   input.autocomplete = 'off'
@@ -70,7 +71,7 @@ export function oauthControls(
 ) {
   const panel = createRegionHost(parent, 'section')
   panel.className = 'oauth-controls'
-  panel.setAttribute('aria-label', '订阅登录')
+  panel.setAttribute('aria-label', tr('settings.oauth.panelAria'))
   panel.hidden = true
   const status = createRegionHost(panel, 'p', 'oauth-status')
   status.setAttribute('role', 'status')
@@ -80,10 +81,10 @@ export function oauthControls(
   const answer = promptView.input
   prompt.hidden = true
   const actions = createRegionHost(panel, 'div', 'oauth-actions')
-  const browserView = uiButton(actions, '浏览器登录')
-  const deviceView = uiButton(actions, '设备码登录')
-  const cancelView = uiButton(actions, '取消登录')
-  const submitView = uiButton(actions, '提交授权码', 'secondary-button')
+  const browserView = uiButton(actions, tr('settings.oauth.browserLogin'))
+  const deviceView = uiButton(actions, tr('settings.oauth.deviceLogin'))
+  const cancelView = uiButton(actions, tr('settings.oauth.cancelLogin'))
+  const submitView = uiButton(actions, tr('settings.oauth.submitCode'), 'secondary-button')
   const browser = browserView.button
   const device = deviceView.button
   const cancel = cancelView.button
@@ -126,7 +127,7 @@ export function oauthControls(
     try {
       input = callbacks.input()
       provider = callbacks.provider()
-      if (!provider?.loginMethods?.includes(loginMethod)) throw new Error('当前 Provider 不支持该登录方式')
+      if (!provider?.loginMethods?.includes(loginMethod)) throw new Error(tr('settings.oauth.methodUnsupported'))
     } catch (error) {
       if (controller === own) {
         clear()
@@ -141,7 +142,7 @@ export function oauthControls(
       browser.disabled = true
       device.disabled = true
       cancel.hidden = false
-      status.textContent = '等待授权。关闭账户窗口会取消本次登录。'
+      status.textContent = tr('settings.oauth.awaiting')
       status.setAttribute('aria-busy', 'true')
       const result = await loginSubscription(
         client,
@@ -161,7 +162,7 @@ export function oauthControls(
             link.href = url.href
             link.target = '_blank'
             link.rel = 'noopener noreferrer'
-            link.textContent = `打开 ${provider.label} 登录页面`
+            link.textContent = tr('settings.oauth.openLoginPage', { provider: provider.label })
           },
           prompt: (value, signal) =>
             new Promise<string>((resolve, reject) => {
@@ -170,7 +171,7 @@ export function oauthControls(
               else if (prompt.firstChild) prompt.firstChild.textContent = value.message
               answer.type = value.type === 'secret' ? 'password' : 'text'
               answer.placeholder = value.placeholder ?? ''
-              submit.textContent = value.type === 'text' ? '继续' : '提交授权码'
+              submit.textContent = value.type === 'text' ? tr('settings.oauth.continue') : tr('settings.oauth.submit')
               prompt.hidden = false
               submit.hidden = false
               answer.value = ''
@@ -208,7 +209,7 @@ export function oauthControls(
         },
       )
       if (controller !== own || own.signal.aborted) return
-      status.textContent = '授权完成。选择模型并保存；保存前会发送一条测试请求。'
+      status.textContent = tr('settings.oauth.completed')
       status.removeAttribute('aria-busy')
       links.replaceChildren()
       callbacks.ready(result.models ?? [])
@@ -219,8 +220,8 @@ export function oauthControls(
         callbacks.error(
           new Error(
             provider.loginMethods && provider.loginMethods.length > 1
-              ? '登录失败，请重试；也可选择该 Provider 支持的其他登录方式。'
-              : '登录失败，请检查网络连接后重试。',
+              ? tr('settings.oauth.failedRetry')
+              : tr('settings.oauth.failedNetwork'),
           ),
         )
       }

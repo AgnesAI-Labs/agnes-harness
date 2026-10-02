@@ -1,3 +1,4 @@
+import { tr } from './locale-bridge.js'
 import type { ThinkingLevel } from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
@@ -148,7 +149,7 @@ function modelRows(
       },
       `${option.route}:${option.id}`,
       option.id,
-      createElement('span', { className: 'model-picker-route' }, option.label ?? '已配置账户'),
+      createElement('span', { className: 'model-picker-route' }, option.label ?? tr('settings.modelPicker.configuredAccount')),
     ),
   )
 }
@@ -225,7 +226,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   let state: ModelPickerState = {
     accessibleName: '',
     disabled: true,
-    label: '选择模型',
+    label: tr('settings.modelPicker.select'),
     options: [],
     pending: false,
   }
@@ -344,7 +345,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
         active: rootIndex === 0,
         entry: 'model',
         index: 0,
-        label: '模型',
+        label: tr('settings.modelPicker.modelEntry'),
         onHover,
         onSelect,
         open: openEntry === 'model',
@@ -358,12 +359,12 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
           active: rootIndex === 1,
           entry: 'thinking',
           index: 1,
-          label: '推理等级',
+          label: tr('settings.picker.reasoningLevels'),
           onHover,
           onSelect,
           open: openEntry === 'thinking',
           state,
-          value: state.selected?.thinking ? thinkingLevelLabel(state.selected.thinking) : '默认',
+          value: state.selected?.thinking ? thinkingLevelLabel(state.selected.thinking) : tr('settings.picker.thinkingDefault'),
         }),
       )
     webUi.renderRegion(listbox, rows)
@@ -374,12 +375,19 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     const count = subCount()
     subIndex = Math.max(0, Math.min(subIndex, count - 1))
     sublist.setAttribute('aria-busy', String(state.pending || selecting))
-    sublist.setAttribute('aria-label', openEntry === 'thinking' ? '推理等级' : '可用模型')
+    sublist.setAttribute(
+      'aria-label',
+      openEntry === 'thinking'
+        ? tr('settings.picker.reasoningLevels')
+        : tr('settings.modelPicker.listAria'),
+    )
     sublist.setAttribute('aria-activedescendant', `model-submenu-option-${subIndex}`)
     if (subhelp) {
       subhelp.hidden = false
       subhelp.textContent =
-        openEntry === 'thinking' ? `${thinkingFor?.id ?? ''} 的推理等级` : '选择此任务使用的模型'
+        openEntry === 'thinking'
+        ? tr('settings.picker.reasoningFor', { id: thinkingFor?.id ?? '' })
+        : tr('settings.modelPicker.help')
     }
     const onSelect = pointerSelect((index) => void choose(index))
     webUi.renderRegion(
@@ -445,7 +453,10 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
         : selectedIndex()
     submenu = webUi.createRegionHost(document.body, 'section', 'model-picker')
     submenu.id = 'model-submenu-popover'
-    submenu.setAttribute('aria-label', entry === 'thinking' ? '推理等级' : '可用模型')
+    submenu.setAttribute(
+      'aria-label',
+      entry === 'thinking' ? tr('settings.picker.reasoningLevels') : tr('settings.modelPicker.listAria'),
+    )
     subhelp = webUi.createRegionHost(submenu, 'p', 'model-picker-help')
     subhelp.dataset.modelPickerHelp = ''
     sublist = webUi.createRegionHost(submenu, 'div', 'model-picker-list')
@@ -558,11 +569,12 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     interaction += 1
     popover = webUi.createRegionHost(document.body, 'section', 'model-picker')
     popover.id = 'model-picker-popover'
-    popover.setAttribute('aria-label', '选择当前会话模型')
+    popover.setAttribute('aria-label', tr('settings.modelPicker.aria'))
     listbox = webUi.createRegionHost(popover, 'div', 'model-picker-list')
     listbox.id = 'model-listbox'
     listbox.setAttribute('role', 'listbox')
-    listbox.setAttribute('aria-label', '模型与推理等级')
+    listbox.setAttribute('aria-label', tr('settings.picker.modelAndReasoning'))
+    listbox.setAttribute('aria-label', tr('settings.picker.modelAndReasoning'))
     listbox.tabIndex = -1
     // 指针回到根面板就取消收起：从子菜单移回来同样会先触发子菜单的 mouseleave。
     popover.addEventListener('mouseenter', clearTimers)

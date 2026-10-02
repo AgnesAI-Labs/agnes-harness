@@ -9,6 +9,12 @@ import { Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
+
 
 let window: Window | undefined
 let disposeMarkup: (() => void) | undefined

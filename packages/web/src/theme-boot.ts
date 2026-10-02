@@ -1,5 +1,6 @@
 import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
 import { pluginAdminShellLocaleCatalog } from './admin/plugins/locales/shell.js'
+import { indexShellLocaleCatalog as workbenchShellLocaleCatalog } from './locales/index-shell.js'
 import {
   applyDocumentLocale,
   applyLocaleText,
@@ -50,6 +51,7 @@ let shellLocaleBootScheduled = false
 function staticShellCatalog() {
   if (document.body?.id === 'plugin-admin-page') return pluginAdminShellLocaleCatalog
   if (document.body?.id === 'resource-admin-page') return resourceAdminShellLocaleCatalog
+  if (document.documentElement.dataset.agnesShell === 'workbench') return workbenchShellLocaleCatalog
   return undefined
 }
 

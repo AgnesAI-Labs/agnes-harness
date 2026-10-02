@@ -11,6 +11,12 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createSettingsController } from '../src/settings.js'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
+
 
 const stylePath = resolve(import.meta.dirname, '../public/style.css')
 
