@@ -945,8 +945,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // The soft deadline handed to a tool is a grace short of the kernel cut-off. Measured 25742 (+1), exact cap.
   // The preset-wide default timeout reaches a tool as ctx.defaultTimeoutMs. Measured 25751 (+9), exact cap.
   // A cancel that lands before the turn opens is recorded once it does, and a cancel that cuts a
-  // fail-closed hook ends the turn aborted. Measured 25769 (+18 over the preceding cap), exact cap.
-  'packages/core/src': 25769,
+  // fail-closed hook ends the turn aborted (+18 over the preceding cap).
+  // Compaction: a summary route that cannot work is retried at growing intervals, and stops the turn
+  // with the reason once the window is nearly full (+34); the kept tail is sized net of the fixed prefix (+8).
+  // Combined, measured 25811, exact cap.
+  'packages/core/src': 25811,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

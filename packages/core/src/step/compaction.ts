@@ -19,7 +19,9 @@ import {
   contextBudgetError,
   contextTokens,
   contextWindowFor,
+  fixedPrefixTokens,
   lastCacheHint,
+  nearlyFull,
   reserveTreeBudget,
 } from './gate.js'
 import {
@@ -45,6 +47,8 @@ type RunnerOptions = {
 }
 
 const HYSTERESIS_MARGIN_FRACTION = 0.5
+// The longest a route that failed outright is spared another threshold compaction, in turns.
+const MAX_SUSPENDED_TURNS = 8
 const CACHE_WARM_RATIO = 0.5
 const SUMMARY_NO_TOOLS_PREAMBLE =
   'Summarize the conversation only. Do not call any tool, emit a tool invocation, or delegate work. Return only the requested summary text.'
@@ -75,8 +79,25 @@ export class CompactionRunner implements CompactionPort {
   // compactions within one turn. A restart forgets them, which costs at most one more retry.
   transientFailures = 0
   transientTurn: number | undefined
+  // Not durable either: consecutive threshold compactions whose route could not work at all (bad
+  // credentials, exhausted quota, a misconfigured model), and the last turn that is spared another
+  // attempt. A restart forgets both, which costs one more failing request, never a missed overflow
+  // compaction, which is never held back.
+  unavailableFailures = 0
+  suspendedThrough = 0
 
   constructor(readonly options: RunnerOptions) {}
+
+  /** Whether threshold compaction is held back this turn after the route failed outright. */
+  suspended(turn: number): boolean {
+    return turn <= this.suspendedThrough
+  }
+
+  /** Spares the next 1, 2, 4, 8, 8, ... turns another attempt, so a broken route is retried ever more rarely. */
+  suspend(turn: number): void {
+    this.unavailableFailures++
+    this.suspendedThrough = turn + Math.min(2 ** (this.unavailableFailures - 1), MAX_SUSPENDED_TURNS)
+  }
 
   shouldCompact(p: {
     contextTokens: number
@@ -547,10 +568,17 @@ function elides(
   if (failure === 'permanent' || phase.reason === 'overflow') return true
   if (phase.reason === 'requested') return false
   const runner = s.compaction as CompactionRunner
-  return (
-    runner.transientFailures + 1 >= MAX_TRANSIENT_FAILURES ||
-    contextWindow - compactionTriggerTokens(s) < reserveTokens / 2
-  )
+  return runner.transientFailures + 1 >= MAX_TRANSIENT_FAILURES || nearlyFull(s, contextWindow, reserveTokens)
+}
+
+/**
+ * The context a compaction leaves behind, from the reading it started at: the masked span goes, the
+ * summary comes. It anchors the context reading until the next request measures it, so it must not
+ * be the usage of the summary request, which carried a different conversation.
+ */
+function tokensAfter(a: Attempt, text: string): number {
+  const summary = estimateTokens(text)
+  return Math.max(summary, a.tokensBefore - spanTokens(a) + summary)
 }
 
 /**
@@ -604,7 +632,10 @@ async function commitReplace(
 ): Promise<StepOutcome> {
   const current = s.op() as OpStateObj
   const seqs = await s.transition(events, withPhase(current, resumed(a.phase)))
-  ;(s.compaction as CompactionRunner).transientFailures = 0
+  const runner = s.compaction as CompactionRunner
+  runner.transientFailures = 0
+  runner.unavailableFailures = 0
+  runner.suspendedThrough = 0
   const compactPayload: CompactPayload = {
     replaceSeq: seqs[replaceIndex] as Seq,
     range: [a.replace.start, a.replace.end],
@@ -628,6 +659,8 @@ async function settleFailed(
   call: SummaryCall,
   outcome: 'aborted' | 'error',
   message: string,
+  // When set, the turn stops on this error instead of resuming.
+  stop?: { code: string; message: string },
 ): Promise<StepOutcome> {
   const current = s.op() as OpStateObj
   await s.transition(
@@ -640,9 +673,14 @@ async function settleFailed(
         { ignorable: true },
       ),
     ],
-    withPhase(current, failedPhase(phase, message)),
+    withPhase(
+      current,
+      stop
+        ? { kind: 'failure_drain', error: stop, provenance: { kind: 'inference' } }
+        : failedPhase(phase, message),
+    ),
   )
-  return phase.reason === 'overflow' ? { phase: 'failure_drain' } : { phase: 'checkpoint' }
+  return stop || phase.reason === 'overflow' ? { phase: 'failure_drain' } : { phase: 'checkpoint' }
 }
 
 /**
@@ -671,7 +709,7 @@ async function elide(
     ...(call ? [s.ev('cost/ledger', call.spend), call.effect.settle('error')] : []),
     beginEvent(s, a, id, { mode: 'elided', cause }),
     replaceEvent(s, a, text, 'system'),
-    s.ev('x/core/compaction-end', id, { ignorable: true }),
+    s.ev('x/core/compaction-end', { ...id, tokensAfter: tokensAfter(a, text) }, { ignorable: true }),
   ]
   return commitReplace(s, a, events, events.length - 2)
 }
@@ -692,7 +730,32 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const tokensBefore = contextTokens(s)
   const primary = resolveModel(s, 'primary')
   const contextWindow = contextWindowFor(s, primary.route, primary.model)
-  const { reserveTokens, keepRecentTokens } = compactionSettingsFor(s, contextWindow)
+  // The fixed prefix is needed before planning: the tail a plan keeps has to leave room for it.
+  await s.ensureEnvelopeEpochs()
+  let currentPrefix: Prefix
+  try {
+    // Even an empty plan must check the fixed prompt cost before quoting a budget exception.
+    // When a primary request already ran, this just returns its saved prefix.
+    currentPrefix = await primaryPrefix(s)
+  } catch (error) {
+    if (!(error instanceof HookBlockedError)) throw error
+    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: error.reason } })
+    return { phase: 'terminal', reason: 'blocked' }
+  }
+  const fixedInstructions = {
+    system: currentPrefix.sections.map((section) => section.text).join('\n\n'),
+    tools: currentPrefix.tools,
+  }
+  const contextError = contextBudgetError(s, 'primary', fixedInstructions)
+  if (contextError) {
+    await s.endTurn('budget', { error: contextError })
+    return { phase: 'terminal', reason: 'budget' }
+  }
+  const { reserveTokens, keepRecentTokens } = compactionSettingsFor(
+    s,
+    contextWindow,
+    fixedPrefixTokens(fixedInstructions),
+  )
   const previous = surface.find((node) => node.kind === 'summary')?.seq
   const custom =
     phase.plan && typeof phase.plan === 'object' && !Array.isArray(phase.plan)
@@ -735,25 +798,6 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
           })
   } catch (error) {
     return leaveWithoutEffect(s, op, error instanceof Error ? error.message : String(error))
-  }
-  await s.ensureEnvelopeEpochs()
-  let currentPrefix: Prefix
-  try {
-    // Even an empty plan must check the fixed prompt cost before quoting a budget exception.
-    // When a primary request already ran, this just returns its saved prefix.
-    currentPrefix = await primaryPrefix(s)
-  } catch (error) {
-    if (!(error instanceof HookBlockedError)) throw error
-    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: error.reason } })
-    return { phase: 'terminal', reason: 'blocked' }
-  }
-  const contextError = contextBudgetError(s, 'primary', {
-    system: currentPrefix.sections.map((section) => section.text).join('\n\n'),
-    tools: currentPrefix.tools,
-  })
-  if (contextError) {
-    await s.endTurn('budget', { error: contextError })
-    return { phase: 'terminal', reason: 'budget' }
   }
   if (!plan) {
     const cache = lastCacheHint(s)
@@ -977,7 +1021,23 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
     if (elides(s, phase, failure, contextWindow, reserveTokens))
       return elide(s, attempt, cause ?? failure, message, call)
     if (failure === 'retryable' && phase.reason === 'threshold') s.compaction.transientFailures++
-    return settleFailed(s, phase, call, s.ac.signal.aborted ? 'aborted' : 'error', message)
+    const unavailable = (failure === 'config' || failure === 'budget') && phase.reason === 'threshold'
+    // A route that cannot work will not start working by the next turn: retry it ever more rarely.
+    // Once the window is nearly full it is retried every turn, and a request about to be sent stops
+    // with the reason instead of growing into an overflow.
+    if (unavailable) s.compaction.suspend(op.meta.turn)
+    const next = phase.resumeAfter as OpStatePhase
+    const stop =
+      unavailable &&
+      next.kind === 'checkpoint' &&
+      next.continuation === 'need_assistant' &&
+      nearlyFull(s, contextWindow, reserveTokens)
+        ? {
+            code: 'COMPACTION_UNAVAILABLE',
+            message: `${message}; the context window is nearly full, so the turn stopped. Fix the compaction model or its credentials, or raise or reset the context budget.`,
+          }
+        : undefined
+    return settleFailed(s, phase, call, s.ac.signal.aborted ? 'aborted' : 'error', message, stop)
   }
 
   const [mainResult, prefixResult] = results
@@ -1003,7 +1063,11 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
     replaceEvent(s, attempt, summary, 'model'),
     s.ev('cost/ledger', spend),
     effect.settle('ok'),
-    s.ev('x/core/compaction-end', { effectId: effect.effectId }, { ignorable: true }),
+    s.ev(
+      'x/core/compaction-end',
+      { effectId: effect.effectId, tokensAfter: tokensAfter(attempt, summary) },
+      { ignorable: true },
+    ),
   ]
   return commitReplace(s, attempt, events, 1)
 }
