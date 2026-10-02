@@ -49,4 +49,3 @@ export function readOfflineMaintenanceLocator(anchor: string): StageZeroView {
   if (!current.value) throw new Error('Maintenance locator unavailable: anchor_absent')
   return current.value
 }
-
