@@ -4,6 +4,12 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ToolContext` gains the optional read-only `defaultTimeoutMs`: the preset-wide default for a tool call
+(`tools.timeout_ms`), next to `timeoutMs`, which is this call's own limit. A tool that lets a caller ask for
+more time uses the default when asked for nothing and caps a request at `timeoutMs`; the `shell` tool does.
+It is optional so code that builds a `ToolContext` itself keeps compiling, and a tool must cope with its
+absence.
+
 `ExecResult` gains the optional `timedOut`: true when the executor's own deadline was the first cause to cut
 the command short, so the process was killed and the output is what it had printed so far. It is mutually
 exclusive with a caller cancel (whichever came first is the cause), and absent means the executor did not

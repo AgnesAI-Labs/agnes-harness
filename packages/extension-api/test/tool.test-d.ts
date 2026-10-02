@@ -200,6 +200,7 @@ describe('tool types', () => {
       | 'progress'
       | 'signal'
       | 'timeoutMs'
+      | 'defaultTimeoutMs'
       | 'outputMaxBytes'
       | 'lease'
       | 'log'

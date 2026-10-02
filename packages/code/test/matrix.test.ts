@@ -98,7 +98,7 @@ describe('preset matrix through the host resolver', () => {
       core: ['read', 'write', 'edit', 'shell', 'grep', 'find', 'ls', 'todo', 'web_fetch'],
       timeout_ms: 120000,
       output_max_bytes: 32768,
-      timeouts: { web_fetch: 30000, skill_helper_import: 240000 },
+      timeouts: { web_fetch: 30000, skill_helper_import: 240000, shell: 600000 },
     })
   })
 
@@ -112,6 +112,8 @@ describe('preset matrix through the host resolver', () => {
     for (const key of ['checkpoint', 'loop', 'repair', 'recovery', 'ext'])
       expect(r.doc, key).not.toHaveProperty(key)
     expect(toPresetView(r.doc).depthLimit).toBe(1)
+    // The frozen baseline keeps the 120 s every tool had: base's longer shell limit does not leak in.
+    expect(toPresetView(r.doc).tools.timeouts).toEqual({})
   })
 
   // Hard rule: the frozen baseline may not be extended. A recipe that did would change what the
