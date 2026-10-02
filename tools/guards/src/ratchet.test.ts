@@ -221,8 +221,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
-  // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
-  'packages/web-ui/src': 4872,
+  // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
+  'packages/web-ui/src': 4891,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   'packages/web-units/src': 4646,
   'packages/base/extensions/tools-core': 800,
