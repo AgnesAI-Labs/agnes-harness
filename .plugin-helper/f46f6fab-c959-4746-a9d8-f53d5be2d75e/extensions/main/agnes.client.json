@@ -1,0 +1,23 @@
+{
+  "skins": [
+    {
+      "id": "green",
+      "name": "绿色",
+      "css": "./skin.css",
+      "tokens": {
+        "--agnes-brand-primary": {
+          "light": "#1a7f37",
+          "dark": "#7ee2a0"
+        },
+        "--agnes-bg-page": {
+          "light": "#f0faf2",
+          "dark": "#0e1f14"
+        },
+        "--agnes-bg-app-content": {
+          "light": "#ffffff",
+          "dark": "#12251a"
+        }
+      }
+    }
+  ]
+}
