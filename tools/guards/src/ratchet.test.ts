@@ -930,7 +930,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
-  'packages/core/src': 25478,
+  'packages/core/src': 26971,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1376,7 +1376,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Unsupported reference source kinds register as not-advertised. Measured 1683, exact, no spare.
   // Shared blob and artifact access suites with their scenario registration, and blob selection
   // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
-  'packages/extension-api/testkit': 2546,
+  'packages/extension-api/testkit': 3449,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2558,7 +2558,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Re-measured with this guard's countLines(): 52711, exact cap, no spare.
   // Seal streams stored chunks into the private store, and closed services refuse with one code.
   // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
-  'packages/host/src': 52783,
+  // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
+  'packages/host/src': 55418,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
