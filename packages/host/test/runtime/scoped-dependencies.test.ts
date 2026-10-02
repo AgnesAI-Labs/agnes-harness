@@ -711,7 +711,7 @@ describe('host scoped dependencies', () => {
     })
   })
 
-  it('leaves host process startup unwired and grades the harness separately from production', async () => {
+  it('keeps service construction in host assembly and grades the harness separately from production', async () => {
     const hostSource = readFileSync(new URL('../../src/host.ts', import.meta.url), 'utf8')
     const assembleSource = readFileSync(new URL('../../src/assemble.ts', import.meta.url), 'utf8')
     const moduleSource = readFileSync(
@@ -721,7 +721,8 @@ describe('host scoped dependencies', () => {
     const indexSource = readFileSync(new URL('../../src/index.ts', import.meta.url), 'utf8')
     expect(hostSource.includes('scoped-dependencies')).toBe(false)
     expect(hostSource.includes('createHostScopedDependencies')).toBe(false)
-    expect(assembleSource.includes('scoped-dependencies')).toBe(false)
+    expect(hostSource.includes('get runtimeServices()')).toBe(true)
+    expect(assembleSource.match(/createHostScopedDependencies\s*\(/g)).toHaveLength(1)
     expect(moduleSource.includes('@agnes/cordis')).toBe(false)
     expect(moduleSource.includes('new Context')).toBe(false)
     expect(moduleSource.includes('child_process')).toBe(false)
@@ -1057,5 +1058,42 @@ describe('host scoped dependencies', () => {
     expect(hostClosed.code).toBe(testClosed.code)
     expect(hostClosed.detailCode).toBe('service_container_closed')
     expect(testClosed.detailCode).toBe(hostClosed.detailCode)
+
+    const extraRequirement = wire('runtime', ['read', 'missing'])
+    const hostExtra = refusalOf(full.host.dependencies.get(extraRequirement))
+    const testExtra = refusalOf(full.testContainer.dependencies.get(extraRequirement))
+    expect(hostExtra.code).toBe('incompatible')
+    expect(testExtra.code).toBe(hostExtra.code)
+    expect(hostExtra.detailCode).toBe('feature_missing')
+    expect(testExtra.detailCode).toBe(hostExtra.detailCode)
+
+    const duplicateHost = createHostScopedDependencies([grant({ permissions: [] })])
+    await expect(
+      duplicateHost.publish({
+        generationId: 'duplicate',
+        providers: [
+          selected({ permissions: [], features: ['read'], binding }),
+          selected({
+            permissions: [],
+            features: ['read', 'extra'],
+            binding: { ...binding, bindingId: 'binding-extra' },
+          }),
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'duplicate_cell' })
+    expect(() => duplicateHost.view('duplicate')).toThrow(
+      expect.objectContaining({ code: 'unknown_generation' }),
+    )
+
+    const duplicateContainer = createTestServiceContainer()
+    duplicateContainer.register({ requirement, binding })
+    expect(() =>
+      duplicateContainer.register({
+        requirement: wire('runtime', ['read', 'extra']),
+        binding: { ...binding, bindingId: 'binding-extra' },
+      }),
+    ).toThrow(/service already registered/)
+    expect(duplicateContainer.dependencies.get(requirement).ok).toBe(true)
+    expect(duplicateContainer.dependencies.get(wire('runtime', ['read'])).ok).toBe(true)
   })
 })

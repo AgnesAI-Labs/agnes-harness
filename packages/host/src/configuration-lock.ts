@@ -1,6 +1,24 @@
+import { chmodSync } from 'node:fs'
 import { chmod } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
+
+/** Synchronous deployment CAS uses the same crash-released transaction lock. */
+export function withConfigurationLockSync<T>(file: string, action: () => T): T {
+  const db = new DatabaseSync(file)
+  try {
+    chmodSync(file, 0o600)
+    db.exec('PRAGMA busy_timeout=5000')
+    db.exec('BEGIN EXCLUSIVE')
+    try {
+      return action()
+    } finally {
+      db.exec('ROLLBACK')
+    }
+  } finally {
+    db.close()
+  }
+}
 
 /** Kernel-owned transaction lock: a crashed setup process cannot leave a permanent busy marker. */
 export async function withConfigurationLock<T>(

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { JsonSchemaDoc } from './gen-core.js'
+import { validateStateOpenDefinition } from './gen-runtime-state.js'
 
 type Json = Record<string, unknown>
 const roots: Record<string, string> = {
@@ -11,6 +12,7 @@ const roots: Record<string, string> = {
   'simple-loop.schema.json': 'RuntimeSimpleLoopCheckpoint',
 }
 const fragments: Record<string, string> = {
+  'prototype.json#/$defs/StateOpenRequest/anyOf/1': 'StateWriteOpenRequest',
   'profile.schema.json#/properties/policy': 'RuntimeProfilePolicy',
   'profile.schema.json#/properties/selectionPolicy': 'RuntimeProfileSelectionPolicy',
   'profile.schema.json#/properties/presets/properties/allowed': 'RuntimeProfileAllowedPresets',
@@ -58,6 +60,8 @@ export function loadRuntimeSchemaGraph(directory: string): {
     } else {
       name = dirname(file) === directory ? fragments[`${basename(file)}#${pointer}`] : undefined
       if (!name) throw new Error(`unsupported runtime schema fragment ${basename(file)}#${pointer}`)
+      if (basename(file) === 'prototype.json' && pointer === '/$defs/StateOpenRequest/anyOf/1')
+        validateStateOpenDefinition(root.$defs?.StateOpenRequest as Json)
       shape = root
       for (const part of pointer.slice(1).split('/')) {
         const key = part.replaceAll('~1', '/').replaceAll('~0', '~')

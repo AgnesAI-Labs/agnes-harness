@@ -53,6 +53,13 @@ importers:
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../../packages/system-node
+    devDependencies:
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
 
   packages/ai:
     dependencies:

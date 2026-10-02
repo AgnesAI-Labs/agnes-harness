@@ -26,4 +26,7 @@ export {
   RuntimeIdentityLegacySchemas,
   RuntimeInterceptorPolicy,
   RuntimeServiceCatalog,
+  RuntimeStateLegacyReaders,
+  RuntimeStateOpenRetryPolicy,
+  RuntimeStateQueryMethods,
 } from '../../gen/ts/runtime-catalog.js'

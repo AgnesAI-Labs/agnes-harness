@@ -53,6 +53,7 @@ import {
   type RuntimeStateStore,
 } from '../packages/host/src/runtime/providers/state.js'
 import { canonicalJson } from '../packages/host/src/runtime/state/canonical-json.js'
+import type { ControlPorts } from '../packages/host/src/runtime/state/control.js'
 import {
   enterPhase,
   leavePhase,
@@ -566,6 +567,53 @@ function preparedAction(key: string, inputValue: unknown): PreparedAction {
   return { ...body, intentFingerprint: digestOf(body) }
 }
 
+/** Source owned by this local, non-billable benchmark adapter, never a production settlement owner. */
+export function createBenchmarkUsageSource() {
+  const originals = new Map<string, string>()
+  return {
+    observe(request: DispatchAdmissionRequest, authorizationId: string, intake: ReceiptIntakeRequest): void {
+      if (
+        request.budget.reservation !== null ||
+        intake.sourceAuthorizationRef !== authorizationId ||
+        intake.receipt.actionId !== request.actionId ||
+        intake.receipt.attemptId !== request.attemptId ||
+        intake.receipt.bindingId !== request.guard.bindingId ||
+        intake.evidence.length !== 0
+      )
+        throw new Error('benchmark usage source does not prove an unreserved local dispatch')
+      for (const fact of intake.usage) {
+        if (
+          fact.actionId !== request.actionId ||
+          fact.attemptId !== request.attemptId ||
+          canonicalJson(fact.source) !== canonicalJson(toolBinding) ||
+          !intake.receipt.usageRefs.includes(fact.usageId)
+        )
+          throw new Error('benchmark usage differs from the actual local producer')
+        const original = canonicalJson({ fact, receipt: intake.receipt, evidence: intake.evidence })
+        const prior = originals.get(fact.originKey)
+        if (prior && prior !== original) throw new Error('benchmark usage source identity conflicts')
+        originals.set(fact.originKey, original)
+      }
+    },
+    verify: ((fact, receipt, evidence) =>
+      originals.get(fact.originKey) === canonicalJson({ fact, receipt, evidence })
+        ? { settlementRef: null }
+        : undefined) satisfies NonNullable<ControlPorts['verifyUsageSettlement']>,
+  }
+}
+
+const benchmarkUsageSources = new WeakMap<RuntimeStateStore, ReturnType<typeof createBenchmarkUsageSource>>()
+function observeBenchmarkUsage(
+  store: RuntimeStateStore,
+  request: DispatchAdmissionRequest,
+  authorizationId: string,
+  intake: ReceiptIntakeRequest,
+): void {
+  const source = benchmarkUsageSources.get(store)
+  if (!source) throw new Error('benchmark usage source owner is absent')
+  source.observe(request, authorizationId, intake)
+}
+
 const originalExec = DatabaseSync.prototype.exec
 
 async function measureCall<T>(body: () => Promise<T>): Promise<{ value: T; txMs: number; callMs: number }> {
@@ -698,6 +746,7 @@ async function runAction(
     queryUsage: null,
     resultHandling: { kind: 'no-hook' },
   }
+  observeBenchmarkUsage(store, request, admitted.authorizationId, intake)
   unwrap(
     await timed(record, 'intakeReceipt', intake.intakeId, bucket, slot.toolKeys, () =>
       store.intakeReceipt(intake, callContext()),
@@ -767,6 +816,9 @@ async function runToolBatch(
       queryUsage: null,
       resultHandling: { kind: 'no-hook' },
     }
+    const dispatched = requests[index]
+    if (!dispatched) throw new Error('benchmark source dispatch is absent')
+    observeBenchmarkUsage(store, dispatched, result.authorizationId, intake)
     unwrap(
       await timed(record, 'intakeReceipt', intake.intakeId, 'tool', slot.toolKeys, () =>
         store.intakeReceipt(intake, callContext()),
@@ -791,7 +843,17 @@ async function timed<T>(
   }
   try {
     const measured = await measureCall(body)
-    if (!notice) throw new Error(`${method} ${requestId} produced no commit notice`)
+    if (!notice) {
+      if (
+        measured.value &&
+        typeof measured.value === 'object' &&
+        'ok' in measured.value &&
+        'error' in measured.value &&
+        !measured.value.ok
+      )
+        throw new Error(`${method} ${requestId}: ${JSON.stringify(measured.value.error)}`)
+      throw new Error(`${method} ${requestId} produced no commit notice`)
+    }
     if (notice.wrote && measured.txMs <= 0) {
       throw new Error(`${method} ${requestId} wrote a commit with no BEGIN/COMMIT span`)
     }
@@ -1134,12 +1196,15 @@ export async function runCandidate(name: string, ports?: LegacyPorts): Promise<S
   const commits: CommitRecord[] = []
   const frozen = Date.parse(ADMITTED_AT)
   try {
+    const usageSource = createBenchmarkUsageSource()
     const store = createRuntimeStateStore({
+      verifyUsageSettlement: usageSource.verify,
       file,
       authority,
       now: () => frozen,
       onCommit: (commit) => storeNotice?.(commit),
     })
+    benchmarkUsageSources.set(store, usageSource)
     const probe = openWalProbe(file)
     const record = (commit: CommitRecord) => {
       commits.push(commit)
@@ -1591,12 +1656,15 @@ async function profileOneDatabase(): Promise<ProfileCampaign['samples'][number]>
   const directory = mkdtempSync(join(tmpdir(), 'agnes-profile-rc-'))
   const file = join(directory, 'state.sqlite')
   const frozen = Date.parse(ADMITTED_AT)
+  const usageSource = createBenchmarkUsageSource()
   const store = createRuntimeStateStore({
+    verifyUsageSettlement: usageSource.verify,
     file,
     authority,
     now: () => frozen,
     onCommit: (commit) => storeNotice?.(commit),
   })
+  benchmarkUsageSources.set(store, usageSource)
   const record = (): void => undefined
   try {
     unwrap(await store.createRun(admissionFor('one call'), callContext()), 'createRun')
@@ -1721,6 +1789,7 @@ async function profileOneDatabase(): Promise<ProfileCampaign['samples'][number]>
       queryUsage: null,
       resultHandling: { kind: 'no-hook' },
     }
+    observeBenchmarkUsage(store, request, dispatch.value.authorizationId, intakeRequest)
     const intake = await profiledCall('intake', () => store.intakeReceipt(intakeRequest, callContext()))
     if (!intake.ok) throw new Error('profiled intake failed')
     return {

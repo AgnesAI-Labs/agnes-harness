@@ -543,7 +543,7 @@ describe('test service container', () => {
     expect(fromTest.error.detailCode).toBe('from-test')
   })
 
-  it('fails closed for a missing, optional, ambiguous, duplicate, or mismatched service', () => {
+  it('fails closed for a missing, optional, duplicate, or mismatched service', () => {
     const container = createTestServiceContainer()
     const binding = {
       bindingId: 'binding-1',
@@ -555,14 +555,18 @@ describe('test service container', () => {
     expect(missing.ok).toBe(false)
     if (!missing.ok) expect(missing.error.detailCode).toBe('service_not_registered')
     container.register({ requirement: requirement('workspace', ['read', 'write']), binding })
-    container.register({
-      requirement: requirement('workspace', ['read', 'extra']),
-      binding: { ...binding, bindingId: 'binding-2' },
-    })
-    const ambiguous = container.dependencies.get(requirement('workspace', ['read']))
-    expect(ambiguous.ok).toBe(false)
-    if (!ambiguous.ok)
-      expect(ambiguous.error).toMatchObject({ code: 'conflict', detailCode: 'service_ambiguous' })
+    expect(() =>
+      container.register({
+        requirement: requirement('workspace', ['read', 'extra']),
+        binding: { ...binding, bindingId: 'binding-2' },
+      }),
+    ).toThrow(/service already registered/)
+    expect(container.dependencies.get(requirement('workspace', ['read'])).ok).toBe(true)
+    const missingFeature = container.dependencies.get(requirement('workspace', ['read', 'absent']))
+    expect(missingFeature.ok).toBe(false)
+    if (!missingFeature.ok) {
+      expect(missingFeature.error).toMatchObject({ code: 'incompatible', detailCode: 'feature_missing' })
+    }
     expect(() =>
       container.register({ requirement: requirement('workspace', ['write', 'read']), binding }),
     ).toThrow(/service already registered/)

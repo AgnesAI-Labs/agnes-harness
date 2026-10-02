@@ -52,6 +52,25 @@ The smoke test uses an isolated temporary home, a loopback model fixture, and re
 
 See [installation](../guide/install.md) for separate output directories and PowerShell steps, or the [demo guide](../guide/demo.md) for manual exploration.
 
+<a id="网络与密钥提供方检查"></a>
+
+## Network and secret provider checks
+
+The [Host network provider](../../packages/host/src/runtime/providers/network.ts) and [secret broker](../../packages/host/src/runtime/providers/secrets.ts) can be tested independently of process startup. Their [reference network](../../examples/runtime-reference/src/providers/network.ts) and [reference secrets](../../examples/runtime-reference/src/providers/secrets.ts) use separate transport and storage algorithms. These entries are not yet wired into ordinary Host, daemon or CLI startup.
+
+```sh
+pnpm exec tsx tools/acceptance/runtime/run-conformance.ts --contracts agh.network,agh.secrets --providers default,reference
+pnpm exec vitest run packages/host/test/runtime/network-secrets.test.ts packages/host/test/runtime/secrets-legacy.e2e.test.ts packages/host/test/runtime/secrets-oauth.test.ts packages/host/test/runtime/secrets-network.e2e.test.ts packages/host/test/runtime/secrets-drain.slow.test.ts packages/host/test/runtime/network.e2e.test.ts packages/host/test/runtime/network-secrets-recovery.e2e.test.ts examples/runtime-reference/src/providers/network-secrets-lock.test.ts examples/runtime-reference/src/providers/network-cross.e2e.test.ts --maxWorkers=1
+```
+
+Conformance runs selection, normal operation, refusal, cancellation, recovery and disposal for each provider. Reports mark the deployment authorization and content ports as `restricted-effects` fixtures. Recovery kills real child processes; network tests use fixed loopback peers and a CONNECT proxy. They establish broker behavior, not acceptance of production startup, real OAuth providers or other operating systems.
+
+Network deployment supplies explicit destination rules, current identity and authorization checks, and a content authority that retains response bytes. DNS answers and redirects are checked before each connection. Request identity is persisted before sending; uncertain sends remain unknown and are not retried automatically. Default proxy requests use a pinned destination through a CONNECT tunnel. The reference supports public IPv4 and explicit deployment address exceptions; it refuses proxies and unsupported public address families.
+
+Secret configuration contains `secret://` references, versions and purpose-bound grants. The default can consume the existing `composeSecrets` resolver without changing file-before-environment behavior or turning a storage refusal into an environment fallback. Handles convey no bearer authority: trusted consumers must revalidate current identity, scope, audience, purpose, version, expiry and revocation at use time. The local material-consumption callback belongs to the deployment's trusted consumer boundary, not an ordinary plugin port. A consumer that does not drain on cancellation produces a bounded disposal failure.
+
+Default refresh and exchange require deployment-owned restricted effect ports. Renewal identity and the credential lock survive crashes; missing evidence returns unknown rather than resending a rotating token. Callback authorization codes are encrypted in short-lived, single-use escrow, and exchange can provision a catalogue entry with `initialVersion: null`. Reference OAuth capabilities are explicitly not advertised and return an incompatible/unsupported result. Material scans cover broker persistence and diagnostic results; source credential stores remain outside the broker metadata database.
+
 <a id="记录验证结果"></a>
 
 ## Record results

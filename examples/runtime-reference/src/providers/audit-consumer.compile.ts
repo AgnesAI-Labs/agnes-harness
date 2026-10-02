@@ -5,8 +5,11 @@ import type {
   ConformanceHarness,
 } from '@agnes/extension-api/testkit'
 import { registerAuditContract, runAuditContractScenario } from '@agnes/extension-api/testkit'
-import type { ReferenceAuditDeployment } from '@agnes-examples/runtime-reference'
-import { createReferenceAuditFactory, openReferenceAuditStore } from '@agnes-examples/runtime-reference'
+import {
+  createReferenceAuditFactory,
+  openReferenceAuditStore,
+  type ReferenceAuditDeployment,
+} from './index.js'
 
 export function auditPublicConsumer(
   harness: ConformanceHarness,

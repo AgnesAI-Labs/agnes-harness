@@ -62,6 +62,8 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
 }
 
 export interface Host {
+  /** Host-private selected services. Never forward this capability to a plugin or wire caller. */
+  readonly runtimeServices: Assembled['runtimeServices']
   /** Privileged coordination port. It is not reachable from ExtensionAPI or any wire request. */
   readonly activationBarrier: ExtensionActivationBarrier
   /** Authenticated management port. It is not registered as a model tool or extension service. */
@@ -171,6 +173,9 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
   let closed = false
   let closePromise: Promise<void> | undefined
   return {
+    get runtimeServices() {
+      return a.runtimeServices
+    },
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
     callService: (params, credential, signal, effectAdmission) => {

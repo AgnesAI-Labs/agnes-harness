@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { defaultIds, openTracked } from '../../../../packages/core/src/index.ts'
 import type {
   AdvanceRunRequest,
@@ -26,6 +26,9 @@ import type {
   UsageFact,
 } from '../../../../packages/extension-api/src/runtime/index.ts'
 import { createSqliteStorage } from '../../../../packages/host/src/adapters/storage-sqlite.ts'
+import { resolvePin } from '../../../../packages/host/src/runtime/blob/retention.ts'
+import { type BlobStore, openBlobStore } from '../../../../packages/host/src/runtime/blob/uploads.ts'
+import { type BlobService, createBlobService } from '../../../../packages/host/src/runtime/providers/blob.ts'
 import {
   createRuntimeStateStore,
   type RuntimeStateStore,
@@ -113,6 +116,45 @@ function file(): string {
 
 type CommitNotice = { method: string; requestId: string; wrote: boolean }
 
+// This acceptance fixture owns observations but never performs billing settlement.
+// SQL membership proves exactly which measured fact is known to be still unsettled.
+// It is a restricted test producer, not an installed production billing owner.
+const usageSource = new DatabaseSync(':memory:')
+usageSource.exec(
+  'CREATE TABLE observed_usage (fact_json TEXT, receipt_json TEXT, evidence_json TEXT, settlement_ref TEXT, PRIMARY KEY(fact_json,receipt_json,evidence_json))',
+)
+afterAll(() => usageSource.close())
+const retentionSources: BlobStore[] = []
+const blobServices: BlobService[] = []
+function verifyFixtureUsage(fact: UsageFact, receipt: Receipt, evidence: readonly unknown[]) {
+  const row = usageSource
+    .prepare(
+      'SELECT settlement_ref FROM observed_usage WHERE fact_json=? AND receipt_json=? AND evidence_json=?',
+    )
+    .get(jcs(fact), jcs(receipt), jcs(evidence)) as { settlement_ref: string | null } | undefined
+  return row ? { settlementRef: row.settlement_ref } : undefined
+}
+function verifyFixturePin(ref: RetentionRef): boolean {
+  if (ref.kind !== 'blob' || ref.version !== '1') return false
+  for (const source of retentionSources) {
+    if (source.authorityId !== ref.authorityId) continue
+    const row = source.db.prepare('SELECT blob FROM roots WHERE pin_id=?').get(ref.pinId) as
+      | { blob: string }
+      | undefined
+    if (!row?.blob) continue
+    const parsed = validateRuntime('BlobRef', JSON.parse(row.blob))
+    if (!parsed.ok || parsed.value.blobId !== ref.resourceId || parsed.value.digest !== ref.digest)
+      return false
+    try {
+      resolvePin(source, parsed.value)
+      return true
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
 function openStore(
   path: string,
   now = () => Date.parse(admittedAt),
@@ -123,6 +165,8 @@ function openStore(
     file: path,
     authority,
     now,
+    verifyUsageSettlement: verifyFixtureUsage,
+    verifyRetentionPin: verifyFixturePin,
     ...(beforeCommit ? { beforeCommit } : {}),
     ...(onCommit ? { onCommit } : {}),
   })
@@ -161,18 +205,16 @@ function patchResult(
   }) => void,
 ): void {
   const row = db
-    .prepare('SELECT result_json FROM runtime_request_results WHERE method = ? AND request_id = ?')
+    .prepare('SELECT result_json FROM runtime_state_control_requests WHERE method = ? AND request_id = ?')
     .get(method, requestId) as { result_json: string }
   const result = JSON.parse(row.result_json) as {
     claim: { writerId: string }
     snapshot: { throughSeq: number; headDigest: string; authority: { tenantId: string } }
   }
   change(result)
-  db.prepare('UPDATE runtime_request_results SET result_json = ? WHERE method = ? AND request_id = ?').run(
-    JSON.stringify(result),
-    method,
-    requestId,
-  )
+  db.prepare(
+    'UPDATE runtime_state_control_requests SET result_json = ? WHERE method = ? AND request_id = ?',
+  ).run(JSON.stringify(result), method, requestId)
 }
 
 const writeOpen = (requestId: string, writerId = 'writer-a', ttlMs = 1_000) => ({
@@ -194,6 +236,7 @@ const readOpen = (requestId: string) => ({
 })
 
 function leaseRequest(
+  path: string,
   requestId: string,
   operation: 'acquire' | 'renew' | 'release' | 'reclaim',
   writerId: string,
@@ -207,22 +250,32 @@ function leaseRequest(
     writerId,
     operation,
     expectedWriterEpoch,
-    expectedLastSeq: 2,
+    expectedLastSeq:
+      query<{ seq: number }>(path, "SELECT MAX(seq) AS seq FROM events WHERE session_key = 'session-1'")[0]
+        ?.seq ?? 0,
     ttlMs,
   }
 }
 
-async function refuseDamaged(path: string, requestId: string): Promise<void> {
+async function refuseDamaged(path: string, requestId: string, detailCode = 'integrity'): Promise<void> {
   const reopened = openStore(path)
   const opened = await reopened.open(writeOpen(requestId), context())
   reopened.close()
   expect(opened.ok).toBe(false)
   if (opened.ok) expect(opened.value.snapshot).toBeUndefined()
-  if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
-  expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+  if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode })
+  expect(
+    query<{ writer_id: string | null }>(
+      path,
+      'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+    ),
+  ).toEqual([])
 }
 
 afterEach(() => {
+  usageSource.exec('DELETE FROM observed_usage')
+  for (const service of blobServices.splice(0)) service.close()
+  for (const source of retentionSources.splice(0)) source.db.close()
   for (const directory of files.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
@@ -245,7 +298,13 @@ describe('runtime state records, proof rows, and ledger events', () => {
 
   it('writes the format event, state-commit event, and proof rows in one database transaction', async () => {
     const path = file()
-    const store = openStore(path)
+    const commits: CommitNotice[] = []
+    const store = openStore(
+      path,
+      () => Date.parse(admittedAt),
+      undefined,
+      (notice) => commits.push(notice),
+    )
     const created = await store.createRun(admission(), context())
     const durability = store.durability()
     expect(existsSync(`${path}-wal`)).toBe(true)
@@ -268,10 +327,29 @@ describe('runtime state records, proof rows, and ledger events', () => {
     )
     const data = JSON.parse(attested[0]?.data ?? '{}') as { commitId: string; mutationCount: number }
     expect(data.commitId).toBe(created.value.commit.commitId)
-    expect(data.mutationCount).toBe(3)
-    expect(count(path, 'runtime_mutation_manifests')).toBe(3)
+    expect(commits).toEqual([{ method: 'createRun', requestId: 'ticket-1', wrote: true }])
+    expect(
+      query(
+        path,
+        "SELECT (SELECT COUNT(*) FROM events WHERE type='runtime/state-commit') + (SELECT COUNT(*) FROM runtime_aux_commits) AS n",
+      ),
+    ).toEqual([{ n: 1 }])
+    expect(data.mutationCount).toBe(4)
+    expect(count(path, 'runtime_mutation_manifests')).toBe(4)
     expect(count(path, 'runtime_side_entries')).toBe(0)
-    expect(count(path, 'runtime_record_versions')).toBe(3)
+    expect(count(path, 'runtime_record_versions')).toBe(4)
+    expect(query(path, 'SELECT record_id FROM runtime_record_versions ORDER BY record_id')).toEqual([
+      { record_id: 'run:run-1' },
+      { record_id: 'session-identity:session-1' },
+      { record_id: 'state-lease:session-1' },
+      { record_id: 'taint:run-1' },
+    ])
+    expect(query(path, 'SELECT writer_id, writer_epoch, last_writer_epoch FROM runtime_leases')).toEqual([
+      { writer_id: null, writer_epoch: null, last_writer_epoch: 0 },
+    ])
+    expect(query(path, 'SELECT DISTINCT commit_id FROM runtime_record_versions')).toEqual([
+      { commit_id: created.value.commit.commitId },
+    ])
   })
 
   it('rolls back proof rows and ledger events together when the commit is rejected', async () => {
@@ -404,7 +482,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
         writerId: 'writer-a',
         operation: 'renew',
         expectedWriterEpoch: 1,
-        expectedLastSeq: 2,
+        expectedLastSeq: 3,
         ttlMs: 5_000,
       },
       context(),
@@ -417,7 +495,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
         writerId: 'writer-a',
         operation: 'release',
         expectedWriterEpoch: 1,
-        expectedLastSeq: 2,
+        expectedLastSeq: 4,
         ttlMs: 1_000,
       },
       context(),
@@ -430,7 +508,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
         writerId: 'writer-b',
         operation: 'reclaim',
         expectedWriterEpoch: 1,
-        expectedLastSeq: 2,
+        expectedLastSeq: 5,
         ttlMs: 1_000,
       },
       context(),
@@ -444,7 +522,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
         writerId: 'writer-a',
         operation: 'renew',
         expectedWriterEpoch: 1,
-        expectedLastSeq: 2,
+        expectedLastSeq: 6,
         ttlMs: 1_000,
       },
       context(),
@@ -457,7 +535,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
         writerId: 'writer-a',
         operation: 'acquire',
         expectedWriterEpoch: 2,
-        expectedLastSeq: 2,
+        expectedLastSeq: 6,
         ttlMs: 1_000,
       },
       context(),
@@ -579,7 +657,12 @@ describe('runtime state records, proof rows, and ledger events', () => {
     reopened.close()
     expect(opened.ok).toBe(false)
     if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
-    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+      ),
+    ).toEqual([])
   })
 
   it('replays the written ledger through the session reader', async () => {
@@ -666,7 +749,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
     mutate(path, (db) => {
       db.prepare("UPDATE runtime_records SET min_reader = 999 WHERE record_id = 'run:run-1'").run()
     })
-    await refuseDamaged(path, 'open-reader')
+    await refuseDamaged(path, 'open-reader', 'unknown_reader')
   })
 
   it('accepts an equivalent spelling of a stored record body', async () => {
@@ -731,7 +814,12 @@ describe('runtime state records, proof rows, and ledger events', () => {
         "SELECT record_id FROM runtime_records WHERE record_id LIKE 'run:%'",
       ),
     ).toEqual([{ record_id: 'run:run-1' }])
-    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+      ),
+    ).toEqual([])
   })
 
   it('returns the original write-open result for the same request', async () => {
@@ -740,13 +828,20 @@ describe('runtime state records, proof rows, and ledger events', () => {
     expect((await store.createRun(admission(), context())).ok).toBe(true)
     const request = writeOpen('open-write')
     const first = await store.open(request, context())
+    const afterFirst = count(path, 'events')
+    expect(afterFirst).toBe(3)
     const second = await store.open(request, context())
+    expect(count(path, 'events')).toBe(afterFirst)
     const changed = await store.open(writeOpen('open-write', 'writer-b'), context())
     store.close()
     expect(first.ok).toBe(true)
     expect(second).toEqual(first)
     expect(changed.ok).toBe(false)
+    expect(count(path, 'events')).toBe(afterFirst)
     if (!changed.ok) expect(changed.error.detailCode).toBe('idempotency_conflict')
+    expect(
+      query(path, "SELECT COUNT(*) AS n FROM runtime_state_control_requests WHERE method='open'"),
+    ).toEqual([{ n: 1 }])
     expect(query<{ n: number }>(path, 'SELECT COUNT(*) AS n FROM runtime_leases')).toEqual([{ n: 1 }])
   })
 
@@ -754,10 +849,13 @@ describe('runtime state records, proof rows, and ledger events', () => {
     const path = file()
     const store = openStore(path)
     expect((await store.createRun(admission(), context())).ok).toBe(true)
-    const request = leaseRequest('lease-acquire', 'acquire', 'writer-a', 0)
+    const request = leaseRequest(path, 'lease-acquire', 'acquire', 'writer-a', 0)
     const first = await store.lease(request, context())
     const second = await store.lease(request, context())
-    const changed = await store.lease(leaseRequest('lease-acquire', 'acquire', 'writer-b', 0), context())
+    const changed = await store.lease(
+      leaseRequest(path, 'lease-acquire', 'acquire', 'writer-b', 0),
+      context(),
+    )
     store.close()
     expect(first.ok).toBe(true)
     expect(second).toEqual(first)
@@ -773,14 +871,17 @@ describe('runtime state records, proof rows, and ledger events', () => {
     let now = Date.parse(admittedAt)
     const store = openStore(path, () => now)
     expect((await store.createRun(admission(), context())).ok).toBe(true)
-    expect((await store.lease(leaseRequest('lease-acquire', 'acquire', 'writer-a', 0), context())).ok).toBe(
-      true,
-    )
-    const request = leaseRequest('lease-renew', 'renew', 'writer-a', 1, 5_000)
+    expect(
+      (await store.lease(leaseRequest(path, 'lease-acquire', 'acquire', 'writer-a', 0), context())).ok,
+    ).toBe(true)
+    const request = leaseRequest(path, 'lease-renew', 'renew', 'writer-a', 1, 5_000)
     const first = await store.lease(request, context())
     now += 1
     const second = await store.lease(request, context())
-    const changed = await store.lease(leaseRequest('lease-renew', 'renew', 'writer-a', 1, 9_000), context())
+    const changed = await store.lease(
+      leaseRequest(path, 'lease-renew', 'renew', 'writer-a', 1, 9_000),
+      context(),
+    )
     store.close()
     expect(first.ok).toBe(true)
     if (first.ok) expect(first.value.claim?.leaseUntil).toBe('2026-04-01T00:00:05.000Z')
@@ -831,13 +932,16 @@ describe('runtime state records, proof rows, and ledger events', () => {
     )
     reopened.close()
     expect(continued.ok).toBe(true)
-    if (continued.ok && continued.value.state === 'created') expect(continued.value.commit.lastSeq).toBe(3)
+    if (continued.ok) {
+      expect(continued.value.state).toBe('created')
+      if (continued.value.state === 'created') expect(continued.value.commit.lastSeq).toBe(3)
+    }
     expect(damaged.ok).toBe(false)
     if (!damaged.ok) expect(damaged.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
     expect(
       query<{ writer_id: string | null }>(
         path,
-        "SELECT writer_id FROM runtime_leases WHERE scope_id = 'session-2'",
+        "SELECT writer_id FROM runtime_leases WHERE scope_id = 'session-2' AND writer_id IS NOT NULL",
       ),
     ).toEqual([])
   })
@@ -913,7 +1017,12 @@ describe('runtime state records, proof rows, and ledger events', () => {
     if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
     expect(created.ok).toBe(false)
     if (!created.ok) expect(created.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
-    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+      ),
+    ).toEqual([])
     expect(count(path, 'events')).toBe(2)
   })
 
@@ -951,7 +1060,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
     ).toEqual([{ n: 2 }])
   })
 
-  it('leaves an uncovered record head for the next open', async () => {
+  it('refuses the next write and open for an uncovered record head', async () => {
     const path = file()
     const store = openStore(path)
     expect((await store.createRun(admission(), context())).ok).toBe(true)
@@ -974,14 +1083,20 @@ describe('runtime state records, proof rows, and ledger events', () => {
     )
     const opened = await store.open(writeOpen('open-rogue-live'), context())
     store.close()
-    expect(continued.ok).toBe(true)
-    if (continued.ok && continued.value.state === 'created') expect(continued.value.commit.lastSeq).toBe(3)
+    expect(continued.ok).toBe(false)
+    if (!continued.ok)
+      expect(continued.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
     expect(opened.ok).toBe(false)
     if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
-    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+      ),
+    ).toEqual([])
   })
 
-  it('leaves a changed record reader for the next open', async () => {
+  it('refuses the next write and open for an unsupported record reader', async () => {
     const path = file()
     const store = openStore(path)
     expect((await store.createRun(admission(), context())).ok).toBe(true)
@@ -994,10 +1109,17 @@ describe('runtime state records, proof rows, and ledger events', () => {
     )
     const opened = await store.open(writeOpen('open-reader-live'), context())
     store.close()
-    expect(continued.ok).toBe(true)
+    expect(continued.ok).toBe(false)
+    if (!continued.ok)
+      expect(continued.error).toMatchObject({ code: 'incompatible', detailCode: 'unknown_reader' })
     expect(opened.ok).toBe(false)
-    if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
-    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+    if (!opened.ok) expect(opened.error).toMatchObject({ code: 'incompatible', detailCode: 'unknown_reader' })
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+      ),
+    ).toEqual([])
   })
 
   it.each([
@@ -1031,7 +1153,12 @@ describe('runtime state records, proof rows, and ledger events', () => {
     expect(replayed.ok).toBe(false)
     if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
     expect(count(path, 'events')).toBe(2)
-    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+      ),
+    ).toEqual([])
   })
 
   it('rejects a repeated admission when its stored run id changes', async () => {
@@ -1061,13 +1188,13 @@ describe('runtime state records, proof rows, and ledger events', () => {
     mutate(path, (db) => {
       const row = db
         .prepare(
-          "SELECT result_json FROM runtime_request_results WHERE method = 'open' AND request_id = 'open-write'",
+          "SELECT result_json FROM runtime_state_control_requests WHERE method = 'open' AND request_id = 'open-write'",
         )
         .get() as { result_json: string }
       const result = JSON.parse(row.result_json) as { claim: { writerEpoch: number } }
       result.claim.writerEpoch = 42
       db.prepare(
-        "UPDATE runtime_request_results SET result_json = ? WHERE method = 'open' AND request_id = 'open-write'",
+        "UPDATE runtime_state_control_requests SET result_json = ? WHERE method = 'open' AND request_id = 'open-write'",
       ).run(JSON.stringify(result))
     })
     const replayed = await store.open(request, context())
@@ -1085,7 +1212,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
     const path = file()
     const store = openStore(path)
     expect((await store.createRun(admission(), context())).ok).toBe(true)
-    const request = leaseRequest('lease-acquire', 'acquire', 'writer-a', 0)
+    const request = leaseRequest(path, 'lease-acquire', 'acquire', 'writer-a', 0)
     const first = await store.lease(request, context())
     expect(
       (await store.createRun(admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'next' }), context()))
@@ -1104,10 +1231,10 @@ describe('runtime state records, proof rows, and ledger events', () => {
     const path = file()
     const store = openStore(path)
     expect((await store.createRun(admission(), context())).ok).toBe(true)
-    expect((await store.lease(leaseRequest('lease-acquire', 'acquire', 'writer-a', 0), context())).ok).toBe(
-      true,
-    )
-    const request = leaseRequest('lease-renew', 'renew', 'writer-a', 1, 5_000)
+    expect(
+      (await store.lease(leaseRequest(path, 'lease-acquire', 'acquire', 'writer-a', 0), context())).ok,
+    ).toBe(true)
+    const request = leaseRequest(path, 'lease-renew', 'renew', 'writer-a', 1, 5_000)
     const first = await store.lease(request, context())
     expect(
       (await store.createRun(admission({ ticketId: 'ticket-2', runId: 'run-2', text: 'next' }), context()))
@@ -1153,7 +1280,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
     const path = file()
     const store = openStore(path)
     expect((await store.createRun(admission(), context())).ok).toBe(true)
-    const request = leaseRequest('lease-acquire', 'acquire', 'writer-a', 0)
+    const request = leaseRequest(path, 'lease-acquire', 'acquire', 'writer-a', 0)
     const first = await store.lease(request, context())
     mutate(path, (db) => {
       patchResult(db, 'lease', 'lease-acquire', (result) => {
@@ -1179,12 +1306,12 @@ describe('runtime state records, proof rows, and ledger events', () => {
     expect((await store.createRun(admission(), context())).ok).toBe(true)
     const request = writeOpen('open-write')
     expect((await store.open(request, context())).ok).toBe(true)
-    expect((await store.lease(leaseRequest('lease-release', 'release', 'writer-a', 1), context())).ok).toBe(
-      true,
-    )
-    expect((await store.lease(leaseRequest('lease-reclaim', 'reclaim', 'writer-b', 1), context())).ok).toBe(
-      true,
-    )
+    expect(
+      (await store.lease(leaseRequest(path, 'lease-release', 'release', 'writer-a', 1), context())).ok,
+    ).toBe(true)
+    expect(
+      (await store.lease(leaseRequest(path, 'lease-reclaim', 'reclaim', 'writer-b', 1), context())).ok,
+    ).toBe(true)
     store.close()
     mutate(path, (db) => {
       patchResult(db, 'open', 'open-write', (result) => {
@@ -1204,24 +1331,23 @@ describe('runtime state records, proof rows, and ledger events', () => {
     ).toEqual([{ writer_id: 'writer-b', writer_epoch: 2 }])
   })
 
-  it('rejects an untampered open after another writer takes the lease', async () => {
+  it('replays an untampered historical open without replacing the current writer', async () => {
     const path = file()
     const store = openStore(path)
     expect((await store.createRun(admission(), context())).ok).toBe(true)
     const request = writeOpen('open-write')
     const first = await store.open(request, context())
-    expect((await store.lease(leaseRequest('lease-release', 'release', 'writer-a', 1), context())).ok).toBe(
-      true,
-    )
-    expect((await store.lease(leaseRequest('lease-reclaim', 'reclaim', 'writer-b', 1), context())).ok).toBe(
-      true,
-    )
+    expect(
+      (await store.lease(leaseRequest(path, 'lease-release', 'release', 'writer-a', 1), context())).ok,
+    ).toBe(true)
+    expect(
+      (await store.lease(leaseRequest(path, 'lease-reclaim', 'reclaim', 'writer-b', 1), context())).ok,
+    ).toBe(true)
     const replayed = await store.open(request, context())
     store.close()
     expect(first.ok).toBe(true)
-    expect(replayed.ok).toBe(false)
-    if (!replayed.ok)
-      expect(replayed.error).toMatchObject({ code: 'conflict', detailCode: 'historical_receipt' })
+    expect(replayed).toEqual(first)
+    if (replayed.ok) expect(replayed.value.claim?.writerEpoch).toBe(1)
     expect(
       query<{ writer_id: string; writer_epoch: number }>(
         path,
@@ -1247,7 +1373,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
     const replayed = await reopened.open(request, context())
     reopened.close()
     expect(first.ok).toBe(true)
-    if (first.ok) expect(first.value.snapshot.throughSeq).toBe(2)
+    if (first.ok) expect(first.value.snapshot.throughSeq).toBe(3)
     expect(replayed.ok).toBe(false)
     if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
     expect(
@@ -1276,7 +1402,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
     expect(replayed.ok).toBe(false)
     if (!replayed.ok) expect(replayed.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
     if (!replayed.ok)
-      expect(replayed.error.message).toBe('stored open result does not match the session authority')
+      expect(replayed.error.message).toBe('control result index does not match its immutable proof')
     expect(
       query<{ writer_id: string; writer_epoch: number }>(
         path,
@@ -1293,7 +1419,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
     expect((await store.open(request, context())).ok).toBe(true)
     mutate(path, (db) => {
       db.prepare(
-        "UPDATE runtime_request_results SET result_json = ? WHERE method = 'open' AND request_id = 'open-write'",
+        "UPDATE runtime_state_control_requests SET result_json = ? WHERE method = 'open' AND request_id = 'open-write'",
       ).run('{}')
     })
     const replayed = await store.open(request, context())
@@ -1305,7 +1431,7 @@ describe('runtime state records, proof rows, and ledger events', () => {
     ])
   })
 
-  it('rejects a replayed open after its writer lease expires', async () => {
+  it('replays an expired historical open without renewing its writer lease', async () => {
     const path = file()
     let now = Date.parse(admittedAt)
     const store = openStore(path, () => now)
@@ -1316,9 +1442,11 @@ describe('runtime state records, proof rows, and ledger events', () => {
     const replayed = await store.open(request, context())
     store.close()
     expect(first.ok).toBe(true)
-    expect(replayed.ok).toBe(false)
-    if (!replayed.ok)
-      expect(replayed.error).toMatchObject({ code: 'conflict', detailCode: 'historical_receipt' })
+    expect(replayed).toEqual(first)
+    if (replayed.ok) {
+      if (!replayed.value.claim) throw new Error('original writer claim is absent')
+      expect(Date.parse(replayed.value.claim.leaseUntil)).toBeLessThan(now)
+    }
     expect(
       query<{ writer_id: string; writer_epoch: number }>(
         path,
@@ -1417,7 +1545,12 @@ describe('runtime state records, proof rows, and ledger events', () => {
       expect(second.value.claim).toBeNull()
       expect(second.value.snapshot.snapshotId).not.toBe(first.value.snapshot.snapshotId)
     }
-    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([])
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+      ),
+    ).toEqual([])
   })
 
   it('refuses every state method that is not implemented yet', async () => {
@@ -1794,7 +1927,7 @@ describe('runtime state advance, dispatch, and invocation', () => {
 
   it('continues a run, admits an action, and marks the attempt running', async () => {
     const { path, store } = await leasedRun()
-    expect(count(path, 'runtime_records')).toBe(3)
+    expect(count(path, 'runtime_records')).toBe(5)
     const prepared = await preparedInvocation(store, 'invocation-1', 0, 1_000)
     expect(prepared.admitted).toMatchObject({
       prepareId: stableId('prep', 'run-1\0invocation-1'),
@@ -1804,7 +1937,7 @@ describe('runtime state advance, dispatch, and invocation', () => {
       remainingQueries: 65_536 - 128,
     })
     expect(prepared.closed).toEqual({ invocationId: 'invocation-1', state: 'prepared' })
-    expect(count(path, 'runtime_records')).toBe(7)
+    expect(count(path, 'runtime_records')).toBe(9)
     const action = preparedAction('step-1')
     const actionId = stableId('act', 'run-1\0step-1')
     const advanced = unwrap(
@@ -2754,7 +2887,7 @@ describe('runtime state advance, dispatch, and invocation', () => {
         `INSERT INTO runtime_records (
            record_id, schema_json, min_reader, record_revision, last_commit_id, created_at, updated_at,
            owner_json, value_json, body_digest
-         ) VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, 2, 1, ?, ?, ?, ?, ?, ?)`,
       ).run(
         recordId,
         sample.schema_json,
@@ -2829,9 +2962,12 @@ describe('runtime state advance, dispatch, and invocation', () => {
     expect(missingSide.ok).toBe(false)
     if (!missingSide.ok)
       expect(missingSide.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
-    expect(query<{ writer_id: string | null }>(path, 'SELECT writer_id FROM runtime_leases')).toEqual([
-      { writer_id: 'writer-a' },
-    ])
+    expect(
+      query<{ writer_id: string | null }>(
+        path,
+        'SELECT writer_id FROM runtime_leases WHERE writer_id IS NOT NULL',
+      ),
+    ).toEqual([{ writer_id: 'writer-a' }])
     const restored = file()
     const second = openStore(restored)
     unwrap(await second.createRun(admission(), context()), 'create')
@@ -3150,6 +3286,9 @@ function intakeOf(
       : options.kind === 'staged'
         ? { kind: 'staged' as const }
         : { kind: 'no-hook' as const }
+  usageSource
+    .prepare('INSERT OR IGNORE INTO observed_usage VALUES (?,?,?,NULL)')
+    .run(jcs(usage), jcs(receipt), jcs([]))
   return {
     intakeId,
     receipt,
@@ -3301,6 +3440,13 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     )
     expect(absent).toBeNull()
     const before = count(path, 'events')
+    const observedUsage = intake.usage[0]
+    if (!observedUsage) throw new Error('fixture producer observation is absent')
+    const forgedUsage = { ...intake, usage: [{ ...observedUsage, dimensions: inline({ tokens: 2 }) }] }
+    const unproven = await store.intakeReceipt(forgedUsage, context())
+    expect(unproven.ok).toBe(false)
+    if (!unproven.ok) expect(unproven.error.detailCode).toBe('usage_source')
+    expect(count(path, 'events')).toBe(before)
     const accepted = unwrap(await store.intakeReceipt(intake, context()), 'intake')
     expect(accepted).toEqual({ intakeId: 'intake-1', state: 'accepted' })
     expect(count(path, 'events')).toBe(before + 1)
@@ -3498,13 +3644,59 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     const admitted = unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
     if (admitted.state !== 'admitted') throw new Error('expected an admission')
     await markRunning(store, 'invocation-1', 1, request.attemptId, 'mark-1')
-    const pin = {
-      kind: 'blob' as const,
-      authorityId: authority.authorityId,
-      resourceId: 'blob-1',
+    const dataDir = dirname(file())
+    const blob = createBlobService({
+      dataDir,
+      authorityId: 'fixture-blob-authority',
+      binding: {
+        bindingId: 'fixture-blob',
+        contract: 'agh.blob',
+        logicalName: 'default',
+        providerId: 'fixture-blob',
+      },
+      now: () => Date.parse(admittedAt),
+    })
+    blobServices.push(blob)
+    const source = openBlobStore({
+      dataDir,
+      authorityId: 'fixture-blob-authority',
+      now: () => Date.parse(admittedAt),
+    })
+    retentionSources.push(source)
+    const bytes = new TextEncoder().encode('retained result')
+    unwrap(
+      await blob.stage(
+        { uploadId: 'fixture-upload', size: bytes.byteLength, mediaType: 'text/plain', expectedDigest: null },
+        context(),
+      ),
+      'blob stage',
+    )
+    const writer = unwrap(blob.openWriter('fixture-upload', context()), 'blob writer')
+    unwrap(writer.write(0, bytes), 'blob write')
+    const sealed = unwrap(await writer.seal(), 'blob seal')
+    writer.close()
+    const staged = unwrap(
+      await blob.promote({ upload: sealed.upload, expectedDigest: sealed.upload.digest }, context()),
+      'blob promote',
+    )
+    const blobRef = unwrap(
+      await blob.pin(
+        {
+          stagedBlob: staged,
+          ownerRef: { kind: 'artifact', value: { artifactId: 'fixture-artifact', version: 1 } },
+          retentionUntil: null,
+        },
+        context(),
+      ),
+      'blob pin',
+    )
+    const pin: RetentionRef = {
+      kind: 'blob',
+      authorityId: blobRef.authorityId,
+      resourceId: blobRef.blobId,
       version: '1',
-      digest: 'a'.repeat(64),
-      pinId: 'pin-1',
+      digest: blobRef.digest,
+      pinId: blobRef.pinId,
     }
     unwrap(
       await store.intakeReceipt(
@@ -3516,13 +3708,13 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
       'intake',
     )
     expect(
-      recordValue<{ status: string; target: { pinId: string } }>(
+      recordValue<{ status: string; target: { kind: 'retained'; retention: RetentionRef } }>(
         path,
-        `reference:${stableId('ref', 'receipt-1\0pin-1')}`,
+        `reference:${stableId('ref', `receipt-1\0${pin.pinId}`)}`,
       ),
     ).toMatchObject({
       status: 'confirmed',
-      target: { pinId: 'pin-1' },
+      target: { kind: 'retained', retention: pin },
     })
     store.close()
     const reopened = openStore(path)
@@ -3818,7 +4010,10 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     expectSchema('StateOpenResult', unwrap(await leased.open(readOpen('open-read'), context()), 'read'))
     expectSchema(
       'StateLeaseResult',
-      unwrap(await leased.lease(leaseRequest('lease-acquire', 'acquire', 'writer-a', 0), context()), 'lease'),
+      unwrap(
+        await leased.lease(leaseRequest(leasedPath, 'lease-acquire', 'acquire', 'writer-a', 0), context()),
+        'lease',
+      ),
     )
     leased.close()
 
@@ -4645,24 +4840,24 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
       'advance 2',
     )
     const current = recordValue<{ activeQuotaReservationRefs: string[] }>(dangling.path, 'run-quota:run-1')
-    mutate(dangling.path, (db) => {
-      const head = db
-        .prepare('SELECT value_json FROM runtime_records WHERE record_id = ?')
-        .get('run-quota:run-1') as { value_json: string }
-      const value = JSON.parse(head.value_json) as { activeQuotaReservationRefs: string[] }
-      value.activeQuotaReservationRefs = [...current.activeQuotaReservationRefs, 'missing']
-      db.prepare('UPDATE runtime_records SET value_json = ? WHERE record_id = ?').run(
-        JSON.stringify(value),
-        'run-quota:run-1',
-      )
+    // Rebuild every source digest, version and manifest so this probes the
+    // quota relationship itself instead of failing at the earlier body gate.
+    rewriteRecord(dangling.path, 'run-quota:run-1', {
+      ...current,
+      activeQuotaReservationRefs: [...current.activeQuotaReservationRefs, 'missing'],
     })
-    const missing = await dangling.store.dispatchAdmission(
+    dangling.store.close()
+    const danglingReopened = openStore(dangling.path)
+    const missing = await danglingReopened.dispatchAdmission(
       dispatchBody(second, 'invocation-2', 2, 'admission-2', [{ name: 'parallel-action', amount: 1 }]),
       context(),
     )
     expect(missing.ok).toBe(false)
-    if (!missing.ok) expect(missing.error.message).toBe('active quota reservation has no mirror')
-    dangling.store.close()
+    if (!missing.ok) {
+      expect(missing.error).toMatchObject({ code: 'incompatible', detailCode: 'integrity' })
+      expect(missing.error.message).toBe('active quota reservation does not match the held mirror')
+    }
+    danglingReopened.close()
   })
 
   it('pins every commit in a tool round and drains that round’s outbox', async () => {
@@ -4731,11 +4926,12 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     store.close()
     // Tool window: dispatch, mark_running, intake. Three wrote commits.
     // Eight more wrote commits belong to the round, so the round is eleven.
-    // createRun and the write-open lease sit outside that count. The empty
+    // The initial run and immutable write-open proof each add one real wrote
+    // commit outside the eleven-commit round. The empty
     // claim after acknowledgement is recorded and does not count.
     expect(commits).toEqual([
       { method: 'createRun', requestId: 'ticket-1', wrote: true },
-      { method: 'open', requestId: 'open-write', wrote: false },
+      { method: 'open', requestId: 'open-write', wrote: true },
       { method: 'admitInvocation', requestId: 'admit-invocation-1', wrote: true },
       { method: 'closeInvocation', requestId: 'close-invocation-1', wrote: true },
       { method: 'advanceRun', requestId: 'advance-create', wrote: true },
@@ -4762,6 +4958,13 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
       { method: 'intakeReceipt', requestId: 'intake-1', wrote: true },
     ])
     expect(round.filter((commit) => commit.wrote)).toHaveLength(11)
+    expect(commits.filter((commit) => commit.wrote)).toHaveLength(13)
+    expect(
+      query(
+        path,
+        "SELECT (SELECT COUNT(*) FROM events WHERE type='runtime/state-commit') + (SELECT COUNT(*) FROM runtime_aux_commits) AS n",
+      ),
+    ).toEqual([{ n: 13 }])
     const delivery = query<{ delivery: string; acked_epoch: number | null }>(
       path,
       'SELECT delivery, acked_epoch FROM runtime_outbox_delivery',

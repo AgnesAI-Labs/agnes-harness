@@ -1,11 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { judgeReport as judgeFromKit, SCENARIOS } from '../../../packages/extension-api/testkit/index.js'
 import { SAMPLE_CLOCK, sampleAssertion, sampleDraft } from './fixtures.js'
 import { judgeReport, mergeReports, serializeReport, writeReport } from './report.js'
-import { main, parseConformanceArgs, runConformance } from './run-conformance.js'
+import { conformanceBinderFiles, main, parseConformanceArgs, runConformance } from './run-conformance.js'
 
 describe('conformance report entry', () => {
   it('uses the testkit judge and keeps one input on the same bytes', () => {
@@ -93,6 +94,7 @@ describe('conformance report entry', () => {
     expect(empty.failures).toEqual([{ code: 'empty-run', detail: 'zero assertions' }])
   })
 
+  // The selection runs every bound reference case, and some of them kill real provider processes.
   it('writes the serialized report and runs a selection with an injected clock', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'conformance-report-'))
     try {
@@ -119,7 +121,7 @@ describe('conformance report entry', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 
   it('parses the command and returns usage without reading a library clock', async () => {
     expect(parseConformanceArgs(['--contracts', 'all', '--providers', 'reference'])).toEqual({
@@ -195,6 +197,101 @@ describe('conformance report entry', () => {
           expect(rows.every((item) => item.perImplementation === true && item.gate === null)).toBe(true)
         }
       }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('loads conformance modules in sorted path order', async () => {
+    const root = dirname(fileURLToPath(new URL('./run-conformance.ts', import.meta.url)))
+    const rels = conformanceBinderFiles().map((file) => relative(root, file).split(sep).join('/'))
+    const sorted = [...rels].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+    expect(rels).toEqual(sorted)
+    expect(rels).toContain('platform/config-conformance.ts')
+    expect(rels).toContain('platform/packages-conformance.ts')
+    expect(rels).toContain('sample-conformance.ts')
+    expect(rels).not.toContain('run-conformance.ts')
+    expect(rels.some((file) => file.endsWith('.test.ts'))).toBe(false)
+    const directory = mkdtempSync(join(tmpdir(), 'conformance-order-'))
+    const log = join(directory, 'order.txt')
+    const later = join(directory, 'b-bind.mjs')
+    const earlier = join(directory, 'a-bind.mjs')
+    const source = [
+      "import { appendFileSync } from 'node:fs'",
+      'export async function bindConformance() {',
+      "  appendFileSync(process.env.CONFORMANCE_BIND_LOG, import.meta.filename + '\\n')",
+      '  return { contracts: [], providers: [] }',
+      '}',
+      '',
+    ].join('\n')
+    writeFileSync(later, source)
+    writeFileSync(earlier, source)
+    process.env.CONFORMANCE_BIND_LOG = log
+    try {
+      await runConformance({
+        contracts: ['agh.loop'],
+        providers: ['default'],
+        command: 'order',
+        clock: SAMPLE_CLOCK,
+        reportPath: join(directory, 'report.json'),
+        binderFiles: [later, earlier],
+      })
+      const names = readFileSync(log, 'utf8')
+        .trim()
+        .split('\n')
+        .map((file) => file.split(/[/\\]/).at(-1))
+      expect(names).toEqual(['a-bind.mjs', 'b-bind.mjs'])
+    } finally {
+      delete process.env.CONFORMANCE_BIND_LOG
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('fails the run when a conformance module does not load', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'conformance-load-'))
+    const file = join(directory, 'broken-bind.mjs')
+    writeFileSync(file, "throw new Error('explode')\n")
+    try {
+      await expect(
+        runConformance({
+          contracts: ['agh.loop'],
+          providers: ['default'],
+          command: 'load',
+          clock: SAMPLE_CLOCK,
+          reportPath: join(directory, 'report.json'),
+          binderFiles: [file],
+        }),
+      ).rejects.toThrow(/conformance module failed to load:.*broken-bind\.mjs:.*explode/)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('fails the run when two modules claim one contract', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'conformance-claim-'))
+    const claim = [
+      'export async function bindConformance() {',
+      "  return { contracts: ['agh.shared-claim'], providers: ['default'] }",
+      '}',
+      '',
+    ].join('\n')
+    const first = join(directory, 'a-claim.mjs')
+    const second = join(directory, 'b-claim.mjs')
+    writeFileSync(first, claim)
+    writeFileSync(second, claim)
+    try {
+      await expect(
+        runConformance({
+          contracts: ['agh.loop'],
+          providers: ['default'],
+          command: 'claim',
+          clock: SAMPLE_CLOCK,
+          reportPath: join(directory, 'report.json'),
+          binderFiles: [second, first],
+        }),
+      ).rejects.toThrow(
+        /conformance contract claimed by more than one module: agh\.shared-claim: .*a-claim\.mjs, .*b-claim\.mjs/,
+      )
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

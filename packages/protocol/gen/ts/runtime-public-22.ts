@@ -15,7 +15,7 @@ export const RuntimePublic22 = Type.Module({
   "Id": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }),
   "UInt53": Type.Integer({ minimum: 0, maximum: 9007199254740991 }),
   "Timestamp": Type.String({ pattern: "Z$", format: "date-time" }),
-  "TypeId": Type.String({ minLength: 1, maxLength: 256, pattern: "^[a-z][a-z0-9.-]*/[a-zA-Z0-9._/-]+@[1-9][0-9]*$" }),
+  "TypeId": Type.String({ minLength: 1, maxLength: 256, pattern: "^(?:[a-z][a-z0-9.-]*|@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*)/[a-zA-Z0-9._/-]+@[1-9][0-9]*$" }),
   "Digest": Type.String({ pattern: "^[a-f0-9]{64}$" }),
   "SchemaRef": Type.Object({ "typeId": Type.Ref('TypeId'), "revision": Type.Ref('UInt53'), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
   "BlobRef": Type.Object({ "authorityId": Type.Ref('Id'), "blobId": Type.Ref('Id'), "digest": Type.Ref('Digest'), "bytes": Type.Ref('UInt53'), "mediaType": Type.String(), "pinId": Type.Ref('Id') }, { additionalProperties: false }),
@@ -25,10 +25,14 @@ export const RuntimePublic22 = Type.Module({
   "RetryAdvice": Type.Union([Type.Object({ "kind": Type.Literal('never') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('retry_read'), "notBefore": Type.Optional(Type.Ref('Timestamp')) }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('retry_same_action'), "notBefore": Type.Optional(Type.Ref('Timestamp')) }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('reconcile'), "ownerRef": Type.Ref('OwnerRef') }, { additionalProperties: false })]),
   "RuntimeError": Type.Object({ "code": Type.Ref('RuntimeErrorCode'), "detailCode": Type.String(), "message": Type.String(), "retryAdvice": Type.Ref('RetryAdvice'), "diagnosticId": Type.Ref('Id'), "safeDetail": Type.Optional(JsonValue) }, { additionalProperties: false }),
   "BindingRef": Type.Object({ "bindingId": Type.Ref('Id'), "contract": Type.String(), "logicalName": Type.String(), "providerId": Type.Ref('Id') }, { additionalProperties: false }),
+  "StateCommitReceipt": Type.Object({ "commitId": Type.Ref('Id'), "transactionFingerprint": Type.Ref('Digest'), "sessionId": Type.Ref('Id'), "firstSeq": Type.Ref('UInt53'), "lastSeq": Type.Ref('UInt53'), "headDigest": Type.Ref('Digest'), "runRevision": Type.Ref('UInt53'), "actionIds": Type.Array(Type.Object({ "key": Type.String(), "actionId": Type.Ref('Id') }, { additionalProperties: false }), { maxItems: 10000 }) }, { additionalProperties: false }),
   "StateAuthorityRef": Type.Object({ "authorityId": Type.Ref('Id'), "tenantId": Type.Ref('Id'), "authorityEpoch": Type.Ref('UInt53') }, { additionalProperties: false }),
+  "ReadGuard": Type.Object({ "recordId": Type.Ref('Id'), "expectedRecordRevision": Type.Union([Type.Ref('UInt53'), Type.Null()]) }, { additionalProperties: false }),
   "ScopeRef": Type.Union([Type.Object({ "installationId": Type.Ref('Id'), "kind": Type.Literal('installation') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "kind": Type.Literal('runtime') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "kind": Type.Literal('workspace') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "sessionId": Type.Ref('Id'), "kind": Type.Literal('session') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "sessionId": Type.Ref('Id'), "runId": Type.Ref('Id'), "kind": Type.Literal('run') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "sessionId": Type.Ref('Id'), "runId": Type.Ref('Id'), "kind": Type.Literal('action'), "actionId": Type.Ref('Id') }, { additionalProperties: false })]),
   "DomainReference": Type.Object({ "authorityId": Type.Ref('Id'), "recordId": Type.Ref('Id'), "recordRevision": Type.Ref('UInt53'), "schema": Type.Ref('SchemaRef'), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
   "OutboxRecord": Type.Union([Type.Object({ "eventId": Type.Ref('Id'), "sourceAuthorityId": Type.Ref('Id'), "sourceCommitId": Type.Ref('Id'), "destination": Type.Ref('Id'), "typeId": Type.Ref('TypeId'), "payload": Type.Ref('DataRef'), "fingerprint": Type.Ref('Digest'), "delivery": Type.Union([Type.Literal('pending'), Type.Literal('claimed'), Type.Literal('acked')]), "attempts": Type.Ref('UInt53'), "nextAttemptAt": Type.Ref('Timestamp'), "claim": Type.Union([Type.Object({ "ownerId": Type.Ref('Id'), "epoch": Type.Ref('UInt53'), "until": Type.Ref('Timestamp') }, { additionalProperties: false }), Type.Null()]), "ackRef": Type.Union([Type.Ref('Id'), Type.Null()]), "consecutiveFailures": Type.Ref('UInt53'), "lastError": Type.Union([Type.Ref('RuntimeError'), Type.Null()]) }, { additionalProperties: false }), Type.Object({ "eventId": Type.Ref('Id'), "sourceAuthorityId": Type.Ref('Id'), "sourceCommitId": Type.Ref('Id'), "destination": Type.Ref('Id'), "typeId": Type.Ref('TypeId'), "payload": Type.Ref('DataRef'), "fingerprint": Type.Ref('Digest'), "delivery": Type.Literal('dead'), "attempts": Type.Ref('UInt53'), "nextAttemptAt": Type.Ref('Timestamp'), "claim": Type.Union([Type.Object({ "ownerId": Type.Ref('Id'), "epoch": Type.Ref('UInt53'), "until": Type.Ref('Timestamp') }, { additionalProperties: false }), Type.Null()]), "ackRef": Type.Union([Type.Ref('Id'), Type.Null()]), "consecutiveFailures": Type.Ref('UInt53'), "lastError": Type.Ref('RuntimeError') }, { additionalProperties: false })]),
+  "StateLeaseRequest": Type.Object({ "requestId": Type.Ref('Id'), "authority": Type.Ref('StateAuthorityRef'), "sessionId": Type.Ref('Id'), "writerId": Type.Ref('Id'), "operation": Type.Union([Type.Literal('acquire'), Type.Literal('renew'), Type.Literal('release'), Type.Literal('reclaim')]), "expectedWriterEpoch": Type.Union([Type.Ref('UInt53'), Type.Null()]), "expectedLastSeq": Type.Ref('UInt53'), "ttlMs": Type.Ref('UInt53') }, { additionalProperties: false }),
+  "WriterClaim": Type.Object({ "scopeId": Type.Ref('Id'), "writerId": Type.Ref('Id'), "writerEpoch": Type.Ref('UInt53'), "leaseUntil": Type.Ref('Timestamp'), "authorityEpoch": Type.Ref('UInt53') }, { additionalProperties: false }),
   "ArtifactVersion": Type.Integer({ minimum: 1, maximum: 9007199254740991 }),
   "ArtifactRef": Type.Object({ "artifactId": Type.Ref('Id'), "version": Type.Ref('ArtifactVersion') }, { additionalProperties: false }),
   "Revision": Type.Ref('UInt53'),
@@ -124,6 +128,13 @@ export const RuntimePublic22 = Type.Module({
   "Externalagnes_v1_Auth": Type.Ref('Externalchannel_Auth'),
   "LegacyIdentityCredentialEnvelope": Type.Ref('Externalagnes_v1_Auth'),
   "LegacyIdentityTransportEvidence": Type.Object({ "bindingId": Type.Ref('Id'), "ingressId": Type.Ref('Id'), "connectionId": Type.Ref('Id'), "initializeDigest": Type.Ref('Digest'), "receivedAt": Type.Ref('Timestamp'), "channelBinding": Type.Ref('Digest'), "clientId": Type.String(), "transport": Type.Union([Type.Literal('local'), Type.Literal('rpc'), Type.Literal('websocket')]), "localGate": Type.Union([Type.Literal('none'), Type.Literal('local-peer'), Type.Literal('loopback-host-origin')]), "proof": Type.Ref('TransportEvidenceProof') }, { additionalProperties: false }),
+  "StateScanResult": Type.Object({ "items": Type.Array(Type.Ref('DataRef'), { maxItems: 500 }), "snapshot": Type.Ref('Id'), "nextCursor": Type.Union([Type.Ref('Cursor'), Type.Null()]), "complete": Type.Boolean() }, { additionalProperties: false }),
+  "StateProbeCommitRequest": Type.Object({ "commitId": Type.Ref('Id') }, { additionalProperties: false }),
+  "StateProbeCommitResult": Type.Union([Type.Ref('StateCommitReceipt'), Type.Null()]),
+  "StateLeaseRecordValue": Type.Object({ "sessionId": Type.Ref('Id'), "lastWriterEpoch": Type.Ref('UInt53'), "claim": Type.Union([Type.Ref('WriterClaim'), Type.Null()]) }, { additionalProperties: false }),
+  "StateLeaseProofValue": Type.Object({ "request": Type.Ref('StateLeaseRequest'), "requestFingerprint": Type.Ref('Digest'), "evaluatedAt": Type.Ref('Timestamp'), "sessionIdentityVersion": Type.Ref('ReadGuard'), "previousLeaseVersion": Type.Union([Type.Ref('ReadGuard'), Type.Null()]), "leaseVersion": Type.Ref('ReadGuard') }, { additionalProperties: false }),
+  "StateWriteOpenRequest": Type.Object({ "requestId": Type.Ref('Id'), "authority": Type.Ref('StateAuthorityRef'), "sessionId": Type.Ref('Id'), "mode": Type.Literal('write'), "writerId": Type.Ref('Id'), "ttlMs": Type.Ref('UInt53') }, { additionalProperties: false }),
+  "StateWriteOpenProofValue": Type.Object({ "request": Type.Ref('StateWriteOpenRequest'), "requestFingerprint": Type.Ref('Digest'), "evaluatedAt": Type.Ref('Timestamp'), "sessionIdentityVersion": Type.Ref('ReadGuard'), "previousLeaseVersion": Type.Union([Type.Ref('ReadGuard'), Type.Null()]), "leaseVersion": Type.Ref('ReadGuard'), "snapshotId": Type.Ref('Id'), "snapshotExpiresAt": Type.Ref('Timestamp'), "snapshotCommitId": Type.Ref('Id') }, { additionalProperties: false }),
   "RuntimeEmptyAuthorConfig": Type.Object({  }, { additionalProperties: false }),
 })
 
@@ -153,14 +164,22 @@ export const RuntimeError = RuntimePublic22.Import('RuntimeError')
 export type RuntimeError = Static<typeof RuntimeError>
 export const BindingRef = RuntimePublic22.Import('BindingRef')
 export type BindingRef = Static<typeof BindingRef>
+export const StateCommitReceipt = RuntimePublic22.Import('StateCommitReceipt')
+export type StateCommitReceipt = Static<typeof StateCommitReceipt>
 export const StateAuthorityRef = RuntimePublic22.Import('StateAuthorityRef')
 export type StateAuthorityRef = Static<typeof StateAuthorityRef>
+export const ReadGuard = RuntimePublic22.Import('ReadGuard')
+export type ReadGuard = Static<typeof ReadGuard>
 export const ScopeRef = RuntimePublic22.Import('ScopeRef')
 export type ScopeRef = Static<typeof ScopeRef>
 export const DomainReference = RuntimePublic22.Import('DomainReference')
 export type DomainReference = Static<typeof DomainReference>
 export const OutboxRecord = RuntimePublic22.Import('OutboxRecord')
 export type OutboxRecord = Static<typeof OutboxRecord>
+export const StateLeaseRequest = RuntimePublic22.Import('StateLeaseRequest')
+export type StateLeaseRequest = Static<typeof StateLeaseRequest>
+export const WriterClaim = RuntimePublic22.Import('WriterClaim')
+export type WriterClaim = Static<typeof WriterClaim>
 export const ArtifactVersion = RuntimePublic22.Import('ArtifactVersion')
 export type ArtifactVersion = Static<typeof ArtifactVersion>
 export const ArtifactRef = RuntimePublic22.Import('ArtifactRef')
@@ -351,5 +370,19 @@ export const LegacyIdentityCredentialEnvelope = RuntimePublic22.Import('LegacyId
 export type LegacyIdentityCredentialEnvelope = Static<typeof LegacyIdentityCredentialEnvelope>
 export const LegacyIdentityTransportEvidence = RuntimePublic22.Import('LegacyIdentityTransportEvidence')
 export type LegacyIdentityTransportEvidence = Static<typeof LegacyIdentityTransportEvidence>
+export const StateScanResult = RuntimePublic22.Import('StateScanResult')
+export type StateScanResult = Page<DataRef>
+export const StateProbeCommitRequest = RuntimePublic22.Import('StateProbeCommitRequest')
+export type StateProbeCommitRequest = Static<typeof StateProbeCommitRequest>
+export const StateProbeCommitResult = RuntimePublic22.Import('StateProbeCommitResult')
+export type StateProbeCommitResult = Static<typeof StateProbeCommitResult>
+export const StateLeaseRecordValue = RuntimePublic22.Import('StateLeaseRecordValue')
+export type StateLeaseRecordValue = Static<typeof StateLeaseRecordValue>
+export const StateLeaseProofValue = RuntimePublic22.Import('StateLeaseProofValue')
+export type StateLeaseProofValue = Static<typeof StateLeaseProofValue>
+export const StateWriteOpenRequest = RuntimePublic22.Import('StateWriteOpenRequest')
+export type StateWriteOpenRequest = Static<typeof StateWriteOpenRequest>
+export const StateWriteOpenProofValue = RuntimePublic22.Import('StateWriteOpenProofValue')
+export type StateWriteOpenProofValue = Static<typeof StateWriteOpenProofValue>
 export const RuntimeEmptyAuthorConfig = RuntimePublic22.Import('RuntimeEmptyAuthorConfig')
 export type RuntimeEmptyAuthorConfig = Static<typeof RuntimeEmptyAuthorConfig>

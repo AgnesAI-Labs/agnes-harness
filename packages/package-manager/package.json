@@ -7,7 +7,9 @@
     "node": ">=24.10"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./runtime/package-source": "./src/runtime/providers/package-source.ts",
+    "./runtime/package-resolver": "./src/runtime/providers/package-resolver.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -1,3 +1,4 @@
+// Measure merged main and runtime integration sources with exact countLines() ceilings.
 // FULL-FILE-ACCESS: measured session-scoped file access, external checkpoints and authoritative UI permission
 // projection/synchronization. Exact countLines() caps after review; no exclusions or spare allocation.
 // PERMISSION-RECONNECT: measured Web +48 lines for fresh permission gating and interrupted submission guards.
@@ -10,6 +11,9 @@
 // SESSION-MODEL-SETTINGS-REPAIR: Core +27 counted lines for window-sized compaction budgets;
 // Host preset replay uses the latest event even when its name matches the initial snapshot.
 // OPTIONAL-STEP-BUDGET: Core 25478->25482 for the committed-cursor livelock guard; exact count, no spare.
+// Move the package-source process fixture out of production; measured exact allocation.
+// Exact measured allocation for Host selected service startup and local package adapters.
+// Exact measured directory, anchor, contract and offline epoch guard allocation; no headroom.
 // UI-INTEGRATION-20260927: merged A/B/C lines (ui-refactor + ui-admin-pages); exact combined counts.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
@@ -223,10 +227,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // thrown on a 410 artifact_reclaimed read.
   // Plugin externals now list antd and @agnes/web-ui/assistant-ui, matching the page import map.
   // Measured 1716, exact, no spare (+2).
-  'packages/web-client/src': 1716,
+  // Conversation window merge state machine. Measured 1955, exact, no spare (+239).
+  'packages/web-client/src': 1955,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
-  'packages/web-ui/src': 4891,
+  // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
+  // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
+  'packages/web-ui/src': 4977,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   'packages/web-units/src': 4638,
   'packages/base/extensions/tools-core': 800,
@@ -325,8 +332,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 5763 -> 5770; approved feature scope, no spare allocation.
   // Windows stale-lock reclamation added 17 counted lines; exact baseline total, no spare.
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
-  // Immutable package snapshots and the lock resolver. Measured 7836, exact, no spare.
-  'packages/package-manager/src': 7836,
+  // Immutable package snapshots and the lock resolver. Measured 7784, exact, no spare.
+  'packages/package-manager/src': 7784,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -606,8 +613,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // override a model's reasoning capability when the installed pi-ai catalogue is incomplete or
   // wrong), landing independently of WIN-12c's own +2. Re-measured on the merged tree directly
   // (never summed): 911; exact cap, no spare.
+
   'packages/host/src/configuration': 1219,
-  'packages/host/src/configuration-lock': 39,
+  'packages/host/src/configuration-lock': 55,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
   'packages/daemon/src/supervisor/profile-bindings': 124,
@@ -943,7 +951,26 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: inference carries the usage/error event's response.
   // Measured 25458 (+2).
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
-  'packages/core/src': 27216,
+
+  // Domain command journal rules and the authorized projection with owner-issued cursors.
+  // Measured 26066 (+588), exact, no spare.
+  // Default projection provider: reader policy, incremental fold and the conversation window.
+  // Measured 26639 (+573), exact, no spare.
+  // Merged with the policy and integrity providers on the integration base. Measured 28132, exact, no spare.
+  // A domain command cancelled while its prepare runs commits nothing. Measured 28134, exact, no spare.
+  // Interaction domain rules: pending questions, one accepted answer per version and a wake per terminal
+  // change. Measured 25787, exact, no spare (+309).
+  // Interaction wake delivery: retries with backoff, dead letters and redrive under the original key.
+  // Measured 25893, exact, no spare (+106).
+  // Merged with the policy and integrity providers on the integration base. Measured 27386, exact, no spare.
+  // Shared interaction authority and its public exports: exact measured 27310 (+339).
+  // Merged with the shared interaction authority on the integration base. Measured 28471, exact, no spare.
+  // Merged with the shared interaction authority on the integration base. Measured 27395, exact, no spare.
+  // Interaction wake delivery bridge restored until expiry, cancellation and question wakes have a
+  // State path. Measured 27395, exact, no spare.
+  // Merged with the domain command and projection providers on the integration base.
+  // Measured 28556, exact, no spare.
+  'packages/core/src': 28801,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1173,7 +1200,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
-  'packages/host/src/assemble': 4193,
+  'packages/host/src/assemble': 4225,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1253,7 +1280,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime public schema exports and generated authority SPI: measured 2452, no spare allocation.
   // Bounded schema codecs and client transport validation: exact measured 2985, no spare.
   // Reviewed runtime contracts plus the generated legacy identity metadata export: measured 3444 (+1), exact.
-  'packages/protocol/src': 3447,
+  // Reviewed runtime contracts with generated State metadata exports: measured 3459, exact.
+  'packages/protocol/src': 3462,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1389,7 +1417,28 @@ const INITIAL_CEILING: Record<string, number> = {
   // Unsupported reference source kinds register as not-advertised. Measured 1683, exact, no spare.
   // Shared blob and artifact access suites with their scenario registration, and blob selection
   // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
-  'packages/extension-api/testkit': 3449,
+  // Projection conformance suite with its fixture domain, Host checks and native conversation.
+  // Measured 2629 (+1102), exact, no spare.
+  // Merged with the identity, policy, audit and integrity contract cases. Measured 4551, exact, no spare.
+  // Projection cases judge real kills, failed mounts and running cancels. Measured 4709, exact, no spare.
+  // Interaction contract cases judge six scenarios for any provider. Measured 1688, exact, no spare.
+  // Merged with the identity, policy, audit and integrity contract cases. Measured 3622, exact, no spare.
+  // Interaction cases judge late answers, real kills and failed mounts. Measured 3664, exact, no spare.
+  // Contract cases re-export from one aggregate. Measured 3459, exact, no spare.
+  // Test container refusals match production feature and cell checks, and the runtime barrel
+  // exports are sorted. Measured 3475, exact, no spare.
+  // Workspace and file contract cases join the aggregate. Measured 3634, exact, no spare.
+  // Network and secret contract cases join the aggregate. Measured 3871, exact, no spare.
+  // Merged with the aggregate contract exports and the workspace and files cases on the integration
+  // base. Measured 4894, exact, no spare.
+  // Projection contract cases join the contract aggregate, which keeps the blob callContext helper.
+  // Measured 4896, exact, no spare.
+  // Merged with the network and secret cases on the integration base. Measured 5133, exact, no spare.
+  // Merged with the aggregate contract exports on the integration base. Measured 3690, exact, no spare.
+  // Interaction contract cases join the contract aggregate. Measured 3691, exact, no spare.
+  // Merged with the projection, network and secret cases on the integration base.
+  // Measured 5349, exact, no spare.
+  'packages/extension-api/testkit': 5349,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1458,7 +1507,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
   // Runtime client wire adapter (bootstrap, catalog paging, write gate, command journal and status
   // recovery) and the verified artifact range and stream reader. Merged total: 5668, exact, no spare.
-  'packages/sdk/src': 5668,
+  // recovery) and the verified artifact range and stream reader. Measured 5665, exact, no spare.
+  // Runtime client push socket (WebSocket uplink sharing the HTTP settle path, push frame routing)
+  // and subscriptions (push delivery, polling fallback, reader queue bound). Measured 6020, exact,
+  // no spare.
+  'packages/sdk/src': 6023,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1818,7 +1871,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
   // Stored public configuration uses canonical JSON and existing credential checks: exact 26512.
-  'packages/daemon/src': 26517,
+
+  // Durable domain store with outbox delivery, dead letters and redrive; measured 27055 (+543), exact.
+  // Merged with the integration base at 26535; measured 27078, exact.
+  'packages/daemon/src': 27083,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2064,7 +2120,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the three UI lines moved most of this scope into packages/web-ui/src,
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
-  'packages/web/src': 13411,
+
+  // Digest-pinned client module stylesheets (integrity, declared order, fail-closed digest check).
+  // Measured 13139, exact (+15).
+  'packages/web/src': 13426,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2574,7 +2633,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Seal streams stored chunks into the private store, and closed services refuse with one code.
   // Re-measured with this guard's countLines(): 52783, exact cap, no spare.
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
-  'packages/host/src': 55614,
+
+  // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
+  // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
+  // Constrained network and secret providers. Measured 63169, exact, no spare.
+  // Default interaction provider over the State approval entries. Measured 63248, exact, no spare (+79).
+  'packages/host/src': 63448,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

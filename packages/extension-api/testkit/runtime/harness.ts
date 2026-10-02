@@ -141,28 +141,17 @@ function failure(code: RuntimeError['code'], detailCode: string, message: string
   }
 }
 
-function featureKey(features: readonly string[]): string {
-  return [...features].sort().join('\0')
-}
-
-function sameIdentity(left: ServiceRequirement, right: ServiceRequirement): boolean {
+function sameCell(left: ServiceRequirement, right: ServiceRequirement): boolean {
   return (
     left.contract === right.contract &&
     left.major === right.major &&
     left.logicalName === right.logicalName &&
-    left.scope === right.scope &&
-    featureKey(left.features) === featureKey(right.features)
+    left.scope === right.scope
   )
 }
 
-function covers(registered: ServiceRequirement, requested: ServiceRequirement): boolean {
-  return (
-    registered.contract === requested.contract &&
-    registered.major === requested.major &&
-    registered.logicalName === requested.logicalName &&
-    registered.scope === requested.scope &&
-    requested.features.every((feature) => registered.features.includes(feature))
-  )
+function coversFeatures(registered: ServiceRequirement, requested: ServiceRequirement): boolean {
+  return requested.features.every((feature) => registered.features.includes(feature))
 }
 
 interface Registration {
@@ -205,11 +194,18 @@ function createView(
           'requirement scope is outside the open scope',
         )
       }
-      const matches = entries.filter((entry) => covers(entry.binding.requirement, requirement))
-      const match = matches[0]
-      if (match === undefined)
+      const identities = entries.filter((entry) => sameCell(entry.binding.requirement, requirement))
+      if (identities.length === 0) {
         return failure('incompatible', 'service_not_registered', 'service is not registered')
-      if (matches.length > 1) return failure('conflict', 'service_ambiguous', 'more than one service matches')
+      }
+      const matches = identities.filter((entry) => coversFeatures(entry.binding.requirement, requirement))
+      if (matches.length > 1) {
+        return failure('conflict', 'service_ambiguous', 'more than one service matches')
+      }
+      const match = matches[0]
+      if (match === undefined) {
+        return failure('incompatible', 'feature_missing', 'service is missing a requested feature')
+      }
       return { ok: true, value: project(match.binding) }
     },
     async openScope(scope, _context) {
@@ -237,7 +233,7 @@ export function createTestServiceContainer(): TestServiceContainer {
       ) {
         throw new Error('binding does not match requirement')
       }
-      if (entries.some((entry) => sameIdentity(entry.binding.requirement, binding.requirement))) {
+      if (entries.some((entry) => sameCell(entry.binding.requirement, binding.requirement))) {
         throw new Error('service already registered')
       }
       entries.push({ binding })

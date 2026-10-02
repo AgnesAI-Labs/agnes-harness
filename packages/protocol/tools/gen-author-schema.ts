@@ -23,6 +23,7 @@ import { AUTHOR_SCHEMA_LIMITS, SCHEMA_NAME, schemaObject } from '../src/runtime/
 import type { PluginAuthorMetadata } from '../src/runtime/public.js'
 import { validateRuntime } from '../src/runtime/public.js'
 import { runtimeSchemaDocument, type SchemaDefinition } from '../src/runtime/schema-document.js'
+import { mapAuthorSchemaPositions, normalizeAuthorSchemaDocument } from './author-schema-document.js'
 import { parseAuthorSchemaJson } from './author-schema-json.js'
 import { generateAuthorSchemaModule } from './gen-author-schema-types.js'
 
@@ -210,23 +211,7 @@ export function generateOwnedAuthorSchemas(options: AuthorSchemaGenerateOptions)
       if (file.expectedDigest !== undefined && digest !== file.expectedDigest)
         fail('locked source bytes mismatch')
       const raw = parseAuthorSchemaJson(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
-      const safe = boundedCanonicalJson(raw, {
-        maxBytes: AUTHOR_SCHEMA_LIMITS.documentBytes,
-        maxDepth: 128,
-        maxMembers: 100000,
-      })
-      if (!safe.ok || !schemaObject(safe.value.json)) fail('invalid source JSON')
-      const doc = safe.value.json
-      if (
-        doc.$schema !== 'https://json-schema.org/draft/2020-12/schema' ||
-        typeof doc.$ref !== 'string' ||
-        !/^#\/\$defs\/[A-Za-z_$][A-Za-z0-9_$]*$/.test(doc.$ref) ||
-        !schemaObject(doc.$defs) ||
-        Object.keys(doc).some(
-          (field) => !['$schema', '$ref', '$defs', 'title', 'description'].includes(field),
-        )
-      )
-        fail('invalid source document')
+      const doc = normalizeAuthorSchemaDocument(raw, file.entry.name)
       files.set(identity, { document: doc, digest, path: file.entry.source })
       return doc
     }
@@ -240,27 +225,17 @@ export function generateOwnedAuthorSchemas(options: AuthorSchemaGenerateOptions)
         definition = defs[name]
       if (!schemaObject(definition)) fail('missing definition')
       definitions[mapped] = {}
-      const rewrite = (value: unknown): unknown => {
-        if (Array.isArray(value)) return value.map(rewrite)
-        if (!schemaObject(value)) return value
-        return Object.fromEntries(
-          Object.entries(value).map(([field, child]) => {
-            if (field === '$ref' && typeof child === 'string') {
-              const local = /^#\/\$defs\/([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(child)
-              if (local) return [field, `#/$defs/${select(file, local[1] as string)}`]
-              const external =
-                /^pkg:(.+)\/([A-Za-z_$][A-Za-z0-9_$]*)#\/\$defs\/([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(child)
-              const target = external
-                ? registry.get(key(external[1] as string, external[2] as string))
-                : undefined
-              if (!target) fail('unlocked schema reference')
-              return [field, `#/$defs/${select(target, external?.[3] as string)}`]
-            }
-            return [field, rewrite(child)]
-          }),
+      definitions[mapped] = mapAuthorSchemaPositions(definition, (node) => {
+        if (typeof node.$ref !== 'string') return node
+        const local = /^#\/\$defs\/([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(node.$ref)
+        if (local) return { ...node, $ref: `#/$defs/${select(file, local[1] as string)}` }
+        const external = /^pkg:(.+)\/([A-Za-z_$][A-Za-z0-9_$]*)#\/\$defs\/([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(
+          node.$ref,
         )
-      }
-      definitions[mapped] = rewrite(definition) as SchemaDefinition
+        const target = external ? registry.get(key(external[1] as string, external[2] as string)) : undefined
+        if (!target) fail('unlocked schema reference')
+        return { ...node, $ref: `#/$defs/${select(target, external?.[3] as string)}` }
+      })
       return mapped
     }
     const file = registry.get(key(packageId, entry.name)) as SourceFile,

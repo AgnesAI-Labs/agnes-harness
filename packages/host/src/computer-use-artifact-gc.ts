@@ -50,6 +50,33 @@ export type ComputerUseArtifactGcRuntime = Readonly<{
   close(): Promise<void>
 }>
 
+export type PublicRetentionFacts = Readonly<{
+  held: ReadonlySet<string>
+  unresolved: ReadonlySet<string>
+  /** True when an inspect result had no digest, so the caller cannot name the bytes. */
+  identityUnsafe: boolean
+}>
+
+/**
+ * Turns inspect results the caller already has into retention facts.
+ * A pinned blob, or any blob that still names an owner, is held.
+ * A missing digest does not invent a file id; it marks the batch unsafe.
+ */
+export function retentionFactsFromInspect(
+  results: readonly { status: string; digest: string | null; ownerRefs: readonly unknown[] }[],
+): PublicRetentionFacts {
+  const held = new Set<string>()
+  let identityUnsafe = false
+  for (const result of results) {
+    if (result.digest === null) {
+      identityUnsafe = true
+      continue
+    }
+    if (result.status === 'pinned' || result.ownerRefs.length > 0) held.add(result.digest)
+  }
+  return { held, unresolved: new Set<string>(), identityUnsafe }
+}
+
 /**
  * Longest the ledger write lock may be held before deletion starts. Ledger writers give up after
  * 5 s of busy waiting, and the deletions themselves still follow.
@@ -72,6 +99,11 @@ export function createComputerUseArtifactGcRuntime(
     onError?: (error: unknown) => void
     /** Once per round while referenced or protected bytes keep the store above its cap. */
     onPressure?: (pressure: Readonly<{ remainingBytes: number; unresolvedPressureBytes: number }>) => void
+    /**
+     * Digests already reported by blob inspect. Held digests stay. An unresolved digest that is
+     * also a candidate refuses the round before any delete.
+     */
+    publicRetention?: Readonly<{ held: ReadonlySet<string>; unresolved: ReadonlySet<string> }>
   }>,
 ): ComputerUseArtifactGcRuntime {
   const platform = createPlatform().os
@@ -80,6 +112,13 @@ export function createComputerUseArtifactGcRuntime(
   if (!privateArtifactDeleteAvailable())
     throw new Error('Computer Use artifact GC native deletion capability is unavailable')
   const clock = input.clock ?? Date.now
+  const mergeHeld = (base: ReadonlySet<string>): ReadonlySet<string> => {
+    const extra = input.publicRetention
+    if (!extra) return base
+    const merged = new Set(base)
+    for (const digest of extra.held) merged.add(digest)
+    return merged
+  }
 
   const abort = new AbortController()
   const ledgerFile = join(input.dataDir, 'sessions.db')
@@ -101,6 +140,12 @@ export function createComputerUseArtifactGcRuntime(
         candidate.createdAtMs > nowMs ? { ...candidate, createdAtMs: nowMs } : candidate,
       )
       const candidateDigests = new Set(candidates.map((candidate) => candidate.sha256))
+      if (input.publicRetention) {
+        for (const digest of input.publicRetention.unresolved) {
+          if (candidateDigests.has(digest))
+            throw new Error('Computer Use artifact GC file identity is unsafe')
+        }
+      }
       const storedBytes = candidates.reduce((sum, candidate) => sum + candidate.bytes, 0)
       if (refs && !(await catchUpArtifactRefIndexWithinBudget(refs))) return deferred(storedBytes)
       const settings = {
@@ -119,7 +164,7 @@ export function createComputerUseArtifactGcRuntime(
         : undefined
       const roots = await computerUseArtifactRootSnapshot({
         candidateDigests,
-        ...(indexed ? { roots: indexed, retention: protection?.digests ?? new Set() } : {}),
+        ...(indexed ? { roots: indexed, retention: mergeHeld(protection?.digests ?? new Set()) } : {}),
       })
       const selected = planRetainedArtifactGc({
         dataDir: input.dataDir,
@@ -214,9 +259,9 @@ export function createComputerUseArtifactGcRuntime(
             })
             if (!now) throw new Error('Computer Use artifact GC ancestor boundary changed')
             // Protection that moved without touching this batch's deletions does not stop it.
-            const retention = [...now.digests].some((digest) => deleting.has(digest))
-              ? now.digests
-              : protection.digests
+            const retention = mergeHeld(
+              [...now.digests].some((digest) => deleting.has(digest)) ? now.digests : protection.digests,
+            )
             const current = await computerUseArtifactRootSnapshot({
               candidateDigests,
               roots: verified,

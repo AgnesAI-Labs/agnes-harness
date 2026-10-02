@@ -37,9 +37,3 @@ export function createReferenceRegistry(
   }
   return slots
 }
-
-export { createReferenceAuditFactory } from './providers/audit.js'
-export type { AuditDeployment as ReferenceAuditDeployment } from './providers/audit.js'
-export { openReferenceAuditStore } from './providers/audit-store.js'
-
-export { createReferenceIdentityProviderFactory, type ReferenceIdentityPorts } from './providers/identity.js'

@@ -7,7 +7,9 @@ import { Ajv2020 } from 'ajv/dist/2020.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { validateOwnedAuthorSchemaSource } from '../../src/runtime/author-schema-source.js'
 import type { JsonValue } from '../../src/runtime/public.js'
+import { validateRuntime } from '../../src/runtime/public.js'
 import { runtimeSchemaDocument } from '../../src/runtime/schema-document.js'
+import { normalizeAuthorSchemaDocument } from '../../tools/author-schema-document.js'
 import { parseAuthorSchemaJson } from '../../tools/author-schema-json.js'
 import { generateOwnedAuthorSchemas, runAuthorSchemaCli } from '../../tools/gen-author-schema.js'
 
@@ -40,6 +42,113 @@ describe('owned schema documents', () => {
       { ownerPackageId: '@example/plugin\u0085', typeId: '@example/plugin\u0085/message@1' },
     ])
       expect(() => validateOwnedAuthorSchemaSource({ ...source({ type: 'string' }), ...extra })).toThrow()
+  })
+  it('accepts original Wire identities and scoped identities through SchemaRef and DataRef', () => {
+    for (const typeId of [
+      'agh.state/createRun.request@1',
+      'a.b-c/name.with_/path@999999999999999999999',
+      '@example/plugin/message@1',
+      '@a_b/p.q-r/name@2',
+    ]) {
+      expect(validateRuntime('TypeId', typeId).ok).toBe(true)
+      const ref = { typeId, revision: 1, digest: '0'.repeat(64) }
+      expect(validateRuntime('SchemaRef', ref).ok).toBe(true)
+      expect(
+        validateRuntime('DataRef', {
+          kind: 'inline',
+          schema: ref,
+          value: {},
+          bytes: 2,
+          digest: '0'.repeat(64),
+        }).ok,
+      ).toBe(true)
+    }
+    for (const typeId of [
+      '@/plugin/message@1',
+      '@example//message@1',
+      '@example/Plugin/message@1',
+      '@example/plugin/message@0',
+      '@example/plugin/message@01',
+      '@example/plugin/message@@1',
+      '@例/plugin/message@1',
+      '@example/plugin/message@1\n',
+    ])
+      expect(validateRuntime('TypeId', typeId).ok).toBe(false)
+    for (const [ownerPackageId, typeId] of [
+      ['@example/plugin', '@other/plugin/message@1'],
+      ['Upper', 'Upper/message@1'],
+      ['@example/plugin', '@example/plugin/message@9007199254740992'],
+    ])
+      expect(() =>
+        validateOwnedAuthorSchemaSource({ ...source({ type: 'string' }), ownerPackageId, typeId }),
+      ).toThrow()
+    const ownerPackageId = `@a/${'p'.repeat(244)}`
+    expect(() =>
+      validateOwnedAuthorSchemaSource({
+        ...source({ type: 'string' }),
+        ownerPackageId,
+        typeId: `${ownerPackageId}/message@1`,
+      }),
+    ).toThrow()
+  })
+  it('normalizes only offline schema positions and preserves supported graph bytes', () => {
+    const unchanged = source({ type: 'string' }).document
+    expect(normalizeAuthorSchemaDocument(unchanged, 'Message')).toEqual(unchanged)
+    const raw = {
+      $schema: draft,
+      type: 'object',
+      properties: {
+        child: { type: 'object', properties: {}, additionalProperties: false },
+        type: { const: 'object' },
+      },
+      additionalProperties: false,
+    }
+    const normalized = normalizeAuthorSchemaDocument(raw, 'Message')
+    const checked = validateOwnedAuthorSchemaSource({ ...source({ type: 'string' }), document: normalized })
+    expect(checked.validate({ child: {}, type: 'object' }).ok).toBe(true)
+    expect(checked.validate({ child: { extra: true } }).ok).toBe(false)
+    expect(raw).not.toHaveProperty('required')
+    expect(() => validateOwnedAuthorSchemaSource({ ...source({ type: 'string' }), document: raw })).toThrow()
+    const data = { $schema: draft, const: { type: 'object', $ref: '#/$defs/Fake' } }
+    const mapped = normalizeAuthorSchemaDocument(data, 'Message') as { $defs: Record<string, unknown> }
+    expect(mapped.$defs.Message).toEqual({ const: data.const })
+    expect(() =>
+      validateOwnedAuthorSchemaSource({ ...source({ type: 'string' }), document: mapped }),
+    ).toThrow()
+  })
+  it('normalizes object schemas under items, unions, definitions and additionalProperties', () => {
+    const object = { type: 'object', properties: {}, additionalProperties: false }
+    for (const definition of [
+      { type: 'array', items: object },
+      { anyOf: [object, { type: 'string' }] },
+      { type: 'object', properties: {}, additionalProperties: object },
+    ]) {
+      const document = normalizeAuthorSchemaDocument(source(definition).document, 'Message')
+      const checked = validateOwnedAuthorSchemaSource({ ...source({ type: 'string' }), document })
+      const value = definition.type === 'array' ? [{}] : definition.anyOf ? {} : { child: {} }
+      expect(checked.validate(value).ok).toBe(true)
+    }
+  })
+  it('rejects malformed annotations, ambiguous roots and unsafe non-JSON without executing getters', () => {
+    for (const input of [
+      { $schema: draft, $id: 1, type: 'string' },
+      { $schema: draft, $id: '', type: 'string' },
+      { $schema: draft, title: 1, type: 'string' },
+      { $schema: draft, $defs: {}, type: 'string' },
+      { $schema: draft, $ref: '#/$defs/X', type: 'string' },
+      { ...source({ type: 'string' }).document, extra: true },
+    ])
+      expect(() => normalizeAuthorSchemaDocument(input, 'Message')).toThrow()
+    let reads = 0
+    const input = Object.defineProperty({ $schema: draft }, 'type', {
+      enumerable: true,
+      get() {
+        reads++
+        return 'string'
+      },
+    })
+    expect(() => normalizeAuthorSchemaDocument(input, 'Message')).toThrow()
+    expect(reads).toBe(0)
   })
   it('rejects getters without invoking them', () => {
     let reads = 0
@@ -220,6 +329,31 @@ describe('schema source generation', () => {
       JSON.stringify(source({ type: 'string', pattern: '.' }).document),
     )
     expect(() => runAuthorSchemaCli(args)).toThrow()
+    expect(readFileSync(join(root, 'generated/Message.ts'), 'utf8')).toBe(prior)
+  })
+  it('generates the real empty authority from standalone source and rejects stale or invalid output atomically', () => {
+    const { root, args } = fixture()
+    const actual = readFileSync(
+      new URL('../../schema/runtime/empty-config.schema.json', import.meta.url),
+      'utf8',
+    )
+    writeFileSync(join(root, 'schemas/message.json'), actual)
+    runAuthorSchemaCli(args)
+    runAuthorSchemaCli([...args, '--check'])
+    const prior = readFileSync(join(root, 'generated/Message.ts'), 'utf8')
+    expect(prior).toContain('"required":[]')
+    const raw = JSON.parse(actual)
+    for (const invalid of [
+      { ...raw, required: null },
+      { ...raw, additionalProperties: undefined },
+      { ...raw, 'x-unknown': true },
+    ]) {
+      writeFileSync(join(root, 'schemas/message.json'), JSON.stringify(invalid))
+      expect(() => runAuthorSchemaCli(args)).toThrow()
+      expect(readFileSync(join(root, 'generated/Message.ts'), 'utf8')).toBe(prior)
+    }
+    writeFileSync(join(root, 'schemas/message.json'), `${actual} `)
+    expect(() => runAuthorSchemaCli([...args, '--check'])).toThrow(/output differs/)
     expect(readFileSync(join(root, 'generated/Message.ts'), 'utf8')).toBe(prior)
   })
   it('preserves unrelated files and rejects source paths escaping the package', () => {

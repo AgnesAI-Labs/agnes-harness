@@ -958,6 +958,13 @@ export interface RuntimeWireTypes {
   Externalagnes_v1_Auth: Schemas.Externalagnes_v1_Auth
   LegacyIdentityCredentialEnvelope: Schemas.LegacyIdentityCredentialEnvelope
   LegacyIdentityTransportEvidence: Schemas.LegacyIdentityTransportEvidence
+  StateScanResult: Schemas.StateScanResult
+  StateProbeCommitRequest: Schemas.StateProbeCommitRequest
+  StateProbeCommitResult: Schemas.StateProbeCommitResult
+  StateLeaseRecordValue: Schemas.StateLeaseRecordValue
+  StateLeaseProofValue: Schemas.StateLeaseProofValue
+  StateWriteOpenRequest: Schemas.StateWriteOpenRequest
+  StateWriteOpenProofValue: Schemas.StateWriteOpenProofValue
   RuntimeEmptyAuthorConfig: Schemas.RuntimeEmptyAuthorConfig
   RuntimePluginManifest: Schemas.RuntimePluginManifest
   RuntimeSimpleLoopCheckpoint: Schemas.RuntimeSimpleLoopCheckpoint
