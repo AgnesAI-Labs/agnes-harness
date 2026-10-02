@@ -95,7 +95,7 @@ function createSettingsDshSlotHost(name: SettingsDshSlotName): HTMLDivElement {
  * The shell owns only the form, rail and pane mount points.  Content is deliberately removed
  * before React mounts so each pane can be registered by its own `web:` row below.
  */
-function settingsShellMarkup(): string {
+function settingsShellMarkup(translate?: (key: string) => string): string {
   const template = templateFromSettingsMarkup()
   const form = template.content.querySelector<HTMLFormElement>('#config-form')
   if (!form) throw new Error('settings markup is missing #config-form')
@@ -135,6 +135,22 @@ function settingsShellMarkup(): string {
   content.id = 'settings-content-slots'
   content.append(dshShellSlots, host)
   form.appendChild(content)
+  if (translate) {
+    for (const node of form.querySelectorAll<HTMLElement>('[data-i18n]')) {
+      const key = node.getAttribute('data-i18n')
+      if (key) node.textContent = translate(key)
+    }
+    for (const [marker, attribute] of [
+      ['data-i18n-aria', 'aria-label'],
+      ['data-i18n-placeholder', 'placeholder'],
+      ['data-i18n-title', 'title'],
+    ] as const) {
+      for (const node of form.querySelectorAll<HTMLElement>(`[${marker}]`)) {
+        const key = node.getAttribute(marker)
+        if (key) node.setAttribute(attribute, translate(key))
+      }
+    }
+  }
   return form.outerHTML
 }
 
@@ -196,20 +212,6 @@ function SettingsBuiltinImpl(
     () => ({ open, pane: (pane) => host.current?.querySelector(`#${PANE_IDS[pane]}`) ?? null, form }),
     [form, open],
   )
-  // 挂载后回填一次模板文案；语言切换由宿主的全文档 applyLocaleText 兜底覆盖。
-  useLayoutEffect(() => {
-    const root = host.current
-    if (!root || !options.translate) return
-    const t = options.translate
-    for (const node of root.querySelectorAll<HTMLElement>('[data-i18n]')) {
-      const key = node.getAttribute('data-i18n')
-      if (key) node.textContent = t(key)
-    }
-    for (const node of root.querySelectorAll<HTMLElement>('[data-i18n-aria]')) {
-      const key = node.getAttribute('data-i18n-aria')
-      if (key) node.setAttribute('aria-label', t(key))
-    }
-  }, [options])
   useLayoutEffect(() => {
     const root = host.current
     if (!root) return
@@ -275,7 +277,7 @@ function SettingsBuiltinImpl(
     { ref: host },
     createElement('div', {
       // biome-ignore lint/security/noDangerouslySetInnerHtml: this is the fixed in-module template that creates row mount points.
-      dangerouslySetInnerHTML: { __html: settingsShellMarkup() },
+      dangerouslySetInnerHTML: { __html: settingsShellMarkup(options.translate) },
     }),
     createElement(SettingsAccountDialog, options.translate ? { t: options.translate } : {}),
   )

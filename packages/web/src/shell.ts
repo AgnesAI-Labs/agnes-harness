@@ -1,3 +1,5 @@
+import { tr } from './locale-bridge.js'
+
 const getButton = (id: string) => {
   const value = document.getElementById(id)
   if (!(value instanceof HTMLButtonElement)) throw new Error(`missing button#${id}`)
