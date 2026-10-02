@@ -1,5 +1,14 @@
 import { type ComponentProps, type Tokens, XMarkdown, type XMarkdownProps } from '@ant-design/x-markdown'
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { fallbackT, type Translate } from '../locales/index.js'
 import {
   decodeMarkdownEntities,
@@ -30,7 +39,7 @@ export interface ConversationMarkdownProps {
   onCopy?: ((text: string) => Promise<void>) | undefined
   onFragment?: ((id: string) => void) | undefined
   /** Locale-bound translate injected by the host; render-time lookup only. */
-  t?: Translate
+  t?: Translate | undefined
 }
 
 const Callbacks = createContext<
@@ -120,7 +129,11 @@ function CodeBlock({ children, domNode }: ComponentProps) {
           data-copy-state={state}
           onClick={copy}
         >
-          {state === 'success' ? t('markdown.copied') : state === 'failure' ? t('markdown.copyFailed') : t('markdown.copy')}
+          {state === 'success'
+            ? t('markdown.copied')
+            : state === 'failure'
+              ? t('markdown.copyFailed')
+              : t('markdown.copy')}
         </button>
       </div>
       <pre ref={codeRef}>{children}</pre>
@@ -137,10 +150,10 @@ const components: NonNullable<XMarkdownProps['components']> = {
   table: TableScroll,
 }
 
-// biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of wide tables.
 function TableScroll({ children }: { children?: ReactNode }) {
   const { t = fallbackT } = useContext(Callbacks)
   return (
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of wide tables.
     <section className="table-scroll" tabIndex={0} aria-label={t('markdown.tableScroll')}>
       <table>{children}</table>
     </section>

@@ -6,12 +6,11 @@ import {
   useMemo,
   useSyncExternalStore,
 } from 'react'
-import type { LocaleCatalog } from './locales/index.js'
+import type { LocaleCatalog, LocaleVars } from './locales/index.js'
 
 export type UiLocale = 'en' | 'zh-CN'
-export type LocaleVars = Readonly<Record<string, string | number>>
 export type LocaleTranslator = (key: string, vars?: LocaleVars) => string
-export type { LocaleCatalog } from './locales/index.js'
+export type { LocaleCatalog, LocaleVars } from './locales/index.js'
 
 /** The host owns preference state; UI packages only consume this stable view. */
 export interface UiLocaleSource {

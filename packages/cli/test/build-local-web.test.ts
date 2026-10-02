@@ -65,6 +65,8 @@ it('builds local web assets with the shared platform vendor modules', async () =
       'utf8',
     )
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain(conversationCss.trim())
+    expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.aui\\:flex')
+    expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('var(--agnes-bg-card)')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.x-markdown')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.x-markdown-dark')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.conversation-markdown')

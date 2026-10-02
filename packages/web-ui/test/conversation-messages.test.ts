@@ -3,6 +3,7 @@
 import type { UINode } from '@agnes/protocol'
 import {
   ConversationMessages,
+  type ConversationMessagesProps,
   type ConversationProjectionStore,
   createConversationProjectionStore,
   useConversationRuntime,
@@ -11,6 +12,7 @@ import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { webUiLocaleCatalog } from '../src/locales/index.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -27,9 +29,15 @@ afterEach(async () => {
   host.remove()
 })
 
+const t: ConversationMessagesProps['t'] = (key, vars) =>
+  Object.entries(vars ?? {}).reduce(
+    (value, [name, replacement]) => value.replaceAll(`{${name}}`, String(replacement)),
+    webUiLocaleCatalog['zh-CN'][key] ?? key,
+  )
+
 function Harness({ store }: { store: ConversationProjectionStore }) {
   const runtime = useConversationRuntime(store)
-  return createElement(AssistantRuntimeProvider, { runtime }, createElement(ConversationMessages))
+  return createElement(AssistantRuntimeProvider, { runtime }, createElement(ConversationMessages, { t }))
 }
 
 async function mount(store: ConversationProjectionStore) {
@@ -91,6 +99,51 @@ const nodes: UINode[] = [
 ]
 
 describe('W3b projected message DOM', () => {
+  it('renders ordinary message content through assistant-ui message parts', async () => {
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        { kind: 'user', id: 'user-1', seq: 1, content: [{ type: 'text', text: 'Question' }] },
+        {
+          kind: 'assistant',
+          id: 'assistant-1',
+          seq: 2,
+          thinking: 'Checking the result',
+          text: 'Streaming answer',
+          streaming: true,
+        },
+      ],
+    })
+    await mount(store)
+
+    const user = item('user-1')?.querySelector('[data-agnes-assistant-ui-message="user"]')
+    const assistant = item('assistant-1')?.querySelector('[data-agnes-assistant-ui-message="assistant"]')
+    expect(user).not.toBeNull()
+    expect(user?.textContent).toContain('Question')
+    expect(assistant?.querySelector('[data-assistant-ui-part="reasoning"]')?.textContent).toContain(
+      'Checking the result',
+    )
+    expect(assistant?.querySelector('[data-assistant-ui-part="text"]')?.textContent).toContain(
+      'Streaming answer',
+    )
+  })
+
+  it('renders messages projected after the read-only runtime starts empty', async () => {
+    const store = createConversationProjectionStore({ sessionId: 'session', nodes: [] })
+    await mount(store)
+    await update(store, [
+      { kind: 'user', id: 'user-after-start', seq: 1, content: [{ type: 'text', text: 'Question' }] },
+      { kind: 'assistant', id: 'assistant-after-start', seq: 2, text: 'Answer' },
+    ])
+
+    expect(item('user-after-start')?.querySelector('[data-assistant-ui-part="text"]')?.textContent).toBe(
+      'Question',
+    )
+    expect(item('assistant-after-start')?.querySelector('[data-assistant-ui-part="text"]')?.textContent).toBe(
+      'Answer',
+    )
+  })
+
   it('keeps the thinking disclosure stable across stream updates and after manual reopening', async () => {
     const thinkingNode: UINode = {
       kind: 'assistant',
@@ -200,7 +253,7 @@ describe('W3b projected message DOM', () => {
     expect(item('tool')?.textContent).toContain('Permission denied')
     expect(toolButton?.getAttribute('aria-expanded')).toBe('true')
     expect(item('tool')?.dataset.expanded).toBe('true')
-    expect(item('approval')?.getAttribute('aria-label')).toBe('审批：已拒绝')
+    expect(item('approval')?.getAttribute('aria-label')).toBe('已拒绝')
     expect(item('approval')?.querySelectorAll('button')).toHaveLength(0)
     expect(item('cost')?.textContent).toContain('1.25 credits（网关记录）')
     expect(cost?.open).toBe(true)
@@ -243,7 +296,7 @@ describe('W3b projected message DOM', () => {
     await mount(store)
     expect(item('lost')?.textContent).toContain('输出中断，至少 42 字未保存')
     expect(item('waiting')?.textContent).toContain('等待审批')
-    expect(item('expired')?.getAttribute('aria-label')).toBe('审批：审批已过期')
+    expect(item('expired')?.getAttribute('aria-label')).toBe('审批已过期')
     expect(host.querySelectorAll('button')).toHaveLength(1)
     await update(store, [
       { kind: 'assistant', id: 'lost', seq: 1, text: 'recovered', streaming: false },

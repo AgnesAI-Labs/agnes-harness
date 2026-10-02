@@ -1,9 +1,20 @@
 import type { UINode, UITurn } from '@agnes/protocol'
-import { useThread } from '@assistant-ui/react'
-import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
-import { ConversationCost } from './cost.js'
+import { MessagePrimitive, ThreadPrimitive, useAssistantState, useThread } from '@assistant-ui/react'
+import {
+  createContext,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { createPortal, flushSync } from 'react-dom'
 import type { Translate } from '../locales/index.js'
+import { ConversationCost } from './cost.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
 
@@ -35,6 +46,31 @@ export interface ConversationMessagesProps {
   /** The upper Web layer owns DSH registration, claims, and fallback visibility. */
   renderNode?: (node: UINode, native: ReactNode) => ReactNode
 }
+
+type ConversationMessageContextValue = {
+  node: UINode
+  props: ConversationMessagesProps
+  hideThinking: boolean
+  turnStatus?: UITurn['status']
+  thinkingHost?: RefObject<HTMLDivElement>
+}
+
+const ConversationMessageContext = createContext<ConversationMessageContextValue | null>(null)
+
+type ConversationMessageTarget = {
+  element: HTMLDivElement
+  context: ConversationMessageContextValue
+}
+
+type ConversationMessageTargetContextValue = {
+  targets: ReadonlyMap<string, ConversationMessageTarget>
+  version: number
+}
+
+const ConversationMessageTargetContext = createContext<ConversationMessageTargetContextValue | null>(null)
+const registerConversationMessageTargetContext = createContext<
+  ((id: string, target: ConversationMessageTarget | undefined) => void) | null
+>(null)
 
 const approvalLabelKeys: Record<ApprovalNode['state'], string> = {
   pending: 'timeline.approval.pending',
@@ -126,6 +162,137 @@ function AssistantMessage({
     </>
   )
 }
+
+function UserTextPart({ text }: { text: string }) {
+  return (
+    <div
+      className="node-body aui:mt-0 aui:rounded-none aui:border-0 aui:bg-transparent aui:p-0 aui:text-sm aui:leading-5 aui:text-[var(--agnes-text-primary)]"
+      data-assistant-ui-part="text"
+    >
+      {text}
+    </div>
+  )
+}
+
+function AssistantTextPart({ text }: { text: string }) {
+  const context = useContext(ConversationMessageContext)
+  const node = context?.node
+  const t = context?.props.t ?? fallbackT
+  const source =
+    node?.kind === 'assistant' && node.lostChars !== undefined && !node.text
+      ? t('timeline.lostOutput', { count: node.lostChars })
+      : text
+  const state = node ? markdownState(node, context?.turnStatus) : undefined
+  return (
+    <div className="node-body markdown" data-assistant-ui-part="text">
+      {context?.props.renderMarkdown ? context.props.renderMarkdown(source, 'body', state) : source}
+    </div>
+  )
+}
+
+function AssistantReasoningPart({ text }: { text: string }) {
+  const context = useContext(ConversationMessageContext)
+  const node = context?.node
+  const assistant = node?.kind === 'assistant' ? node : undefined
+  const state = assistant ? markdownState(assistant, context?.turnStatus) : undefined
+  const active = Boolean(text.trim()) && Boolean(state?.streaming) && !assistant?.text.trim()
+  const wasActive = useRef(active)
+  const initiallyActive = useRef(active)
+  const disclosure = useRef<HTMLDetailsElement>(null)
+  const shownActive = useInteractionSnapshot(disclosure, active)
+  const shownThinking = useInteractionSnapshot(disclosure, Boolean(text.trim()))
+  useLayoutEffect(() => {
+    if (disclosure.current && wasActive.current !== shownActive) disclosure.current.open = shownActive
+    wasActive.current = shownActive
+  }, [shownActive])
+  useLayoutEffect(() => {
+    if (disclosure.current) disclosure.current.open = initiallyActive.current
+  }, [])
+  if (!context || !assistant || context.hideThinking) return null
+  const t = context.props.t ?? fallbackT
+  return (
+    <details ref={disclosure} className="thinking" data-assistant-ui-part="reasoning" hidden={!shownThinking}>
+      <summary>{t('timeline.thinkingSummary')}</summary>
+      <div ref={context.thinkingHost} className="thinking-content markdown">
+        {context.props.renderMarkdown ? context.props.renderMarkdown(text, 'thinking', state) : text}
+      </div>
+    </details>
+  )
+}
+
+const userMessageParts = { Text: UserTextPart }
+const assistantMessageParts = { Text: AssistantTextPart, Reasoning: AssistantReasoningPart }
+
+// Adapt the v0.11.27 registry message shells while leaving Agnes turn actions in their existing owner.
+function ConversationMessageView() {
+  const context = useContext(ConversationMessageContext)
+  if (!context) return null
+  const { node, props, hideThinking, turnStatus, thinkingHost } = context
+  const t = props.t ?? fallbackT
+  const native = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
+  const className =
+    node.kind === 'user'
+      ? 'aui-user-message-root aui:mx-auto aui:grid aui:w-full aui:auto-rows-auto aui:grid-cols-[minmax(72px,1fr)_auto] aui:gap-y-2 aui:px-2'
+      : node.kind === 'assistant'
+        ? 'aui-assistant-message-root aui:relative aui:mx-auto aui:flex aui:w-full aui:flex-col aui:items-start'
+        : undefined
+
+  return (
+    <MessagePrimitive.Root
+      {...(className ? { className } : {})}
+      {...(node.kind === 'user' || node.kind === 'assistant'
+        ? { 'data-agnes-assistant-ui-message': node.kind }
+        : {})}
+    >
+      {node.kind === 'user' ? (
+        <div
+          data-slot="user-message"
+          className="aui-user-message-content-wrapper aui:relative aui:col-start-2 aui:min-w-0"
+        >
+          <div className="aui-user-message-content aui:rounded-3xl aui:border aui:border-[var(--agnes-line-primary)] aui:bg-[var(--agnes-bg-card)] aui:px-5 aui:py-2.5 aui:text-sm aui:leading-relaxed aui:text-[var(--agnes-text-primary)]">
+            <p className="node-label">{t('timeline.userLabel')}</p>
+            <MessagePrimitive.Parts components={userMessageParts} />
+          </div>
+        </div>
+      ) : node.kind === 'assistant' ? (
+        <>
+          <p className="node-label">Agnes</p>
+          <div className="aui-assistant-message-content aui:mx-2 aui:min-h-[4.25rem] aui:text-sm aui:leading-relaxed aui:text-[var(--agnes-text-primary)]">
+            <MessagePrimitive.Parts components={assistantMessageParts} />
+          </div>
+        </>
+      ) : (
+        native
+      )}
+    </MessagePrimitive.Root>
+  )
+}
+
+function AssistantUiMessagePortal() {
+  const id = useAssistantState(({ message }) => message.id)
+  const targetContext = useContext(ConversationMessageTargetContext)
+  const target = targetContext?.targets.get(id)
+  const isAgnesMessage = target?.context.node.kind === 'user' || target?.context.node.kind === 'assistant'
+
+  useLayoutEffect(() => {
+    if (!target || !isAgnesMessage) return
+    target.element.dataset.agnesAssistantUiReady = 'true'
+    return () => {
+      delete target.element.dataset.agnesAssistantUiReady
+    }
+  }, [target, isAgnesMessage])
+
+  if (!target || !isAgnesMessage) return null
+  return createPortal(
+    <ConversationMessageContext.Provider value={target.context}>
+      <ConversationMessageView />
+    </ConversationMessageContext.Provider>,
+    target.element,
+    id,
+  )
+}
+
+const assistantUiMessageComponents = { Message: AssistantUiMessagePortal }
 
 export function ConversationToolCard({
   node,
@@ -264,7 +431,11 @@ function nativeContent(
         </>
       )
     case 'slot':
-      return props.renderSlot ? props.renderSlot(node) : <div data-slot-state="empty">{t('slot.notReady')}</div>
+      return props.renderSlot ? (
+        props.renderSlot(node)
+      ) : (
+        <div data-slot-state="empty">{t('slot.notReady')}</div>
+      )
     case 'contribute-conflict':
       return (
         <>
@@ -305,7 +476,39 @@ function Message({
   turnStatus?: UITurn['status'] | undefined
   thinkingHost?: RefObject<HTMLDivElement> | undefined
 }) {
+  const messageTarget = useRef<HTMLDivElement>(null)
+  const registerTarget = useContext(registerConversationMessageTargetContext)
   const native = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
+  const usesAssistantUi = node.kind === 'user' || node.kind === 'assistant'
+  const context = useMemo<ConversationMessageContextValue>(
+    () => ({
+      node,
+      props,
+      hideThinking,
+      ...(turnStatus ? { turnStatus } : {}),
+      ...(thinkingHost ? { thinkingHost } : {}),
+    }),
+    [hideThinking, node, props, thinkingHost, turnStatus],
+  )
+  useLayoutEffect(() => {
+    const element = messageTarget.current
+    if (!element || !usesAssistantUi || !registerTarget) return
+    registerTarget(node.id, { element, context })
+  }, [context, node.id, registerTarget, usesAssistantUi])
+  useLayoutEffect(
+    () => () => {
+      if (usesAssistantUi) registerTarget?.(node.id, undefined)
+    },
+    [node.id, registerTarget, usesAssistantUi],
+  )
+  const content = usesAssistantUi ? (
+    <>
+      <div ref={messageTarget} data-agnes-assistant-ui-target="" />
+      <div data-agnes-assistant-ui-fallback="">{native}</div>
+    </>
+  ) : (
+    native
+  )
   return (
     <article
       className={`timeline-node ${node.kind}`}
@@ -329,7 +532,7 @@ function Message({
         : {})}
       {...(node.kind === 'contribute-conflict' ? { role: 'note' } : {})}
     >
-      {props.renderNode ? props.renderNode(node, native) : native}
+      {props.renderNode ? props.renderNode(node, content) : content}
     </article>
   )
 }
@@ -419,9 +622,7 @@ function Turn({
                 min: Math.floor(turn.durationMs / 60_000),
                 sec: Math.round((turn.durationMs % 60_000) / 1000),
               })
-  const statusText = duration
-    ? `${status}${props.t('turn.elapsedSuffix', { duration })}`
-    : status
+  const statusText = duration ? `${status}${props.t('turn.elapsedSuffix', { duration })}` : status
   const finalNode = members.find((node) => node.id === turn.finalAssistantId)
   const finalText = finalNode?.kind === 'assistant' ? finalNode.text : ''
   const finalThinking = finalNode?.kind === 'assistant' ? finalNode.thinking?.trim() : undefined
@@ -529,6 +730,32 @@ function Turn({
 /** Read-only DOM projection of W3a `metadata.custom.node`; source IDs own React identity. */
 export function ConversationMessages(props: ConversationMessagesProps) {
   const messages = useThread((state) => state.messages)
+  const targetsRef = useRef(new Map<string, ConversationMessageTarget>())
+  const [targetVersion, setTargetVersion] = useState(0)
+  const registerMessageTarget = useCallback((id: string, target: ConversationMessageTarget | undefined) => {
+    const current = targetsRef.current.get(id)
+    if (!target) {
+      if (!current) return
+      targetsRef.current.delete(id)
+      setTargetVersion((version) => version + 1)
+      return
+    }
+    if (
+      current?.element === target.element &&
+      current.context.node === target.context.node &&
+      current.context.props === target.context.props &&
+      current.context.hideThinking === target.context.hideThinking &&
+      current.context.turnStatus === target.context.turnStatus &&
+      current.context.thinkingHost === target.context.thinkingHost
+    )
+      return
+    targetsRef.current.set(id, target)
+    setTargetVersion((version) => version + 1)
+  }, [])
+  const targetContext = useMemo<ConversationMessageTargetContextValue>(
+    () => ({ targets: targetsRef.current, version: targetVersion }),
+    [targetVersion],
+  )
   const visible = props.visibleNodeIds ? new Set(props.visibleNodeIds) : undefined
   const nodes = new Map<string, UINode>()
   for (const message of messages) {
@@ -548,30 +775,43 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       props.turns.flatMap((turn) => turn.nodeIds.map((id) => [id, turn.id] as const)),
     )
     return (
-      <section data-agnes-conversation-messages="">
-        {props.turns.map((turn) => (
-          <Turn key={turn.id} turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} />
-        ))}
-        <section className="timeline-unassigned" hidden={[...nodes.keys()].every((id) => assigned.has(id))}>
-          {[...nodes]
-            .filter(([id]) => !assigned.has(id))
-            .map(([id, node]) => (
-              <Message key={id} node={node} props={props} />
+      <ConversationMessageTargetContext.Provider value={targetContext}>
+        <registerConversationMessageTargetContext.Provider value={registerMessageTarget}>
+          <section data-agnes-conversation-messages="">
+            <ThreadPrimitive.Messages components={assistantUiMessageComponents} />
+            {props.turns.map((turn) => (
+              <Turn key={turn.id} turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} />
             ))}
-        </section>
-      </section>
+            <section
+              className="timeline-unassigned"
+              hidden={[...nodes.keys()].every((id) => assigned.has(id))}
+            >
+              {[...nodes]
+                .filter(([id]) => !assigned.has(id))
+                .map(([id, node]) => (
+                  <Message key={id} node={node} props={props} />
+                ))}
+            </section>
+          </section>
+        </registerConversationMessageTargetContext.Provider>
+      </ConversationMessageTargetContext.Provider>
     )
   }
   return (
-    <section data-agnes-conversation-messages="">
-      {messages.map((message) => {
-        if (visible && !visible.has(message.id)) return null
-        const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
-        const node = custom?.node
-        return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
-          <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
-        ) : null
-      })}
-    </section>
+    <ConversationMessageTargetContext.Provider value={targetContext}>
+      <registerConversationMessageTargetContext.Provider value={registerMessageTarget}>
+        <section data-agnes-conversation-messages="">
+          <ThreadPrimitive.Messages components={assistantUiMessageComponents} />
+          {messages.map((message) => {
+            if (visible && !visible.has(message.id)) return null
+            const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
+            const node = custom?.node
+            return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
+              <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
+            ) : null
+          })}
+        </section>
+      </registerConversationMessageTargetContext.Provider>
+    </ConversationMessageTargetContext.Provider>
   )
 }

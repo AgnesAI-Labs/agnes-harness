@@ -1,4 +1,4 @@
-import type { LocaleVars } from '@agnes/web-client'
+export type LocaleVars = Readonly<Record<string, string | number>>
 
 /** web-ui 组件的取词合同：宿主注入 `LocaleService#t` 的稳定包装（props `t`）。 */
 export type Translate = (key: string, vars?: LocaleVars) => string

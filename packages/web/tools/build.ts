@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
@@ -22,6 +23,7 @@ const out = join(root, 'dist', 'web')
 export async function buildWeb(options: { clean?: boolean } = {}): Promise<BuildResult[]> {
   if (options.clean !== false) await rm(out, { recursive: true, force: true })
   await mkdir(out, { recursive: true })
+  const generatedConversationCss = join(out, 'conversation-tailwind.css')
   // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的
   // 同一份实例；app.js 打包时保持这些说明符为外部导入。
   const platformExternals = [
@@ -130,6 +132,9 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
   // Conversation rules share the existing style.css URL on all three pages. The local CLI build
   // must apply the same composition when copying Web assets into its own static root.
   await appendFile(join(out, 'style.css'), `\n${await readFile(conversationCss, 'utf8')}`)
+  buildConversationCss(generatedConversationCss)
+  await appendFile(join(out, 'style.css'), `\n${await readFile(generatedConversationCss, 'utf8')}`)
+  await rm(generatedConversationCss)
   // esbuild emits this CSS companion because XMarkdown imports its core stylesheet. All pages
   // already load /style.css, so merge core + published themes + Agnes overrides there.
   const generatedMarkdownCss = join(out, 'vendor', 'assistant-ui.css')

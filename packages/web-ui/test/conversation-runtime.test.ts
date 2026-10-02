@@ -236,7 +236,7 @@ describe('W3a projected conversation adapter', () => {
     expect(ids()).toEqual(['a2'])
     await update(store, { sessionId: 'one', nodes: [user, lost, latest] })
     expect(ids()).toEqual(['u1', 'a1', 'a2'])
-    expect(byId('a1')?.textContent).toContain('7')
+    expect(byId('a1')?.textContent).toContain('runtime.lostOutput')
     expect(byId('a2')?.textContent).toBe('latest')
     await update(store, { sessionId: 'one', nodes: [latest, user, lost] })
     expect(ids()).toEqual(['a2', 'u1', 'a1'])

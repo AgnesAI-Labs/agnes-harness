@@ -238,6 +238,7 @@ export async function startClientModules(options: {
         ...(options.claim ? { claim: options.claim } : {}),
         newContentButton: children.newContentButton,
         session,
+        locale,
         resources,
       })
       builtinUnits.mount('@agnes/web-empty-state', () => emptyState.dispose())
@@ -352,6 +353,7 @@ export async function startClientModules(options: {
           ...options.transcript,
           ...(options.claim ? { claim: options.claim } : {}),
           session,
+          locale,
           resources,
         })
       : undefined
