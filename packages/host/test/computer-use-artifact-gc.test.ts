@@ -17,7 +17,10 @@ import {
   verifyRootsUnderLedgerLock,
 } from '../src/artifact-ref-index.js'
 import { planRetentionProtection } from '../src/artifact-retention-protection.js'
-import { createComputerUseArtifactGcRuntime } from '../src/computer-use-artifact-gc.js'
+import {
+  createComputerUseArtifactGcRuntime,
+  retentionFactsFromInspect,
+} from '../src/computer-use-artifact-gc.js'
 import { computerUseMarkerPath } from '../src/computer-use-marker.js'
 import { createPrivateArtifactStore, withComputerUseArtifactMutation } from '../src/private-artifact-store.js'
 import { fullScanRefIndex, indexTables } from './support/full-scan-roots-oracle.js'
@@ -876,5 +879,54 @@ describe.skipIf(!privateArtifactDeleteAvailable())('Computer Use artifact GC ref
       await runtime.close()
       fixture.database.close()
     }
+  })
+
+  it('keeps an expired screenshot whose digest is held by public retention', async () => {
+    const fixture = await screenshotFixture()
+    createEmptyLedger(fixture.dataDir)
+    const runtime = createComputerUseArtifactGcRuntime({
+      dataDir: fixture.dataDir,
+      retention: { ...retention, globalMaxBytes: 1 },
+      clock: () => 120_000,
+      publicRetention: { held: new Set([fixture.sha256]), unresolved: new Set() },
+    })
+    try {
+      await expect(runtime.trigger()).resolves.toMatchObject({ deleted: 0 })
+      expect(existsSync(fixture.artifact)).toBe(true)
+    } finally {
+      await runtime.close()
+    }
+  })
+
+  it('refuses the round when public retention cannot identify a candidate', async () => {
+    const fixture = await screenshotFixture()
+    createEmptyLedger(fixture.dataDir)
+    const runtime = createComputerUseArtifactGcRuntime({
+      dataDir: fixture.dataDir,
+      retention: { ...retention, globalMaxBytes: 1 },
+      clock: () => 120_000,
+      publicRetention: { held: new Set(), unresolved: new Set([fixture.sha256]) },
+    })
+    try {
+      await expect(runtime.trigger()).rejects.toThrow('Computer Use artifact GC file identity is unsafe')
+      expect(existsSync(fixture.artifact)).toBe(true)
+    } finally {
+      await runtime.close()
+    }
+  })
+})
+
+describe('public retention facts', () => {
+  it('reads held digests from inspect results and marks a missing digest unsafe', () => {
+    const digest = 'a'.repeat(64)
+    const facts = retentionFactsFromInspect([
+      { status: 'pinned', digest, ownerRefs: [] },
+      { status: 'staged', digest: 'b'.repeat(64), ownerRefs: [{ kind: 'blob' }] },
+      { status: 'uploading', digest: null, ownerRefs: [] },
+    ])
+    expect(facts.held.has(digest)).toBe(true)
+    expect(facts.held.has('b'.repeat(64))).toBe(true)
+    expect(facts.identityUnsafe).toBe(true)
+    expect(facts.unresolved.size).toBe(0)
   })
 })
