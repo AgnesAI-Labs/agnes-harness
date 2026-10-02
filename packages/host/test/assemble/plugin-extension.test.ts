@@ -1,11 +1,13 @@
-import { fakeProvider, textTurn } from '@agnes/core/testkit'
+import { fakeProvider, textTurn, toolTurn } from '@agnes/core/testkit'
 import { describe, expect, it } from 'vitest'
 import { pluginRowSource } from '../../src/ext-host/row-extension-host.js'
 import {
   auditKinds,
+  type PluginHost,
   pluginHost,
   pluginRow,
   pluginSource,
+  pluginSourceWith,
   rowState,
   settle,
   targetOf,
@@ -190,6 +192,108 @@ describe('a third-party row registers through ctx.extension()', () => {
     expect(toolNames(h).filter((n) => n === 'plugin_echo')).toHaveLength(1)
     expect(h.host.kernel.registrations(SOURCE)).toEqual(['tool:plugin_echo', 'hook:session_start'])
     await h.host.close()
+  })
+})
+
+describe('a third-party tool whose package comes back to a state the Host has already published', () => {
+  const snapshot = (digit: string) => `sha256-${digit.repeat(64)}`
+  const identity = (snapshotId: string) => ({ snapshotId })
+  // The model-facing tool must carry a TypeBox schema, or the Host refuses the call's arguments.
+  const OBJECT_SCHEMA = `{ [Symbol.for('TypeBox.Kind')]: 'Object', type: 'object', properties: {}, required: [], additionalProperties: false }`
+  const echoTool = (text: string) =>
+    `  agnes.registerTool({ ...tool('plugin_echo'), parameters: ${OBJECT_SCHEMA}, async execute() { return { content: [{ type: 'text', text: '${text}' }] } } })`
+  // A provider whose next turn is a call to the named tool, so a test decides what the model does.
+  const caller = () => {
+    let next = fakeProvider([])
+    const provider = { ...next, infer: (...args: Parameters<typeof next.infer>) => next.infer(...args) }
+    return {
+      provider,
+      script: (name: string) => {
+        next = fakeProvider([toolTurn(name, {}), textTurn('done')], '2')
+      },
+    }
+  }
+  type Session = Awaited<ReturnType<PluginHost['host']['createSession']>>
+  // A call in a held session shows what a session that stays open across the change gets; a call in
+  // no session opens one, which binds to the generation published at that moment.
+  const callTool = async (h: PluginHost, driver: ReturnType<typeof caller>, name: string, held?: Session) => {
+    driver.script(name)
+    const session = held ?? (await h.host.createSession({ cwd: h.dataDir, key: `call-${Math.random()}` }))
+    try {
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'go' }],
+        actor: session.d.actor,
+        kind: 'prompt',
+      })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const data = (await session.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]?.data
+      return JSON.stringify(data)
+    } finally {
+      if (!held) await session.close()
+    }
+  }
+
+  it('keeps answering after disable then enable, and after remove then reinstall', async () => {
+    const driver = caller()
+    const v1 = pluginSource(echoTool('plugin_echo'))
+    const h = await pluginHost([v1], { provider: driver.provider })
+    try {
+      const enabled = targetOf([pluginRow()])
+      const disabled = targetOf([pluginRow(ROW, 'plugin', true)])
+      const removed = targetOf([])
+      await h.host.applyRuntimeTarget(enabled)
+      await settle()
+      expect(await callTool(h, driver, 'plugin_echo')).toContain('plugin_echo')
+      const held = await h.host.createSession({ cwd: h.dataDir, key: 'held-across-the-change' })
+
+      // The same content comes back after each of these; the generation it maps to was published
+      // before, and the lease its tool was registered under has been revoked since.
+      for (const away of [disabled, removed]) {
+        await h.host.applyRuntimeTarget(away)
+        await settle()
+        expect(toolNames(h)).not.toContain('plugin_echo')
+        await h.host.applyRuntimeTarget(enabled)
+        await settle()
+        for (const session of [undefined, held]) {
+          const outcome = await callTool(h, driver, 'plugin_echo', session)
+          expect(outcome).not.toContain('lease revoked')
+          expect(outcome).toContain('plugin_echo')
+        }
+      }
+      await held.close()
+    } finally {
+      await h.host.close()
+    }
+  })
+
+  it('answers with the old version after v1 to v2 to v1', async () => {
+    const driver = caller()
+    const version = (id: string) =>
+      pluginSourceWith(
+        [
+          {
+            exportName: 'plugin',
+            rowId: ROW,
+            body: echoTool(`answer-${id}`),
+          },
+        ],
+        identity(snapshot(id)),
+      )
+    const h = await pluginHost([version('1'), version('2')], {
+      provider: driver.provider,
+    })
+    try {
+      const at = (id: string) => targetOf([pluginRow(ROW, 'plugin', false, identity(id))])
+      for (const id of ['1', '2', '1', '2']) {
+        await h.host.applyRuntimeTarget(at(snapshot(id)))
+        await settle()
+        const outcome = await callTool(h, driver, 'plugin_echo')
+        expect(outcome).not.toContain('lease revoked')
+        expect(outcome).toContain(`answer-${id}`)
+      }
+    } finally {
+      await h.host.close()
+    }
   })
 })
 
