@@ -411,6 +411,18 @@ export { createSkillInstaller, type SkillInstallAuthority } from './resources/sk
 export { validInstallPathPolicy } from './resources/skill-install-files.js'
 export type { SkillInstallBridge, SkillInstallInvocation } from './resources/skill-install-port.js'
 export {
+  type BootstrapAnchor,
+  type BootstrapLocator,
+  createBootstrapAnchor,
+  type MaintenanceCredential,
+  openBootstrapAnchor,
+  readStageZero,
+  type StageZeroView,
+} from './runtime/maintenance/bootstrap-locator.js'
+// The directory provider factory stays off the package root. Selected services are reached
+// through the scoped dependencies; only the anchor helper is needed before any plugin loads.
+export { createDirectoryAnchor } from './runtime/providers/authority-directory.js'
+export {
   createHostScopedDependencies,
   type HostPermissionGrant,
   type HostProviderPublication,

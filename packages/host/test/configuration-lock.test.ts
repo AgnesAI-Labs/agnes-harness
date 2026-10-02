@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, it } from 'vitest'
-import { withConfigurationLock } from '../src/configuration-lock.js'
+import { withConfigurationLock, withConfigurationLockSync } from '../src/configuration-lock.js'
 
 it('waits for an existing reader before entering the lock action', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'agnes-config-lock-'))
@@ -19,6 +19,12 @@ it('waits for an existing reader before entering the lock action', async () => {
   }, 75)
   try {
     await expect(withConfigurationLock(file, async () => 'saved')).resolves.toBe('saved')
+    expect(() =>
+      withConfigurationLockSync(file, () => {
+        throw new Error('CAS refused')
+      }),
+    ).toThrow('CAS refused')
+    expect(withConfigurationLockSync(file, () => 'recovered')).toBe('recovered')
   } finally {
     clearTimeout(release)
     if (reader.isOpen) reader.close()

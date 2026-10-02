@@ -1,3 +1,4 @@
+// Exact measured directory, anchor, contract and offline epoch guard allocation; no headroom.
 // UI-INTEGRATION-20260927: merged A/B/C lines (ui-refactor + ui-admin-pages); exact combined counts.
 // HELPER-REPAIR integrated with 50d55230: measured web 13260/app 1772/admin 1714, including formatting.
 // HELPER-REPAIR: measured SDK 5050, daemon 26353 for stream recovery and bounded skins; no spare.
@@ -594,7 +595,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // wrong), landing independently of WIN-12c's own +2. Re-measured on the merged tree directly
   // (never summed): 911; exact cap, no spare.
   'packages/host/src/configuration': 1202,
-  'packages/host/src/configuration-lock': 39,
+  'packages/host/src/configuration-lock': 55,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
   'packages/daemon/src/supervisor/profile-bindings': 124,
@@ -1381,7 +1382,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Test container refusals match production feature and cell checks, and the runtime barrel
   // exports are sorted. Measured 3475, exact, no spare.
   // Workspace and file contract cases join the aggregate. Measured 3634, exact, no spare.
-  'packages/extension-api/testkit': 3634,
+  'packages/extension-api/testkit': 3721,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1813,7 +1814,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
   // Stored public configuration uses canonical JSON and existing credential checks: exact 26512.
-  'packages/daemon/src': 26512,
+  'packages/daemon/src': 26535,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2571,7 +2572,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact measured total after versioned record readers and legacy outbox proof validation; no spare.
   // Atomic approval entry and verified fresh/legacy State sources: measured 57869 (+2451), exact.
   // Durable workspace leases and the file service providers. Measured 59163, exact, no spare.
-  'packages/host/src': 59163,
+  'packages/host/src': 60888,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
