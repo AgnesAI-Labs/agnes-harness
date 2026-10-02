@@ -534,6 +534,27 @@ describe('tools phase', () => {
     })
   })
 
+  it('a mutating tool that runs past its deadline stays unknown but says it timed out', async () => {
+    const s = await atTools(
+      [toolTurn('shell', { command: 'sleep 130' })],
+      withTool(shellTool(() => new Promise(() => undefined))),
+    )
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, timeoutMs: 5, timeouts: {} },
+    }
+    await s.session.runToolsPhase()
+    const res = (await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data as {
+      content: Array<{ text: string }>
+    }
+    // The code and the settlement keep a possibly-applied mutation from ever being replayed.
+    expect(res).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+    expect(res.content[0]?.text).toMatch(/5 ms limit.*aborted.*partial.*in the background/s)
+    expect((await s.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
+      outcome: 'unknown',
+    })
+  })
+
   it('hands each tool the output limit the preset resolved', async () => {
     let seen = 0
     const tool = readTool(async (_args, ctx) => {

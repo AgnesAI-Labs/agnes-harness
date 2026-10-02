@@ -940,7 +940,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Configurable request output allowance and durable truncation stop. Measured +20, exact allocation.
   // Configurable tool output limit: the Preset key `tools.output_max_bytes` resolved and handed to each
   // tool as `ctx.outputMaxBytes`. Measured 25723 (+8), exact cap without spare allocation.
-  'packages/core/src': 25723,
+  // A mutating tool cut short by its deadline or a cancel names that cause in its unknown-outcome result
+  // text instead of reading as a lost transport. Measured 25741 (+18), exact cap.
+  'packages/core/src': 25741,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
