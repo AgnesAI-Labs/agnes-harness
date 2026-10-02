@@ -73,6 +73,11 @@ The [backend entry](../../examples/packages/client-service-panel/v1/extensions/m
 
 Calls require a current session. Configure a model in Web and create/select a session before enabling the plugin or refreshing the page so apply runs with a session ready. The example queries only once during apply. Without a session it displays `unavailable` and does not automatically retry when a session is later selected. This is a limitation of the minimal example; real applications should refresh according to the session lifecycle.
 
+For session-scoped query data, the service handler can read the Host-validated `ctx.sessionId`.
+Do not send a second session identifier in service input: the local Web relay strips identity-shaped
+input fields. The [device-control example](../../examples/packages/mhs-device-control/README.md)
+uses `ctx.sessionId` and refreshes on session changes.
+
 Success displays `backend 1.0.0`. After updating to v2, check that both frontend and backend report `2.0.0`. A frontend v2 label alone does not prove a backend switch.
 
 <a id="失败与清理"></a>

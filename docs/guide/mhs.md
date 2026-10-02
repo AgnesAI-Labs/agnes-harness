@@ -6,7 +6,7 @@ English | [简体中文](mhs.zh-CN.md)
 
 [Project home](../../README.md) · [Documentation](../README.md) · [FDE and use cases](why-agh.md)
 
-> **Coming soon: AGH's MHS integration documentation and examples.**
+> **Available now: an event-driven device-control workflow and Web panel. Verified physical-device adapters are still coming soon.**
 
 From inspection and maintenance to instrument coordination, field work connects device state, human judgment, and business workflows. AGH plans to explore physical device integration through MHS (Model Hardware Standard), built on MCP (Model Context Protocol) as the device connection layer, bringing state reads, operation requests, and execution receipts into one task flow.
 
@@ -34,6 +34,12 @@ AGH organizes tasks, authorization interactions, and result records. An adapter 
 
 For example, an inspection task might follow: read status → detect an anomaly → obtain human confirmation → perform a constrained action → verify the receipt. This describes a target workflow. Each device model, action, and failure path needs its own implementation and validation.
 
+## Try the device-control workflow
+
+The installable [`mhs-device-control`](../../examples/packages/mhs-device-control/README.md) package exposes robot-dog and robot-car tools. Five control steps appear in the conversation tool card; a floating Web panel prints the detailed events as planning, dispatch, action, progress, state, and receipt advance. Operation state is retained per session, so later turns can issue additional commands while the panel shows recent history. The dog action vocabulary includes standing, lying down, heart, New Year greeting, dance, stretch, pounce, and flips, based on Unitree's public [Go2 SportClient](https://github.com/unitreerobotics/unitree_sdk2/blob/main/include/unitree/robot/go2/sport/sport_client.hpp) and [App descriptions](https://www.unitree.com/cn/app/go2/).
+
+The included `event-loopback` driver produces the software event sequence and receipt without connecting a physical device. It is an integration point for the Harness tool, event, service, and UI contracts, not a physical-device verification. A future MCP adapter can replace the driver while preserving those contracts.
+
 <a id="即将开放的内容"></a>
 
 ## What is coming
@@ -41,7 +47,7 @@ For example, an inspection task might follow: read status → detect an anomaly 
 | Content | Planned scope | Status |
 | --- | --- | --- |
 | Integration guide | Device capability descriptions, adapter placement, identity, and permissions | Coming soon |
-| Examples and reproduction steps | Start with read-only status or simulation; state prerequisites and expected results | Coming soon |
+| Examples and reproduction steps | Event-loopback device tools, operation events, receipts, and Web panel | Available; physical-device reproduction coming soon |
 | Device verification notes | Supported models, software versions, test environments, and known limits | Coming soon |
 
 Adapter designs, supported devices, and examples will be announced after validation. No opening date is set. Integration is currently exploratory: the repository has no verified general-purpose MHS adapter or end-to-end device example.
@@ -58,4 +64,4 @@ Start with [backend plugins](../develop/backend.md), [MCP](mcp.md), and [full-st
 
 ## Current status at a glance
 
-**AGH's MHS integration documentation and examples are coming soon.** The direction covers task orchestration, human confirmation, and result verification. A verified general-purpose adapter, supported-device list, and end-to-end device example are not yet available, and no opening date has been announced. Device controllers retain responsibility for real-time control and physical safety.
+**An event-driven device-control workflow and Web panel are available as an installable example.** The direction covers task orchestration, human confirmation, and result verification. A verified general-purpose adapter, supported-device list, and physical-device end-to-end example are not yet available, and no opening date has been announced. Device controllers retain responsibility for real-time control and physical safety.

@@ -43,7 +43,11 @@ function fixture(platform?: Partial<SeamImplementations['platform']>) {
   } as unknown as WorkspaceInvocationView
   const seams = fakeSeams(platform ? { platform } : {}),
     log = { debug() {}, info() {}, warn() {}, error() {} }
-  const identity: Pick<ServiceContext, 'actor' | 'source' | 'requestId' | 'signal' | 'timeoutMs'> = {
+  const identity: Pick<
+    ServiceContext,
+    'sessionId' | 'actor' | 'source' | 'requestId' | 'signal' | 'timeoutMs'
+  > = {
+    sessionId: 'session-1',
     actor: { id: 'subject', org: '', role: '', deptPath: [], attrs: {} },
     source: 'surface',
     requestId: 'request',
@@ -122,6 +126,7 @@ it('exposes a read-only platform view read from seams.platform at call time, and
     'net',
     'platform',
     'requestId',
+    'sessionId',
     'signal',
     'source',
     'timeoutMs',

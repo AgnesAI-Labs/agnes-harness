@@ -1,0 +1,13 @@
+{
+  "client": {
+    "entry": "./client/index.js",
+    "styles": ["./client/index.css"],
+    "slots": ["workbench.panel", "tool.call.toolview"],
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "publicConfig": {
+      "title": "MHS Device Control"
+    },
+    "services": ["mhs.operation.snapshot"],
+    "projections": []
+  }
+}

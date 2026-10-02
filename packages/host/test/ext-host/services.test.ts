@@ -216,6 +216,7 @@ describe('S3 Service registration and invocation', () => {
         expect(ctx.actor).toEqual(actor)
         expect(Object.isFrozen(ctx.actor.attrs)).toBe(true)
         expect(ctx.source).toBe('reports')
+        expect(ctx.sessionId).toBe('session-1')
         expect(ctx.requestId).toMatch(/^[0-9a-f-]{36}$/)
         expect(ctx).not.toHaveProperty('session')
         return output

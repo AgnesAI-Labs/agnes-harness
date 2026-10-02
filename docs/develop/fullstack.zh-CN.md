@@ -67,6 +67,10 @@ node packages/cli/dist/local/agnes.mjs install file:./examples/packages/client-s
 
 成功显示 `backend 1.0.0`；更新到 v2 后重新核对前后端均为 `2.0.0`。只显示前端 v2 不能证明后端已切换。
 
+会话范围内的查询数据可从服务处理器中的 `ctx.sessionId` 读取，这是 Host 校验过的会话 ID。
+不要在服务输入中另传会话标识：本地 Web 中继会剔除这类身份字段。
+[设备控制示例](../../examples/packages/mhs-device-control/README.md)使用 `ctx.sessionId`，并在切换会话时重新读取。
+
 ## 失败与清理
 
 移除后端行、关闭对应浏览器行、撤信任、缺少 allow-list 或当前会话，都应拒绝服务调用；前端会显示 unavailable。普通插件的安装代码不能自行授予 `services`。

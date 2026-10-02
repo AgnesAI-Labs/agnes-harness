@@ -1,7 +1,7 @@
 当前可检查和安装的 Cordis 行示例通过 `agnes.plugins` 声明后端。前端模块及皮肤由
 `agnes.clientDescriptors` 绑定同包的插件行，包括 `client-panel`、`client-multi-panel`、
 `client-service-panel`、`skins-builtin` v1/v2、`skin-example` v1 和四组 DSH fixture。
-`hot-service`、`hot-tool-plugin`、`cordis-greeting`、`hook-context-note`、
+`hot-service`、`hot-tool-plugin`、`mhs-device-control`、`cordis-greeting`、`hook-context-note`、
 `hook-runner-takeover` 与 `acme-dashboard` 也使用行格式。包管理页的本地目录只公布已迁移
 且检查通过的版本；测试专用 broken 版本须显式启用。
 
@@ -26,5 +26,7 @@
 - `acme-dashboard` v1/v2 声明 Cordis 后端行、静态 `services` 名称与 Surface 依赖；部署清单指向 v2。其 Surface artifact 有意在启动时失败，不应被算作健康部署。
 - `hot-tool-plugin` 与 `hook-context-note`、`hook-runner-takeover` 是可安装的单目录 Cordis 示例；
   `cordis-greeting` 只作为 workspace 内部接线示例。
+- `mhs-device-control` 是可安装的全栈设备控制示例：后端工具输出详细操作事件和回执，
+  浏览器模块通过 `workbench.panel` 展示当前设备、进度和会话内最近操作。
 
 包管理测试在隔离的临时 profile 中真实安装示例；这不等于用户 profile 或浏览器的发布验收。
