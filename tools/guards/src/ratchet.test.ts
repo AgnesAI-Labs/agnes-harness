@@ -215,7 +215,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 1716,
   'packages/web-slots/src': 605,
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
-  'packages/web-ui/src': 4706,
+  // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
+  'packages/web-ui/src': 4792,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   'packages/web-units/src': 4630,
   'packages/base/extensions/tools-core': 800,

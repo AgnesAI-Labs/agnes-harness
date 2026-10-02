@@ -1,4 +1,5 @@
 import type { UINode, UITurn } from '@agnes/protocol'
+import type { DomainTimelineEntry, DomainView } from '@agnes/protocol/runtime'
 import { useThread } from '@assistant-ui/react'
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -28,6 +29,8 @@ export interface ConversationMessagesProps {
   renderSlot?: (node: Extract<UINode, { kind: 'slot' }>) => ReactNode
   /** The upper Web layer owns DSH registration, claims, and fallback visibility. */
   renderNode?: (node: UINode, native: ReactNode) => ReactNode
+  /** Rendered in this React tree; without it a card shows its fallback text and resource titles. */
+  renderDomain?: (view: DomainView) => ReactNode
 }
 
 const approvalLabels: Record<ApprovalNode['state'], string> = {
@@ -306,6 +309,39 @@ function Message({
   )
 }
 
+/** Domain data is never parsed as HTML and actions get no controls here; `renderDomain` owns both. */
+function DomainCard({
+  entry,
+  status,
+  props,
+}: {
+  entry: DomainTimelineEntry
+  status: string | undefined
+  props: ConversationMessagesProps
+}) {
+  const { view } = entry
+  return (
+    <article
+      className="timeline-node domain"
+      data-node-id={entry.id}
+      data-node-kind="domain"
+      data-phase={view.phase}
+      data-status={status}
+    >
+      {props.renderDomain ? (
+        props.renderDomain(view)
+      ) : (
+        <>
+          <div className="node-body">{view.fallbackText}</div>
+          <div className="node-body" data-domain-resources="" hidden={view.resources.length === 0}>
+            {view.resources.map((resource) => resource.title ?? resource.artifactId).join(', ')}
+          </div>
+        </>
+      )}
+    </article>
+  )
+}
+
 const turnStatus: Record<UITurn['status'], string> = {
   running: '正在执行',
   waiting: '等待处理',
@@ -496,8 +532,20 @@ export function ConversationMessages(props: ConversationMessagesProps) {
   const messages = useThread((state) => state.messages)
   const visible = props.visibleNodeIds ? new Set(props.visibleNodeIds) : undefined
   const nodes = new Map<string, UINode>()
+  // ponytail: in turn mode domain cards follow the unassigned nodes; nest them in their turn when needed.
+  const domainCards = new Map<string, ReactNode>()
   for (const message of messages) {
     const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
+    if (custom?.kind === 'domain') {
+      if (!visible || visible.has(message.id)) {
+        const { entry } = custom
+        domainCards.set(
+          entry.id,
+          <DomainCard key={entry.id} entry={entry} status={message.status?.type} props={props} />,
+        )
+      }
+      continue
+    }
     const node = custom?.node
     if (
       node &&
@@ -517,12 +565,16 @@ export function ConversationMessages(props: ConversationMessagesProps) {
         {props.turns.map((turn) => (
           <Turn key={turn.id} turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} />
         ))}
-        <section className="timeline-unassigned" hidden={[...nodes.keys()].every((id) => assigned.has(id))}>
+        <section
+          className="timeline-unassigned"
+          hidden={domainCards.size === 0 && [...nodes.keys()].every((id) => assigned.has(id))}
+        >
           {[...nodes]
             .filter(([id]) => !assigned.has(id))
             .map(([id, node]) => (
               <Message key={id} node={node} props={props} />
             ))}
+          {[...domainCards.values()]}
         </section>
       </section>
     )
@@ -532,6 +584,7 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       {messages.map((message) => {
         if (visible && !visible.has(message.id)) return null
         const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
+        if (custom?.kind === 'domain') return domainCards.get(message.id)
         const node = custom?.node
         return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
           <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
