@@ -411,6 +411,26 @@ export { createSkillInstaller, type SkillInstallAuthority } from './resources/sk
 export { validInstallPathPolicy } from './resources/skill-install-files.js'
 export type { SkillInstallBridge, SkillInstallInvocation } from './resources/skill-install-port.js'
 export {
+  type BootstrapAnchor,
+  type BootstrapLocator,
+  createBootstrapAnchor,
+  type MaintenanceCredential,
+  openBootstrapAnchor,
+  readStageZero,
+  type StageZeroView,
+} from './runtime/maintenance/bootstrap-locator.js'
+export {
+  type ActivationNote,
+  AUTHORITY_DIRECTORY_CONTRACT,
+  AUTHORITY_DIRECTORY_PROVIDER_ID,
+  type AuthorityDirectoryOpenOptions,
+  type AuthorityDirectoryProvider,
+  createAuthorityDirectoryProvider,
+  createDirectoryAnchor,
+  type DurabilityPhase,
+  type UpgradeApproval,
+} from './runtime/providers/authority-directory.js'
+export {
   createHostScopedDependencies,
   type HostPermissionGrant,
   type HostProviderPublication,
