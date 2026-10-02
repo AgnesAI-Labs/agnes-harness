@@ -6,7 +6,7 @@
 # any test that only reads the resolved view, so nothing below should be read as evidence that
 # inheritance ran. What this file settles is the keys the kernel has no default for at all.
 name: base
-tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch], timeout_ms: 120000, output_max_bytes: 32768, timeouts: { web_fetch: 30000, skill_helper_import: 240000 } }
+tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch], timeout_ms: 120000, output_max_bytes: 32768, timeouts: { web_fetch: 30000, skill_helper_import: 240000, shell: 600000 } }
 mcp: { servers: [], defer: true }
 # Written unexpanded on purpose: a `~` here is the operator's home, and whoever reads this key is
 # the one that knows whose home that is. Nothing expands it yet, so nothing may join these onto a

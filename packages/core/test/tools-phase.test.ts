@@ -563,6 +563,27 @@ describe('tools phase', () => {
     })
   })
 
+  // A tool with its own limit (preset tools.timeouts) is cut off at that limit, is told a limit a grace
+  // short of it, and is also told the preset-wide default so it can tell "no request" from "the most".
+  it('tells a tool its own soft limit and the preset-wide default', async () => {
+    let seen: { limit: number; byDefault: number | undefined } | undefined
+    const s = await atTools(
+      [toolTurn('shell', { command: 'x' })],
+      withTool(
+        shellTool(async (_args, ctx) => {
+          seen = { limit: ctx.timeoutMs, byDefault: ctx.defaultTimeoutMs }
+          return { content: [{ type: 'text' as const, text: 'ok' }] }
+        }),
+      ),
+    )
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, timeoutMs: 400, timeouts: { shell: 1000 } },
+    }
+    await s.session.runToolsPhase()
+    expect(seen).toEqual({ limit: 900, byDefault: 400 })
+  })
+
   it('hands ctx.exec results to the tool untouched, including the executor timedOut fact', async () => {
     const s = await atTools(
       [toolTurn('shell', { command: 'x' })],

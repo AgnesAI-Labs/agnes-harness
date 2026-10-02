@@ -1016,6 +1016,7 @@ export async function approveAndExecute(
           name: call.name,
           signal: ac.signal,
           timeoutMs: softTimeoutMs,
+          defaultTimeoutMs: s.preset.tools.timeoutMs,
           outputMaxBytes: s.preset.tools.outputMaxBytes,
         },
       )

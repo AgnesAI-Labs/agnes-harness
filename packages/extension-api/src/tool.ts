@@ -242,6 +242,8 @@ export interface ToolContext {
   readonly signal: AbortSignal
   /** Soft deadline for this call; the kernel cuts the call off a short grace later (see CHANGELOG). */
   readonly timeoutMs: number
+  /** The preset-wide default (`tools.timeout_ms`), for a tool that lets a caller ask for more time up to `timeoutMs`. */
+  readonly defaultTimeoutMs?: number
   /** Bytes of one result's text the model sees before the output guard cuts it (preset `tools.output_max_bytes`). */
   readonly outputMaxBytes: number
   readonly lease: LeaseView

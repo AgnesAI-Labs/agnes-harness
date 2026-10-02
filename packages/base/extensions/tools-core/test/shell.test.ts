@@ -168,6 +168,69 @@ describe('shell does not widen what it executes', () => {
   })
 })
 
+// How long a foreground call may run: the preset default unless the caller asks, a caller may ask for
+// more up to the call's limit, and what it asked for beyond that is capped. There is no background
+// mode to fall back on, so this is how a long command gets its time.
+describe('shell foreground time', () => {
+  const asked = async (opts: Parameters<typeof fakeToolContext>[0], args: { timeoutMs?: number }) => {
+    const ctx = fakeToolContext(opts)
+    await shellTool.execute({ command: 'x', ...args }, ctx)
+    return ctx.calls.execOpts[0]?.timeoutMs
+  }
+  it.each([
+    [
+      'uses the preset default when the caller asks for nothing',
+      { timeoutMs: 598_000, defaultTimeoutMs: 100_000 },
+      {},
+      100_000,
+    ],
+    [
+      'grants a request between the default and the limit as asked',
+      { timeoutMs: 598_000, defaultTimeoutMs: 100_000 },
+      { timeoutMs: 300_000 },
+      300_000,
+    ],
+    [
+      'caps a request above the limit at the limit',
+      { timeoutMs: 598_000, defaultTimeoutMs: 100_000 },
+      { timeoutMs: 86_400_000 },
+      598_000,
+    ],
+    ['falls back to 120000 when the host states no default', { timeoutMs: 598_000 }, {}, 120_000],
+    [
+      'never gives a default longer than the limit',
+      { timeoutMs: 30_000, defaultTimeoutMs: 120_000 },
+      {},
+      30_000,
+    ],
+    [
+      'ignores a request that is not a positive whole number',
+      { timeoutMs: 598_000, defaultTimeoutMs: 100_000 },
+      { timeoutMs: 1.5 },
+      100_000,
+    ],
+  ] as const)('%s', async (_name, opts, args, expected) => {
+    expect(await asked(opts, args)).toBe(expected)
+  })
+
+  it('says in the timeout text that the request was capped, and only then', async () => {
+    const exec = () => ({ code: -1, stdout: '', stderr: '', timedOut: true })
+    const capped = fakeToolContext({ timeoutMs: 598_000, defaultTimeoutMs: 100_000, exec })
+    expect(textOf(await shellTool.execute({ command: 'x', timeoutMs: 86_400_000 }, capped))).toContain(
+      '[timed out after 598000ms (requested 86400000ms, capped): ',
+    )
+    const granted = fakeToolContext({ timeoutMs: 598_000, defaultTimeoutMs: 100_000, exec })
+    expect(textOf(await shellTool.execute({ command: 'x', timeoutMs: 300_000 }, granted))).toContain(
+      '[timed out after 300000ms: ',
+    )
+  })
+
+  it('does not promise an extension beyond a deployment maximum in a number', () => {
+    expect(shellTool.description).not.toMatch(/\d{4,}/)
+    expect(shellTool.description).toMatch(/longer timeoutMs|timeoutMs.*up to/i)
+  })
+})
+
 // The executor's own deadline is the first cause when it says so. The model is told what was captured,
 // how long the limit was, that the processes were killed, and what it can do about it; there is no
 // exit line, because the exit code of a killed command says nothing and the UI reads `[exit N]` last.

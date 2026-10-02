@@ -943,7 +943,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // A mutating tool cut short by its deadline or a cancel names that cause in its unknown-outcome result
   // text instead of reading as a lost transport. Measured 25741 (+18), exact cap.
   // The soft deadline handed to a tool is a grace short of the kernel cut-off. Measured 25742 (+1), exact cap.
-  'packages/core/src': 25742,
+  // The preset-wide default timeout reaches a tool as ctx.defaultTimeoutMs. Measured 25751 (+9), exact cap.
+  'packages/core/src': 25751,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1367,7 +1368,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // `ToolContext.outputMaxBytes` and the three bounds of the Preset key `tools.output_max_bytes`,
   // exported as constants. Measured 981 (+3), exact, no spare.
   // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
-  'packages/extension-api/src': 987, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
+  'packages/extension-api/src': 988, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
