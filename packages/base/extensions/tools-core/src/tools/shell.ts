@@ -12,7 +12,7 @@ export const SHELL_SENTINEL = '$SHELL'
 export const shellTool = defineTool({
   name: 'shell',
   description:
-    'Run a command line in the session shell (the runtime context tells you which shell dialect is active). Output is captured; long output is stored as an artifact. timeoutMs may shorten the call but not extend it beyond the session limit — set background=true for long-running commands and poll the returned job.',
+    'Run a command line in the session shell (the runtime context tells you which shell dialect is active). Output is captured; long output is stored as an artifact. timeoutMs may shorten the call but not extend it beyond the session limit. The background option is unavailable: run long commands in the foreground, in shorter steps.',
   parameters: ShellParams,
   meta: {
     isReadOnly: false,
@@ -39,7 +39,14 @@ export const shellTool = defineTool({
         return { content: [{ type: 'text', text: `background job ${jobId} started` }] }
       } catch (e) {
         return {
-          content: [{ type: 'text', text: `background job could not be submitted: ${(e as Error).message}` }],
+          content: [
+            {
+              type: 'text',
+              text:
+                `background job could not be submitted: ${(e as Error).message}; ` +
+                'background execution is unavailable here; run the command in the foreground, in shorter steps if it is long',
+            },
+          ],
           isError: true,
         }
       }
