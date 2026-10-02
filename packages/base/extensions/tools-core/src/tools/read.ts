@@ -1,11 +1,5 @@
 import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
-import {
-  byteLength,
-  guardedResult,
-  OUTPUT_LIMITS,
-  parseSpillLocator,
-  splitByBytes,
-} from '../guards/output.js'
+import { byteLength, OUTPUT_LIMITS, parseSpillLocator, splitByBytes } from '../guards/output.js'
 import { ReadParams } from './schemas.js'
 
 // Ceiling on how much of a file is pulled into memory for one call. Without it a single read of a
@@ -48,6 +42,13 @@ function toLines(text: string): string[] {
   return lines
 }
 
+function clipLine(line: string): string {
+  if (line.length * 3 <= WRAP_BYTES) return line
+  const bytes = byteLength(line)
+  if (bytes <= WRAP_BYTES) return line
+  return `${splitByBytes(line, WRAP_BYTES)[0]} [line cut at ${WRAP_BYTES} of ${bytes} bytes]`
+}
+
 export type SpilledLines = { ok: true; lines: string[]; notes: string } | { ok: false; message: string }
 
 /**
@@ -58,6 +59,13 @@ export type SpilledLines = { ok: true; lines: string[]; notes: string } | { ok: 
  */
 export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<SpilledLines> {
   const ref = parseSpillLocator(path)
+  if (ref === undefined && /^artifact:\/\/[0-9a-f]{64}$/.test(path))
+    // The resource link next to the note names the digest alone, so a bare digest is the likeliest
+    // slip, and the fix is a short step the model can take at once.
+    return {
+      ok: false,
+      message: 'artifact locator is missing its ?size=<bytes>; use the whole path from the truncation note',
+    }
   if (ref === undefined)
     return {
       ok: false,
@@ -92,16 +100,19 @@ export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<
 }
 
 // One page of numbered lines: from `offset`, at most `limit` of them, and no more than fit the
-// output limit. When the limit of bytes ends the page early, the hint says where to continue.
+// output limit. When the limit of bytes ends the page early, the hint says where to continue. This
+// is the whole of what `read` hands back, for a file as for a stored output, so a result is never
+// cut into a head and a tail: the model reads on from the hint instead of losing the middle.
 function pageOfLines(
   spilled: { lines: string[]; notes: string },
   offset: number,
   limit: number | undefined,
+  what: 'file' | 'artifact',
 ): string {
   const { lines, notes } = spilled
   const start = offset - 1
   if (start >= lines.length)
-    return `${notes}[no lines at offset ${offset}; the artifact has ${lines.length} lines]`
+    return `${notes}[no lines at offset ${offset}; the ${what} has ${lines.length} lines]`
   const end = limit === undefined ? lines.length : Math.min(lines.length, start + limit)
   const budget = OUTPUT_LIMITS.maxBytes - HINT_RESERVE - byteLength(notes)
   const rows: string[] = []
@@ -145,7 +156,9 @@ export const readTool = defineTool({
         return { content: [{ type: 'text', text: `read failed: ${spilled.message}` }], isError: true }
       // A page is already within the output limit, and it is not put back into the store: the text
       // it came from is what the model reads on from, by offset.
-      return { content: [{ type: 'text', text: pageOfLines(spilled, args.offset ?? 1, args.limit) }] }
+      return {
+        content: [{ type: 'text', text: pageOfLines(spilled, args.offset ?? 1, args.limit, 'artifact') }],
+      }
     }
     let bytes: Uint8Array
     try {
@@ -176,19 +189,11 @@ export const readTool = defineTool({
     // A cut at the byte ceiling almost certainly lands mid-line; showing that fragment as if it
     // were a whole line invites an edit against text that does not exist in the file.
     if (notes !== '') text = text.slice(0, Math.max(text.lastIndexOf('\n') + 1, 0)) || text
-    const lines = toLines(text)
-    const start = (args.offset ?? 1) - 1
-    const slice = lines.slice(start, args.limit === undefined ? undefined : start + args.limit)
-    if (slice.length === 0)
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `${notes}[no lines at offset ${args.offset ?? 1}; the file has ${lines.length} lines]`,
-          },
-        ],
-      }
-    const numbered = notes + slice.map((l, i) => `${start + i + 1}\t${l}`).join('\n')
-    return guardedResult(ctx, numbered)
+    // A file keeps its real line numbers, so a line too long for a page is cut and says so rather
+    // than wrapped into extra numbers; a shell command reaches the rest of it.
+    const lines = toLines(text).map(clipLine)
+    return {
+      content: [{ type: 'text', text: pageOfLines({ lines, notes }, args.offset ?? 1, args.limit, 'file') }],
+    }
   },
 })

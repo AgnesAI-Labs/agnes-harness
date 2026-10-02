@@ -137,7 +137,7 @@ export async function guardOutput(
   let stored: string
   try {
     ref = await ctx.artifacts.put(new TextEncoder().encode(text), { mime })
-    stored = `full output stored at ${spillLocator(ref)}. To read the rest, call read with that path and an offset/limit, or grep that path to search it`
+    stored = `full output stored at ${spillLocator(ref)}. To read the rest, call read with that full path, ?size= included, and an offset/limit, or grep that full path to search it`
   } catch (e) {
     // Truncate anyway. Handing back the untruncated text because the store is unavailable would
     // turn a storage failure into an unbounded context, which is the failure this guard exists to

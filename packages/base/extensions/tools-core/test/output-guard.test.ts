@@ -96,7 +96,9 @@ describe('guardOutput', () => {
     expect(ctx.calls.artifacts[0]?.mime).toBe('text/plain')
     // The note names the stored text by the locator read and grep accept, and says how to use it.
     const ref = r.ref as ArtifactRef
-    expect(r.text).toContain(`full output stored at ${spillLocator(ref)}. To read the rest, call read`)
+    expect(r.text).toContain(
+      `full output stored at ${spillLocator(ref)}. To read the rest, call read with that full path, ?size= included`,
+    )
     expect(parseSpillLocator(spillLocator(ref))).toEqual({
       sha256: ref.sha256,
       size: ref.size,

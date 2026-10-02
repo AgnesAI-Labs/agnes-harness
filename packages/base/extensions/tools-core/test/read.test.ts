@@ -85,49 +85,47 @@ describe('read', () => {
   it('bounds how many bytes it pulls off the filesystem', async () => {
     const ctx = fakeToolContext({ files: { 'big.txt': 'a'.repeat(MAX_READ_BYTES + 100) } })
     const r = await readTool.execute({ path: 'big.txt' }, ctx)
-    // The read itself is capped, so neither the process nor the artifact store sees the whole file.
+    // The read itself is capped, so the process never holds the whole file.
     expect(ctx.calls.read[0]?.opts?.limit).toBe(MAX_READ_BYTES + 1)
     expect(textOf(r)).toContain(`only the first ${MAX_READ_BYTES} bytes`)
-    expect(ctx.calls.artifacts[0]?.bytes.byteLength).toBeLessThan(MAX_READ_BYTES + 4096)
+    expect(byteLength(textOf(r))).toBeLessThanOrEqual(OUTPUT_LIMITS.maxBytes)
   })
 
   it('cuts the byte-capped text back to a line boundary instead of showing a half line', async () => {
     // The cap lands wherever 4 MiB lands, almost always mid-line. Numbering that fragment as if it
-    // were a whole line invites an edit against text the file does not contain, so the fragment is
-    // dropped. The excerpt the model sees is head-and-tail cut by the output guard, so the check is
-    // on what was numbered: the stored artifact holds the whole numbered text.
+    // were a whole line invites an edit against text the file does not contain, so it is dropped.
     const width = 10
     const line = 'x'.repeat(width - 1)
-    const whole = MAX_READ_BYTES / width
-    expect(Number.isInteger(whole)).toBe(false)
-    const lastWhole = Math.floor(whole)
+    const lastWhole = Math.floor(MAX_READ_BYTES / width)
+    expect(Number.isInteger(MAX_READ_BYTES / width)).toBe(false)
     const ctx = fakeToolContext({ files: { 'big.txt': `${line}\n`.repeat(lastWhole + 10) } })
-    await readTool.execute({ path: 'big.txt' }, ctx)
-    const stored = new TextDecoder().decode(ctx.calls.artifacts[0]?.bytes as Uint8Array)
-    expect(stored.slice(stored.lastIndexOf('\n') + 1)).toBe(`${lastWhole}\t${line}`)
+    const page = textOf(await readTool.execute({ path: 'big.txt', offset: lastWhole - 2 }, ctx))
+    expect(page.slice(page.lastIndexOf('\n') + 1)).toBe(`${lastWhole}\t${line}`)
     // The line the cap fell inside is absent entirely, not shown truncated.
-    expect(stored).not.toContain(`${lastWhole + 1}\t`)
+    expect(page).not.toContain(`${lastWhole + 1}\t`)
   })
 
-  it('spills a long file to an artifact and returns a ref alongside the excerpt', async () => {
-    const line = 'a'.repeat(80)
-    const ctx = fakeToolContext({ files: { 'long.txt': Array(400).fill(line).join('\n') } })
-    const r = await readTool.execute({ path: 'long.txt' }, ctx)
-    expect(byteLength(textOf(r))).toBeLessThanOrEqual(OUTPUT_LIMITS.maxBytes)
-    expect(textOf(r)).toContain('[truncated')
-    expect(r.content[1]).toMatchObject({ type: 'ref', mime: 'text/plain' })
-    expect(ctx.calls.artifacts).toHaveLength(1)
+  it('pages a long file instead of cutting it, and never stores it', async () => {
+    const lines = Array.from({ length: 400 }, (_, i) => `row ${i + 1} ${'a'.repeat(80)}`)
+    const ctx = fakeToolContext({ files: { 'long.txt': lines.join('\n') } })
+    const first = textOf(await readTool.execute({ path: 'long.txt' }, ctx))
+    expect(byteLength(first)).toBeLessThanOrEqual(OUTPUT_LIMITS.maxBytes)
+    expect(first).not.toContain('[truncated')
+    const next = Number(/call read again with offset=(\d+) to continue\]$/.exec(first)?.[1])
+    // The next page starts at the line after the last one shown: nothing is lost in between.
+    expect(first).toContain(`${next - 1}\trow ${next - 1} `)
+    expect(textOf(await readTool.execute({ path: 'long.txt', offset: next, limit: 1 }, ctx))).toBe(
+      `${next}\t${lines[next - 1]}`,
+    )
+    expect(ctx.calls.artifacts).toHaveLength(0)
   })
 
-  it('returns a result rather than letting a hostile store rejection escape execute()', async () => {
-    // The output guard runs outside every `try` here, so a throw inside it ends the turn instead of
-    // reaching the model as a failed call. A null-prototype rejection is not exotic: `JSON.parse`
-    // revivers and several RPC clients produce them.
-    const ctx = fakeToolContext({ files: { 'long.txt': `${'a'.repeat(80)}\n`.repeat(400) } })
-    ctx.artifacts.put = () => Promise.reject(Object.create(null))
-    const r = await readTool.execute({ path: 'long.txt' }, ctx)
-    expect(textOf(r)).toContain('could not be stored')
-    expect(r.content[1]).toBeUndefined()
+  it('cuts a line too long for a page and says so, keeping real line numbers', async () => {
+    const ctx = fakeToolContext({ files: { 'min.js': `a\n${'z'.repeat(5000)}\nc` } })
+    const page = textOf(await readTool.execute({ path: 'min.js' }, ctx))
+    expect(page).toContain('2\tzzz')
+    expect(page).toContain('[line cut at 2048 of 5000 bytes]')
+    expect(page.endsWith('3\tc')).toBe(true)
   })
 
   it('does not attach a ref when the output fits', async () => {
@@ -195,7 +193,7 @@ describe('read of an artifact the output guard stored', () => {
   })
 
   it.each([
-    ['a locator without its size', `artifact://${sha}`, 'artifact locator', 0],
+    ['a locator without its size', `artifact://${sha}`, 'missing its ?size=', 0],
     ['a locator with a stray parameter', `artifact://${sha}?size=3&x=1`, 'artifact locator', 0],
     ['a size no number holds exactly', `artifact://${sha}?size=99999999999999999999`, 'artifact locator', 0],
     ['an artifact that is not stored', `artifact://${sha}?size=3`, 'artifact not found', 1],
