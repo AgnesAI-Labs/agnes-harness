@@ -476,7 +476,7 @@ describe('reference authority directory', () => {
           kind: 'directory',
           sourceLocatorRevision: 1,
           targetProviderLock: lockRef(),
-          targetLocationRef: 'next',
+          targetLocationRef: 'nested/one/two/next',
           externalJournalRef: 'journal-1',
         },
         policyRef: 'policy-1',
@@ -496,12 +496,12 @@ describe('reference authority directory', () => {
         )
         expect(receipt.ok).toBe(true)
         const standbyLeft = createAuthorityDirectoryProvider({
-          directory: join(relocating.left.root, 'standby', 'next'),
+          directory: join(relocating.left.root, 'standby', 'nested/one/two/next'),
           anchor: relocating.left.anchor,
           authority: AUTHORITY,
         })
         const standbyRight = createReferenceAuthorityDirectory({
-          directory: join(relocating.right.root, 'standby', 'next'),
+          directory: join(relocating.right.root, 'standby', 'nested/one/two/next'),
           anchor: relocating.right.anchor,
           authority: AUTHORITY,
         })

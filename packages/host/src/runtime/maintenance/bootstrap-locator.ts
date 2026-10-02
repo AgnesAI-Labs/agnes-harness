@@ -92,6 +92,7 @@ export function createBootstrapAnchor(
   const locator = checkedLocator(initial.locator)
   if (!locator.ok) return locator
   if (!isAbsolute(directory)) return fail('invalid_input', 'anchor_path')
+  if (!filesystemSupportsLocalRename(directory)) return fail('incompatible', 'filesystem_unsupported')
   const credential = credentialFor(initial.principalRef, locator.value.directoryId)
   try {
     createPrivateDirectorySync(directory)
@@ -108,6 +109,7 @@ export function createBootstrapAnchor(
 /** Reopens an anchor without rewriting the published locator. */
 export function openBootstrapAnchor(directory: string): Outcome<BootstrapAnchor> {
   if (!isAbsolute(directory)) return fail('invalid_input', 'anchor_path')
+  if (!filesystemSupportsLocalRename(directory)) return fail('incompatible', 'filesystem_unsupported')
   const current = readStageZero(directory)
   if (!current.ok) return current
   if (!current.value) return fail('incompatible', 'anchor_absent')

@@ -134,7 +134,8 @@ export function createReferenceAuthorityDirectory(options: {
   const anchor = resolve(options.anchor)
   const store = resolve(directory, 'routes.sqlite')
   let disposed = false
-  const blocked = options.filesystem === 'unsupported' || !localSqliteLocation(directory)
+  const blocked =
+    options.filesystem === 'unsupported' || !localSqliteLocation(directory) || !localSqliteLocation(anchor)
 
   function admit(
     context: CallContext,
@@ -428,6 +429,7 @@ export function createReferenceAnchor(
 ): Outcome<ReferenceAnchor> {
   const checked = checkLocator(locator)
   if (!checked.ok) return checked
+  if (!localSqliteLocation(anchor)) return halt('incompatible', 'filesystem_unsupported')
   const file = anchorFile(anchor)
   mkdirSync(anchor, { recursive: true, mode: 0o700 })
   const db = new DatabaseSync(file)
@@ -445,6 +447,7 @@ export function createReferenceAnchor(
 }
 
 export function openReferenceAnchor(anchor: string): Outcome<ReferenceAnchor> {
+  if (!localSqliteLocation(anchor)) return halt('incompatible', 'filesystem_unsupported')
   const current = readReferenceAnchor(anchor)
   if (!current.ok) return current
   if (!current.value) return halt('incompatible', 'anchor_absent')
@@ -547,6 +550,7 @@ function relocate(
   if (!separated(directory, standby) || !separated(directory, anchor) || !separated(standby, anchor)) {
     return halt('incompatible', 'anchor_nested')
   }
+  if (!localSqliteLocation(standby)) return halt('incompatible', 'filesystem_unsupported')
   const frozen = immediate(store, (db) => {
     const current = takeHead(db, emptyOwned(authority, locator.epoch))
     if (!current.ok) return current
@@ -566,15 +570,19 @@ function relocate(
   const digest = canonicalJsonDigest(JSON.parse(JSON.stringify(frozen.value)) as JsonValue)
   if (existsSync(standby)) return halt('incompatible', 'target_exists')
   try {
+    let durableAncestor = dirname(standby)
+    while (!existsSync(durableAncestor)) durableAncestor = dirname(durableAncestor)
     mkdirSync(dirname(standby), { recursive: true, mode: 0o700 })
     mkdirSync(standby, { mode: 0o700 })
     cloneRows(store, resolve(standby, 'routes.sqlite'))
-    for (const path of [
-      resolve(standby, 'routes.sqlite'),
-      standby,
-      dirname(standby),
-      dirname(dirname(standby)),
-    ]) {
+    const durablePaths = [resolve(standby, 'routes.sqlite')]
+    let folder = standby
+    while (true) {
+      durablePaths.push(folder)
+      if (folder === durableAncestor) break
+      folder = dirname(folder)
+    }
+    for (const path of durablePaths) {
       const descriptor = openSync(path, 'r')
       try {
         fsyncSync(descriptor)

@@ -13,7 +13,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type {
@@ -142,7 +142,10 @@ export function createAuthorityDirectoryProvider(
   const directory = resolve(options.directory)
   const anchor = resolve(options.anchor)
   let disposed = false
-  const localFs = options.filesystem === 'unsupported' ? false : filesystemSupportsLocalRename(directory)
+  const localFs =
+    options.filesystem !== 'unsupported' &&
+    filesystemSupportsLocalRename(directory) &&
+    filesystemSupportsLocalRename(anchor)
   const features: readonly string[] = localFs
     ? ['cutover-replay', 'external-anchor', 'local-fs-rename', 'exclusive-lock']
     : ['cutover-replay', 'external-anchor']
@@ -488,6 +491,8 @@ function publishDirectoryMove(
   ) {
     return refused({ code: 'incompatible', detailCode: 'anchor_nested' })
   }
+  if (!filesystemSupportsLocalRename(standby))
+    return refused({ code: 'incompatible', detailCode: 'filesystem_unsupported' })
   const frozen = mutate<DirectoryHead>(
     directory,
     emptyHead(options.authority, view.locator.epoch),
@@ -732,7 +737,7 @@ function writeGeneration(
     }
     renameWriteThroughSync(pointerTemp, join(directory, 'current'))
     fire(onPhase, 'commit')
-  } catch (error) {
+  } catch {
     if (pointerShows(directory, document.id)) throw new PhaseStop('commit')
     return { ok: false, error: refusal('retryable', 'durability_failed') }
   }
@@ -894,15 +899,18 @@ function validHead(head: DirectoryHead): boolean {
 }
 
 function copyStore(from: string, to: string): void {
+  let existingAncestor = dirname(to)
+  while (!existsSync(existingAncestor)) existingAncestor = dirname(existingAncestor)
   mkdirSync(resolve(to, '..'), { recursive: true, mode: 0o700 })
   mkdirSync(to, { mode: 0o700 })
   for (const name of ['current', 'generations', 'seals', 'origins']) {
     const source = join(from, name)
     if (existsSync(source)) copyTree(source, join(to, name))
   }
-  syncDirectorySync(to)
-  syncDirectorySync(resolve(to, '..'))
-  syncDirectorySync(resolve(to, '../..'))
+  for (let folder = to; ; folder = dirname(folder)) {
+    syncDirectorySync(folder)
+    if (folder === existingAncestor) break
+  }
 }
 
 function copyTree(from: string, to: string): void {

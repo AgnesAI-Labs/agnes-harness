@@ -23,14 +23,21 @@ import {
   type DurabilityPhase,
 } from '../../src/runtime/providers/authority-directory.js'
 
-const durabilityFault = vi.hoisted(() => ({ failSync: false, fsType: null as number | null }))
+const durabilityFault = vi.hoisted(() => ({
+  failSync: false,
+  fsType: null as number | null,
+  fsPath: null as string | null,
+}))
 vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>()
   return {
     ...fs,
     statfsSync: (path: Parameters<typeof fs.statfsSync>[0]) => {
       const stats = fs.statfsSync(path)
-      return durabilityFault.fsType === null ? stats : { ...stats, type: durabilityFault.fsType }
+      return durabilityFault.fsType === null ||
+        (durabilityFault.fsPath !== null && String(path) !== durabilityFault.fsPath)
+        ? stats
+        : { ...stats, type: durabilityFault.fsType }
     },
     fsyncSync: (fd: number) => {
       if (durabilityFault.failSync) throw Object.assign(new Error('Injected fsync failure'), { code: 'EIO' })
@@ -725,6 +732,26 @@ describe('authority directory', () => {
         reason: 'relocate',
         mode: 'explicit',
       }
+      const targetParent = join(opened.root, 'standby')
+      mkdirSync(targetParent)
+      durabilityFault.fsPath = targetParent
+      durabilityFault.fsType = 2
+      try {
+        expect(detail(await opened.provider.transfer(request, context()))).toBe(
+          'incompatible/filesystem_unsupported',
+        )
+      } finally {
+        durabilityFault.fsType = null
+        durabilityFault.fsPath = null
+      }
+      expect(
+        detail(
+          await opened.provider.approveUpgrade(
+            { upgradeId: 'target-check', validationRef: proof, authorityIds: ['state-auth'] },
+            context(),
+          ),
+        ),
+      ).toBe('ok')
       const moved = await opened.provider.transfer(request, context())
       expect(detail(moved)).toBe('ok')
       if (!moved.ok) return
