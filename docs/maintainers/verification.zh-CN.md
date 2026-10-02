@@ -44,6 +44,23 @@ smoke 使用隔离的临时 home、本机回环模型夹具与真实 CLI/daemon/
 
 构建到独立输出目录或执行 PowerShell 步骤见[安装指南](../guide/install.zh-CN.md)，手动体验见[演示指南](../guide/demo.zh-CN.md)。
 
+## 网络与密钥提供方检查
+
+[Host 网络提供方](../../packages/host/src/runtime/providers/network.ts)与[密钥 broker](../../packages/host/src/runtime/providers/secrets.ts)可脱离进程启动单独验证。[reference 网络](../../examples/runtime-reference/src/providers/network.ts)与[reference 密钥](../../examples/runtime-reference/src/providers/secrets.ts)采用独立的传输和存储算法。这些入口尚未接入普通 Host、daemon 或 CLI 启动。
+
+```sh
+pnpm exec tsx tools/acceptance/runtime/run-conformance.ts --contracts agh.network,agh.secrets --providers default,reference
+pnpm exec vitest run packages/host/test/runtime/network-secrets.test.ts packages/host/test/runtime/secrets-legacy.e2e.test.ts packages/host/test/runtime/secrets-oauth.test.ts packages/host/test/runtime/secrets-network.e2e.test.ts packages/host/test/runtime/secrets-drain.slow.test.ts packages/host/test/runtime/network.e2e.test.ts packages/host/test/runtime/network-secrets-recovery.e2e.test.ts examples/runtime-reference/src/providers/network-secrets-lock.test.ts examples/runtime-reference/src/providers/network-cross.e2e.test.ts --maxWorkers=1
+```
+
+符合性分别执行选择、正常、拒绝、取消、恢复和释放六类场景。报告用 `restricted-effects` 标明部署授权与内容端口夹具。恢复会杀死真实子进程；网络测试使用固定回环对端与 CONNECT 代理。这些证据覆盖 broker 行为，不代表生产启动、真实 OAuth 提供方或其他操作系统已验收。
+
+网络部署提供显式目标规则、当前身份和授权校验，以及保留响应字节的内容权威。每次连接前检查 DNS 回答和重定向。请求身份先持久化再发送；不确定的发送保持 unknown，不自动重试。默认代理通过 CONNECT 隧道访问已固定的目标地址。Reference 支持公共 IPv4 与部署显式批准的地址例外，拒绝代理和不支持的公共地址族。
+
+密钥配置只含 `secret://` 引用、版本与用途绑定 grant。默认实现可消费现有 `composeSecrets`，保留文件优先于环境变量的行为，存储拒绝不转成环境变量回退。句柄不授予 bearer 权限：受信消费者每次使用时重新核验当前身份、scope、audience、用途、版本、期限和撤销状态。本机材料消费回调属于部署的受信消费者边界，不是普通插件端口。消费者不响应取消时，释放有界失败。
+
+默认 refresh 与 exchange 需要部署侧受限效果端口。刷新身份和凭据锁跨崩溃保留；缺少证据返回 unknown，不重发旋转 token。回调授权码仅进入短期、单次使用的加密 escrow；exchange 可以为 `initialVersion: null` 的目录项安装首次凭据。Reference OAuth 能力明确登记为未声明，返回 incompatible/unsupported。材料扫描覆盖 broker 持久化和诊断结果；凭据来源存储不写入 broker 元数据库。
+
 ## 记录验证结果
 
 每次验收记录源码 revision、OS/架构、Node/pnpm 版本、执行命令，以及通过、失败和跳过数量。修复后采用定向回归时注明覆盖范围，不将它描述成一次全仓重跑。
