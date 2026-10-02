@@ -51,6 +51,14 @@ export function defineFixture(fixture: ExtensionFixture): ExtensionFixture {
 }
 export { projectionFixture } from './fixtures/projections.js'
 export { serviceFixture } from './fixtures/services.js'
+export type {
+  AuditConformanceBinding,
+  AuditContractAssertion,
+  AuditContractDriver,
+  AuditContractInstance,
+} from './runtime/contracts/audit.js'
+export { registerAuditContract, runAuditContractScenario } from './runtime/contracts/audit.js'
+export * as contracts from './runtime/contracts/index.js'
 export * from './runtime/contracts/policy.js'
 export type {
   AssertionInput,
@@ -68,6 +76,8 @@ export type {
   FixtureMark,
   GateKind,
   GateObservation,
+  IdentityContractFixture,
+  IdentityCredentialCase,
   InjectedClock,
   Qualification,
   ReportDraft,
@@ -97,6 +107,7 @@ export {
   FIXTURE_MARKS,
   faultPoint,
   GATE_KINDS,
+  IDENTITY_CREDENTIAL_CASES,
   judgeReport,
   LEGACY_FIXTURES,
   PROVIDER_ABSENT,
@@ -104,6 +115,8 @@ export {
   QUALIFICATIONS,
   RESTRICTED_EFFECTS_FIXTURE,
   RUNTIME_INBOX_FIXTURE,
+  registerIdentityContract,
+  runIdentityContractCase,
   SCENARIOS,
   serializeReport,
 } from './runtime/index.js'
@@ -112,9 +125,3 @@ export {
   type TransportContractCase,
   type TransportFixture,
 } from './transport-contract.js'
-
-export type { AuditContractAssertion, AuditContractDriver, AuditContractInstance, AuditConformanceBinding } from './runtime/contracts/audit.js'
-export { registerAuditContract, runAuditContractScenario } from './runtime/contracts/audit.js'
-
-export type { IdentityContractFixture, IdentityCredentialCase } from './runtime/index.js'
-export { IDENTITY_CREDENTIAL_CASES, registerIdentityContract, runIdentityContractCase } from './runtime/index.js'

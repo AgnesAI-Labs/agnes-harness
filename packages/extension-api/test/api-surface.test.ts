@@ -18,12 +18,14 @@ describe('author API consistency', () => {
   it('pins root and optional runtime exports without confusing them with type exports', () => {
     expect(Object.keys(api).sort()).toEqual(surface.runtimeExports)
     expect(surface.apiVersion).toBe(api.API_VERSION)
+    // New contract cases join the `contracts` aggregate only. Do not add them to this list.
     expect(Object.keys(testkit).sort()).toEqual([
       'ASSERTION_STATUSES',
       'CATALOG_GATES',
       'FAILURE_CODES',
       'FIXTURE_MARKS',
       'GATE_KINDS',
+      'IDENTITY_CREDENTIAL_CASES',
       'LEGACY_FIXTURES',
       'NEGATIVE_ACTIONS',
       'PROVIDER_ABSENT',
@@ -32,6 +34,7 @@ describe('author API consistency', () => {
       'RUNTIME_INBOX_FIXTURE',
       'SCENARIOS',
       'TRANSPORT_CONTRACT_CASES',
+      'contracts',
       'createConformanceHarness',
       'createRestrictedEffectsFixture',
       'createRuntimeInboxFixture',
@@ -42,6 +45,12 @@ describe('author API consistency', () => {
       'judgeReport',
       'projectionFixture',
       'providerFileForContract',
+      'registerAuditContract',
+      'registerIdentityContract',
+      'registerPolicyContract',
+      'runAuditContractScenario',
+      'runIdentityContractCase',
+      'runPolicyContractScenario',
       'serializeReport',
       'serviceFixture',
     ])

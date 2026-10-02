@@ -1376,7 +1376,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Unsupported reference source kinds register as not-advertised. Measured 1683, exact, no spare.
   // Shared blob and artifact access suites with their scenario registration, and blob selection
   // refusals through the test service container, merged on that base. Measured 2546, exact, no spare.
-  'packages/extension-api/testkit': 3449,
+  // Contract cases re-export from one aggregate. Measured 3459, exact, no spare.
+  'packages/extension-api/testkit': 3459,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
