@@ -309,6 +309,16 @@ describe('registerRemoteToolsStrict', () => {
     const first = await readTool.execute({ path: locator }, ctx)
     expect(first.isError).toBeUndefined()
     expect((first.content[0] as { text: string }).text).toContain('row 0')
+    // One block per line: each marker line starts its own line, so grep reports a match at its own
+    // row and a page of read does not run two blocks together.
+    const stored = ctx.calls.artifacts.map((a) => new TextDecoder().decode(a.bytes))
+    const lines = (stored.find((text) => text.startsWith('=== text block 1 of 100 ')) as string).split('\n')
+    expect(lines.slice(0, 4)).toEqual([
+      `=== text block 1 of 100 (${'row 0 '.length + 7000} bytes) ===`,
+      `row 0 ${'x'.repeat(7000)}`,
+      `=== text block 2 of 100 (${'row 1 '.length + 7000} bytes) ===`,
+      `row 1 ${'x'.repeat(7000)}`,
+    ])
     const hit = await grepTool.execute({ pattern: 'row 99 ', path: locator }, ctx)
     expect(hit.isError).toBeUndefined()
     expect((hit.content[0] as { text: string }).text).toContain('row 99')
