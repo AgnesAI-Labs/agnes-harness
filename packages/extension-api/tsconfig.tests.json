@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.tests.tsbuildinfo"
+  },
+  "include": [
+    "test/**/*.ts",
+    "testkit/**/*.ts",
+    "tools/**/*.ts",
+    "examples/**/*.ts",
+    "src/**/*.test.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    {
+      "path": "./tsconfig.runtime.json"
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../core/tsconfig.runtime.json"
+    }
+  ]
+}

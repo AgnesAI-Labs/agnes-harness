@@ -23,6 +23,7 @@ export {
   RuntimeConfigurationSchemas,
   RuntimeEventsOutboxAPI,
   RuntimeHttpHeaderPolicy,
+  RuntimeIdentityLegacySchemas,
   RuntimeInterceptorPolicy,
   RuntimeServiceCatalog,
 } from '../../gen/ts/runtime-catalog.js'

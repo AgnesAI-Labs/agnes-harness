@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import { createReferenceRegistry } from './index.js'
 import { loadReferencePlugin } from './plugin.js'
+import { configReferenceProvider, exerciseReferenceConfig } from './providers/config.js'
 import { SAMPLE_CONTRACT, SAMPLE_PROVIDER_ID, sampleContractCases } from './sample-contract.js'
 
 describe('reference registry', () => {
@@ -25,7 +26,17 @@ describe('reference registry', () => {
       expect(slot.methods).toEqual(found?.methods)
       expect(slot.providerFile).toBe(providerFileForContract(slot.contract))
     }
-    expect(loadReferencePlugin()).toEqual(slots)
+    const loaded = loadReferencePlugin()
+    expect(loaded.map((slot) => slot.contract)).toEqual(slots.map((slot) => slot.contract))
+    expect(loaded.filter((slot) => slot.provider !== null)).toEqual([
+      {
+        ...slots.find((slot) => slot.contract === 'agh.config'),
+        provider: configReferenceProvider,
+      },
+    ])
+    expect(loaded.find((slot) => slot.contract === 'agh.config')?.providerFile).toBe(
+      'examples/runtime-reference/src/providers/config.ts',
+    )
     expect(() =>
       createReferenceRegistry([
         { id: 'twice', contract: 'agh.loop' },
@@ -45,6 +56,17 @@ describe('reference registry', () => {
       const source = readFileSync(new URL(`./${name}`, import.meta.url), 'utf8')
       expect(source).not.toContain('providers/')
     }
+    const registration = readFileSync(new URL('./register.ts', import.meta.url), 'utf8')
+    expect(registration).toContain('./providers/config.js')
+    const implementation = readFileSync(new URL('./providers/config.ts', import.meta.url), 'utf8')
+    expect(implementation.includes('@agnes/host')).toBe(false)
+    expect(implementation.includes('createFileConfigProvider')).toBe(false)
+    expect(implementation.includes('createFetchConfigProvider')).toBe(false)
+    expect(implementation.includes('createConfigProvider')).toBe(false)
+  })
+
+  it('runs the reference configuration provider across the six scenarios', async () => {
+    await exerciseReferenceConfig()
   })
 
   it('runs the copyable sample across the six scenarios', async () => {
