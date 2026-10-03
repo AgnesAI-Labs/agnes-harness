@@ -105,7 +105,9 @@ export type ArtifactsStoreOptions = Readonly<{
 
 /**
  * Versions point at a BlobRef of the selected blob service. Grants are stored whole. A ticket row keeps
- * no nonce: the nonce is an HMAC of the ticket id, so a repeated request rebuilds the same URL.
+ * no nonce: the nonce is an HMAC of the ticket id, so a repeated request rebuilds the same URL. Every
+ * revoke and revokeGrant that changes something appends one row to the revocation log, whose seq only
+ * grows.
  */
 const TABLES = `
 CREATE TABLE IF NOT EXISTS artifact_versions (
@@ -133,7 +135,20 @@ CREATE TABLE IF NOT EXISTS download_tickets (
   grant_revision INTEGER NOT NULL,
   expires_ms INTEGER NOT NULL,
   PRIMARY KEY (actor, request_id)
+);
+CREATE TABLE IF NOT EXISTS revocations (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  request_id TEXT,
+  at INTEGER NOT NULL
 );`
+
+/** One revocation log row; `ref` is the revoked version, or `{ grantId }` for a revoked grant. */
+export type RevocationRow = Readonly<
+  | { seq: number; kind: 'revoke'; ref: Wire.ArtifactRef; requestId: null; at: number }
+  | { seq: number; kind: 'revokeGrant'; ref: { grantId: Wire.Id }; requestId: Wire.Id | null; at: number }
+>
 
 type VersionRow = {
   artifact_id: string
@@ -193,6 +208,11 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
       | undefined
     return row && (JSON.parse(row.value) as Wire.ArtifactAccessGrantValue)
   }
+
+  const logRevocation = (kind: RevocationRow['kind'], ref: RevocationRow['ref'], requestId: Wire.Id | null) =>
+    db
+      .prepare('INSERT INTO revocations (kind, ref, request_id, at) VALUES (?, ?, ?, ?)')
+      .run(kind, jcs(ref), requestId, now())
 
   const allows = (grant: Wire.ArtifactAccessGrantValue, context: CallContext, permission: Permission) =>
     grant.status === 'active' &&
@@ -403,8 +423,11 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
       })
     },
 
-    /** Revokes one grant; its revision moves on and every later check refuses it. */
-    revokeGrant(grantId: Wire.Id): Wire.ArtifactAccessGrantValue {
+    /**
+     * Revokes one grant; its revision moves on and every later check refuses it. `requestId` is the
+     * caller's request, recorded in the revocation log.
+     */
+    revokeGrant(grantId: Wire.Id, requestId: Wire.Id | null = null): Wire.ArtifactAccessGrantValue {
       return atomically(() => {
         const current = grantOf(grantId)
         if (!current) throw new Error('no such grant')
@@ -418,19 +441,42 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
           JSON.stringify(revoked),
           grantId,
         )
+        logRevocation('revokeGrant', { grantId }, requestId)
         return revoked
       })
     },
 
-    /** Revokes one exact version; other versions stay readable. */
+    /** Revokes one exact version; other versions stay readable. Revoking it again changes nothing. */
     revoke(ref: Wire.ArtifactRef): void {
       atomically(() => {
-        if (!versionOf(ref.artifactId, ref.version)) throw new Error('no such artifact version')
+        const row = versionOf(ref.artifactId, ref.version)
+        if (!row) throw new Error('no such artifact version')
+        if (row.revoked) return
         db.prepare('UPDATE artifact_versions SET revoked = 1 WHERE artifact_id = ? AND version = ?').run(
           ref.artifactId,
           ref.version,
         )
+        // The wire revoke request carries no request id.
+        logRevocation('revoke', { artifactId: row.artifact_id, version: row.version }, null)
       })
+    },
+
+    /** The revocation log in seq order. Internal: no agh.artifacts method reports it. */
+    revocations(): RevocationRow[] {
+      live()
+      const rows = db
+        .prepare('SELECT seq, kind, ref, request_id, at FROM revocations ORDER BY seq')
+        .all() as { seq: number; kind: string; ref: string; request_id: string | null; at: number }[]
+      return rows.map(
+        (row) =>
+          ({
+            seq: row.seq,
+            kind: row.kind,
+            ref: JSON.parse(row.ref),
+            requestId: row.request_id,
+            at: row.at,
+          }) as RevocationRow,
+      )
     },
 
     close() {

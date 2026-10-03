@@ -71,14 +71,18 @@ export type BlobStoreOptions = Readonly<{
 /**
  * Objects live in SQLite as 1 MiB pieces, each with the SHA-256 it had when written, so a damaged or
  * missing piece is found at the read that needs it. A pin names the object a reference may read and
- * the owner it was taken for; a sealed upload names the object it promotes to.
+ * the owner it was taken for; a sealed upload names the object it promotes to. A collected object
+ * keeps its row as a tombstone and loses its pieces. Every released pin and collected object appends
+ * one row to the deletion log, whose seq only grows.
  */
 const TABLES = `
 CREATE TABLE IF NOT EXISTS objects (
   blob_id TEXT PRIMARY KEY,
   digest TEXT NOT NULL,
   size INTEGER NOT NULL,
-  media_type TEXT NOT NULL
+  media_type TEXT NOT NULL,
+  reservation_id TEXT NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS pieces (
   blob_id TEXT NOT NULL,
@@ -90,16 +94,41 @@ CREATE TABLE IF NOT EXISTS pieces (
 CREATE TABLE IF NOT EXISTS pins (
   pin_id TEXT PRIMARY KEY,
   blob_id TEXT NOT NULL,
-  owner TEXT
+  owner TEXT,
+  revision INTEGER NOT NULL DEFAULT 1,
+  active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS uploads (
   upload_id TEXT PRIMARY KEY,
   reservation_id TEXT NOT NULL,
   blob_id TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deletions (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  at INTEGER NOT NULL
 );`
 
 type ObjectRow = { digest: string; size: number; media_type: string }
+type PinRow = ObjectRow & { blob_id: string; deleted: number; active: number; revision: number }
 type Described = Readonly<{ authorityId: Wire.Id; digest: string; bytes: number; mediaType: string }>
+
+/** One deletion log row: `pin-released` for an unpin, `blob-deleted` for an object gc collected. */
+export type DeletionRow = Readonly<{
+  seq: number
+  kind: 'pin-released' | 'blob-deleted'
+  ref: Wire.PublicRef
+  digest: string
+  at: number
+}>
+
+/** True when `inner` names the same scope as `outer` or one nested inside it. */
+const within = (inner: Wire.ScopeRef, outer: Wire.ScopeRef) =>
+  Object.entries(outer).every(
+    ([key, value]) => key === 'kind' || (inner as Record<string, unknown>)[key] === value,
+  )
 
 export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
   const authorityId = options.authorityId ?? 'reference-blob'
@@ -114,24 +143,53 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
     if (!open) refuse('blocked', 'blob store is closed')
   }
 
+  function atomically<T>(body: () => T): T {
+    live()
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      const result = body()
+      db.exec('COMMIT')
+      return result
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   /** Whether a reference describes exactly this stored object of this store. */
-  const describes = (row: ObjectRow | undefined, ref: Described): row is ObjectRow =>
+  const describes = <R extends ObjectRow>(row: R | undefined, ref: Described): row is R =>
     row !== undefined &&
     ref.authorityId === authorityId &&
     row.digest === ref.digest &&
     row.size === ref.bytes &&
     row.media_type === ref.mediaType
 
-  /** The object a reference names through a live pin of exactly that object. */
-  function pinned(ref: Wire.BlobRef): ObjectRow {
-    const row = db
+  const pinRow = (pinId: Wire.Id) =>
+    db
       .prepare(
-        'SELECT o.digest, o.size, o.media_type FROM pins p JOIN objects o ON o.blob_id = p.blob_id WHERE p.pin_id = ? AND p.blob_id = ?',
+        'SELECT p.blob_id, p.revision, p.active, o.digest, o.size, o.media_type, o.deleted FROM pins p JOIN objects o ON o.blob_id = p.blob_id WHERE p.pin_id = ?',
       )
-      .get(ref.pinId, ref.blobId) as ObjectRow | undefined
-    if (!describes(row, ref)) refuse('not_found', 'no such pinned blob')
+      .get(pinId) as PinRow | undefined
+
+  /** The pin a reference names, whether or not it still grants reads. */
+  function pinOf(ref: Wire.BlobRef): PinRow {
+    const row = pinRow(ref.pinId)
+    if (row?.blob_id !== ref.blobId || !describes(row, ref)) refuse('not_found', 'no such pinned blob')
     return row
   }
+
+  /** The object a reference names through a live pin of exactly that object. */
+  function pinned(ref: Wire.BlobRef): ObjectRow {
+    const row = pinOf(ref)
+    if (row.deleted) refuse('artifact_deleted', 'blob was collected')
+    if (!row.active) refuse('revoked', 'pin was released')
+    return row
+  }
+
+  const logDeletion = (kind: DeletionRow['kind'], ref: Wire.PublicRef, digest: string) =>
+    db
+      .prepare('INSERT INTO deletions (kind, ref, digest, at) VALUES (?, ?, ?, ?)')
+      .run(kind, jcs(ref), digest, Date.now())
 
   /** The reference must name a live pin of exactly this object, and every stored byte must be there. */
   function authorize(context: CallContext, ref: Wire.BlobRef) {
@@ -224,26 +282,24 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
   }
 
   /** Stores bytes as one object and runs `link` to name it, in one transaction. */
-  function store(blobId: Wire.Id, bytes: Uint8Array, mediaType: string, link: () => void) {
-    db.exec('BEGIN IMMEDIATE')
-    try {
-      db.prepare('INSERT INTO objects (blob_id, digest, size, media_type) VALUES (?, ?, ?, ?)').run(
-        blobId,
-        sha256(bytes),
-        bytes.byteLength,
-        mediaType,
-      )
+  function store(
+    blobId: Wire.Id,
+    reservationId: Wire.Id,
+    bytes: Uint8Array,
+    mediaType: string,
+    link: () => void,
+  ) {
+    atomically(() => {
+      db.prepare(
+        'INSERT INTO objects (blob_id, digest, size, media_type, reservation_id) VALUES (?, ?, ?, ?, ?)',
+      ).run(blobId, sha256(bytes), bytes.byteLength, mediaType, reservationId)
       const insert = db.prepare('INSERT INTO pieces (blob_id, seq, data, sha) VALUES (?, ?, ?, ?)')
       for (let seq = 0; seq * PIECE_BYTES < bytes.byteLength; seq++) {
         const data = bytes.subarray(seq * PIECE_BYTES, (seq + 1) * PIECE_BYTES)
         insert.run(blobId, seq, data, sha256(data))
       }
       link()
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+    })
   }
 
   return {
@@ -263,7 +319,7 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
         mediaType,
         pinId: randomUUID(),
       })
-      store(ref.blobId, bytes, mediaType, () =>
+      store(ref.blobId, randomUUID(), bytes, mediaType, () =>
         db.prepare('INSERT INTO pins (pin_id, blob_id) VALUES (?, ?)').run(ref.pinId, ref.blobId),
       )
       return ref
@@ -282,7 +338,7 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
         status: 'sealed',
       })
       const blobId = randomUUID()
-      store(blobId, bytes, mediaType, () =>
+      store(blobId, upload.reservationId, bytes, mediaType, () =>
         db
           .prepare('INSERT INTO uploads (upload_id, reservation_id, blob_id) VALUES (?, ?, ?)')
           .run(upload.uploadId, upload.reservationId, blobId),
@@ -306,43 +362,140 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
         return { authorityId, blobId: row.blob_id, digest, bytes, mediaType, reservationId }
       }),
 
-    /** Pins a staged object for one owner; the same owner gets the same pin back. */
+    /** Pins a staged object for one owner; while that pin is live, the same owner gets it back. */
     pin: (request: unknown, context: CallContext) =>
       attempt(context, (): Wire.BlobRef => {
         const { stagedBlob, ownerRef } = parse('BlobPinRequest', request)
-        live()
-        const row = db
-          .prepare('SELECT digest, size, media_type FROM objects WHERE blob_id = ?')
-          .get(stagedBlob.blobId) as ObjectRow | undefined
-        if (!describes(row, stagedBlob)) refuse('not_found', 'no such staged blob')
-        const owner = jcs(ownerRef)
-        const held = db
-          .prepare('SELECT pin_id FROM pins WHERE blob_id = ? AND owner = ?')
-          .get(stagedBlob.blobId, owner) as { pin_id: string } | undefined
-        const pinId = held?.pin_id ?? randomUUID()
-        if (!held)
-          db.prepare('INSERT INTO pins (pin_id, blob_id, owner) VALUES (?, ?, ?)').run(
-            pinId,
-            stagedBlob.blobId,
-            owner,
-          )
-        const { blobId, digest, bytes, mediaType } = stagedBlob
-        return { authorityId, blobId, digest, bytes, mediaType, pinId }
+        return atomically(() => {
+          const row = db
+            .prepare('SELECT digest, size, media_type, deleted FROM objects WHERE blob_id = ?')
+            .get(stagedBlob.blobId) as (ObjectRow & { deleted: number }) | undefined
+          if (!describes(row, stagedBlob)) refuse('not_found', 'no such staged blob')
+          if (row.deleted) refuse('artifact_deleted', 'staged blob was collected')
+          const owner = jcs(ownerRef)
+          const held = db
+            .prepare('SELECT pin_id FROM pins WHERE blob_id = ? AND owner = ? AND active = 1')
+            .get(stagedBlob.blobId, owner) as { pin_id: string } | undefined
+          const pinId = held?.pin_id ?? randomUUID()
+          if (!held)
+            db.prepare('INSERT INTO pins (pin_id, blob_id, owner) VALUES (?, ?, ?)').run(
+              pinId,
+              stagedBlob.blobId,
+              owner,
+            )
+          const { blobId, digest, bytes, mediaType } = stagedBlob
+          return { authorityId, blobId, digest, bytes, mediaType, pinId }
+        })
       }),
 
-    /** Reports a pinned reference with the owners of every pin on its object; nothing else is inspected. */
+    /** Releases one pin and logs it. Releasing a released pin changes nothing and reports false. */
+    unpin: (request: unknown, context: CallContext) =>
+      attempt(context, (): Wire.BlobUnpinResult => {
+        const { pinId, expectedRevision } = parse('BlobUnpinRequest', request)
+        return atomically(() => {
+          const row = pinRow(pinId)
+          if (!row) refuse('not_found', 'no such pin')
+          if (!row.active) return { released: false }
+          if (row.revision !== expectedRevision)
+            refuse('revision_conflict', 'pin is not at the expected revision')
+          db.prepare('UPDATE pins SET active = 0, revision = ? WHERE pin_id = ?').run(row.revision + 1, pinId)
+          const { blob_id: blobId, digest, size: bytes, media_type: mediaType } = row
+          const value = { authorityId, blobId, digest, bytes, mediaType, pinId }
+          logDeletion('pin-released', { kind: 'blob', value }, digest)
+          return { released: true }
+        })
+      }),
+
+    /**
+     * Collects objects that no live pin and no sealed upload holds: the row stays as a tombstone, the
+     * pieces go, and the deletion log gains a row, all in one transaction. A sealed upload holds its
+     * object as the default service's upload root does; stage and seal are not here, so nothing hands
+     * out a pin that could release that hold. The test write entries record no owner scope, so every
+     * object counts as inside the request scope, which itself must be inside the caller's.
+     */
+    gc: (request: unknown, context: CallContext) =>
+      attempt(context, (): Wire.BlobGcResult => {
+        const { scopeRef, dryRun, cursor, limit } = parse('BlobGcRequest', request)
+        if (limit < 1 || limit > 10_000) refuse('invalid_request', 'gc limit must be 1 to 10000')
+        if (!within(scopeRef, context.scope))
+          refuse('permission_denied', 'gc scope is outside the caller scope')
+        return atomically(() => {
+          // ponytail: lists every remaining object per call; page in SQL once stores hold many objects.
+          const rows = db
+            .prepare(
+              `SELECT o.blob_id, o.digest, o.size, o.media_type, o.reservation_id,
+                 EXISTS (SELECT 1 FROM pins p WHERE p.blob_id = o.blob_id AND p.active = 1)
+                 OR EXISTS (SELECT 1 FROM uploads u WHERE u.blob_id = o.blob_id) AS held
+               FROM objects o WHERE o.deleted = 0 AND o.blob_id > ? ORDER BY o.blob_id`,
+            )
+            .all(cursor ?? '') as (ObjectRow & { blob_id: string; reservation_id: string; held: number })[]
+          const eligibleRefs: Wire.PublicRef[] = []
+          const deletedRefs: Wire.PublicRef[] = []
+          let last: string | null = null
+          for (const row of rows) {
+            if (eligibleRefs.length === limit) break
+            last = row.blob_id
+            if (row.held) continue
+            const ref: Wire.PublicRef = {
+              kind: 'staged-blob',
+              value: {
+                authorityId,
+                blobId: row.blob_id,
+                digest: row.digest,
+                bytes: row.size,
+                mediaType: row.media_type,
+                reservationId: row.reservation_id,
+              },
+            }
+            eligibleRefs.push(ref)
+            if (dryRun) continue
+            db.prepare('UPDATE objects SET deleted = 1 WHERE blob_id = ?').run(row.blob_id)
+            db.prepare('DELETE FROM pieces WHERE blob_id = ?').run(row.blob_id)
+            logDeletion('blob-deleted', ref, row.digest)
+            deletedRefs.push(ref)
+          }
+          const more = last !== null && rows[rows.length - 1]?.blob_id !== last
+          return { eligibleRefs, deletedRefs, nextCursor: more ? last : null }
+        })
+      }),
+
+    /**
+     * Reports one pin reference: deleted once its object was collected, staged once the pin was
+     * released, with the owners of the object's live pins. Nothing else is inspected.
+     */
     inspect: (request: unknown, context: CallContext) =>
       attempt(context, (): Wire.BlobInspectResult => {
         const { ref } = parse('BlobInspectRequest', request)
         live()
         if (ref.kind !== 'blob') refuse('operation_not_supported', 'only pinned blobs are inspected')
-        const row = pinned(ref.value)
-        const owners = db
-          .prepare('SELECT owner FROM pins WHERE blob_id = ? AND owner IS NOT NULL ORDER BY owner')
-          .all(ref.value.blobId) as { owner: string }[]
+        const row = pinOf(ref.value)
+        const owners = row.deleted
+          ? []
+          : (db
+              .prepare(
+                'SELECT owner FROM pins WHERE blob_id = ? AND active = 1 AND owner IS NOT NULL ORDER BY owner',
+              )
+              .all(ref.value.blobId) as { owner: string }[])
         const ownerRefs = owners.map((item) => JSON.parse(item.owner) as Wire.PublicRef)
-        return { status: 'pinned', bytes: row.size, digest: row.digest, ownerRefs }
+        const status = row.deleted ? 'deleted' : row.active ? 'pinned' : 'staged'
+        return { status, bytes: row.size, digest: row.digest, ownerRefs }
       }),
+
+    /** The deletion log in seq order. Internal: no agh.blob method reports it. */
+    deletions(): DeletionRow[] {
+      live()
+      const rows = db.prepare('SELECT seq, kind, ref, digest, at FROM deletions ORDER BY seq').all() as (Omit<
+        DeletionRow,
+        'ref'
+      > & { ref: string })[]
+      return rows.map((row) => ({ ...row, ref: JSON.parse(row.ref) as Wire.PublicRef }))
+    },
+
+    /** The newest deletion log seq, 0 before any row; a checkpoint records it as its watermark. */
+    deletionWatermark(): number {
+      live()
+      return (db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM deletions').get() as { seq: number }).seq
+    },
 
     close() {
       if (!open) return

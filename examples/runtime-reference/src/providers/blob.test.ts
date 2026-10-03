@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { createConformanceHarness, SCENARIOS } from '@agnes/extension-api/testkit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -136,6 +137,93 @@ describe('reference blob store', () => {
     })
     const tail = must(await store.blobRead.readRange({ ref: pinned, offset: PIECE_BYTES, length: 9 }, ctx()))
     expect(tail.bytes).toEqual(bytes.subarray(PIECE_BYTES))
+  })
+
+  it('releases a pin once and logs it; gc collects only what no pin or sealed upload holds', async () => {
+    const kept = store.seed(bytesOf(3))
+    const dropped = store.seed(bytesOf(PIECE_BYTES + 1))
+    const upload = store.upload(bytesOf(4))
+    const stagedBlob = must(await store.promote({ upload, expectedDigest: upload.digest }, ctx()))
+    const ownerRef = { kind: 'artifact', value: { artifactId: 'artifact-1', version: 1 } } as const
+    const held = must(await store.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))
+    const unpin = (ref: { pinId: string }, expectedRevision = 1) =>
+      store.unpin({ pinId: ref.pinId, expectedRevision }, ctx())
+    expect(refused(await unpin(dropped, 2))).toBe('revision_conflict')
+    expect(refused(await unpin({ pinId: 'missing' }))).toBe('not_found')
+    expect(must(await unpin(dropped))).toEqual({ released: true })
+    expect(must(await unpin(dropped))).toEqual({ released: false })
+    expect(must(await unpin(held))).toEqual({ released: true })
+    expect(refused(await store.blobRead.readRange({ ref: dropped, offset: 0, length: 1 }, ctx()))).toBe(
+      'revoked',
+    )
+    expect(must(await store.inspect({ ref: { kind: 'blob', value: dropped } }, ctx())).status).toBe('staged')
+    expect(store.deletionWatermark()).toBe(2)
+
+    const gc = (over: object = {}) =>
+      store.gc({ scopeRef: ctx().scope, dryRun: false, cursor: null, limit: 1, ...over }, ctx())
+    expect(refused(await gc({ limit: 0 }))).toBe('invalid_request')
+    expect(refused(await gc({ scopeRef: { kind: 'installation', installationId: 'install-2' } }))).toBe(
+      'permission_denied',
+    )
+    const collected = {
+      kind: 'staged-blob',
+      value: expect.objectContaining({ blobId: dropped.blobId, digest: dropped.digest }),
+    }
+    expect(must(await gc({ dryRun: true, limit: 10 }))).toEqual({
+      eligibleRefs: [collected],
+      deletedRefs: [],
+      nextCursor: null,
+    })
+    expect(store.deletionWatermark()).toBe(2)
+    const deleted: unknown[] = []
+    let cursor: string | null = null
+    do {
+      const page = must(await gc({ cursor }))
+      expect(page.eligibleRefs.length).toBeLessThanOrEqual(1)
+      deleted.push(...page.deletedRefs)
+      cursor = page.nextCursor
+    } while (cursor !== null)
+    expect(deleted).toEqual([collected])
+    expect(must(await gc({ limit: 10 })).eligibleRefs).toEqual([])
+
+    expect(store.deletions()).toEqual([
+      {
+        seq: 1,
+        kind: 'pin-released',
+        ref: { kind: 'blob', value: dropped },
+        digest: dropped.digest,
+        at: expect.any(Number),
+      },
+      {
+        seq: 2,
+        kind: 'pin-released',
+        ref: { kind: 'blob', value: held },
+        digest: held.digest,
+        at: expect.any(Number),
+      },
+      { seq: 3, kind: 'blob-deleted', ref: collected, digest: dropped.digest, at: expect.any(Number) },
+    ])
+    expect(store.deletionWatermark()).toBe(3)
+    const db = new DatabaseSync(path)
+    try {
+      const count = (blobId: string) =>
+        (db.prepare('SELECT COUNT(*) AS n FROM pieces WHERE blob_id = ?').get(blobId) as { n: number }).n
+      expect([count(dropped.blobId), count(kept.blobId), count(held.blobId)]).toEqual([0, 1, 1])
+    } finally {
+      db.close()
+    }
+    expect(refused(await store.blobRead.readRange({ ref: dropped, offset: 0, length: 1 }, ctx()))).toBe(
+      'artifact_deleted',
+    )
+    expect(must(await store.inspect({ ref: { kind: 'blob', value: dropped } }, ctx())).status).toBe('deleted')
+    expect(must(await store.blobRead.readRange({ ref: kept, offset: 0, length: 3 }, ctx())).bytes).toEqual(
+      bytesOf(3),
+    )
+    const again = must(await store.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))
+    expect(again.pinId).not.toBe(held.pinId)
+    expect(must(await store.blobRead.readRange({ ref: again, offset: 0, length: 4 }, ctx())).bytes).toEqual(
+      bytesOf(4),
+    )
   })
 })
 
