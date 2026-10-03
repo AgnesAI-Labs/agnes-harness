@@ -7,6 +7,11 @@ function freeze<T>(value: T): T {
   return value
 }
 export const RuntimeSchemaRefs = freeze({
+  "EmbeddingVectors": {
+    "typeId": "agh.embedding/vectors@1",
+    "revision": 1,
+    "digest": "a6b1c7217fa28b4cddef04e08a7c2bc6140cc5f78a9b607bf2865e1dbd923e57"
+  },
   "RuntimeCommitData": {
     "typeId": "agh.runtime/state-commit@1",
     "revision": 1,

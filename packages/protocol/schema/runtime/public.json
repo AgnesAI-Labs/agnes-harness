@@ -28735,6 +28735,18 @@
       },
       "required": ["hits", "usageRefs", "provenance"]
     },
+    "EmbeddingVectors": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 1,
+        "maxItems": 10000
+      },
+      "maxItems": 10000
+    },
     "EmbeddingEncodeRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -39578,6 +39590,7 @@
     }
   },
   "x-schema-ids": {
+    "EmbeddingVectors": "agh.embedding/vectors@1",
     "RuntimeCommitData": "agh.runtime/state-commit@1",
     "RuntimeFormatData": "agh.runtime/format@1",
     "StandardToolOutput": "agh.tool/standard-output@1",
@@ -40404,6 +40417,7 @@
     "maxBinaryMetadataBytes": 8192
   },
   "x-schema-revisions": {
+    "EmbeddingVectors": 1,
     "AckOutboxRequest": 2,
     "ActionFrame": 2,
     "ActionRecordValue": 2,
