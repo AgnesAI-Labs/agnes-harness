@@ -15,9 +15,18 @@ import {
   canonicalJsonDigest,
   RuntimeArtifactPolicy,
   RuntimeClientTransportPolicy,
+  RuntimeMethodSchemaRefs,
+  RuntimeServiceCatalog,
+  validateRuntime,
 } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BLOB_FEATURES, type BlobService, createBlobService } from '../../src/runtime/providers/blob.js'
+import {
+  BLOB_FEATURES,
+  type BlobService,
+  blobProviderDescriptor,
+  createBlobService,
+  runtimeServiceDataDir,
+} from '../../src/runtime/providers/blob.js'
 
 const START = Date.parse('2026-10-01T00:00:00.000Z')
 const MIB = RuntimeClientTransportPolicy.maxRangeBytes
@@ -254,6 +263,16 @@ describe('default blob service retention', () => {
     expect(ok(await blob.inspect(stagedRef, ctx()))).toMatchObject({ status: 'staged', ownerRefs: [] })
   })
 
+  it('keeps its content under the runtime service directory, apart from the legacy artifact store', async () => {
+    const root = await fresh()
+    const blob = open(runtimeServiceDataDir(root, 'blob'))
+    const { upload } = await sealed(blob, 'upload-1', text('hello'))
+    ok(await blob.promote({ upload, expectedDigest: upload.digest }, ctx()))
+    expect(existsSync(join(root, 'artifacts'))).toBe(false)
+    const content = join(root, 'runtime-services', 'blob', 'artifacts', 'sha256', upload.digest.slice(0, 2))
+    expect(existsSync(join(content, upload.digest))).toBe(true)
+  })
+
   it('aborts an expired upload only after its writer stopped, inside the requested scope, then deletes it', async () => {
     const blob = open(await fresh())
     const session = ok(
@@ -417,6 +436,40 @@ describe('default blob service reads', () => {
     writeFileSync(join(dataDir, 'artifacts', 'sha256', ref.digest.slice(0, 2), ref.digest), text('abcdeX'))
     expect(refused(await blob.blobRead.readRange({ ref, offset: 0, length: 2 }, ctx()))).toBe('integrity')
     expect(refused(await blob.blobRead.openRead({ ref, offset: 0 }, ctx()))).toBe('integrity')
+  })
+})
+
+describe('default blob service descriptor', () => {
+  it('offers each remote method of its declared features and refuses a binding of another contract', () => {
+    const configSchema = { typeId: 'agh.test/config@1', revision: 1, digest: 'c'.repeat(64) }
+    const input = { binding: BINDING, packageVersion: '1.0.0', packageDigest: 'a'.repeat(64), configSchema }
+    const descriptor = blobProviderDescriptor(input)
+    expect(validateRuntime('ProviderDescriptor', descriptor).ok).toBe(true)
+    expect(descriptor).toMatchObject({
+      providerId: BINDING.providerId,
+      contract: 'agh.blob',
+      major: 1,
+      logicalName: 'default',
+      features: [...BLOB_FEATURES],
+      requires: [],
+    })
+    const catalog: Record<string, { kind?: string }> = RuntimeServiceCatalog['agh.blob'].methods
+    const refs: Record<string, unknown> = RuntimeMethodSchemaRefs['agh.blob']
+    for (const { method, kind, inputSchema, outputSchema } of descriptor.operations) {
+      expect(kind).toBe(catalog[method]?.kind)
+      expect({ input: inputSchema, output: outputSchema }).toEqual(refs[method])
+    }
+    expect(descriptor.operations.map(({ method, retrySafety }) => [method, retrySafety])).toEqual([
+      ['stage', 'idempotent'],
+      ['promote', 'idempotent'],
+      ['pin', 'idempotent'],
+      ['unpin', 'never'],
+      ['gc', 'never'],
+      ['inspect', 'read-only'],
+    ])
+    expect(() =>
+      blobProviderDescriptor({ ...input, binding: { ...BINDING, contract: 'agh.files' } }),
+    ).toThrow()
   })
 })
 

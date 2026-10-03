@@ -19,11 +19,18 @@ import {
   type TestServiceBinding,
 } from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
-import { canonicalJsonDigest, RuntimeSchemaRefs } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
+  RuntimeServiceCatalog,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  ARTIFACTS_FEATURES,
   type ArtifactsService,
+  artifactsFeatures,
+  artifactsProviderDescriptor,
   BLOB_REQUIREMENT,
   createArtifactsService,
   type OwnerAction,
@@ -38,6 +45,7 @@ const BLOB_BINDING = {
   providerId: 'agh.blob.default',
 }
 const DESCRIPTOR = RuntimeSchemaRefs.ArtifactContentDescriptor
+const TICKET_KEY = { version: 'key-1', key: new Uint8Array(32).fill(7) }
 const text = (value: string) => new TextEncoder().encode(value)
 
 function scope(sessionId = 'session-1'): ScopeRef {
@@ -609,11 +617,56 @@ describe('default artifacts assembly', () => {
       ),
     ).toBe('blocked')
     expect([...BLOB_FEATURES]).toEqual(BLOB_REQUIREMENT.features)
-    expect(ARTIFACTS_FEATURES).toEqual([
+    expect(artifactsFeatures({ ticketKey: TICKET_KEY })).toEqual([
       'artifact-publication.v1',
       'artifact-access.v1',
       'artifact-ticket.v1',
     ])
+    expect(artifactsFeatures({})).toEqual(['artifact-publication.v1', 'artifact-access.v1'])
+  })
+
+  it('describes the service with the ticket feature only when a ticket key is configured', () => {
+    const binding = {
+      bindingId: 'artifacts-1',
+      contract: 'agh.artifacts',
+      logicalName: 'default',
+      providerId: 'agh.artifacts.default',
+    }
+    const configSchema = { typeId: 'agh.test/config@1', revision: 1, digest: 'c'.repeat(64) }
+    const input = { binding, packageVersion: '1.0.0', packageDigest: 'a'.repeat(64), configSchema }
+    const keyed = artifactsProviderDescriptor({ ...input, ticketKey: TICKET_KEY })
+    const plain = artifactsProviderDescriptor(input)
+    const catalog: Record<string, { kind?: string; local?: boolean }> =
+      RuntimeServiceCatalog['agh.artifacts'].methods
+    const refs: Record<string, unknown> = RuntimeMethodSchemaRefs['agh.artifacts']
+    for (const descriptor of [keyed, plain]) {
+      expect(validateRuntime('ProviderDescriptor', descriptor).ok).toBe(true)
+      expect(descriptor).toMatchObject({
+        providerId: binding.providerId,
+        contract: 'agh.artifacts',
+        major: 1,
+      })
+      expect(descriptor.requires).toEqual([BLOB_REQUIREMENT])
+      for (const { method, kind, inputSchema, outputSchema } of descriptor.operations) {
+        expect(kind).toBe(catalog[method]?.kind)
+        expect({ input: inputSchema, output: outputSchema }).toEqual(refs[method])
+      }
+    }
+    expect(keyed.features).toEqual([...plain.features, 'artifact-ticket.v1'])
+    // The only ticket method, redeemDownload, is a local port method and never a remote operation.
+    expect(keyed.operations).toEqual(plain.operations)
+    expect(plain.operations.map(({ method, retrySafety }) => [method, retrySafety])).toEqual([
+      ['reserve', 'idempotent'],
+      ['publish', 'idempotent'],
+      ['revoke', 'idempotent'],
+      ['query', 'read-only'],
+      ['fail', 'idempotent'],
+      ['grant', 'idempotent'],
+      ['revokeGrant', 'idempotent'],
+    ])
+    expect(() =>
+      artifactsProviderDescriptor({ ...input, binding: { ...binding, contract: 'agh.blob' } }),
+    ).toThrow()
   })
 })
 

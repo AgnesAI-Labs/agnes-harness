@@ -23,17 +23,22 @@ import {
   revokeGrant,
   type SelectedBlobActions,
 } from '../artifacts/publication.js'
+import { defaultServiceDescriptor, type ServiceDescriptorInput } from './blob.js'
 
 export type { ArtifactAccessOptions } from '../artifacts/access.js'
 export type { ArtifactEvent, OwnerAction, SelectedBlobActions } from '../artifacts/publication.js'
 
 export const ARTIFACTS_CONTRACT = 'agh.artifacts'
 export const ARTIFACTS_MAJOR = 1
-export const ARTIFACTS_FEATURES = [
-  'artifact-publication.v1',
-  'artifact-access.v1',
-  'artifact-ticket.v1',
-] as const
+
+/** Ticket downloads are refused without a ticket key, so only a configured key offers their feature. */
+export function artifactsFeatures(options: Pick<ArtifactAccessOptions, 'ticketKey'>): string[] {
+  return [
+    'artifact-publication.v1',
+    'artifact-access.v1',
+    ...(options.ticketKey ? ['artifact-ticket.v1'] : []),
+  ]
+}
 
 /** The fixed requirement on the selected blob service. */
 export const BLOB_REQUIREMENT: Wire.ServiceRequirement = {
@@ -43,6 +48,19 @@ export const BLOB_REQUIREMENT: Wire.ServiceRequirement = {
   features: ['blob-read.v1'],
   scope: 'runtime',
   optional: false,
+}
+
+/** Every artifacts action returns its first result again for the same input. */
+export function artifactsProviderDescriptor(
+  input: ServiceDescriptorInput & Pick<ArtifactAccessOptions, 'ticketKey'>,
+): Wire.ProviderDescriptor {
+  return defaultServiceDescriptor(
+    ARTIFACTS_CONTRACT,
+    input,
+    artifactsFeatures(input),
+    [BLOB_REQUIREMENT],
+    ['reserve', 'publish', 'fail', 'revoke', 'grant', 'revokeGrant'],
+  )
 }
 
 export type ArtifactsServiceOptions = ArtifactAccessOptions &

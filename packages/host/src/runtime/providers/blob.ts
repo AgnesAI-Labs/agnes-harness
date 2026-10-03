@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { constants } from 'node:fs'
+import { constants, mkdirSync } from 'node:fs'
 import { type FileHandle, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
@@ -10,7 +10,12 @@ import type {
   Outcome,
 } from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
-import { RuntimeClientTransportPolicy } from '@agnes/protocol/runtime'
+import {
+  RuntimeClientTransportPolicy,
+  RuntimeMethodSchemaRefs,
+  RuntimeServiceCatalog,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
 import { gc, inspect, pin, promote, resolvePin, unpin } from '../blob/retention.js'
 import {
   BlobRefusal,
@@ -27,6 +32,84 @@ import {
 export const BLOB_CONTRACT = 'agh.blob'
 export const BLOB_MAJOR = 1
 export const BLOB_FEATURES = ['blob-read.v1'] as const
+
+/**
+ * The data directory of one default runtime service, `<hostDataDir>/runtime-services/<service>`,
+ * created when missing. These services keep their content and databases under `<dataDir>/artifacts`,
+ * which the legacy private artifact store already owns in the Host data directory, so callers
+ * assembling them pass this directory as `dataDir`, never the Host data directory itself.
+ */
+export function runtimeServiceDataDir(hostDataDir: string, service: 'blob' | 'artifacts'): string {
+  const dir = join(hostDataDir, 'runtime-services', service)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  return dir
+}
+
+export type ServiceDescriptorInput = Readonly<{
+  binding: Wire.BindingRef
+  packageVersion: string
+  packageDigest: string
+  configSchema: Wire.SchemaRef
+}>
+
+/**
+ * The validated descriptor of a default runtime service: one operation for each remote catalog method
+ * whose required feature is declared; local port methods are not operations. Queries are read-only,
+ * the `idempotent` actions return their first result again for the same input, and any other action
+ * is never retried.
+ */
+export function defaultServiceDescriptor(
+  contract: 'agh.blob' | 'agh.artifacts',
+  input: ServiceDescriptorInput,
+  features: readonly string[],
+  requires: readonly Wire.ServiceRequirement[],
+  idempotent: readonly string[],
+): Wire.ProviderDescriptor {
+  if (input.binding.contract !== contract) throw new Error(`invalid ${contract} binding`)
+  const methods: Readonly<Record<string, { kind?: string; local?: boolean; requiredFeature?: string }>> =
+    RuntimeServiceCatalog[contract].methods
+  const schemas: Readonly<Partial<Record<string, { input: Wire.SchemaRef; output: Wire.SchemaRef }>>> =
+    RuntimeMethodSchemaRefs[contract]
+  const checked = validateRuntime('ProviderDescriptor', {
+    providerId: input.binding.providerId,
+    contract,
+    major: RuntimeServiceCatalog[contract].major,
+    logicalName: input.binding.logicalName,
+    packageVersion: input.packageVersion,
+    packageDigest: input.packageDigest,
+    features,
+    scope: 'runtime',
+    configSchema: input.configSchema,
+    requires,
+    capabilities: [],
+    recovery: 'R1',
+    isolation: ['trusted-in-process'],
+    stateCodecs: [],
+    activationMode: 'eager',
+    operations: Object.entries(methods).flatMap(([method, { kind, local, requiredFeature }]) =>
+      local || (requiredFeature && !features.includes(requiredFeature))
+        ? []
+        : [
+            {
+              method,
+              kind,
+              inputSchema: schemas[method]?.input,
+              outputSchema: schemas[method]?.output,
+              requiredCapabilities: [],
+              retrySafety:
+                kind === 'query' ? 'read-only' : idempotent.includes(method) ? 'idempotent' : 'never',
+            },
+          ],
+    ),
+  })
+  if (!checked.ok) throw new Error(`invalid ${contract} descriptor`)
+  return checked.value
+}
+
+/** Stage, promote and pin return their first result again; unpin reports `released` only once. */
+export function blobProviderDescriptor(input: ServiceDescriptorInput): Wire.ProviderDescriptor {
+  return defaultServiceDescriptor(BLOB_CONTRACT, input, BLOB_FEATURES, [], ['stage', 'promote', 'pin'])
+}
 
 const CHUNK_BYTES = RuntimeClientTransportPolicy.maxRangeBytes
 

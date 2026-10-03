@@ -2659,7 +2659,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default interaction provider over the State approval entries. Measured 63248, exact, no spare (+79).
   // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9), exact cap.
   // Detached release planning: measured 64517, exact, no spare.
-  'packages/host/src': 64517,
+  // Default blob and artifacts provider descriptors, the ticket feature only with a ticket key, and
+  // per-service data directories. Measured 64597 (+80), exact, no spare.
+  'packages/host/src': 64597,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
