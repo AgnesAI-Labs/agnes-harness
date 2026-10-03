@@ -857,7 +857,7 @@ const SESSION_SAMPLES: Record<string, Sample> = {
   RuntimeFormatData: {
     valid: runtimeFormatData,
     invalid: [
-      { ...runtimeFormatData, minReader: 2 },
+      { ...runtimeFormatData, minReader: 3 },
       { ...runtimeFormatData, legacyThroughSeq: -1 },
     ],
     note: 'runtime format declaration preserves the existing ledger envelope',
