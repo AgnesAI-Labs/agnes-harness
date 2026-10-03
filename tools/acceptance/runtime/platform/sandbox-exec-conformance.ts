@@ -36,9 +36,28 @@ export const qualification = {
     unsupported: ['Linux filesystem isolation provider', 'reference cgroup backend', 'Exec.env.secret'],
   },
   win32: {
-    ownership: 'unsupported: Job Object backend is absent',
+    ownership: 'strong Job membership for directly inherited descendants; suspended launch, no breakaway',
+    nativeImplemented: true,
+    serviceQualified: false,
+    supervisorProtected: false,
     tested: false,
-    unsupported: ['sandbox isolation', 'six execution limits', 'Exec.env.secret'],
+    openFiles: {
+      default: 'SystemExtendedHandleInformation + NtQueryObject(File)',
+      reference: 'ProcessHandleInformation + NtQueryObject(File)',
+      diagnosticOnly: true,
+      hardLimit: false,
+      overshootBound: null,
+      qualified: false,
+      decision: 'Windows refuses execution with openFiles: handle sampling cannot impose a hard ceiling',
+    },
+    memory: 'Job committed-byte ceilings plus aggregate working-set watchdog; distinct measurements',
+    validation: 'Windows Job limits, stable File refusal and ownership await integration CI',
+    unsupported: [
+      'sandbox isolation',
+      'qualified openFiles enforcement',
+      'protected supervisor',
+      'Exec.env.secret',
+    ],
   },
 }
 function methods(run: (name: ScenarioName) => Promise<ReturnType<typeof evidence>>) {
@@ -89,10 +108,15 @@ export async function unsupportedPlatform(kind: Kind, service: 'sandbox' | 'exec
             },
             f.auth.call(),
           )
+    const windows = process.platform === 'win32' // guards-allow-platform: mandatory Windows File quota refusal.
     assert.equal(
       error(result),
       'incompatible/' +
-        (service === 'sandbox' ? 'sandbox_isolation_unsupported' : 'exec_platform_unsupported'),
+        (service === 'sandbox'
+          ? 'sandbox_isolation_unsupported'
+          : windows
+            ? 'exec_limit_openFiles_unsupported'
+            : 'exec_platform_unsupported'),
     )
     assert.equal(f[service].features.length, 0)
   } finally {

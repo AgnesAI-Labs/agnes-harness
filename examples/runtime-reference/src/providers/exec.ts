@@ -38,6 +38,8 @@ interface Measurements {
   ownershipVerified: boolean
   residualObserved: number
   ownership: string
+  committedBytes?: number
+  filesEnforced?: boolean
 }
 interface CabinetEntry {
   id: string
@@ -357,7 +359,12 @@ export function createReferenceExec(raw: ReferenceExecOptions) {
       const request = parsed.value
       if (request.env.find((item) => item.value.kind === 'secret'))
         throw new Problem('exec_secret_env_unsupported', 'incompatible')
-      if (!supported) throw new Problem('exec_platform_unsupported', 'incompatible')
+      if (!supported)
+        // guards-allow-platform: Windows requires mandatory File sampling qualification.
+        throw new Problem(
+          process.platform === 'win32' ? 'exec_limit_openFiles_unsupported' : 'exec_platform_unsupported',
+          'incompatible',
+        )
       if (request.argv.length === 0 || request.argv.find((item) => item.includes('\0')))
         throw new Problem('exec_argv', 'invalid_input')
       for (const field of Object.keys(request.limits) as (keyof R.ResourceLimits)[])
@@ -597,4 +604,177 @@ export function createReferenceExec(raw: ReferenceExecOptions) {
       return closing
     },
   }
+}
+
+// Raw qualification entry, deliberately disconnected from advertised Exec services.
+// Job membership cannot replace filesystem/network sandbox admission.
+export function referenceWindowsOwnerPath() {
+  return fileURLToPath(new URL('../../dist/native/execution-owner.exe', import.meta.url))
+}
+export async function runReferenceWindowsExecution(request: {
+  argv: readonly string[]
+  cwd: string
+  env: Readonly<Record<string, string>>
+  stdin: Uint8Array
+  limits: R.ResourceLimits | Omit<R.ResourceLimits, 'openFiles'>
+  signal: AbortSignal
+  governor?: string
+  fileMode?: 'files' | 'five-limits'
+}): Promise<{ stdout: Uint8Array; stderr: Uint8Array; metrics: Measurements }> {
+  if (request.signal.aborted) throw new Error('exec_cancelled')
+  const numbers = ['cpuMs', 'wallMs', 'memoryBytes', 'outputBytes', 'processes'] as const
+  const budget = request.limits
+  if ('openFiles' in budget || request.fileMode !== 'five-limits')
+    throw new Error('exec_limit_openFiles_unsupported')
+  if (
+    numbers.some((name) => !Number.isSafeInteger(budget[name]) || budget[name] < 1) ||
+    budget.cpuMs > 922337203685477 ||
+    budget.wallMs >= 4294967295 ||
+    budget.outputBytes > 67108864 ||
+    budget.processes > 65535 ||
+    request.stdin.byteLength > 1048576 ||
+    request.argv.length === 0 ||
+    request.argv.some((argument) => argument.indexOf('\0') !== -1)
+  )
+    throw new Error('exec_resource_bounds')
+  const supervisor = spawn(
+    request.governor ?? referenceWindowsOwnerPath(),
+    [...numbers.map((name) => String(budget[name])), request.fileMode, ...request.argv],
+    { cwd: request.cwd, env: Object.assign({}, request.env), windowsHide: true, stdio: 'pipe' },
+  )
+  const cancel = () => {
+    supervisor.stdin.end('cancel')
+  }
+  supervisor.stdin.on('error', () => {})
+  const size = Buffer.allocUnsafe(4)
+  size.writeUInt32LE(request.stdin.byteLength)
+  supervisor.stdin.write(size)
+  supervisor.stdin.write(request.stdin)
+  request.signal.addEventListener('abort', cancel, { once: true })
+  if (request.signal.aborted) cancel()
+  let text = '',
+    corrupt = false,
+    retained = 0
+  let last: Measurements | null = null,
+    denied: string | null = null
+  const chunks: [Buffer[], Buffer[]] = [[], []]
+  supervisor.stderr.resume()
+  supervisor.stdout.on('data', (bytes: Buffer) => {
+    text += bytes.toString('utf8')
+    const records = text.split('\n')
+    text = records.pop() ?? ''
+    for (const record of records) {
+      try {
+        if (record.length > 4096) throw new Error()
+        const value = JSON.parse(record) as Record<string, unknown>
+        if (last !== null || denied !== null) throw new Error()
+        switch (value.kind) {
+          case 'refusal':
+            if (
+              retained !== 0 ||
+              ![
+                'exec_resource_bounds',
+                'exec_limit_openFiles_unsupported',
+                'exec_runner_unavailable',
+                'exec_cleanup_unknown',
+              ].includes(String(value.detailCode))
+            )
+              throw new Error()
+            denied = String(value.detailCode)
+            break
+          case 'output': {
+            if (value.stream !== 0 && value.stream !== 1) throw new Error()
+            if (
+              typeof value.hex !== 'string' ||
+              value.hex.length > 2048 ||
+              value.hex.length % 2 !== 0 ||
+              /[^a-f0-9]/u.test(value.hex)
+            )
+              throw new Error()
+            const decoded = Buffer.from(value.hex, 'hex')
+            retained += decoded.length
+            if (retained > budget.outputBytes) throw new Error()
+            chunks[value.stream].push(decoded)
+            break
+          }
+          case 'metrics': {
+            const counter = value as unknown as Measurements
+            const quantities = [
+              'pid',
+              'cpuMs',
+              'rss',
+              'committedBytes',
+              'processes',
+              'files',
+              'outputBytes',
+              'intervalMs',
+              'maxGapMs',
+              'residualObserved',
+            ]
+            if (
+              quantities.some(
+                (key) =>
+                  typeof value[key] !== 'number' ||
+                  !Number.isSafeInteger(value[key]) ||
+                  Number(value[key]) < 0,
+              )
+            )
+              throw new Error()
+            if (
+              counter.pid === 0 ||
+              counter.final !== true ||
+              counter.remaining !== 0 ||
+              counter.ownership !== 'strong' ||
+              counter.ownershipVerified !== true ||
+              counter.intervalMs !== 10 ||
+              counter.residualObserved !== 0 ||
+              counter.filesEnforced !== false ||
+              !Number.isSafeInteger(counter.code) ||
+              counter.signal !== 0 ||
+              counter.outputBytes < retained ||
+              ![
+                'completed',
+                'cpuMs',
+                'wallMs',
+                'memoryBytes',
+                'outputBytes',
+                'processes',
+                'cancel',
+                'owner',
+                'residual',
+                'unavailable',
+              ].includes(counter.reason) ||
+              (counter.reason === 'completed' && counter.outputBytes > budget.outputBytes)
+            )
+              throw new Error()
+            last = counter
+            break
+          }
+          default:
+            throw new Error()
+        }
+      } catch {
+        corrupt = true
+        cancel()
+      }
+    }
+    if (text.length > 4096) {
+      corrupt = true
+      cancel()
+      text = ''
+    }
+  })
+  return await new Promise((accept, reject) => {
+    supervisor.once('error', () => {
+      request.signal.removeEventListener('abort', cancel)
+      reject(new Error('exec_runner_unavailable'))
+    })
+    supervisor.once('close', (exit) => {
+      request.signal.removeEventListener('abort', cancel)
+      if (corrupt || text !== '' || (exit !== 0 && exit !== 125)) reject(new Error('exec_cleanup_unknown'))
+      else if (exit === 125 && denied !== null) reject(new Error(denied))
+      else if (exit !== 0 || last === null) reject(new Error('exec_cleanup_unknown'))
+      else accept({ stdout: Buffer.concat(chunks[0]), stderr: Buffer.concat(chunks[1]), metrics: last })
+    })
+  })
 }

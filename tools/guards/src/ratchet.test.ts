@@ -1,3 +1,4 @@
+// Windows Job internal five-limit protocol: exact Host allocation, no headroom.
 // Durable admission coordination and session control: exact merged source/testkit caps; no headroom.
 // Exact source counts after combining routing/model providers with current integration; no spare allocation.
 // Merged approval, compaction and session-stability sources: exact measured ceilings, no headroom.
@@ -2718,7 +2719,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sourced memory and hybrid retrieval providers. Measured 73124, exact, no spare.
   // Durable run admission coordination. Measured 73401, exact, no spare.
   // Durable resource pins. Measured 73722, exact, no spare.
-  'packages/host/src': 73722,
+  // Windows Job execution backends. Measured 73901, exact, no spare.
+  'packages/host/src': 73901,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

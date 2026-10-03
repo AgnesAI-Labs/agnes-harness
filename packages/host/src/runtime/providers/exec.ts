@@ -145,7 +145,11 @@ export function createExecService(input: ExecOptions): ExecService {
       const body = parsed.value
       if (body.env.some((item) => item.value.kind === 'secret'))
         return refusal('incompatible', 'exec_secret_env_unsupported')
-      if (!supported) return refusal('incompatible', 'exec_platform_unsupported')
+      if (!supported)
+        return refusal(
+          'incompatible',
+          createPlatform().os === 'win32' ? 'exec_limit_openFiles_unsupported' : 'exec_platform_unsupported',
+        )
       if (!body.argv.length || body.argv.some((value) => value.includes('\0')))
         return refusal('invalid_input', 'exec_argv')
       for (const [name, limit] of Object.entries(body.limits))

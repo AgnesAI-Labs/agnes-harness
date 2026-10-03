@@ -4,6 +4,39 @@ import { cleanup, error, must, resolveInput, scan, secrets } from './network-sec
 import { fixture } from './sandbox-exec-fixture.js'
 
 describe.each(['default', 'reference'] as const)('%s execution admission', (kind) => {
+  it('refuses the mandatory Windows File ceiling without advertising execution', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    let f: Awaited<ReturnType<typeof fixture>> | undefined
+    try {
+      f = await fixture(kind)
+      const reply = await f.exec.run(
+        {
+          sandboxRef: {
+            authorityId: 'sandbox-authority',
+            sandboxId: 'unqualified',
+            ownerBinding: f.sandbox.binding,
+            lease: f.mount.lease,
+          },
+          argv: [process.execPath],
+          cwd: { mount: f.mount, path: '' },
+          env: [],
+          stdinRef: null,
+          limits: f.createInput.resourceLimits,
+        },
+        f.auth.call(),
+      )
+      expect(error(reply)).toBe('incompatible/exec_limit_openFiles_unsupported')
+      expect(f.exec.features).toEqual([])
+      expect(f.sandbox.features).toEqual([])
+    } finally {
+      if (platform) Object.defineProperty(process, 'platform', platform)
+      if (f) {
+        await f.close()
+        cleanup(f.directory)
+      }
+    }
+  })
   it('requires current authentic calls and never launches malformed input', async () => {
     const f = await fixture(kind)
     try {
