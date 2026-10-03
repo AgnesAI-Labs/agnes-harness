@@ -1,3 +1,4 @@
+// Windows authority directory: exact filesystem probe, file-flush boundary and evidence allocation.
 // Measure merged main and runtime integration sources with exact countLines() ceilings.
 // Versioned resource discovery and process-local ownership: exact measured source/testkit caps.
 // FULL-FILE-ACCESS: measured session-scoped file access, external checkpoints and authoritative UI permission
@@ -287,7 +288,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-21: add Linux same-handle artifact deletion dispatch and availability. Exact 1122.
   // 2026-09-22: no-replace directory publication, +17 measured lines; no fallback.
   // SKILL-DELETE-PRIORITY: +47 counted lines for 64-bit deletion and platform path preflight; no spare.
-  'packages/system-node/src': 1186,
+  'packages/system-node/src': 1206,
   // 2026-09-13 in-process ecosystem: verified snapshots, rollback journal/GC and the local examples
   // catalogue are the PackageManager-owned state machine. Exact post-integration total; no spare.
   // 2026-09-14: Task 1 orphaned-pin-cleanup adds listRuntimePinsStore() function and
@@ -1459,7 +1460,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI registry recover no longer judges the stand-in host's handles. Measured 5761, exact, no spare.
   // Detached release planning: measured 6849, exact, no spare.
   // Preserve case failure diagnostics and record unsupported authority directory scenarios. Exact count.
-  'packages/extension-api/testkit': 7236,
+  'packages/extension-api/testkit': 7239,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2664,7 +2665,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Detached release planning: measured 64517, exact, no spare.
   // Default blob and artifacts provider descriptors, the ticket feature only with a ticket key, and
   // per-service data directories. Measured 64597 (+80), exact, no spare.
-  'packages/host/src': 65018,
+  'packages/host/src': 65056,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

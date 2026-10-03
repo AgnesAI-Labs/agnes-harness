@@ -27,8 +27,13 @@ import {
 const durabilityFault = vi.hoisted(() => ({
   failSync: false,
   fsType: null as number | null,
+  platform: null as string | null,
   fsPath: null as string | null,
 }))
+vi.mock('node:os', async (original) => {
+  const os = await original<typeof import('node:os')>()
+  return { ...os, platform: () => durabilityFault.platform ?? os.platform() }
+})
 vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>()
   return {
@@ -394,6 +399,7 @@ describe('authority directory', () => {
       })
       expect(provider.features).not.toContain('local-fs-rename')
       expect(detail(await provider.seedRoute(route, context()))).toBe('incompatible/filesystem_unsupported')
+      durabilityFault.platform = 'darwin'
       for (const fsType of [2, 0x6969, 0xff534d42, 0x1234]) {
         durabilityFault.fsType = fsType
         const network = createAuthorityDirectoryProvider({
@@ -407,6 +413,7 @@ describe('authority directory', () => {
         await network.dispose()
       }
     } finally {
+      durabilityFault.platform = null
       durabilityFault.fsType = null
       rmSync(opened.root, { recursive: true, force: true })
       rmSync(unsupportedRoot, { recursive: true, force: true })
@@ -736,12 +743,14 @@ describe('authority directory', () => {
       const targetParent = join(opened.root, 'standby')
       mkdirSync(targetParent)
       durabilityFault.fsPath = targetParent
+      durabilityFault.platform = 'darwin'
       durabilityFault.fsType = 2
       try {
         expect(detail(await opened.provider.transfer(request, context()))).toBe(
           'incompatible/filesystem_unsupported',
         )
       } finally {
+        durabilityFault.platform = null
         durabilityFault.fsType = null
         durabilityFault.fsPath = null
       }

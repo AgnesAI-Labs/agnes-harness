@@ -156,6 +156,40 @@ static napi_value renameDirectoryNoReplace(napi_env env, napi_callback_info info
   napi_value result; napi_get_undefined(env, &result); return result;
 }
 
+
+// Query the opened object, not the drive letter: junctions and mounted volumes can change its volume.
+static napi_value volumeInfo(napi_env env, napi_callback_info info) {
+  napi_value args[1]; std::wstring path;
+  if (!arguments(env, info, 1, args) || !stringArgument(env, args[0], path)) return nullptr;
+  Handle directory(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+  if (directory.value == INVALID_HANDLE_VALUE) return failure(env, "Open volume probe", GetLastError());
+  std::vector<WCHAR> finalPath(32768);
+  const DWORD length = GetFinalPathNameByHandleW(directory.value, finalPath.data(),
+                                                static_cast<DWORD>(finalPath.size()), VOLUME_NAME_GUID);
+  if (!length) return failure(env, "Resolve volume GUID", GetLastError());
+  if (length >= finalPath.size()) return failure(env, "Volume path too long", ERROR_INVALID_NAME);
+  const std::wstring resolved(finalPath.data(), length);
+  const auto end = resolved.find(L"}\\");
+  if (resolved.rfind(L"\\\\?\\Volume{", 0) != 0 || end == std::wstring::npos)
+    return failure(env, "Local volume GUID required", ERROR_NOT_SUPPORTED);
+  const std::wstring volumeRoot = resolved.substr(0, end + 2);
+  WCHAR filesystem[MAX_PATH + 1]{}; DWORD flags = 0;
+  if (!GetVolumeInformationByHandleW(directory.value, nullptr, 0, nullptr, nullptr, &flags,
+                                     filesystem, MAX_PATH + 1))
+    return failure(env, "Read volume information", GetLastError());
+  napi_value result, name, drive, readOnly;
+  napi_create_object(env, &result);
+  napi_create_string_utf16(env, reinterpret_cast<const char16_t*>(filesystem), NAPI_AUTO_LENGTH, &name);
+  napi_create_uint32(env, GetDriveTypeW(volumeRoot.c_str()), &drive);
+  napi_get_boolean(env, (flags & FILE_READ_ONLY_VOLUME) != 0, &readOnly);
+  napi_set_named_property(env, result, "filesystem", name);
+  napi_set_named_property(env, result, "driveType", drive);
+  napi_set_named_property(env, result, "readOnly", readOnly);
+  return result;
+}
+
 static napi_value renameWriteThrough(napi_env env, napi_callback_info info) {
   napi_value args[2]; std::wstring from, to;
   if (!arguments(env, info, 2, args) || !stringArgument(env, args[0], from) || !stringArgument(env, args[1], to)) return nullptr;
@@ -883,6 +917,7 @@ static napi_value initialize(napi_env env, napi_value exports) {
     {"createTemporaryPrivateFile", nullptr, guarded<createTemporaryFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"createPrivateDirectory", nullptr, guarded<createDirectory>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"renameDirectoryNoReplace", nullptr, guarded<renameDirectoryNoReplace>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"volumeInfo", nullptr, guarded<volumeInfo>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"renameWriteThrough", nullptr, guarded<renameWriteThrough>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"hasPrivateDacl", nullptr, guarded<privateDacl>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"syncDirectory", nullptr, guarded<syncDirectory>, nullptr, nullptr, nullptr, napi_default, nullptr},

@@ -3,17 +3,26 @@ import {
   closeSync,
   existsSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   realpathSync,
   statfsSync,
   writeFileSync,
 } from 'node:fs'
+import { platform } from 'node:os' // guards-allow-platform: authority filesystem and durability boundary.
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Outcome } from '@agnes/extension-api/runtime'
 import type { DataRef, JsonValue } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
-import { createPrivateDirectorySync, createPrivateFileSync, renameWriteThroughSync } from '@agnes/system-node'
+import {
+  createPrivateDirectorySync,
+  createPrivateFileSync,
+  renameWriteThroughSync,
+  syncDirectorySync,
+  windowsReplaceFileSync,
+  windowsVolumeInfoSync,
+} from '@agnes/system-node'
 import { withConfigurationLockSync } from '../../configuration-lock.js'
 
 export interface BootstrapLocator {
@@ -52,15 +61,45 @@ const LOCAL_FILESYSTEMS = new Set([
 export function filesystemSupportsLocalRename(directory: string): boolean {
   let probe = resolve(directory)
   try {
+    if (platform() === 'win32' && /^[\\\\/]{2}/.test(probe)) return false
     while (!existsSync(probe)) {
       const parent = dirname(probe)
       if (parent === probe) return false
       probe = parent
     }
+    if (platform() === 'win32') {
+      const volume = windowsVolumeInfoSync(probe)
+      return (
+        volume.driveType === 3 &&
+        volume.readOnly === false &&
+        ['NTFS', 'REFS'].includes(volume.filesystem.toUpperCase())
+      )
+    }
     return LOCAL_FILESYSTEMS.has(statfsSync(probe).type)
   } catch {
     return false
   }
+}
+
+/** Windows flushes files; it does not claim POSIX parent-directory power-loss durability. */
+export function authorityDurability(): 'windows-file-flush' | 'posix-directory-fsync' {
+  return platform() === 'win32' ? 'windows-file-flush' : 'posix-directory-fsync'
+}
+
+export function replaceAuthorityFileSync(from: string, to: string): void {
+  if (authorityDurability() === 'windows-file-flush') windowsReplaceFileSync(from, to)
+  else renameWriteThroughSync(from, to)
+}
+
+export function syncAuthorityDirectorySync(directory: string): void {
+  if (authorityDurability() === 'posix-directory-fsync') {
+    syncDirectorySync(directory)
+    return
+  }
+  const entry = lstatSync(directory)
+  if (!entry.isDirectory() || entry.isSymbolicLink() || !filesystemSupportsLocalRename(directory))
+    throw new Error('Local directory metadata is unavailable')
+  // No directory FlushFileBuffers fallback: capability/report explicitly excludes that guarantee.
 }
 
 export function pathsAreSeparate(left: string, right: string): boolean {
@@ -210,7 +249,7 @@ function writeStable(directory: string, name: string, text: string): Outcome<tru
     if (descriptor !== undefined) closeSync(descriptor)
   }
   try {
-    renameWriteThroughSync(temp, final)
+    replaceAuthorityFileSync(temp, final)
   } catch {
     return fail('retryable', 'durability_failed')
   }

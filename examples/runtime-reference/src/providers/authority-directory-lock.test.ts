@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type {
   AuthorityCheckpoint,
@@ -12,7 +12,7 @@ import type {
   JsonValue,
   MigrationRequest,
 } from '@agnes/protocol/runtime'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { inlineData } from '../../../../packages/host/src/runtime/maintenance/authority-publication.js'
 import { openBootstrapAnchor } from '../../../../packages/host/src/runtime/maintenance/bootstrap-locator.js'
 import {
@@ -24,6 +24,52 @@ import {
   createReferenceAuthorityDirectory,
   openReferenceAnchor,
 } from './authority-directory.ts'
+
+const probe = vi.hoisted(() => ({
+  platform: null as string | null,
+  volume: { filesystem: 'NTFS', driveType: 3, readOnly: false },
+  error: false,
+  failReplacement: false,
+  failFileFlush: false,
+  failCommittedFlush: false,
+}))
+vi.mock('node:os', async (original) => {
+  const os = await original<typeof import('node:os')>()
+  return { ...os, platform: () => probe.platform ?? os.platform() }
+})
+vi.mock('@agnes/system-node', async (original) => {
+  const system = await original<typeof import('@agnes/system-node')>()
+  return {
+    ...system,
+    windowsVolumeInfoSync: (path: string) => {
+      if (probe.platform !== 'win32') return system.windowsVolumeInfoSync(path)
+      if (probe.error) throw new Error('Volume probe failed')
+      return probe.volume
+    },
+    windowsReplaceFileSync: (from: string, to: string) => {
+      if (probe.platform !== 'win32') return system.windowsReplaceFileSync(from, to)
+      if (probe.failReplacement) throw Object.assign(new Error('Replacement refused'), { code: 'EXDEV' })
+      renameSync(from, to)
+      if (probe.failFileFlush || (probe.failCommittedFlush && basename(to) === 'current'))
+        throw new Error('File flush failed after replacement')
+      system.syncFileSync(to)
+    },
+    syncFileSync: (path: string) => {
+      if (probe.failFileFlush) throw new Error('File flush failed')
+      return system.syncFileSync(path)
+    },
+    syncDirectorySync: (path: string) => {
+      if (probe.platform === 'win32') throw new Error('Windows directory flush unavailable')
+      return system.syncDirectorySync(path)
+    },
+  }
+})
+afterEach(() => {
+  vi.restoreAllMocks()
+  probe.platform = null
+  probe.volume = { filesystem: 'NTFS', driveType: 3, readOnly: false }
+  probe.error = probe.failReplacement = probe.failFileFlush = probe.failCommittedFlush = false
+})
 
 const PRINCIPAL = 'maintainer'
 const AUTHORITY = { authorityId: 'directory-authority', tenantId: 'tenant-a', authorityEpoch: 1 }
@@ -300,231 +346,246 @@ describe('reference authority directory', () => {
       ).toBeLessThanOrEqual(0.5)
   })
 
-  it('agrees with the default directory on publish, refusal, replay, and relocation', async () => {
-    const left = openDefault('authority-directory-default')
-    const right = openReference('authority-directory-reference')
-    try {
-      const route = makeRoute('state-auth', 1, 'seed-state-auth', null)
-      await same(left, right, 'deny', (driver) =>
-        driver.provider.seedRoute(route, context('other-principal')),
+  it.each([null, 'win32'])(
+    'agrees on publish, refusal, replay, and relocation with platform %s',
+    async (platform) => {
+      probe.platform = platform
+      const left = openDefault('authority-directory-default')
+      const right = openReference('authority-directory-reference')
+      expect(left.provider.features.includes('windows-file-flush')).toBe(
+        platform === 'win32' || process.platform === 'win32',
       )
-      const controller = new AbortController()
-      controller.abort()
-      await same(left, right, 'cancel', (driver) =>
-        driver.provider.seedRoute(route, context(PRINCIPAL, controller.signal)),
+      expect(right.provider.features.includes('windows-file-flush')).toBe(
+        platform === 'win32' || process.platform === 'win32',
       )
-      await same(left, right, 'seed', (driver) => driver.provider.seedRoute(route, context()))
-      for (const logicalAuthorityId of ['toString', 'constructor', '__proto__']) {
-        const absent = await same(left, right, 'reserved-looking ID absent', (driver) =>
-          driver.provider.read({ kind: 'authority', logicalAuthorityId }, context()),
+      try {
+        const route = makeRoute('state-auth', 1, 'seed-state-auth', null)
+        await same(left, right, 'deny', (driver) =>
+          driver.provider.seedRoute(route, context('other-principal')),
         )
-        expect(code(absent)).toBe('incompatible/route_absent')
-        const specialRoute = makeRoute(logicalAuthorityId, 1, `seed-${logicalAuthorityId}`, null)
-        const seeded = await same(left, right, 'reserved-looking ID seed', (driver) =>
-          driver.provider.seedRoute(specialRoute, context()),
+        const controller = new AbortController()
+        controller.abort()
+        await same(left, right, 'cancel', (driver) =>
+          driver.provider.seedRoute(route, context(PRINCIPAL, controller.signal)),
         )
-        expect(code(seeded)).toBe('ok')
-        const readSpecial = await same(left, right, 'reserved-looking ID read', (driver) =>
-          driver.provider.read({ kind: 'authority', logicalAuthorityId }, context()),
+        await same(left, right, 'seed', (driver) => driver.provider.seedRoute(route, context()))
+        for (const logicalAuthorityId of ['toString', 'constructor', '__proto__']) {
+          const absent = await same(left, right, 'reserved-looking ID absent', (driver) =>
+            driver.provider.read({ kind: 'authority', logicalAuthorityId }, context()),
+          )
+          expect(code(absent)).toBe('incompatible/route_absent')
+          const specialRoute = makeRoute(logicalAuthorityId, 1, `seed-${logicalAuthorityId}`, null)
+          const seeded = await same(left, right, 'reserved-looking ID seed', (driver) =>
+            driver.provider.seedRoute(specialRoute, context()),
+          )
+          expect(code(seeded)).toBe('ok')
+          const readSpecial = await same(left, right, 'reserved-looking ID read', (driver) =>
+            driver.provider.read({ kind: 'authority', logicalAuthorityId }, context()),
+          )
+          expect(readSpecial.ok && (readSpecial.value as { route: AuthorityRoute }).route).toEqual(
+            specialRoute,
+          )
+        }
+        const validation = proof()
+        await same(left, right, 'approve', (driver) =>
+          driver.provider.approveUpgrade(
+            { upgradeId: 'upgrade-1', validationRef: validation, authorityIds: ['state-auth'] },
+            context(),
+          ),
         )
-        expect(readSpecial.ok && (readSpecial.value as { route: AuthorityRoute }).route).toEqual(specialRoute)
-      }
-      const validation = proof()
-      await same(left, right, 'approve', (driver) =>
-        driver.provider.approveUpgrade(
-          { upgradeId: 'upgrade-1', validationRef: validation, authorityIds: ['state-auth'] },
-          context(),
-        ),
-      )
-      const first = publication([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', validation)
-      const invalid: readonly [string, AuthorityDirectoryCompareAndSwapRequest][] = [
-        ['invalid_input/cutover_transaction_mismatch', { ...first, transactionId: 'different' }],
-        ['conflict/writer_epoch', { ...first, expectedWriterEpoch: 9 }],
-        ['conflict/directory_authority', { ...first, authority: { ...first.authority, authorityEpoch: 9 } }],
-        [
-          'invalid_input/duplicate_authority',
-          {
-            ...first,
-            publication: {
-              ...first.publication,
-              changes: [...first.publication.changes, ...first.publication.changes],
+        const first = publication([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', validation)
+        const invalid: readonly [string, AuthorityDirectoryCompareAndSwapRequest][] = [
+          ['invalid_input/cutover_transaction_mismatch', { ...first, transactionId: 'different' }],
+          ['conflict/writer_epoch', { ...first, expectedWriterEpoch: 9 }],
+          [
+            'conflict/directory_authority',
+            { ...first, authority: { ...first.authority, authorityEpoch: 9 } },
+          ],
+          [
+            'invalid_input/duplicate_authority',
+            {
+              ...first,
+              publication: {
+                ...first.publication,
+                changes: [...first.publication.changes, ...first.publication.changes],
+              },
             },
-          },
-        ],
-        [
-          'incompatible/fence_incomplete',
-          { ...first, publication: { ...first.publication, sourceFences: [] } },
-        ],
-        [
-          'incompatible/fence_open',
-          {
-            ...first,
-            publication: {
-              ...first.publication,
-              sourceFences: first.publication.sourceFences.map((fence) => ({
-                ...fence,
-                writerCredentialsRevoked: false,
-              })),
+          ],
+          [
+            'incompatible/fence_incomplete',
+            { ...first, publication: { ...first.publication, sourceFences: [] } },
+          ],
+          [
+            'incompatible/fence_open',
+            {
+              ...first,
+              publication: {
+                ...first.publication,
+                sourceFences: first.publication.sourceFences.map((fence) => ({
+                  ...fence,
+                  writerCredentialsRevoked: false,
+                })),
+              },
             },
-          },
-        ],
-        [
-          'incompatible/fence_checkpoint',
-          {
-            ...first,
-            publication: {
-              ...first.publication,
-              sourceFences: first.publication.sourceFences.map((fence) => ({
-                ...fence,
-                checkpoint: { ...fence.checkpoint, snapshotDigest: '99'.repeat(32) },
-              })),
+          ],
+          [
+            'incompatible/fence_checkpoint',
+            {
+              ...first,
+              publication: {
+                ...first.publication,
+                sourceFences: first.publication.sourceFences.map((fence) => ({
+                  ...fence,
+                  checkpoint: { ...fence.checkpoint, snapshotDigest: '99'.repeat(32) },
+                })),
+              },
             },
-          },
-        ],
-        [
-          'incompatible/validation_mismatch',
-          {
-            ...first,
-            publication: {
-              ...first.publication,
-              validationRef: { ...validation, bytes: validation.bytes + 1 },
+          ],
+          [
+            'incompatible/validation_mismatch',
+            {
+              ...first,
+              publication: {
+                ...first.publication,
+                validationRef: { ...validation, bytes: validation.bytes + 1 },
+              },
             },
-          },
-        ],
-      ]
-      for (const [expected, candidate] of invalid) {
-        const refused = await same(left, right, expected, (driver) =>
-          driver.provider.compareAndSwap(candidate, context()),
+          ],
+        ]
+        for (const [expected, candidate] of invalid) {
+          const refused = await same(left, right, expected, (driver) =>
+            driver.provider.compareAndSwap(candidate, context()),
+          )
+          expect(code(refused)).toBe(expected)
+          const unchanged = await same(left, right, 'unchanged', (driver) =>
+            driver.provider.read({ kind: 'authority', logicalAuthorityId: 'state-auth' }, context()),
+          )
+          expect(unchanged.ok && (unchanged.value as { revision: number }).revision).toBe(1)
+          const absent = await same(left, right, 'absent', (driver) =>
+            driver.provider.probeCutover('cutover-1', context()),
+          )
+          expect(absent.ok && absent.value).toEqual({ state: 'absent' })
+        }
+        await same(left, right, 'freeze', (driver) => driver.provider.freeze(context()))
+        const frozen = await same(left, right, 'frozen publish', (driver) =>
+          driver.provider.compareAndSwap(first, context()),
         )
-        expect(code(refused)).toBe(expected)
-        const unchanged = await same(left, right, 'unchanged', (driver) =>
+        expect(code(frozen)).toBe('conflict/directory_fenced')
+        const frozenSeed = await same(left, right, 'frozen seed', (driver) =>
+          driver.provider.seedRoute(makeRoute('new-authority', 1, 'seed-new', null), context()),
+        )
+        expect(code(frozenSeed)).toBe('conflict/directory_fenced')
+        const frozenApproval = await same(left, right, 'frozen approval', (driver) =>
+          driver.provider.approveUpgrade(
+            { upgradeId: 'new-upgrade', validationRef: validation, authorityIds: ['state-auth'] },
+            context(),
+          ),
+        )
+        expect(code(frozenApproval)).toBe('conflict/directory_fenced')
+        await same(left, right, 'release freeze', (driver) => driver.provider.releaseFreeze(context()))
+        const published = await same(left, right, 'publish', (driver) =>
+          driver.provider.compareAndSwap(first, context()),
+        )
+        expect(published.ok).toBe(true)
+        const read = await same(left, right, 'read', (driver) =>
           driver.provider.read({ kind: 'authority', logicalAuthorityId: 'state-auth' }, context()),
         )
-        expect(unchanged.ok && (unchanged.value as { revision: number }).revision).toBe(1)
-        const absent = await same(left, right, 'absent', (driver) =>
-          driver.provider.probeCutover('cutover-1', context()),
+        expect(read.ok).toBe(true)
+        const current = read.ok ? (read.value as { route: AuthorityRoute }).route : route
+        const secondProof = inlineData({ accepted: false } as JsonValue, 'agh.maintenance/validation@1')
+        await same(left, right, 'approve-2', (driver) =>
+          driver.provider.approveUpgrade(
+            { upgradeId: 'upgrade-2', validationRef: secondProof, authorityIds: ['state-auth'] },
+            context(),
+          ),
         )
-        expect(absent.ok && absent.value).toEqual({ state: 'absent' })
-      }
-      await same(left, right, 'freeze', (driver) => driver.provider.freeze(context()))
-      const frozen = await same(left, right, 'frozen publish', (driver) =>
-        driver.provider.compareAndSwap(first, context()),
-      )
-      expect(code(frozen)).toBe('conflict/directory_fenced')
-      const frozenSeed = await same(left, right, 'frozen seed', (driver) =>
-        driver.provider.seedRoute(makeRoute('new-authority', 1, 'seed-new', null), context()),
-      )
-      expect(code(frozenSeed)).toBe('conflict/directory_fenced')
-      const frozenApproval = await same(left, right, 'frozen approval', (driver) =>
-        driver.provider.approveUpgrade(
-          { upgradeId: 'new-upgrade', validationRef: validation, authorityIds: ['state-auth'] },
-          context(),
-        ),
-      )
-      expect(code(frozenApproval)).toBe('conflict/directory_fenced')
-      await same(left, right, 'release freeze', (driver) => driver.provider.releaseFreeze(context()))
-      const published = await same(left, right, 'publish', (driver) =>
-        driver.provider.compareAndSwap(first, context()),
-      )
-      expect(published.ok).toBe(true)
-      const read = await same(left, right, 'read', (driver) =>
-        driver.provider.read({ kind: 'authority', logicalAuthorityId: 'state-auth' }, context()),
-      )
-      expect(read.ok).toBe(true)
-      const current = read.ok ? (read.value as { route: AuthorityRoute }).route : route
-      const secondProof = inlineData({ accepted: false } as JsonValue, 'agh.maintenance/validation@1')
-      await same(left, right, 'approve-2', (driver) =>
-        driver.provider.approveUpgrade(
-          { upgradeId: 'upgrade-2', validationRef: secondProof, authorityIds: ['state-auth'] },
-          context(),
-        ),
-      )
-      const second = publication(
-        [advance(current, 'cutover-2', 2, NEXT_COHORT)],
-        'upgrade-2',
-        'cutover-2',
-        secondProof,
-      )
-      await same(left, right, 'second', (driver) => driver.provider.compareAndSwap(second, context()))
-      const replay = await same(left, right, 'replay', (driver) =>
-        driver.provider.compareAndSwap(first, context()),
-      )
-      expect(replay).toEqual(published)
-      const unauthorizedReplay = await same(left, right, 'unauthorized replay', (driver) =>
-        driver.provider.compareAndSwap(first, context('other-principal')),
-      )
-      expect(code(unauthorizedReplay)).toBe('denied/maintenance_principal')
-      const stale = { ...first, publication: { ...first.publication, validationRef: secondProof } }
-      await same(left, right, 'identity', (driver) => driver.provider.compareAndSwap(stale, context()))
-      const mismatched = publication(
-        [
-          advance(route, 'cutover-x', 1),
-          advance(makeRoute('budget-auth', 1, 'seed-budget', null), 'cutover-x', 4),
-        ],
-        'upgrade-1',
-        'cutover-x',
-        validation,
-      )
-      await same(left, right, 'zero', (driver) => driver.provider.compareAndSwap(mismatched, context()))
-      await same(left, right, 'epoch', async (driver) => {
-        const bumped = driver.bump()
-        expect(bumped.ok).toBe(true)
-        return driver.provider.compareAndSwap(second, context())
-      })
-      const moved: MigrationRequest = {
-        upgradeId: 'move-1',
-        target: {
-          kind: 'directory',
-          sourceLocatorRevision: 1,
-          targetProviderLock: lockRef(),
-          targetLocationRef: 'nested/one/two/next',
-          externalJournalRef: 'journal-1',
-        },
-        policyRef: 'policy-1',
-        reason: 'relocate',
-        mode: 'explicit',
-      }
-      const relocating = {
-        left: openDefault('authority-directory-move-default'),
-        right: openReference('authority-directory-move-reference'),
-      }
-      try {
-        await same(relocating.left, relocating.right, 'move-seed', (driver) =>
-          driver.provider.seedRoute(route, context()),
+        const second = publication(
+          [advance(current, 'cutover-2', 2, NEXT_COHORT)],
+          'upgrade-2',
+          'cutover-2',
+          secondProof,
         )
-        const receipt = await same(relocating.left, relocating.right, 'move', (driver) =>
-          driver.provider.transfer(moved, context()),
+        await same(left, right, 'second', (driver) => driver.provider.compareAndSwap(second, context()))
+        const replay = await same(left, right, 'replay', (driver) =>
+          driver.provider.compareAndSwap(first, context()),
         )
-        expect(receipt.ok).toBe(true)
-        const standbyLeft = createAuthorityDirectoryProvider({
-          directory: join(relocating.left.root, 'standby', 'nested/one/two/next'),
-          anchor: relocating.left.anchor,
-          authority: AUTHORITY,
+        expect(replay).toEqual(published)
+        const unauthorizedReplay = await same(left, right, 'unauthorized replay', (driver) =>
+          driver.provider.compareAndSwap(first, context('other-principal')),
+        )
+        expect(code(unauthorizedReplay)).toBe('denied/maintenance_principal')
+        const stale = { ...first, publication: { ...first.publication, validationRef: secondProof } }
+        await same(left, right, 'identity', (driver) => driver.provider.compareAndSwap(stale, context()))
+        const mismatched = publication(
+          [
+            advance(route, 'cutover-x', 1),
+            advance(makeRoute('budget-auth', 1, 'seed-budget', null), 'cutover-x', 4),
+          ],
+          'upgrade-1',
+          'cutover-x',
+          validation,
+        )
+        await same(left, right, 'zero', (driver) => driver.provider.compareAndSwap(mismatched, context()))
+        await same(left, right, 'epoch', async (driver) => {
+          const bumped = driver.bump()
+          expect(bumped.ok).toBe(true)
+          return driver.provider.compareAndSwap(second, context())
         })
-        const standbyRight = createReferenceAuthorityDirectory({
-          directory: join(relocating.right.root, 'standby', 'nested/one/two/next'),
-          anchor: relocating.right.anchor,
-          authority: AUTHORITY,
-        })
-        const seenLeft = await standbyLeft.read(
-          { kind: 'authority', logicalAuthorityId: 'state-auth' },
-          context(),
-        )
-        const seenRight = await standbyRight.read(
-          { kind: 'authority', logicalAuthorityId: 'state-auth' },
-          context(),
-        )
-        expect(code(seenRight)).toBe(code(seenLeft))
-        if (seenLeft.ok && seenRight.ok) expect(seenRight.value).toEqual(seenLeft.value)
+        const moved: MigrationRequest = {
+          upgradeId: 'move-1',
+          target: {
+            kind: 'directory',
+            sourceLocatorRevision: 1,
+            targetProviderLock: lockRef(),
+            targetLocationRef: 'nested/one/two/next',
+            externalJournalRef: 'journal-1',
+          },
+          policyRef: 'policy-1',
+          reason: 'relocate',
+          mode: 'explicit',
+        }
+        const relocating = {
+          left: openDefault('authority-directory-move-default'),
+          right: openReference('authority-directory-move-reference'),
+        }
+        try {
+          await same(relocating.left, relocating.right, 'move-seed', (driver) =>
+            driver.provider.seedRoute(route, context()),
+          )
+          const receipt = await same(relocating.left, relocating.right, 'move', (driver) =>
+            driver.provider.transfer(moved, context()),
+          )
+          expect(receipt.ok).toBe(true)
+          const standbyLeft = createAuthorityDirectoryProvider({
+            directory: join(relocating.left.root, 'standby', 'nested/one/two/next'),
+            anchor: relocating.left.anchor,
+            authority: AUTHORITY,
+          })
+          const standbyRight = createReferenceAuthorityDirectory({
+            directory: join(relocating.right.root, 'standby', 'nested/one/two/next'),
+            anchor: relocating.right.anchor,
+            authority: AUTHORITY,
+          })
+          const seenLeft = await standbyLeft.read(
+            { kind: 'authority', logicalAuthorityId: 'state-auth' },
+            context(),
+          )
+          const seenRight = await standbyRight.read(
+            { kind: 'authority', logicalAuthorityId: 'state-auth' },
+            context(),
+          )
+          expect(code(seenRight)).toBe(code(seenLeft))
+          if (seenLeft.ok && seenRight.ok) expect(seenRight.value).toEqual(seenLeft.value)
+        } finally {
+          rmSync(relocating.left.root, { recursive: true, force: true })
+          rmSync(relocating.right.root, { recursive: true, force: true })
+        }
       } finally {
-        rmSync(relocating.left.root, { recursive: true, force: true })
-        rmSync(relocating.right.root, { recursive: true, force: true })
+        rmSync(left.root, { recursive: true, force: true })
+        rmSync(right.root, { recursive: true, force: true })
       }
-    } finally {
-      rmSync(left.root, { recursive: true, force: true })
-      rmSync(right.root, { recursive: true, force: true })
-    }
-  })
+    },
+  )
 
   it('agrees on a joint cohort and on an unsupported filesystem', async () => {
     const left = openDefault('authority-directory-joint-default')
@@ -649,4 +710,116 @@ describe('reference authority directory', () => {
         rmSync(driver.root, { recursive: true, force: true })
     }
   })
+
+  it.each([
+    ['NTFS', 3, false, false, true],
+    ['ReFS', 3, false, false, true],
+    ['ntfs', 3, false, false, true],
+    ['NTFS', 4, false, false, false],
+    ['NTFS', 2, false, false, false],
+    ['NTFS', 0, false, false, false],
+    ['NTFS', 1, false, false, false],
+    ['NTFS', 5, false, false, false],
+    ['NTFS', 6, false, false, false],
+    ['FAT32', 3, false, false, false],
+    ['exFAT', 3, false, false, false],
+    ['CSVFS', 3, false, false, false],
+    ['unknown', 3, false, false, false],
+    ['NTFS', 3, true, false, false],
+    ['NTFS', 3, false, true, false],
+  ] as const)(
+    'qualifies Windows volume %s/%s readOnly=%s probeError=%s',
+    async (filesystem, driveType, readOnly, error, accepted) => {
+      probe.platform = 'win32'
+      probe.volume = { filesystem, driveType, readOnly }
+      probe.error = error
+      const tree = mkdtempSync(join(tmpdir(), 'authority-windows-volume-'))
+      try {
+        for (const [directory, anchor, createAnchor, create] of [
+          [
+            join(tree, 'default'),
+            join(tree, 'default-anchor'),
+            createDirectoryAnchor,
+            createAuthorityDirectoryProvider,
+          ],
+          [
+            join(tree, 'reference'),
+            join(tree, 'reference-anchor'),
+            createReferenceAnchor,
+            createReferenceAuthorityDirectory,
+          ],
+        ] as const) {
+          const locator = {
+            directoryId: 'directory-1',
+            providerLockRef: proof(),
+            endpointRef: directory,
+            epoch: 1,
+            revision: 1,
+            cutoverId: 'locator-1',
+          }
+          expect(code(createAnchor(anchor, locator, PRINCIPAL))).toBe(
+            accepted ? 'ok' : 'incompatible/filesystem_unsupported',
+          )
+          const provider = create({ directory, anchor, authority: AUTHORITY, filesystem: 'local' })
+          const result = await provider.seedRoute(
+            makeRoute('state-auth', 1, 'seed-state-auth', null),
+            context(),
+          )
+          expect(code(result)).toBe(accepted ? 'ok' : 'incompatible/filesystem_unsupported')
+          await provider.dispose()
+        }
+      } finally {
+        rmSync(tree, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it.each(['replace', 'flush', 'committed-flush'] as const)(
+    'recovers Windows default publication after a %s failure',
+    async (fault) => {
+      probe.platform = 'win32'
+      const driver = openDefault('authority-windows-publish-fault')
+      try {
+        const route = makeRoute('state-auth', 1, 'seed-state-auth', null)
+        expect(code(await driver.provider.seedRoute(route, context()))).toBe('ok')
+        const validation = proof()
+        expect(
+          code(
+            await driver.provider.approveUpgrade(
+              { upgradeId: 'upgrade-1', validationRef: validation, authorityIds: ['state-auth'] },
+              context(),
+            ),
+          ),
+        ).toBe('ok')
+        const request = publication([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', validation)
+        probe.failReplacement = fault === 'replace'
+        probe.failFileFlush = fault === 'flush'
+        probe.failCommittedFlush = fault === 'committed-flush'
+        if (probe.failCommittedFlush)
+          await expect(driver.provider.compareAndSwap(request, context())).rejects.toThrow()
+        else
+          expect(code(await driver.provider.compareAndSwap(request, context()))).toBe(
+            'retryable/durability_failed',
+          )
+        probe.failReplacement = probe.failFileFlush = probe.failCommittedFlush = false
+        await driver.provider.dispose()
+        const recovered = createAuthorityDirectoryProvider({
+          directory: driver.directory,
+          anchor: driver.anchor,
+          authority: AUTHORITY,
+        })
+        try {
+          expect(
+            await recovered.read({ kind: 'authority', logicalAuthorityId: 'state-auth' }, context()),
+          ).toMatchObject({ ok: true, value: { revision: fault === 'committed-flush' ? 2 : 1 } })
+          expect(code(await recovered.compareAndSwap(request, context()))).toBe('ok')
+        } finally {
+          await recovered.dispose()
+        }
+      } finally {
+        await driver.provider.dispose()
+        rmSync(driver.root, { recursive: true, force: true })
+      }
+    },
+  )
 })

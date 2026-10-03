@@ -44,6 +44,7 @@ type Native = {
   createTemporaryPrivateFile(path: string): number
   createPrivateDirectory(path: string): void
   deletePrivateArtifact(root: string, relativePath: string, sha256: string): bigint
+  volumeInfo?(path: string): { filesystem: string; driveType: number; readOnly: boolean }
   renameWriteThrough(from: string, to: string): void
   hasPrivateDacl(path: string): boolean
   syncDirectory(path: string): void
@@ -660,4 +661,27 @@ export function renameDirectoryNoReplaceSync(from: string, to: string): void {
   implementation(source, target)
   if (windows) return
   for (const directory of new Set([dirname(source), dirname(target)])) syncDirectorySync(directory)
+}
+
+/** Actual handle volume, including junction targets. UNC/device namespaces are deliberately refused. */
+export function windowsVolumeInfoSync(path: string): {
+  filesystem: string
+  driveType: number
+  readOnly: boolean
+} {
+  if (!windows || !/^[a-z]:[\\/]/i.test(path))
+    throw Object.assign(new Error('Local Windows drive path required'), { code: 'EINVAL' })
+  const probe = native().volumeInfo
+  if (!probe)
+    throw Object.assign(new Error('Rebuild native artifact for volume information'), {
+      code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
+    })
+  return probe(filePath(path))
+}
+
+/** Caller flushes source first. Same-volume replacement and file flush, without directory durability. */
+export function windowsReplaceFileSync(from: string, to: string): void {
+  if (!windows) throw Object.assign(new Error('Windows replacement unavailable'), { code: 'ENOSYS' })
+  native().renameWriteThrough(filePath(from), filePath(to))
+  syncFileSync(to)
 }

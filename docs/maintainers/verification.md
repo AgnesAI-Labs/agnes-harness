@@ -40,6 +40,18 @@ On Windows, tests that exercise symlink escapes require permission to create sym
 
 <a id="构建与真实本地进程"></a>
 
+## Authority directory on local filesystems
+
+The [default directory](../../packages/host/src/runtime/providers/authority-directory.ts) and [independent SQLite reference](../../examples/runtime-reference/src/providers/authority-directory.ts) support fixed local NTFS/ReFS volumes on Windows. Qualification uses the opened object's volume GUID, drive type and filesystem name; Windows Node statfs.type is not a filesystem identifier. UNC, mapped network drives, removable, read-only and unknown volumes fail closed. Explicit device and extended namespace paths are refused; ordinary local long paths are converted internally.
+
+The default flushes file contents before same-volume write-through replacement and flushes the published file. The reference uses SQLite FULL transactions and flushes copied database files before locator publication. Windows does not claim POSIX parent-directory fsync or equivalent power-loss directory durability; every Windows conformance scenario records this limitation. POSIX persistence behavior is unchanged. Injected tests on macOS cover Windows decisions, failures and all six scenarios; real Windows process recovery and concurrency need the Windows CI shards. Killing a process does not test power loss.
+
+
+```sh
+pnpm exec tsx tools/acceptance/runtime/run-conformance.ts --contracts agh.authority-directory --providers default,reference
+pnpm exec vitest run packages/host/test/runtime/authority-directory.test.ts packages/host/test/runtime/authority-directory.e2e.test.ts examples/runtime-reference/src/providers/authority-directory-lock.test.ts examples/runtime-reference/src/providers/authority-directory.e2e.test.ts packages/system-node/test/windows-volume.test.ts --maxWorkers=1
+```
+
 ## Build and real local processes
 
 ```sh
