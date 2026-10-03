@@ -250,7 +250,14 @@ describe('bounded migration indexes', () => {
       entries: { itemRef?: DataRef }[]
     }
     expect(node.entries[0]!.itemRef?.kind).toBe('blob')
-    const page = await exportIndexPage(root, ASSET_INDEX, digest, null, 500, storage)
+    const readOnly = {
+      ...storage,
+      async put(): Promise<DataRef> {
+        throw new Error('Paging must reuse persisted descriptors')
+      },
+    }
+    const page = await exportIndexPage(root, ASSET_INDEX, digest, null, 500, readOnly)
+    expect(await exportIndexPage(root, ASSET_INDEX, digest, null, 500, readOnly)).toEqual(page)
     const ref = page.items[0] as DataRef
     expect(ref.kind).toBe('blob')
     expect(ref.schema.typeId).toBe('agh.migration/asset-index-item@1')

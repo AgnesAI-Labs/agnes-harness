@@ -35,6 +35,12 @@ interface IndexNode {
   level: number
   entries: Entry[] | Branch[]
 }
+interface IndexRow {
+  key: string
+  item: IndexItem
+  position: number
+  descriptor?: DataRef
+}
 export interface IndexCheckpoint {
   version: 1
   typeId: IndexType
@@ -209,15 +215,11 @@ export async function* walkExportIndex(
   typeId: IndexType,
   storage: IndexStorage,
   after: string | null = null,
-): AsyncGenerator<{ key: string; item: IndexItem; position: number }, number> {
+): AsyncGenerator<IndexRow, number> {
   if (typeId !== EXPORT_INDEX && typeId !== ASSET_INDEX) refuse('index_schema')
   let previous: string | null = null,
     position = 0
-  async function* visit(
-    ref: DataRef,
-    expectedLevel: number | null,
-    depth: number,
-  ): AsyncGenerator<{ key: string; item: IndexItem; position: number }> {
+  async function* visit(ref: DataRef, expectedLevel: number | null, depth: number): AsyncGenerator<IndexRow> {
     if (depth >= MAX_DEPTH || ref.schema.typeId !== typeId || ref.schema.revision !== 1)
       refuse('index_schema')
     let raw: unknown
@@ -274,7 +276,9 @@ export async function* walkExportIndex(
           compareIndexKeys(typeId, after, preceding ?? leaf.key) >= 0
         )
           refuse('checkpoint_invalid')
-        yield { key: leaf.key, item: item!, position }
+        const row: IndexRow = { key: leaf.key, item: item!, position }
+        if (leaf.itemRef) row.descriptor = leaf.itemRef
+        yield row
       } else {
         const branch = entry as Branch
         if (
@@ -381,7 +385,13 @@ export async function verifyExportIndex(
   return next
 }
 
-async function pageItem(typeId: IndexType, item: IndexItem, storage: IndexStorage): Promise<IndexItem> {
+async function pageItem(
+  typeId: IndexType,
+  item: IndexItem,
+  storage: IndexStorage,
+  descriptor?: DataRef,
+): Promise<IndexItem> {
+  if (descriptor) return descriptor
   // A descriptor near the codec limit cannot fit with page/cursor framing. Return a pinned
   // reference to that descriptor, not a claim that the referenced asset bytes were copied.
   if (encoded(item).length > INDEX_MAX_BYTES / 2)
@@ -413,7 +423,7 @@ export async function exportIndexPage(
       const row = result.value
       if (row.position !== next.consumed + 1) refuse('checkpoint_invalid')
       const rowCheckpoint = { ...next, after: row.key, consumed: row.position }
-      const output = await pageItem(typeId, row.item, storage)
+      const output = await pageItem(typeId, row.item, storage, row.descriptor)
       const prospective = {
         items: [...items, output],
         nextCursor: encodeIndexCursor(rowCheckpoint),
