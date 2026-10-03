@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type {
@@ -187,7 +188,7 @@ interface Driver {
 }
 
 function openDefault(label: string, filesystem?: 'unsupported'): Driver {
-  const root = mkdtempSync(`/tmp/${label}-`)
+  const root = mkdtempSync(join(tmpdir(), `${label}-`))
   const directory = join(root, 'dir')
   const anchor = join(root, 'anchor')
   const locator = {
@@ -222,7 +223,7 @@ function openDefault(label: string, filesystem?: 'unsupported'): Driver {
 }
 
 function openReference(label: string, filesystem?: 'unsupported'): Driver {
-  const root = mkdtempSync(`/tmp/${label}-`)
+  const root = mkdtempSync(join(tmpdir(), `${label}-`))
   const directory = join(root, 'dir')
   const anchor = join(root, 'anchor')
   const locator = {
