@@ -30,6 +30,7 @@
   "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/web-ui"],
   "@agnes/resource-control-worker": [
     "@agnes/base",
+    "@agnes/extension-api",
     "@agnes/protocol",
     "@agnes/resource-control-runtime",
     "@agnes/system-node"

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@agnes/base": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/system-node": "workspace:*"
