@@ -1,6 +1,11 @@
 import { hash } from 'node:crypto'
 import type { SchemaRef, StateAuthorityRef } from '@agnes/extension-api/runtime'
-import { RuntimeSchemaRefs, RuntimeStateLegacyReaders } from '@agnes/protocol/runtime'
+import {
+  RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
+  RuntimeStateLegacyReaders,
+  type RuntimeWireTypes,
+} from '@agnes/protocol/runtime'
 import { canonicalJson } from './canonical-json.js'
 import { noteSha, profiling } from './profile.js'
 
@@ -221,6 +226,13 @@ export const APPROVAL_TAINT_ACK_SCHEMA = RuntimeSchemaRefs.ApprovalTaintAckRecor
 export const AUTHORIZATION_PREPARATION_SCHEMA = RuntimeSchemaRefs.AuthorizationPreparation
 export const APPROVAL_RESPONSE_SOURCE_SCHEMA = RuntimeSchemaRefs.ApprovalRespondRequest
 export const CONTROL_REQUEST_SOURCE_SCHEMA = RuntimeSchemaRefs.CommitControlRequest
+/** Official supervisor method fullrefs are the stored SessionControl payload codecs. */
+export const SESSION_CONTROL_REQUEST_SCHEMA =
+  RuntimeMethodSchemaRefs['agh.supervisor'].submitSessionControl.input
+export const SESSION_CONTROL_RESULT_SCHEMA =
+  RuntimeMethodSchemaRefs['agh.supervisor'].submitSessionControl.output
+export const SESSION_CONTROL_STATE_SCHEMA =
+  RuntimeMethodSchemaRefs['agh.supervisor'].readSessionControl.output
 
 const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [SESSION_IDENTITY_SCHEMA.typeId]: SESSION_IDENTITY_SCHEMA,
@@ -250,6 +262,9 @@ const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [AUTHORIZATION_PREPARATION_SCHEMA.typeId]: AUTHORIZATION_PREPARATION_SCHEMA,
   [APPROVAL_RESPONSE_SOURCE_SCHEMA.typeId]: APPROVAL_RESPONSE_SOURCE_SCHEMA,
   [CONTROL_REQUEST_SOURCE_SCHEMA.typeId]: CONTROL_REQUEST_SOURCE_SCHEMA,
+  [SESSION_CONTROL_REQUEST_SCHEMA.typeId]: SESSION_CONTROL_REQUEST_SCHEMA,
+  [SESSION_CONTROL_RESULT_SCHEMA.typeId]: SESSION_CONTROL_RESULT_SCHEMA,
+  [SESSION_CONTROL_STATE_SCHEMA.typeId]: SESSION_CONTROL_STATE_SCHEMA,
 }
 
 export function sessionIdentityRecordId(sessionId: string): string {
@@ -558,12 +573,15 @@ export function matchesKnownSchemaText(text: string): boolean {
 export function stateSchemaReader(schema: SchemaRef): 1 | 2 {
   return RuntimeStateLegacyReaders.entries.some((entry) => sameJson(entry.source, schema)) ? 1 : 2
 }
-const stateDefinitions = new Map<string, keyof typeof RuntimeSchemaRefs>(
-  Object.entries(RuntimeSchemaRefs)
+const stateDefinitions = new Map<string, keyof RuntimeWireTypes>([
+  ...Object.entries(RuntimeSchemaRefs)
     .filter(([_name, ref]) => SCHEMAS[ref.typeId])
-    .map(([name, ref]) => [canonicalJson(ref), name as keyof typeof RuntimeSchemaRefs]),
-)
-export function stateSchemaDefinition(schema: SchemaRef): keyof typeof RuntimeSchemaRefs | undefined {
+    .map(([name, ref]) => [canonicalJson(ref), name as keyof typeof RuntimeSchemaRefs] as const),
+  [canonicalJson(SESSION_CONTROL_REQUEST_SCHEMA), 'SessionControlRequest'],
+  [canonicalJson(SESSION_CONTROL_RESULT_SCHEMA), 'SessionControlResult'],
+  [canonicalJson(SESSION_CONTROL_STATE_SCHEMA), 'SessionControlState'],
+])
+export function stateSchemaDefinition(schema: SchemaRef): keyof RuntimeWireTypes | undefined {
   return stateDefinitions.get(canonicalJson(schema))
 }
 
