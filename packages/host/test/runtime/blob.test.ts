@@ -1,10 +1,16 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { CallContext, Outcome, ScopeRef } from '@agnes/extension-api/runtime'
+import type {
+  AuthorityTransferControl,
+  BlobReadPort,
+  CallContext,
+  Outcome,
+  ScopeRef,
+} from '@agnes/extension-api/runtime'
 import {
   type BuildIdentity,
   type ConformanceHarness,
@@ -24,6 +30,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 import type { TransferMaintenance } from '../../src/runtime/authority-transfer.js'
 import { inlineData } from '../../src/runtime/maintenance/authority-publication.js'
+import { indexDigest } from '../../src/runtime/migration/export-index.js'
 import {
   BLOB_FEATURES,
   type BlobService,
@@ -100,6 +107,7 @@ function open(
   dataDir: string,
   authorizeRead?: (context: CallContext) => boolean,
   maintenance?: TransferMaintenance,
+  transferTarget = false,
 ): BlobService {
   const options: BlobServiceOptions = {
     dataDir,
@@ -108,6 +116,7 @@ function open(
     now: () => clock,
     ...(authorizeRead ? { authorizeRead } : {}),
     ...(maintenance ? { maintenance } : {}),
+    ...(transferTarget ? { transferTarget } : {}),
   }
   const service = createBlobService(options)
   services.push(service)
@@ -562,11 +571,27 @@ const MAINTAINER = ctx({ authorizationRef: 'maintenance' })
 const EXPECTED = { authorityId: 'blob-authority', tenantId: 'tenant-1', authorityEpoch: 1 }
 const FENCE = { upgradeId: 'upgrade-1', expected: EXPECTED, cohortDigest: 'c'.repeat(64) }
 
-/** The maintenance directory as the store sees it: one published route and an activation flag. */
-function maintenance(directory: {
-  route?: Wire.AuthorityRoute
-  targetActivated?: boolean
-}): TransferMaintenance {
+const PLAN = 'f'.repeat(64)
+
+const unavailable = (detailCode: string, message: string) => ({
+  ok: false as const,
+  error: {
+    code: 'invalid_input' as const,
+    detailCode,
+    message,
+    retryAdvice: { kind: 'never' as const },
+    diagnosticId: 'test',
+  },
+})
+
+/**
+ * The maintenance directory as the store sees it: one published route and an activation flag. A
+ * store at another location overrides its location and the source it imports from.
+ */
+function maintenance(
+  directory: { route?: Wire.AuthorityRoute; targetActivated?: boolean },
+  over: Partial<TransferMaintenance> = {},
+): TransferMaintenance {
   return {
     authorize: (context) => context.authorizationRef === 'maintenance',
     tenantId: 'tenant-1',
@@ -574,16 +599,10 @@ function maintenance(directory: {
     readRoute: async ({ logicalAuthorityId }) =>
       directory.route?.logicalAuthorityId === logicalAuthorityId
         ? { ok: true, value: { route: directory.route, targetActivated: directory.targetActivated ?? false } }
-        : {
-            ok: false,
-            error: {
-              code: 'invalid_input',
-              detailCode: 'not_found',
-              message: 'no published route',
-              retryAdvice: { kind: 'never' },
-              diagnosticId: 'test',
-            },
-          },
+        : unavailable('not_found', 'no published route'),
+    sourceBlobs: { openRead: async () => unavailable('not_found', 'no source lends its bytes') },
+    planFingerprint: async () => ({ ok: true, value: PLAN }),
+    ...over,
   }
 }
 
@@ -629,7 +648,7 @@ describe('default blob service authority transfer', () => {
     const writer = ok(blob.openWriter('upload-2', ctx()))
     ok(writer.write(0, text('abc')))
 
-    expect(refused(await open(dataDir).transfer.fence(FENCE, MAINTAINER))).toBe('blocked')
+    expect(refused(await open(dataDir).transfer.fence(FENCE, MAINTAINER))).toBe('operation_not_supported')
     expect(() => createBlobService({ dataDir, authorityId: 'other-authority', binding: BINDING })).toThrow()
     expect(refused(await blob.transfer.fence(FENCE, ctx()))).toBe('permission_denied')
     for (const expected of [
@@ -742,37 +761,456 @@ describe('default blob service authority transfer', () => {
   })
 })
 
+const UPGRADE = 'upgrade-1'
+
+/** A source fenced and exported while it holds every kind of row and content its store keeps. */
+async function exportedSource() {
+  const sourceDir = await fresh()
+  const directory: { route?: Wire.AuthorityRoute } = {}
+  const source = open(sourceDir, trusted, maintenance(directory))
+  const kept = await pinned(source, text('kept bytes'), 'upload-kept')
+  const loose = await sealed(source, 'upload-loose', text('staged, never pinned'))
+  ok(await source.promote({ upload: loose.upload, expectedDigest: loose.upload.digest }, ctx()))
+  await sealed(source, 'upload-sealed', text('sealed, never promoted'))
+  const gone = await sealed(source, 'upload-gone', text('collected'))
+  ok(await source.promote({ upload: gone.upload, expectedDigest: gone.upload.digest }, ctx()))
+  ok(await source.unpin({ pinId: gone.retention.pinId, expectedRevision: 1 }, ctx()))
+  ok(await source.gc({ scopeRef: scope(), dryRun: false, cursor: null, limit: 100 }, ctx()))
+  expect(existsSync(contentFile(sourceDir, gone.upload.digest))).toBe(false)
+  // An upload still receiving bytes: five of its six chunks are stored rows.
+  const partial = Uint8Array.from({ length: 6 * MIB }, (_, at) => at % 251)
+  ok(
+    await source.stage(
+      { uploadId: 'upload-open', size: partial.byteLength, mediaType: 'text/plain', expectedDigest: null },
+      ctx(),
+    ),
+  )
+  const writer = ok(source.openWriter('upload-open', ctx()))
+  for (let at = 0; at < 5 * MIB; at += MIB) ok(writer.write(at, partial.subarray(at, at + MIB)))
+  writer.close()
+  const fence = ok(await source.transfer.fence(FENCE, MAINTAINER))
+  const exported = ok(
+    await source.transfer.export({ upgradeId: UPGRADE, fenceId: fence.fenceId }, MAINTAINER),
+  )
+  return { source, sourceDir, directory, kept, partial, collected: gone.upload.digest, fence, exported }
+}
+
+type ExportedSource = Awaited<ReturnType<typeof exportedSource>>
+
+/** Every manifest part, read page by page. */
+async function manifestParts({ source, fence, exported }: ExportedSource, limit = 2) {
+  const parts: Wire.AuthorityExportPart[] = []
+  let cursor: string | null = null
+  for (;;) {
+    const page: Wire.AuthorityTransferControlExportPageResult = ok(
+      await source.transfer.exportPage(
+        {
+          upgradeId: UPGRADE,
+          fenceId: fence.fenceId,
+          manifestDigest: indexDigest(exported.manifestRoot),
+          cursor,
+          limit,
+        },
+        MAINTAINER,
+      ),
+    )
+    expect(page.snapshot).toBe(fence.checkpoint.checkpointId)
+    expect(page.items.length).toBeLessThanOrEqual(limit)
+    parts.push(...page.items)
+    if (page.complete) return parts
+    cursor = page.nextCursor
+  }
+}
+
+/** A new store at another location, reading the source's bytes through the given lender. */
+async function candidate(
+  world: ExportedSource,
+  lender: Pick<BlobReadPort, 'openRead'> = world.source.transferRead,
+) {
+  const targetDir = await fresh()
+  const target = open(
+    targetDir,
+    trusted,
+    maintenance(world.directory, { locationRef: 'location-2', sourceBlobs: lender }),
+    true,
+  )
+  return { target, targetDir }
+}
+
+const importRequest = (exported: Wire.AuthorityExport) => ({
+  upgradeId: UPGRADE,
+  source: exported,
+  targetLocationRef: 'location-2',
+})
+
+/** The route serving a candidate: its checkpoint is the import's, at the route's epoch. */
+const targetRoute = (
+  imported: Wire.AuthorityTransferControlImportResult,
+  over: Partial<Wire.AuthorityRoute> = {},
+) => {
+  const authorityEpoch = over.authorityEpoch ?? 2
+  return recoveryRoute(authorityEpoch, {
+    locationRef: 'location-2',
+    cutoverId: 'cutover-1',
+    checkpoint: { ...imported.targetCheckpoint, authorityEpoch },
+    ...over,
+  })
+}
+
+const activation = (route: Wire.AuthorityRoute, cutoverId = route.cutoverId) => ({
+  upgradeId: UPGRADE,
+  cutoverId,
+  publishedRoute: inlineData(route as unknown as JsonValue, 'agh.test/authority-route@1'),
+})
+
+const probe = (blob: BlobService) => blob.transfer.probe({ upgradeId: UPGRADE }, MAINTAINER)
+
+const BUSINESS_TABLES = ['uploads', 'upload_chunks', 'blobs', 'roots', 'deletions']
+const businessRows = (dataDir: string) =>
+  BUSINESS_TABLES.reduce(
+    (total, table) => total + Number(sql(dataDir, `SELECT COUNT(*) AS n FROM ${table}`)[0]?.n),
+    0,
+  )
+
+const newUpload = { uploadId: 'upload-new', size: 1, mediaType: 'text/plain', expectedDigest: null }
+
+const flipped = (bytes: Uint8Array) => {
+  const out = Buffer.from(bytes)
+  out.writeUInt8(out.readUInt8(0) ^ 1, 0)
+  return out
+}
+
+describe('default blob service authority copy', () => {
+  it('moves fenced rows and live content to a candidate that serves only once activated', async () => {
+    const world = await exportedSource()
+    const { source, fence, exported } = world
+    expect(exported).toMatchObject({
+      upgradeId: UPGRADE,
+      fenceId: fence.fenceId,
+      checkpoint: fence.checkpoint,
+      collectionCount: 5,
+      deletionWatermark: 4,
+    })
+    const exportAgain = () =>
+      source.transfer.export({ upgradeId: UPGRADE, fenceId: fence.fenceId }, MAINTAINER)
+    expect(ok(await exportAgain())).toEqual(exported)
+    // An export interrupted before it was recorded runs again to the same bytes.
+    sql(world.sourceDir, 'DELETE FROM maintenance_exports')
+    expect(ok(await exportAgain())).toEqual(exported)
+    expect(
+      refused(await source.transfer.export({ upgradeId: UPGRADE, fenceId: 'another-fence' }, MAINTAINER)),
+    ).toBe('idempotency_conflict')
+
+    // Pages chain by cursor over every part once, ordered by collection and part index.
+    const parts = await manifestParts(world)
+    expect(parts.length).toBe(exported.partCount)
+    const order = parts.map(({ collectionId, partIndex }) => [collectionId, partIndex] as const)
+    expect(order).toEqual(
+      [...order].sort(([a, i], [b, j]) => Buffer.compare(Buffer.from(a), Buffer.from(b)) || i - j),
+    )
+    const collections = new Set(parts.map(({ collectionId }) => collectionId))
+    expect(collections.size).toBe(5)
+    for (const collectionId of collections) {
+      const indexes = parts.filter((part) => part.collectionId === collectionId).map((part) => part.partIndex)
+      expect(indexes).toEqual(indexes.map((_, at) => at))
+    }
+    expect(parts.filter(({ collectionId }) => collectionId === 'blob.upload_chunks').length).toBeGreaterThan(
+      1,
+    )
+    expect(parts.reduce((total, { records }) => total + records, 0)).toBe(fence.checkpoint.recordCount)
+    const pageRequest = {
+      upgradeId: UPGRADE,
+      fenceId: fence.fenceId,
+      manifestDigest: indexDigest(exported.manifestRoot),
+      cursor: null,
+      limit: 2,
+    }
+    expect(refused(await source.transfer.exportPage({ ...pageRequest, cursor: 'bogus' }, MAINTAINER))).toBe(
+      'invalid_request',
+    )
+    expect(refused(await source.transfer.exportPage({ ...pageRequest, limit: 0 }, MAINTAINER))).toBe(
+      'invalid_request',
+    )
+    expect(
+      refused(
+        await source.transfer.exportPage({ ...pageRequest, manifestDigest: 'e'.repeat(64) }, MAINTAINER),
+      ),
+    ).toBe('revision_conflict')
+
+    const { target, targetDir } = await candidate(world)
+    expect(ok(await probe(target))).toEqual({ state: 'absent' })
+    expect(refused(await target.stage(newUpload, ctx()))).toBe('blocked')
+    const imported = ok(await target.transfer.import(importRequest(exported), MAINTAINER))
+    expect(imported.targetCheckpoint).toMatchObject({
+      authorityId: 'blob-authority',
+      authorityEpoch: 1,
+      snapshotDigest: fence.checkpoint.snapshotDigest,
+      recordCount: fence.checkpoint.recordCount,
+    })
+    expect(ok(await target.transfer.import(importRequest(exported), MAINTAINER))).toEqual(imported)
+    expect(
+      refused(
+        await target.transfer.import(
+          { ...importRequest(exported), targetLocationRef: 'location-3' },
+          MAINTAINER,
+        ),
+      ),
+    ).toBe('idempotency_conflict')
+    const importedProbe = {
+      state: 'imported',
+      fence,
+      exportDigest: canonicalJsonDigest(exported as unknown as JsonValue),
+      targetCheckpoint: imported.targetCheckpoint,
+    }
+    expect(ok(await probe(target))).toEqual(importedProbe)
+    expect(ok(await probe(source))).toEqual({ state: 'fenced', fence })
+
+    const validation = ok(
+      await target.transfer.verify(
+        { upgradeId: UPGRADE, source: exported, candidateRef: imported.candidateRef },
+        MAINTAINER,
+      ),
+    )
+    expect(validation).toMatchObject({
+      upgradeId: UPGRADE,
+      planFingerprint: PLAN,
+      candidateDigest: indexDigest(imported.candidateRef),
+      sourceSnapshotDigest: fence.checkpoint.snapshotDigest,
+      validatorBindings: [],
+      accepted: true,
+    })
+    expect(validation.checks.map(({ checkId, passed }) => [checkId, passed])).toEqual([
+      ['snapshot-digest', true],
+      ['record-count', true],
+      ['required-assets', true],
+      ['deletion-watermark', true],
+    ])
+
+    const route = targetRoute(imported)
+    world.directory.route = route
+    const activated = ok(await target.transfer.activate(activation(route), MAINTAINER))
+    expect(activated).toEqual({
+      state: 'activated',
+      cutoverId: 'cutover-1',
+      authority: { ...EXPECTED, authorityEpoch: 2 },
+      checkpoint: { ...imported.targetCheckpoint, authorityEpoch: 2 },
+    })
+    expect(activated.state === 'activated' && activated.checkpoint.snapshotDigest).toBe(
+      fence.checkpoint.snapshotDigest,
+    )
+    expect(ok(await target.transfer.activate(activation(route), MAINTAINER))).toEqual(activated)
+    expect(ok(await probe(target))).toEqual(activated)
+    expect(ok(await probe(source))).toEqual({ state: 'fenced', fence })
+
+    // The target serves the source's pins and open uploads; collected content stays gone.
+    expect(
+      ok(await target.blobRead.readRange({ ref: world.kept, offset: 0, length: 64 }, ctx())).bytes,
+    ).toEqual(text('kept bytes'))
+    expect(existsSync(contentFile(targetDir, world.collected))).toBe(false)
+    const writer = ok(target.openWriter('upload-open', ctx()))
+    ok(writer.write(5 * MIB, world.partial.subarray(5 * MIB)))
+    expect(ok(await writer.seal()).upload.digest).toBe(sha(world.partial))
+    writer.close()
+    ok(await target.stage(newUpload, ctx()))
+    expect(refused(await source.stage(newUpload, ctx()))).toBe('blocked')
+    expect(refused(await source.transfer.import(importRequest(exported), MAINTAINER))).toBe(
+      'revision_conflict',
+    )
+    // Only a fenced store lends its bytes, and only to the maintenance controller.
+    const lend = (blob: BlobService, context: CallContext) =>
+      blob.transferRead.openRead({ ref: world.kept, offset: 0 }, context)
+    expect(refused(await lend(target, MAINTAINER))).toBe('blocked')
+    expect(refused(await lend(source, ctx()))).toBe('permission_denied')
+
+    const reopened = reopen(target, targetDir, maintenance(world.directory, { locationRef: 'location-2' }))
+    expect(ok(await probe(reopened))).toEqual(activated)
+  })
+
+  it('resumes an interrupted import from its last accepted step without repeating a row', async () => {
+    const world = await exportedSource()
+    let budget = Number.POSITIVE_INFINITY
+    const lender: Pick<BlobReadPort, 'openRead'> = {
+      openRead: async (request, context) => {
+        if (budget <= 0) return unavailable('lender_unavailable', 'the source stopped lending')
+        budget -= 1
+        return world.source.transferRead.openRead(request, context)
+      },
+    }
+    const { target, targetDir } = await candidate(world, lender)
+    const request = importRequest(world.exported)
+    for (const calls of [2, 6]) {
+      budget = calls
+      expect(refused(await target.transfer.import(request, MAINTAINER))).toBe('lender_unavailable')
+      expect(ok(await probe(target))).toEqual({ state: 'absent' })
+    }
+    expect(businessRows(targetDir)).toBeGreaterThan(0)
+    expect(businessRows(targetDir)).toBeLessThan(world.fence.checkpoint.recordCount)
+
+    budget = Number.POSITIVE_INFINITY
+    const imported = ok(await target.transfer.import(request, MAINTAINER))
+    expect(imported.targetCheckpoint).toMatchObject({
+      snapshotDigest: world.fence.checkpoint.snapshotDigest,
+      recordCount: world.fence.checkpoint.recordCount,
+    })
+    expect(businessRows(targetDir)).toBe(world.fence.checkpoint.recordCount)
+  })
+
+  it('refuses export chunks and assets whose bytes do not match their digest', async () => {
+    const world = await exportedSource()
+    const parts = await manifestParts(world)
+    const chunks = new Set(parts.map(({ contentDigest }) => contentDigest))
+    let lie = false
+    const lender: Pick<BlobReadPort, 'openRead'> = {
+      openRead: async (request, context) => {
+        const opened = await world.source.transferRead.openRead(request, context)
+        if (!lie || !opened.ok || !chunks.has(request.ref.digest)) return opened
+        const original = opened.value.chunks
+        // Rows stay well-formed: one hex letter of an id or digest changes.
+        async function* changed() {
+          for await (const chunk of original) {
+            const out = Buffer.from(chunk)
+            const at = out.indexOf('a')
+            if (at >= 0) out.writeUInt8(0x62, at)
+            yield out
+          }
+        }
+        return { ok: true, value: { ...opened.value, chunks: changed() } }
+      },
+    }
+    const { target } = await candidate(world, lender)
+    const request = importRequest(world.exported)
+    // Content changed behind the export, first of an asset and then of a part's chunk.
+    for (const digest of [world.kept.digest, parts[0]?.contentDigest ?? '']) {
+      const file = contentFile(world.sourceDir, digest)
+      const original = readFileSync(file)
+      writeFileSync(file, flipped(original))
+      expect(refused(await target.transfer.import(request, MAINTAINER))).toBe('integrity')
+      writeFileSync(file, original)
+    }
+    // A lender handing over other bytes than the part names.
+    lie = true
+    expect(refused(await target.transfer.import(request, MAINTAINER))).toBe('integrity')
+    lie = false
+    expect(ok(await target.transfer.import(request, MAINTAINER)).targetCheckpoint.snapshotDigest).toBe(
+      world.fence.checkpoint.snapshotDigest,
+    )
+  })
+
+  it('fails verification for a row or content missing behind the import', async () => {
+    const world = await exportedSource()
+    const { target, targetDir } = await candidate(world)
+    const imported = ok(await target.transfer.import(importRequest(world.exported), MAINTAINER))
+    const verify = (candidateRef = imported.candidateRef) =>
+      target.transfer.verify({ upgradeId: UPGRADE, source: world.exported, candidateRef }, MAINTAINER)
+    sql(targetDir, `DELETE FROM roots WHERE pin_id = '${world.kept.pinId}'`)
+    rmSync(contentFile(targetDir, world.kept.digest))
+    const validation = ok(await verify())
+    expect(validation.accepted).toBe(false)
+    expect(validation.checks.filter(({ passed }) => !passed).map(({ checkId }) => checkId)).toEqual([
+      'snapshot-digest',
+      'record-count',
+      'required-assets',
+    ])
+    expect(refused(await verify(inlineData({ other: true }, 'agh.test/candidate@1')))).toBe(
+      'revision_conflict',
+    )
+  })
+
+  it('activates a candidate only onto the route the directory durably holds', async () => {
+    const world = await exportedSource()
+    const { target } = await candidate(world)
+    const early = recoveryRoute(2, { locationRef: 'location-2', cutoverId: 'cutover-1' })
+    world.directory.route = early
+    expect(refused(await target.transfer.activate(activation(early), MAINTAINER))).toBe('not_found')
+    const imported = ok(await target.transfer.import(importRequest(world.exported), MAINTAINER))
+    const route = targetRoute(imported)
+    expect(refused(await target.stage(newUpload, ctx()))).toBe('blocked')
+
+    world.directory.route = targetRoute(imported, { cohortDigest: 'e'.repeat(64) })
+    expect(refused(await target.transfer.activate(activation(route), MAINTAINER))).toBe('revision_conflict')
+    world.directory.route = route
+    expect(refused(await target.transfer.activate(activation(route, 'cutover-2'), MAINTAINER))).toBe(
+      'revision_conflict',
+    )
+    for (const other of [
+      targetRoute(imported, { locationRef: 'location-1' }),
+      targetRoute(imported, { authorityEpoch: 1 }),
+      // A route published for another candidate.
+      targetRoute(imported, { checkpoint: { ...route.checkpoint, checkpointId: 'other-candidate' } }),
+    ]) {
+      world.directory.route = other
+      expect(refused(await target.transfer.activate(activation(other), MAINTAINER))).toBe('revision_conflict')
+    }
+    world.directory.route = route
+    expect(refused(await target.transfer.activate(activation(route), ctx()))).toBe('permission_denied')
+    expect(refused(await target.stage(newUpload, ctx()))).toBe('blocked')
+
+    ok(await target.transfer.activate(activation(route), MAINTAINER))
+    expect(
+      refused(
+        await target.transfer.activate(activation(targetRoute(imported, { authorityEpoch: 3 })), MAINTAINER),
+      ),
+    ).toBe('idempotency_conflict')
+    ok(await target.stage(newUpload, ctx()))
+  })
+})
+
 describe('default blob service descriptor', () => {
-  it('offers each remote method of its declared features and refuses a binding of another contract', () => {
+  it('offers each remote method of its declared features and refuses a binding of another contract', async () => {
     const configSchema = { typeId: 'agh.test/config@1', revision: 1, digest: 'c'.repeat(64) }
     const input = { binding: BINDING, packageVersion: '1.0.0', packageDigest: 'a'.repeat(64), configSchema }
     const descriptor = blobProviderDescriptor(input)
-    expect(validateRuntime('ProviderDescriptor', descriptor).ok).toBe(true)
-    expect(descriptor).toMatchObject({
-      providerId: BINDING.providerId,
-      contract: 'agh.blob',
-      major: 1,
-      logicalName: 'default',
-      features: [...BLOB_FEATURES],
-      requires: [],
-    })
+    const transfer = blobProviderDescriptor({ ...input, maintenance: maintenance({}) })
     const catalog: Record<string, { kind?: string }> = RuntimeServiceCatalog['agh.blob'].methods
     const refs: Record<string, unknown> = RuntimeMethodSchemaRefs['agh.blob']
-    for (const { method, kind, inputSchema, outputSchema } of descriptor.operations) {
-      expect(kind).toBe(catalog[method]?.kind)
-      expect({ input: inputSchema, output: outputSchema }).toEqual(refs[method])
+    for (const offered of [descriptor, transfer]) {
+      expect(validateRuntime('ProviderDescriptor', offered).ok).toBe(true)
+      expect(offered).toMatchObject({
+        providerId: BINDING.providerId,
+        contract: 'agh.blob',
+        major: 1,
+        logicalName: 'default',
+        requires: [],
+      })
+      for (const { method, kind, inputSchema, outputSchema } of offered.operations) {
+        expect(kind).toBe(catalog[method]?.kind)
+        expect({ input: inputSchema, output: outputSchema }).toEqual(refs[method])
+      }
     }
-    expect(descriptor.operations.map(({ method, retrySafety }) => [method, retrySafety])).toEqual([
+    const blobOperations = [
       ['stage', 'idempotent'],
       ['promote', 'idempotent'],
       ['pin', 'idempotent'],
       ['unpin', 'never'],
       ['gc', 'never'],
       ['inspect', 'read-only'],
-    ])
+    ]
+    expect(descriptor.features).toEqual([...BLOB_FEATURES])
+    expect(descriptor.operations.map(({ method, retrySafety }) => [method, retrySafety])).toEqual(
+      blobOperations,
+    )
+    expect(transfer.features).toEqual([...BLOB_FEATURES, 'authority-transfer.v1'])
+    expect(transfer.operations.map(({ method, retrySafety }) => [method, retrySafety]).sort()).toEqual(
+      [
+        ...blobOperations,
+        ['authorityFence', 'idempotent'],
+        ['authorityExport', 'idempotent'],
+        ['authorityExportPage', 'idempotent'],
+        ['authorityImport', 'idempotent'],
+        ['authorityVerify', 'idempotent'],
+        ['authorityActivate', 'idempotent'],
+        ['authorityAbort', 'idempotent'],
+        ['authorityProbe', 'read-only'],
+      ].sort(),
+    )
     expect(() =>
       blobProviderDescriptor({ ...input, binding: { ...BINDING, contract: 'agh.files' } }),
     ).toThrow()
+
+    // Without a maintenance assembly, a store takes no part in a transfer.
+    const plain = open(await fresh())
+    for (const method of Object.keys(plain.transfer) as (keyof AuthorityTransferControl)[])
+      expect(refused(await plain.transfer[method]({} as never, MAINTAINER))).toBe('operation_not_supported')
   })
 })
 

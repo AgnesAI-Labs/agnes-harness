@@ -114,7 +114,7 @@ function outboxWatermarks(db: DatabaseSync): Wire.AuthorityCheckpoint['bridgeWat
 }
 
 /** Every business write goes through `write`, the authority's gate. */
-export type ArtifactsStore = Authority & {
+export type ArtifactsStore = Pick<Authority, 'write' | 'fence' | 'probe' | 'abort'> & {
   readonly db: DatabaseSync
   readonly authorityId: Wire.Id
   readonly now: () => number

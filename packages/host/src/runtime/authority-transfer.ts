@@ -1,9 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { AuthorityTransferControl, CallContext, Outcome } from '@agnes/extension-api/runtime'
+import type {
+  AuthorityTransferControl,
+  BlobReadPort,
+  CallContext,
+  Outcome,
+} from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import { type RuntimeErrorDetails, type RuntimeWireTypes, validateRuntime } from '@agnes/protocol/runtime'
+import { type AuthorityCopy, type AuthorityCopyMethods, openAuthorityCopy } from './authority-copy.js'
 
 type Detail = keyof typeof RuntimeErrorDetails
 
@@ -22,10 +28,16 @@ export type TransferMaintenance = Readonly<{
     request: Readonly<{ logicalAuthorityId: Wire.Id; upgradeId: Wire.Id }>,
     context: CallContext,
   ): Promise<Outcome<Readonly<{ route: Wire.AuthorityRoute; targetActivated: boolean }>>>
+  /** Reads the source authority's export chunks and content while this store imports them. */
+  sourceBlobs: Pick<BlobReadPort, 'openRead'>
+  /** The verify request carries no plan fingerprint, so the maintenance assembly supplies it. */
+  planFingerprint(upgradeId: Wire.Id, context: CallContext): Promise<Outcome<Wire.Digest>>
 }>
 
-/** The source side of an authority transfer; the descriptor does not offer it yet. */
+/** The source side of an authority transfer, for a store that cannot export its rows yet. */
 export type AuthorityTransferSource = Pick<AuthorityTransferControl, 'fence' | 'probe' | 'abort'>
+
+export type AuthorityRole = 'serving' | 'fenced' | 'candidate' | 'aborted'
 
 export type AuthoritySource = Readonly<{
   authorityId: Wire.Id
@@ -37,16 +49,24 @@ export type AuthoritySource = Readonly<{
   error(detail: Detail, message: string): Wire.RuntimeError
   Refusal: new (error: Wire.RuntimeError) => Error
   maintenance?: TransferMaintenance
+  /** A new store opened at a transfer target starts as a candidate; an existing store keeps its role. */
+  target?: boolean
+  now?: () => number
+  /** Without it, export, import, verify and activate are refused as not supported. */
+  copy?: AuthorityCopy
 }>
 
-/** One store's authority: the gate in front of its business writes and the source side of a transfer. */
-export type Authority = Readonly<{
-  /** A business write. Refused as blocked unless the store still serves at the epoch it holds. */
-  write<T>(body: () => T): T
-  fence(request: unknown, context: CallContext): Wire.AuthorityFence
-  probe(request: unknown, context: CallContext): Wire.AuthorityTransferProbe
-  abort(request: unknown, context: CallContext): Promise<Wire.AuthorityTransferProbe>
-}>
+/** One store's authority: the gate in front of its business writes and both sides of a transfer. */
+export type Authority = Readonly<
+  {
+    /** A business write. Refused as blocked unless the store still serves at the epoch it holds. */
+    write<T>(body: () => T): T
+    role(): AuthorityRole
+    fence(request: unknown, context: CallContext): Wire.AuthorityFence
+    probe(request: unknown, context: CallContext): Wire.AuthorityTransferProbe
+    abort(request: unknown, context: CallContext): Promise<Wire.AuthorityTransferProbe>
+  } & AuthorityCopyMethods
+>
 
 /** The maintenance namespace: never business state, never part of a checkpoint. */
 const DDL = [
@@ -58,10 +78,11 @@ const DDL = [
     abort_fingerprint TEXT, aborted TEXT)`,
 ]
 
-type AuthorityRow = { authority_id: string; epoch: number; role: string }
-type TransferRow = {
+type AuthorityRow = { authority_id: string; epoch: number; role: AuthorityRole }
+export type TransferRow = {
   fingerprint: string
   fence: string
+  watermark: number
   abort_fingerprint: string | null
   aborted: string | null
 }
@@ -69,9 +90,10 @@ type TransferRow = {
 const sha256 = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex')
 
 /**
- * Opens the authority row of a store that serves at epoch 1 until a transfer moves it. A fence
- * installs the write gate, takes the checkpoint and records itself in one transaction; only an abort
- * onto the published recovery route lifts the gate, at the next epoch.
+ * Opens the authority row of a store that serves at epoch 1 until a transfer moves it, or of a new
+ * transfer target that stays a candidate until activated. A fence installs the write gate, takes the
+ * checkpoint and records itself in one transaction; only an abort onto the published recovery route
+ * lifts the gate, at the next epoch.
  */
 export function openAuthority(db: DatabaseSync, source: AuthoritySource): Authority {
   const refuse = (detail: Detail, message: string): never => {
@@ -87,8 +109,8 @@ export function openAuthority(db: DatabaseSync, source: AuthoritySource): Author
   }
   for (const statement of DDL) db.exec(statement)
   db.prepare(
-    "INSERT OR IGNORE INTO maintenance_authority (id, authority_id, epoch, role) VALUES (1, ?, 1, 'serving')",
-  ).run(source.authorityId)
+    'INSERT OR IGNORE INTO maintenance_authority (id, authority_id, epoch, role) VALUES (1, ?, ?, ?)',
+  ).run(source.authorityId, source.target ? 0 : 1, source.target ? 'candidate' : 'serving')
   const row = () =>
     db
       .prepare('SELECT authority_id, epoch, role FROM maintenance_authority WHERE id = 1')
@@ -114,7 +136,8 @@ export function openAuthority(db: DatabaseSync, source: AuthoritySource): Author
   }
 
   const admit = (context: CallContext) => {
-    const maintenance = source.maintenance ?? refuse('blocked', 'no maintenance authority is configured')
+    const maintenance =
+      source.maintenance ?? refuse('operation_not_supported', 'no maintenance authority is configured')
     if (!maintenance.authorize(context))
       refuse('permission_denied', 'caller is not the maintenance controller')
     return maintenance
@@ -123,7 +146,7 @@ export function openAuthority(db: DatabaseSync, source: AuthoritySource): Author
   const transfer = (upgradeId: Wire.Id) =>
     db
       .prepare(
-        'SELECT fingerprint, fence, abort_fingerprint, aborted FROM maintenance_transfers WHERE upgrade_id = ?',
+        'SELECT fingerprint, fence, watermark, abort_fingerprint, aborted FROM maintenance_transfers WHERE upgrade_id = ?',
       )
       .get(upgradeId) as TransferRow | undefined
 
@@ -146,8 +169,34 @@ export function openAuthority(db: DatabaseSync, source: AuthoritySource): Author
     return { snapshotDigest: hash.digest('hex'), recordCount }
   }
 
+  const head = () =>
+    (db.prepare(`SELECT COALESCE(MAX(seq), 0) AS head FROM ${source.log}`).get() as { head: number }).head
+
+  const copy = openAuthorityCopy({
+    db,
+    source,
+    refuse,
+    parse,
+    checked,
+    admit,
+    transaction,
+    role: () => row().role,
+    transfer,
+    snapshot,
+    head,
+    serve: (next) => {
+      epoch = next
+    },
+  })
+
   return {
     write: (body) => transaction(true, body),
+    role: () => row().role,
+    export: copy.export,
+    exportPage: copy.exportPage,
+    import: copy.import,
+    verify: copy.verify,
+    activate: copy.activate,
 
     fence(request, context) {
       const maintenance = admit(context)
@@ -184,22 +233,19 @@ export function openAuthority(db: DatabaseSync, source: AuthoritySource): Author
           },
           writerCredentialsRevoked: true,
         })
-        const { head } = db.prepare(`SELECT COALESCE(MAX(seq), 0) AS head FROM ${source.log}`).get() as {
-          head: number
-        }
         db.prepare("UPDATE maintenance_authority SET role = 'fenced' WHERE id = 1").run()
         db.prepare(
           'INSERT INTO maintenance_transfers (upgrade_id, fingerprint, fence, watermark) VALUES (?, ?, ?, ?)',
-        ).run(input.upgradeId, fingerprint, JSON.stringify(fence), head)
+        ).run(input.upgradeId, fingerprint, JSON.stringify(fence), head())
         return fence
       })
     },
 
     probe(request, context) {
-      admit(context)
+      const maintenance = admit(context)
       const { upgradeId } = parse('AuthorityTransferControlProbeRequest', request)
       const prior = transfer(upgradeId)
-      if (!prior) return { state: 'absent' }
+      if (!prior) return copy.probe(upgradeId, maintenance)
       if (prior.aborted !== null) return JSON.parse(prior.aborted) as Wire.AuthorityTransferProbe
       return { state: 'fenced', fence: JSON.parse(prior.fence) as Wire.AuthorityFence }
     },
