@@ -1373,9 +1373,11 @@ export function resolveConfigRequest(
   )
   if (!chainedPreset.ok) return { ok: false, refusal: chainedPreset.refusal }
   let resolvedPreset = chainedPreset.value
-  const leaf = presets[presets.length - 1]
+  const leaf = presets[presets.length - 1] ?? {
+    source: request.defaults.preset.source,
+    document: defaultPreset.value,
+  }
   if (
-    !leaf ||
     !resolvedProfile.presets.allowed.some(
       (item) => item.presetId === leaf.document.id && item.digest === documentDigest(leaf.document),
     )
