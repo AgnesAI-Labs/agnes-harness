@@ -1,2 +1,5 @@
+export { readEmbeddingVectors } from './embedding/data.js'
 export type { ModelAdapterDeployment, ModelWireSource } from './model-adapter/ports.js'
+export type { EmbeddingDeployment } from './providers/embedding.js'
+export { createEmbeddingFactory } from './providers/embedding.js'
 export { createModelAdapterFactory } from './providers/model-adapter.js'

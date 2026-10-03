@@ -1,5 +1,9 @@
 # Runtime reference providers
 
+The experimental embedding factories expose a recoverable `encode` leaf and an injected public Usage control port. They currently accept explicit synthetic, credential-free loopback fixtures through the restricted network effect port. The contract fixtures consume the public default Usage provider with durable synthetic source observations. Live embedding model calls, pricing, settlement and startup selection require their owning services before production activation.
+
+Embedding results use the official `agh.embedding/vectors@1` schema. Both implementations check the content digest, the input digest, row count, dimensions, finite values and requested unit normalization before returning vectors. Encode requests are bounded inline references; vector content can be inline or a pinned JSON Blob up to 1 MiB. Consumers must validate vectors before updating their index. Failed vector validation preserves recorded usage; a sent request with no confirmed result remains unknown across process recovery and is never sent again.
+
 The sandbox and execution factories are experimental, parallel services. Host startup does not select them: construction requires a current mount resolver, a compiled filesystem policy, authenticated calls, and a content backend that supplies durable Blob retention proofs. Existing command adapters retain their existing behavior.
 
 Build from the repository root with the pinned Node and pnpm versions:

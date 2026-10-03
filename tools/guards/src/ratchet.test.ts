@@ -1,3 +1,4 @@
+// Measure recoverable embedding providers and their public fixture contract with exact ceilings.
 // Windows Job internal five-limit protocol: exact Host allocation, no headroom.
 // Durable admission coordination and session control: exact merged source/testkit caps; no headroom.
 // Exact source counts after combining routing/model providers with current integration; no spare allocation.
@@ -1016,7 +1017,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 4612,
+  'packages/ai/src': 5277,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1492,7 +1493,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sourced memory and hybrid retrieval providers. Measured 11849, exact, no spare.
   // Durable run admission coordination. Measured 12086, exact, no spare.
   // Durable resource pins. Measured 12187, exact, no spare.
-  'packages/extension-api/testkit': 12236,
+  // Recoverable embedding providers. Measured 12446, exact, no spare.
+  'packages/extension-api/testkit': 12446,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
