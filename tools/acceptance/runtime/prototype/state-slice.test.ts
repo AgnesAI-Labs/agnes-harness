@@ -48,7 +48,10 @@ import {
   sideEntryIdentity,
   sideListsDigest,
 } from '../../../../packages/host/src/runtime/state/records.ts'
+import { RuntimeStateDatabase } from '../../../../packages/host/src/runtime/state/transactions.ts'
+import { createAdmissionAcceptanceIssuer } from '../../../../packages/host/test/helpers/runtime-admission-issuer.ts'
 import { jcs } from '../../../../packages/protocol/src/jcs.ts'
+import { RuntimeSchemaRefs } from '../../../../packages/protocol/src/runtime/index.ts'
 import { validateRuntime } from '../../../../packages/protocol/src/runtime/public.ts'
 
 const authority: StateAuthorityRef = { authorityId: 'authority-1', tenantId: 'tenant-1', authorityEpoch: 1 }
@@ -161,7 +164,7 @@ function openStore(
   beforeCommit?: () => void,
   onCommit?: (commit: CommitNotice) => void,
 ): RuntimeStateStore {
-  return createRuntimeStateStore({
+  const options = {
     file: path,
     authority,
     now,
@@ -169,7 +172,27 @@ function openStore(
     verifyRetentionPin: verifyFixturePin,
     ...(beforeCommit ? { beforeCommit } : {}),
     ...(onCommit ? { onCommit } : {}),
-  })
+  }
+  const database = new RuntimeStateDatabase(options)
+  const issuer = createAdmissionAcceptanceIssuer(database, authority, now)
+  const store = createRuntimeStateStore(options, database)
+  const create = store.createRun.bind(store)
+  const close = store.close.bind(store)
+  store.createRun = async (input, rawContext) => {
+    if (rawContext.signal.aborted || !validateRuntime('RunAdmission', input).ok)
+      return create(input, rawContext)
+    try {
+      return create(input, await issuer.issue(input, rawContext))
+    } catch (error) {
+      if (rawContext.signal.aborted) return create(input, rawContext)
+      throw error
+    }
+  }
+  store.close = () => {
+    issuer.close()
+    close()
+  }
+  return store
 }
 
 function query<T>(path: string, sql: string): T[] {
@@ -334,11 +357,41 @@ describe('runtime state records, proof rows, and ledger events', () => {
         "SELECT (SELECT COUNT(*) FROM events WHERE type='runtime/state-commit') + (SELECT COUNT(*) FROM runtime_aux_commits) AS n",
       ),
     ).toEqual([{ n: 1 }])
-    expect(data.mutationCount).toBe(4)
-    expect(count(path, 'runtime_mutation_manifests')).toBe(4)
+    expect(data.mutationCount).toBe(5)
+    const lockedBinding = query<{ schema_json: string; value_json: string; last_commit_id: string }>(
+      path,
+      "SELECT schema_json,value_json,last_commit_id FROM runtime_records WHERE record_id = 'run-binding:run-1'",
+    )[0]
+    expect(lockedBinding).toBeDefined()
+    if (!lockedBinding) throw Error('official RunBinding is missing')
+    expect(JSON.parse(lockedBinding.schema_json)).toEqual(RuntimeSchemaRefs.RunBinding)
+    expect(validateRuntime('RunBinding', JSON.parse(lockedBinding.value_json)).ok).toBe(true)
+    const nativeIssued = query<{ source_json: string }>(
+      path,
+      "SELECT source_json FROM runtime_admission_source_issued WHERE ticket_id='ticket-1'",
+    )[0]
+    expect(nativeIssued).toBeDefined()
+    expect(JSON.parse(lockedBinding.value_json)).toEqual(
+      JSON.parse(nativeIssued?.source_json ?? '{}').runBinding,
+    )
+    expect(lockedBinding.last_commit_id).toBe(created.value.commit.commitId)
+    const bindingMutation = query<{
+      commit_id: string
+      record_id: string
+      previous_revision: number | null
+      next_json: string
+    }>(path, "SELECT * FROM runtime_mutation_manifests WHERE record_id='run-binding:run-1'")[0]
+    expect(bindingMutation?.commit_id).toBe(created.value.commit.commitId)
+    expect(bindingMutation?.previous_revision).toBeNull()
+    expect(JSON.parse(bindingMutation?.next_json ?? '{}')).toMatchObject({
+      recordRevision: 1,
+      schema: RuntimeSchemaRefs.RunBinding,
+    })
+    expect(count(path, 'runtime_mutation_manifests')).toBe(5)
     expect(count(path, 'runtime_side_entries')).toBe(0)
-    expect(count(path, 'runtime_record_versions')).toBe(4)
+    expect(count(path, 'runtime_record_versions')).toBe(5)
     expect(query(path, 'SELECT record_id FROM runtime_record_versions ORDER BY record_id')).toEqual([
+      { record_id: 'run-binding:run-1' },
       { record_id: 'run:run-1' },
       { record_id: 'session-identity:session-1' },
       { record_id: 'state-lease:session-1' },
@@ -1927,7 +1980,7 @@ describe('runtime state advance, dispatch, and invocation', () => {
 
   it('continues a run, admits an action, and marks the attempt running', async () => {
     const { path, store } = await leasedRun()
-    expect(count(path, 'runtime_records')).toBe(5)
+    expect(count(path, 'runtime_records')).toBe(6)
     const prepared = await preparedInvocation(store, 'invocation-1', 0, 1_000)
     expect(prepared.admitted).toMatchObject({
       prepareId: stableId('prep', 'run-1\0invocation-1'),
@@ -1937,7 +1990,7 @@ describe('runtime state advance, dispatch, and invocation', () => {
       remainingQueries: 65_536 - 128,
     })
     expect(prepared.closed).toEqual({ invocationId: 'invocation-1', state: 'prepared' })
-    expect(count(path, 'runtime_records')).toBe(9)
+    expect(count(path, 'runtime_records')).toBe(10)
     const action = preparedAction('step-1')
     const actionId = stableId('act', 'run-1\0step-1')
     const advanced = unwrap(

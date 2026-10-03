@@ -202,6 +202,11 @@ export const RuntimeSchemaRefs = freeze({
     "revision": 2,
     "digest": "9cb4d13895dafd0317516208cdf184efff45957d94d5b002e2b2ef2045128dd0"
   },
+  "RunBinding": {
+    "typeId": "agh.runtime/run-binding@1",
+    "revision": 2,
+    "digest": "0f0daee8d4ea4b05023ffaf870b3aafe88e6a97c1c55cfb694664a08f9426f8f"
+  },
   "RunTaintRecordValue": {
     "typeId": "agh.runtime/run-taint-record@1",
     "revision": 2,

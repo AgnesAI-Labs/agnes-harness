@@ -196,6 +196,7 @@ export function storedMutationNextJson(recordRevision: number, digest: string, s
 
 export const SESSION_IDENTITY_SCHEMA = RuntimeSchemaRefs.SessionIdentityValue
 export const RUN_RECORD_SCHEMA = RuntimeSchemaRefs.RunRecordValue
+export const RUN_BINDING_SCHEMA = RuntimeSchemaRefs.RunBinding
 export const RUN_TAINT_SCHEMA = RuntimeSchemaRefs.RunTaintRecordValue
 export const ACTION_SCHEMA = RuntimeSchemaRefs.ActionRecordValue
 export const ATTEMPT_SCHEMA = RuntimeSchemaRefs.AttemptRecordValue
@@ -224,6 +225,7 @@ export const CONTROL_REQUEST_SOURCE_SCHEMA = RuntimeSchemaRefs.CommitControlRequ
 const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [SESSION_IDENTITY_SCHEMA.typeId]: SESSION_IDENTITY_SCHEMA,
   [RUN_RECORD_SCHEMA.typeId]: RUN_RECORD_SCHEMA,
+  [RUN_BINDING_SCHEMA.typeId]: RUN_BINDING_SCHEMA,
   [RUN_TAINT_SCHEMA.typeId]: RUN_TAINT_SCHEMA,
   [ACTION_SCHEMA.typeId]: ACTION_SCHEMA,
   [ATTEMPT_SCHEMA.typeId]: ATTEMPT_SCHEMA,
@@ -256,6 +258,10 @@ export function sessionIdentityRecordId(sessionId: string): string {
 
 export function runRecordId(runId: string): string {
   return `run:${runId}`
+}
+
+export function runBindingRecordId(runId: string): string {
+  return `run-binding:${runId}`
 }
 
 export function taintRecordId(runId: string): string {

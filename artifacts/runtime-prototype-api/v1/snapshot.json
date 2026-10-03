@@ -161,7 +161,7 @@
     },
     {
       "path": "packages/protocol/schema/runtime/public.json",
-      "sha256": "f93474aa1821be9b79324ea302ffabb35dd48f12d6be9bf05947e7e5a36dcfae"
+      "sha256": "9c9cbbd8db48985adffc715b036fb315f77f1720ef3ee894abd6c98b26f2e101"
     },
     {
       "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -511,7 +511,7 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-      "sha256": "9cfe882d59adaba65e5a6a10930b578deeb014ba280e8bc3935734ec520a9cd8"
+      "sha256": "07121a83cdd8f053118db1b5679e398ec932aa0f645a2ae5e19625954be74aa3"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
@@ -988,7 +988,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-        "sha256": "9cfe882d59adaba65e5a6a10930b578deeb014ba280e8bc3935734ec520a9cd8"
+        "sha256": "07121a83cdd8f053118db1b5679e398ec932aa0f645a2ae5e19625954be74aa3"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
@@ -1112,7 +1112,7 @@
       },
       {
         "path": "packages/protocol/schema/runtime/public.json",
-        "sha256": "f93474aa1821be9b79324ea302ffabb35dd48f12d6be9bf05947e7e5a36dcfae"
+        "sha256": "9c9cbbd8db48985adffc715b036fb315f77f1720ef3ee894abd6c98b26f2e101"
       },
       {
         "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -1403,9 +1403,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "c2d2aad56a7b9209f45bb48b6c7b8689aeed2ee78b5d9c6d93a33e8090aecef7",
+    "inputDigest": "361feddb0a6fb1b402d1098e9b15c6c81719bed6b210e465e28c31a78a203e29",
     "diagnostics": [],
-    "reportDigest": "4990c541657521648a05fc063fe805723a3476b94ccd12df80b6fd247c35e48d"
+    "reportDigest": "cacab536dccc99552bb0c905ae136bbb3f706fa50a87e22ed8754fc1b0167be0"
   },
-  "snapshotDigest": "0b68f933e81b8a829d4f75166744d1557e36b7d9514fde5bd55fdf9c5142f33e"
+  "snapshotDigest": "4c742c29e461d808f31576b70a456aecaed5f28d4682c7bf4ef14740c2cfd006"
 }
