@@ -1,8 +1,9 @@
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pid } from 'node:process'
+import { execPath, pid } from 'node:process'
 import { isDeepStrictEqual } from 'node:util'
 import type {
   RendererDefinition,
@@ -228,6 +229,58 @@ export function recoverUIRegistry(factory: UIRegistryFactory, directory: string,
   }
   const old = (JSON.parse(readFileSync(killed, 'utf8')) as Selection).handle
   writeFileSync(join(directory, REBUILT), JSON.stringify({ ...seen, oldHandleRefused: !host.accepts(old) }))
+}
+
+/** The `ready` of a client process `restartUIRegistryClient` runs: prints READY and waits to be killed. */
+export function holdUIRegistryClient(): void {
+  writeSync(1, 'READY\n')
+  // Blocks this thread, so the registry stays as it is until the process is killed.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60_000)
+}
+
+/**
+ * A binding's `restart`: runs `node <argv>` in `cwd` as a client process and kills it with SIGKILL once
+ * it prints READY, then runs it again until it exits. Each run settles only once the child's pipes have
+ * closed, so neither the process nor its handles outlive the call; a child that neither gets ready nor
+ * exits within 15 seconds is killed and the call rejects.
+ */
+export async function restartUIRegistryClient(
+  argv: readonly string[],
+  cwd: string,
+): Promise<readonly { signal: string | null; pid: number | null }[]> {
+  const run = () =>
+    new Promise<{ signal: string | null; pid: number | null }>((resolve, reject) => {
+      const child = spawn(execPath, argv, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      let killed = false
+      let timedOut = false
+      const kill = () => {
+        killed = true
+        child.kill('SIGKILL')
+      }
+      const timer = setTimeout(() => {
+        timedOut = true
+        kill()
+      }, 15_000)
+      child.stdout.setEncoding('utf8')
+      child.stderr.setEncoding('utf8')
+      child.stdout.on('data', (chunk: string) => {
+        stdout += chunk
+        if (!killed && stdout.includes('READY\n')) kill()
+      })
+      child.stderr.on('data', (chunk: string) => {
+        stderr += chunk
+      })
+      child.on('error', reject)
+      child.on('close', (_code, signal) => {
+        clearTimeout(timer)
+        if (timedOut) reject(new Error(`ui registry client timed out\n${stderr}\n${stdout}`))
+        else resolve({ signal, pid: child.pid ?? null })
+      })
+    })
+  const killed = await run()
+  return [killed, await run()]
 }
 
 const CASES: Record<ScenarioName, (binding: UIRegistryConformanceBinding) => Promise<boolean>> = {

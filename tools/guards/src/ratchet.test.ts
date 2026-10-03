@@ -228,7 +228,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Plugin externals now list antd and @agnes/web-ui/assistant-ui, matching the page import map.
   // Measured 1716, exact, no spare (+2).
   // Conversation window merge state machine. Measured 1955, exact, no spare (+239).
-  'packages/web-client/src': 1955,
+  // Default UI registry over a private slot ledger. Measured 2126, exact, no spare (+171).
+  'packages/web-client/src': 2126,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1449,7 +1450,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merged with the projection, network and secret cases on the integration base.
   // Measured 5354, exact, no spare.
   // UI registry contract cases join the contract aggregate. Measured 5728, exact, no spare.
-  'packages/extension-api/testkit': 5728,
+  // The UI registry bindings share one client restart helper there. Measured 5771, exact, no spare.
+  'packages/extension-api/testkit': 5771,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

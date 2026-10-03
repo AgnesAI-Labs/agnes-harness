@@ -1,11 +1,63 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { bindUIRegistryContract } from '../../../../examples/runtime-reference/src/providers/ui-registry.ts'
+import {
+  holdUIRegistryClient,
+  recoverUIRegistry,
+  registerUIRegistryContract,
+  restartUIRegistryClient,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.ts'
+import type { BuildIdentity } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
+import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
+import { createUIRegistry } from '../../../../packages/web-client/src/runtime/providers/ui-registry.ts'
 
 const CONTRACT = 'agh.ui-registry'
-const REFERENCE = 'reference'
+const PROVIDERS = ['default', 'reference'] as const
+const RECIPE = 'packages/web-client/src/runtime/providers/ui-registry.ts'
 
-// Only the reference registry binds here. The web client's registry joins once it offers the factory;
-// until then a default request stays without evidence.
+const root = fileURLToPath(new URL('../../../../', import.meta.url))
+const self = fileURLToPath(import.meta.url)
+const sha256 = (path: string) =>
+  createHash('sha256')
+    .update(readFileSync(join(root, path)))
+    .digest('hex')
+
+const build: BuildIdentity = {
+  codeSha: 'web-client-code',
+  buildDigest: 'web-client-build',
+  lockDigest: 'web-client-lock',
+  specVersion: 'web-client-spec',
+  sdkVersion: 'web-client-sdk',
+  sdkDigest: 'web-client-sdk-digest',
+  platform: 'web-client-platform',
+}
+
+/**
+ * Registers the six UI registry cases for the web client's default registry. Its `recover` client
+ * processes run this file, which builds the same registry.
+ */
+export function bindDefaultUIRegistryContract(
+  harness: ConformanceHarness,
+  command: string,
+  providerId = 'default',
+): void {
+  registerUIRegistryContract(harness, {
+    providerId,
+    recipe: RECIPE,
+    command,
+    build,
+    providerDigest: sha256(RECIPE),
+    configDigest: canonicalJsonDigest({}),
+    releaseSetDigest: sha256('packages/web-client/package.json'),
+    factory: createUIRegistry,
+    restart: (directory) => restartUIRegistryClient(['--import', 'tsx', self, directory], root),
+  })
+}
+
+// The web client's default registry and the reference registry bind here.
 export async function bindConformance(
   harness: ConformanceHarness,
   request: {
@@ -16,7 +68,18 @@ export async function bindConformance(
 ): Promise<{ readonly contracts: readonly string[]; readonly providers: readonly string[] }> {
   if (request.contracts !== 'all' && !request.contracts.includes(CONTRACT))
     return { contracts: [], providers: [] }
-  if (!request.providers.includes(REFERENCE)) return { contracts: [CONTRACT], providers: [] }
-  await bindUIRegistryContract(harness, request.command, { providerId: REFERENCE })
-  return { contracts: [CONTRACT], providers: [REFERENCE] }
+  const providers = PROVIDERS.filter((providerId) => request.providers.includes(providerId))
+  for (const providerId of providers) {
+    if (providerId === 'reference') await bindUIRegistryContract(harness, request.command, { providerId })
+    else bindDefaultUIRegistryContract(harness, request.command, providerId)
+  }
+  return { contracts: [CONTRACT], providers }
+}
+
+// The client process `recover` starts: `<directory>`.
+const entry = process.argv[1]
+if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+  const directory = process.argv[2]
+  if (directory === undefined) throw new Error('expected: <directory>')
+  recoverUIRegistry(createUIRegistry, directory, holdUIRegistryClient)
 }
