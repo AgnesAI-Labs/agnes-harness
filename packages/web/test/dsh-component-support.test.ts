@@ -62,7 +62,8 @@ describe('DSH component support matrix', () => {
     const dshTranscript = document.createElement('div')
     const newContentButton = document.createElement('button')
     document.body.append(dshTranscript, newContentButton)
-    const timeline = createTimelineRenderer({ locale: zhLocaleService(), 
+    const timeline = createTimelineRenderer({
+      locale: zhLocaleService(),
       transcript: dshTranscript,
       newContentButton,
       registry: runtime.registry,
