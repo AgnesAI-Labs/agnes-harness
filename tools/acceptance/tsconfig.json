@@ -23,7 +23,11 @@
     "runtime/platform/resources-conformance.ts",
     "runtime/platform/mcp-conformance.ts",
     "runtime/fixtures/mcp-http-server.ts",
-    "runtime/platform/package-installer-conformance.ts"
+    "runtime/platform/package-installer-conformance.ts",
+    "runtime/platform/billing-trace-conformance.ts",
+    "runtime/fixtures/otlp-receiver.ts",
+    "runtime/fixtures/billing-receipt-server.ts",
+    "runtime/fixtures/billing-trace-provider.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
   "references": [

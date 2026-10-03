@@ -1468,7 +1468,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Absent non-reference providers name their missing binding. Measured 7899, exact, no spare.
   // Exact measured MCP session contract and alphabetical export; no spare allocation.
   // Restricted installation proposal cases. Measured 8124, exact, no spare.
-  'packages/extension-api/testkit': 8124,
+  // Billing and trace providers. Measured 8513, exact, no spare.
+  'packages/extension-api/testkit': 8513,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2677,7 +2678,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Staged generations and prepare conformance: combined measured 65493, exact, no spare.
   // Blob and artifacts write gate, deletion and revocation logs, outbox seq and source-side
   // fence, probe and abort. Measured 65845 (+352), exact, no spare.
-  'packages/host/src': 65845,
+  // Billing and trace providers. Measured 66992, exact, no spare.
+  'packages/host/src': 66992,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
