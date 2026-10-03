@@ -67,8 +67,12 @@ const RULES = { secrets: true, paths: false as const, pii: false, custom: EXTRA 
 // Neither a bare token in a URL fragment (the Web WS credential lives only in `location.hash`) nor
 // a query value (`?ticket=`, `?code=`, `X-Amz-Signature=`) carries a name or shape the rules above
 // can rely on, so every http(s)/ws(s) URL run loses both: each query value (a segment without `=`
-// whole) and the fragment are replaced, keeping scheme, host, path and parameter names. Find the
-// URL run, then locate `?`/`#` with plain (linear) String.indexOf/split instead of in the regex.
+// whole) and the fragment are replaced, keeping scheme, host, path and parameter names. A
+// path-absolute run (`/api/.../downloads/t-1?nonce=`: download tickets and form links are relative)
+// gets the same treatment, in free text and as a structured url value stripUrl cannot parse; it
+// starts at a `/` that no path or host character precedes (a one-character lookbehind) and no second
+// `/` follows. Find the URL run, then locate `?`/`#` with plain (linear) String.indexOf/split instead
+// of in the regex.
 //
 // An earlier version matched `(https?:\/\/[^\s"'<>#]+)#[^\s"'<>]*` directly: excluding `#` from the
 // greedy class means that when a run has no `#` at all (e.g. several comma-joined URLs — a comma is
@@ -78,7 +82,7 @@ const RULES = { secrets: true, paths: false as const, pii: false, custom: EXTRA 
 // linear, no backtracking. The tradeoff (accepted): a comma/semicolon-joined run that does contain a
 // `?` or `#` is treated as one run, so everything after that first `?`/`#` is replaced, rather than
 // only the part of the specific URL that owned it — over-redaction, not under-redaction.
-const URL_RUN = /(?:https?|wss?):\/\/[^\s"'<>]+/gi
+const URL_RUN = /(?:(?:https?|wss?):\/\/|(?<![\w.~%/-])\/(?!\/))[^\s"'<>]+/gi
 
 const redactQueryPair = (pair: string): string =>
   pair.includes('=') ? `${pair.slice(0, pair.indexOf('=') + 1)}${REDACTED}` : pair && REDACTED

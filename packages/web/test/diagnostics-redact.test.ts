@@ -250,18 +250,34 @@ describe('redactDiagnosticText (common secret spellings)', () => {
     expect(redactDiagnosticText(`Cookie: theme=dark; sid=${V}`)).toBe(`Cookie: ${REDACTED}`)
   })
 
-  it('redacts every query value of an http(s) or ws(s) URL in free text, keeping parameter names', () => {
+  it('redacts every query value of an http(s), ws(s) or path-absolute URL, keeping parameter names', () => {
     const texts = [
       `GET https://h.example/download?ticket=${V}`,
       `https://h.example/cb?state=x&code=${V}`,
       `https://b.s3.example/k?X-Amz-Date=1&X-Amz-Signature=${V}`,
       `wss://h.example/ws?t=${V}`,
       `https://h.example/p?${V}`,
+      `/x/y#frag-${V}`,
     ]
     expect(leaks(texts)).toEqual([])
     expect(redactDiagnosticText(`see https://h.example/cb?state=x&code=${V}#frag now`)).toBe(
       `see https://h.example/cb?state=${REDACTED}&code=${REDACTED}#${REDACTED} now`,
     )
+    // Download tickets and form links carry a relative URL whose query holds a bearer nonce.
+    const ticket = `/api/runtime/client/downloads/t-1?nonce=${V}`
+    const kept = `/api/runtime/client/downloads/t-1?nonce=${REDACTED}`
+    expect(redactDiagnosticText(`open ${ticket} now`)).toBe(`open ${kept} now`)
+    expect(redactDiagnosticText(`/x/y?a=1#frag-${V}`)).toBe(`/x/y?a=${REDACTED}#${REDACTED}`)
+    expect(redactDiagnosticText(`{"level":"info","url":"${ticket}","n":1}`)).toBe(
+      `{"level":"info","url":"${kept}","n":1}`,
+    )
+    expect(
+      redactDiagnostic({
+        url: ticket,
+        href: ticket,
+        formLink: { url: `/forms/i-1?ticket=${V}`, version: 2 },
+      }),
+    ).toEqual({ url: kept, href: kept, formLink: { url: `/forms/i-1?ticket=${REDACTED}`, version: 2 } })
   })
 
   it('leaves near-miss names untouched in text', () => {
@@ -276,6 +292,7 @@ describe('redactDiagnosticText (common secret spellings)', () => {
       'passwordless: true',
       'passwordless=true',
       'https://example.com/a:b@c',
+      'src/app.ts?raw=1',
     ]) {
       expect(redactDiagnosticText(text)).toBe(text)
     }
@@ -293,6 +310,7 @@ describe('redactDiagnosticText (common secret spellings)', () => {
     ['max user and pass runs with no @', `ab://${'c'.repeat(128)}:${'x'.repeat(256)} `.repeat(500)],
     ['one URL with 50k query pairs', `https://h.example/p?${'a=b&'.repeat(50_000)}`],
     ['200k cookie-name words', 'cookie'.repeat(33_000)],
+    ['50k path-absolute URL starts', ' /?#'.repeat(50_000)],
   ])('redacts %s in under 200ms (bounded lookbehind classes)', (_name, text) => {
     const start = performance.now()
     redactDiagnosticText(text)

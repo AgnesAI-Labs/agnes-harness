@@ -113,7 +113,10 @@ describe('renderDiagnosticsViewer', () => {
   })
 
   it('executes the viewer script', () => {
-    const bundle = makeBundle({ trace: twoLevelTimeline() })
+    const bundle = makeBundle({
+      trace: twoLevelTimeline(),
+      warnings: [{ source: 'trace', reason: 'unavailable' }],
+    })
     const html = renderDiagnosticsViewer(bundle)
     document.documentElement.innerHTML = html
     const scripts = Array.from(document.querySelectorAll('script'))
@@ -125,6 +128,7 @@ describe('renderDiagnosticsViewer', () => {
     expect(tabLabels).toEqual(['概览', '对话', '轨迹', '日志', '系统', '产物'])
 
     expect(document.getElementById('tab-logs')?.textContent).toContain('未包含')
+    expect(document.getElementById('tab-overview')?.textContent).toContain('trace：不可用')
 
     const traceText = document.getElementById('tab-trace')?.textContent ?? ''
     expect(traceText).toContain('root-call')
@@ -155,5 +159,27 @@ describe('renderDiagnosticsViewer', () => {
     expect(artifactsText).toContain('abcdef012345')
     expect(artifactsText).not.toContain('abcdef0123456789abcdef0123456789')
     expect(artifactsText).toContain('image/png')
+  })
+
+  it.each([
+    ['an unknown bundle version', '2', false],
+    ['a missing bundle data block', '未知', true],
+  ])('shows an unsupported-version notice instead of tabs for %s', (_name, shown, dropData) => {
+    const bundle = {
+      ...makeBundle({ trace: twoLevelTimeline() }),
+      bundleVersion: 2,
+    } as unknown as DiagnosticsBundle
+    document.documentElement.innerHTML = renderDiagnosticsViewer(bundle)
+    if (dropData) document.getElementById('agh-bundle')?.remove()
+    const runtime = Array.from(document.querySelectorAll('script')).find(
+      (s) => s.getAttribute('type') !== 'application/json',
+    )
+    expect(() => new Function(runtime?.textContent ?? '')()).not.toThrow()
+
+    expect(document.querySelectorAll('#agh-tabs button, main section')).toHaveLength(0)
+    const notice = document.querySelector('main')?.textContent ?? ''
+    expect(notice).toContain('此查看器不支持该诊断包版本')
+    expect(notice).toContain(shown)
+    expect(notice).not.toContain('root-call')
   })
 })

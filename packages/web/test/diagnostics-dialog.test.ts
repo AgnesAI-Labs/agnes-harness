@@ -139,7 +139,14 @@ describe('createDiagnosticsDialog', () => {
   })
 
   it('generates with the checked include set, then shows name and size', async () => {
-    const t = setup()
+    const t = setup('s1', {
+      context: () => ({
+        sessionId: 's1',
+        sessionTitle: null,
+        projection: undefined,
+        projectionHasEarlier: true,
+      }),
+    })
     const pending = deferred<CollectedDiagnostics>()
     t.collect.mockReturnValue(pending.promise)
     ui?.open()
@@ -152,6 +159,7 @@ describe('createDiagnosticsDialog', () => {
     const [input, include] = t.collect.mock.calls[0] ?? []
     expect(include).toEqual({ conversation: true, logs: false, system: true })
     expect(input?.sessionId).toBe('s1')
+    expect(input?.projectionHasEarlier).toBe(true)
     expect(input?.browser).toEqual(
       expect.objectContaining({ origin: location.origin, screen: expect.any(Object) }),
     )
