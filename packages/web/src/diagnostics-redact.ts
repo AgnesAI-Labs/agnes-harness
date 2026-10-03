@@ -5,10 +5,11 @@ export const REDACTED = '***REDACTED***'
 // Anchored branches require an exact key match, `token$` / `credentials?$` a key suffix
 // (`NPM_TOKEN`, `githubToken`, `awsCredentials`); the rest match anywhere in the key name. Kept
 // narrow (vs. a bare `token`/`key` substring) so `maxTokens`, `tokenizer`, `sessionKey`,
-// `credentialRef` and similar counts/refs survive structural redaction untouched; a non-string
-// under a matching key (e.g. an integer `firstToken`) is kept by redactSecretField.
+// `credentialRef` and similar counts/refs survive structural redaction untouched; a number or
+// boolean under a matching key (e.g. an integer `firstToken`) is kept by redactSecretField, an
+// object (a `credentialEnvelope`) goes whole.
 const SECRET_KEY =
-  /^(authorization|proxy-authorization|bearer|cookie|set-cookie)$|token$|credentials?$|api[_-]?key|secret|password|passwd|private[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret/i
+  /^(authorization|proxy-authorization|bearer|cookie|set-cookie)$|token$|credentials?$|api[_-]?key|secret|password|passwd|private[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization[_-]?code|credential[_-]?envelope|escrow/i
 const URL_KEY = /^(baseUrl|url|endpoint)$/i
 
 // Mirrors host/src/adapters/secrets.ts:10's REF shape exactly (case-insensitive, since Web-side

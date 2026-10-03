@@ -33,6 +33,22 @@ function sanitize(value: unknown): unknown {
   return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, sanitize(child)]))
 }
 
+// Stricter than the audit baseline (redactDetail), because this export leaves the machine. The same
+// key rule as the Web exporter (web/src/diagnostics-redact.ts SECRET_KEY): a matching key keeps a
+// number or boolean, and any other value, an object or array included, goes whole.
+const SECRET_KEY =
+  /^(authorization|proxy-authorization|bearer|cookie|set-cookie)$|token$|credentials?$|api[_-]?key|secret|password|passwd|private[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization[_-]?code|credential[_-]?envelope|escrow/i
+const SECRET_REF = /^secret:\/\/[a-z0-9-]+\/[a-z0-9._-]+$/
+
+function redactKeys(value: unknown, key = ''): unknown {
+  if (typeof value === 'string' && SECRET_REF.test(value)) return value
+  const scalar = typeof value === 'number' || typeof value === 'boolean'
+  if (SECRET_KEY.test(key) && !scalar) return '<redacted>'
+  if (Array.isArray(value)) return value.map((item) => redactKeys(item))
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).map(([name, child]) => [name, redactKeys(child, name)]))
+}
+
 function localOwner(c: CallContext): void {
   if (c.conn.authKind !== 'local' || c.conn.credentialKind !== 'local')
     throw rpcError('CAPABILITY_DENIED', { reason: 'local owner required' })
@@ -43,10 +59,9 @@ function redactLine(line: string): string {
     const row = JSON.parse(line) as unknown
     if (row === null || typeof row !== 'object' || Array.isArray(row)) throw new TypeError('not a row')
     const record = row as Record<string, unknown>
-    return JSON.stringify({
-      ...record,
-      detail: redactDetail(record.detail as Record<string, unknown> | undefined),
-    })
+    return JSON.stringify(
+      redactKeys({ ...record, detail: redactDetail(record.detail as Record<string, unknown> | undefined) }),
+    )
   } catch {
     return JSON.stringify({ at: null, kind: 'unparseable' })
   }
@@ -125,7 +140,8 @@ export function registerDiagnostics(
         more = false
         break
       }
-      const { _meta: _dropped, ...event } = sanitize(row) as EventEnvelope & { _meta?: unknown }
+      const { _meta: _dropped, ...rest } = sanitize(row) as EventEnvelope & { _meta?: unknown }
+      const event = redactKeys(rest) as EventEnvelope
       const size = Buffer.byteLength(JSON.stringify(event))
       if (events.length > 0 && bytes + size > maxBytes) {
         more = true
