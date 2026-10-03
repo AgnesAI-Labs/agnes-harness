@@ -17,6 +17,7 @@
     "runtime/fixtures.ts",
     "runtime/fixtures/resources-cold-process.ts",
     "runtime/fixtures/assembly-cold-process.ts",
+    "runtime/fixtures/assembly-admission-process.ts",
     "runtime/build-identity.ts",
     "runtime/run-conformance.ts",
     "runtime/routing-model-conformance.ts",

@@ -5,6 +5,7 @@ import type {
   AssemblyPrepareResult,
   AssemblyPublishResult,
 } from '@agnes/protocol/runtime'
+import { type AdmissionStatePorts, createAdmissionCoordinator } from '../assembly/admission.js'
 import { AssemblyCandidate, type CandidateLifecycle } from '../assembly/candidate.js'
 import { readInputs } from '../assembly/inputs.js'
 import {
@@ -29,7 +30,9 @@ export function createAssemblyProvider(
   input: unknown,
   lifecycle?: CandidateLifecycle,
   maintenance?: AssemblyMaintenancePorts,
+  admissionState?: AdmissionStatePorts,
 ) {
+  const admission = createAdmissionCoordinator(maintenance, admissionState)
   const captured = attempt(() => {
     fields(input, ['plan', 'graph', 'configuration', 'resolution', 'fixture'], '/')
     return freeze(structuredClone(input))
@@ -82,6 +85,7 @@ export function createAssemblyProvider(
       : result
   }
   return {
+    admission,
     providerId: 'agh.default/assembly',
     contract: 'agh.assembly',
     implemented: Object.freeze(
@@ -132,6 +136,7 @@ export function createAssemblyProvider(
     async dispose(): Promise<readonly string[]> {
       disposed = true
       lifetime.abort()
+      await admission.dispose()
       await Promise.all([preparing, publishing])
       return candidate ? candidate.dispose() : []
     },

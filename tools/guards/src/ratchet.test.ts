@@ -1,3 +1,4 @@
+// Durable admission coordination and session control: exact merged source/testkit caps; no headroom.
 // Exact source counts after combining routing/model providers with current integration; no spare allocation.
 // Merged approval, compaction and session-stability sources: exact measured ceilings, no headroom.
 // Persisted installer proposals and local proposal contracts: exact measured counts, no spare allocation.
@@ -1487,7 +1488,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Bounded sandbox and execution services. Measured 9078, exact, no spare.
   // Authority transfer conformance cases. Measured 10213, exact, no spare.
   // Sourced memory and hybrid retrieval providers. Measured 11849, exact, no spare.
-  'packages/extension-api/testkit': 11849,
+  // Durable run admission coordination. Measured 12086, exact, no spare.
+  'packages/extension-api/testkit': 12086,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2713,7 +2715,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default blob service export, import, verify and activate of an authority transfer, over the
   // bounded export index. Measured 71812 (+769), exact, no spare.
   // Sourced memory and hybrid retrieval providers. Measured 73124, exact, no spare.
-  'packages/host/src': 73124,
+  // Durable run admission coordination. Measured 73401, exact, no spare.
+  'packages/host/src': 73401,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

@@ -1,5 +1,6 @@
 export * from './artifacts.js'
 export * from './assembly.js'
+export * from './assembly-admission.js'
 export * from './audit.js'
 export * from './authority-directory.js'
 export * from './authority-transfer.js'

@@ -82,9 +82,14 @@ export function createReferenceAdmissionTickets(ports: ReferenceMaintenancePorts
             pin = rows.get(`pin:admission:${id}`)
           assertJournal(
             pin &&
-              referenceBody(pin, 'package-pin-receipt').status === 'active' &&
+              (referenceBody(pin, 'package-pin-receipt').status === 'active' ||
+                (ticket.status === 'cancelled' &&
+                  referenceBody(pin, 'package-pin-receipt').status === 'released')) &&
               journalSame(
-                referenceRef(referenceBody(pin, 'package-pin-receipt'), 'package-pin-receipt'),
+                referenceRef(
+                  { ...referenceBody(pin, 'package-pin-receipt'), status: 'active' },
+                  'package-pin-receipt',
+                ),
                 admission.packagePinReceipt,
               ),
             'package_pin_missing',
@@ -165,25 +170,36 @@ export function createReferenceAdmissionTickets(ports: ReferenceMaintenancePorts
           requestFingerprint: fingerprint,
         }
         await referenceAuthorized(ports, call, null)
-        await referenceCommit(
-          ports,
-          transaction,
-          [
-            referenceWrite(ports, head.recordId, 'current-head', facts, head, at),
-            referenceWrite(ports, key, 'admission-ticket', ticket, null, at),
-            referenceWrite(ports, `pin:${pinId}`, 'package-pin-receipt', receipt, null, at),
-            referenceWrite(
-              ports,
-              indexKey,
-              'admission-run-key',
-              { runKey: draft.runKey, ticketId: id, scope: call.scope, requestFingerprint: fingerprint },
-              null,
-              at,
-            ),
-          ],
-          [],
-          call,
-        )
+        try {
+          await referenceCommit(
+            ports,
+            transaction,
+            [
+              referenceWrite(ports, head.recordId, 'current-head', facts, head, at),
+              referenceWrite(ports, key, 'admission-ticket', ticket, null, at),
+              referenceWrite(ports, `pin:${pinId}`, 'package-pin-receipt', receipt, null, at),
+              referenceWrite(
+                ports,
+                indexKey,
+                'admission-run-key',
+                { runKey: draft.runKey, ticketId: id, scope: call.scope, requestFingerprint: fingerprint },
+                null,
+                at,
+              ),
+            ],
+            [],
+            call,
+          )
+        } catch (fault) {
+          const winner = (await referenceRead(ports, call)).find((row) => row.recordId === key)
+          if (!winner) throw fault
+          const committedTicket = referenceBody(winner, 'admission-ticket')
+          assertJournal(
+            committedTicket.requestFingerprint === fingerprint &&
+              journalSame(committedTicket.admission, admission),
+            'admission_ticket_conflict',
+          )
+        }
         return { admission, packagePinReceipt, ticketRef: referenceRef(ticket, 'admission-ticket') }
       })
     },

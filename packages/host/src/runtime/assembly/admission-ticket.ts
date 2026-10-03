@@ -34,7 +34,7 @@ export function admissionTicketDecision(
   return { next: 'probe-required', keepPin: true }
 }
 
-/** Maintenance-only durable issuance. Full Runtime create/confirm/cancel/probe is unavailable. */
+/** Maintenance-only durable issuance; Runtime coordination lives in admission.ts. */
 export function createAdmissionTickets(ports: AssemblyMaintenancePorts) {
   return {
     incomplete: Object.freeze(['createRun', 'confirm', 'cancel', 'probe', 'release-pin']),
@@ -83,9 +83,14 @@ export function createAdmissionTickets(ports: AssemblyMaintenancePorts) {
           const pin = get(`pin:admission:${ticketId}`)
           requireRelease(
             pin &&
-              journalData(pin, 'package-pin-receipt').status === 'active' &&
+              (journalData(pin, 'package-pin-receipt').status === 'active' ||
+                (ticket.status === 'cancelled' &&
+                  journalData(pin, 'package-pin-receipt').status === 'released')) &&
               equal(
-                journalRef(journalData(pin, 'package-pin-receipt'), 'package-pin-receipt'),
+                journalRef(
+                  { ...journalData(pin, 'package-pin-receipt'), status: 'active' },
+                  'package-pin-receipt',
+                ),
                 admission.packagePinReceipt,
               ),
             'package_pin_missing',
@@ -187,7 +192,18 @@ export function createAdmissionTickets(ports: AssemblyMaintenancePorts) {
           ),
         ]
         await authorizeMaintenance(ports, context, null)
-        await journalCommit(ports, transactionId, mutations, [], context)
+        try {
+          await journalCommit(ports, transactionId, mutations, [], context)
+        } catch (error) {
+          const committed = (await journalRead(ports, [recordId], context))[0]
+          if (!committed) throw error
+          const saved = journalData(committed, 'admission-ticket')
+          requireRelease(
+            saved.requestFingerprint === requestFingerprint && equal(saved.admission, admission),
+            'admission_ticket_conflict',
+            '/ticket/replay',
+          )
+        }
         return { ticketRef: journalRef(ticket, 'admission-ticket'), packagePinReceipt, admission }
       })
     },
