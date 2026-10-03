@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,15 +48,13 @@ type Request = Parameters<UIRegistry['resolve']>[0]
 type Resolved = ReturnType<UIRegistry['resolve']>
 
 /**
- * A double for the client host: records every bind with its definition object, refuses the next binds
- * when told to and accepts only the handles it issued. Handle ids carry a generation of their own, so a
- * host in another process never takes an old handle for one of its own.
+ * A double for the client host: records every bind with its definition object and refuses the next binds
+ * when told to.
  */
 interface RecordingHost extends UIRegistryHost {
   readonly binds: RendererDefinition[]
   readonly handles: RendererHandle[]
   refuseNext(error: Wire.RuntimeError): void
-  accepts(handleId: string | null): boolean
 }
 
 const DENIED: Wire.RuntimeError = {
@@ -71,7 +68,6 @@ const DENIED: Wire.RuntimeError = {
 const unpresented = (): Outcome<never> => ({ ok: false, error: { ...DENIED, detailCode: 'not_presented' } })
 
 function recordingHost(): RecordingHost {
-  const generation = randomUUID()
   const refusals: Wire.RuntimeError[] = []
   const host: RecordingHost = {
     binds: [],
@@ -79,15 +75,14 @@ function recordingHost(): RecordingHost {
     refuseNext: (error) => {
       refusals.push(error)
     },
-    accepts: (handleId) => host.handles.some((handle) => handle.id === handleId),
     bindRenderer(definition) {
       host.binds.push(definition)
       const error = refusals.shift()
       if (error !== undefined) return { ok: false, error }
       const n = host.handles.length + 1
       const handle: RendererHandle = {
-        id: `${generation}/handle-${n}`,
-        ownerToken: `${generation}/owner-${n}`,
+        id: `handle-${n}`,
+        ownerToken: `owner-${n}`,
         present: unpresented,
         dispose: async () => {},
       }
@@ -188,11 +183,8 @@ const REBUILT = 'rebuilt.json'
 interface Selection {
   readonly pid: number
   readonly selected: string | null
-  readonly handle: string | null
   /** Whether the handle is the one its host just bound for the selected renderer's definition. */
   readonly leased: boolean
-  /** Rebuilt process only: whether its host refused the handle the killed process leased. */
-  readonly oldHandleRefused?: boolean
 }
 
 /**
@@ -201,7 +193,9 @@ interface Selection {
  * registers the Profile's text renderers and resolves one terminal view. The first process records what
  * it selected and calls `ready`, which must not return, since the process is killed there. A process
  * that finds that record is the rebuilt one: it registers the renderers in reverse order, as a restart
- * does not promise the order, resolves again and records whether its host refuses the old handle.
+ * does not promise the order, resolves again and records what it selected. Refusing the killed
+ * process's handles is the client host's part, not the registry's: a registry takes no handle back, so it
+ * is not judged here.
  */
 export function recoverUIRegistry(factory: UIRegistryFactory, directory: string, ready: () => void): void {
   const profile = JSON.parse(readFileSync(join(directory, PROFILE), 'utf8')) as { renderers: string[] }
@@ -219,7 +213,6 @@ export function recoverUIRegistry(factory: UIRegistryFactory, directory: string,
   const seen: Selection = {
     pid,
     selected: matched?.descriptor.id ?? null,
-    handle: matched?.handle.id ?? null,
     leased: definition ? leased(resolved, host, definition) : false,
   }
   if (!rebuilt) {
@@ -227,8 +220,7 @@ export function recoverUIRegistry(factory: UIRegistryFactory, directory: string,
     ready()
     return
   }
-  const old = (JSON.parse(readFileSync(killed, 'utf8')) as Selection).handle
-  writeFileSync(join(directory, REBUILT), JSON.stringify({ ...seen, oldHandleRefused: !host.accepts(old) }))
+  writeFileSync(join(directory, REBUILT), JSON.stringify(seen))
 }
 
 /** The `ready` of a client process `restartUIRegistryClient` runs: prints READY and waits to be killed. */
@@ -407,9 +399,7 @@ const CASES: Record<ScenarioName, (binding: UIRegistryConformanceBinding) => Pro
         before.selected === 'acme.card-tui-3' &&
         after.selected === before.selected &&
         before.leased &&
-        after.leased &&
-        after.handle !== before.handle &&
-        after.oldHandleRefused === true
+        after.leased
       )
     } finally {
       rmSync(directory, { recursive: true, force: true })

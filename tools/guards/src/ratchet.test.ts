@@ -1453,7 +1453,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5354, exact, no spare.
   // UI registry contract cases join the contract aggregate. Measured 5728, exact, no spare.
   // The UI registry bindings share one client restart helper there. Measured 5771, exact, no spare.
-  'packages/extension-api/testkit': 5771,
+  // UI registry recover no longer judges the stand-in host's handles. Measured 5761, exact, no spare.
+  'packages/extension-api/testkit': 5761,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
