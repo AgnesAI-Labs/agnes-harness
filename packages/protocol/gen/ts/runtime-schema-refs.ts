@@ -6848,8 +6848,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "resolve": {
       "input": {
         "typeId": "agh.config/resolve.request@1",
-        "revision": 2,
-        "digest": "a4ac55193ae4169bb57a45bc20f0686e8f822f4ef4660fff3203d35cbc672671"
+        "revision": 3,
+        "digest": "59a11fc931b201e388c5759e55775a83bee536cc2b6c1307b2935a34449ae761"
       },
       "output": {
         "typeId": "agh.config/resolve.response@1",

@@ -165,7 +165,7 @@
     },
     {
       "path": "packages/protocol/schema/runtime/public.json",
-      "sha256": "9c9cbbd8db48985adffc715b036fb315f77f1720ef3ee894abd6c98b26f2e101"
+      "sha256": "70726f48345a5bf6fc869354da947ee2e77190ba32bcc39fd95c7f979897716b"
     },
     {
       "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -439,7 +439,7 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-15.ts",
-      "sha256": "5d55843eee9b0c6335da47c8f72581defb787a97cf357091ae682743b0e9cce8"
+      "sha256": "921ad9faed195e58a7bf83fb7abc10f551091ee2f7478c9aca571fd774ea0b2d"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-16.ts",
@@ -515,7 +515,7 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-      "sha256": "07121a83cdd8f053118db1b5679e398ec932aa0f645a2ae5e19625954be74aa3"
+      "sha256": "7f20a987fd101f07a7ce31bafbc0578978eb8d4cbf14dff6c7074a1bb9f28a1d"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
@@ -920,7 +920,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-15.ts",
-        "sha256": "5d55843eee9b0c6335da47c8f72581defb787a97cf357091ae682743b0e9cce8"
+        "sha256": "921ad9faed195e58a7bf83fb7abc10f551091ee2f7478c9aca571fd774ea0b2d"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-16.ts",
@@ -996,7 +996,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-        "sha256": "07121a83cdd8f053118db1b5679e398ec932aa0f645a2ae5e19625954be74aa3"
+        "sha256": "7f20a987fd101f07a7ce31bafbc0578978eb8d4cbf14dff6c7074a1bb9f28a1d"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
@@ -1120,7 +1120,7 @@
       },
       {
         "path": "packages/protocol/schema/runtime/public.json",
-        "sha256": "9c9cbbd8db48985adffc715b036fb315f77f1720ef3ee894abd6c98b26f2e101"
+        "sha256": "70726f48345a5bf6fc869354da947ee2e77190ba32bcc39fd95c7f979897716b"
       },
       {
         "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -1411,9 +1411,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "f676639d005f934c8c28c2f4e95bdb22bc4f36b46c5d387b40be625ef0f33a4e",
+    "inputDigest": "95e8cd50f303633cd50d35242f61bf785296d4231ae53c8a0c5ffb45a67551a6",
     "diagnostics": [],
-    "reportDigest": "96d20f76cf48360a16ffae73da0da61653cc0509136b4be241f5e31e16acb1da"
+    "reportDigest": "cea646afd7c8b2004a0ce42716544a9a8f503b7de9e75a9b8c065867b277ed07"
   },
-  "snapshotDigest": "b1eec165f9304c1fde60fd995dffb1da4fa69939bf446e67124f029e27bc238e"
+  "snapshotDigest": "4903424bccca052448f02ef2a3f7a110bde6e04c63d9f405e73ea402cca4f17d"
 }

@@ -32689,7 +32689,7 @@
           "items": {
             "$ref": "#/$defs/ConfigPresetSnapshot"
           },
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 16
         },
         "managed": {
@@ -40550,7 +40550,7 @@
     "ConfigPresetSnapshot": 2,
     "ConfigProfileSnapshot": 2,
     "ConfigReadResult": 2,
-    "ConfigResolveRequest": 2,
+    "ConfigResolveRequest": 3,
     "ConfigResolveResult": 2,
     "ConfigSessionOverlay": 2,
     "ConfigValue": 2,
