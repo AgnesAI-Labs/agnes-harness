@@ -669,6 +669,9 @@ importers:
       '@agnes/cordis':
         specifier: workspace:*
         version: link:../cordis
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
