@@ -191,6 +191,7 @@ export function validateRuntimeValue<T>(schema: TSchema, value: unknown): Valida
     artifacts['../extension-api/src/runtime/index.ts'] += "export * from './authoring.js'\n"
     artifacts['../extension-api/src/runtime/index.ts'] +=
       "export { defineGeneratedAuthorSchema } from './authoring-source.js'\n"
+    artifacts['../extension-api/src/runtime/index.ts'] += "export * from './routing-authoring.js'\n"
     if (metadata['x-author-overrides']?.length)
       artifacts['../extension-api/src/runtime/index.ts'] +=
         `export type {\n${metadata['x-author-overrides'].map((name) => `  ${name},`).join('\n')}\n} from './authoring.js'\n`

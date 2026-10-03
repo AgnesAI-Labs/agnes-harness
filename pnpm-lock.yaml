@@ -63,6 +63,9 @@ importers:
 
   packages/ai:
     dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -70,6 +73,9 @@ importers:
         specifier: 0.87.1
         version: 0.87.1(@modelcontextprotocol/sdk@1.25.2(hono@4.13.7)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)
     devDependencies:
+      '@agnes-examples/runtime-reference':
+        specifier: workspace:*
+        version: link:../../examples/runtime-reference
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33

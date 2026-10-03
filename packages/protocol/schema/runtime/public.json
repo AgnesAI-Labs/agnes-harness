@@ -39578,6 +39578,7 @@
     }
   },
   "x-schema-ids": {
+    "PreparedModelRequest": "agh.model/prepared-request@1",
     "RuntimeCommitData": "agh.runtime/state-commit@1",
     "RuntimeFormatData": "agh.runtime/format@1",
     "StandardToolOutput": "agh.tool/standard-output@1",

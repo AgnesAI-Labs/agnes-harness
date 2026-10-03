@@ -18,6 +18,7 @@
     "runtime/fixtures/resources-cold-process.ts",
     "runtime/build-identity.ts",
     "runtime/run-conformance.ts",
+    "runtime/routing-model-conformance.ts",
     "runtime/sources.ts",
     "runtime/platform/assembly-conformance.ts",
     "runtime/platform/resources-conformance.ts",

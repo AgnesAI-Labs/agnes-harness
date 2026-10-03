@@ -419,7 +419,10 @@ export class PiAdapter extends WireAdapter {
     const fetchBody =
       (wire: ResponseMeta): typeof globalThis.fetch =>
       async (input, init) => {
-        const request = new Request(input, init)
+        const request = new Request(input, {
+          ...init,
+          ...(opts.redirect === 'error' ? { redirect: 'error' } : {}),
+        })
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
         const response = await globalThis.fetch(request)
