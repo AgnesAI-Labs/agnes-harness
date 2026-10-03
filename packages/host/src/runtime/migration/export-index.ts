@@ -440,26 +440,3 @@ export async function exportIndexPage(
     await walker.return(0)
   }
 }
-
-/** Byte integrity only. Authorization, pins and current deletion/revocation belong to the Blob owner. */
-export async function verifyIndexItemBytes(
-  typeId: IndexType,
-  item: IndexItem,
-  reader: Pick<IndexStorage, 'read'>,
-): Promise<void> {
-  indexItemKey(typeId, item)
-  if ('kind' in item && item.kind === 'inline') {
-    checkInline(item)
-    return
-  }
-  const blob = 'chunk' in item ? item.chunk : (item as Extract<DataRef, { kind: 'blob' }>).blob
-  if (blob.bytes > 1024 ** 3) refuse('blob_limit')
-  const hash = createHash('sha256')
-  let bytes = 0
-  for await (const chunk of reader.read(blob)) {
-    bytes += chunk.byteLength
-    if (bytes > blob.bytes) refuse('blob_bytes')
-    hash.update(chunk)
-  }
-  if (bytes !== blob.bytes || hash.digest('hex') !== blob.digest) refuse('bad_digest')
-}

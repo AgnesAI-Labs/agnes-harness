@@ -15,7 +15,6 @@ import {
   type IndexStorage,
   initialIndexCheckpoint,
   verifyExportIndex,
-  verifyIndexItemBytes,
   walkExportIndex,
 } from '../../../src/runtime/migration/export-index.js'
 
@@ -177,24 +176,6 @@ describe('bounded migration indexes', () => {
         buildExportIndex(EXPORT_INDEX, rows(items), memoryStorage().storage),
       ).rejects.toMatchObject({ detailCode: 'duplicate_or_unsorted' })
     }
-    const bytes = Buffer.from('actual immutable chunk bytes')
-    const actual = part(0)
-    actual.contentDigest = createHash('sha256').update(bytes).digest('hex')
-    actual.chunk = { ...actual.chunk, digest: actual.contentDigest, bytes: bytes.length }
-    const reader = {
-      async *read() {
-        yield bytes.subarray(0, 5)
-        yield bytes.subarray(5)
-      },
-    }
-    await expect(verifyIndexItemBytes(EXPORT_INDEX, actual, reader)).resolves.toBeUndefined()
-    await expect(
-      verifyIndexItemBytes(EXPORT_INDEX, actual, {
-        async *read() {
-          yield Buffer.from('bad')
-        },
-      }),
-    ).rejects.toMatchObject({ detailCode: 'bad_digest' })
     const bad = part(0)
     bad.contentDigest = 'cd'.repeat(32)
     await expect(buildExportIndex(EXPORT_INDEX, rows([bad]), memoryStorage().storage)).rejects.toMatchObject({
