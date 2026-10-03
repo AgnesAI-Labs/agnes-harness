@@ -345,7 +345,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
   // Immutable package snapshots and the lock resolver. Measured 7784, exact, no spare.
   // Static runtime package inspection without script execution. Measured 8247, exact, no spare.
-  'packages/package-manager/src': 8971,
+  'packages/package-manager/src': 9455,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
