@@ -761,6 +761,16 @@ describe('restricted effects fixture', () => {
   })
 })
 
+describe('fixture marks', () => {
+  it('accepts the client host stand-in mark and rejects unknown marks', () => {
+    const marked = judgeReport(draft([assertion({ fixture: 'test-client-host' })]))
+    expect(marked.status).toBe('passed')
+    expect(marked.assertions[0]?.fixture).toBe('test-client-host')
+    const unknown = judgeReport(draft([assertion({ fixture: 'client-host' as never })]))
+    expect(unknown.status).not.toBe('passed')
+  })
+})
+
 describe('runtime inbox fixture', () => {
   it('wakes registered waiters once and keeps the delivery id on this instance', () => {
     const inbox = createRuntimeInboxFixture()
