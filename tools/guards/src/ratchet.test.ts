@@ -229,7 +229,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1716, exact, no spare (+2).
   // Conversation window merge state machine. Measured 1955, exact, no spare (+239).
   // Default UI registry over a private slot ledger. Measured 2126, exact, no spare (+171).
-  'packages/web-client/src': 2126,
+  // Renderer context restricted to its mounted view and the generic domain view card. Measured 2443,
+  // exact, no spare (+317).
+  'packages/web-client/src': 2443,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
