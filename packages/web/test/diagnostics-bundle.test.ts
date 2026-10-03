@@ -44,6 +44,9 @@ const SECRET_EVENT = 'ghp_' + 'e'.repeat(36)
 const SECRET_BROWSER = 'xoxb-' + 'b'.repeat(20)
 const SECRET_CONFIG = 'AIza' + 'c'.repeat(30)
 const SECRET_ERROR = 'sk-' + 'err'.repeat(8)
+// A stored value has no recognizable shape; only the carrier (key, header, cookie) can give it away.
+const SECRET_VALUE = 'opaque-stored-value-7v7v7v7v7v7v'
+const SECRET_REF = 'secret://openai/default'
 const SHA_A = 'a'.repeat(64)
 const SHA_B = 'b'.repeat(64)
 
@@ -177,10 +180,29 @@ describe('collectDiagnostics', () => {
     expect(out.bundle.version).toBe('9.9.9')
   })
 
-  it('redacts every text file', async () => {
+  it('redacts every text file and keeps secret references', async () => {
+    const carried = { authorization: `Bearer ${SECRET_VALUE}`, 'set-cookie': `sid=${SECRET_VALUE}; Path=/` }
     const { call } = fake({
-      ...standard([[ev(1, 'tool/result', { content: [{ type: 'text', text: `token ${SECRET_EVENT}` }] })]]),
-      'config.get': () => ({ profile: 'default', provider: { note: `key ${SECRET_CONFIG}` } }),
+      ...standard([
+        [
+          ev(1, 'tool/result', { content: [{ type: 'text', text: `token ${SECRET_EVENT}` }] }),
+          ev(2, 'tool/call', { credentialRef: SECRET_REF, headers: carried }),
+        ],
+      ]),
+      'diagnostics.collect': () => ({
+        ...collectResult,
+        logs: [
+          {
+            ...collectResult.logs[0],
+            text: JSON.stringify({ kind: 'daemon', headers: { cookie: `sid=${SECRET_VALUE}` } }),
+          },
+          collectResult.logs[1],
+        ],
+      }),
+      'config.get': () => ({
+        profile: 'default',
+        provider: { note: `key ${SECRET_CONFIG}`, apiKey: SECRET_REF },
+      }),
     })
     const projection = {
       sessionId: 'abc-123_DEF456',
@@ -192,7 +214,11 @@ describe('collectDiagnostics', () => {
     } as UITimeline
     const log: BrowserLog = {
       ...browserLog,
-      entries: [{ ts: NOW.toISOString(), level: 'log', text: `slack ${SECRET_BROWSER}` }],
+      entries: [
+        { ts: NOW.toISOString(), level: 'log', text: `slack ${SECRET_BROWSER}` },
+        { ts: NOW.toISOString(), level: 'warn', text: `Authorization: Bearer ${SECRET_VALUE}` },
+        { ts: NOW.toISOString(), level: 'warn', text: `Set-Cookie: sid=${SECRET_VALUE}; Path=/` },
+      ],
     }
     const out = await collectDiagnostics(
       input(call, { projection, browserLog: log }),
@@ -202,11 +228,14 @@ describe('collectDiagnostics', () => {
     const files = readZip(out.zip)
     expect(files.size).toBeGreaterThanOrEqual(6)
     for (const [name, text] of files) {
-      for (const secret of [SECRET_PROJECTION, SECRET_EVENT, SECRET_BROWSER, SECRET_CONFIG]) {
+      for (const secret of [SECRET_PROJECTION, SECRET_EVENT, SECRET_BROWSER, SECRET_CONFIG, SECRET_VALUE]) {
         expect(text.includes(secret), `${name} leaks ${secret.slice(0, 4)}`).toBe(false)
       }
     }
     expect(files.get('events.jsonl')).toContain('REDACTED')
+    // A bare reference names where the value lives without carrying it, so it survives the export.
+    expect(files.get('events.jsonl')).toContain(SECRET_REF)
+    expect(files.get('system.json')).toContain(SECRET_REF)
   })
 
   it('omits inline base64 media from trace.json and index.html without touching the live projection', async () => {
