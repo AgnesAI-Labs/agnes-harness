@@ -5,6 +5,7 @@ import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { withPhase } from '../src/step/op-state.js'
 import { type HookPort, noopHooks } from '../src/step/session.js'
+import { CoreError } from '../src/types.js'
 import { fakeProvider, type Script, sent, sentFor, textTurn, usage } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
@@ -198,6 +199,88 @@ describe('abort during inference', () => {
     expect(out.reason).toBe('completed')
     expect((await next.log.scan({ type: 'turn/end', limit: 5 })).length).toBe(2)
   })
+})
+
+describe('abort before the turn opens', () => {
+  /** The cancel the ledger carries: it has to precede the turn's end, whoever delivered it. */
+  const cancelMarks = async (log: { scan: (q: never) => Promise<Array<{ data: unknown }>> }) =>
+    (await log.scan({ type: 'x/core/op-mark', limit: 100 } as never)).filter(
+      (e) => (e.data as { control?: string } | null)?.control === 'cancel_requested',
+    )
+
+  it.each(['the signal was aborted before run()', 'session.abort() landed right after run()'] as const)(
+    'records the cancel once the turn exists when %s',
+    async (how) => {
+      const ac = new AbortController()
+      const { session, log } = await openSession({ provider: hangingProvider() })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      if (how.startsWith('the signal')) ac.abort()
+      const run = session.run({ until: 'turn-end', signal: ac.signal })
+      // No turn is open yet: this is the window a Stop sent right behind a Send lands in.
+      if (how.startsWith('session')) await session.abort()
+      expect((await run).reason).toBe('aborted')
+
+      expect(await cancelMarks(log as never)).toHaveLength(1)
+      expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'aborted' })
+      // A model request that never started has nothing to settle as aborted without a cancel on file.
+      for (const e of await log.scan({ type: 'effect/settled', limit: 10 }))
+        expect(e.data).not.toMatchObject({ outcome: 'aborted' })
+      expect(session.op()).toBeNull()
+    },
+  )
+})
+
+describe('abort while a hook is running', () => {
+  /**
+   * What the real dispatcher does to a fail-closed hook whose caller has gone away: the hook counts
+   * as failed. The turn must still end as the stop the user asked for, not as that failure.
+   */
+  it.each(['before_step', 'context'] as const)(
+    'ends the turn aborted, not blocked or failed, when the %s hook is cut by the cancel',
+    async (which) => {
+      let entered: () => void = () => undefined
+      const inHook = new Promise<void>((resolve) => (entered = resolve))
+      let signal: AbortSignal | undefined
+      const cut = async (): Promise<void> => {
+        entered()
+        await new Promise<void>((resolve) =>
+          signal?.addEventListener('abort', () => resolve(), { once: true }),
+        )
+      }
+      const hooks: HookPort = {
+        ...noopHooks,
+        ...(which === 'before_step'
+          ? {
+              beforeStep: async () => {
+                await cut()
+                return { block: true, reason: 'hook execution failed' }
+              },
+            }
+          : {
+              context: async () => {
+                await cut()
+                throw new CoreError('E_ENVELOPE', 'hook rejected transformation')
+              },
+            }),
+      }
+      const ac = new AbortController()
+      const { session, log } = await openSession({ provider: hangingProvider(), hooks })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      const run = session.run({ until: 'turn-end', signal: ac.signal })
+      signal = session.ac.signal
+      await inHook
+      ac.abort()
+      const out = await run
+      expect(out.reason).toBe('aborted')
+      expect(out.error).toBeUndefined()
+      const end = (await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data as { error?: { code: string } }
+      expect(end).toMatchObject({ reason: 'aborted' })
+      expect(end.error?.code).not.toBe('HOOK_BLOCKED')
+      expect(end.error?.code).not.toBe('E_STEP_FAILED')
+      expect(await types(log as never)).not.toContain('x/core/invariant')
+      expect(session.op()).toBeNull()
+    },
+  )
 })
 
 describe('the run loop bounds', () => {

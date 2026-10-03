@@ -59,27 +59,33 @@ const input = (events: Event[], overrides: Partial<Parameters<typeof projectUsag
 })
 
 describe('projectUsage', () => {
-  it('counts guardian cost without replacing the inference context anchor', () => {
-    const inference = row(1, cost('inference-1', { input: 10, output: 2, cacheRead: 3, cacheWrite: 4 }))
-    const guardian = row(
-      2,
-      cost('guardian-1', { input: 1024, output: 0 }, { purpose: 'approval-guardian', credits: 0.5 }),
-    )
-    expect(contextTokensAtCut([inference, guardian], 'main', 2)).toBe(19)
-    expect(projectUsage(input([inference, guardian]))).toMatchObject({
-      totals: { input: 1034, output: 2, cacheRead: 3, cacheWrite: 4 },
-      credits: { amount: 0.5 },
-    })
-  })
+  it.each([
+    ['approval-guardian', { input: 1024, output: 0 }, 0.5, { input: 1034, output: 2 }],
+    ['media', { input: 2048, output: 64 }, 0.75, { input: 2058, output: 66 }],
+    // Its failed rows are all zero and its wide request can be larger or smaller than the context.
+    ['compaction', { input: 9000, output: 900 }, 0.5, { input: 9010, output: 902 }],
+  ] as const)(
+    'counts %s cost without replacing the inference context anchor',
+    (purpose, tokens, credits, totals) => {
+      const inference = row(1, cost('inference-1', { input: 10, output: 2, cacheRead: 3, cacheWrite: 4 }))
+      const other = row(2, cost(`${purpose}-1`, tokens, { purpose, credits }))
+      expect(contextTokensAtCut([inference, other], 'main', 2)).toBe(19)
+      expect(projectUsage(input([inference, other]))).toMatchObject({
+        totals: { ...totals, cacheRead: 3, cacheWrite: 4 },
+        credits: { amount: credits },
+      })
+    },
+  )
 
-  it('counts auxiliary media cost without replacing the primary inference context anchor', () => {
+  it('anchors the context at the estimate a compaction leaves behind, until the next request', () => {
     const inference = row(1, cost('inference-1', { input: 10, output: 2, cacheRead: 3, cacheWrite: 4 }))
-    const media = row(2, cost('media-1', { input: 2048, output: 64 }, { purpose: 'media', credits: 0.75 }))
-    expect(contextTokensAtCut([inference, media], 'main', 2)).toBe(19)
-    expect(projectUsage(input([inference, media]))).toMatchObject({
-      totals: { input: 2058, output: 66, cacheRead: 3, cacheWrite: 4 },
-      credits: { amount: 0.75 },
-    })
+    const end = { ...row(2, { tokensAfter: 7 }), type: 'x/core/compaction-end' } as Event
+    const node = {
+      ...row(3, { content: [{ type: 'text', text: 'x'.repeat(40) }] }),
+      type: 'user/message',
+    } as Event
+    expect(contextTokensAtCut([inference, end], 'main', 2)).toBe(7)
+    expect(contextTokensAtCut([inference, end, node], 'main', 3)).toBe(17)
   })
 
   it('starts child billing at the global fork boundary and ignores late parent adjustments', () => {

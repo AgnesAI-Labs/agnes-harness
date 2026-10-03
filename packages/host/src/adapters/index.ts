@@ -176,6 +176,8 @@ export async function openAdapters(
     signal?: AbortSignal
     /** Skill directories the workspace fence may read; ignored in remote mode. */
     skillReadRoots?: () => readonly string[]
+    /** The installation's own state: readable but never writable by the file tools under full access. */
+    fullAccessReadOnlyRoots?: () => readonly string[]
   },
 ): Promise<AdapterBundle> {
   assertSessionTreeStorePath(opts.dataDir)
@@ -376,6 +378,9 @@ export async function openAdapters(
       exec: innerExec,
       ...(transport && remotePool ? { transport, remotePool } : {}),
       ...(transport || !opts.skillReadRoots ? {} : { skillReadRoots: opts.skillReadRoots }),
+      ...(transport || !opts.fullAccessReadOnlyRoots
+        ? {}
+        : { fullAccessReadOnlyRoots: opts.fullAccessReadOnlyRoots }),
     })
 
     return {

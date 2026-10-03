@@ -11,7 +11,14 @@ import {
 } from '@agnes/extension-api'
 import { inspectJsonData, type McpStatus, validateResourceControlData } from '@agnes/protocol'
 import { decodeSafeImages, type SafeImage, type SafeImageLimits } from '@agnes/protocol-validation'
-import { callOutputLimitBytes, guardOutput, refBlock } from '../../extensions/tools-core/src/guards/output.js'
+import {
+  callOutputLimitBytes,
+  cutHead,
+  guardOutput,
+  refBlock,
+  spillLocator,
+} from '../../extensions/tools-core/src/guards/output.js'
+import { MAX_READ_BYTES } from '../../extensions/tools-core/src/tools/read.js'
 import { remoteInputSchema } from '../mcp-json-schema.js'
 import type { McpServerConfig } from './config.js'
 import { mcpLocalToolPrefix } from './naming.js'
@@ -201,15 +208,74 @@ function prepareContent(
   })
 }
 
+// The most text of one MCP call that is kept, stored or shown. `read` and `grep` take at most
+// MAX_READ_BYTES of a stored output, so bytes stored past that could never be read back. It also
+// equals the largest per-call model budget (4 x the 1 MiB maximum of `tools.output_max_bytes`), so it
+// never cuts a result the model could have been shown whole.
+// The SDK has already read the whole response into memory by the time a result gets here and this
+// cannot undo that; it bounds what is copied, stored and persisted from it.
+const MAX_KEPT_MCP_TEXT_BYTES = MAX_READ_BYTES
+
+type TextCut = Readonly<{ total: number; kept: number; dropped: number }>
+
+// Keeps the first `cap` UTF-8 bytes of a call's text blocks, in order. A block that straddles the
+// cap is cut at a character boundary and every text block after it is dropped, so what is left is a
+// prefix of what the server sent. Runs after secrets are redacted: a cut before redaction could
+// leave the front half of a secret at the end of the kept text, where nothing would match it.
+function capPreparedText(
+  prepared: readonly PreparedContent[],
+  cap: number,
+): Readonly<{ prepared: readonly PreparedContent[]; cut?: TextCut }> {
+  let total = 0
+  for (const item of prepared) if (item.kind === 'text') total += Buffer.byteLength(item.text, 'utf8')
+  if (total <= cap) return { prepared }
+  let remaining = cap
+  let dropped = 0
+  const kept: PreparedContent[] = []
+  for (const item of prepared) {
+    if (item.kind !== 'text') {
+      kept.push(item)
+      continue
+    }
+    const size = Buffer.byteLength(item.text, 'utf8')
+    if (size <= remaining) {
+      kept.push(item)
+      remaining -= size
+    } else if (remaining > 0) {
+      // A UTF-16 unit is at least one byte, so the first `remaining` units hold at least `remaining`
+      // bytes; slicing first keeps the encode inside cutHead proportional to the cap, not the input.
+      kept.push({ kind: 'text', text: cutHead(item.text.slice(0, remaining), remaining) })
+      remaining = 0
+    } else dropped++
+  }
+  let keptBytes = 0
+  for (const item of kept) if (item.kind === 'text') keptBytes += Buffer.byteLength(item.text, 'utf8')
+  return { prepared: kept, cut: { total, kept: keptBytes, dropped } }
+}
+
+const cutNote = (serverId: string, cut: TextCut): string =>
+  `\n[mcp server ${serverId} returned ${cut.total} bytes of text, over the ${MAX_KEPT_MCP_TEXT_BYTES}-byte limit on what is kept; only the first ${cut.kept} bytes were kept${
+    cut.dropped > 0 ? ` (${cut.dropped} text blocks after that point were dropped)` : ''
+  }. The rest was not stored and cannot be read back]\n`
+
+// The call's whole kept text as one plain-text artifact, a marker line before each block. Plain text
+// rather than a JSON array because that is what `read` pages through and `grep` searches by line: a
+// JSON array puts every block on one line, so a match could only be reported at the block's start
+// and a page of `read` would be wrapped, escaped fragments.
 async function storeOmittedTextSet(
   ctx: Parameters<typeof guardOutput>[0],
   texts: readonly string[],
 ): Promise<Readonly<{ note: string; ref?: ReturnType<typeof refBlock> }>> {
   try {
-    const bytes = new TextEncoder().encode(JSON.stringify(texts.map((text) => ({ kind: 'text', text }))))
-    const artifact = await ctx.artifacts.put(bytes, { mime: 'application/json' })
+    const set = texts
+      .map(
+        (text, i) =>
+          `=== text block ${i + 1} of ${texts.length} (${Buffer.byteLength(text, 'utf8')} bytes) ===\n${text}`,
+      )
+      .join('\n')
+    const artifact = await ctx.artifacts.put(new TextEncoder().encode(set), { mime: 'text/plain' })
     return {
-      note: `full text set stored as artifact ${artifact.sha256.slice(0, 12)}`,
+      note: `full text set stored at ${spillLocator(artifact)}. To read it, call read with that full path, ?size= included, and an offset/limit, or grep that full path to search it; each block follows a "=== text block N of M ===" line`,
       ref: refBlock(artifact),
     }
   } catch {
@@ -255,13 +321,18 @@ function remoteDefinition(
         if (!Array.isArray(result.content)) throw new Error('content is not an array')
         // Validate the entire untrusted media set before the first artifact write. A valid leading
         // image followed by a malformed/bomb image must fail closed without publishing a partial set.
-        const prepared = prepareContent(result.content, cfg, mediaLimits)
+        const { prepared, cut } = capPreparedText(
+          prepareContent(result.content, cfg, mediaLimits),
+          MAX_KEPT_MCP_TEXT_BYTES,
+        )
         const pieces: OutputPiece[] = []
         const allTexts = prepared.flatMap((item) => (item.kind === 'text' ? [item.text] : []))
         // Text and media have independent budgets. Do not predict Core's resource-link rendering
         // here: that would duplicate a cross-package wire contract and can drift silently.
         const callLimit = callOutputLimitBytes(ctx)
-        let remainingTextBytes = callLimit
+        // The cut note is text the model reads, so it is paid for out of the same budget up front.
+        const cutText = cut === undefined ? undefined : cutNote(cfg.id, cut)
+        let remainingTextBytes = callLimit - (cutText === undefined ? 0 : Buffer.byteLength(cutText, 'utf8'))
         let textExhausted = false
         let omittedTexts = 0
         for (const item of prepared) {
@@ -313,6 +384,8 @@ function remoteDefinition(
           }
           omittedNote = stored.ref ? { text: note(), ref: stored.ref } : { text: note() }
         }
+        // First, so the guard notes that follow ("truncated: N bytes") read against the true size.
+        if (cutText !== undefined) content.push({ type: 'text', text: cutText })
         for (const piece of pieces)
           if (piece.kind === 'text') content.push(...piece.blocks)
           else content.push(piece.block)

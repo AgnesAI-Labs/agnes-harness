@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import type { Socket } from 'node:net'
 import { rpcError } from '@agnes/protocol'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SharedSessionChannel } from '../../worker-runtime/src/shared-session-channel.js'
 import { encodeFrame } from '../src/supervisor/framing.js'
 import { WorkerLink } from '../src/supervisor/worker-link.js'
@@ -177,7 +177,15 @@ describe('WorkerLink command settlement', () => {
   it('isolates a failed session projection without blocking another session', async () => {
     const socket = new FakeSocket()
     const order: number[] = []
-    const onSessionFailure = vi.fn()
+    // The failure observer throwing (it runs notices and cleanup) must stay inside the link: the
+    // frame chain has no one to hand a rejection to, and an unhandled one ends the daemon.
+    const onSessionFailure = vi.fn(() => {
+      throw new Error('observer failed')
+    })
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    onTestFinished(() => void process.off('unhandledRejection', onUnhandled))
     const link = new WorkerLink(socket as unknown as Socket, {
       onEvent: async (sessionKey, event) => {
         order.push(event.seq)
@@ -205,6 +213,8 @@ describe('WorkerLink command settlement', () => {
     await vi.waitFor(() => expect(onSessionFailure).toHaveBeenCalledOnce())
     expect(link.alive).toBe(true)
     expect(order).toEqual([1, 3])
+    await new Promise((r) => setTimeout(r, 20))
+    expect(unhandled).toEqual([])
   })
 
   it.each([

@@ -120,6 +120,39 @@ describe('superviseConnection', () => {
     expect(disposeSecond).toHaveBeenCalledOnce()
   })
 
+  it('terminates the dropped generation before it connects the replacement, so no old process outlives it', async () => {
+    const first = fakeConnection('gen1')
+    const second = fakeConnection('gen2')
+    const connections = [first, second]
+    const closing = deferred()
+    const order: string[] = []
+    first.close = async () => {
+      order.push('close:start')
+      await closing.promise
+      first.closed = true
+      order.push('close:end')
+    }
+    const connect = vi.fn(async () => {
+      order.push(`connect:${first.closed ? 'after-close' : 'before-close'}`)
+      return connections.shift() as McpConnection
+    })
+    const handle = superviseConnection({
+      connect,
+      sync: vi.fn(async () => vi.fn()),
+      sleep: instantSleep(),
+    })
+    await handle.ready
+    first.fireClose()
+    await vi.waitFor(() => expect(order).toContain('close:start'))
+    // The replacement must not start while the old generation is still being terminated.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(connect).toHaveBeenCalledTimes(1)
+    closing.resolve()
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
+    expect(order).toEqual(['connect:before-close', 'close:start', 'close:end', 'connect:after-close'])
+    await handle.dispose()
+  })
+
   it('re-syncs on tools/list_changed without reconnecting', async () => {
     const conn = fakeConnection('a')
     const disposeFirst = vi.fn()
@@ -305,6 +338,45 @@ describe('superviseConnection', () => {
       closeGate.resolve()
       await disposing
       expect(conn.closed).toBe(true)
+    } finally {
+      closeGate.resolve()
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops reconnecting, and dispose waits, when a dropped generation will not close', async () => {
+    const first = fakeConnection('gen1')
+    const closeGate = deferred<void>()
+    first.close = async () => {
+      await closeGate.promise
+      first.closed = true
+    }
+    const connect = vi.fn(async () => first)
+    const events: Array<{ state: string; reason?: string }> = []
+    const handle = superviseConnection({
+      connect,
+      sync: async () => () => {},
+      sleep: instantSleep(),
+      onStatus: (event) =>
+        events.push({ state: event.state, ...('reason' in event ? { reason: event.reason } : {}) }),
+    })
+    await handle.ready
+    vi.useFakeTimers()
+    try {
+      first.fireClose()
+      await vi.advanceTimersByTimeAsync(5_100)
+      // No second process may start beside the one that has not exited.
+      expect(connect).toHaveBeenCalledOnce()
+      expect(events.at(-1)).toEqual({ state: 'unavailable', reason: 'exhausted' })
+      let disposed = false
+      const disposing = handle.dispose().then(() => {
+        disposed = true
+      })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(disposed).toBe(false)
+      closeGate.resolve()
+      await disposing
+      expect(first.closed).toBe(true)
     } finally {
       closeGate.resolve()
       vi.useRealTimers()

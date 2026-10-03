@@ -294,6 +294,8 @@ export const noopHooks: HookPort = {
 export type CompactionPort = {
   /** Absent is treated as false so older policy-only adapters cannot accidentally disclose a stub. */
   readonly runnable?: boolean
+  /** Whether threshold compaction is held back this turn because the summary route failed outright. */
+  suspended?(turn: number): boolean
   shouldCompact(p: {
     contextTokens: number
     contextWindow: number
@@ -1613,6 +1615,12 @@ export class SessionImpl {
           if (this.op()) await this.abandon('run-no-progress', error)
           return { reason: 'error', lastSeq: this.lastSeq, error }
         }
+        // A cancel that arrived while no turn was open (a Stop sent right behind a Send) could only
+        // pull the signal: there was no row to mark. The turn exists now, so put the request on the
+        // ledger before anything runs under it; step() ends a marked turn without starting more work.
+        const open = this.op()
+        if (open && this.ac.signal.aborted && !this.closing && open.control.status !== 'cancel_requested')
+          await this.abort()
         let out: StepOutcome
         const quietEntry = this.d.quiet?.enter(this.d.quietGroup ?? this.key)
         if (quietEntry) await quietEntry
@@ -1628,6 +1636,24 @@ export class SessionImpl {
           const error = {
             code: 'E_STEP_FAILED',
             message: err instanceof Error ? err.message : String(err),
+          }
+          // A fail-closed hook or request stage that the cancel cut off throws like a failure, but
+          // the user asked for the stop. End the turn as the stop it was, with no invariant row for
+          // what the cancel itself caused; if even that cannot be written, the failure path below
+          // still records and closes the turn.
+          if (this.ac.signal.aborted && !this.closing) {
+            try {
+              await this.abort()
+              const stopped = await finishAborted(this)
+              if (stopped.phase === 'terminal')
+                return {
+                  reason: stopped.reason ?? 'aborted',
+                  lastSeq: this.lastSeq,
+                  ...(this.turnEndError ? { error: this.turnEndError } : {}),
+                }
+            } catch {
+              /* fall through to the failure close */
+            }
           }
           await this.diag('invariant', { kind: 'step-threw', phase, message: error.message })
           if (this.op()) await this.abandon('step-threw', error)

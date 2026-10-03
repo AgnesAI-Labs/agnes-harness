@@ -16,6 +16,11 @@ const rmFault = { active: false }
 // a handle on a transport whose `openAdapters` call never returned, so there is no bundle to read it
 // off; nothing else in this file consults it.
 const created: RemoteTransport[] = []
+// The input every session workspace factory was built from, so a test can see what openAdapters
+// hands it without having to reach the roots through a live fence.
+const factoryInputs: Parameters<
+  typeof import('../../src/adapters/session-workspace.js').createSessionWorkspaceAdapterFactory
+>[0][] = []
 // guards-allow-platform: the loopback spawns remote POSIX commands on this machine.
 const posixIt = process.platform === 'win32' ? it.skip : it
 
@@ -36,6 +41,19 @@ vi.mock('../../src/adapters/remote-transport.js', async (importOriginal) => {
       }
       created.push(wrapped)
       return wrapped
+    },
+  }
+})
+
+vi.mock('../../src/adapters/session-workspace.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/adapters/session-workspace.js')>()
+  return {
+    ...real,
+    createSessionWorkspaceAdapterFactory: (
+      input: Parameters<typeof real.createSessionWorkspaceAdapterFactory>[0],
+    ) => {
+      factoryInputs.push(input)
+      return real.createSessionWorkspaceAdapterFactory(input)
     },
   }
 })
@@ -104,6 +122,31 @@ describe('remote assembly wiring (RA17)', () => {
     return { dataDir, workspaceRoot }
   }
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('hands the read-only roots to a local deployment but never to a remote one', async () => {
+    const { dataDir, workspaceRoot } = paths()
+    const roots = () => [join(dir, 'home', 'profiles')]
+    const local = await openAdapters(await localProfile(), {
+      dataDir,
+      workspaceRoot,
+      fullAccessReadOnlyRoots: roots,
+    })
+    const localInput = factoryInputs.at(-1)
+    await local.close()
+    // Control: without it the remote assertion below would hold for any wiring at all.
+    expect(localInput?.fullAccessReadOnlyRoots).toBe(roots)
+
+    const remote = await openAdapters(await remoteSeamProfile(dir), {
+      dataDir,
+      workspaceRoot,
+      modules: remoteModules(),
+      fullAccessReadOnlyRoots: roots,
+    })
+    const remoteInput = factoryInputs.at(-1)
+    await remote.close()
+    expect(remoteInput?.transport).toBeDefined()
+    expect(remoteInput?.fullAccessReadOnlyRoots).toBeUndefined()
+  })
 
   it('refuses when an exported transport has no package config', async () => {
     const opts = paths()

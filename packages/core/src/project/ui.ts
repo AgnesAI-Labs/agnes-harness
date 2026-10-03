@@ -29,6 +29,7 @@ import {
   validateSlotPayload,
 } from '@agnes/protocol'
 import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
+import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState } from '../reduce/state.js'
 import type { Conflict, ContextBreakdownDiag } from '../request/contribute.js'
@@ -557,21 +558,13 @@ export class UIProjectionCell {
       return
     }
     if ((event.lane ?? 'main') !== this.lane) return
+    const anchor = contextAnchorOf(event)
+    if (anchor) {
+      this.contextBase = { seq: anchor.seq, total: anchor.total }
+      this.contextTokensValue = anchor.total
+    }
     if (event.type === 'cost/ledger') {
       const row = event.data as CostLedger
-      if (
-        row.purpose !== 'title' &&
-        row.purpose !== 'approval-guardian' &&
-        row.purpose !== 'media' &&
-        !row.interrupted &&
-        !row.adjustment
-      ) {
-        this.contextBase = {
-          seq: event.seq,
-          total: row.tokens.input + row.tokens.output + row.tokens.cacheRead + row.tokens.cacheWrite,
-        }
-        this.contextTokensValue = this.contextBase.total
-      }
       if (this.seenCostEffects.has(row.effectId)) return
       this.seenCostEffects.add(row.effectId)
       if (row.adjustment) {
