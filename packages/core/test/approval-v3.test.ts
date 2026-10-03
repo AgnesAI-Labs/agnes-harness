@@ -4,7 +4,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { fakeProvider, toolTurn } from './helpers/fake-provider.js'
+import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
 
@@ -54,15 +54,18 @@ function registryWith(tool: ToolDef): ToolRegistry {
 async function atTools(o: {
   scopes: string[]
   calls?: number
+  /** Text turns queued after the tool turns, for tests that drive the session past the tool phase. */
+  tail?: number
   seams?: ReturnType<typeof fakeSeams>
   approvalMode?: 'manual' | 'smart' | 'off'
   profile?: string | null
   execute?: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>
 }) {
   const calls = o.calls ?? 1
-  const provider = fakeProvider(
-    Array.from({ length: calls }, (_, i) => toolTurn('scoped_write', { value: String(i) })),
-  )
+  const provider = fakeProvider([
+    ...Array.from({ length: calls }, (_, i) => toolTurn('scoped_write', { value: String(i) })),
+    ...Array.from({ length: o.tail ?? 0 }, () => textTurn('done')),
+  ])
   const opened = await openSession({
     provider,
     registry: registryWith(
@@ -263,6 +266,36 @@ describe('v3 approval modes and grants', () => {
       credits: 1,
     })
   })
+
+  it.each([
+    { guard: 'allow-once' as const, executions: 1 },
+    { guard: 'reject' as const, executions: 0 },
+  ])(
+    'a settled guardian $guard decision is not a parked decision and opens no continuation turn',
+    async ({ guard, executions: expected }) => {
+      let executions = 0
+      const opened = await atTools({
+        scopes: ['cua:click:background'],
+        approvalMode: 'smart',
+        tail: 2,
+        execute: async () => {
+          executions++
+          return { content: [{ type: 'text', text: 'ok' }] }
+        },
+        seams: fakeSeams({
+          approval: { guard: async () => ({ decision: guard, ruleVersion: 'guardian-v1', reasons: [] }) },
+        }),
+      })
+      for (let i = 0; i < 40; i++) if ((await opened.session.step()).phase === 'idle') break
+      for (let i = 0; i < 3; i++) expect((await opened.session.step()).phase).toBe('idle')
+      expect(executions).toBe(expected)
+      expect(
+        (await opened.log.scan({ type: 'turn/start', limit: 10 })).map(
+          (row) => (row.data as { trigger: string }).trigger,
+        ),
+      ).toEqual(['prompt'])
+    },
+  )
 
   it('fails smart approval closed when its bounded cost cannot be projected or recorded', async () => {
     for (const mode of ['projection', 'record'] as const) {
