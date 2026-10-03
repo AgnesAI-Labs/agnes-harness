@@ -31,6 +31,7 @@ import {
   stage,
   type UploadWriter,
 } from '../blob/uploads.js'
+import type { IndexStorage } from '../migration/export-index.js'
 
 export const BLOB_CONTRACT = 'agh.blob'
 export const BLOB_MAJOR = 1
@@ -119,6 +120,17 @@ export function defaultServiceDescriptor(
   return checked.value
 }
 
+/** The authority transfer steps that return their first result again; a probe only reads. */
+export const TRANSFER_STEPS = [
+  'authorityFence',
+  'authorityExport',
+  'authorityExportPage',
+  'authorityImport',
+  'authorityVerify',
+  'authorityActivate',
+  'authorityAbort',
+] as const
+
 /**
  * Stage, promote, pin and every transfer step return their first result again; unpin reports
  * `released` only once.
@@ -131,18 +143,7 @@ export function blobProviderDescriptor(
     input,
     blobFeatures(input),
     [],
-    [
-      'stage',
-      'promote',
-      'pin',
-      'authorityFence',
-      'authorityExport',
-      'authorityExportPage',
-      'authorityImport',
-      'authorityVerify',
-      'authorityActivate',
-      'authorityAbort',
-    ],
+    ['stage', 'promote', 'pin', ...TRANSFER_STEPS],
     ['authorityProbe'],
   )
 }
@@ -183,6 +184,13 @@ export type BlobService = Readonly<{
   transfer: AuthorityTransferControl
   /** Host-internal: a fenced store lends its content and export chunks to the target importing them. */
   transferRead: Pick<BlobReadPort, 'openRead'>
+  /**
+   * Host-internal maintenance entry for another store fenced in the same cohort: its export chunks and
+   * index pages go into this store's content past the business gate, and `transferRead` lends them.
+   */
+  transferStorage(upgradeId: Wire.Id): IndexStorage
+  /** Host-internal: whether this store's content holds the referenced bytes intact. */
+  holds(ref: Wire.BlobRef): Promise<boolean>
   close(): void
 }>
 
@@ -366,6 +374,14 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
       probe: (request, context) => call(context, () => store.probe(request, context)),
     },
     transferRead,
+    transferStorage: (upgradeId) => {
+      live()
+      return store.copy.storage(upgradeId)
+    },
+    holds: async (ref) => {
+      live()
+      return store.copy.assets.present(ref)
+    },
     close: () => {
       if (closed) return
       closed = true

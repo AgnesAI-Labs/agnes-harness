@@ -6,7 +6,9 @@ import type * as Wire from '@agnes/protocol/runtime'
 import { RuntimeErrorDetails, type RuntimeWireTypes, validateRuntime } from '@agnes/protocol/runtime'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import { openPrivateArtifactDatabase } from '../../private-artifact-store.js'
+import type { AuthorityCopy } from '../authority-copy.js'
 import { type Authority, openAuthority, type TransferMaintenance } from '../authority-transfer.js'
+import type { IndexStorage } from '../migration/export-index.js'
 
 type Detail = keyof typeof RuntimeErrorDetails
 
@@ -113,8 +115,48 @@ function outboxWatermarks(db: DatabaseSync): Wire.AuthorityCheckpoint['bridgeWat
   return [{ bridgeId: 'outbox', producedThrough: head.produced, acceptedThrough: head.accepted }]
 }
 
+/**
+ * The selected default blob service's maintenance entry. This store's export chunks and index pages
+ * live in that service's content, which its own transfer moves in the same cohort.
+ */
+export type BlobTransfer = Readonly<{
+  binding: Wire.BindingRef
+  transferStorage(upgradeId: Wire.Id): IndexStorage
+  holds(ref: Wire.BlobRef): Promise<boolean>
+}>
+
+const CONTENT_TYPE = 'agh.host.artifacts/content@1'
+
+/**
+ * How this store's rows move to another location. Its assets are the blobs its records name; the blob
+ * service moves their bytes in the same cohort, so this store only checks that they arrived.
+ */
+function publicationCopy(db: DatabaseSync, blob: BlobTransfer): AuthorityCopy {
+  const schema = {
+    typeId: CONTENT_TYPE,
+    revision: 1,
+    digest: createHash('sha256').update(CONTENT_TYPE).digest('hex'),
+  }
+  function* list(): Generator<Wire.DataRef> {
+    const rows = db
+      .prepare(
+        `SELECT json_extract(record, '$.blob') AS ref FROM reservations
+         UNION SELECT json_extract(record, '$.source.blob') FROM reservations
+         UNION SELECT json_extract(payload, '$.blob') FROM outbox`,
+      )
+      .iterate() as Iterable<{ ref: string | null }>
+    for (const { ref } of rows)
+      if (ref !== null) yield { kind: 'blob', schema, blob: JSON.parse(ref) as Wire.BlobRef }
+  }
+  return {
+    collection: 'artifacts',
+    storage: (upgradeId) => blob.transferStorage(upgradeId),
+    assets: { list, present: (ref) => blob.holds(ref), copy: async () => undefined },
+  }
+}
+
 /** Every business write goes through `write`, the authority's gate. */
-export type ArtifactsStore = Pick<Authority, 'write' | 'fence' | 'probe' | 'abort'> & {
+export type ArtifactsStore = Omit<Authority, 'role'> & {
   readonly db: DatabaseSync
   readonly authorityId: Wire.Id
   readonly now: () => number
@@ -127,6 +169,10 @@ export function openArtifactsStore(options: {
   authorityId: Wire.Id
   now?: () => number
   maintenance?: TransferMaintenance
+  /** Without it, export, import, verify and activate are refused as not supported. */
+  blobTransfer?: BlobTransfer
+  /** Opens a new store as a transfer target; an existing store keeps its role. */
+  transferTarget?: boolean
 }): ArtifactsStore {
   const db = openPrivateArtifactDatabase(options.dataDir, 'artifacts-service.db', 'artifacts service store')
   let authority: Authority
@@ -144,6 +190,8 @@ export function openArtifactsStore(options: {
       error: artifactsError,
       Refusal: ArtifactsRefusal,
       ...(options.maintenance ? { maintenance: options.maintenance } : {}),
+      target: options.transferTarget === true,
+      ...(options.blobTransfer ? { copy: publicationCopy(db, options.blobTransfer) } : {}),
     })
   } catch (error) {
     db.close()
@@ -154,6 +202,12 @@ export function openArtifactsStore(options: {
     if (closed) refuse('blocked', 'artifacts service is closed')
     return db
   }
+  const gated =
+    <A extends unknown[], R>(method: (...args: A) => R) =>
+    (...args: A): R => {
+      live()
+      return method(...args)
+    }
   return {
     // Every read and transaction goes through `live`, so a call after close is refused with a stable
     // code instead of failing on the closed database.
@@ -171,18 +225,14 @@ export function openArtifactsStore(options: {
       live()
       return authority.write(body)
     },
-    fence(request, context) {
-      live()
-      return authority.fence(request, context)
-    },
-    probe(request, context) {
-      live()
-      return authority.probe(request, context)
-    },
-    abort(request, context) {
-      live()
-      return authority.abort(request, context)
-    },
+    fence: gated(authority.fence),
+    probe: gated(authority.probe),
+    abort: gated(authority.abort),
+    export: gated(authority.export),
+    exportPage: gated(authority.exportPage),
+    import: gated(authority.import),
+    verify: gated(authority.verify),
+    activate: gated(authority.activate),
   }
 }
 

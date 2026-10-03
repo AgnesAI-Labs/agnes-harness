@@ -2729,7 +2729,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows Job execution backends. Measured 73901, exact, no spare.
   // Artifact ticket key port. Measured 74321, exact, no spare.
   // Usage and budget settlement for billing. Measured 74449, exact, no spare.
-  'packages/host/src': 74819,
+  // Default artifacts transfer with its export held by the default blob service, and collection counts
+  // of only collections with parts. Measured 74892 (+73), exact, no spare.
+  'packages/host/src': 74892,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

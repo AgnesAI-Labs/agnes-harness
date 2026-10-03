@@ -110,6 +110,8 @@ export type BlobStore = Authority & {
   readonly now: () => number
   /** Uploads with an open writer in this process. A restarted process has none, so old writers are stopped. */
   readonly writers: Set<Wire.Id>
+  /** Where this store's transfer keeps its export chunks and index pages, and how it moves content. */
+  readonly copy: AuthorityCopy
 }
 
 export function openBlobStore(options: {
@@ -122,6 +124,7 @@ export function openBlobStore(options: {
 }): BlobStore {
   const db = openPrivateArtifactDatabase(options.dataDir, 'blob-service.db', 'blob service store')
   const now = options.now ?? (() => Date.now())
+  const copy = contentCopy(db, options.dataDir, options.authorityId)
   let authority: Authority
   try {
     db.exec('PRAGMA busy_timeout = 5000')
@@ -139,7 +142,7 @@ export function openBlobStore(options: {
       ...(options.maintenance ? { maintenance: options.maintenance } : {}),
       target: options.transferTarget === true,
       now,
-      copy: contentCopy(db, options.dataDir, options.authorityId),
+      copy,
     })
   } catch (error) {
     db.close()
@@ -152,6 +155,7 @@ export function openBlobStore(options: {
     authorityId: options.authorityId,
     now,
     writers: new Set(),
+    copy,
   }
 }
 
