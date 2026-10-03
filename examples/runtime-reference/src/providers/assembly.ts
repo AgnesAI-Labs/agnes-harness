@@ -570,24 +570,61 @@ function materialPhase(s: Snapshot) {
   }
   const client = object(content(target.clientBundlesRef), ['bundles'])
   const bundles = list(client.bundles)
-  for (const raw of bundles) {
-    const bundle = object(raw, ['bundleId', 'digest', 'platform', 'schema'])
-    decode('Id', bundle.bundleId)
-    decode('Digest', bundle.digest)
-    decode('Id', bundle.platform)
-    demand(hasSchema(decode('SchemaRef', bundle.schema)), 'schema_missing')
-  }
-  for (const raw of list(fixed.bundles)) {
-    const required = object(raw, ['bundleId', 'digest', 'platform', 'schema'])
-    decode('Id', required.bundleId)
-    decode('Digest', required.digest)
-    decode('Id', required.platform)
-    demand(hasSchema(decode('SchemaRef', required.schema)), 'schema_missing')
+  const checkBundle = (raw: unknown) => {
+    const item = object(raw, [
+      'bundleId',
+      'digest',
+      'target',
+      'schemas',
+      'packageId',
+      'version',
+      'entry',
+      'viewSchemaRanges',
+    ])
+    decode('Id', item.bundleId)
+    decode('Digest', item.digest)
+    const packageId = decode('Id', item.packageId),
+      version = decode('Id', item.version),
+      entry = decode('Id', item.entry)
+    demand(new Set(['sdk', 'im', 'tui', 'web']).has(String(item.target)), 'schema_invalid')
+    const refs = list(item.schemas).map((raw) => decode('SchemaRef', raw))
+    for (const ref of refs) demand(hasSchema(ref), 'schema_missing')
+    const artifacts = target.packages
+      .filter((pkg) => pkg.packageId === packageId && pkg.version === version)
+      .flatMap((pkg) => Object.entries(pkg.entries))
+      .filter(([key]) => key === entry)
     demand(
-      bundles.some((bundle) => matches(bundle, required)),
+      artifacts.length === 1 &&
+        artifacts[0]?.[1].digest === item.digest &&
+        artifacts[0]?.[1].platform === item.target,
+      'bundle_package_mismatch',
+    )
+    for (const range of list(item.viewSchemaRanges).map((raw) => decode('ViewSchemaRange', raw))) {
+      decode('TypeId', range.typeId)
+      decode('UInt53', range.minRevision)
+      decode('UInt53', range.maxRevision)
+      const supported = refs
+        .filter((schema) => schema.typeId === range.typeId)
+        .some((schema) => range.minRevision <= schema.revision && schema.revision <= range.maxRevision)
+      demand(supported && range.minRevision <= range.maxRevision, 'bundle_schema_range_mismatch')
+    }
+  }
+  bundles.forEach(checkBundle)
+  for (const required of list(fixed.bundles)) {
+    checkBundle(required)
+    demand(
+      bundles.some((available) => matches(available, required)),
       'required_ui_bundle_missing',
     )
   }
+  const identities = bundles.map((raw) => {
+    const item = raw as Record<string, unknown>
+    return `${String(item.bundleId)}/${String(item.target)}`
+  })
+  demand(
+    identities.every((id, index) => identities.indexOf(id) === index),
+    'duplicate_ui_bundle',
+  )
   const definitions = list(schemas.contracts).map((raw) => decode('CommunityContractDefinition', raw))
   checkCommunity(definitions, target.bindings)
   for (const definition of definitions) {

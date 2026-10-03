@@ -393,6 +393,7 @@ describe('detached immutable assembly plans', () => {
     const files = [
       '../../src/runtime/providers/assembly.ts',
       '../../src/runtime/assembly/release-set.ts',
+      '../../src/runtime/assembly/client-bundles.ts',
       '../../src/runtime/assembly/candidate.ts',
       '../../src/runtime/assembly/inputs.ts',
       '../../src/runtime/assembly/primitives.ts',

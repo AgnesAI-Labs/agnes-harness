@@ -14,6 +14,7 @@ import {
   RuntimeServiceCatalog,
   validateOwnedAuthorSchemaSource,
 } from '@agnes/protocol/runtime'
+import { verifyClientBundles } from './client-bundles.js'
 import { type ReleaseSetInputs, readInputs, readLocatorRoute } from './inputs.js'
 import {
   array,
@@ -629,33 +630,7 @@ function verifyMaterials(input: ReleaseSetInputs): DispatchAtomicDomain[] {
     '/clientBundlesRef/value',
   )
   const bundles = array(bundleBody.bundles, '/clientBundlesRef/bundles')
-  for (const value of bundles) {
-    const bundle = fields(value, ['bundleId', 'digest', 'platform', 'schema'], '/clientBundlesRef/bundles')
-    readWire('Id', bundle.bundleId)
-    readWire('Digest', bundle.digest)
-    readWire('Id', bundle.platform)
-    requireRelease(
-      known(readWire('SchemaRef', bundle.schema)),
-      'schema_missing',
-      '/clientBundlesRef/bundles/schema',
-    )
-  }
-  for (const required of array(config.bundles, '/configSnapshotRef/bundles')) {
-    const row = fields(required, ['bundleId', 'digest', 'platform', 'schema'], '/configSnapshotRef/bundles')
-    readWire('Id', row.bundleId)
-    readWire('Digest', row.digest)
-    readWire('Id', row.platform)
-    requireRelease(
-      known(readWire('SchemaRef', row.schema)),
-      'schema_missing',
-      '/configSnapshotRef/bundles/schema',
-    )
-    requireRelease(
-      bundles.some((bundle) => equal(bundle, required)),
-      'required_ui_bundle_missing',
-      '/clientBundlesRef/bundles',
-    )
-  }
+  verifyClientBundles(release, bundles, array(config.bundles, '/configSnapshotRef/bundles'), known)
   const definitions = array(materials.contracts, '/schemasRef/contracts').map((row) =>
     readWire('CommunityContractDefinition', row),
   )

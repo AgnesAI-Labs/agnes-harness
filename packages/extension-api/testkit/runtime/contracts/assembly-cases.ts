@@ -7,6 +7,8 @@ import {
   resealAssemblyFixture,
 } from './assembly-fixture.js'
 
+import { changedAssemblyUiEntryDigest } from './assembly-ui-fixture.js'
+
 export function pairAssemblyFixture(input: AssemblyFixture): void {
   const state = input.plan.targetReleaseSet.bindings.find((row) => row.descriptor.contract === 'agh.state')
   const budget = input.plan.targetReleaseSet.bindings.find((row) => row.descriptor.contract === 'agh.budget')
@@ -342,6 +344,95 @@ export function assemblyRefusalFixtures(): AssemblyRefusalFixture[] {
             optional: false,
           })
         }
+      },
+    },
+    {
+      name: 'UI entry digest tampered under locked package',
+      code: 'bundle_package_mismatch',
+      change: (f) => {
+        firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles).digest =
+          changedAssemblyUiEntryDigest(true)
+      },
+    },
+    {
+      name: 'same version changed real UI entry bytes',
+      code: 'same_version_content_changed',
+      change: (f) => {
+        f.fixture.previousRelease = structuredClone(f.plan.targetReleaseSet)
+        const bundle = firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles)
+        const pkg = firstFixtureRow(
+          f.plan.targetReleaseSet.packages.filter((pkg) => pkg.packageId === bundle.packageId),
+        )
+        const changed = changedAssemblyUiEntryDigest()
+        const artifact = pkg.entries.web
+        if (!artifact) throw new Error('fixture entry missing')
+        artifact.digest = changed
+        bundle.digest = changed
+        firstFixtureRow(f.plan.targetReleaseSet.configSnapshotRef.value.bundles).digest = changed
+      },
+    },
+    {
+      name: 'UI bundle package version disagrees',
+      code: 'bundle_package_mismatch',
+      change: (f) => {
+        firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles).version = '2.0.0'
+      },
+    },
+    {
+      name: 'UI bundle entry absent',
+      code: 'bundle_package_mismatch',
+      change: (f) => {
+        firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles).entry = 'missing'
+      },
+    },
+    {
+      name: 'UI bundle target disagrees with locked artifact',
+      code: 'bundle_package_mismatch',
+      change: (f) => {
+        firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles).target = 'tui'
+      },
+    },
+    {
+      name: 'UI bundle legacy platform rejected',
+      code: 'schema_invalid',
+      change: (f) => {
+        firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles).target = 'browser'
+      },
+    },
+    {
+      name: 'UI renderer range cannot read locked schema',
+      code: 'bundle_schema_range_mismatch',
+      change: (f) => {
+        firstFixtureRow(
+          firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles).viewSchemaRanges,
+        ).minRevision = 2
+      },
+    },
+    {
+      name: 'UI bundle schema absent from catalog',
+      code: 'schema_missing',
+      change: (f) => {
+        firstFixtureRow(
+          firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles).schemas,
+        ).digest = '1'.repeat(64)
+      },
+    },
+    {
+      name: 'UI bundle codec field is not a lock member',
+      code: 'schema_invalid',
+      change: (f) => {
+        Object.assign(firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles), {
+          codec: 'extra',
+        })
+      },
+    },
+    {
+      name: 'duplicate UI bundle identity',
+      code: 'duplicate_ui_bundle',
+      change: (f) => {
+        f.plan.targetReleaseSet.clientBundlesRef.value.bundles.push(
+          structuredClone(firstFixtureRow(f.plan.targetReleaseSet.clientBundlesRef.value.bundles)),
+        )
       },
     },
     {
