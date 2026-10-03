@@ -950,7 +950,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // with the reason once the window is nearly full (+34); the kept tail is sized net of the fixed
   // prefix, so the first request after a compaction lands below the threshold (+8).
   // Measured 25811, exact cap.
-  'packages/core/src': 25811,
+  // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
+  'packages/core/src': 25861,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1808,7 +1809,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
   // A cancel that arrived before the worker run began is forwarded after it. Measured 26536 (+2), exact.
-  'packages/daemon/src': 26536,
+  // An approval request carries the tool's ACP kind and name. Measured 26542 (+6), exact cap.
+  'packages/daemon/src': 26542,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2054,7 +2056,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the three UI lines moved most of this scope into packages/web-ui/src,
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
-  'packages/web/src': 13411,
+  // The live approval card's wording, preview and session-choice rule (new file). Measured 13463 (+52), exact cap.
+  'packages/web/src': 13463,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

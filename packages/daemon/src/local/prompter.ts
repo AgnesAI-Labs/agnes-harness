@@ -6,6 +6,7 @@ import {
   OFFERED_OPTION_KINDS,
 } from '@agnes/protocol'
 import type { ConnectionState, LocalEndpoint } from './endpoint.js'
+import { toolKind } from './project.js'
 
 // The request shape is core's, reached through the signature host publishes: one source, so the two
 // cannot drift. When the shape moves to protocol this becomes an import from there.
@@ -59,8 +60,10 @@ export class PrompterRouter implements Prompter {
         toolCallId: req.toolUseId ?? req.requestId,
         title: req.summary,
         ...(req.tool ? { rawInput: structuredClone(req.tool.args) } : {}),
-        kind: req.kind === 'tool' ? 'execute' : 'other',
+        kind: req.kind === 'tool' ? toolKind(req.tool?.name) : 'other',
         status: 'pending',
+        // The tool's name, so a client can say what "allow for the session" covers.
+        ...(req.tool ? { _meta: { 'ai.agnes.harness': { tool: req.tool.name } } } : {}),
       },
       // This request is ACP. Its allow_always is session-scoped and must never be upgraded into
       // Agnes' distinct profile-scoped permanent verdict.

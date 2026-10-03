@@ -1,6 +1,9 @@
 import type { EventEnvelope } from '@agnes/protocol'
+import type { ToolKind } from '@agnes/protocol/gen/acp'
 
-const KIND_BY_TOOL: Record<string, string> = {
+// Typed against ACP's own ToolKind: a value outside it fails the outbound validation, and for an
+// approval request that means the call is refused without anyone being asked.
+const KIND_BY_TOOL: Record<string, ToolKind> = {
   read: 'read',
   grep: 'read',
   find: 'read',
@@ -9,7 +12,12 @@ const KIND_BY_TOOL: Record<string, string> = {
   edit: 'edit',
   shell: 'execute',
   run_code: 'execute',
+  web_fetch: 'fetch',
 }
+
+/** The ACP kind for a tool name; anything this table does not name, including plugin tools, is `other`. */
+export const toolKind = (name: string | undefined): ToolKind =>
+  name !== undefined && Object.hasOwn(KIND_BY_TOOL, name) ? (KIND_BY_TOOL[name] as ToolKind) : 'other'
 
 const PLAN_STATUS: Record<string, string> = { done: 'completed', doing: 'in_progress' }
 
@@ -60,7 +68,7 @@ export function toSessionUpdate(
         payload: {
           toolCallId: d.toolUseId,
           title: d.name,
-          kind: KIND_BY_TOOL[String(d.name)] ?? 'other',
+          kind: toolKind(String(d.name)),
           status: 'pending',
           rawInput: d.args,
         },
