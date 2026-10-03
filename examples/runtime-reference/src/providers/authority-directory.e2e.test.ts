@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type {
@@ -208,6 +209,7 @@ async function prepared(): Promise<{
 
 function runChild(
   args: readonly string[],
+  phase: string,
 ): Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', fixture, ...args], {
@@ -217,6 +219,7 @@ function runChild(
     let stdout = ''
     let stderr = ''
     let settled = false
+    let killRequested = false
     const finish = (result: { code: number | null; signal: NodeJS.Signals | null }) => {
       if (settled) return
       settled = true
@@ -234,6 +237,9 @@ function runChild(
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk
+      if (!killRequested && stdout.includes(`PHASE ${phase}\n`)) {
+        killRequested = child.kill('SIGKILL')
+      }
     })
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk
@@ -244,7 +250,7 @@ function runChild(
       clearTimeout(timer)
       reject(error)
     })
-    child.on('exit', (code, signal) => finish({ code, signal }))
+    child.on('close', (code, signal) => finish({ code, signal }))
   })
 }
 
@@ -281,7 +287,7 @@ function startChild(args: readonly string[]): {
       clearTimeout(timer)
       reject(error)
     })
-    child.on('exit', () => {
+    child.on('close', () => {
       clearTimeout(timer)
       resolve({ stdout, stderr })
     })
@@ -314,7 +320,8 @@ describe('reference authority directory process durability', () => {
             request: opened.request,
           }),
         )
-        const killed = await runChild(['kill', opened.directory, opened.anchor, payload])
+        const killed = await runChild(['kill', opened.directory, opened.anchor, payload], phase)
+        expect(killed.stdout.trim(), killed.stderr).toBe(`PHASE ${phase}`)
         expect(killed.signal, `${phase}\n${killed.stderr}\n${killed.stdout}`).toBe('SIGKILL')
         expect(await revisionAt(opened.directory, opened.anchor)).toBe(phase === 'transaction' ? 1 : 2)
         if (phase === 'transaction') continue
@@ -342,6 +349,16 @@ describe('reference authority directory process durability', () => {
       const go = join(opened.root, 'go')
       const children: ChildProcess[] = []
       try {
+        if (kind === 'locator') {
+          const writer = new DatabaseSync(join(opened.anchor, 'anchor.sqlite'))
+          try {
+            writer.exec('BEGIN EXCLUSIVE')
+            expect(detail(readReferenceAnchor(opened.anchor))).toBe('retryable/anchor_unreadable')
+          } finally {
+            writer.exec('ROLLBACK')
+            writer.close()
+          }
+        }
         const view = readReferenceAnchor(opened.anchor)
         expect(view.ok && view.value).toBeTruthy()
         if (!view.ok || !view.value) throw new Error('Reference anchor missing')
@@ -400,6 +417,13 @@ describe('reference authority directory process durability', () => {
           const current = readReferenceAnchor(opened.anchor)
           expect(current.ok && current.value?.locator).toMatchObject({ revision: 2, epoch: 2 })
           expect(current.ok && current.value?.locator.cutoverId).toMatch(/^cutover-(a|b)$/)
+          const damaged = new DatabaseSync(join(opened.anchor, 'anchor.sqlite'))
+          try {
+            damaged.prepare('UPDATE anchor_view SET payload = ? WHERE slot = 1').run('broken-json')
+          } finally {
+            damaged.close()
+          }
+          expect(detail(readReferenceAnchor(opened.anchor))).toBe('incompatible/anchor_corrupt')
         }
       } finally {
         for (const child of children) {
