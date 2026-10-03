@@ -5,7 +5,14 @@
   "@agnes/plugin-runtime": ["@agnes/cordis", "@agnes/cordis-loader"],
   "@agnes/web-slots": [],
   "@agnes/web-ui": ["@agnes/protocol"],
-  "@agnes/web-client": ["@agnes/cordis", "@agnes/web-slots", "@agnes/protocol", "@agnes/sdk"],
+  "@agnes/web-client": [
+    "@agnes/cordis",
+    "@agnes/web-slots",
+    "@agnes/protocol",
+    "@agnes/sdk",
+    "@agnes/extension-api",
+    "@agnes/web-ui"
+  ],
   "@agnes/web-units": ["@agnes/protocol", "@agnes/web-slots", "@agnes/web-ui"],
   "@agnes/resource-control-contracts": [],
   "@agnes/protocol": ["@agnes/resource-control-contracts", "@agnes/protocol-validation"],
