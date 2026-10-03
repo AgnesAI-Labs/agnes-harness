@@ -1,3 +1,4 @@
+import { setImmediate as nextTurn } from 'node:timers/promises'
 import { describe, expect, it } from 'vitest'
 import {
   boundary,
@@ -36,6 +37,8 @@ describe.each(['default', 'reference'] as const)('%s bounded broker drain', (kin
       expect(error(await use)).toBe('cancelled/secret_cancelled')
     } finally {
       finish()
+      // The rejected bounded close still drains asynchronously after the consumer completes.
+      await nextTurn()
       cleanup(root)
     }
   })

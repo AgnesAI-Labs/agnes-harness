@@ -14,8 +14,10 @@ import { createWorkspaceService } from '../../src/runtime/providers/workspace.js
 import { openWorkspaceStore } from '../../src/runtime/workspace-leases.js'
 
 const roots: string[] = []
+const stores: ReturnType<typeof openWorkspaceStore>[] = []
 
 afterEach(() => {
+  for (const store of stores.splice(0)) store.close()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -119,6 +121,7 @@ describe('workspace leases', () => {
     const { mkdirSync } = await import('node:fs')
     mkdirSync(work)
     const store = openWorkspaceStore({ directory: join(directory, 'store'), now: () => 1_000 })
+    stores.push(store)
     const service = createWorkspaceService({
       store,
       authorityId: 'authority-1',
@@ -161,6 +164,7 @@ describe('workspace leases', () => {
     expect(held.ok).toBe(true)
     service.close()
     otherTenant.close()
+    store.close()
   })
 
   it('reclaims an expired lease and leaves the work directory when one generation closes', async () => {
@@ -171,6 +175,7 @@ describe('workspace leases', () => {
     writeFileSync(join(work, 'notes.txt'), 'keep')
     let now = 5_000
     const store = openWorkspaceStore({ directory: join(directory, 'store'), now: () => now })
+    stores.push(store)
     const first = createWorkspaceService({
       store,
       authorityId: 'authority-1',
@@ -214,6 +219,7 @@ describe('workspace leases', () => {
       ),
     ).toBe('revision_conflict')
     second.close()
+    store.close()
     const reopened = createWorkspaceService({
       directory: join(directory, 'store'),
       authorityId: 'authority-1',

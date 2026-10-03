@@ -96,7 +96,7 @@ describe('package source process recovery', () => {
       ...Object.fromEntries(
         Object.entries(process.env).filter(
           ([name]) =>
-            !name.startsWith('AGNES_') &&
+            (name === 'AGNES_NODE_HEADERS' || !name.startsWith('AGNES_')) &&
             !name.startsWith('AGH_') &&
             !name.startsWith('VITEST_') &&
             name !== 'NODE_OPTIONS',
