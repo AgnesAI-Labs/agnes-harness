@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { type ActionRecordValue, RuntimeSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
-import { canonicalJson } from '../state/canonical-json.js'
+import { canonicalJson } from './canonical-json.js'
 import {
   bodyDigest,
   emptyIntegrity,
@@ -8,7 +8,7 @@ import {
   mutationDigest,
   protectEvent,
   sideListsDigest,
-} from '../state/records.js'
+} from './records.js'
 
 function refuse(): never {
   throw new Error('Original parent accounting membership is unavailable')
