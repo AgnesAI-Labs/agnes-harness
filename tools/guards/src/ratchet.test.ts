@@ -951,7 +951,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // prefix, so the first request after a compaction lands below the threshold (+8).
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
-  'packages/core/src': 25861,
+  // Guardian-decided approvals no longer reopen a parked continuation (+2), a Stop on a running mutating
+  // call is recorded as cancelled once it has stopped (+54), and approval decisions keep their reason (+82).
+  // Measured 25998 with all three merged, exact cap; each alone is lower.
+  'packages/core/src': 25998,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
