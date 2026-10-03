@@ -2679,9 +2679,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Blob and artifacts write gate, deletion and revocation logs, outbox seq and source-side
   // fence, probe and abort. Measured 65845 (+352), exact, no spare.
   // Billing and trace providers. Measured 66992, exact, no spare.
-  // Bounded migration export index and intake spool. Measured 67851, exact, no spare.
-  // Bounded migration export index and intake spool. Measured 67861, exact, no spare.
-  'packages/host/src': 67861,
+  // Bounded migration export index and intake spool. Measured 67840, exact, no spare.
+  'packages/host/src': 67840,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
