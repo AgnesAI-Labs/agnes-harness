@@ -22,6 +22,9 @@ export type ExecutionMetrics = {
   ownershipVerified: boolean
   residualObserved: number
   ownership: string
+  /** Windows native qualification: committed allocation is separate from sampled RSS. */
+  committedBytes?: number
+  filesEnforced?: boolean
 }
 export type OwnedExecutionResult = { stdout: Uint8Array; stderr: Uint8Array; metrics: ExecutionMetrics }
 export const EXEC_SAMPLE_MS = 10
@@ -51,7 +54,7 @@ export function runOwnedExecution(input: {
   cgroupDirectoryFd?: number
   observed?: (metrics: ExecutionMetrics) => void
 }): Promise<OwnedExecutionResult> {
-  if (createPlatform().os === 'win32') return Promise.reject(new Error('exec_platform_unsupported'))
+  if (createPlatform().os === 'win32') return Promise.reject(new Error('exec_limit_openFiles_unsupported'))
   if (createPlatform().os === 'linux' && input.cgroupDirectoryFd === undefined)
     return Promise.reject(new Error('exec_delegation_unsupported'))
   if (input.signal.aborted) return Promise.reject(new Error('exec_cancelled'))

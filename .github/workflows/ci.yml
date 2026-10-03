@@ -81,14 +81,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
-      # Build the POSIX execution governor and the macOS libproc identity helpers explicitly.
-      # Dependency installation remains script-disabled; Windows retains its existing build path.
+      # Build execution supervisors on every platform, with Windows MSVC prepared above.
       - run: pnpm --filter @agnes/host build:native
       - run: node examples/runtime-reference/scripts/build-native.mjs
       - run: pnpm --filter @agnes/system-node build:native
-      - name: Windows unsupported execution admission
+      - name: Windows Job protocol and honest execution admission
         if: runner.os == 'Windows' && matrix.shard == '3/3'
-        run: pnpm exec vitest run packages/host/test/runtime/exec.test.ts --maxWorkers=1
+        run: pnpm exec vitest run packages/host/test/runtime/exec.test.ts packages/host/test/runtime/windows-job-owner.test.ts examples/runtime-reference/src/providers/sandbox-exec-lock.test.ts --maxWorkers=1
       # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
       # Split Windows files across three runners while keeping two workers per runner.
       # The fast tier discovers and runs the complete Protocol fixture tree through the same
@@ -200,9 +199,12 @@ jobs:
           # Enter the delegated parent before dropping privilege so migration
           # needs only its delegated common ancestor, never host-root write access.
           sudo bash -c 'echo $$ > "$1/cgroup.procs"; exec setpriv --reuid="$2" --regid="$3" --init-groups env PATH="$5" AGNES_TEST_CGROUP="$1" "$4" exec vitest run packages/host/test/runtime/cgroup-owner.e2e.test.ts --maxWorkers=1' -- "$group_root" "$(id -u)" "$(id -g)" "$(command -v pnpm)" "$PATH"
+      - name: Windows native Job limits, File refusal and process ownership
+        if: runner.os == 'Windows'
+        run: pnpm exec vitest run packages/host/test/runtime/windows-job-owner.e2e.test.ts --maxWorkers=1
       - name: test heavy tier
         env:
-          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
+          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts,packages/host/test/runtime/windows-job-owner.e2e.test.ts' || '' }}
         run: pnpm exec vitest run --project heavy --maxWorkers=${{ runner.os == 'Windows' && 1 || 2 }}
       # The ACP cold-start bound measures concurrent CLI processes. Run it without other Vitest
       # files competing for this runner's cores, while retaining its original assertion.

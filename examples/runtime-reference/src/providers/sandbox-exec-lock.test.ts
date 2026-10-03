@@ -34,4 +34,21 @@ describe('independent sandbox and execution recipes', () => {
     expect(a).toContain('PROC_UID_ONLY')
     expect(b).toContain('proc_listallpids')
   })
+  it('keeps Windows launch, File enumeration and protocol implementations independent', () => {
+    const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
+    const reference = read('../../native/windows-job-owner.cc') + read('../../native/job-file-snapshot.h')
+    const production =
+      read('../../../../packages/host/native/windows-exec-owner.cc') +
+      read('../../../../packages/host/native/windows-file-handles.h')
+    expect(overlap(reference, production)).toBeLessThanOrEqual(0.5)
+    expect(reference).toContain('PROC_THREAD_ATTRIBUTE_JOB_LIST')
+    expect(production).toContain('AssignProcessToJobObject')
+    expect(reference).toContain('NtQueryInformationProcess')
+    expect(production).toContain('NtQuerySystemInformation')
+    const wire = read('./exec.ts').split('// Raw qualification entry,')[1] ?? ''
+    expect(wire).not.toMatch(/(?:from|import\s*\()[^\n]*host/u)
+    expect(
+      overlap(wire, read('../../../../packages/host/src/runtime/platform/windows-job-owner.ts')),
+    ).toBeLessThanOrEqual(0.5)
+  })
 })
