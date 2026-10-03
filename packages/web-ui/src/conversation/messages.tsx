@@ -546,7 +546,11 @@ function Message({
       {...(node.kind === 'tool'
         ? {
             'data-status': node.status,
-            'aria-label': props.t('tool.detail.status', { status: toolOutcome(node, props.t).label }),
+            // 无障碍标签要带上工具名：只报状态会让读屏用户听不出是哪次调用。
+            'aria-label': props.t('tool.card.aria', {
+              name: node.name,
+              status: toolOutcome(node, props.t).label,
+            }),
           }
         : {})}
       {...(node.kind === 'approval'
@@ -723,8 +727,10 @@ function Turn({
         {turn.status === 'failed' && (
           <p className="turn-error" role="alert">
             {turn.error
-              ? `${turn.error.code}：${turn.error.message}`
-              : `本次执行未完成（${turn.reason ?? '未知原因'}），暂未收到具体错误信息。`}
+              ? props.t('turn.error.codeJoin', { code: turn.error.code, message: turn.error.message })
+              : props.t('turn.error.noDetail', {
+                  reason: turn.reason ?? props.t('turn.error.unknownReason'),
+                })}
           </p>
         )}
         <div className="turn-node-flow">

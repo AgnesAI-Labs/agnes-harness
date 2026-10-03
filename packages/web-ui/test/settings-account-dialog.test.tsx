@@ -14,6 +14,10 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
     'accounts.providerLabel': 'Provider · translated',
     'accounts.baseUrlLabel': '服务地址',
     'accounts.apiKeyLabel': 'API Key · translated',
+    'accounts.defaultThinkingLabel': '思考等级 · translated',
+    'accounts.contextBudgetLabel': '上下文预算 · translated',
+    'accounts.contextBudgetPlaceholder': '自动预算 · translated',
+    'accounts.modelSettingsHint': '新会话沿用默认值 · translated',
   }
 
   try {
@@ -30,6 +34,18 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
     expect(host.querySelector('#config-base-url')?.closest('label')?.textContent).toContain('服务地址')
     expect(host.querySelector('#config-api-key')?.closest('label')?.textContent).toContain(
       'API Key · translated',
+    )
+    expect(host.querySelector('#config-thinking')?.closest('label')?.textContent).toContain(
+      '思考等级 · translated',
+    )
+    expect(host.querySelector('#config-context-window')?.closest('label')?.textContent).toContain(
+      '上下文预算 · translated',
+    )
+    expect(host.querySelector('#config-context-window')?.getAttribute('placeholder')).toBe(
+      '自动预算 · translated',
+    )
+    expect(host.querySelector('#config-model-settings-hint')?.textContent).toBe(
+      '新会话沿用默认值 · translated',
     )
   } finally {
     root.unmount()

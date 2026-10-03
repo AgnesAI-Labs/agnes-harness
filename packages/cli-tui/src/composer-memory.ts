@@ -1,4 +1,3 @@
-import { tt } from './locale-extended.js'
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { SlotName, ThinkingLevel } from '@agnes/protocol'
@@ -11,6 +10,7 @@ import {
   parseComposerMemory,
   resolveNewSessionSelection,
 } from '@agnes/sdk/composer-selection'
+import { tt } from './locale-extended.js'
 
 export function readComposerMemoryFile(path: string | undefined): ComposerMemory | undefined {
   if (!path) return undefined

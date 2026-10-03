@@ -96,10 +96,14 @@
   },
   {
     "path": "packages/resource-control-web/src/admin.tsx",
-    "includes": ["永久删除", "skillPriority"]
+    "includes": ["skillPriority"]
   },
   {
-    "path": "packages/web-ui/src/resource-detail.tsx",
+    "path": "packages/resource-control-web/src/locales/admin.ts",
+    "includes": ["永久删除"]
+  },
+  {
+    "path": "packages/web-ui/src/locales/resource-detail.ts",
     "includes": ["同名覆盖优先级（50–500，越大越优先）", "保存优先级"]
   },
   {

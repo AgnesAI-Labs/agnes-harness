@@ -33,7 +33,11 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
   const fill = `${Math.min(100, Number(pct))}%`
   const stale = connected ? '' : t('usage.stale')
   const caption = usage
-    ? t('usage.caption', { used: compact(usage.context.tokens), window: compact(usage.context.window), stale })
+    ? t('usage.caption', {
+        used: compact(usage.context.tokens),
+        window: compact(usage.context.window),
+        stale,
+      })
     : ''
   const summary = usage
     ? t('usage.summary', {
@@ -45,10 +49,10 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
     : ''
   const rows: Array<[string, string]> = usage
     ? [
-        ['上下文占用', `${count(usage.context.tokens)} Token`],
-        ['本会话预算', `${count(usage.context.window)} Token`],
+        [t('usage.rows.context'), `${count(usage.context.tokens)} Token`],
+        [t('usage.rows.window'), `${count(usage.context.window)} Token`],
         ...(usage.model.maxTokens
-          ? [['模型最大输出', `${count(usage.model.maxTokens)} Token`] as [string, string]]
+          ? [[t('usage.rows.maxOutput'), `${count(usage.model.maxTokens)} Token`] as [string, string]]
           : []),
         [t('usage.rows.autoCompact'), usage.context.autoCompact ? t('usage.enabled') : t('usage.disabled')],
       ]
@@ -84,9 +88,7 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
             </Fragment>
           ))}
         </dl>
-        <p className="usage-note">
-          上下文为后台估算，包含当前保留的对话等内容；会话预算用于自动整理，不改变模型容量。模型最大输出来自模型目录。
-        </p>
+        <p className="usage-note">{t('usage.note')}</p>
       </div>
     </details>
   )

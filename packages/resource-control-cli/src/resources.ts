@@ -20,7 +20,9 @@ export class ResourceOperationFailure extends Error {
     readonly outputRendered = false,
   ) {
     const fallback =
-      state === 'cancelled' ? 'The resource operation was cancelled' : 'The resource operation could not be completed safely'
+      state === 'cancelled'
+        ? 'The resource operation was cancelled'
+        : 'The resource operation could not be completed safely'
     super(safeError?.message ?? fallback)
     this.code =
       safeError?.code ??

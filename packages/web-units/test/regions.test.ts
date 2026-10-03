@@ -17,6 +17,13 @@ import {
 } from '../src/index.js'
 
 const roots: Root[] = []
+const englishText: Record<string, string> = {
+  'settings-shell.appearanceTitle': 'General settings',
+  'settings-shell.fontScale': 'Font size',
+  'shell.install': 'Install from source',
+  'button.refresh': 'Refresh Skill catalog',
+}
+const enT = (key: string): string => englishText[key] ?? key
 
 afterEach(() => {
   while (roots.length) roots.pop()?.unmount()
@@ -31,7 +38,7 @@ describe('independent core web-unit implementations', () => {
     document.body.append(host)
     const shell = createRoot(host)
     roots.push(shell)
-    flushSync(() => shell.render(createElement(SettingsBuiltin, { options: {} })))
+    flushSync(() => shell.render(createElement(SettingsBuiltin, { options: { translate: enT } })))
     const paneSlot = host.querySelector<HTMLElement>('#settings-pane-slot-model')
     if (!paneSlot) throw new Error('model settings slot is missing')
     const pane = createRoot(paneSlot)
@@ -48,21 +55,22 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-save')?.getAttribute('form')).toBe('config-form')
   })
 
-  it('renders the appearance language switch in English', () => {
+  it('renders the appearance controls in English', () => {
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
     roots.push(root)
-    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'appearance' })))
-    const english = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')
-    const chinese = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="zh-CN"]')
-    expect(english).toBeInstanceOf(HTMLInputElement)
-    expect(english?.checked).toBe(true)
-    expect(chinese?.checked).toBe(false)
-    expect(host.querySelector('[data-i18n="settings.appearance.language"]')?.textContent).toBe('Language')
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'appearance', translate: enT })))
+    expect(host.querySelector('input[name="agnes-theme"][value="system"]')).toBeInstanceOf(HTMLInputElement)
+    expect(host.querySelector('input[name="agnes-font-scale"][value="normal"]')).toBeInstanceOf(
+      HTMLInputElement,
+    )
+    expect(host.querySelector('[data-i18n="settings-shell.appearanceTitle"]')?.textContent).toBe(
+      'General settings',
+    )
     expect(
-      host.querySelector('[data-i18n-aria="settings.appearance.language"]')?.getAttribute('aria-label'),
-    ).toBe('Language')
+      host.querySelector('[data-i18n-aria="settings-shell.fontScale"]')?.getAttribute('aria-label'),
+    ).toBe('Font size')
   })
 
   it('keeps the conversation child contract in the web-units package', () => {
@@ -192,11 +200,11 @@ describe('independent core web-unit implementations', () => {
     const root = createRoot(host)
     roots.push(root)
 
-    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'plugin' })))
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'plugin', translate: enT })))
     expect(host.querySelector('#install-source')?.textContent).toBe('Install from source')
     expect(host.querySelector('#install-source')?.getAttribute('data-i18n')).toBe('shell.install')
 
-    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'resources' })))
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'resources', translate: enT })))
     expect(host.querySelector('#skill-refresh')?.textContent).toBe('Refresh Skill catalog')
     expect(host.querySelector('#resource-list')?.getAttribute('data-i18n-aria')).toBe('shell.list.aria')
   })

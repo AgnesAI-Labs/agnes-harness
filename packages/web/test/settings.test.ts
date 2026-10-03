@@ -5,14 +5,13 @@ import type { Client } from '@agnes/sdk/browser'
 import { unmountRegion } from '@agnes/web-ui'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)
-
 
 // Picker interaction is covered by settings-accounts/settings-oauth; these cases exercise the
 // controller against real DOM nodes because the account and select subtrees are React-owned.
@@ -116,6 +115,29 @@ function client(
 }
 
 describe('settings controller', () => {
+  it('keeps locale markers on account form labels and hints in the static settings markup', () => {
+    installDom()
+    expect(
+      fixtureWindow.document.querySelector('#config-account-name')?.getAttribute('data-i18n-placeholder'),
+    ).toBe('settings-shell.accountNamePlaceholder')
+    expect(
+      fixtureWindow.document
+        .querySelector('#config-provider')
+        ?.previousElementSibling?.getAttribute('data-i18n'),
+    ).toBe('settings-shell.providerLabel')
+    expect(
+      fixtureWindow.document
+        .querySelector('#config-thinking')
+        ?.previousElementSibling?.getAttribute('data-i18n'),
+    ).toBe('settings-shell.defaultThinkingLabel')
+    expect(
+      fixtureWindow.document.querySelector('#config-context-window')?.getAttribute('data-i18n-placeholder'),
+    ).toBe('settings-shell.contextBudgetPlaceholder')
+    expect(
+      fixtureWindow.document.getElementById('config-model-settings-hint')?.getAttribute('data-i18n'),
+    ).toBe('settings-shell.modelSettingsHint')
+  })
+
   it('shows loading instead of the empty account copy while configuration is pending', async () => {
     installDom()
     const snapshotRequest = deferred<ConfigSnapshot>()

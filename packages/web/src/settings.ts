@@ -333,10 +333,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const tokens = parseContextBudget(window)
     if (
       thinking &&
-      !modelThinkingOptions(model?.thinkingLevelMap).some((option) => option.value === thinking)
+      !modelThinkingOptions(model?.thinkingLevelMap, tr).some((option) => option.value === thinking)
     ) {
       ui.thinking?.setAttribute('aria-invalid', 'true')
-      throw new Error('该模型当前不支持所选思考强度，请重新选择')
+      throw new Error(tr('settings.model.thinkingUnsupported'))
     }
     ui.thinking?.setAttribute('aria-invalid', 'false')
     if (
@@ -347,7 +347,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ) {
       ui.contextWindow?.setAttribute('aria-invalid', 'true')
       throw new Error(
-        `上下文预算须为 ${minimumContextBudget(model?.contextWindow).toLocaleString()} Token 以上、模型容量以内的正整数，可使用 K/M 单位`,
+        tr('settings.model.contextRange', {
+          min: minimumContextBudget(model?.contextWindow).toLocaleString(),
+        }),
       )
     }
     ui.contextWindow?.setAttribute('aria-invalid', 'false')
@@ -364,9 +366,12 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       model?.defaultSettings ??
       {}
     if (ui.thinking) {
-      const options = modelThinkingOptions(model?.thinkingLevelMap)
+      const options = modelThinkingOptions(model?.thinkingLevelMap, tr)
       if (defaults.thinking && !options.some((option) => option.value === defaults.thinking))
-        options.push({ value: defaults.thinking, label: `已保存的档位当前不可用：${defaults.thinking}` })
+        options.push({
+          value: defaults.thinking,
+          label: tr('settings.model.savedThinkingUnavailable', { value: defaults.thinking }),
+        })
       setSettingsSelectOptions(ui.thinking, options)
       ui.thinking.value = defaults.thinking ?? ''
     }
@@ -378,8 +383,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
     if (ui.modelSettingsHint)
       ui.modelSettingsHint.textContent =
-        (model?.contextWindow ? `模型容量：${model.contextWindow.toLocaleString()} tokens。` : '') +
-        '可输入 100K（100,000 Token）或完整数量，留空恢复自动；仅新会话继承，已有会话保留自己的配置。'
+        (model?.contextWindow
+          ? `${tr('settings.model.capacity', { tokens: model.contextWindow.toLocaleString() })} `
+          : '') + tr('settings.model.budgetHint')
   }
 
   const renderKeyHint = (): void => {
@@ -406,7 +412,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         .map((provider) =>
           option(
             method === 'oauth'
-              ? `${provider.label.replace(/\s*订阅$/, '')}${tr('settings.provider.subscriptionLoginSuffix')}`
+              ? `${provider.label.replace(/\s*subscription$/i, '')}${tr('settings.provider.subscriptionLoginSuffix')}`
               : provider.label,
             providerValue(provider, method),
           ),
@@ -623,7 +629,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     try {
       request = input()
       defaultSettings = ui.thinking || ui.contextWindow ? readModelSettings() : undefined
-      if (accountName && editingId && !accountName.value.trim()) throw new Error('请填写账户名称')
+      if (accountName && editingId && !accountName.value.trim())
+        throw new Error(tr('settings.account.nameRequired'))
     } catch (error) {
       setError(error)
       return

@@ -31,27 +31,30 @@ export function createSessionActions(options: {
   dialog.innerHTML = `<form>
     <div class="dialog-heading"><h2 id="session-rename-heading"></h2></div>
     <label class="form-field" for="session-rename-input">
+      <span id="session-rename-label"></span>
       <input id="session-rename-input" required autocomplete="off" aria-describedby="session-rename-error" />
     </label>
     <p id="session-rename-error" class="session-rename-error" role="alert"></p>
     <div class="dialog-actions"><button class="secondary-button" type="button"></button><button class="primary-button" type="submit"></button></div></form>`
   document.body.append(dialog)
-  dialog.querySelector('h2')!.textContent = t('session.rename.heading')
-  const nameLabel = dialog.querySelector('label')!
-  nameLabel.insertBefore(document.createTextNode(t('session.rename.nameLabel')), nameLabel.firstChild)
-  const cancelText = t('session.rename.cancel')
-  const submitRename = t('session.rename.submit')
-  dialog.querySelector<HTMLButtonElement>('.secondary-button')!.textContent = cancelText
+  const heading = dialog.querySelector('h2') as HTMLHeadingElement
+  const nameLabel = dialog.querySelector('#session-rename-label') as HTMLElement
   const form = dialog.querySelector('form') as HTMLFormElement
   const input = dialog.querySelector('input') as HTMLInputElement
   const error = dialog.querySelector('p') as HTMLParagraphElement
   const cancel = dialog.querySelector('button') as HTMLButtonElement
   const submit = dialog.querySelector('[type=submit]') as HTMLButtonElement
-  submit.textContent = submitRename
   let target: string | undefined
   let pending = false
   let saved = false
   let returnFocus: HTMLElement | undefined
+  // 弹窗只创建一次，所以在每次打开时重新取词，否则切换语言后它仍显示启动时的文案。
+  const applyStaticText = (): void => {
+    heading.textContent = t('session.rename.heading')
+    nameLabel.textContent = t('session.rename.nameLabel')
+    cancel.textContent = t('session.rename.cancel')
+    submit.textContent = saved ? t('session.rename.retryRefresh') : t('session.rename.submit')
+  }
   const text = (failure: unknown) =>
     failure instanceof Error ? failure.message : t('session.rename.defaultError')
   const close = () => {
@@ -101,7 +104,7 @@ export function createSessionActions(options: {
       } finally {
         pending = submit.disabled = cancel.disabled = false
         input.disabled = saved
-        submit.textContent = saved ? t('session.rename.retryRefresh') : submitRename
+        applyStaticText()
         dialog.removeAttribute('aria-busy')
         if (dialog.open) (saved ? submit : input).focus()
       }
@@ -143,7 +146,10 @@ export function createSessionActions(options: {
       restore.type = 'button'
       const restoreLabel = t('session.archived.restore')
       restore.textContent = restoring.has(row.sessionId) ? t('session.archived.restoring') : restoreLabel
-      restore.setAttribute('aria-label', t('session.archived.restoreAria', { title: title.textContent ?? '' }))
+      restore.setAttribute(
+        'aria-label',
+        t('session.archived.restoreAria', { title: title.textContent ?? '' }),
+      )
       restore.disabled = restoring.has(row.sessionId)
       restore.addEventListener('click', () => {
         if (archivedView()?.rows !== rows || restoring.has(row.sessionId)) return
@@ -198,7 +204,8 @@ export function createSessionActions(options: {
         const page = await options.client.session.list({ limit: 500, ...(cursor ? { cursor } : {}) })
         if (!current()) return
         all.push(...page.items.filter((row) => row.archived))
-        if (page.next === cursor && page.next !== undefined) throw new Error(t('session.archived.paginationStalled'))
+        if (page.next === cursor && page.next !== undefined)
+          throw new Error(t('session.archived.paginationStalled'))
         cursor = page.next
       } while (cursor !== undefined)
       archived = all
@@ -262,7 +269,7 @@ export function createSessionActions(options: {
         returnFocus = trigger
         saved = false
         input.disabled = false
-        submit.textContent = submitRename
+        applyStaticText()
         input.value = title
         error.textContent = ''
         input.removeAttribute('aria-invalid')

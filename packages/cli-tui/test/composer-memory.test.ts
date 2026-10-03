@@ -70,11 +70,16 @@ describe('TUI composer memory', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'agh-composer-')), 'composer-selection.json')
     writeComposerMemoryFile(path, { model: { route: 'deepseek', id: 'retired' }, permission: 'workspace' })
     const session = sessionDouble()
-    const inherited = await inheritFreshSession(session, path, {
-      slot: 'primary',
-      route: 'deepseek',
-      model: 'deepseek-v4-flash',
-    }, 'zh-CN')
+    const inherited = await inheritFreshSession(
+      session,
+      path,
+      {
+        slot: 'primary',
+        route: 'deepseek',
+        model: 'deepseek-v4-flash',
+      },
+      'zh-CN',
+    )
     expect(session.setModel).toHaveBeenCalledTimes(1)
     expect(session.setModel).toHaveBeenCalledWith({
       slot: 'primary',

@@ -61,7 +61,10 @@ export class AdminApiError extends Error {
   }
 }
 
-function safeError(value: unknown, fallback = 'The admin backend is temporarily unavailable. Try again later.'): AdminError {
+function safeError(
+  value: unknown,
+  fallback = 'The admin backend is temporarily unavailable. Try again later.',
+): AdminError {
   if (!value || typeof value !== 'object') return { code: 'ADMIN_UNAVAILABLE', message: fallback }
   const error = value as ErrorResponse
   const code = typeof error.error?.code === 'string' ? error.error.code : 'ADMIN_UNAVAILABLE'
@@ -109,7 +112,9 @@ export class PluginAdminApi {
     })
     const body = await json(response)
     if (!response.ok)
-      throw new AdminApiError(safeError(body, response.status === 403 ? 'You do not have plugin admin permission.' : undefined))
+      throw new AdminApiError(
+        safeError(body, response.status === 403 ? 'You do not have plugin admin permission.' : undefined),
+      )
     if (!isContext(body))
       throw new AdminApiError({
         code: 'ADMIN_CONTEXT_INVALID',
@@ -315,7 +320,10 @@ export class PluginAdminApi {
     const result = await json(response)
     if (!response.ok)
       throw new AdminApiError(
-        safeError(result, response.status === 403 ? 'You do not have permission to perform this action.' : undefined),
+        safeError(
+          result,
+          response.status === 403 ? 'You do not have permission to perform this action.' : undefined,
+        ),
       )
     if (!validatePackageAdminCall(method, 'result', result).ok)
       throw new AdminApiError({

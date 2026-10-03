@@ -201,7 +201,8 @@ export function ConversationTurnActions({
     const valid = () => mounted.current && currentId.current === id && epoch.current === generation
     const fallback = () => {
       const copied = legacyCopy(finalText, doc)
-      if (valid()) report(copied ? t('turnactions.copied') : t('turnactions.copyFailed'), copied ? 1600 : undefined)
+      if (valid())
+        report(copied ? t('turnactions.copied') : t('turnactions.copyFailed'), copied ? 1600 : undefined)
     }
     const clipboard = doc.defaultView?.navigator.clipboard
     if (!clipboard?.writeText) return fallback()

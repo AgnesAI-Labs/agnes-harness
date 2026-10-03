@@ -851,7 +851,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     }
     render(nodes, turns, nextMeta)
   }
-  options.locale?.subscribe(() => {
+  const unsubscribeLocale = options.locale?.subscribe(() => {
     const last = lastRender
     if (last) render(last.nodes, last.turns, last.meta, { preserveScroll: true })
   })
@@ -889,6 +889,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     reset,
     dispose() {
       reset()
+      unsubscribeLocale?.()
       scrollContainer.removeEventListener('scroll', onScroll)
       sentinel?.disconnect()
       earlier.remove()

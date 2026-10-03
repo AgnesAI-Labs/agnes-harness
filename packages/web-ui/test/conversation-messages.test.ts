@@ -304,10 +304,10 @@ describe('W3b projected message DOM', () => {
     const detail = (id: string) => item(id)?.querySelector('.tool-detail-text')?.textContent
     expect(item('exit')?.getAttribute('aria-label')).toBe('工具 shell：退出码 1')
     expect(item('exit')?.querySelector('.tool-status')?.textContent).toBe('退出码 1')
-    expect(detail('exit')).toContain('输出\nhello')
+    expect(detail('exit')).toContain('执行结果\nhello')
     expect(detail('exit')).not.toContain('[exit 1]')
     expect(detail('exit')).not.toContain('错误详情')
-    expect(detail('silent')).toContain('输出\n（无输出）')
+    expect(detail('silent')).toContain('执行结果\n（无输出）')
     expect(item('silent')?.getAttribute('aria-label')).toBe('工具 shell：退出码 2')
     expect(item('cut')?.getAttribute('aria-label')).toBe('工具 shell：执行失败')
     expect(detail('cut')).toContain('错误详情\npartial output')

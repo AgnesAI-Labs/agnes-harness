@@ -24,8 +24,7 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.recovery.openFailed': 'Opening the task failed. {detail}',
     'app.recovery.retry': 'Retry open',
     'app.recovery.create': 'New task',
-    'app.recovery.hint':
-      '{message} You can retry, pick another task in the sidebar, or create a new one. ',
+    'app.recovery.hint': '{message} You can retry, pick another task in the sidebar, or create a new one. ',
     'app.status.newTask': 'New task',
     'app.status.stoppingWait': 'Requesting stop; waiting for the backend to confirm',
     'app.status.awaitingApproval': 'Awaiting approval',
@@ -48,11 +47,14 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.approval.rejectOnce': 'Reject',
     'app.approval.rejectAlways': 'Always reject',
     'app.approval.title': 'Needs your confirmation',
-    'app.notice.oldSessionClosing': 'The previous session is still closing; the new session is already being prepared.',
+    'app.notice.oldSessionClosing':
+      'The previous session is still closing; the new session is already being prepared.',
     'app.fork.waitIdle': 'Wait for the session to finish running before forking.',
     'app.fork.noForkableTurn': 'This session has no completed turn to fork yet.',
-    'app.fork.refreshFailed': 'The new session was created, but refreshing the page failed. Find it after reloading: {id}',
-    'app.fork.renameFailed': 'The new session was created, but saving its name failed; rename it from the new session menu.',
+    'app.fork.refreshFailed':
+      'The new session was created, but refreshing the page failed. Find it after reloading: {id}',
+    'app.fork.renameFailed':
+      'The new session was created, but saving its name failed; rename it from the new session menu.',
     'app.fork.notIdle': 'Only a finished turn on an idle session can be forked.',
     'app.fork.created': 'A new chat was created from the selected turn. The original chat is unchanged.',
     'app.newSession.verifying': 'Verifying…',
@@ -63,7 +65,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.newSession.checkingPicker': 'Checking the system directory picker…',
     'app.newSession.pickMachine': 'Pick a directory from this machine.',
     'app.newSession.noPicker': 'This environment cannot open a directory picker; type the path instead.',
-    'app.newSession.pickerFailed': 'Could not open the system directory picker; type the workspace path instead.',
+    'app.newSession.pickerFailed':
+      'Could not open the system directory picker; type the workspace path instead.',
     'app.newSession.defaultTitle': 'New session',
     'app.session.selectionChanged': 'The session selection changed.',
     'app.session.createFailed': 'Session creation failed.',
@@ -80,12 +83,16 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.admin.openFailed': 'Opening the admin pane failed. Try again.',
     'app.connection.closedIntentional':
       'The connection closed; whether the task finished follows the backend state. Re-run the Web start command and open its address to resume viewing.',
-    'app.connection.lost': 'The backend connection was lost; whether the task finished follows the backend state.',
-    'app.gap.partial': 'Some history events are no longer replayable; reading the backend’s current projection.',
+    'app.connection.lost':
+      'The backend connection was lost; whether the task finished follows the backend state.',
+    'app.gap.partial':
+      'Some history events are no longer replayable; reading the backend’s current projection.',
     'app.ws.unavailable': 'The WebSocket address is unavailable.',
     'app.firstRun.configure': 'Configure a model first to start the first task.',
-    'app.workspaceList.unreadable': 'Could not read the workspace list. Try again later or add a working directory directly.',
-    'app.session.notFound': 'This task was not found in the backend. Pick one from the sidebar or create a new task.',
+    'app.workspaceList.unreadable':
+      'Could not read the workspace list. Try again later or add a working directory directly.',
+    'app.session.notFound':
+      'This task was not found in the backend. Pick one from the sidebar or create a new task.',
     'runtime.import': 'The plugin UI entry failed to load; retry allowed',
     'runtime.styles': 'The plugin UI styles failed to load; retry allowed',
     'runtime.unsupportedSlot': 'The plugin UI uses a slot this host does not implement',
@@ -104,9 +111,33 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.doc.fallbackTitle': 'Document',
     'app.guide.title': 'Guides',
     'app.rightbarTabs': 'Extension panels',
+    'app.permission.notice.full':
+      'This session now has full permission and can read and write files inside and outside the workspace.',
+    'app.permission.notice.mode': 'Session permission is set to “{mode}”.',
+    'app.notice.newSessionModel': 'The new session will use the selected model and configuration.',
+    'app.notice.modelSaved':
+      'Model configuration saved; later requests use the new reasoning strength and context window.',
+    'app.error.sessionChanged': 'The session selection changed.',
+    'app.error.connectionChanged': 'The connection changed. Wait for permissions to sync, then send again.',
+    'app.error.permissionRequired': "Choose this session's permission before sending.",
+    'app.approval.impact.write':
+      'Will create or overwrite the file{target}. Check the request before deciding.',
+    'app.approval.impact.edit': 'Will modify the file{target}. Check the request before deciding.',
+    'app.approval.impact.execute':
+      'Will run a command in this task working directory. Check the command before deciding.',
+    'app.approval.impact.fetch': 'Will open the URL{target}. Check the request before deciding.',
+    'app.approval.impact.read': 'Will read{target}. Check the request before deciding.',
+    'app.approval.impact.readContent': 'Will read the content. Check the request before deciding.',
+    'app.approval.impact.default': 'Check the tool and its arguments before deciding whether to continue.',
+    'app.approval.session.all': 'Allow all {tool} calls in this session',
+    'app.approval.session.tool': 'Allow all calls to this tool in this session',
+    'app.approval.truncatedCount': 'Showing {shown} of {total} characters',
+    'app.approval.truncatedWarning':
+      'The content is not shown in full ({count}). The hidden part takes effect with the call too, so this approval offers no “allow for the session”; only “allow once” or “reject”.',
   },
   'zh-CN': {
-    'app.reconnect.waiting': '正在等待后台恢复，恢复后页面会自动重新载入。只重启了后台时，请同时重新运行 Web 启动命令。',
+    'app.reconnect.waiting':
+      '正在等待后台恢复，恢复后页面会自动重新载入。只重启了后台时，请同时重新运行 Web 启动命令。',
     'app.reconnect.reloading': '后台已恢复，正在重新载入页面…',
     'app.reconnect.retry': '重试连接',
     'app.reconnect.stalled': '后台暂未恢复。确认后台和 Web 启动命令都已重新运行后，可以重试连接。 ',
@@ -120,7 +151,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.trace.sessionSwitched': '会话已切换，请等待轨迹更新',
     'app.watch.stopTimeout': '旧会话事件流关闭超时',
     'app.error.fallback': '操作失败，请重试。',
-    'app.recovery.profileMissing': '这个历史任务的旧配置文件已缺失，暂时无法打开。记录仍保留，未切换为当前配置。',
+    'app.recovery.profileMissing':
+      '这个历史任务的旧配置文件已缺失，暂时无法打开。记录仍保留，未切换为当前配置。',
     'app.recovery.openFailed': '历史任务打开失败。{detail}',
     'app.recovery.retry': '重试打开',
     'app.recovery.create': '新建任务',
@@ -174,7 +206,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.model.savedNotEffective': '配置已保存，但尚未生效；当前继续使用已生效的模型。请在设置中重试保存。',
     'app.model.savedNotice': '模型配置已更新。新会话沿用上次使用的模型；尚未选过时使用新的默认模型。',
     'app.admin.openFailed': '打开管理面板失败，请重试。',
-    'app.connection.closedIntentional': '连接已关闭；任务是否结束请以后台状态为准。重新运行 Web 启动命令并打开其地址即可恢复查看。',
+    'app.connection.closedIntentional':
+      '连接已关闭；任务是否结束请以后台状态为准。重新运行 Web 启动命令并打开其地址即可恢复查看。',
     'app.connection.lost': '与后台的连接已断开；任务是否结束请以后台状态为准。',
     'app.gap.partial': '部分历史事件已不可回放，正在读取后台现有投影。',
     'app.ws.unavailable': 'WebSocket 连接地址不可用。',
@@ -199,5 +232,24 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.doc.fallbackTitle': '文档',
     'app.guide.title': '指南',
     'app.rightbarTabs': '扩展面板',
+    'app.permission.notice.full': '本会话已开启完全权限，可读写工作区内外文件。',
+    'app.permission.notice.mode': '本会话权限已设为「{mode}」。',
+    'app.notice.newSessionModel': '新会话将使用所选模型与配置。',
+    'app.notice.modelSaved': '模型配置已保存，后续请求将使用新的思考强度和上下文窗口。',
+    'app.error.sessionChanged': '会话选择已改变。',
+    'app.error.connectionChanged': '连接已变化，请等待权限同步后重新发送。',
+    'app.error.permissionRequired': '请先选择本会话权限，确认后再发送。',
+    'app.approval.impact.write': '将创建或覆盖文件{target}。请核对后决定。',
+    'app.approval.impact.edit': '将修改文件{target}。请核对后决定。',
+    'app.approval.impact.execute': '将在此任务的工作目录执行命令。请核对命令后决定。',
+    'app.approval.impact.fetch': '将访问网址{target}。请核对后决定。',
+    'app.approval.impact.read': '将读取{target}。请核对后决定。',
+    'app.approval.impact.readContent': '将读取内容。请核对后决定。',
+    'app.approval.impact.default': '请核对工具及参数后决定是否继续。',
+    'app.approval.session.all': '本会话内允许所有 {tool} 调用',
+    'app.approval.session.tool': '本会话内允许此工具的所有调用',
+    'app.approval.truncatedCount': '已显示 {shown} / 共 {total} 字符',
+    'app.approval.truncatedWarning':
+      '内容未完整显示（{count}）。未显示的部分同样会随调用生效，所以这项审批没有“本会话允许”，只能“仅允许这次”或“拒绝”。',
   },
 }

@@ -74,20 +74,20 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                 <span>{t('accounts.testConnection')}</span>
               </Button>
             </div>
-            <Field className="form-field" label="默认思考强度">
+            <Field className="form-field" label={t('accounts.defaultThinkingLabel')}>
               <SettingsOptionSelect id="config-thinking" />
             </Field>
-            <Field className="form-field" label="默认上下文预算（Token）">
+            <Field className="form-field" label={t('accounts.contextBudgetLabel')}>
               <input
                 id="config-context-window"
                 type="text"
                 maxLength={32}
-                placeholder="自动（模型目录默认值）"
+                placeholder={t('accounts.contextBudgetPlaceholder')}
                 aria-describedby="config-model-settings-hint config-error"
               />
             </Field>
             <p id="config-model-settings-hint" className="field-hint">
-              支持 K/M 单位，如 100K 表示 100,000 Token。新会话继承这些默认值；已有会话保留自己的配置。
+              {t('accounts.modelSettingsHint')}
             </p>
             <p id="config-state" aria-live="polite" />
             <Button id="config-retry" className="secondary-button compact" htmlType="button" hidden>

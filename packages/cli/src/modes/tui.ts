@@ -53,7 +53,7 @@ export async function runTui(
     // Resume keeps the historical session's own model and does not read the preference file.
     const inherited =
       resumeId === undefined
-        ? await inheritFreshSession(session, io.composerSelectionPath, p.model, resolveLocale(process.env))
+        ? await inheritFreshSession(session, io.composerSelectionPath, p.model, resolveLocale(io.env))
         : undefined
     // Rendering is bounded by BrandingCache: a slow or unavailable control plane yields the shared
     // default after at most 1.5 s, while a profile-specific override can replace it when available.

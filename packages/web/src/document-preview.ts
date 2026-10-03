@@ -1,9 +1,9 @@
+import type { LocaleVars } from '@agnes/web-client'
 import {
   type DocumentPreviewInput,
   documentResourceUrl,
   sanitizeDocumentHtml,
 } from '@agnes/web-ui/assistant-ui'
-import type { LocaleVars } from '@agnes/web-client'
 import { createMarkdownRenderer, type MarkdownRenderer } from './markdown.js'
 
 export type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-ui/assistant-ui'
@@ -60,7 +60,10 @@ function renderInput(
     case 'image': {
       const url = documentResourceUrl(input.resourceUrl)
       if (!url) {
-        unavailable(element, t('doc.preview.unavailable', { kind: t('doc.kind.image'), reason: t('doc.reason.unauthorized') }))
+        unavailable(
+          element,
+          t('doc.preview.unavailable', { kind: t('doc.kind.image'), reason: t('doc.reason.unauthorized') }),
+        )
         return undefined
       }
       const image = document.createElement('img')
@@ -73,7 +76,10 @@ function renderInput(
     case 'pdf': {
       const url = documentResourceUrl(input.resourceUrl)
       if (!url) {
-        unavailable(element, t('doc.preview.unavailable', { kind: t('doc.kind.pdf'), reason: t('doc.reason.unauthorized') }))
+        unavailable(
+          element,
+          t('doc.preview.unavailable', { kind: t('doc.kind.pdf'), reason: t('doc.reason.unauthorized') }),
+        )
         return undefined
       }
       const frame = document.createElement('iframe')

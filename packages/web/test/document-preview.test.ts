@@ -56,10 +56,14 @@ describe('DSH document preview renderers', () => {
   it('leaves object URL ownership with the consumer across updates and disposal', () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL')
     const element = host()
-    const preview = createDocumentPreview(element, {
-      kind: 'image',
-      resourceUrl: 'blob:https://example.test/one',
-    }, zhT)
+    const preview = createDocumentPreview(
+      element,
+      {
+        kind: 'image',
+        resourceUrl: 'blob:https://example.test/one',
+      },
+      zhT,
+    )
     expect(element.querySelector('img')?.getAttribute('alt')).toBe('文档图片')
     preview.update({ kind: 'image', resourceUrl: '' })
     expect(element.querySelector('img')).toBeNull()
@@ -102,10 +106,14 @@ describe('DSH document preview renderers', () => {
     preview.update({ kind: 'image', title: '截图', resourceUrl: 'blob:https://example.test/image-1' })
     expect(element.querySelector<HTMLImageElement>('img')?.src).toBe('blob:https://example.test/image-1')
     const pdfElement = document.createElement('div')
-    const pdfPreview = createDocumentPreview(pdfElement, {
-      kind: 'pdf',
-      resourceUrl: 'blob:https://example.test/document-1',
-    }, zhT)
+    const pdfPreview = createDocumentPreview(
+      pdfElement,
+      {
+        kind: 'pdf',
+        resourceUrl: 'blob:https://example.test/document-1',
+      },
+      zhT,
+    )
     expect(pdfElement.querySelector<HTMLIFrameElement>('iframe')?.sandbox.value).toBe('')
     pdfPreview.dispose()
     preview.dispose()

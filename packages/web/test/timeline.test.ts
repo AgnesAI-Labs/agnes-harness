@@ -26,6 +26,20 @@ function renderer() {
 }
 
 describe('timeline reader semantics', () => {
+  it('unsubscribes from locale changes when disposed', () => {
+    const transcript = document.createElement('div')
+    const newContentButton = document.createElement('button')
+    const locale = zhLocaleService()
+    const unsubscribe = vi.fn()
+    vi.spyOn(locale, 'subscribe').mockReturnValue(unsubscribe)
+    document.body.append(transcript, newContentButton)
+    const timeline = createTimelineRenderer({ locale, transcript, newContentButton })
+
+    timeline.dispose?.()
+
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+
   it('refreshes translated node chrome when the locale changes', () => {
     const transcript = document.createElement('div')
     const newContentButton = document.createElement('button')

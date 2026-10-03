@@ -32,7 +32,7 @@ describe('client module runtime status', () => {
 
   it('normalizes an arbitrary loader error without exposing its details', () => {
     const error = new Error('file:///private/token=secret/index.js\nstack trace')
-    const normalized = normalizeRuntimeError('import', error)
+    const normalized = normalizeRuntimeError('import', error, zhT)
 
     expect(normalized).toEqual({
       code: 'CLIENT_MODULE_IMPORT_FAILED',

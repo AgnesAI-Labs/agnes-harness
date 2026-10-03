@@ -59,6 +59,11 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.validationLegend': 'Validation & default model',
     'settings-shell.authMethodLabel': 'Auth method',
     'settings-shell.defaultModelLabel': 'Default model',
+    'settings-shell.defaultThinkingLabel': 'Default thinking level',
+    'settings-shell.contextBudgetLabel': 'Default context budget (tokens)',
+    'settings-shell.contextBudgetPlaceholder': 'Automatic (model catalog default)',
+    'settings-shell.modelSettingsHint':
+      'K and M suffixes are supported; 100K means 100,000 tokens. New sessions inherit these defaults; existing sessions keep their settings.',
     'settings-shell.testConnection': 'Test connection',
     'settings-shell.retryRead': 'Retry reading the configuration',
     'settings-shell.accountGuard':
@@ -119,6 +124,11 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.validationLegend': '验证与默认模型',
     'settings-shell.authMethodLabel': '认证方式',
     'settings-shell.defaultModelLabel': '默认模型',
+    'settings-shell.defaultThinkingLabel': '默认思考强度',
+    'settings-shell.contextBudgetLabel': '默认上下文预算（Token）',
+    'settings-shell.contextBudgetPlaceholder': '自动（模型目录默认值）',
+    'settings-shell.modelSettingsHint':
+      '支持 K/M 单位，如 100K 表示 100,000 Token。新会话继承这些默认值；已有会话保留自己的配置。',
     'settings-shell.testConnection': '测试连接',
     'settings-shell.retryRead': '重试读取配置',
     'settings-shell.accountGuard': '默认账户不可停用或删除；如需调整，请先将其他已启用账户设为默认。',

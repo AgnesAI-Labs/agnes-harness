@@ -54,7 +54,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   const [store] = useState(() =>
     createConversationProjectionStore({ sessionId: registry.sessionId ?? '', nodes: [] }),
   )
-  const runtime = useConversationRuntime(store)
+  const runtime = useConversationRuntime(store, locale?.t.bind(locale))
   const projection = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const viewport = useCallback(
     () => content.current?.closest<HTMLElement>('#transcript') ?? content.current,

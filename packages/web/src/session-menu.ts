@@ -24,7 +24,11 @@ const ITEMS: readonly (readonly [SessionAction, string, readonly string[]])[] = 
     ],
   ],
   ['fork', 'session.menu.fork', ['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']],
-  ['archive', 'session.menu.archive', ['M3 4h18v4H3z', 'M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8', 'M10 12h4']],
+  [
+    'archive',
+    'session.menu.archive',
+    ['M3 4h18v4H3z', 'M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8', 'M10 12h4'],
+  ],
 ]
 
 /** 24px 栅格 + `.icon`，线宽与端点样式因此自动跟随仓内图标族。 */

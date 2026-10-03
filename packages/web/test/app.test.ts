@@ -233,6 +233,7 @@ function installPublicFixture(): void {
   history.replaceState(null, '', '/?session=old#test-launcher-token')
   sessionStorage.clear()
   localStorage.clear()
+  localStorage.setItem('agnes-locale', 'zh-CN')
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ available: false }), { status: 200 })),
@@ -245,20 +246,15 @@ function submit(text: string): void {
   document.getElementById('composer')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 }
 
-/** 模型选择器首层是入口菜单（模型 / 推理等级），点「模型」那一行才展开模型列表子菜单。 */
+/** The model trigger opens the complete flat model list. */
 function openModelList(): void {
-  const entries = Array.from(document.querySelectorAll<HTMLElement>('.model-picker-entry'))
-  const row = entries.find(
-    (entry) => entry.querySelector('.model-picker-entry-label')?.textContent === '模型',
-  )
-  if (!row) throw new Error('model picker entry menu did not open')
-  row.click()
+  if (!document.querySelector('#model-listbox')) throw new Error('model picker did not open')
 }
 
-/** 模型列表在子菜单里，不在首层入口菜单上。 */
+/** The model list is rendered directly in the picker. */
 function modelMenu(): HTMLElement {
-  const found = document.querySelector<HTMLElement>('#model-submenu-listbox')
-  if (!found) throw new Error('model picker submenu did not open')
+  const found = document.querySelector<HTMLElement>('#model-listbox')
+  if (!found) throw new Error('model picker did not open')
   return found
 }
 
@@ -873,7 +869,9 @@ describe('web session selection', () => {
 
     await import('../src/app.js')
     const createInBeta = await vi.waitFor(() => {
-      const button = document.querySelector<HTMLButtonElement>('[aria-label="New session in “Beta”"]')
+      const button = document.querySelector<HTMLButtonElement>(
+        '[data-workspace-new-session="/workspace/beta"]',
+      )
       expect(button).toBeTruthy()
       expect(button?.disabled).toBe(false)
       return button as HTMLButtonElement
@@ -941,7 +939,7 @@ describe('web session selection', () => {
     expect(control('send').disabled).toBe(true)
   })
 
-  it('offers a reasoning-level entry and sends the chosen level', async () => {
+  it('keeps the model picker flat and applies the selected model settings', async () => {
     installPublicFixture()
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)
@@ -952,7 +950,7 @@ describe('web session selection', () => {
       initialize: vi.fn(async () => undefined),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
-      // reasoning / thinkingLevelMap 必须原样到达选择器，否则第二层档位屏根本不会出现。
+      // Model capability metadata stays available to settings even though the picker is flat.
       apis: vi.fn(async () => ({
         profile: {
           models: [
@@ -978,37 +976,25 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(control('model').disabled).toBe(false))
 
     const rows = () => Array.from(modelMenu().querySelectorAll<HTMLElement>('[role="option"]'))
-    const entryValue = (label: string) =>
-      Array.from(document.querySelectorAll<HTMLElement>('.model-picker-entry'))
-        .find((row) => row.querySelector('.model-picker-entry-label')?.textContent === label)
-        ?.querySelector('.model-picker-entry-value')?.textContent
-
     control('model').click()
     openModelList()
     rows()[0]?.click()
-    await vi.waitFor(() =>
-      expect(old.setModel).toHaveBeenCalledWith({ slot: 'primary', route: 'local', model: 'model-a' }),
-    )
-
-    // 换到支持推理的模型之后，入口菜单才多出「推理等级」这一行。
-    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
-    control('model').click()
-    expect(entryValue('推理等级')).toBe('默认')
-
-    Array.from(document.querySelectorAll<HTMLElement>('.model-picker-entry'))
-      .find((row) => row.querySelector('.model-picker-entry-label')?.textContent === '推理等级')
-      ?.click()
-    expect(rows().map((row) => row.textContent?.trim())).toEqual(['Low', 'High'])
-
-    rows()[1]?.click()
     await vi.waitFor(() =>
       expect(old.setModel).toHaveBeenCalledWith({
         slot: 'primary',
         route: 'local',
         model: 'model-a',
-        thinking: 'high',
+        thinking: 'off',
+        contextWindow: 128000,
       }),
     )
+
+    // The flat picker changes only the model; thinking controls stay in account settings.
+    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
+    control('model').click()
+    expect(document.querySelector('.model-picker-entry, #model-submenu-listbox')).toBeNull()
+    expect(rows().map((row) => row.textContent?.trim())).toContain('model-a已配置账户')
+    control('model').click()
   }, 20_000)
 
   it.each(['save-first', 'poll-first', 'poll-fails'])(

@@ -1,12 +1,11 @@
 /** @vitest-environment happy-dom */
 import { describe, expect, it, vi } from 'vitest'
-import { requestWorkspacePicker, workspacePickerAvailable } from '../src/workspace-picker.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { requestWorkspacePicker, workspacePickerAvailable } from '../src/workspace-picker.js'
 import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)
-
 
 describe('workspace picker client', () => {
   it('checks capability without a browser credential', async () => {

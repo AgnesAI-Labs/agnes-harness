@@ -2,9 +2,9 @@
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
-import { zhT } from './helpers/locale.js'
 import { renderSessionNavigation } from '../src/navigation.js'
 import { createSessionActions, forkTitle } from '../src/session-actions.js'
+import { zhT } from './helpers/locale.js'
 
 const controllers: ReturnType<typeof createSessionActions>[] = []
 afterEach(() => {

@@ -172,7 +172,13 @@ export function WebConversationMessages({
       />
     ),
     renderSlot: (node) => (
-      <SlotLeaf key={node.id} node={node} registry={registry} claim={claim} t={(key) => locale?.t(key) ?? key} />
+      <SlotLeaf
+        key={node.id}
+        node={node}
+        registry={registry}
+        claim={claim}
+        t={(key) => locale?.t(key) ?? key}
+      />
     ),
     renderNode: (node, native) =>
       registry ? <DshNodeLeaf key={node.id} node={node} native={native} registry={registry} /> : native,

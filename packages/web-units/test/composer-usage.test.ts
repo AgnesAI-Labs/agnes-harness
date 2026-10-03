@@ -1,4 +1,5 @@
 /** @vitest-environment happy-dom */
+import { webUiLocaleCatalog } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/assistant-ui'
 import { act, createElement, createRef, StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -19,7 +20,14 @@ it('uses component ownership and disposes compatible custom factories on replace
   const update = Object.assign(vi.fn(), { dispose: vi.fn() })
   const picker = () => ({ destroy: vi.fn(), render: vi.fn() })
   const dependencies: ComposerDependencies = {
-    translate: (key) => key,
+    // 组件已改为从目录取词，所以桩要返回真实文案（含 {var} 插值）而不是 key 本身。
+    translate: (key, vars) => {
+      const template = webUiLocaleCatalog['zh-CN'][key] ?? key
+      if (!vars) return template
+      return template.replace(/\{(\w+)\}/g, (match, name: string) =>
+        Object.hasOwn(vars, name) ? String(vars[name]) : match,
+      )
+    },
     createModelPicker: picker,
     createPermissionPicker: picker,
     createUsagePanel: vi.fn(() => update),

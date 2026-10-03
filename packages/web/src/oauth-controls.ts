@@ -1,8 +1,8 @@
 import type { ConfigModel, ConfigOAuthInput, ConfigProvider } from '@agnes/protocol'
-import { tr } from './locale-bridge.js'
 import { loginSubscription, type OAuthClient } from '@agnes/sdk/browser'
 import { Button, createRegionHost, Field, mountRegion } from '@agnes/web-ui'
 import { createElement } from 'react'
+import { tr } from './locale-bridge.js'
 
 type UiButton = { button: HTMLButtonElement; host: HTMLElement; dispose?: () => void }
 type UiField = { field: HTMLLabelElement; input: HTMLInputElement; host: HTMLElement; dispose?: () => void }
@@ -127,7 +127,8 @@ export function oauthControls(
     try {
       input = callbacks.input()
       provider = callbacks.provider()
-      if (!provider?.loginMethods?.includes(loginMethod)) throw new Error(tr('settings.oauth.methodUnsupported'))
+      if (!provider?.loginMethods?.includes(loginMethod))
+        throw new Error(tr('settings.oauth.methodUnsupported'))
     } catch (error) {
       if (controller === own) {
         clear()
@@ -171,7 +172,8 @@ export function oauthControls(
               else if (prompt.firstChild) prompt.firstChild.textContent = value.message
               answer.type = value.type === 'secret' ? 'password' : 'text'
               answer.placeholder = value.placeholder ?? ''
-              submit.textContent = value.type === 'text' ? tr('settings.oauth.continue') : tr('settings.oauth.submit')
+              submit.textContent =
+                value.type === 'text' ? tr('settings.oauth.continue') : tr('settings.oauth.submit')
               prompt.hidden = false
               submit.hidden = false
               answer.value = ''

@@ -156,7 +156,10 @@ export function renderSessionNavigation(
       if (row.sessionId === options.currentId) choice.setAttribute('aria-current', 'page')
       const title = document.createElement('span')
       title.className = 'session-title'
-      title.textContent = row.title || options.labels.get(row.sessionId) || t('nav.sessionFallback', { id: row.sessionId.slice(-8) })
+      title.textContent =
+        row.title ||
+        options.labels.get(row.sessionId) ||
+        t('nav.sessionFallback', { id: row.sessionId.slice(-8) })
       choice.title = title.textContent
       choice.append(title)
       choice.addEventListener('click', () => options.open(row.sessionId))
@@ -174,7 +177,8 @@ export function renderSessionNavigation(
         trigger.disabled = options.disabled ?? false
         attachSessionMenu(
           trigger,
-          (action) => options.action?.(action, row.sessionId, title.textContent ?? t('nav.fallbackName'), trigger),
+          (action) =>
+            options.action?.(action, row.sessionId, title.textContent ?? t('nav.fallbackName'), trigger),
           t,
         )
         menu.append(trigger)

@@ -1,4 +1,4 @@
-import type { ModelSettings, ThinkingLevel } from '@agnes/protocol'
+import type { ModelSettings } from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 import { tr } from './locale-bridge.js'
@@ -7,12 +7,10 @@ export type ModelPickerOption = {
   id: string
   route: string
   label?: string
-  reasoning?: boolean
+  /** 弹窗取用的档位映射；模型列表本身不展示或修改档位。 */
   thinkingLevelMap?: Record<string, string>
   contextWindow?: number
   defaultSettings?: ModelSettings
-  /** 当前选择状态可携带已保存的档位；模型列表本身不展示或修改它。 */
-  thinking?: ThinkingLevel
 }
 
 export type ModelPickerState = {

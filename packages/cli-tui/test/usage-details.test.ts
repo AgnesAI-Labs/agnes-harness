@@ -22,10 +22,13 @@ describe('formatUsageReport cache section', () => {
   })
 
   it('shows the most recent invalidation with its cause in Chinese', () => {
-    const text = formatUsageReport({
-      ...baseUsage,
-      cache: { hitRate: 0.1, lastInvalidation: { seq: 42, reprocessedTokens: 9500, cause: 'compaction' } },
-    }, 'zh-CN')
+    const text = formatUsageReport(
+      {
+        ...baseUsage,
+        cache: { hitRate: 0.1, lastInvalidation: { seq: 42, reprocessedTokens: 9500, cause: 'compaction' } },
+      },
+      'zh-CN',
+    )
     expect(text).toContain('最近一次缓存失效：seq 42 · 原因 压缩 · 重新处理 9500 token')
   })
 })

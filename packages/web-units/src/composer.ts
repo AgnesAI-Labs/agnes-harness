@@ -1,4 +1,4 @@
-import type { ModelSettings, ThinkingLevel, UsageView } from '@agnes/protocol'
+import type { ModelSettings, UsageView } from '@agnes/protocol'
 import { ModelSettingsDialog } from '@agnes/web-ui'
 import {
   type ComponentType,
@@ -20,12 +20,8 @@ export type ModelPickerOption = {
   id: string
   route: string
   label?: string
-  /** 模型是否支持思考档位；来自 apis.list 的 profile.models[].reasoning。 */
-  reasoning?: boolean
   /** 模型声明的「档位 → provider 取值」映射；缺省表示任意合法档位都接受。 */
   thinkingLevelMap?: Record<string, string>
-  /** 本次要应用的思考档位；只在模型支持思考时随选择结果一起出现。 */
-  thinking?: ThinkingLevel
 }
 export type ModelPickerState = {
   accessibleName: string
@@ -60,11 +56,14 @@ export interface ComposerDependencies {
     onError(error: unknown): void
     onSelect(mode: PermissionMode): Promise<boolean>
   }): PermissionPicker
-  createUsagePanel(parent: HTMLElement): ((usage: UsageView | undefined, connected: boolean) => void) & {
+  createUsagePanel(
+    parent: HTMLElement,
+    t?: Translate,
+  ): ((usage: UsageView | undefined, connected: boolean) => void) & {
     dispose?(): void
   }
   /** Component injection keeps production usage in the composer root; factories remain compatible. */
-  UsagePanel?: ComponentType<{ usage: UsageView | undefined; connected: boolean }>
+  UsagePanel?: ComponentType<{ usage: UsageView | undefined; connected: boolean; t?: Translate }>
   isSubmitShortcut(event: {
     key: string
     shiftKey: boolean
@@ -222,7 +221,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       onError,
       onSelect: onPermissionSelect,
     })
-    if (!dependencies.UsagePanel) renderUsage.current = dependencies.createUsagePanel(usage.current)
+    if (!dependencies.UsagePanel)
+      renderUsage.current = dependencies.createUsagePanel(usage.current, dependencies.translate)
     return () => {
       modelPicker.current?.destroy()
       permissionPicker.current?.destroy()
@@ -401,6 +401,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ...view.modelSettings,
             disabled: view.model.disabled || view.model.pending,
             onApply: onModelSettingsChange,
+            t: dependencies.translate,
           })
         : undefined,
       createElement(
@@ -415,6 +416,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ? createElement(dependencies.UsagePanel, {
               usage: view.usage,
               connected: view.connected,
+              t: dependencies.translate,
             })
           : undefined,
       ),

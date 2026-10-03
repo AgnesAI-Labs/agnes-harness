@@ -1,6 +1,6 @@
 import { renderRegion } from '@agnes/web-ui'
-import { tr } from './locale-bridge.js'
 import { createElement, type ReactNode } from 'react'
+import { tr } from './locale-bridge.js'
 import { applyLocaleText, isUiLocale, syncLocaleRadios, type UiLocale } from './locale-preference.js'
 import { readSkinCache } from './skin.js'
 import {
@@ -159,8 +159,20 @@ function skinOptions(props: SkinOptionsProps): ReactNode {
   return createElement(
     'div',
     null,
-    skinOption(NO_SKIN, tr('settings.appearance.followTheme'), tr('settings.appearance.followThemeHint'), props),
-    ...props.skins.map((skin) => skinOption(skin.id, skin.name, tr('settings.appearance.fromPackage', { package: skin.packageName }), props)),
+    skinOption(
+      NO_SKIN,
+      tr('settings.appearance.followTheme'),
+      tr('settings.appearance.followThemeHint'),
+      props,
+    ),
+    ...props.skins.map((skin) =>
+      skinOption(
+        skin.id,
+        skin.name,
+        tr('settings.appearance.fromPackage', { package: skin.packageName }),
+        props,
+      ),
+    ),
     createElement('p', { className: 'appearance-option-hint', hidden: props.status === null }, props.status),
   )
 }

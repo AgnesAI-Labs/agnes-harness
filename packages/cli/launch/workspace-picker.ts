@@ -1,6 +1,12 @@
-import { tt } from '@agnes/cli-tui'
+import { resolveLocale, tt } from '@agnes/cli-tui'
 
-const TITLE = (): string => tt('picker.chooseWorkspace', process.env.AGNES_LOCALE ?? 'en')
+const TITLE = (env: NodeJS.ProcessEnv): string => tt('picker.chooseWorkspace', resolveLocale(env))
+
+// 提示语来自语言目录，要按脚本语言拼成字符串字面量再嵌入：漏掉引号或转义会让脚本文本非法，
+// macOS 上表现为 osascript 编译失败、选择器降级为不可用。
+const appleScriptText = (value: string): string => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+const powerShellText = (value: string): string => `'${value.replace(/'/g, "''")}'`
+
 import { spawn } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access } from 'node:fs/promises'
@@ -31,24 +37,26 @@ type PickerBackend = Readonly<{
   decode(result: PickerCommandResult): WorkspacePickerResult
 }>
 
-const macScript = `
+const macScript = (env: NodeJS.ProcessEnv) =>
+  `
 tell application "Finder"
   activate
   try
-    set chosenFolder to choose folder with prompt TITLE()
+    set chosenFolder to choose folder with prompt ${appleScriptText(TITLE(env))}
     return "selected" & linefeed & POSIX path of chosenFolder
   on error number -128
     return "cancelled"
   end try
 end tell`.trim()
 
-const windowsScript = `
+const windowsScript = (env: NodeJS.ProcessEnv) =>
+  `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 try {
   Add-Type -AssemblyName System.Windows.Forms
   $dialog = [System.Windows.Forms.FolderBrowserDialog]::new()
-  $dialog.Description = TITLE()
+  $dialog.Description = ${powerShellText(TITLE(env))}
   $dialog.ShowNewFolderButton = $true
   if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     $result = @{ status = 'selected'; path = $dialog.SelectedPath }
@@ -202,7 +210,7 @@ export function createNativeWorkspacePicker(options: NativeWorkspacePickerOption
         return executable
           ? {
               executable,
-              args: ['-e', macScript],
+              args: ['-e', macScript(env)],
               decode: macResult,
             }
           : undefined
@@ -225,7 +233,7 @@ export function createNativeWorkspacePicker(options: NativeWorkspacePickerOption
                 '-NonInteractive',
                 '-STA',
                 '-EncodedCommand',
-                Buffer.from(windowsScript, 'utf16le').toString('base64'),
+                Buffer.from(windowsScript(env), 'utf16le').toString('base64'),
               ],
               decode: (result) => structured(result, win32.isAbsolute),
             }
@@ -237,14 +245,14 @@ export function createNativeWorkspacePicker(options: NativeWorkspacePickerOption
         if (zenity)
           return {
             executable: zenity,
-            args: ['--file-selection', '--directory', '--title=' + TITLE()],
+            args: ['--file-selection', '--directory', `--title=${TITLE(env)}`],
             decode: desktopResult,
           }
         const kdialog = await find(['kdialog'])
         if (kdialog)
           return {
             executable: kdialog,
-            args: ['--getexistingdirectory', env.HOME ?? '/', '--title', TITLE()],
+            args: ['--getexistingdirectory', env.HOME ?? '/', '--title', TITLE(env)],
             decode: desktopResult,
           }
       }

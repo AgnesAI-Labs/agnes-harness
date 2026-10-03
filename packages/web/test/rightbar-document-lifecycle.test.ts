@@ -5,13 +5,12 @@ import { createElement, StrictMode, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startClientModules } from '../src/client-modules/boot.js'
-import { mountRightbarRegion, type RightbarDocument } from '../src/region-slots.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
-import { zhT } from './helpers/locale.js'
+import { mountRightbarRegion, type RightbarDocument } from '../src/region-slots.js'
+import { zhLocaleService, zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)
-
 
 const runtimes: Array<Awaited<ReturnType<typeof startClientModules>>> = []
 const owners: Array<{ ctx: Context; mount: ReturnType<typeof mountRightbarRegion> }> = []
@@ -67,7 +66,7 @@ async function fixture(
   const resources = new ClientResourceService(ctx, { call } as never, session)
   const host = document.createElement('aside')
   if (!options.detached) document.body.append(host)
-  const mount = mountRightbarRegion(slots, host, { session, resources, document: initial })
+  const mount = mountRightbarRegion(slots, host, { session, resources, document: initial }, zhLocaleService())
   owners.push({ ctx, mount })
   let update: (doc: RightbarDocument) => void = () => {
     throw new Error('owner not mounted')

@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 import { afterEach, expect, it, vi } from 'vitest'
-import { zhT } from './helpers/locale.js'
 import { attachSessionMenu, closeSessionMenu, createSessionMenuTrigger } from '../src/session-menu.js'
+import { zhT } from './helpers/locale.js'
 
 afterEach(() => {
   closeSessionMenu()

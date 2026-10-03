@@ -1,10 +1,9 @@
 import type { UsageView } from '@agnes/protocol'
+import type { LocaleVars } from '@agnes/web-client'
 import { ConversationUsage, type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
-
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import type { LocaleVars } from '@agnes/web-client'
 
 export { type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
 
@@ -36,7 +35,7 @@ export function createCostDetails(
   details.append(summary, list)
   parent.append(details)
   return (node) => {
-    summary.textContent = costSummary(node)
+    summary.textContent = costSummary(node, t)
     fillRows(list, costDetails(node, t))
   }
 }
@@ -55,9 +54,7 @@ export function createUsagePanel(
   const update = ((usage, connected) => {
     if (disposed) return
     parent.hidden = !usage
-    flushSync(() =>
-      root.render(createElement(ConversationUsage, { usage, connected, ...(t ? { t } : {}) })),
-    )
+    flushSync(() => root.render(createElement(ConversationUsage, { usage, connected, ...(t ? { t } : {}) })))
   }) as UsagePanelUpdater
   update.dispose = () => {
     if (disposed) return

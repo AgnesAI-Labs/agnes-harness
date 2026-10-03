@@ -1,7 +1,7 @@
 import { Context } from '@agnes/cordis'
 import { LocaleService } from '@agnes/web-client'
-import { webUiLocaleCatalog } from '@agnes/web-ui'
-import { WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
+import { webUiLocaleCatalog } from '../../../web-ui/src/locales/index.js'
+import { WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '../../../web-units/src/locales/index.js'
 import { webLocaleCatalog } from '../../src/locale-catalog.js'
 import type { Translate } from '../../src/presentation.js'
 
@@ -31,8 +31,8 @@ export const zhT: Translate = catalogT('zh-CN')
 export const enT: Translate = catalogT('en')
 
 /** 带全部宿主目录的 zh-CN LocaleService，供命令式渲染器（timeline 等）在测试里取词。 */
-export function zhLocaleService(): LocaleService {
-  const locale = new LocaleService(new Context(), 'zh-CN')
+export function zhLocaleService(context: Context = new Context()): LocaleService {
+  const locale = new LocaleService(context, 'zh-CN')
   locale.register('@agnes/web', webLocaleCatalog)
   locale.register(WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog)
   locale.register('@agnes/web-ui', webUiLocaleCatalog)

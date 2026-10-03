@@ -1,6 +1,6 @@
 import * as webUi from '@agnes/web-ui'
-import { tr } from './locale-bridge.js'
 import { createElement, type ReactNode } from 'react'
+import { tr } from './locale-bridge.js'
 
 export type PermissionMode = 'view' | 'workspace' | 'full'
 
@@ -24,18 +24,26 @@ const PERMISSION_OPTION_DESCRIPTION_KEYS: Record<PermissionMode, string> = {
 
 /** 静态 id 行：label/description 渲染时经 tr 取词，不在模块加载期写死。 */
 export const PERMISSION_OPTIONS: readonly PermissionOption[] = [
-  { id: 'view', label: '仅可查看', description: '本会话弹出的命令审批一律拒绝' },
-  { id: 'workspace', label: '工作区内修改', description: '仅工作区内读写；越界需切换完全权限或选择目录' },
+  {
+    id: 'view',
+    label: PERMISSION_OPTION_LABEL_KEYS.view,
+    description: PERMISSION_OPTION_DESCRIPTION_KEYS.view,
+  },
+  {
+    id: 'workspace',
+    label: PERMISSION_OPTION_LABEL_KEYS.workspace,
+    description: PERMISSION_OPTION_DESCRIPTION_KEYS.workspace,
+  },
   {
     id: 'full',
-    label: '完全权限',
-    description: '工作区内外文件读写；跳过审批，保留安全禁令和系统权限',
+    label: PERMISSION_OPTION_LABEL_KEYS.full,
+    description: PERMISSION_OPTION_DESCRIPTION_KEYS.full,
   },
 ]
 
 export function permissionLabel(mode: PermissionMode | null): string {
-  if (mode === null) return '请选择权限'
-  return PERMISSION_OPTIONS.find((option) => option.id === mode)?.label ?? '工作区内修改'
+  if (mode === null) return tr('settings.picker.choosePermission')
+  return tr(PERMISSION_OPTION_LABEL_KEYS[mode] ?? PERMISSION_OPTION_LABEL_KEYS.workspace)
 }
 
 export function yoloEnabled(mode: PermissionMode): boolean {

@@ -11,6 +11,8 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.hint.busy': 'You can add the next round',
     'composer.hint.shortcut': 'Enter to send, Shift+Enter for a new line',
     'composer.hint.modelUnavailable': 'The current model is no longer available; pick another model',
+    'composer.hint.permissionSyncing': 'Session permissions are syncing; try sending again shortly',
+    'composer.hint.permissionRequired': 'Choose the permissions for this session before sending',
     'composer.action.preparing': 'Preparing session…',
     'composer.action.submitting': 'Submitting…',
     'composer.action.append': 'Add to next round',
@@ -55,6 +57,8 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.hint.busy': '可补充下一轮',
     'composer.hint.shortcut': 'Enter 发送，Shift+Enter 换行',
     'composer.hint.modelUnavailable': '当前模型已不可用，请重新选择模型',
+    'composer.hint.permissionSyncing': '正在同步会话权限，请稍后发送',
+    'composer.hint.permissionRequired': '请先选择本会话权限，确认后再发送',
     'composer.action.preparing': '正在准备会话…',
     'composer.action.submitting': '正在提交…',
     'composer.action.append': '加入下一轮',
@@ -73,7 +77,8 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'cost.callDetailsAria': '查看本次调用用量明细',
     'session.error.legacyLedger': '该会话由旧版本创建，当前版本无法打开，请新建会话。',
     'session.error.authFailed': '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
-    'session.error.outputLimit': '模型回复达到输出额度，本轮已停止。请要求分步生成，或调整请求输出额度后继续。',
+    'session.error.outputLimit':
+      '模型回复达到输出额度，本轮已停止。请要求分步生成，或调整请求输出额度后继续。',
     'session.error.rateLimit':
       '模型服务返回限流错误（HTTP 429）。请稍后重试；若持续出现，请检查该账号的服务额度或联系模型服务方。',
     'session.error.internal': '后台未能完成请求，请稍后重试。',

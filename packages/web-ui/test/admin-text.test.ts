@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import type { PackageInstalledDescriptor } from '@agnes/protocol'
+import { describe, expect, it } from 'vitest'
 import {
   blockerText,
   contributionText,

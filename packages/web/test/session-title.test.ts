@@ -1,11 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { createTitleRefresh, sessionTitle } from '../src/session-title.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { createTitleRefresh, sessionTitle } from '../src/session-title.js'
 import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)
-
 
 afterEach(() => vi.useRealTimers())
 it('retains a persisted title across new transcript renders and does not split emoji', () => {

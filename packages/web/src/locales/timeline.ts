@@ -58,6 +58,9 @@ export const timelineLocaleCatalog: LocaleCatalog = {
     'turn.duration.s': '{n} s',
     'turn.duration.minSec': '{min} min {sec} s',
     'turn.elapsedSuffix': ' · took {duration}',
+    'turn.error.codeJoin': '{code}: {message}',
+    'turn.error.unknownReason': 'unknown reason',
+    'turn.error.noDetail': 'The run did not finish ({reason}); no error details were received.',
   },
   'zh-CN': {
     'timeline.userLabel': '你',
@@ -115,5 +118,8 @@ export const timelineLocaleCatalog: LocaleCatalog = {
     'turn.duration.s': '{n} 秒',
     'turn.duration.minSec': '{min} 分 {sec} 秒',
     'turn.elapsedSuffix': ' · 用时 {duration}',
+    'turn.error.codeJoin': '{code}：{message}',
+    'turn.error.unknownReason': '未知原因',
+    'turn.error.noDetail': '本次执行未完成（{reason}），暂未收到具体错误信息。',
   },
 }

@@ -21,8 +21,7 @@ export const indexShellLocaleCatalog: LocaleCatalog = {
     'index-shell.checkingPicker': 'Checking the system directory picker…',
     'index-shell.manualPath': 'Enter a path manually',
     'index-shell.cwdLabel': 'Directory path',
-    'index-shell.cwdHint':
-      'Enter an absolute path reachable from the machine that runs agnes serve.',
+    'index-shell.cwdHint': 'Enter an absolute path reachable from the machine that runs agnes serve.',
     'index-shell.cancel': 'Cancel',
     'index-shell.useWorkspace': 'Use this workspace',
     'index-shell.pluginDetailAria': 'Plugin details',

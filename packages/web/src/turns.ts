@@ -258,8 +258,8 @@ export function createTurnProjector(options: {
           turn.status !== 'failed'
             ? ''
             : turn.error
-              ? `${turn.error.code}：${turn.error.message}`
-              : `本次执行未完成（${turn.reason ?? '未知原因'}），暂未收到具体错误信息。`
+              ? t('turn.error.codeJoin', { code: turn.error.code, message: turn.error.message })
+              : t('turn.error.noDetail', { reason: turn.reason ?? t('turn.error.unknownReason') })
         if (entry.error.textContent !== errorText) entry.error.textContent = errorText
         if (active) ticking.add(entry)
         else delete entry.refreshStatus

@@ -3,8 +3,8 @@ import type { Ansi } from '../ansi.js'
 import { xterm256 } from '../ansi.js'
 import { type Component, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
-import { displayWidth } from '../terminal.js'
 import { tt } from '../locale-extended.js'
+import { displayWidth } from '../terminal.js'
 import { tuiColor } from '../theme.js'
 
 /**

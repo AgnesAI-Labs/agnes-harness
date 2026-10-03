@@ -618,11 +618,11 @@ function renderControls(): void {
       ? {
           kind: 'state',
           text: permissionRefreshPending
-            ? '正在同步会话权限，请稍后发送'
-            : '请先选择本会话权限，确认后再发送',
+            ? t('composer.hint.permissionSyncing')
+            : t('composer.hint.permissionRequired'),
         }
       : knownSessionModel && !selectedModelAvailable()
-        ? { kind: 'state', text: '当前模型已不可用，请重新选择模型' }
+        ? { kind: 'state', text: t('composer.hint.modelUnavailable') }
         : composerHintPresentation(
             {
               connected,
@@ -863,15 +863,16 @@ function renderApproval(): void {
   }
 
   const liveTitle = liveApproval?.request.toolCall.title
-  const summary = typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? '允许执行此操作？')
+  const summary =
+    typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? t('app.approval.defaultSummary'))
   const risks = {
     destructive: t('app.risk.destructive'),
     always: t('app.risk.always'),
     budget: t('app.risk.budget'),
     unknown: t('app.risk.unknown'),
   }
-  const card = liveApproval ? liveApprovalCard(liveApproval.request.toolCall) : undefined
-  const impact = durable ? risks[durable.risk] : (card?.impact ?? '请核对工具及参数后决定是否继续。')
+  const card = liveApproval ? liveApprovalCard(liveApproval.request.toolCall, t) : undefined
+  const impact = durable ? risks[durable.risk] : (card?.impact ?? t('app.approval.toolImpact'))
   const actions: ApprovalAction[] = []
   const decide = (id: string, label: string, action: () => Promise<void>): void => {
     actions.push({
@@ -895,9 +896,9 @@ function renderApproval(): void {
   if (liveApproval) {
     const request = liveApproval
     const labels: Record<string, string> = {
-      allow_once: '仅允许这次',
-      reject_once: '拒绝',
-      reject_always: '始终拒绝',
+      allow_once: t('app.approval.allowOnce'),
+      reject_once: t('app.approval.rejectOnce'),
+      reject_always: t('app.approval.rejectAlways'),
       // Absent when the card cannot show the whole call: that choice would also cover later calls.
       ...(card?.sessionLabel === undefined ? {} : { allow_always: card.sessionLabel }),
     }
@@ -1467,8 +1468,8 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     rememberWebComposer({ permission: mode })
     notice.textContent =
       mode === 'full'
-        ? '本会话已开启完全权限，可读写工作区内外文件。'
-        : `本会话权限已设为「${permissionLabel(mode)}」。`
+        ? t('app.permission.notice.full')
+        : t('app.permission.notice.mode', { mode: permissionLabel(mode) })
     notice.dataset.kind = ''
     return true
   } catch (error) {
@@ -1520,7 +1521,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     else if (!sameModel) draftModelSettingsEdited = false
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
-    notice.textContent = '新会话将使用所选模型与配置。'
+    notice.textContent = t('app.notice.newSessionModel')
     notice.dataset.kind = ''
     renderControls()
     return true
@@ -1542,7 +1543,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
-    notice.textContent = '模型配置已保存，后续请求将使用新的思考强度和上下文窗口。'
+    notice.textContent = t('app.notice.modelSaved')
     notice.dataset.kind = ''
     live?.refresh()
     return true
@@ -1897,30 +1898,29 @@ function submitComposer(): void {
         thinking: selectedModel.settings?.thinking ?? null,
         contextWindow: selectedModel.settings?.contextWindow ?? null,
       })
-      if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
+      if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
       modelSelectionSeq = applied.effectiveFromSeq
       knownSessionModel = selectedModel
       initialModelPending = undefined
       renderControls()
     }
     if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
-      throw new Error('连接已变化，请等待权限同步后重新发送。')
+      throw new Error(t('app.error.connectionChanged'))
     if (initialPermissionPending !== undefined) {
       const selectedPermission = initialPermissionPending
       const enabled = yoloEnabled(selectedPermission)
       const applied = await session.setYolo(enabled)
-      if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
-      if (connectionEpoch !== permissionConnectionEpoch)
-        throw new Error('连接已变化，请等待权限同步后重新发送。')
+      if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
+      if (connectionEpoch !== permissionConnectionEpoch) throw new Error(t('app.error.connectionChanged'))
       permissionSelectionSeq = applied.effectiveFromSeq
       sessionYoloEnabled = enabled
       permissionMode = selectedPermission
       initialPermissionPending = undefined
     }
     if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
-      throw new Error('连接已变化，请等待权限同步后重新发送。')
-    if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
-    if (sessionYoloEnabled === undefined) throw new Error('请先选择本会话权限，确认后再发送。')
+      throw new Error(t('app.error.connectionChanged'))
+    if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
+    if (sessionYoloEnabled === undefined) throw new Error(t('app.error.permissionRequired'))
     const result = await (busy ? session.followUp(input) : session.prompt(input))
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))

@@ -1,8 +1,8 @@
-import { tt } from '../locale-extended.js'
 import type { Ansi } from '../ansi.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
 import { Select } from '../components/select.js'
+import { tt } from '../locale-extended.js'
 import type { TuiThemeName } from '../theme.js'
 
 export class ThemePicker implements Component {
@@ -17,7 +17,10 @@ export class ThemePicker implements Component {
     const names: TuiThemeName[] = ['light', 'dark', 'mono']
     const labels = [tt('theme.light', locale), tt('theme.dark', locale), tt('theme.mono', locale)]
     const select = new Select({
-      options: names.map((id, i) => ({ id, label: `${labels[i]}${id === current ? tt('theme.current', locale) : ''}` })),
+      options: names.map((id, i) => ({
+        id,
+        label: `${labels[i]}${id === current ? tt('theme.current', locale) : ''}`,
+      })),
       onChoose: (id) => {
         this.close()
         this.choose(id as TuiThemeName)

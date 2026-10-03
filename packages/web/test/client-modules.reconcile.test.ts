@@ -5,7 +5,6 @@ import { Context } from '@agnes/cordis'
 import {
   AgnesClientService,
   CommandService,
-  LocaleService,
   SessionService,
   SlotRegistry,
   ThemeService,
@@ -17,6 +16,7 @@ import {
   createReconciler,
   type ReadyClientModule,
 } from '../src/client-modules/reconcile.js'
+import { zhLocaleService } from './helpers/locale.js'
 
 function roster(mods: ReadyClientModule[]): ClientRoster {
   return {
@@ -81,7 +81,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
     new CommandService(ctx, async () => true)
     new SessionService(ctx)
     new ThemeService(ctx, 'light')
-    new LocaleService(ctx, 'zh-CN')
+    const locale = zhLocaleService(ctx)
     const slots = (ctx as unknown as { slots: SlotRegistry }).slots
     slots.declare('ui:sidebar', { kind: 'single', scope: 'root' }, 'fixture')
     slots.register(
@@ -99,6 +99,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
     let receivedConfig: unknown
     const reconciler = createReconciler({
       ctx,
+      locale,
       source: { list: async () => current },
       importer: async () => ({
         apply(pluginCtx: { slots: SlotRegistry }, config: unknown) {
@@ -331,6 +332,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
     let fail = true
     const reconciler = createReconciler({
       ctx: h.ctx,
+      locale: zhLocaleService(h.ctx),
       source: { list: async () => roster([mod('a', 'v1')]) },
       importer: async () => {
         if (fail) throw new Error('file:///private/secret/index.js')
@@ -512,7 +514,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
     new CommandService(ctx, async () => true)
     new SessionService(ctx)
     new ThemeService(ctx, 'light')
-    new LocaleService(ctx, 'zh-CN')
+    const locale = zhLocaleService(ctx)
     const slots = (ctx as unknown as { slots: SlotRegistry }).slots
     slots.declare('ui:sidebar', { kind: 'single', scope: 'root' }, 'fixture')
     slots.declare('ui:topbar', { kind: 'single', scope: 'root' }, 'fixture')
@@ -563,13 +565,14 @@ describe('client reconciler（WC10 前端状态机）', () => {
     new CommandService(ctx, async () => true)
     new SessionService(ctx)
     new ThemeService(ctx, 'light')
-    new LocaleService(ctx, 'zh-CN')
+    const locale = zhLocaleService(ctx)
     const slots = (ctx as unknown as { slots: SlotRegistry }).slots
     slots.declare('ui:sidebar', { kind: 'single', scope: 'root' }, 'fixture')
     let current = roster([{ ...mod('render-failure', 'v1'), slots: ['ui:sidebar'] }])
     let applyCount = 0
     const reconciler = createReconciler({
       ctx,
+      locale,
       source: { list: async () => current },
       importer: async () => ({
         apply(pluginCtx: { slots: SlotRegistry }) {

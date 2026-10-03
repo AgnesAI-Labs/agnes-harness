@@ -61,11 +61,20 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   function sync(): void {
     close()
     const selected = select.options[select.selectedIndex]
-    label.textContent = selected
-    ? optionLabel(selected)
-    : (options.translate ?? fallbackT)('settings.selectPicker.fallback', { label: options.label })
-    trigger.title = label.textContent
-    trigger.setAttribute('aria-label', `${options.label}：${label.textContent}`)
+    const selectedLabel = selected ? optionLabel(selected) : undefined
+    const text = selectedLabel
+      ? (options.formatOption?.(selectedLabel) ?? selectedLabel)
+      : (options.translate ?? fallbackT)('settings.selectPicker.fallback', { label: options.label })
+    label.textContent = text
+    trigger.title = text
+    // 标签与当前值的连接符随语言变化（中文用全角冒号），所以走目录而不是写死。
+    trigger.setAttribute(
+      'aria-label',
+      (options.translate ?? fallbackT)('settings.selectPicker.ariaJoin', {
+        label: options.label,
+        value: text,
+      }),
+    )
     trigger.disabled = select.disabled || !Array.from(select.options).some(available)
   }
 

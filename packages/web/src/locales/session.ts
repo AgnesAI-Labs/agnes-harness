@@ -31,7 +31,8 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.archived.empty.fallback': 'No archived sessions yet.',
     'session.archived.paginationStalled': 'Session list pagination did not advance. Try again.',
     'session.refreshFailed': 'Refreshing the list failed: {detail}',
-    'session.archiveRefreshFailedNotice': 'Archived, but the list failed to refresh; reload the page: {detail}',
+    'session.archiveRefreshFailedNotice':
+      'Archived, but the list failed to refresh; reload the page: {detail}',
   },
   'zh-CN': {
     'nav.noWorkspaceTitle': '没有工作区归属的历史会话',

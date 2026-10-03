@@ -30,7 +30,10 @@ export function SettingsAccounts({
       (other) => other.enabled && other.accountId !== account.accountId,
     )
     const actions: Array<[ConfigAccountInput['action'], string]> = [
-      [account.enabled ? 'disable' : 'enable', account.enabled ? t('accounts.disable') : t('accounts.enable')],
+      [
+        account.enabled ? 'disable' : 'enable',
+        account.enabled ? t('accounts.disable') : t('accounts.enable'),
+      ],
       ['default', t('accounts.makeDefault')],
       ['remove', removingId === account.accountId ? t('accounts.confirmRemove') : t('accounts.remove')],
     ]
