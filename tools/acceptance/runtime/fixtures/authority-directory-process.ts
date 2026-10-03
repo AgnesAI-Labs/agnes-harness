@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { CallContext } from '@agnes/extension-api/runtime'
 import type { AuthorityDirectoryCompareAndSwapRequest, StateAuthorityRef } from '@agnes/protocol/runtime'
@@ -39,7 +39,11 @@ function context(principalRef: string): CallContext {
 
 function open(payload: Payload, directory: string, anchor: string) {
   const onPhase = (phase: string) => {
-    if (payload.phase !== null && phase === payload.phase) process.kill(process.pid, 'SIGKILL')
+    if (payload.phase !== null && phase === payload.phase) {
+      // Stop inside the synchronous persistence hook until the parent observes it and kills us.
+      writeSync(1, `PHASE ${phase}\n`)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+    }
   }
   if (payload.implementation === 'default') {
     return createAuthorityDirectoryProvider({

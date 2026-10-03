@@ -192,6 +192,7 @@ async function prepared(): Promise<{
 
 function runChild(
   args: readonly string[],
+  phase: string,
 ): Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', fixture, ...args], {
@@ -201,6 +202,7 @@ function runChild(
     let stdout = ''
     let stderr = ''
     let settled = false
+    let killRequested = false
     const finish = (result: { code: number | null; signal: NodeJS.Signals | null }) => {
       if (settled) return
       settled = true
@@ -218,6 +220,9 @@ function runChild(
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk
+      if (!killRequested && stdout.includes(`PHASE ${phase}\n`)) {
+        killRequested = child.kill('SIGKILL')
+      }
     })
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk
@@ -228,7 +233,7 @@ function runChild(
       clearTimeout(timer)
       reject(error)
     })
-    child.on('exit', (code, signal) => finish({ code, signal }))
+    child.on('close', (code, signal) => finish({ code, signal }))
   })
 }
 
@@ -313,7 +318,8 @@ describe('authority directory process durability', () => {
             request: opened.request,
           }),
         )
-        const killed = await runChild(['kill', opened.directory, opened.anchor, payload])
+        const killed = await runChild(['kill', opened.directory, opened.anchor, payload], phase)
+        expect(killed.stdout.trim(), killed.stderr).toBe(`PHASE ${phase}`)
         expect(killed.signal, `${phase}\n${killed.stderr}\n${killed.stdout}`).toBe('SIGKILL')
         const revision = await revisionAt(opened.directory, opened.anchor)
         const durable = phase === 'commit' || phase === 'notify'
