@@ -623,14 +623,17 @@ function renderControls(): void {
         }
       : knownSessionModel && !selectedModelAvailable()
         ? { kind: 'state', text: '当前模型已不可用，请重新选择模型' }
-        : composerHintPresentation({
-            connected,
-            configured,
-            hasSession: current !== undefined || draftingNew,
-            busy,
-            stopping,
-            loading: sessionPending,
-          }),
+        : composerHintPresentation(
+            {
+              connected,
+              configured,
+              hasSession: current !== undefined || draftingNew,
+              busy,
+              stopping,
+              loading: sessionPending,
+            },
+            t,
+          ),
     input: {
       disabled:
         !available || (!current && !draftingNew) || stopping || sessionPending || initialSubmissionPending,

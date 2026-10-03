@@ -1,4 +1,4 @@
-import type { ModelSettings, UsageView } from '@agnes/protocol'
+import type { ModelSettings, ThinkingLevel, UsageView } from '@agnes/protocol'
 import { ModelSettingsDialog } from '@agnes/web-ui'
 import {
   type ComponentType,
@@ -257,7 +257,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     createElement(
       'div',
       { className: 'composer-writing' },
-      createElement('label', { className: 'visually-hidden', htmlFor: 'prompt' }, dependencies.translate('composer.input.label')),
+      createElement(
+        'label',
+        { className: 'visually-hidden', htmlFor: 'prompt' },
+        dependencies.translate('composer.input.label'),
+      ),
       createElement('textarea', {
         ref: prompt,
         id: 'prompt',
@@ -347,7 +351,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             d: 'M12 3 5 6.5v5.2c0 4.4 2.9 8.4 7 9.8 4.1-1.4 7-5.4 7-9.8V6.5L12 3zm0 2.1 5 2.5v4.1c0 3.4-2.2 6.5-5 7.7-2.8-1.2-5-4.3-5-7.7V7.6l5-2.5z',
           }),
         ),
-        createElement('span', { 'data-permission-label': true }, dependencies.translate('composer.permission.workspace')),
+        createElement(
+          'span',
+          { 'data-permission-label': true },
+          dependencies.translate('composer.permission.workspace'),
+        ),
         createElement(
           'svg',
           {

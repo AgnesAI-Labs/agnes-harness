@@ -1,6 +1,7 @@
-import type { ModelSettings } from '@agnes/protocol'
+import type { ModelSettings, ThinkingLevel } from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
+import { tr } from './locale-bridge.js'
 import { thinkingLevelLabel } from './presentation.js'
 
 export type ModelPickerOption = {
@@ -11,6 +12,7 @@ export type ModelPickerOption = {
   thinkingLevelMap?: Record<string, string>
   contextWindow?: number
   defaultSettings?: ModelSettings
+  thinking?: ThinkingLevel
 }
 
 export type ModelPickerState = {
@@ -146,7 +148,11 @@ function modelRows(
       },
       `${option.route}:${option.id}`,
       option.id,
-      createElement('span', { className: 'model-picker-route' }, option.label ?? tr('settings.modelPicker.configuredAccount')),
+      createElement(
+        'span',
+        { className: 'model-picker-route' },
+        option.label ?? tr('settings.modelPicker.configuredAccount'),
+      ),
     ),
   )
 }
@@ -361,7 +367,9 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
           onSelect,
           open: openEntry === 'thinking',
           state,
-          value: state.selected?.thinking ? thinkingLevelLabel(state.selected.thinking) : tr('settings.picker.thinkingDefault'),
+          value: state.selected?.thinking
+            ? thinkingLevelLabel(state.selected.thinking)
+            : tr('settings.picker.thinkingDefault'),
         }),
       )
     webUi.renderRegion(listbox, rows)
@@ -374,17 +382,15 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     sublist.setAttribute('aria-busy', String(state.pending || selecting))
     sublist.setAttribute(
       'aria-label',
-      openEntry === 'thinking'
-        ? tr('settings.picker.reasoningLevels')
-        : tr('settings.modelPicker.listAria'),
+      openEntry === 'thinking' ? tr('settings.picker.reasoningLevels') : tr('settings.modelPicker.listAria'),
     )
     sublist.setAttribute('aria-activedescendant', `model-submenu-option-${subIndex}`)
     if (subhelp) {
       subhelp.hidden = false
       subhelp.textContent =
         openEntry === 'thinking'
-        ? tr('settings.picker.reasoningFor', { id: thinkingFor?.id ?? '' })
-        : tr('settings.modelPicker.help')
+          ? tr('settings.picker.reasoningFor', { id: thinkingFor?.id ?? '' })
+          : tr('settings.modelPicker.help')
     }
     const onSelect = pointerSelect((index) => void choose(index))
     webUi.renderRegion(

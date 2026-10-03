@@ -54,9 +54,11 @@ export function createConversationToolCard(
       iconName = next.name
       icon = reactIcon(options.icon(iconName))
     }
-    const statusLabel = options.translate(STATUS_LABEL_KEYS[next.status])
     element.dataset.status = next.status
-    element.setAttribute('aria-label', `工具 ${next.name}：${toolOutcome(next).label}`)
+    element.setAttribute(
+      'aria-label',
+      options.translate('tool.detail.status', { status: toolOutcome(next, options.translate).label }),
+    )
     flushSync(() =>
       root.render(
         createElement(ReactToolCard, {

@@ -922,22 +922,33 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
       input.baseUrl === undefined
         ? (existing?.baseUrl ?? providerEndpoint(entry, undefined))
         : providerEndpoint(entry, input.baseUrl)
-    const result = oauthEntry
-      ? {
-          models: (await staticCatalogue(entry)).records.map((record) =>
-            configModel(
-              record,
-              existing?.models.find((m) => m.id === record.id),
+    const labelOnlyUpdate =
+      !!existing &&
+      parsed.apiKey === undefined &&
+      input.enabled === undefined &&
+      input.makeDefault === undefined &&
+      existing.id === parsed.entry.id &&
+      existing.baseUrl === baseUrl &&
+      existing.model === parsed.model &&
+      existing.label !== label
+    const result = labelOnlyUpdate
+      ? { models: structuredClone(existing?.models ?? []), verified: true }
+      : oauthEntry
+        ? {
+            models: (await staticCatalogue(entry)).records.map((record) =>
+              configModel(
+                record,
+                existing?.models.find((m) => m.id === record.id),
+              ),
             ),
-          ),
-          verified: true,
-        }
-      : await test({
-          providerId: parsed.entry.id,
-          accountId: id,
-          baseUrl,
-          ...(parsed.apiKey === undefined ? {} : { apiKey: parsed.apiKey }),
-        })
+            verified: true,
+          }
+        : await test({
+            providerId: parsed.entry.id,
+            accountId: id,
+            baseUrl,
+            ...(parsed.apiKey === undefined ? {} : { apiKey: parsed.apiKey }),
+          })
     if (!result.verified) throw new ConfigurationError('CONFIG_TEST_FAILED')
     if (!result.models.some((model) => model.id === parsed.model))
       throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')

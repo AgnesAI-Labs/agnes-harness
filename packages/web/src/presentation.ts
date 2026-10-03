@@ -1,4 +1,5 @@
-import type { ModelSettings } from '@agnes/protocol'
+import type { ModelSettings, ThinkingLevel } from '@agnes/protocol'
+import type { LocaleVars } from '@agnes/web-client'
 
 export { shouldShowEmptyState } from './conversation-visibility.js'
 
@@ -20,7 +21,12 @@ export type ComposerActionPresentation = {
   title: string
 }
 
-export type KnownSessionModel = { route: string; id: string; settings?: ModelSettings }
+export type KnownSessionModel = {
+  route: string
+  id: string
+  settings?: ModelSettings
+  thinking?: ThinkingLevel
+}
 
 type ResizeableComposer = {
   scrollHeight: number
@@ -107,7 +113,9 @@ export function modelSelectLabel(model: KnownSessionModel | undefined, t: Transl
 }
 
 export function modelSelectAccessibleName(model: KnownSessionModel | undefined, t: Translate): string {
-  return model ? t('composer.model.accessible.current', { id: model.id }) : t('composer.model.accessible.fallback')
+  return model
+    ? t('composer.model.accessible.current', { id: model.id })
+    : t('composer.model.accessible.fallback')
 }
 
 export function launcherCredential(
@@ -128,8 +136,7 @@ export function errorNotice(
 ): string {
   // Not a fault to retry or report: the session was written by an older build and cannot be read.
   if (reason === 'legacy-ledger-format') return t('session.error.legacyLedger')
-  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'AUTH')
-    return t('session.error.authFailed')
+  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'AUTH') return t('session.error.authFailed')
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'OUTPUT_LIMIT')
     return t('session.error.outputLimit')
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'RATE_LIMIT')

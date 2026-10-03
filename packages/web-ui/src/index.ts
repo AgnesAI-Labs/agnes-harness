@@ -6,9 +6,19 @@ export * from './admin-text.js'
 export type { AntdRoot } from './antd-root.js'
 export { createAntdRoot } from './antd-root.js'
 export * from './confirm.js'
-export { WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from './locales/index.js'
-export type { LocaleCatalog, LocaleDictionary, Translate } from './locales/index.js'
 export * from './diagnostics-dialog.js'
+export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
+export {
+  ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
+  adminConfirmationLocaleCatalog,
+} from './locales/admin-confirmation.js'
+export { ADMIN_DETAIL_LOCALE_NAMESPACE, adminDetailLocaleCatalog } from './locales/admin-detail.js'
+export { ADMIN_DIALOGS_LOCALE_NAMESPACE, adminDialogsLocaleCatalog } from './locales/admin-dialogs.js'
+export { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
+export type { LocaleCatalog, LocaleDictionary, Translate } from './locales/index.js'
+export { WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from './locales/index.js'
+export { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
+export { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
 export * from './model-settings-dialog.js'
 export * from './popover.js'
 export {
