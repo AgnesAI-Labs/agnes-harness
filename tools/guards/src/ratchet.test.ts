@@ -1448,7 +1448,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Interaction contract cases join the contract aggregate. Measured 3691, exact, no spare.
   // Merged with the projection, network and secret cases on the integration base.
   // Measured 5354, exact, no spare.
-  'packages/extension-api/testkit': 5354,
+  // UI registry contract cases join the contract aggregate. Measured 5728, exact, no spare.
+  'packages/extension-api/testkit': 5728,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
