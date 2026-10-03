@@ -39590,6 +39590,7 @@
     }
   },
   "x-schema-ids": {
+    "PreparedModelRequest": "agh.model/prepared-request@1",
     "EmbeddingVectors": "agh.embedding/vectors@1",
     "RuntimeCommitData": "agh.runtime/state-commit@1",
     "RuntimeFormatData": "agh.runtime/format@1",

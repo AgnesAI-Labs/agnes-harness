@@ -63,6 +63,9 @@ importers:
 
   packages/ai:
     dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol

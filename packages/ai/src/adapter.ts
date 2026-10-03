@@ -21,6 +21,8 @@ export type WireEvent =
 export type AdapterStreamOptions = {
   /** Called before network I/O with the actual serialized body digest, never credentials. */
   reportSent?: (report: SentReport) => void
+  /** Refuse automatic redirects when the caller authorizes only the original physical endpoint. */
+  redirect?: 'error'
   signal: AbortSignal
   toolNames: string[]
   /** A caller can disable this call's retries, but cannot increase the adapter's retry budget. */

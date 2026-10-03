@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testkit": "./testkit/index.ts"
+    "./testkit": "./testkit/index.ts",
+    "./runtime": "./src/runtime/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -13,7 +14,8 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
-    "@earendil-works/pi-ai": "0.87.1"
+    "@earendil-works/pi-ai": "0.87.1",
+    "@agnes/extension-api": "workspace:*"
   },
   "devDependencies": {
     "@sinclair/typebox": "0.34.33"

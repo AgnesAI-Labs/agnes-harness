@@ -33,6 +33,9 @@
       "path": "../extension-api"
     },
     {
+      "path": "../ai"
+    },
+    {
       "path": "../../examples/runtime-reference"
     },
     {
