@@ -22,7 +22,8 @@
     "runtime/platform/assembly-conformance.ts",
     "runtime/platform/resources-conformance.ts",
     "runtime/platform/mcp-conformance.ts",
-    "runtime/fixtures/mcp-http-server.ts"
+    "runtime/fixtures/mcp-http-server.ts",
+    "runtime/platform/package-installer-conformance.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
   "references": [
@@ -43,6 +44,9 @@
     },
     {
       "path": "../../packages/resource-control-worker"
+    },
+    {
+      "path": "../../packages/package-manager"
     }
   ]
 }

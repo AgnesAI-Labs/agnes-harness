@@ -8,6 +8,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./package-installer": "./src/runtime/providers/package-installer.ts",
     "./runtime/package-source": "./src/runtime/providers/package-source.ts",
     "./runtime/package-resolver": "./src/runtime/providers/package-resolver.ts"
   },
