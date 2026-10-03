@@ -126,6 +126,22 @@ describe('exec adapter', () => {
     expect(r.signal).toBeUndefined()
     expect(r.code).toBe(0)
   })
+  // `timedOut` names the FIRST cause that cut the command short. A killTree that kills nothing lets
+  // the child outlive both the cancel and the deadline, so both fire and only the order is left.
+  it.each([
+    ['a cancel that came first is not reported as a timeout', 50, 250, false],
+    ['a timeout that came first stays the cause when a cancel follows', 50, 250, true],
+  ] as const)('%s', async (_name, first, second, timeoutFirst) => {
+    const e = createExec({ killTree: () => undefined })
+    const ac = new AbortController()
+    const p = runTestNode(e, ['-e', 'setTimeout(()=>{},600)'], {
+      cwd,
+      timeoutMs: timeoutFirst ? first : second,
+      signal: ac.signal,
+    })
+    setTimeout(() => ac.abort(), timeoutFirst ? second : first)
+    expect((await p).timedOut).toBe(timeoutFirst)
+  })
   it('honours AbortSignal', async () => {
     const ac = new AbortController()
     const p = runTestNode(exec, ['-e', 'setInterval(()=>{},1000)'], { cwd, signal: ac.signal })

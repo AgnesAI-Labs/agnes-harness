@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, promises as fs, realpathSync as realpathSyncPortable } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, parse, relative, resolve } from 'node:path'
 import type { FsEntry } from '@agnes/extension-api'
 import { readBlob, readCommit, resolveRef, writeBlob, writeCommit, writeRef, writeTree } from 'isomorphic-git'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ const denied = (path: string) => Object.assign(new Error(`E_FS_DENIED: ${path}`)
 // The native resolver, as the host's fence spells paths: on Windows the portable one keeps 8.3
 // short names, and a workspace hash taken from one spelling names another shadow repository.
 const realpathSync = realpathSyncPortable.native
-function realFs(root: string): HostFs {
+function realFs(root: string, allowOutside = () => false): HostFs {
   const inside = (path: string): string => {
     const base = realpathSync(root)
     const absolute = isAbsolute(path) ? path : resolve(base, path)
@@ -21,7 +21,7 @@ function realFs(root: string): HostFs {
     while (!existsSync(probe)) probe = dirname(probe)
     const target = resolve(realpathSync(probe), relative(probe, absolute))
     const rel = relative(base, target)
-    if (rel.startsWith('..') || isAbsolute(rel)) throw denied(path)
+    if ((rel.startsWith('..') || isAbsolute(rel)) && !allowOutside()) throw denied(path)
     return target
   }
   const kind = (stat: Awaited<ReturnType<typeof fs.lstat>>): FsEntry['kind'] =>
@@ -215,6 +215,42 @@ describe('filesystem checkpoint seam', () => {
     await seam.rewind(present)
     await seam.rewind(present)
     expect(await fs.readFile(join(h.workspace, 'old.txt'), 'utf8')).toBe('original')
+
+    // Keep volume-root regression targets entirely in memory; never write to the real disk root.
+    const workspace = realpathSync(h.workspace)
+    const volume = parse(workspace).root
+    const decoys = new Map([
+      [join(volume, 'eport.txt'), 'untouched'],
+      [join(volume, 'ew/report.txt'), 'untouched'],
+    ])
+    const files = new Map(decoys)
+    const missing = () => Object.assign(new Error('missing virtual file'), { code: 'ENOENT' })
+    const ctx = context(h.workspace, h.data)
+    ctx.adapters.fs = {
+      async realpath(path) {
+        // The seam names the workspace as the caller spelled it. The real spelling can differ (macOS
+        // /var -> /private/var, Windows short names), so the virtual one resolves it to the real root.
+        const target = path === h.workspace ? workspace : resolve(workspace, path)
+        if (target === workspace || target === volume || files.has(target)) return target
+        throw missing()
+      },
+      async stat(path) {
+        const value = files.get(resolve(workspace, path))
+        if (value === undefined) throw missing()
+        return { kind: 'file', size: value.length, mtimeMs: 1 }
+      },
+      read: async (path) => new TextEncoder().encode(files.get(resolve(workspace, path))),
+      write: async (path, bytes) => void files.set(resolve(workspace, path), new TextDecoder().decode(bytes)),
+      rm: async (path) => void files.delete(resolve(workspace, path)),
+      mkdir: async () => {},
+      list: async () => [],
+    }
+    const virtual = await createFsCheckpoint(ctx, h.deps)
+    const targets = [join(volume, 'report.txt'), join(volume, 'new/report.txt')]
+    const rootAbsent = await virtual.snapshot(targets, 'volume-root-missing')
+    for (const target of targets) files.set(target, 'created')
+    await virtual.rewind(rootAbsent.id)
+    expect(files).toEqual(decoys)
   })
 
   it('keeps duplicate snapshots distinct and canonicalizes duplicate parent-symlink paths', async () => {
@@ -242,16 +278,45 @@ describe('filesystem checkpoint seam', () => {
     ])
   })
 
-  it('restores mixed present and absent paths', async () => {
+  it.each(['workspace', 'full'])('restores mixed present and absent paths with %s access', async (mode) => {
     const h = await setup()
+    let allowOutside = mode === 'full'
+    const absentPath = allowOutside ? join(h.root, 'new/gone.txt') : 'gone.txt'
+    const existingPath = allowOutside ? join(h.root, 'outside.txt') : 'existing.txt'
+    const existingAbsolute = resolve(h.workspace, existingPath)
+    const absentAbsolute = resolve(h.workspace, absentPath)
     await fs.writeFile(join(h.workspace, 'keep.txt'), 'before')
-    const seam = await h.make()
-    const id = (await seam.snapshot(['gone.txt', 'keep.txt', 'gone.txt'], 'mixed')).id
-    await fs.writeFile(join(h.workspace, 'gone.txt'), 'remove me')
+    await fs.writeFile(existingAbsolute, 'outside-before')
+    const ctx = context(h.workspace, h.data)
+    ctx.adapters.fs = realFs(h.workspace, () => allowOutside)
+    const seam = await createFsCheckpoint(ctx, h.deps)
+    const id = (
+      await seam.snapshot(
+        [absentPath, 'keep.txt', existingPath, relative(h.workspace, existingAbsolute)],
+        'mixed',
+      )
+    ).id
+    await fs.mkdir(dirname(absentAbsolute), { recursive: true })
+    await fs.writeFile(absentAbsolute, 'remove me')
+    await fs.writeFile(existingAbsolute, 'outside-after')
     await fs.writeFile(join(h.workspace, 'keep.txt'), 'after')
-    await seam.rewind(id)
+    const reopened = await createFsCheckpoint(ctx, h.deps)
+    if (mode === 'full') {
+      allowOutside = false
+      await expect(reopened.rewind(id)).rejects.toThrow(/E_FS_DENIED/)
+      expect(await fs.readFile(join(h.workspace, 'keep.txt'), 'utf8')).toBe('after')
+      expect(await fs.readFile(existingAbsolute, 'utf8')).toBe('outside-after')
+      expect(await fs.readFile(absentAbsolute, 'utf8')).toBe('remove me')
+      allowOutside = true
+    }
+    await reopened.rewind(id)
     expect(await fs.readFile(join(h.workspace, 'keep.txt'), 'utf8')).toBe('before')
-    await expect(fs.stat(join(h.workspace, 'gone.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await fs.readFile(existingAbsolute, 'utf8')).toBe('outside-before')
+    await expect(fs.stat(absentAbsolute)).rejects.toMatchObject({ code: 'ENOENT' })
+    const hash = h.deps.workspaceHash(await fs.realpath(h.workspace))
+    const shadow = new ShadowGit(realFs(h.data), `checkpoints/${hash.slice(0, 16)}`)
+    await shadow.init({ workspaceHash: hash })
+    expect((await shadow.read(id)).manifest.schema).toBe(mode === 'full' ? 2 : 1)
   })
 
   it('rejects relative and absolute escapes without creating refs or modifying outside content', async () => {
@@ -342,8 +407,15 @@ describe('filesystem checkpoint seam', () => {
     }
   }, 30_000) // Eight real snapshots and restores include durable Git object validation.
 
-  it('fails closed when manifest identity, commit parents, or payload bytes are tampered', async () => {
-    for (const variant of ['identity', 'parent', 'payload'] as const) {
+  it('fails closed when manifest identity, paths, commit parents, or payload bytes are tampered', async () => {
+    for (const variant of [
+      'identity',
+      'parent',
+      'payload',
+      'absolute-v1',
+      'traversal-v2',
+      'nul-v2',
+    ] as const) {
       const h = await setup()
       await fs.writeFile(join(h.workspace, 'a.txt'), 'trusted')
       const seam = await h.make()
@@ -368,6 +440,12 @@ describe('filesystem checkpoint seam', () => {
           ? new TextEncoder().encode('corrupt')
           : (await readBlob({ fs: shadow.fs, gitdir: shadow.gitdir, oid: oldOid, filepath: file.payload }))
               .blob
+      if (variant === 'absolute-v1' || variant === 'traversal-v2' || variant === 'nul-v2') {
+        oldManifest.schema = variant === 'absolute-v1' ? 1 : 2
+        file.rel = variant === 'traversal-v2' ? `${h.workspace}/dir/../a.txt` : join(h.workspace, 'a.txt')
+        if (variant === 'nul-v2') file.rel += '\0'
+        file.payload = `payload/${createHash('sha256').update(file.rel).digest('hex')}`
+      }
       const payloadOid = await writeBlob({ fs: shadow.fs, gitdir: shadow.gitdir, blob: payload })
       const payloadTree = await writeTree({
         fs: shadow.fs,

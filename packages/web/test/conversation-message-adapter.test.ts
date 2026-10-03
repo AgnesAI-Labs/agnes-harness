@@ -325,6 +325,55 @@ it('uses the complete shared cost contract through the real adapter without an i
   expect(details.isConnected).toBe(false)
 })
 
+it.each([true, false])('shows a failed turn reason through the React adapter (%s)', async (withError) => {
+  const message = 'Increase the context budget. <img src=x> **literal**'
+  const turn: UITurn = {
+    id: 'turn:1',
+    turn: 1,
+    startSeq: 1,
+    endSeq: 3,
+    startedAt: '2026-10-01T00:00:00.000Z',
+    endedAt: '2026-10-01T00:00:01.000Z',
+    status: 'failed',
+    reason: 'budget',
+    nodeIds: ['user', 'assistant'],
+    inherited: false,
+    forkable: false,
+    usage: {
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: false,
+      billingComplete: false,
+      calls: [],
+    },
+    ...(withError ? { error: { code: 'BUDGET_EXCEEDED', message } } : {}),
+  }
+  const nodes: UINode[] = [user, { kind: 'assistant', id: 'assistant', seq: 2, text: 'earlier progress' }]
+  const store = createConversationProjectionStore({ sessionId: 'session', nodes, turns: [turn] })
+  function FailedTurn({ current }: { current: UITurn }) {
+    const runtime = useConversationRuntime(store)
+    return createElement(
+      AssistantRuntimeProvider,
+      { runtime },
+      createElement(WebConversationMessages, { registry, turns: [current] }),
+    )
+  }
+  await act(async () => root.render(createElement(FailedTurn, { current: turn })))
+  const error = host.querySelector<HTMLElement>('.turn-error')
+  expect(error?.getAttribute('role')).toBe('alert')
+  expect(error?.textContent).toBe(
+    withError ? `BUDGET_EXCEEDED：${message}` : '本次执行未完成（budget），暂未收到具体错误信息。',
+  )
+  expect(error?.closest('.turn-process, .turn-process-body')).toBeNull()
+  expect(error?.querySelector('img, strong')).toBeNull()
+  expect(host.querySelector<HTMLDetailsElement>('.turn-process')?.open).toBe(false)
+  await act(async () =>
+    root.render(
+      createElement(FailedTurn, { current: { ...turn, status: 'completed', reason: 'completed' } }),
+    ),
+  )
+  expect(host.querySelector('.turn-error')).toBeNull()
+})
+
 it('keeps each React action footer through replay and history prepend, then retires reused turn IDs across sessions', async () => {
   const firstNodes: UINode[] = [
     { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'first' }] },

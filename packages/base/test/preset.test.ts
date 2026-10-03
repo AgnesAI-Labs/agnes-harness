@@ -86,6 +86,7 @@ describe('presets/base.yaml', () => {
 describe('every key the kernel reads is spelled the way the kernel spells it', () => {
   const PATHS = [
     'tools.timeout_ms',
+    'tools.output_max_bytes',
     'tools.timeouts',
     'budget.preflight',
     'budget.per_request_cap',
@@ -142,7 +143,10 @@ describe('every key the kernel reads is spelled the way the kernel spells it', (
     expect(fromDoc).toEqual({
       ...fromNothing,
       isolation: 'worktree',
-      tools: { ...fromNothing.tools, timeouts: { web_fetch: 30000, skill_helper_import: 240000 } },
+      tools: {
+        ...fromNothing.tools,
+        timeouts: { web_fetch: 30000, skill_helper_import: 240000, shell: 600000 },
+      },
     })
   })
 })

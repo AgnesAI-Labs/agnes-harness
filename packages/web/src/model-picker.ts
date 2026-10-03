@@ -1,3 +1,4 @@
+import type { ModelSettings } from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 
@@ -5,6 +6,10 @@ export type ModelPickerOption = {
   id: string
   route: string
   label?: string
+  reasoning?: boolean
+  thinkingLevelMap?: Record<string, string>
+  contextWindow?: number
+  defaultSettings?: ModelSettings
 }
 
 export type ModelPickerState = {

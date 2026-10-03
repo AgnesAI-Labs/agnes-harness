@@ -1,4 +1,5 @@
-import type { UsageView } from '@agnes/protocol'
+import type { ModelSettings, UsageView } from '@agnes/protocol'
+import { ModelSettingsDialog } from '@agnes/web-ui'
 import {
   type ComponentType,
   createElement,
@@ -28,7 +29,7 @@ export type ModelPicker = {
   render(state: ModelPickerState): void
 }
 export type PermissionMode = 'view' | 'workspace' | 'full'
-export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode }
+export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
 export type PermissionPicker = {
   destroy(): void
   render(state: PermissionPickerState): void
@@ -71,6 +72,12 @@ export interface ComposerView {
   input: { disabled: boolean; placeholder: string }
   loading: boolean
   model: ModelPickerState
+  modelSettings?: {
+    key: string
+    settings: ModelSettings
+    contextWindow: number
+    thinkingLevelMap?: Record<string, string> | undefined
+  }
   permission: PermissionPickerState
   sending: boolean
   send: { disabled: boolean; label: string; mode: 'idle' | 'busy' | 'pending'; title: string }
@@ -93,6 +100,7 @@ export interface ComposerRegionOptions {
   onDraftChange(value: string): void
   onError(error: unknown): void
   onModelSelect(option: ModelPickerOption): Promise<boolean>
+  onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   onSubmit(): void
   onWorkspace(): void
@@ -147,6 +155,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onDraftChange,
     onError,
     onModelSelect,
+    onModelSettingsChange,
     onPermissionSelect,
     onSubmit,
     onWorkspace,
@@ -366,6 +375,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ),
         ),
       ),
+      view.modelSettings && onModelSettingsChange
+        ? createElement(ModelSettingsDialog, {
+            ...view.modelSettings,
+            disabled: view.model.disabled || view.model.pending,
+            onApply: onModelSettingsChange,
+          })
+        : undefined,
       createElement(
         'section',
         {

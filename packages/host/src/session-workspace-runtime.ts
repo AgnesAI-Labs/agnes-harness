@@ -21,6 +21,7 @@ import type {
   SandboxReadinessCapability,
   SandboxWorkspaceBackend,
 } from './sandbox-readiness-manager.js'
+import { withSessionFileAccess } from './session-file-access.js'
 import {
   assertWorkspaceBinding,
   inheritWorkspaceBinding,
@@ -233,6 +234,8 @@ function sameBinding(left: WorkspaceBinding, right: WorkspaceBinding): boolean {
 
 /** Owns publication, invocation leases, child aliases and the one reverse-order runtime cleanup. */
 export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
+  constructor(private readonly fullAccessFor: (sessionKey: string) => boolean = () => false) {}
+
   private readonly entries = new Map<string, RuntimeEntry>()
   private readonly opening = new Map<
     string,
@@ -334,7 +337,7 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
         throw fault('E_WORKSPACE_CLOSED', 'workspace invocation port is revoked')
       const lease = this.acquire(sessionKey)
       const coreLease: WorkspaceInvocationLease = Object.freeze({
-        source: this.invocationSource(lease.runtime),
+        source: this.invocationSource(lease.runtime, sessionKey),
         release: lease.release,
       })
       return coreLease
@@ -367,21 +370,30 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
     return lease
   }
 
-  private invocationSource(runtime: SessionWorkspaceRuntime): WorkspaceInvocationSource {
+  private invocationSource(runtime: SessionWorkspaceRuntime, sessionKey: string): WorkspaceInvocationSource {
     const services = runtime.services as
       | Readonly<{ approval?: ApprovalSeam; checkpoint?: CheckpointSeam }>
       | undefined
     const hooks = runtime.hooks as
       | Readonly<{ snapshot?: () => HookInvocationSnapshot | Promise<HookInvocationSnapshot> }>
       | undefined
+    const withAccess = <T>(invoke: () => T): T =>
+      withSessionFileAccess(runtime.fs, () => this.fullAccessFor(sessionKey), invoke)
+    const sandbox = runtime.seam ?? unavailableHookSandbox
+    const checkpoint = services?.checkpoint ?? unavailableCheckpoint
     return Object.freeze({
       root: runtime.root,
-      fs: runtime.fs,
+      fs: {
+        read: (path, opts) => withAccess(() => runtime.fs.read(path, opts)),
+        write: (path, data) => withAccess(() => runtime.fs.write(path, data)),
+        list: (path) => withAccess(() => runtime.fs.list(path)),
+        stat: (path) => withAccess(() => runtime.fs.stat(path)),
+      },
       ready: async (signal?: AbortSignal): Promise<OpaqueSandboxConfine> => {
         const backend = await runtime.sandbox.ready(signal)
         return Object.freeze({
           confine: async (argv: readonly string[]) =>
-            Object.freeze([...(await backend.confine({ argv, cwd: runtime.root }))]),
+            withAccess(async () => Object.freeze([...(await backend.confine({ argv, cwd: runtime.root }))])),
         })
       },
       hookSnapshot: (): Promise<HookInvocationSnapshot> => {
@@ -389,9 +401,16 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
           return Promise.reject(fault('E_WORKSPACE_REQUIRED', 'workspace hooks are unavailable'))
         return Promise.resolve(hooks.snapshot())
       },
-      hookSandbox: runtime.seam ?? unavailableHookSandbox,
+      hookSandbox: {
+        enforcement: () => sandbox.enforcement(),
+        exec: (argv, opts) => withAccess(() => sandbox.exec(argv, opts)),
+      },
       approval: services?.approval ?? unavailableApproval,
-      checkpoint: services?.checkpoint ?? unavailableCheckpoint,
+      checkpoint: {
+        snapshot: (paths, stepId) => withAccess(() => checkpoint.snapshot(paths, stepId)),
+        rewind: (id) => withAccess(() => checkpoint.rewind(id)),
+        list: () => withAccess(() => checkpoint.list()),
+      },
     })
   }
 
@@ -427,7 +446,7 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
         throw fault('E_WORKSPACE_CLOSED', 'child workspace reservation is closed')
       const lease = this.acquireEntry(entry)
       return Object.freeze({
-        source: this.invocationSource(entry.runtime),
+        source: this.invocationSource(entry.runtime, childKey),
         release: lease.release,
       })
     })

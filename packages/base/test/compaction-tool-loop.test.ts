@@ -28,6 +28,7 @@ const SKILL = 'LOOP SKILL BODY'
 
 type Setup = {
   window: number
+  sessionWindow?: number
   compactionWindow?: number
   separateCompactionModel?: boolean
   reserve: number
@@ -82,6 +83,13 @@ async function open(o: Setup) {
     plan: async (payload, config) => buildCompactionPlan(payload, config),
     onCompact: async () => undefined,
   })
+  if (o.sessionWindow !== undefined)
+    await opened.session.setModel({
+      slot: 'primary',
+      route: 'default',
+      model: 'primary-model',
+      contextWindow: o.sessionWindow,
+    })
   return { ...opened, provider }
 }
 
@@ -153,6 +161,40 @@ function mainRequestsAfterFirstSummary(provider: ToolLoopProvider) {
 }
 
 describe('compaction inside long tool loops', () => {
+  it.each([
+    [8192, 128000],
+    [16384, 128000],
+    [8192, 8192],
+    [16384, 16384],
+  ])(
+    'compacts a tool loop within its %s-token session window on a %s-token model using the default policy',
+    async (window, capacity) => {
+      const { session, log, provider } = await open({
+        window: capacity,
+        sessionWindow: window,
+        reserve: 16384,
+        keep: 20000,
+        resultChars: 2000,
+        answerAt: (step) => step >= 40,
+      })
+      const reasons = [await turn(session, 'read every file, LOOP-SKILL')]
+      const m = await measure(`session-window-${window}`, log, provider, reasons)
+      expect(reasons).toEqual(['completed'])
+      expect(m.unpaired).toEqual([])
+      expect(m.replaces).toBeGreaterThan(0)
+      expect(m.summaryRequests).toBeGreaterThan(0)
+      expect(m.quotes).toBe(0)
+      expect(m.failed).toBe(0)
+      expect(m.peakMainInput).toBeLessThan(window)
+      for (const [index, req] of provider.requests.entries())
+        if (req.kind === 'summary') {
+          expect(req.sampling?.maxTokens).toBeGreaterThan(0)
+          expect((provider.inputs[index] ?? 0) + (req.sampling?.maxTokens ?? 0)).toBeLessThanOrEqual(window)
+        }
+    },
+    60_000,
+  )
+
   it('compacts a long first turn in a 128K window once and keeps going', async () => {
     const { session, log, provider } = await open({
       window: 128_000,

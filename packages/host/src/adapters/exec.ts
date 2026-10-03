@@ -149,19 +149,23 @@ export function createExec(
           stdio: ['pipe', 'pipe', 'pipe'],
         })
         live.add(child)
+        // First cause wins: `timedOut` means the deadline cut the command short before any cancel did.
         let timedOut = false
+        let cancelled = false
         let sig: string | undefined
         const output = createExecOutput(max)
         child.stdout?.on('data', output.stdout)
         child.stderr?.on('data', output.stderr)
         const timer = setTimeout(
           () => {
+            if (cancelled) return
             timedOut = true
             killGroup(child)
           },
           o.timeoutMs ?? opts.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
         )
         const onAbort = () => {
+          cancelled = true
           sig = 'SIGKILL'
           killGroup(child)
         }

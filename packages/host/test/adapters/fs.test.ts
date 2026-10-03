@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { testFsPolicy } from '@agnes/core/testkit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createFs, type FsBinding } from '../../src/adapters/fs.js'
+import { withSessionFileAccess } from '../../src/session-file-access.js'
 
 const directoryLink = process.platform === 'win32' ? 'junction' : 'dir' // guards-allow-platform: actual directory-link fixtures.
 
@@ -148,6 +149,27 @@ describe('fs adapter', () => {
     await expect(f.write(out, new Uint8Array())).rejects.toThrow(/E_FS_DENIED/)
     await expect(f.mkdir(join(outside, 'd'))).rejects.toThrow(/E_FS_DENIED/)
     await expect(f.rm(out)).rejects.toThrow(/E_FS_DENIED/)
+    let full = true
+    await withSessionFileAccess(
+      f,
+      () => full,
+      async () => {
+        await f.write(out, new TextEncoder().encode('full'))
+        expect(new TextDecoder().decode(await f.read(out))).toBe('full')
+        expect((await f.stat(out)).kind).toBe('file')
+        expect((await f.list(outside)).map((entry) => entry.name)).toContain('x')
+        expect(await f.realpath(out)).toBe(join(realpathSync.native(outside), 'x'))
+        await f.mkdir(join(outside, 'd'))
+        await f.rm(join(outside, 'd'), { recursive: true })
+        await expect(f.write('.git/config', new Uint8Array())).rejects.toThrow(/denied by policy/)
+        await expect(fs().read(out)).rejects.toThrow(/E_FS_DENIED/)
+        full = false
+        await expect(f.read(out)).rejects.toThrow(/完全权限/)
+        full = true
+        await f.rm(out)
+      },
+    )
+    await expect(f.list(outside)).rejects.toThrow(/E_FS_DENIED/)
   })
   // The escape does not have to be the last segment: a symlinked directory in the middle of the
   // path leaves every later segment outside the fence too.

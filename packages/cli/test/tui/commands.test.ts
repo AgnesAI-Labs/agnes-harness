@@ -586,7 +586,7 @@ describe('runSlash', () => {
     const { app, client } = await unstartedApp()
     try {
       expect((await runSlash(app, '/yolo')).text).toBe(
-        'yolo on from seq 7 — every ask for the rest of this session is skipped',
+        'full access from seq 7: read/write inside and outside the workspace; tool approvals skipped. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.',
       )
     } finally {
       await client.close()

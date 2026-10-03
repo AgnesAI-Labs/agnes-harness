@@ -22,7 +22,8 @@ tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch] }
 # on_unavailable must be allow — L0 has no OS backend, and deny would refuse every exec.
 sandbox: { level: L0, required: false, on_unavailable: allow }
 mcp: { defer: true }
-budget: { per_request_cap: 4000, max_steps: 80 }
+# No cumulative step ceiling: completion, cancellation and failure end a normal task.
+budget: { per_request_cap: 4000, max_steps: null }
 approval:
   # Editing and writing inside the workspace is pre-approved; every shell command is still asked.
   #

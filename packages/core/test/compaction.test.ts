@@ -61,6 +61,8 @@ async function history(summaryScript: Script = textTurn('SUMMARY')) {
   const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), summaryScript, textTurn('final')])
   provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
   const opened = await openSession({ provider })
+  // These fixtures resize catalog models; saved conversation budgets are covered separately.
+  delete opened.session.preset.model.contextWindow
   opened.session.preset.model.id.compaction = 'summary-model'
   opened.session.preset.compaction.reserveTokens = 80
   for (const prompt of ['one {{HISTORY}}', 'two']) {
@@ -90,6 +92,43 @@ function runner(onCompact: (p: HookPayloadMap['compact']) => Promise<void> = asy
 }
 
 describe('production compaction phase', () => {
+  it.each([384000, 2048])(
+    'summarizes a reduced session budget using the model capacity and output cap (%i)',
+    async (maxTokens) => {
+      const provider = fakeProvider([textTurn('old answer'), textTurn('SUMMARY'), textTurn('done')])
+      provider.models = () => [{ ...model('answer-model', 'primary', 1_000_000), maxTokens }]
+      const { session, log } = await openSession({ provider })
+      session.preset.model.id.primary = 'answer-model'
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'history '.repeat(25000) }],
+        actor,
+      })
+      await session.run({ until: 'turn-end', signal: signal() })
+      await session.setModel({
+        slot: 'primary',
+        route: 'default',
+        model: 'answer-model',
+        contextWindow: 32000,
+      })
+      session.compaction = new CompactionRunner({
+        plan: async (payload, config) => {
+          expect(payload.reserveTokens).toBe(8000)
+          expect(config.keepRecentTokens).toBe(12000)
+          return { ...plan(payload), maxTokens: Math.floor(0.8 * payload.reserveTokens) }
+        },
+        onCompact: async () => undefined,
+      })
+      await session.requestCompaction({ actor, admissionId: 'reduced-window' })
+      await session.run({ until: 'turn-end', signal: signal() })
+      const summary = provider.requests.find((request) => request.kind !== 'inference')
+      expect(summary?.sampling?.maxTokens).toBe(Math.min(6400, maxTokens))
+      expect(await log.scan({ type: 'x/core/compaction-end', limit: 5 })).toHaveLength(1)
+      expect(session.surface().some((node) => node.kind === 'summary' && node.event.origin === 'model')).toBe(
+        true,
+      )
+    },
+  )
+
   it('settles an internal context-first block before sending a cold summary', async () => {
     const { session, provider, log } = await history()
     provider.models = () => [model('answer-model', 'primary', 10_000)]
@@ -1385,12 +1424,18 @@ describe('routing a summary that is unavailable', () => {
   async function toolHistory(
     summaryScripts: Script[],
     windows: { primary?: number; compaction?: number } = {},
+    primaryInputTokens?: number,
   ) {
+    const completed = textTurn('read all three').map((event) =>
+      event.type === 'usage' && primaryInputTokens !== undefined
+        ? { ...event, tokens: { ...event.tokens, input: primaryInputTokens } }
+        : event,
+    )
     const provider = fakeProvider([
       toolTurn('read', { path: 'a' }),
       toolTurn('read', { path: 'b' }),
       toolTurn('read', { path: 'c' }),
-      textTurn('read all three'),
+      completed,
       ...summaryScripts,
       textTurn('after'),
     ])
@@ -1630,7 +1675,7 @@ describe('routing a summary that is unavailable', () => {
   })
 
   it('elides a first transient threshold failure once the window has less than half the reserve left', async () => {
-    const h = await toolHistory([failure(true)], { primary: 5000 })
+    const h = await toolHistory([failure(true)], { primary: 5000 }, 4500)
     await h.enter('threshold')
     await expectElided(h, /RATE_LIMIT/, true)
   })

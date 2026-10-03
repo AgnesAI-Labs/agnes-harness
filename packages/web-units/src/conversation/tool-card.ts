@@ -1,5 +1,5 @@
 import type { UINode } from '@agnes/protocol'
-import { ConversationToolCard as ReactToolCard } from '@agnes/web-ui/assistant-ui'
+import { ConversationToolCard as ReactToolCard, toolOutcome } from '@agnes/web-ui/assistant-ui'
 import { createElement, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
@@ -13,15 +13,6 @@ export interface ConversationToolCard {
 
 export interface ConversationToolCardOptions {
   icon(name: string): Element
-}
-
-const STATUS_LABEL: Record<ToolNode['status'], string> = {
-  planned: '等待执行',
-  awaiting_approval: '等待审批',
-  running: '正在执行',
-  completed: '执行完成',
-  failed: '执行失败',
-  cancelled: '已取消',
 }
 
 /** Copy an existing icon into a React-owned tree without adopting its DOM nodes. */
@@ -61,7 +52,7 @@ export function createConversationToolCard(
       icon = reactIcon(options.icon(iconName))
     }
     element.dataset.status = next.status
-    element.setAttribute('aria-label', `工具 ${next.name}：${STATUS_LABEL[next.status]}`)
+    element.setAttribute('aria-label', `工具 ${next.name}：${toolOutcome(next).label}`)
     flushSync(() =>
       root.render(
         createElement(ReactToolCard, {

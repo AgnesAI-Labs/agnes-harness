@@ -4,6 +4,29 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ToolContext` gains the optional read-only `defaultTimeoutMs`: the preset-wide default for a tool call
+(`tools.timeout_ms`), next to `timeoutMs`, which is this call's own limit. A tool that lets a caller ask for
+more time uses the default when asked for nothing and caps a request at `timeoutMs`; the `shell` tool does.
+It is optional so code that builds a `ToolContext` itself keeps compiling, and a tool must cope with its
+absence.
+
+`ExecResult` gains the optional `timedOut`: true when the executor's own deadline was the first cause to cut
+the command short, so the process was killed and the output is what it had printed so far. It is mutually
+exclusive with a caller cancel (whichever came first is the cause), and absent means the executor did not
+say, so an `exec` implementation or test double that never sets it keeps conforming. `ToolContext.timeoutMs`
+is now documented as a soft deadline: the kernel hands a tool the call's limit minus a short grace
+(`min(2000, limit / 10)` ms) and cuts the call off at the full limit, so a tool that honours
+`ctx.timeoutMs` can return its own result before the kernel's cut-off. The value a tool sees only gets
+smaller; no limit is raised.
+
+`ToolContext` gains the read-only `outputMaxBytes`: the most text of one tool result the model sees before
+the output guard cuts it. The kernel fills it from the Preset key `tools.output_max_bytes` (integer,
+4096 to 1048576, default 32768 where it was a fixed 8192), next to `timeoutMs`. A tool that sizes its own
+output against it follows the deployment instead of a constant. `DEFAULT_OUTPUT_MAX_BYTES`,
+`MIN_OUTPUT_MAX_BYTES` and `MAX_OUTPUT_MAX_BYTES` are new runtime exports. The addition is not breaking
+for tool authors; code that builds a `ToolContext` itself (test doubles, adapters) must now supply the
+field.
+
 The `before_provider_headers` hook event is removed: the kernel never dispatched it, so no handler could
 have run. The public table now has sixteen events, and registering the old name is refused with an
 invalid-registration error. This is a removal that would normally call for a major version; the project

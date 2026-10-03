@@ -13,6 +13,8 @@ export type PresetView = {
     promptSections?: readonly string[]
     route: Record<string, string>
     thinking: Partial<Record<string, ThinkingLevel>>
+    /** Durable per-session windows, keyed by model slot. */
+    contextWindow?: Partial<Record<string, number>>
     /**
      * The model id a slot asks its route for, when the assembly pins one. A route names an
      * endpoint; a model id names what that endpoint is asked to run, and the two are different
@@ -28,7 +30,8 @@ export type PresetView = {
     preflight: 'count' | 'estimate'
     perRequestCap: number | null
     onExceed: 'quote' | 'deny'
-    maxSteps: number
+    /** null disables the cumulative per-turn step ceiling. */
+    maxSteps: number | null
   }
   approval: {
     onTimeout: 'rejected'
@@ -37,7 +40,7 @@ export type PresetView = {
     pendingTtlMs: number
   }
   sandbox: { onUnavailable: 'deny' | 'allow' }
-  tools: { timeoutMs: number; timeouts: Record<string, number> }
+  tools: { timeoutMs: number; timeouts: Record<string, number>; outputMaxBytes: number }
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
   repair: { timeoutMs: number }
   completionGate: { minItems: number }
@@ -65,12 +68,12 @@ export function presetDefaults(): PresetView {
       retry: { maxAttempts: 2, baseDelayMs: 1000 },
       timeoutMs: 600000,
     },
-    budget: { preflight: 'estimate', perRequestCap: null, onExceed: 'quote', maxSteps: 50 },
+    budget: { preflight: 'estimate', perRequestCap: null, onExceed: 'quote', maxSteps: null },
     // A timed-out approval reads as a rejection and nothing else: an unanswered prompt must never
     // be the path by which a destructive call proceeds.
     approval: { onTimeout: 'rejected', timeoutMs: 60000, onUnavailable: 'deny', pendingTtlMs: 86400000 },
     sandbox: { onUnavailable: 'deny' },
-    tools: { timeoutMs: 120000, timeouts: {} },
+    tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768 },
     verifier: { timeoutMs: 30000, defaultTier: 0 },
     repair: { timeoutMs: 10000 },
     completionGate: { minItems: 3 },
@@ -142,6 +145,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     tools: {
       timeoutMs: pick(raw, 'tools.timeout_ms', d.tools.timeoutMs),
       timeouts: pick(raw, 'tools.timeouts', d.tools.timeouts),
+      outputMaxBytes: pick(raw, 'tools.output_max_bytes', d.tools.outputMaxBytes),
     },
     verifier: {
       timeoutMs: pick(raw, 'verifier.timeout_ms', d.verifier.timeoutMs),

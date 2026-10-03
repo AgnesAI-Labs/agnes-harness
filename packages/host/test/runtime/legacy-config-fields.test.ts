@@ -36,22 +36,24 @@ function pointer(root: unknown, path: string): unknown {
   return current
 }
 
-function resolve(node: unknown, root: unknown, depth: number): unknown {
-  if (!node || typeof node !== 'object' || depth > 8) return node
+function resolve(node: unknown, root: unknown, depth: number): { node: unknown; root: unknown } {
+  if (!node || typeof node !== 'object' || depth > 8) return { node, root }
   const ref = (node as { $ref?: string }).$ref
-  if (!ref) return node
+  if (!ref) return { node, root }
   if (!ref.startsWith('#/')) {
     const [file, hash] = ref.split('#')
     const other = schemas[file?.replace('.json', '') ?? '']
-    if (!other) return { $external: ref }
+    if (!other) return { node: { $external: ref }, root }
     return resolve(hash ? pointer(other, hash) : other, other, depth + 1)
   }
   return resolve(pointer(root, ref.slice(1)), root, depth + 1)
 }
 
 function leaves(node: unknown, path: string, root: unknown, out: Set<string>, depth: number): void {
-  if (depth > 14) return
-  const resolved = resolve(node, root, 0) as {
+  if (depth > 14) throw new Error(`legacy schema traversal exceeds its depth bound: ${path}`)
+  const authority = resolve(node, root, 0)
+  root = authority.root
+  const resolved = authority.node as {
     $external?: string
     oneOf?: unknown[]
     anyOf?: unknown[]
@@ -79,7 +81,7 @@ function leaves(node: unknown, path: string, root: unknown, out: Set<string>, de
     return
   }
   if (resolved.type === 'array' && resolved.items) {
-    const items = resolve(resolved.items, root, 0) as {
+    const items = resolve(resolved.items, root, 0).node as {
       properties?: unknown
       oneOf?: unknown
       anyOf?: unknown
@@ -187,16 +189,24 @@ it('reads a bare string model route as that slot and keeps a separate model pin'
   expect(routeOnly.diagnostics.some((item) => item.code === 'schema_invalid')).toBe(true)
 })
 
-it('uses the default primary-decision budget when max_steps is omitted', () => {
+it('defaults missing step ceilings to null and tool output to 32768 bytes', () => {
   const result = presetOf({ name: 'bare' })
   expect(result.status).toBe('accepted')
-  expect(result.sessionParameters).toMatchObject({ budget: { max_steps: 50 } })
+  expect(result.sessionParameters).toMatchObject({
+    budget: { max_steps: null },
+    tools: { output_max_bytes: 32768 },
+  })
   expect(result.rows.find((row) => row.path === '/budget/max_steps')).toMatchObject({
     source: 'specified-default',
-    value: 50,
+    value: null,
     unit: 'primary-decision-steps',
   })
-  expect(result.features).toContain(MAX_STEPS_FEATURE)
+  expect(result.rows.find((row) => row.path === '/tools/output_max_bytes')).toMatchObject({
+    source: 'specified-default',
+    value: 32768,
+    unit: 'bytes',
+  })
+  expect(result.features).not.toContain(MAX_STEPS_FEATURE)
 })
 
 it('inherits a parent isolation and does not replace it with the bare default', () => {
@@ -298,8 +308,29 @@ it('maps recovery park to human and approval ask to require_approval', () => {
   })
 })
 
-it('preserves model.max_tokens without publishing it as a session field', () => {
-  const result = presetOf({ name: 'sample', model: { max_tokens: 100 } })
+it('preserves unplaced model settings without publishing them as session fields', () => {
+  const profile = {
+    name: 'dev',
+    provider: {
+      routes: [
+        {
+          route: 'first',
+          models: [
+            { id: 'one', defaultSettings: { contextWindow: 65536, thinking: 'high' } },
+            { id: 'two', defaultSettings: { contextWindow: 131072 } },
+            { id: 'no-defaults' },
+          ],
+        },
+        { route: 'second', models: [{ id: 'three', defaultSettings: { thinking: 'low' } }] },
+      ],
+    },
+  }
+  const original = structuredClone(profile)
+  const result = convertLegacyConfiguration({
+    profiles: [{ layer: 'user', document: profile }],
+    presets: [{ layer: 'user', document: { name: 'sample', model: { max_tokens: 100 } } }],
+    presetId: 'sample',
+  })
   expect(result.status).toBe('held')
   expect(result.publishable).toBe(false)
   expect(result.sessionParameters).not.toHaveProperty('model.max_tokens')
@@ -311,6 +342,35 @@ it('preserves model.max_tokens without publishing it as a session field', () => 
     value: 100,
     placed: false,
   })
+  expect(profile).toEqual(original)
+  expect(result.providerConfig?.preserved).toContainEqual({
+    path: '/provider',
+    value: profile.provider,
+    reason: 'manifest_digest_required',
+  })
+  for (const [key, value] of [
+    ['contextWindow', [65536, 131072]],
+    ['thinking', ['high', 'low']],
+  ] as const) {
+    const path = `/provider/routes[]/models[]/defaultSettings/${key}`
+    expect(result.providerConfig?.preserved).toContainEqual({
+      path,
+      value,
+      reason: 'target_schema_missing',
+    })
+    expect(result.diagnostics).toContainEqual({
+      code: 'target_schema_missing',
+      path,
+      message: expect.any(String),
+    })
+    expect(result.rows.find((row) => row.path === path)).toMatchObject({
+      present: true,
+      source: 'document',
+      layer: 'user',
+      value,
+      placed: false,
+    })
+  }
 })
 
 it('refuses removal of a protected core operation name', () => {

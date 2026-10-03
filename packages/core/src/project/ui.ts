@@ -8,6 +8,7 @@ import {
   type EffectIntent,
   type EffectSettled,
   isEventType,
+  type ModelSettings,
   normalize,
   type OpState,
   type SlotFillView,
@@ -85,6 +86,7 @@ export type UIProjectionUsageOptions = {
   route: string
   model: { id: string; contextWindow: number; maxTokens?: number }
   thinking: ThinkingLevel
+  settings?: ModelSettings
   autoCompact: boolean
 }
 
@@ -334,6 +336,7 @@ export class UIProjectionCell {
         route: options.route,
         id: options.model.id,
         thinking: options.thinking,
+        ...(options.settings ? { settings: options.settings } : {}),
         ...(options.model.maxTokens ? { maxTokens: options.model.maxTokens } : {}),
       },
       ...(Object.keys(cacheHealthView(this.cacheHealth)).length > 0

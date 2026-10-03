@@ -27,6 +27,7 @@ export const writeTool = defineTool({
     // file, and two spellings taking two locks is the same as taking no lock at all.
     withFileLock(normalizeWorkspacePath(args.path, ctx.cwd).abs, async () => {
       let old = ''
+      let existed = true
       try {
         old = dec.decode(await ctx.fs.read(args.path))
       } catch (e) {
@@ -39,6 +40,7 @@ export const writeTool = defineTool({
             content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
             isError: true,
           }
+        existed = false
       }
       const t = looksTruncated(old, args.content)
       if (t.truncated)
@@ -56,7 +58,7 @@ export const writeTool = defineTool({
         content: [
           {
             type: 'text',
-            text: `${old === '' ? 'created' : 'overwrote'} ${args.path} (${args.content.length} chars)`,
+            text: `${existed ? 'overwrote' : 'created'} ${args.path} (${args.content.length} chars)`,
           },
         ],
         details: { path: args.path, bytes: enc.encode(args.content).byteLength },

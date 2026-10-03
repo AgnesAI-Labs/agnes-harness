@@ -1,27 +1,41 @@
+import type { ArtifactRef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import {
   byteLength,
-  CALL_OUTPUT_LIMIT_BYTES,
+  callOutputLimitBytes,
   type GuardedBlock,
   guardOutput,
   guardOutputSet,
   OUTPUT_LIMITS,
+  outputLimits,
+  parseSpillLocator,
   refBlock,
+  spillLocator,
 } from '../src/guards/output.js'
 
-const { maxBytes, maxLines, headBytes, tailBytes } = OUTPUT_LIMITS
+// These cases were written against an 8 KiB limit, and the sizes below are built from it, so they
+// ask for that limit explicitly instead of taking the deployment default.
+const SMALL = 8192
+const { maxBytes, maxLines, headBytes, tailBytes } = outputLimits(SMALL)
+const CALL_OUTPUT_LIMIT_BYTES = 4 * SMALL
+const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
+  fakeToolContext({ outputMaxBytes: SMALL, ...o })
+
+// What the note may add to a cut result. It carries the locator and the way back to the text, so it
+// is longer than a bare "stored as artifact"; the bound is on the note, not on the cut text.
+const NOTE_ROOM = 320
 
 describe('guardOutput', () => {
   it('passes small output through without touching the artifact store', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const r = await guardOutput(ctx, 'hello')
     expect(r).toEqual({ text: 'hello', truncated: false })
     expect(ctx.calls.artifacts).toHaveLength(0)
   })
 
   it('passes output that sits exactly on both limits', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const text = `${'x'.repeat(maxBytes - maxLines + 1)}${'\n'.repeat(maxLines - 1)}`
     expect(text.length).toBe(maxBytes)
     expect(text.split('\n')).toHaveLength(maxLines)
@@ -30,7 +44,7 @@ describe('guardOutput', () => {
   })
 
   it('spills over the character limit, keeping head and tail', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const big = 'x'.repeat(maxBytes + 1)
     const r = await guardOutput(ctx, big)
     expect(r.truncated).toBe(true)
@@ -44,7 +58,7 @@ describe('guardOutput', () => {
   })
 
   it('spills over the line limit even when the text is small, and says so', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     // Short lines, so the character limit is nowhere near reached and only the line count can be
     // what triggered the spill.
     const r = await guardOutput(ctx, Array.from({ length: maxLines + 1 }, () => 'x').join('\n'))
@@ -54,7 +68,7 @@ describe('guardOutput', () => {
   })
 
   it('names both limits when both are exceeded', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const r = await guardOutput(ctx, `${'y'.repeat(maxBytes)}\n`.repeat(maxLines))
     expect(r.text).toContain(`over the ${maxBytes}-byte and ${maxLines}-line limits`)
   })
@@ -62,42 +76,51 @@ describe('guardOutput', () => {
   it('never returns more text than it was given', async () => {
     // Head and tail are cut from the same string, so on a text shorter than head+tail they would
     // overlap and the "truncated" output would repeat the middle — longer than the original.
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const many = '\n'.repeat(maxLines)
     const r = await guardOutput(ctx, many)
     expect(r.truncated).toBe(true)
-    expect(r.text.length).toBeLessThan(many.length + 200)
+    expect(r.text.length).toBeLessThan(many.length + NOTE_ROOM)
     expect(r.text.replaceAll('\n', '').startsWith('[truncated')).toBe(true)
   })
 
   it('drops the middle rather than sampling it twice', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const text = `${'A'.repeat(headBytes)}${'B'.repeat(5000)}${'C'.repeat(tailBytes)}`
     const r = await guardOutput(ctx, text)
     expect(r.text).not.toContain('B')
     expect(r.text.startsWith('A'.repeat(headBytes))).toBe(true)
     expect(r.text.endsWith('C'.repeat(tailBytes))).toBe(true)
-    expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + 200)
+    expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + NOTE_ROOM)
   })
 
   it('stores the whole text, not the truncated view', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const text = `${'A'.repeat(headBytes)}${'B'.repeat(5000)}${'C'.repeat(tailBytes)}`
     const r = await guardOutput(ctx, text)
     const stored = new TextDecoder().decode(ctx.calls.artifacts[0]?.bytes as Uint8Array)
     expect(stored).toBe(text)
     expect(ctx.calls.artifacts[0]?.mime).toBe('text/plain')
-    expect(r.text).toContain(r.ref?.sha256.slice(0, 12) as string)
+    // The note names the stored text by the locator read and grep accept, and says how to use it.
+    const ref = r.ref as ArtifactRef
+    expect(r.text).toContain(
+      `full output stored at ${spillLocator(ref)}. To read the rest, call read with that full path, ?size= included`,
+    )
+    expect(parseSpillLocator(spillLocator(ref))).toEqual({
+      sha256: ref.sha256,
+      size: ref.size,
+      mime: 'text/plain',
+    })
   })
 
   it('passes an explicit mime through to the artifact store', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     await guardOutput(ctx, 'z'.repeat(maxBytes + 1), { mime: 'text/x-diff' })
     expect(ctx.calls.artifacts[0]?.mime).toBe('text/x-diff')
   })
 
   it('does not split a surrogate pair at the head or tail boundary', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     // An emoji straddling the head cut and another straddling the tail cut.
     const text = `${'a'.repeat(headBytes - 1)}😀${'b'.repeat(5000)}😀${'c'.repeat(tailBytes - 1)}`
     const r = await guardOutput(ctx, text)
@@ -108,12 +131,12 @@ describe('guardOutput', () => {
   it('still truncates when the artifact store fails, and says the text was not stored', async () => {
     // Failing open here would put the whole unbounded output into the model's context, which is the
     // one thing this guard exists to prevent.
-    const ctx = fakeToolContext({ artifactsFail: 'artifact store offline' })
+    const ctx = ctxOf({ artifactsFail: 'artifact store offline' })
     const big = 'x'.repeat(maxBytes + 1)
     const r = await guardOutput(ctx, big)
     expect(r.truncated).toBe(true)
     expect(r.ref).toBeUndefined()
-    expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + 200)
+    expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + NOTE_ROOM)
     expect(r.text).toContain('could not be stored')
     expect(r.text).toContain('artifact store offline')
   })
@@ -122,7 +145,7 @@ describe('guardOutput', () => {
     // The note is the only part of a guarded result no limit applies to, and the message inside it
     // is written by whichever backend just failed. Uncut, a storage outage becomes the unbounded
     // context this guard exists to prevent.
-    const ctx = fakeToolContext({ artifactsFail: `store offline ${'m'.repeat(100 * 1024)}` })
+    const ctx = ctxOf({ artifactsFail: `store offline ${'m'.repeat(100 * 1024)}` })
     const r = await guardOutput(ctx, 'x'.repeat(maxBytes + 1))
     expect(r.text.length).toBeLessThanOrEqual(headBytes + tailBytes + 400)
     // The message is cut, not dropped: the reason for the failure still reaches the model.
@@ -144,7 +167,7 @@ describe('guardOutput', () => {
 
   for (const [what, make] of hostile)
     it(`describes ${what} instead of throwing out of the guard`, async () => {
-      const ctx = fakeToolContext()
+      const ctx = ctxOf()
       ctx.artifacts.put = () => Promise.reject(make())
       const r = await guardOutput(ctx, 'x'.repeat(maxBytes + 1))
       expect(r.truncated).toBe(true)
@@ -163,7 +186,7 @@ describe('guardOutput', () => {
       '\udc00',
     ]
     for (const m of messages) {
-      const ctx = fakeToolContext({ artifactsFail: m })
+      const ctx = ctxOf({ artifactsFail: m })
       const r = await guardOutput(ctx, 'x'.repeat(maxBytes + 1))
       for (const code of [...r.text].map((c) => c.codePointAt(0) as number))
         expect(code < 0xd800 || code > 0xdfff, JSON.stringify(m.slice(0, 8))).toBe(true)
@@ -171,13 +194,24 @@ describe('guardOutput', () => {
   })
 
   it('keeps the limits at the documented values', () => {
-    expect(OUTPUT_LIMITS).toEqual({ maxBytes: 8192, maxLines: 2000, headBytes: 4096, tailBytes: 1024 })
+    // One number moves all three: half and an eighth are the proportions the limit has always had.
+    expect(outputLimits(8192)).toEqual({ maxBytes: 8192, maxLines: 2000, headBytes: 4096, tailBytes: 1024 })
+    expect(OUTPUT_LIMITS).toEqual(outputLimits(32768))
+  })
+
+  it('takes its limit from the context: head, tail and the call limit follow it', async () => {
+    const ctx = ctxOf({ outputMaxBytes: 16384 })
+    const r = await guardOutput(ctx, `${'h'.repeat(8192)}${'m'.repeat(9000)}${'t'.repeat(2048)}`)
+    expect(r.text.startsWith('h'.repeat(8192))).toBe(true)
+    expect(r.text.endsWith('t'.repeat(2048))).toBe(true)
+    expect(r.text).toContain('over the 16384-byte limit')
+    expect(callOutputLimitBytes(ctx)).toBe(4 * 16384)
   })
 })
 
 describe('refBlock', () => {
   it('builds a ref content block, defaulting the mime to the artifact mime', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const ref = await ctx.artifacts.put(new TextEncoder().encode('x'), { mime: 'text/plain' })
     expect(refBlock(ref)).toEqual({ type: 'ref', ref, mime: 'text/plain' })
     expect(refBlock(ref, 'text/x-diff').mime).toBe('text/x-diff')
@@ -190,7 +224,7 @@ describe('guardOutput measures bytes, not UTF-16 code units', () => {
   // one. Bytes are also the better stand-in for what the limit is really protecting — tokens —
   // since characters-per-token swings by script while bytes-per-token barely moves.
   it('truncates CJK and ASCII at the same real size', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const cjkOverBudget = '中'.repeat(Math.ceil(maxBytes / 3) + 10)
     const asciiSameCount = 'a'.repeat(cjkOverBudget.length)
     expect(Buffer.byteLength(cjkOverBudget, 'utf8')).toBeGreaterThan(maxBytes)
@@ -200,7 +234,7 @@ describe('guardOutput measures bytes, not UTF-16 code units', () => {
   })
 
   it('never cuts a multi-byte character in half', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const r = await guardOutput(ctx, '中'.repeat(maxBytes))
     expect(r.truncated).toBe(true)
     // A byte-level cut landing mid-character would leave U+FFFD once the string is read back.
@@ -215,7 +249,7 @@ describe('guardOutput does not eat a byte-order mark', () => {
   // subarray, so without the flag a truncated Windows-authored file silently loses its first
   // character -- the same class of quiet rewrite the envelope scrub exists to prevent.
   it('keeps a leading U+FEFF through truncation', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const text = `﻿${'a'.repeat(maxBytes + 8)}`
     const r = await guardOutput(ctx, text)
     expect(r.truncated).toBe(true)
@@ -223,7 +257,7 @@ describe('guardOutput does not eat a byte-order mark', () => {
   })
 
   it('keeps a U+FEFF sitting at the first byte the tail cut keeps', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     // Build the text first, then compute where cutTail will actually start from its real byte
     // length -- inserting the mark shifts everything after it, so deriving the offset from the
     // pre-insertion length puts the mark in the discarded middle instead, where losing it is
@@ -244,11 +278,11 @@ describe('guardOutput does not eat a byte-order mark', () => {
 
 describe('guardOutputSet', () => {
   it('keeps the call limit at its documented value', () => {
-    expect(CALL_OUTPUT_LIMIT_BYTES).toBe(32 * 1024)
+    expect(callOutputLimitBytes({ outputMaxBytes: 8192 })).toBe(32 * 1024)
   })
 
   it('passes a small set through untouched, without spending the artifact store', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const input: GuardedBlock[] = [
       { kind: 'text', text: 'hello' },
       { kind: 'text', text: 'world' },
@@ -265,7 +299,7 @@ describe('guardOutputSet', () => {
   })
 
   it('bounds the sum across blocks, not just each one', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     // Ten blocks of 7KB: every one is under the single-block limit on its own, but their sum
     // (70KB) is well over the 32KB call limit, so a per-block-only check would let all of them
     // through -- exactly the shape an MCP server wrapping a database returns as "many rows".
@@ -283,7 +317,7 @@ describe('guardOutputSet', () => {
   })
 
   it('charges the budget for passthrough blocks too, the gap codex leaves open', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     // A passthrough block (already converted to an artifact ref, e.g. an MCP image) that alone
     // spends the whole call budget must still block a smaller text block from slipping in after
     // it. A budget that only charges text blocks is not really a budget: codex bounds its text
@@ -303,7 +337,7 @@ describe('guardOutputSet', () => {
   })
 
   it('drops a block that cannot be afforded and everything after it, keeping order', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     // Declared costs rather than text, so the numbers are exact and not entangled with guardOutput's
     // own head/tail truncation of an oversized text block.
     const spend = (bytes: number, tag: string): GuardedBlock => ({
@@ -325,7 +359,7 @@ describe('guardOutputSet', () => {
   })
 
   it('charges a text block its truncated size, not its original size', async () => {
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     // A block already cut down to a few KB by its own single-block guard should spend the
     // aggregate budget as that few KB, not as the far larger size it arrived at.
     const input: GuardedBlock[] = [{ kind: 'text', text: 'x'.repeat(maxBytes * 10) }]
@@ -333,11 +367,11 @@ describe('guardOutputSet', () => {
     expect(out.omitted).toBe(0)
     const textBlock = out.blocks.find((b) => b.type === 'text')
     expect(textBlock).toBeDefined()
-    expect(byteLength((textBlock as { text: string }).text)).toBeLessThan(headBytes + tailBytes + 200)
+    expect(byteLength((textBlock as { text: string }).text)).toBeLessThan(headBytes + tailBytes + NOTE_ROOM)
   })
 
   it('still bounds the result when the full-set artifact store is unavailable', async () => {
-    const ctx = fakeToolContext({ artifactsFail: 'set store offline' })
+    const ctx = ctxOf({ artifactsFail: 'set store offline' })
     const input: GuardedBlock[] = Array.from({ length: 10 }, () => ({
       kind: 'text' as const,
       text: 'a'.repeat(7 * 1024),

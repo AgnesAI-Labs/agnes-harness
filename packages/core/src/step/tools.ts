@@ -173,6 +173,25 @@ function dispatchErrorResult(code: string, message: string): ToolResult {
   return { content: [{ type: 'text', text: message }], isError: true, details: { code } }
 }
 
+/**
+ * Model-facing text for a mutation call whose outcome stays unknown. A deadline or a cancel is ours
+ * and is named as such, so it is not mistaken for a lost transport and retried blindly.
+ */
+function unknownOutcomeMessage(name: string, cause: 'timeout' | 'cancelled' | undefined, ms: number): string {
+  if (!cause) return `the outcome of ${name} is unknown after dispatch`
+  const why =
+    cause === 'timeout'
+      ? `exceeded the ${ms} ms limit for one call and was aborted`
+      : 'was cancelled while running'
+  return (
+    `the outcome of ${name} is unknown: it ${why}, so it may have taken partial effect. ` +
+    'Inspect the current state before retrying; do not rerun it unchanged.' +
+    (cause === 'timeout'
+      ? ' Split it into shorter steps, or run it in the background if the tool offers that.'
+      : '')
+  )
+}
+
 async function settleSyntheticDispatch(
   s: SessionImpl,
   call: PlannedCall,
@@ -937,6 +956,9 @@ export async function approveAndExecute(
     firstDispatchCommitted = call.executionDomain === 'workspace'
   }
   const timeoutMs = s.preset.tools.timeouts[call.name] ?? s.preset.tools.timeoutMs
+  // The tool is told a limit a grace short of the one enforced below, so a tool that honours it can
+  // return its own result (partial output, the cause) before the kernel cuts the call off.
+  const softTimeoutMs = timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10))
   const ac = new AbortController()
   const nestedParks: EventInput[] = []
   const onAbort = () => ac.abort()
@@ -963,6 +985,7 @@ export async function approveAndExecute(
           generationDepth: s.generationDepth,
           actor: s.d.actor,
           cwd: s.d.cwd,
+          fullAccess: s.yolo,
           runtime: s.d.runtime,
           preset: s.preset,
           children: s.d.children,
@@ -988,7 +1011,14 @@ export async function approveAndExecute(
           // against a number the kernel invented plans against a deadline that is not the real one.
           lease: { remainingMs: () => s.d.log.leaseRemainingMs() },
         },
-        { toolUseId: call.toolUseId, name: call.name, signal: ac.signal, timeoutMs },
+        {
+          toolUseId: call.toolUseId,
+          name: call.name,
+          signal: ac.signal,
+          timeoutMs: softTimeoutMs,
+          defaultTimeoutMs: s.preset.tools.timeoutMs,
+          outputMaxBytes: s.preset.tools.outputMaxBytes,
+        },
       )
     const invoke = (ctx: ReturnType<typeof context>, attempt: ExecuteAttempt) =>
       s.executeTool(
@@ -1106,9 +1136,14 @@ export async function approveAndExecute(
       ac.abort()
       const mutation = policy.isDestructive || !policy.isReadOnly || policy.replay === 'never'
       if (mutation) {
+        // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
         const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
           code: 'TOOL_OUTCOME_UNKNOWN',
-          message: `the outcome of ${call.name} is unknown after dispatch`,
+          message: unknownOutcomeMessage(
+            call.name,
+            timedOut ? 'timeout' : cancelled ? 'cancelled' : undefined,
+            timeoutMs,
+          ),
           outcome: 'unknown',
         })
         return {

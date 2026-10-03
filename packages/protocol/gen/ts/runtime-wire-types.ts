@@ -271,6 +271,7 @@ export interface RuntimeWireTypes {
   Externalsession_v1_BudgetState: Schemas.Externalsession_v1_BudgetState
   Externalagnes_v1_BudgetState: Schemas.Externalagnes_v1_BudgetState
   Externalmodel_ThinkingLevel: Schemas.Externalmodel_ThinkingLevel
+  Externalmodel_ModelSettings: Schemas.Externalmodel_ModelSettings
   Externalagnes_v1_UsageView: Schemas.Externalagnes_v1_UsageView
   Externalagnes_v1_UITimeline: Schemas.Externalagnes_v1_UITimeline
   Externalagnes_v1_UIHistoryCursor: Schemas.Externalagnes_v1_UIHistoryCursor

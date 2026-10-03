@@ -103,6 +103,10 @@ describe('I9 auth, usage and thinking protocol contracts', () => {
         model: { thinking: { primary: 'high', compaction: 'medium' }, max_tokens: 32768 },
       }),
     ).toBe(true)
+    for (const max_steps of [null, 1, 80])
+      expect(Value.Check(PresetDoc, { name: 'subscription', budget: { max_steps } })).toBe(true)
+    for (const max_steps of [0, -1, 1.5, '80'])
+      expect(Value.Check(PresetDoc, { name: 'subscription', budget: { max_steps } })).toBe(false)
     for (const max_tokens of [0, -1, 1.5, '32768', null, Number.MAX_SAFE_INTEGER + 1])
       expect(Value.Check(PresetDoc, { name: 'subscription', model: { max_tokens } })).toBe(false)
     expect(

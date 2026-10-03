@@ -101,6 +101,7 @@ async function prompt(session: HostSession, value: string) {
 
 type ToolResult = {
   name?: string
+  code?: string
   isError?: boolean
   content?: Array<{ type: string; text?: string }>
 }
@@ -280,7 +281,7 @@ describe('subagents in a workspace-bound Host session', () => {
     }
   })
 
-  it('confines the child to the parent workspace: a write outside it is refused', async () => {
+  it.each([false, true])('isolates child files from parent full access (%s)', async (fullAccess) => {
     const outside = realpathSync.native(tempDir('agnes-subagent-outside-'))
     const escapePath = join(outside, 'escape.txt')
     let host!: Awaited<ReturnType<typeof workspaceHost>>['host']
@@ -309,6 +310,7 @@ describe('subagents in a workspace-bound Host session', () => {
     host = opened.host
     const { session, root } = opened
     try {
+      await session.setYolo(fullAccess, session.d.actor)
       expect((await prompt(session, 'delegate writes')).reason).toBe('completed')
       const [parentWrite, fork] = await toolResults(session)
       expect(fork?.isError).not.toBe(true)
@@ -319,16 +321,22 @@ describe('subagents in a workspace-bound Host session', () => {
       const [inside, outsideWrite] = childRows.map((row) => row.data as ToolResult & { code?: string })
       expect(inside?.isError).not.toBe(true)
       expect(readFileSync(join(root, 'inside.txt'), 'utf8')).toBe('inside')
-      // Refused exactly as the parent's identical write is, under the same enforcement posture.
-      expect(parentWrite?.isError).toBe(true)
+      // Sharing the parent's workspace resources never shares its session permission switch.
+      expect(parentWrite?.isError === true).toBe(!fullAccess)
       expect(outsideWrite?.isError).toBe(true)
+      expect(textOf(outsideWrite)).toContain('E_FS_DENIED')
+      if (!fullAccess) {
+        expect(textOf(parentWrite)).toContain('write failed before writing:')
+        expect(textOf(outsideWrite)).toBe(textOf(parentWrite))
+        expect(outsideWrite?.code).toBe(parentWrite?.code)
+      }
       expect(outsideWrite).toMatchObject({
-        code: (parentWrite as { code?: string }).code,
         enforcement: (parentWrite as { enforcement?: unknown }).enforcement,
       })
       expect(outsideWrite).toMatchObject({ enforcement: { level: 'full' } })
       await expect(direct).rejects.toMatchObject({ code: 'E_FS_DENIED' })
-      expect(existsSync(escapePath)).toBe(false)
+      expect(existsSync(escapePath)).toBe(fullAccess)
+      if (fullAccess) expect(readFileSync(escapePath, 'utf8')).toBe('parent')
     } finally {
       await host.close()
     }

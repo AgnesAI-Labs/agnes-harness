@@ -195,6 +195,38 @@ it('keeps a ten-thousand-node opening snapshot at the frozen default tail size',
   expect(scan).not.toHaveBeenCalled()
 })
 
+it.each(['tui', 'web'] as const)('projects permission-only changes for %s subscribers', async (surface) => {
+  const { session, log } = await open({ provider: fakeProvider([]) })
+  const baseline = await session.projectUIOpening({ surface })
+  expect(baseline.timeline.yolo).toBe(false)
+  let after = baseline.timeline.upto
+  let notified: ReturnType<SessionImpl['projectUIPatch']> | undefined
+  const dispose = log.observeCommitted(['x/core/yolo-switch'], () => {
+    notified = session.projectUIPatch(after, undefined, { surface })
+  })
+  try {
+    for (const enabled of [true, false]) {
+      const seq = await session.setYolo(enabled, actor)
+      expect(notified).toBeDefined()
+      expect(await notified).toMatchObject({
+        kind: 'patch',
+        patch: { from: after, upto: seq, yolo: enabled, changes: [], turnChanges: [] },
+      })
+      expect((await session.projectUIOpening({ surface })).timeline.yolo).toBe(enabled)
+      expect((await session.projectUI(undefined, { surface })).yolo).toBe(enabled)
+      expect(
+        await session.projectUIPatch(baseline.timeline.upto, baseline.timeline.upto, { surface }),
+      ).toMatchObject({
+        kind: 'replace',
+        timeline: { upto: baseline.timeline.upto, yolo: enabled },
+      })
+      after = seq
+    }
+  } finally {
+    dispose()
+  }
+})
+
 it('applies each committed event once and serves a head patch from the bounded cell journal', async () => {
   const { session, storage } = await open({ provider: fakeProvider([]) })
   const baseline = await session.projectUI()
@@ -307,7 +339,11 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
       options: ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'],
       pending: { ticket: 'ticket-1', expiresAt: '2026-09-13T00:10:00.000Z' },
     }),
-    event('turn/end', { reason: 'parked', lastAssistantSeq: null }),
+    event('turn/end', {
+      reason: 'parked',
+      lastAssistantSeq: null,
+      error: { code: 'APPROVAL_PENDING', message: 'Waiting for approval' },
+    }),
     event('turn/start', { turn: 1, trigger: 'prompt' }, { lane: 'side' }),
     event('approval/decided', { requestId: 'approval-1', verdict: 'allowed-once', via: 'callback' }),
     event('turn/start', {
@@ -348,6 +384,7 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
     'reject_once',
   ])
   expect(timeline.turns).toHaveLength(1)
+  expect(timeline.turns?.[0]?.error).toBeUndefined()
   expect(timeline.turns[0]).toMatchObject({
     id: 'turn:1',
     turn: 1,
@@ -653,6 +690,25 @@ it('cancelled planned tools remain cancelled after close, reopen and resume', as
   })
   expect(timeline.opState).toBeNull()
   await expect(session.projectUI()).rejects.toMatchObject({ code: 'E_CLOSED' })
+})
+
+it('preserves a turn error before inference in live patches and through a reopen', async () => {
+  const provider = fakeProvider([])
+  const { session, storage } = await open({ provider })
+  await input(session)
+  const baseline = await session.projectUI()
+  const error = { code: 'BUDGET_EXCEEDED', message: 'Increase the context budget or reset it to automatic.' }
+  await session.endTurn('budget', { error })
+  const timeline = await session.projectUI()
+  expect(timeline.turns?.at(-1)).toMatchObject({ status: 'failed', reason: 'budget', error })
+  expect(await session.projectUIPatch(baseline.upto)).toMatchObject({
+    kind: 'patch',
+    patch: { turnChanges: [{ op: 'upsert', turn: { error } }] },
+  })
+  expect(validateAgainst(UITimeline, { ...timeline, generation: 1 }).ok).toBe(true)
+  await session.close()
+  const reopened = (await open({ provider, storage })).session
+  expect((await reopened.projectUI()).turns).toEqual(timeline.turns)
 })
 
 it('preserves a failed tool result through a reopen without declaring completion', async () => {

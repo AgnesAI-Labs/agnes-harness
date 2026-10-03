@@ -131,7 +131,13 @@ export interface Host {
   validatePresetSwitch(name: string): ResolvedPreset
   /** Same gate, for `session.setModel`. Throws `HostError` on a selection outside this deployment's
    *  assembled route table; the caller passes `sel` unchanged on to `session.setModel()`. */
-  validateModelSwitch(sel: { slot: string; route: string; model: string; thinking?: ThinkingLevel }): void
+  validateModelSwitch(sel: {
+    slot: string
+    route: string
+    model: string
+    thinking?: ThinkingLevel | null
+    contextWindow?: number | null
+  }): void
 }
 
 export async function createHost(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {
@@ -144,7 +150,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
   // that was always going to refuse - a rejected assembly is supposed to have no side effects.
   const audit = opts.audit ?? createFileAudit(join(opts.dataDir, 'audit', 'host.jsonl'))
   audit.write({ kind: 'profile.resolved', detail: { hash: profile.hash, chain: profile.chain } })
-  const workspaceRuntimes = new SessionWorkspaceRuntimeTable()
+  const workspaceRuntimes = new SessionWorkspaceRuntimeTable((key) => a.kernel.get(key)?.yolo === true)
   const a = await assemble(profile, {
     ...opts,
     loader,
