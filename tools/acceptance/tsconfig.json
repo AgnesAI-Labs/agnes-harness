@@ -27,7 +27,8 @@
     "runtime/platform/billing-trace-conformance.ts",
     "runtime/fixtures/otlp-receiver.ts",
     "runtime/fixtures/billing-receipt-server.ts",
-    "runtime/fixtures/billing-trace-provider.ts"
+    "runtime/fixtures/billing-trace-provider.ts",
+    "runtime/platform/migration-conformance.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
   "references": [
