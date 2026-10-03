@@ -9,7 +9,6 @@ import type {
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import {
-  RuntimeAuthorityTransferAPI,
   RuntimeClientTransportPolicy,
   RuntimeErrorDetails,
   RuntimeServiceCatalog,
@@ -326,7 +325,7 @@ export function blobContractPort(subject: BlobSubject): BlobContractPort {
       const revokedRef = await subject.seed(content(MIB * 2, 5))
       const offered = subject.binding
       const { requirement } = offered
-      const features = [...requirement.features, RuntimeAuthorityTransferAPI.feature]
+      const features = [...requirement.features, 'conformance.undeclared-feature.v1']
       const partial = { readRange: subject.read().readRange } as BlobReadPort
       return {
         unauthorized: [await range(ref, 0, 1, stranger), await stream(ref, 0, {}, stranger)],
@@ -514,14 +513,21 @@ export interface ConformanceBinding<Port> {
   readonly port: Port
 }
 
-/** Registers the six cases of one contract; a scenario that throws is a failed case. */
+/**
+ * Registers the six cases of one contract; a scenario that throws is a failed case. A `suite` registers
+ * a feature's cases beside the contract's own, under ids and a consumer of its name.
+ */
 export function registerScenarios<O extends Record<ScenarioName, unknown>>(
   harness: ConformanceHarness,
   contract: string,
   binding: ConformanceBinding<{ readonly [K in ScenarioName]: (context: CaseContext) => Promise<O[K]> }>,
   judge: Judge<O>,
   features: Record<ScenarioName, readonly string[]>,
+  suite?: Readonly<{ name: string; methodKind: string }>,
 ): void {
+  const label = suite
+    ? `${contract}/${binding.providerId}/${suite.name}`
+    : `${contract}/${binding.providerId}`
   const digests = [binding.providerDigest, binding.configDigest, binding.releaseSetDigest]
   const observe = async <K extends ScenarioName>(scenario: K, context: CaseContext) => {
     try {
@@ -539,12 +545,14 @@ export function registerScenarios<O extends Record<ScenarioName, unknown>>(
       async run(context): Promise<AssertionInput> {
         const passed = digests.every((digest) => HEX.test(digest)) && (await observe(scenario, context))
         return {
-          id: `${contract}/${binding.providerId}/${scenario}`,
+          id: `${label}/${scenario}`,
           providerDigest: binding.providerDigest,
           recipe: binding.recipe,
           features: [...features[scenario]],
           build: binding.build,
-          consumer: `${contract}-conformance-consumer`,
+          consumer: suite
+            ? `${contract}-${suite.name}-conformance-consumer`
+            : `${contract}-conformance-consumer`,
           command: binding.command,
           status: passed ? 'passed' : 'failed',
           configDigest: binding.configDigest,
@@ -554,7 +562,7 @@ export function registerScenarios<O extends Record<ScenarioName, unknown>>(
           sharedEvidenceId: null,
           reuse: {
             scope: 'run',
-            methodKind: 'query',
+            methodKind: suite?.methodKind ?? 'query',
             lifecycle: LIFECYCLE[scenario],
             undeclaredConnection: false,
           },

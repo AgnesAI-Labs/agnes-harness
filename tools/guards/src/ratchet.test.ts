@@ -1483,7 +1483,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Billing and trace providers. Measured 8513, exact, no spare.
   // Read-only migration planning and receipt verification. Measured 8929, exact, no spare.
   // Bounded sandbox and execution services. Measured 9078, exact, no spare.
-  'packages/extension-api/testkit': 9563,
+  // Authority transfer conformance cases. Measured 10213, exact, no spare.
+  'packages/extension-api/testkit': 10213,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
