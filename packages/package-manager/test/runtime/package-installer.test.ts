@@ -26,7 +26,7 @@ function value<T>(result: Outcome<T>): T {
   if (!result.ok) throw new Error(result.error.detailCode)
   return result.value
 }
-const refuse = <T>(result: Outcome<T>, detailCode: string) =>
+const refuse = (result: Outcome<unknown>, detailCode: string) =>
   expect(result).toMatchObject({ ok: false, error: { detailCode } })
 
 describe.each(['default', 'reference'])('persistent installer proposals: %s', (providerId) => {
@@ -91,6 +91,9 @@ describe.each(['default', 'reference'])('persistent installer proposals: %s', (p
     fixture(async (f, dir) => {
       const call = installerContext()
       const accepted = value(await f.subject.requestChange(installerFixtureRequest(), call))
+      const read = f.journal.read(accepted.proposalId)
+      read.proposal.status = 'denied'
+      expect(f.journal.read(accepted.proposalId).proposal.status).toBe('planning')
       const second = openInstallerFixture(providerId, dir)
       try {
         const cancelled = value(
@@ -478,13 +481,24 @@ it('keeps reference implementation independent and agrees on inputs, outputs and
     '../../src/runtime/providers/package-installer.ts',
     '../../src/runtime/install-journal.ts',
     '../../src/runtime/repair-plan.ts',
+    '../../src/runtime/package-apply.ts',
+    '../../src/runtime/deployment-approval.ts',
   ]
     .map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'))
     .join('\n')
-  const referenceText = readFileSync(
-    new URL('../../../../examples/runtime-reference/src/providers/package-installer.ts', import.meta.url),
-    'utf8',
-  )
+  const referenceText =
+    readFileSync(
+      new URL('../../../../examples/runtime-reference/src/providers/deployment-approval.ts', import.meta.url),
+      'utf8',
+    ) +
+    readFileSync(
+      new URL('../../../../examples/runtime-reference/src/providers/package-apply.ts', import.meta.url),
+      'utf8',
+    ) +
+    readFileSync(
+      new URL('../../../../examples/runtime-reference/src/providers/package-installer.ts', import.meta.url),
+      'utf8',
+    )
   expect(referenceText).not.toMatch(/from\s+['"][^'"]*package-manager/)
   const lines = (text: string) =>
     new Set(

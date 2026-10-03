@@ -13,7 +13,7 @@ export interface InstallOperationObservation {
   readonly operationId: string
   readonly planDigest: string
   readonly state: 'unpublished' | 'published' | 'unknown'
-  readonly heads: Wire['UpgradeExpectedHeads']
+  readonly heads: Wire['UpgradeExpectedHeads'] | null
   readonly checkpoint: Wire['UpgradeCheckpoint'] | null
   readonly receipt: Wire['ReceiptPointer'] | null
 }
@@ -40,7 +40,16 @@ export function verifyInstallObservation(
     observation.planDigest !== record.proposal.planDigest
   )
     throw new InstallFault('conflict', 'operation_identity_conflict')
-  installerWire('UpgradeExpectedHeads', observation.heads)
+  if (record.proposal.plan?.kind === 'resource' && record.applyCheckpoint) {
+    if (observation.heads !== null) throw new InstallFault('conflict', 'operation_identity_conflict')
+  } else if (
+    observation.heads === null &&
+    record.proposal.plan?.kind === 'release' &&
+    record.proposal.plan.value.sourceReleaseSetId === null &&
+    observation.state !== 'published'
+  ) {
+    /* No previous release exists. */
+  } else installerWire('UpgradeExpectedHeads', observation.heads)
   if (!['unpublished', 'published', 'unknown'].includes(observation.state))
     throw new InstallFault('invalid_input', 'operation_observation_invalid')
   if (observation.receipt !== null) installerWire('ReceiptPointer', observation.receipt)
@@ -88,7 +97,7 @@ export function createInstallRepairPlan(
       throw new InstallFault('conflict', 'checkpoint_heads_conflict')
     if (
       heads.kind !== 'release' ||
-      observation.heads.kind !== 'release' ||
+      observation.heads?.kind !== 'release' ||
       heads.routeId !== observation.heads.routeId
     )
       throw new InstallFault('conflict', 'repair_route_conflict')

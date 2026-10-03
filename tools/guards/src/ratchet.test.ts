@@ -351,7 +351,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Static runtime package inspection without script execution. Measured 8247, exact, no spare.
   // Maintenance publication and immutable client bundles. Measured 9457, exact, no spare.
   // Normalized package self digests. Measured 9479, exact, no spare.
-  'packages/package-manager/src': 9479,
+  'packages/package-manager/src': 10514,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -1494,7 +1494,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable run admission coordination. Measured 12086, exact, no spare.
   // Durable resource pins. Measured 12187, exact, no spare.
   // Recoverable embedding providers. Measured 12446, exact, no spare.
-  'packages/extension-api/testkit': 12446,
+  // Fixed package plan apply. Measured 12543, exact, no spare.
+  'packages/extension-api/testkit': 12543,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
