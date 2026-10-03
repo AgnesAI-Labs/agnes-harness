@@ -16,11 +16,13 @@ import {
   RuntimeServiceCatalog,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import type { AuthorityTransferSource, TransferMaintenance } from '../authority-transfer.js'
 import { gc, inspect, pin, promote, resolvePin, unpin } from '../blob/retention.js'
 import {
   BlobRefusal,
   type BlobStore,
   blobError,
+  contentPath,
   openBlobStore,
   openUploadWriter,
   parse,
@@ -123,6 +125,8 @@ export type BlobServiceOptions = Readonly<{
    * provide one yet, so without it every read is refused as blocked.
    */
   authorizeRead?: (context: CallContext, ref: Wire.BlobRef) => boolean
+  /** The Host's maintenance assembly. Without it, every transfer call is refused as blocked. */
+  maintenance?: TransferMaintenance
 }>
 
 type Handler<T> = (request: unknown, context: CallContext) => Promise<Outcome<T>>
@@ -139,6 +143,8 @@ export type BlobService = Readonly<{
   blobRead: BlobReadPort
   /** Host-internal upload byte path; not an agh.blob method. */
   openWriter(uploadId: Wire.Id, context: CallContext): Outcome<UploadWriter>
+  /** Host-internal source side of an authority transfer; not offered by the descriptor. */
+  transfer: AuthorityTransferSource
   close(): void
 }>
 
@@ -232,10 +238,9 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
 
   /** Opens the content file and checks its full digest once per file identity in this process. */
   async function openContent(ref: Wire.BlobRef): Promise<FileHandle> {
-    const path = join(store.dataDir, 'artifacts', 'sha256', ref.digest.slice(0, 2), ref.digest)
     let handle: FileHandle
     try {
-      handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+      handle = await open(contentPath(store, ref.digest), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
     } catch {
       refuse('integrity', 'blob bytes are missing')
     }
@@ -294,6 +299,11 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
       closed
         ? { ok: false, error: blobError('blocked', 'blob service is closed') }
         : openUploadWriter(store, uploadId, context),
+    transfer: {
+      fence: (request, context) => call(context, () => store.fence(request, context)),
+      probe: (request, context) => call(context, () => store.probe(request, context)),
+      abort: (request, context) => call(context, () => store.abort(request, context)),
+    },
     close: () => {
       if (closed) return
       closed = true

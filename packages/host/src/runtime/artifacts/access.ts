@@ -222,7 +222,7 @@ export function createArtifactAccess(
         const blob = readable(record)
         const actor = jcs({ principalRef: context.principalRef, scope: context.scope })
         const fingerprint = hex(jcs(target))
-        return store.transaction(() => {
+        return store.write(() => {
           const prior = store.db
             .prepare('SELECT * FROM tickets WHERE actor = ? AND request_id = ?')
             .get(actor, requestId) as TicketRow | undefined

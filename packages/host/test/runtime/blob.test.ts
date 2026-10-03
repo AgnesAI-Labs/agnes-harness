@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome, ScopeRef } from '@agnes/extension-api/runtime'
 import {
   type BuildIdentity,
@@ -13,6 +14,7 @@ import {
 import type * as Wire from '@agnes/protocol/runtime'
 import {
   canonicalJsonDigest,
+  type JsonValue,
   RuntimeArtifactPolicy,
   RuntimeClientTransportPolicy,
   RuntimeMethodSchemaRefs,
@@ -20,9 +22,12 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { TransferMaintenance } from '../../src/runtime/authority-transfer.js'
+import { inlineData } from '../../src/runtime/maintenance/authority-publication.js'
 import {
   BLOB_FEATURES,
   type BlobService,
+  type BlobServiceOptions,
   blobProviderDescriptor,
   createBlobService,
   runtimeServiceDataDir,
@@ -91,17 +96,49 @@ async function fresh(): Promise<string> {
   return dir
 }
 
-function open(dataDir: string, authorizeRead?: (context: CallContext) => boolean): BlobService {
-  const service = createBlobService({
+function open(
+  dataDir: string,
+  authorizeRead?: (context: CallContext) => boolean,
+  maintenance?: TransferMaintenance,
+): BlobService {
+  const options: BlobServiceOptions = {
     dataDir,
     authorityId: 'blob-authority',
     binding: BINDING,
     now: () => clock,
     ...(authorizeRead ? { authorizeRead } : {}),
-  })
+    ...(maintenance ? { maintenance } : {}),
+  }
+  const service = createBlobService(options)
   services.push(service)
   return service
 }
+
+function reopen(blob: BlobService, dataDir: string, maintenance?: TransferMaintenance): BlobService {
+  blob.close()
+  services.splice(services.indexOf(blob), 1)
+  return open(dataDir, trusted, maintenance)
+}
+
+/** Runs one statement against the persisted store, as a restarted process would find it. */
+function sql(dataDir: string, statement: string): Record<string, unknown>[] {
+  const db = new DatabaseSync(join(dataDir, 'artifacts', 'blob-service.db'))
+  try {
+    return db.prepare(statement).all()
+  } finally {
+    db.close()
+  }
+}
+
+const contentFile = (dataDir: string, digest: string) =>
+  join(dataDir, 'artifacts', 'sha256', digest.slice(0, 2), digest)
+
+const deletionLog = (dataDir: string) =>
+  sql(dataDir, 'SELECT kind, ref, digest FROM deletions ORDER BY seq').map(({ kind, ref, digest }) => [
+    kind,
+    ref,
+    digest,
+  ])
 
 const trusted = (context: CallContext) => context.authorizationRef === 'auth-ok'
 
@@ -274,7 +311,8 @@ describe('default blob service retention', () => {
   })
 
   it('aborts an expired upload only after its writer stopped, inside the requested scope, then deletes it', async () => {
-    const blob = open(await fresh())
+    const dataDir = await fresh()
+    const blob = open(dataDir)
     const session = ok(
       await blob.stage(
         { uploadId: 'upload-1', size: 4, mediaType: 'text/plain', expectedDigest: null },
@@ -316,6 +354,10 @@ describe('default blob service retention', () => {
     const deleted = ok(await gc())
     expect(deleted.deletedRefs).toMatchObject([{ kind: 'upload', value: { uploadId: 'upload-1' } }])
     expect(ok(await inspectUpload(blob, session)).status).toBe('deleted')
+    expect(deletionLog(dataDir)).toEqual([
+      ['upload-aborted', 'upload-1', null],
+      ['upload-deleted', 'upload-1', null],
+    ])
   })
 
   it('pages gc results by cursor and limit', async () => {
@@ -367,6 +409,83 @@ describe('default blob service retention', () => {
     expect(ok(await blob.inspect({ ref: { kind: 'staged-blob', value: otherStaged } }, ctx())).status).toBe(
       'pinned',
     )
+  })
+
+  it('logs each collect and released pin, and unlinks content after the commit once nothing can use it', async () => {
+    const dataDir = await fresh()
+    let blob = open(dataDir)
+    const first = await sealed(blob, 'upload-1', text('same'))
+    const digest = first.upload.digest
+    const file = contentFile(dataDir, digest)
+    const staged = ok(await blob.promote({ upload: first.upload, expectedDigest: digest }, ctx()))
+    const twin = await sealed(blob, 'upload-2', text('same'))
+    const gc = () => blob.gc({ scopeRef: scope(), dryRun: false, cursor: null, limit: 100 }, ctx())
+
+    ok(await blob.unpin({ pinId: first.retention.pinId, expectedRevision: 1 }, ctx()))
+    expect(ok(await gc()).deletedRefs).toEqual([{ kind: 'staged-blob', value: staged }])
+    // The twin upload can still be promoted, so the shared content stays.
+    expect(existsSync(file)).toBe(true)
+    const second = ok(await blob.promote({ upload: twin.upload, expectedDigest: digest }, ctx()))
+    ok(await blob.unpin({ pinId: twin.retention.pinId, expectedRevision: 1 }, ctx()))
+    ok(await gc())
+    expect(existsSync(file)).toBe(false)
+    const collected = [
+      ['pin-released', first.retention.pinId, null],
+      ['blob-deleted', staged.blobId, digest],
+      ['pin-released', twin.retention.pinId, null],
+      ['blob-deleted', second.blobId, digest],
+      ['content-unlink-pending', digest, digest],
+    ]
+    expect(deletionLog(dataDir)).toEqual([...collected, ['content-unlinked', digest, digest]])
+
+    // A crash after the collect committed and before the unlink: the next gc unlinks the file.
+    blob.close()
+    sql(dataDir, "DELETE FROM deletions WHERE kind = 'content-unlinked'")
+    writeFileSync(file, text('same'))
+    blob = reopen(blob, dataDir)
+    ok(await gc())
+    expect(existsSync(file)).toBe(false)
+    expect(deletionLog(dataDir)).toEqual([...collected, ['content-unlinked', digest, digest]])
+    // A crash after the unlink and before its record: the missing file counts as unlinked.
+    sql(dataDir, "DELETE FROM deletions WHERE kind = 'content-unlinked'")
+    ok(await gc())
+    expect(deletionLog(dataDir)).toEqual([...collected, ['content-unlinked', digest, digest]])
+    // Content sealed again before the interrupted unlink completes is retained.
+    sql(dataDir, "DELETE FROM deletions WHERE kind = 'content-unlinked'")
+    await sealed(blob, 'upload-3', text('same'))
+    ok(await gc())
+    expect(existsSync(file)).toBe(true)
+    expect(deletionLog(dataDir)).toEqual([...collected, ['content-retained', digest, digest]])
+  })
+
+  it('keeps marked content when the collect that marked it rolls back', async () => {
+    const dataDir = await fresh()
+    const blob = open(dataDir)
+    const staged: Wire.StagedBlobRef[] = []
+    for (const [uploadId, bytes] of [
+      ['upload-1', 'one'],
+      ['upload-2', 'two'],
+    ] as const) {
+      const { upload, retention } = await sealed(blob, uploadId, text(bytes))
+      staged.push(ok(await blob.promote({ upload, expectedDigest: upload.digest }, ctx())))
+      ok(await blob.unpin({ pinId: retention.pinId, expectedRevision: 1 }, ctx()))
+    }
+    const [first, last] = staged.sort((a, b) => (a.blobId < b.blobId ? -1 : 1))
+    if (!first || !last) throw new Error('expected two staged blobs')
+    // gc collects in blob id order, so the later collect fails after the earlier content was marked.
+    sql(
+      dataDir,
+      `CREATE TRIGGER fail_collect AFTER INSERT ON deletions WHEN NEW.ref = '${last.blobId}'
+       BEGIN SELECT RAISE(ABORT, 'injected'); END`,
+    )
+    expect(
+      refused(await blob.gc({ scopeRef: scope(), dryRun: false, cursor: null, limit: 100 }, ctx())),
+    ).toBe('internal_error')
+    expect(existsSync(contentFile(dataDir, first.digest))).toBe(true)
+    expect(ok(await blob.inspect({ ref: { kind: 'staged-blob', value: first } }, ctx())).status).toBe(
+      'staged',
+    )
+    expect(deletionLog(dataDir).map(([kind]) => kind)).toEqual(['pin-released', 'pin-released'])
   })
 })
 
@@ -436,6 +555,190 @@ describe('default blob service reads', () => {
     writeFileSync(join(dataDir, 'artifacts', 'sha256', ref.digest.slice(0, 2), ref.digest), text('abcdeX'))
     expect(refused(await blob.blobRead.readRange({ ref, offset: 0, length: 2 }, ctx()))).toBe('integrity')
     expect(refused(await blob.blobRead.openRead({ ref, offset: 0 }, ctx()))).toBe('integrity')
+  })
+})
+
+const MAINTAINER = ctx({ authorizationRef: 'maintenance' })
+const EXPECTED = { authorityId: 'blob-authority', tenantId: 'tenant-1', authorityEpoch: 1 }
+const FENCE = { upgradeId: 'upgrade-1', expected: EXPECTED, cohortDigest: 'c'.repeat(64) }
+
+/** The maintenance directory as the store sees it: one published route and an activation flag. */
+function maintenance(directory: {
+  route?: Wire.AuthorityRoute
+  targetActivated?: boolean
+}): TransferMaintenance {
+  return {
+    authorize: (context) => context.authorizationRef === 'maintenance',
+    tenantId: 'tenant-1',
+    locationRef: 'location-1',
+    readRoute: async ({ logicalAuthorityId }) =>
+      directory.route?.logicalAuthorityId === logicalAuthorityId
+        ? { ok: true, value: { route: directory.route, targetActivated: directory.targetActivated ?? false } }
+        : {
+            ok: false,
+            error: {
+              code: 'invalid_input',
+              detailCode: 'not_found',
+              message: 'no published route',
+              retryAdvice: { kind: 'never' },
+              diagnosticId: 'test',
+            },
+          },
+  }
+}
+
+function recoveryRoute(authorityEpoch: number, over: Partial<Wire.AuthorityRoute> = {}): Wire.AuthorityRoute {
+  return {
+    logicalAuthorityId: 'blob-authority',
+    tenantId: 'tenant-1',
+    authorityEpoch,
+    providerBinding: BINDING,
+    locationRef: 'location-1',
+    cohortDigest: 'c'.repeat(64),
+    cutoverId: 'recovery-1',
+    checkpoint: {
+      authorityId: 'blob-authority',
+      authorityEpoch,
+      checkpointId: 'checkpoint-1',
+      snapshotDigest: 'd'.repeat(64),
+      recordCount: 0,
+      bridgeWatermarks: [],
+    },
+    previous: { authorityEpoch: 1, locationRef: 'location-1', cutoverId: 'cutover-0' },
+    ...over,
+  }
+}
+
+describe('default blob service authority transfer', () => {
+  it('fences once per upgrade: business writes and an open upload stop as blocked while reads go on', async () => {
+    const dataDir = await fresh()
+    const blob = open(dataDir, trusted, maintenance({}))
+    const { upload } = await sealed(blob, 'upload-1', text('kept'))
+    const stagedBlob = ok(await blob.promote({ upload, expectedDigest: upload.digest }, ctx()))
+    const owner = (artifactId: string): Wire.PublicRef => ({
+      kind: 'artifact',
+      value: { artifactId, version: 1 },
+    })
+    const ref = ok(await blob.pin({ stagedBlob, ownerRef: owner('artifact-1'), retentionUntil: null }, ctx()))
+    ok(
+      await blob.stage(
+        { uploadId: 'upload-2', size: 6, mediaType: 'text/plain', expectedDigest: null },
+        ctx(),
+      ),
+    )
+    const writer = ok(blob.openWriter('upload-2', ctx()))
+    ok(writer.write(0, text('abc')))
+
+    expect(refused(await open(dataDir).transfer.fence(FENCE, MAINTAINER))).toBe('blocked')
+    expect(() => createBlobService({ dataDir, authorityId: 'other-authority', binding: BINDING })).toThrow()
+    expect(refused(await blob.transfer.fence(FENCE, ctx()))).toBe('permission_denied')
+    for (const expected of [
+      { ...EXPECTED, authorityEpoch: 2 },
+      { ...EXPECTED, tenantId: 'tenant-2' },
+      { ...EXPECTED, authorityId: 'other-authority' },
+    ])
+      expect(refused(await blob.transfer.fence({ ...FENCE, expected }, MAINTAINER))).toBe('revision_conflict')
+    const fence = ok(await blob.transfer.fence(FENCE, MAINTAINER))
+    expect(fence).toMatchObject({
+      upgradeId: 'upgrade-1',
+      source: EXPECTED,
+      fenceEpoch: 1,
+      writerCredentialsRevoked: true,
+      checkpoint: { authorityId: 'blob-authority', authorityEpoch: 1, bridgeWatermarks: [] },
+    })
+    expect(ok(await blob.transfer.fence(FENCE, MAINTAINER))).toEqual(fence)
+    expect(refused(await blob.transfer.fence({ ...FENCE, cohortDigest: 'e'.repeat(64) }, MAINTAINER))).toBe(
+      'idempotency_conflict',
+    )
+    expect(refused(await blob.transfer.fence({ ...FENCE, upgradeId: 'upgrade-2' }, MAINTAINER))).toBe(
+      'revision_conflict',
+    )
+
+    expect(refused(writer.write(3, text('def')))).toBe('blocked')
+    expect(
+      refused(
+        await blob.stage(
+          { uploadId: 'upload-3', size: 1, mediaType: 'text/plain', expectedDigest: null },
+          ctx(),
+        ),
+      ),
+    ).toBe('blocked')
+    expect(
+      refused(await blob.pin({ stagedBlob, ownerRef: owner('artifact-2'), retentionUntil: null }, ctx())),
+    ).toBe('blocked')
+    expect(refused(await blob.promote({ upload, expectedDigest: upload.digest }, ctx()))).toBe('blocked')
+    expect(refused(await blob.unpin({ pinId: ref.pinId, expectedRevision: 1 }, ctx()))).toBe('blocked')
+    expect(
+      refused(await blob.gc({ scopeRef: scope(), dryRun: false, cursor: null, limit: 100 }, ctx())),
+    ).toBe('blocked')
+    expect(ok(await blob.blobRead.readRange({ ref, offset: 0, length: 4 }, ctx())).bytes).toEqual(
+      text('kept'),
+    )
+    expect(ok(await blob.inspect({ ref: { kind: 'blob', value: ref } }, ctx())).status).toBe('pinned')
+  })
+
+  it('records the deletion watermark with the fence, keeps both across reopen and aborts only onto the published recovery route', async () => {
+    const dataDir = await fresh()
+    const directory: { route?: Wire.AuthorityRoute; targetActivated?: boolean } = {}
+    let blob = open(dataDir, trusted, maintenance(directory))
+    const { upload, retention } = await sealed(blob, 'upload-1', text('kept'))
+    const stagedBlob = ok(await blob.promote({ upload, expectedDigest: upload.digest }, ctx()))
+    const ownerRef: Wire.PublicRef = { kind: 'artifact', value: { artifactId: 'artifact-1', version: 1 } }
+    const ref = ok(await blob.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))
+    ok(await blob.unpin({ pinId: retention.pinId, expectedRevision: 1 }, ctx()))
+    const probe = () => blob.transfer.probe({ upgradeId: 'upgrade-1' }, MAINTAINER)
+    expect(ok(await probe())).toEqual({ state: 'absent' })
+    const fence = ok(await blob.transfer.fence(FENCE, MAINTAINER))
+    expect(
+      sql(dataDir, 'SELECT watermark, (SELECT MAX(seq) FROM deletions) AS head FROM maintenance_transfers'),
+    ).toEqual([{ watermark: 1, head: 1 }])
+
+    blob = reopen(blob, dataDir, maintenance(directory))
+    expect(ok(await probe())).toEqual({ state: 'fenced', fence })
+    expect(refused(await blob.unpin({ pinId: ref.pinId, expectedRevision: 1 }, ctx()))).toBe('blocked')
+
+    const abort = (route: Wire.AuthorityRoute, expectedFenceId = fence.fenceId, context = MAINTAINER) =>
+      blob.transfer.abort(
+        {
+          upgradeId: 'upgrade-1',
+          expectedFenceId,
+          recoveryRoute: inlineData(route as unknown as JsonValue, 'agh.test/authority-route@1'),
+        },
+        context,
+      )
+    const recovery = recoveryRoute(2)
+    expect(refused(await abort(recovery, fence.fenceId, ctx()))).toBe('permission_denied')
+    expect(refused(await abort(recovery))).toBe('not_found')
+    directory.route = recoveryRoute(2, { cutoverId: 'recovery-2' })
+    expect(refused(await abort(recovery))).toBe('revision_conflict')
+    directory.route = recovery
+    expect(refused(await abort(recovery, 'another-fence'))).toBe('revision_conflict')
+    expect(refused(await abort(recoveryRoute(1)))).toBe('revision_conflict')
+    expect(refused(await abort(recoveryRoute(3)))).toBe('revision_conflict')
+    expect(refused(await abort(recoveryRoute(2, { locationRef: 'location-2' })))).toBe('revision_conflict')
+    directory.targetActivated = true
+    expect(refused(await abort(recovery))).toBe('revision_conflict')
+    expect(refused(await blob.unpin({ pinId: ref.pinId, expectedRevision: 1 }, ctx()))).toBe('blocked')
+
+    directory.targetActivated = false
+    const aborted = ok(await abort(recovery))
+    expect(aborted).toEqual({ state: 'aborted', source: EXPECTED, restoredEpoch: 2 })
+    expect(ok(await abort(recovery))).toEqual(aborted)
+    expect(refused(await abort(recoveryRoute(2, { cutoverId: 'recovery-2' })))).toBe('idempotency_conflict')
+    blob = reopen(blob, dataDir, maintenance(directory))
+    expect(ok(await probe())).toEqual(aborted)
+    expect(ok(await blob.unpin({ pinId: ref.pinId, expectedRevision: 1 }, ctx()))).toEqual({ released: true })
+    // The fenced epoch never serves again; a later fence names the restored one.
+    expect(refused(await blob.transfer.fence({ ...FENCE, upgradeId: 'upgrade-2' }, MAINTAINER))).toBe(
+      'revision_conflict',
+    )
+    const next = ok(
+      await blob.transfer.fence(
+        { ...FENCE, upgradeId: 'upgrade-2', expected: { ...EXPECTED, authorityEpoch: 2 } },
+        MAINTAINER,
+      ),
+    )
+    expect(next).toMatchObject({ fenceEpoch: 2, checkpoint: { authorityEpoch: 2 } })
   })
 })
 

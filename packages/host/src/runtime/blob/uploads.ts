@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
@@ -13,6 +14,7 @@ import {
 import { createPlatform } from '../../adapters/platform.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import { createPrivateArtifactStore, openPrivateArtifactDatabase } from '../../private-artifact-store.js'
+import { type Authority, openAuthority, type TransferMaintenance } from '../authority-transfer.js'
 
 type Detail = keyof typeof RuntimeErrorDetails
 
@@ -67,62 +69,83 @@ export function within(inner: Wire.ScopeRef, outer: Wire.ScopeRef): boolean {
 const DDL = [
   `CREATE TABLE IF NOT EXISTS uploads (
     upload_id TEXT PRIMARY KEY, owner TEXT NOT NULL, scope TEXT NOT NULL, expires_at INTEGER NOT NULL,
-    session TEXT NOT NULL, result TEXT, deleted INTEGER NOT NULL DEFAULT 0)`,
+    session TEXT NOT NULL, result TEXT, digest TEXT, deleted INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS upload_chunks (
     upload_id TEXT NOT NULL, at INTEGER NOT NULL, bytes BLOB NOT NULL, PRIMARY KEY (upload_id, at))`,
   `CREATE TABLE IF NOT EXISTS blobs (
-    blob_id TEXT PRIMARY KEY, upload_id TEXT NOT NULL UNIQUE, staged TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)`,
+    blob_id TEXT PRIMARY KEY, upload_id TEXT NOT NULL UNIQUE, staged TEXT NOT NULL, digest TEXT NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS roots (
     pin_id TEXT PRIMARY KEY, target TEXT NOT NULL, target_id TEXT NOT NULL, owner TEXT, owner_key TEXT,
     retention_until INTEGER, revision INTEGER NOT NULL, active INTEGER NOT NULL, blob TEXT)`,
   'CREATE INDEX IF NOT EXISTS roots_target ON roots (target, target_id, active)',
+  // The deletion log: every collect and released pin, and both phases of a content unlink.
+  `CREATE TABLE IF NOT EXISTS deletions (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, ref TEXT NOT NULL, digest TEXT, at INTEGER NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS deletions_kind ON deletions (kind, digest, seq)',
+  'CREATE INDEX IF NOT EXISTS blobs_digest ON blobs (digest, deleted)',
+  'CREATE INDEX IF NOT EXISTS uploads_digest ON uploads (digest)',
 ]
 
-export type BlobStore = {
+/** The business tables a checkpoint covers, in key order. */
+const TABLES = {
+  uploads: 'upload_id',
+  upload_chunks: 'upload_id, at',
+  blobs: 'blob_id',
+  roots: 'pin_id',
+  deletions: 'seq',
+}
+
+/** Every business write goes through `write`, the authority's gate. */
+export type BlobStore = Authority & {
   readonly db: DatabaseSync
   readonly dataDir: string
   readonly authorityId: Wire.Id
   readonly now: () => number
   /** Uploads with an open writer in this process. A restarted process has none, so old writers are stopped. */
   readonly writers: Set<Wire.Id>
-  transaction<T>(body: () => T): T
 }
 
 export function openBlobStore(options: {
   dataDir: string
   authorityId: Wire.Id
   now?: () => number
+  maintenance?: TransferMaintenance
 }): BlobStore {
   const db = openPrivateArtifactDatabase(options.dataDir, 'blob-service.db', 'blob service store')
+  let authority: Authority
   try {
     db.exec('PRAGMA busy_timeout = 5000')
     db.exec('PRAGMA journal_mode = WAL')
     db.exec('PRAGMA synchronous = NORMAL')
     syncCheckpointsToMedium(db)
     for (const statement of DDL) db.exec(statement)
+    authority = openAuthority(db, {
+      authorityId: options.authorityId,
+      tables: TABLES,
+      log: 'deletions',
+      bridges: () => [],
+      error: blobError,
+      Refusal: BlobRefusal,
+      ...(options.maintenance ? { maintenance: options.maintenance } : {}),
+    })
   } catch (error) {
     db.close()
     throw error
   }
   return {
+    ...authority,
     db,
     dataDir: options.dataDir,
     authorityId: options.authorityId,
     now: options.now ?? (() => Date.now()),
     writers: new Set(),
-    transaction(body) {
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        const result = body()
-        db.exec('COMMIT')
-        return result
-      } catch (error) {
-        db.exec('ROLLBACK')
-        throw error
-      }
-    },
   }
 }
+
+/** The content file of one digest in this store's content-addressed directory. */
+export const contentPath = (store: Pick<BlobStore, 'dataDir'>, digest: Wire.Digest) =>
+  join(store.dataDir, 'artifacts', 'sha256', digest.slice(0, 2), digest)
 
 type UploadRow = {
   owner: string
@@ -146,7 +169,7 @@ export function stage(store: BlobStore, request: unknown, context: CallContext):
   if (input.size > RuntimeClientTransportPolicy.maxArtifactBytes)
     refuse('artifact_bytes', 'upload is larger than the artifact limit')
   const owner = ownerOf(context)
-  return store.transaction(() => {
+  return store.write(() => {
     const row = loadUpload(store, input.uploadId)
     if (row) {
       const prior = JSON.parse(row.session) as Wire.UploadSession
@@ -238,7 +261,7 @@ function writeChunk(store: BlobStore, uploadId: Wire.Id, offset: number, bytes: 
   if (!Number.isSafeInteger(offset) || offset < 0) refuse('invalid_request', 'chunk offset is not valid')
   if (bytes.byteLength === 0 || bytes.byteLength > UPLOAD_CHUNK_BYTES)
     refuse('invalid_request', 'chunk size is not valid')
-  return store.transaction(() => {
+  return store.write(() => {
     const { session } = uploading(loadUpload(store, uploadId))
     const end = offset + bytes.byteLength
     if (end > session.expectedBytes) refuse('invalid_request', 'chunk runs past the declared size')
@@ -281,7 +304,7 @@ async function seal(store: BlobStore, uploadId: Wire.Id): Promise<Wire.UploadRes
     session.expectedBytes,
     uploadChunks(store, uploadId),
   )
-  return store.transaction(() => {
+  return store.write(() => {
     const current = loadUpload(store, uploadId)
     if (current?.result) return JSON.parse(current.result) as Wire.UploadResult
     const { session: open } = uploading(current)
@@ -313,8 +336,8 @@ async function seal(store: BlobStore, uploadId: Wire.Id): Promise<Wire.UploadRes
       )
       .run(pinId, uploadId)
     store.db
-      .prepare('UPDATE uploads SET session = ?, result = ? WHERE upload_id = ?')
-      .run(JSON.stringify(sealed), JSON.stringify(result), uploadId)
+      .prepare('UPDATE uploads SET session = ?, result = ?, digest = ? WHERE upload_id = ?')
+      .run(JSON.stringify(sealed), JSON.stringify(result), digest, uploadId)
     store.db.prepare('DELETE FROM upload_chunks WHERE upload_id = ?').run(uploadId)
     return result
   })
