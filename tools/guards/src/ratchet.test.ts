@@ -1,4 +1,5 @@
 // Measure merged main and runtime integration sources with exact countLines() ceilings.
+// Versioned resource discovery and process-local ownership: exact measured source/testkit caps.
 // FULL-FILE-ACCESS: measured session-scoped file access, external checkpoints and authoritative UI permission
 // projection/synchronization. Exact countLines() caps after review; no exclusions or spare allocation.
 // PERMISSION-RECONNECT: measured Web +48 lines for fresh permission gating and interrupted submission guards.
@@ -1458,7 +1459,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI registry recover no longer judges the stand-in host's handles. Measured 5761, exact, no spare.
   // Detached release planning: measured 6849, exact, no spare.
   // Preserve case failure diagnostics and record unsupported authority directory scenarios. Exact count.
-  'packages/extension-api/testkit': 6876,
+  'packages/extension-api/testkit': 7236,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2663,7 +2664,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Detached release planning: measured 64517, exact, no spare.
   // Default blob and artifacts provider descriptors, the ticket feature only with a ticket key, and
   // per-service data directories. Measured 64597 (+80), exact, no spare.
-  'packages/host/src': 64597,
+  'packages/host/src': 65018,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
