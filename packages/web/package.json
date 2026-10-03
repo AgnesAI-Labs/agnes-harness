@@ -15,6 +15,7 @@
   "dependencies": {
     "@agnes/base": "workspace:*",
     "@agnes/cordis": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-web": "workspace:*",
     "@agnes/sdk": "workspace:*",

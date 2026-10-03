@@ -286,9 +286,9 @@ function componentLayerGaps(packageDir: string): string[] {
   return gaps
 }
 
-function clientApiGaps(base: string): string[] {
+function clientApiGaps(base: string, packageName: string): string[] {
   const gaps: string[] = []
-  for (const file of listSourceFiles(join(base, 'packages/web-client/src'), {
+  for (const file of listSourceFiles(join(base, `packages/${packageName}/src`), {
     excludeDirs: [...SKIP_DIRS],
   })) {
     for (const { specifier } of importEdges(readFileSync(file, 'utf8'))) {
@@ -464,9 +464,9 @@ describe('UI libraries stay in the component layer', () => {
   )
 })
 
-describe('web-client uses the extension API client entry', () => {
-  it('keeps extension API backend and test entries out of web-client source', () => {
-    const gaps = clientApiGaps(root)
+describe.each(['web', 'web-client'])('%s uses the extension API client entry', (packageName) => {
+  it('keeps extension API backend and test entries out of source', () => {
+    const gaps = clientApiGaps(root, packageName)
     expect(gaps, gaps.join('\n')).toEqual([])
   })
 
@@ -490,13 +490,23 @@ describe('web-client uses the extension API client entry', () => {
       `const api = require('${specifier}')`,
       `type API = import('${specifier}').API`,
       `const api = import(\`${specifier}\`)`,
+      `import '${specifier}'`,
+      `import api from '${specifier}'`,
+      `import * as api from '${specifier}'`,
+      `import { type API } from '${specifier}'`,
+      `export { api } from '${specifier}'`,
+      `export * as api from '${specifier}'`,
+      `const api = require(\`${specifier}\`)`,
+      `import api = require('${specifier}')`,
     ]
     for (const [index, source] of sources.entries()) {
       const ext = ['ts', 'tsx', 'mts', 'cts'][index % 4]
       const dir = ['nested', 'gen', 'generated'][index % 3]
-      const file = `packages/web-client/src/${dir}/panel.${ext}`
+      const file = `packages/${packageName}/src/${dir}/panel.${ext}`
       withTemp({ [file]: source }, (base) => {
-        expect(clientApiGaps(base), source).toEqual(allowed ? [] : [`${file}: imports ${specifier}`])
+        expect(clientApiGaps(base, packageName), source).toEqual(
+          allowed ? [] : [`${file}: imports ${specifier}`],
+        )
       })
     }
   })

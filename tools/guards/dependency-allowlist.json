@@ -123,6 +123,7 @@
   "@agnes/web": [
     "@agnes/base",
     "@agnes/cordis",
+    "@agnes/extension-api",
     "@agnes/protocol",
     "@agnes/resource-control-web",
     "@agnes/sdk",
