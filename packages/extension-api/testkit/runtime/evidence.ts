@@ -86,6 +86,7 @@ export interface AssertionRecord {
   readonly startedAt: string
   readonly finishedAt: string
   readonly status: AssertionStatus
+  readonly diagnostic?: string
   readonly configDigest: string
   readonly releaseSetDigest: string
   readonly attachmentDigest: string | null
@@ -189,6 +190,7 @@ function readAssertion(value: unknown): ReadAssertion {
   if (!member(SCENARIOS, value.scenario)) missing.push('scenario')
   if (!member(QUALIFICATIONS, value.qualification)) missing.push('qualification')
   if (!member(ASSERTION_STATUSES, value.status)) missing.push('status')
+  if (value.diagnostic !== undefined && typeof value.diagnostic !== 'string') missing.push('diagnostic')
   if (!Array.isArray(value.features) || value.features.some((feature) => text(feature) === null)) {
     missing.push('features')
   }
@@ -236,6 +238,7 @@ function readAssertion(value: unknown): ReadAssertion {
     startedAt: text(value.startedAt) as string,
     finishedAt: text(value.finishedAt) as string,
     status: value.status as AssertionStatus,
+    ...(typeof value.diagnostic === 'string' ? { diagnostic: value.diagnostic } : {}),
     configDigest: text(value.configDigest) as string,
     releaseSetDigest: text(value.releaseSetDigest) as string,
     attachmentDigest: value.attachmentDigest === null ? null : (text(value.attachmentDigest) as string),

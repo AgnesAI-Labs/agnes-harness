@@ -1,5 +1,6 @@
 import { bindInteractionContract } from '../../../../examples/runtime-reference/src/providers/interaction-contract.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
+import { withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.interaction'
 const REFERENCE = 'reference'
@@ -18,6 +19,6 @@ export async function bindConformance(
   if (request.contracts !== 'all' && !request.contracts.includes(CONTRACT))
     return { contracts: [], providers: [] }
   if (!request.providers.includes(REFERENCE)) return { contracts: [CONTRACT], providers: [] }
-  bindInteractionContract(harness, request.command, { providerId: REFERENCE })
+  bindInteractionContract(withConformanceBuild(harness), request.command, { providerId: REFERENCE })
   return { contracts: [CONTRACT], providers: [REFERENCE] }
 }

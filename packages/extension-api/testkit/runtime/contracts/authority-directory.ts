@@ -14,6 +14,7 @@ const FEATURES: Record<ScenarioName, readonly string[]> = {
 
 export interface AuthorityDirectoryScenarioEvidence {
   readonly passed: boolean
+  readonly status?: 'skipped'
   readonly providerDigest: string
   readonly configDigest: string
   readonly releaseSetDigest: string
@@ -68,6 +69,7 @@ export function registerAuthorityDirectoryContract(
       scenario,
       qualification: 'required',
       providerId: binding.providerId,
+      build: binding.build,
       async run(context): Promise<AssertionInput> {
         const evidence = await port[context.scenario]()
         return {
@@ -78,7 +80,8 @@ export function registerAuthorityDirectoryContract(
           build: binding.build,
           consumer: 'authority-directory-consumer',
           command: binding.command,
-          status: complete(evidence) ? 'passed' : 'failed',
+          status: evidence.status === 'skipped' ? 'skipped' : complete(evidence) ? 'passed' : 'failed',
+          ...(evidence.status === 'skipped' ? { diagnostic: evidence.detail } : {}),
           configDigest: evidence.configDigest,
           releaseSetDigest: evidence.releaseSetDigest,
           attachmentDigest: null,

@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import {
@@ -12,7 +11,7 @@ import {
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import { constructReleaseSet } from '../../../../packages/host/src/runtime/assembly/release-set.js'
 import { createAssemblyProvider } from '../../../../packages/host/src/runtime/providers/assembly.js'
-import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
+import { getConformanceBuildIdentity } from '../build-identity.js'
 
 function hash(files: string[]): string {
   const digest = createHash('sha256')
@@ -30,12 +29,6 @@ export async function bindConformance(
   if (request.contracts !== 'all' && !request.contracts.includes('agh.assembly'))
     return { contracts: [], providers: [] }
   const providers = request.providers.filter((provider) => provider === 'default' || provider === 'reference')
-  const codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-  const lockDigest = hash(['pnpm-lock.yaml'])
-  const sdk = JSON.parse(
-    readFileSync(new URL('../../../../packages/extension-api/package.json', import.meta.url), 'utf8'),
-  ) as { name: string; version: string }
-  const specVersion = 'runtime-services-1'
   const context = (): ReturnType<AssemblyPlanContractBinding['context']> => ({
     signal: new AbortController().signal,
     principalRef: 'fixture-principal',
@@ -62,15 +55,7 @@ export async function bindConformance(
       providerId,
       command: request.command,
       providerDigest,
-      build: {
-        codeSha,
-        buildDigest: canonicalJsonDigest({ codeSha, specVersion }),
-        lockDigest,
-        specVersion,
-        sdkVersion: sdk.version,
-        sdkDigest: canonicalJsonDigest({ name: sdk.name, version: sdk.version }),
-        platform: `${process.platform}-${process.arch}`, // guards-allow-platform: evidence only, no branch
-      },
+      build: getConformanceBuildIdentity(),
       context,
       create: providerId === 'default' ? createAssemblyProvider : createReferenceAssemblyProvider,
       construct: providerId === 'default' ? constructReleaseSet : constructReferenceReleaseSet,

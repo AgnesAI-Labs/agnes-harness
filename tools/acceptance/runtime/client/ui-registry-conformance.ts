@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -9,10 +10,10 @@ import {
   registerUIRegistryContract,
   restartUIRegistryClient,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.ts'
-import type { BuildIdentity } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
 import { createUIRegistry } from '../../../../packages/web-client/src/runtime/providers/ui-registry.ts'
+import { getConformanceBuildIdentity, withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.ui-registry'
 const PROVIDERS = ['default', 'reference'] as const
@@ -25,15 +26,7 @@ const sha256 = (path: string) =>
     .update(readFileSync(join(root, path)))
     .digest('hex')
 
-const build: BuildIdentity = {
-  codeSha: 'web-client-code',
-  buildDigest: 'web-client-build',
-  lockDigest: 'web-client-lock',
-  specVersion: 'web-client-spec',
-  sdkVersion: 'web-client-sdk',
-  sdkDigest: 'web-client-sdk-digest',
-  platform: 'web-client-platform',
-}
+const build = getConformanceBuildIdentity()
 
 /**
  * Registers the six UI registry cases for the web client's default registry. Its `recover` client
@@ -53,7 +46,8 @@ export function bindDefaultUIRegistryContract(
     configDigest: canonicalJsonDigest({}),
     releaseSetDigest: sha256('packages/web-client/package.json'),
     factory: createUIRegistry,
-    restart: (directory) => restartUIRegistryClient(['--import', 'tsx', self, directory], root),
+    restart: (directory) =>
+      restartUIRegistryClient(['--import', 'tsx', self, directory, JSON.stringify(build)], root),
   })
 }
 
@@ -70,7 +64,8 @@ export async function bindConformance(
     return { contracts: [], providers: [] }
   const providers = PROVIDERS.filter((providerId) => request.providers.includes(providerId))
   for (const providerId of providers) {
-    if (providerId === 'reference') await bindUIRegistryContract(harness, request.command, { providerId })
+    if (providerId === 'reference')
+      await bindUIRegistryContract(withConformanceBuild(harness), request.command, { providerId })
     else bindDefaultUIRegistryContract(harness, request.command, providerId)
   }
   return { contracts: [CONTRACT], providers }
@@ -81,5 +76,7 @@ const entry = process.argv[1]
 if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
   const directory = process.argv[2]
   if (directory === undefined) throw new Error('expected: <directory>')
+  const expectedBuild = process.argv[3]
+  if (expectedBuild !== undefined) assert.deepEqual(build, JSON.parse(expectedBuild))
   recoverUIRegistry(createUIRegistry, directory, holdUIRegistryClient)
 }

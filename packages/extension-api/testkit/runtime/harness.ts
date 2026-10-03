@@ -70,6 +70,7 @@ export interface AssertionInput {
   readonly consumer: string
   readonly command: string
   readonly status: AssertionStatus
+  readonly diagnostic?: string
   readonly configDigest: string
   readonly releaseSetDigest: string
   readonly attachmentDigest: string | null
@@ -96,6 +97,7 @@ export interface CaseRegistration {
   readonly scenario: ScenarioName
   readonly qualification: Qualification
   readonly providerId: string
+  readonly build?: BuildIdentity
   run(context: CaseContext): AssertionInput | Promise<AssertionInput>
 }
 
@@ -370,16 +372,35 @@ export function createConformanceHarness(): ConformanceHarness {
       for (const registration of cases) {
         if (!selected.has(registration.contract)) continue
         if (!request.providers.includes(registration.providerId)) continue
-        const input = await registration.run({
-          contract: registration.contract,
-          scenario: registration.scenario,
-          qualification: registration.qualification,
-          providerId: registration.providerId,
-          clock: request.clock,
-          container,
-          inbox,
-          effects,
-        })
+        let input: AssertionInput
+        try {
+          input = await registration.run({
+            contract: registration.contract,
+            scenario: registration.scenario,
+            qualification: registration.qualification,
+            providerId: registration.providerId,
+            clock: request.clock,
+            container,
+            inbox,
+            effects,
+          })
+        } catch (error) {
+          assertions.push({
+            ...absentAssertion(
+              registration.contract,
+              registration.providerId,
+              request,
+              registration.build ?? ABSENT_BUILD,
+            ),
+            id: `threw:${registration.providerId}:${registration.contract}:${registration.scenario}:${assertions.length}`,
+            scenario: registration.scenario,
+            qualification: registration.qualification,
+            providerDigest: 'case-threw',
+            consumer: 'case-runner',
+            diagnostic: error instanceof Error ? error.message : String(error),
+          })
+          continue
+        }
         if (input.fixture !== null && !(FIXTURE_MARKS as readonly string[]).includes(input.fixture)) {
           throw new Error('case fixture mark is not recognized')
         }

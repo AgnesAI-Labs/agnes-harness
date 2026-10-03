@@ -14,6 +14,7 @@
     "runtime/report.ts",
     "runtime/report.test.ts",
     "runtime/fixtures.ts",
+    "runtime/build-identity.ts",
     "runtime/run-conformance.ts",
     "runtime/sources.ts",
     "runtime/platform/assembly-conformance.ts"

@@ -1,6 +1,7 @@
 import { bindArtifactsContract } from '../../../../examples/runtime-reference/src/providers/artifacts-contract.ts'
 import { bindBlobContract } from '../../../../examples/runtime-reference/src/providers/blob-contract.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
+import { withConformanceBuild } from '../build-identity.js'
 
 const BINDERS = { 'agh.blob': bindBlobContract, 'agh.artifacts': bindArtifactsContract } as const
 const REFERENCE = 'reference'
@@ -21,6 +22,7 @@ export async function bindConformance(
     (contract) => request.contracts === 'all' || request.contracts.includes(contract),
   )
   if (!contracts.length || !request.providers.includes(REFERENCE)) return { contracts, providers: [] }
-  for (const contract of contracts) BINDERS[contract](harness, request.command, { providerId: REFERENCE })
+  for (const contract of contracts)
+    BINDERS[contract](withConformanceBuild(harness), request.command, { providerId: REFERENCE })
   return { contracts, providers: [REFERENCE] }
 }
