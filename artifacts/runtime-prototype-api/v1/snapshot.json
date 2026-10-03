@@ -36,6 +36,10 @@
       "sha256": "edf5f9a829e3f107cf22d0b0c4d7421fb639be86093716bda7d7a7ded17972d3"
     },
     {
+      "path": "packages/extension-api/src/runtime/pricing-authoring.ts",
+      "sha256": "b925ebb391cfa2b590327170cf47a5b060db0c5b3ddca1f617e06a422872d640"
+    },
+    {
       "path": "packages/extension-api/src/runtime/routing-authoring.ts",
       "sha256": "b09e7debd6551e50184a5fdccd7c105fc4dd0e6ef02beb1075277081c872f9fd"
     },
@@ -281,7 +285,7 @@
     },
     {
       "path": "packages/protocol/tools/gen-runtime.ts",
-      "sha256": "50c941333e046f8fc34d2fba1846e4a2e372c4e05e121b8997840b42b5d8de4c"
+      "sha256": "7eea1ce80b43c5c77bff27f1c6e8e0f727eda03aa403076ca001417adf3af869"
     },
     {
       "path": "packages/protocol/tools/gen-session.ts",
@@ -311,7 +315,7 @@
     },
     {
       "path": "packages/extension-api/src/runtime/index.ts",
-      "sha256": "6206ec6da89998c28d8d1596149fa170100b5a0c6d916352bb1bbb37ff53812c"
+      "sha256": "e12089cfc2af0969be0afbbdb058cea397de6ab287c5dcfbb69a4bb8da30c2f6"
     },
     {
       "path": "packages/extension-api/src/runtime/public-1.ts",
@@ -676,7 +680,11 @@
       },
       {
         "path": "packages/extension-api/src/runtime/index.ts",
-        "sha256": "6206ec6da89998c28d8d1596149fa170100b5a0c6d916352bb1bbb37ff53812c"
+        "sha256": "e12089cfc2af0969be0afbbdb058cea397de6ab287c5dcfbb69a4bb8da30c2f6"
+      },
+      {
+        "path": "packages/extension-api/src/runtime/pricing-authoring.ts",
+        "sha256": "b925ebb391cfa2b590327170cf47a5b060db0c5b3ddca1f617e06a422872d640"
       },
       {
         "path": "packages/extension-api/src/runtime/public-1.ts",
@@ -1352,7 +1360,7 @@
       },
       {
         "path": "packages/protocol/tools/gen-runtime.ts",
-        "sha256": "50c941333e046f8fc34d2fba1846e4a2e372c4e05e121b8997840b42b5d8de4c"
+        "sha256": "7eea1ce80b43c5c77bff27f1c6e8e0f727eda03aa403076ca001417adf3af869"
       },
       {
         "path": "packages/protocol/tools/gen-session.ts",
@@ -1396,16 +1404,16 @@
       },
       {
         "path": "tools/runtime-prototype/files.ts",
-        "sha256": "c937cef434276f019faad2b6ec37a3c3373b692d9d4013cc94e157ed28228e61"
+        "sha256": "b3c36c24faccd01394a00a9933e6925ac6941706b3a60b2afa48b2512c550c4d"
       },
       {
         "path": "tools/runtime-prototype/tsconfig.compile.json",
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "361feddb0a6fb1b402d1098e9b15c6c81719bed6b210e465e28c31a78a203e29",
+    "inputDigest": "f676639d005f934c8c28c2f4e95bdb22bc4f36b46c5d387b40be625ef0f33a4e",
     "diagnostics": [],
-    "reportDigest": "cacab536dccc99552bb0c905ae136bbb3f706fa50a87e22ed8754fc1b0167be0"
+    "reportDigest": "96d20f76cf48360a16ffae73da0da61653cc0509136b4be241f5e31e16acb1da"
   },
-  "snapshotDigest": "4c742c29e461d808f31576b70a456aecaed5f28d4682c7bf4ef14740c2cfd006"
+  "snapshotDigest": "b1eec165f9304c1fde60fd995dffb1da4fa69939bf446e67124f029e27bc238e"
 }
