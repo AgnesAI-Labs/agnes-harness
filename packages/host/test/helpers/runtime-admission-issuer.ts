@@ -106,6 +106,8 @@ export function createAdmissionAcceptanceIssuer(
     if (!actor) throw Error('actual acceptance identity refused')
     return actor
   })()
+  // A store-construction failure may close this restricted owner before anyone awaits issue().
+  void ready.catch(() => undefined)
   async function issue(admission: RunAdmission, input: CallContext): Promise<CallContext> {
     const actor = await ready
     // Fixture issuance belongs outside the Runtime writer transaction, including a queued refusal.
