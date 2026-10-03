@@ -2,7 +2,7 @@
 // mirrored here. The Node binding assigns the factory to UIRegistryFactory, which keeps them in step.
 type Target = 'web' | 'tui' | 'im' | 'sdk'
 
-interface Descriptor {
+export interface Descriptor {
   id: string
   packageDigest: string
   renderKey: string
