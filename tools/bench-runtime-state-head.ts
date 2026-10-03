@@ -19,6 +19,8 @@ import type {
   StateAuthorityRef,
 } from '../packages/extension-api/src/runtime/index.ts'
 import { createRuntimeStateStore } from '../packages/host/src/runtime/providers/state.ts'
+import { RuntimeStateDatabase } from '../packages/host/src/runtime/state/transactions.ts'
+import { createAdmissionAcceptanceIssuer } from '../packages/host/test/helpers/runtime-admission-issuer.ts'
 import { jcs } from '../packages/protocol/src/jcs.ts'
 
 const authority: StateAuthorityRef = {
@@ -96,7 +98,29 @@ function positive(name: string, fallback: number): number {
 }
 
 function openStore(file: string) {
-  return createRuntimeStateStore({ file, authority, now: () => Date.parse(admittedAt) })
+  const options = { file, authority, now: () => Date.parse(admittedAt) }
+  const database = new RuntimeStateDatabase(options)
+  try {
+    const issuer = createAdmissionAcceptanceIssuer(database, authority, options.now, context())
+    try {
+      const store = createRuntimeStateStore(options, database)
+      return {
+        store,
+        issue: issuer.issue,
+        ready: issuer.ready,
+        close() {
+          issuer.close()
+          store.close()
+        },
+      }
+    } catch (error) {
+      issuer.close()
+      throw error
+    }
+  } catch (error) {
+    database.close()
+    throw error
+  }
 }
 
 function eventCount(file: string): number {
@@ -134,15 +158,17 @@ function memory() {
 }
 
 async function writeRuns(file: string, runs: number): Promise<void> {
-  const store = openStore(file)
+  const opened = openStore(file)
   try {
     for (let index = 1; index <= runs; index += 1) {
-      const created = await store.createRun(admission(index), context())
+      const input = admission(index)
+      const issued = await opened.issue(input, context())
+      const created = await opened.store.createRun(input, issued)
       if (!created.ok) throw new Error(`createRun ${index} failed: ${created.error.detailCode}`)
       if (index % 5_000 === 0) console.error(`wrote ${index} runs`)
     }
   } finally {
-    store.close()
+    opened.close()
   }
 }
 
@@ -150,17 +176,19 @@ async function latency(): Promise<void> {
   const runs = positive('--runs', 300)
   const directory = mkdtempSync(join(tmpdir(), 'agnes-state-head-'))
   const file = join(directory, 'state.sqlite')
-  const store = openStore(file)
+  const opened = openStore(file)
   const samples: number[] = []
   try {
     for (let index = 1; index <= runs; index += 1) {
+      const input = admission(index)
+      const issued = await opened.issue(input, context())
       const started = performance.now()
-      const created = await store.createRun(admission(index), context())
+      const created = await opened.store.createRun(input, issued)
       samples.push(performance.now() - started)
       if (!created.ok) throw new Error(`createRun ${index} failed: ${created.error.detailCode}`)
     }
     const readStarted = performance.now()
-    const read = await store.open(
+    const read = await opened.store.open(
       {
         requestId: 'bench-read',
         authority,
@@ -174,7 +202,7 @@ async function latency(): Promise<void> {
     const readOpenMs = performance.now() - readStarted
     if (!read.ok) throw new Error(`read open failed: ${read.error.detailCode}`)
     const writeStarted = performance.now()
-    const write = await store.open(
+    const write = await opened.store.open(
       {
         requestId: 'bench-write',
         authority,
@@ -214,7 +242,7 @@ async function latency(): Promise<void> {
       }),
     )
   } finally {
-    store.close()
+    opened.close()
   }
 }
 
@@ -230,10 +258,11 @@ async function build(): Promise<void> {
 }
 
 async function openOnce(file: string, requestId: string): Promise<number> {
-  const store = openStore(file)
+  const openedStore = openStore(file)
   try {
+    await openedStore.ready
     const started = performance.now()
-    const opened = await store.open(
+    const opened = await openedStore.store.open(
       {
         requestId,
         authority,
@@ -248,7 +277,7 @@ async function openOnce(file: string, requestId: string): Promise<number> {
     if (!opened.ok) throw new Error(`open failed: ${opened.error.detailCode}`)
     return openMs
   } finally {
-    store.close()
+    openedStore.close()
   }
 }
 
@@ -279,7 +308,11 @@ async function opens(): Promise<void> {
   const events = eventCount(file)
   const prepareStarted = performance.now()
   const prepared = openStore(file)
-  prepared.close()
+  try {
+    await prepared.ready
+  } finally {
+    prepared.close()
+  }
   const prepareMs = performance.now() - prepareStarted
   const before = memory()
   await openOnce(file, 'bench-warmup-open')
@@ -299,7 +332,7 @@ async function opens(): Promise<void> {
       events,
       runs,
       prepareMs,
-      note: 'prepareMs is store construction, including the first create-if-missing of runtime_records_commit. The warmup open is outside the samples. Each sample is a new store and a full session verify.',
+      note: 'prepareMs includes source installation and issuer readiness before the first open. The warmup open is outside the samples. Each sample is a new store and a full session verify.',
       samplesMs: samples,
       medianMs,
       p95Ms,
