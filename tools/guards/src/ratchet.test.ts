@@ -2706,7 +2706,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Bounded migration export index and intake spool. Measured 67840, exact, no spare.
   // Read-only migration planning and receipt verification. Measured 68546, exact, no spare.
   // Bounded sandbox and execution services. Measured 69677, exact, no spare.
-  'packages/host/src': 71043,
+  // Default blob service export, import, verify and activate of an authority transfer, over the
+  // bounded export index. Measured 71813 (+770), exact, no spare.
+  'packages/host/src': 71813,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
