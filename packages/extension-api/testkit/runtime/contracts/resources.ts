@@ -2,14 +2,21 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
-import type { BindingRef, ResourceDescriptor, SchemaRef, ScopeRef } from '@agnes/protocol/runtime'
+import type {
+  BindingRef,
+  ResourceDescriptor,
+  ResourcesReleaseResult,
+  RetentionRef,
+  SchemaRef,
+  ScopeRef,
+} from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import { type BuildIdentity, SCENARIOS, type ScenarioName } from '../evidence.js'
 import type { ConformanceHarness } from '../harness.js'
 
 export const RESOURCE_CATALOG_COVERAGE = {
-  implemented: ['list', 'describe', 'register', 'remove', 'resources_discover'],
-  incomplete: ['durable-retain', 'durable-release', 'pin-gc-races', 'production-wiring', 'tools-consumer'],
+  implemented: ['list', 'describe', 'register', 'remove', 'retain', 'release', 'resources_discover'],
+  incomplete: ['production-wiring', 'tools-consumer'],
 } as const
 export interface ResourceCatalogSubject {
   readonly binding: BindingRef
@@ -117,7 +124,13 @@ export interface ResourceCatalogContractBinding {
   coldRead(directory: string, descriptor: ResourceDescriptor): Promise<Outcome<unknown>>
 }
 
-/** Six lifecycle scenarios for the catalog subset; pin/receipt contracts remain explicitly incomplete. */
+/** Six lifecycle scenarios for the catalog, including the first-pin exemption. */
+function resourceRef(descriptor: ResourceDescriptor) {
+  return {
+    kind: 'resource' as const,
+    value: { resourceId: descriptor.id, version: descriptor.version, digest: descriptor.digest },
+  }
+}
 export async function exerciseResourceCatalog(
   binding: ResourceCatalogContractBinding,
   scenario: ScenarioName,
@@ -167,6 +180,55 @@ export async function exerciseResourceCatalog(
         insist(
           detail(await call('describe', { resourceId: another.id, version: null })) === 'resources_not_found',
           'removed resource',
+        )
+        const pinned = resourceCatalogValue<RetentionRef>(
+          'RetentionRef',
+          await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' }),
+        )
+        insist(
+          pinned.kind === 'domain-record' &&
+            pinned.authorityId === 'agh.resources' &&
+            pinned.resourceId === descriptor.id &&
+            pinned.version === descriptor.version &&
+            pinned.digest === descriptor.digest,
+          'first retain binds the discovered version',
+        )
+        const replay = resourceCatalogValue<RetentionRef>(
+          'RetentionRef',
+          await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' }),
+        )
+        insist(replay.pinId === pinned.pinId, 'same owner replays the pin')
+        insist(
+          detail(await call('retain', { resource: resourceRef(descriptor), purpose: 'job' })) ===
+            'resources_pin_required',
+          'another purpose is not a new acquisition',
+        )
+        const previous = options.authorize
+        options.authorize = (method, resource, ctx) =>
+          previous(method, resource, ctx) || ctx.principalRef === 'second-principal'
+        insist(
+          detail(
+            await call(
+              'retain',
+              { resource: resourceRef(descriptor), purpose: 'continuation' },
+              { ...resourceCatalogContext(), principalRef: 'second-principal' },
+            ),
+          ) === 'resources_pin_required',
+          'ordinary caller must already hold the pin',
+        )
+        options.authorize = previous
+        const released = resourceCatalogValue<ResourcesReleaseResult>(
+          'ResourcesReleaseResult',
+          await call('release', { retention: pinned, reason: 'continuation finished' }),
+        )
+        insist(released.state === 'released', 'release with no active reference')
+        const again = resourceCatalogValue<ResourcesReleaseResult>(
+          'ResourcesReleaseResult',
+          await call('release', { retention: pinned, reason: 'continuation finished' }),
+        )
+        insist(
+          again.state === 'released' && again.receipt.digest === released.receipt.digest,
+          'release replay',
         )
         break
       }
@@ -220,14 +282,33 @@ export async function exerciseResourceCatalog(
         insist(
           detail(
             await call('retain', {
-              resource: {
-                kind: 'resource',
-                value: { resourceId: descriptor.id, version: descriptor.version, digest: descriptor.digest },
-              },
-              purpose: 'continuation',
+              resource: { kind: 'interaction', value: { interactionId: 'not-a-resource' } },
+              purpose: 'history',
             }),
-          ) === 'resources_pin_unavailable',
-          'no fabricated pin',
+          ) === 'resources_not_resource',
+          'non-resource input is not acquisition',
+        )
+        const unseen = resourceCatalogDescriptor('unseen')
+        insist(
+          (await call('register', { descriptor: unseen, ownerReleaseSetId: 'fixture-release' })).ok,
+          'registered without a query',
+        )
+        insist(
+          detail(await call('retain', { resource: resourceRef(unseen), purpose: 'job' })) ===
+            'resources_not_discovered',
+          'register does not discover',
+        )
+        const forged: RetentionRef = {
+          kind: 'domain-record',
+          authorityId: 'agh.resources',
+          resourceId: descriptor.id,
+          version: descriptor.version,
+          digest: descriptor.digest,
+          pinId: 'forged-pin',
+        }
+        insist(
+          detail(await call('release', { retention: forged, reason: 'forged' })) === 'resources_pin_unknown',
+          'forged pin refused',
         )
         insist(
           (
@@ -238,9 +319,13 @@ export async function exerciseResourceCatalog(
           ).ok,
           'pagination setup',
         )
-        const page = resourceCatalogValue<{ nextCursor: string }>(
+        const page = resourceCatalogValue<{ items: ResourceDescriptor[]; nextCursor: string | null }>(
           'ResourcesListResult',
           await call('list', query),
+        )
+        insist(
+          page.items[0]?.id === descriptor.id && page.nextCursor !== null,
+          'first page stays the discovered resource',
         )
         insist(
           (
@@ -259,6 +344,17 @@ export async function exerciseResourceCatalog(
           detail(await call('describe', { resourceId: descriptor.id, version: '1' })) ===
             'resources_version_stale',
           'old resource version',
+        )
+        insist(
+          detail(await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })) ===
+            'resources_version_stale',
+          'retain does not follow the new version',
+        )
+        const latest = { ...descriptor, version: '2' }
+        insist(
+          detail(await call('retain', { resource: resourceRef(latest), purpose: 'artifact' })) ===
+            'resources_not_discovered',
+          'latest is not pinned without a new query',
         )
         break
       }
@@ -312,6 +408,11 @@ export async function exerciseResourceCatalog(
           detail(await call('remove', { id: descriptor.id, expectedRevision: 1 })) === 'resources_closed',
           'disposed mutations refused',
         )
+        insist(
+          detail(await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })) ===
+            'resources_closed',
+          'disposed retain refused',
+        )
         break
       }
     }
@@ -337,7 +438,7 @@ export function registerResourceCatalogContract(
           id: `agh.resources/${binding.providerId}/catalog/${scenario}`,
           providerDigest: binding.providerDigest,
           recipe: 'versioned-resource-catalog',
-          features: ['list', 'describe', 'register', 'remove'],
+          features: ['list', 'describe', 'register', 'remove', 'retain', 'release'],
           build: binding.build,
           consumer: 'detached-resource-catalog-consumer',
           command: binding.command,

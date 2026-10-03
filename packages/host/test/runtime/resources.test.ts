@@ -1,10 +1,12 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Outcome } from '@agnes/extension-api/runtime'
-import type { ResourceDescriptor, ResourceRef } from '@agnes/protocol/runtime'
+import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
+import type { DataRef, ResourceDescriptor, ResourceRef, RetentionRef } from '@agnes/protocol/runtime'
+import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { createReferenceResources } from '../../../../examples/runtime-reference/src/providers/resources.js'
+import { upgradeAssemblyFixture } from '../../../extension-api/testkit/runtime/contracts/assembly-publish.js'
 import {
   exerciseResourceCatalog,
   type ResourceCatalogContractBinding,
@@ -12,8 +14,14 @@ import {
   resourceCatalogDescriptor,
   resourceCatalogFixtureInput,
 } from '../../../extension-api/testkit/runtime/contracts/resources.js'
+import { releaseSnapshot } from '../../src/runtime/assembly/maintenance-journal.js'
 import { createResourcesService } from '../../src/runtime/providers/resources.js'
 import { ResourceRetention } from '../../src/runtime/resource-retention.js'
+import {
+  maintenanceFixtureRecord,
+  maintenancePayload,
+  persistentAssemblyFixture,
+} from './fixtures/assembly-maintenance.js'
 
 const implementations = [
   { name: 'default' as const, create: createResourcesService },
@@ -197,6 +205,454 @@ describe('parallel resource catalog contracts', () => {
         service.close()
         rmSync(directory, { recursive: true, force: true })
       }
+    }
+  })
+})
+
+function resourceRef(descriptor: ResourceDescriptor) {
+  return {
+    kind: 'resource' as const,
+    value: { resourceId: descriptor.id, version: descriptor.version, digest: descriptor.digest },
+  }
+}
+function pinIdentity(descriptor: ResourceDescriptor, purpose: string) {
+  return `rp-${canonicalJsonDigest({
+    digest: descriptor.digest,
+    ownerId: 'fixture-principal',
+    purpose,
+    resourceId: descriptor.id,
+    version: descriptor.version,
+  })}`
+}
+function retainedRef(descriptor: ResourceDescriptor, purpose: string): RetentionRef {
+  return {
+    kind: 'domain-record',
+    authorityId: 'agh.resources',
+    resourceId: descriptor.id,
+    version: descriptor.version,
+    digest: descriptor.digest,
+    pinId: pinIdentity(descriptor, purpose),
+  }
+}
+function pauseGate() {
+  let opened!: () => void
+  let resume!: () => void
+  const entered = new Promise<void>((resolve) => {
+    opened = resolve
+  })
+  const blocked = new Promise<void>((resolve) => {
+    resume = resolve
+  })
+  return {
+    entered,
+    resume,
+    gate: async () => {
+      opened()
+      await blocked
+    },
+  }
+}
+function packageReceipt(pin: { pinId: string; releaseSetId: string; ownerId: string }): DataRef {
+  const value = { pinId: pin.pinId, releaseSetId: pin.releaseSetId, ownerId: pin.ownerId, status: 'active' }
+  return {
+    kind: 'inline',
+    schema: {
+      typeId: 'agh.assembly/package-pin-receipt@1',
+      revision: 1,
+      digest: canonicalJsonDigest(value),
+    },
+    value,
+    digest: canonicalJsonDigest(value),
+    bytes: Buffer.byteLength(JSON.stringify(value)),
+  }
+}
+const ledgerError = (detailCode: string): Outcome<never> => ({
+  ok: false,
+  error: {
+    code: 'incompatible',
+    detailCode,
+    message: 'Synthetic package pin refused',
+    diagnosticId: 'resource-pin-fixture',
+    retryAdvice: { kind: 'never' },
+  },
+})
+function runtimeCaller(context: CallContext): CallContext {
+  if (context.scope.kind !== 'workspace') return context
+  return {
+    ...context,
+    scope: {
+      kind: 'runtime',
+      installationId: context.scope.installationId,
+      runtimeId: context.scope.runtimeId,
+    },
+  }
+}
+
+describe('durable resource pins', () => {
+  it('returns the same first pin, replay, and release refusal from both catalogs', async () => {
+    const traces: unknown[][] = []
+    for (const impl of implementations) {
+      const directory = mkdtempSync(join(tmpdir(), 'resource-pin-cross-'))
+      const service = impl.create(resourceCatalogFixtureInput(directory))
+      const descriptor = resourceCatalogDescriptor()
+      const call = (method: string, data: unknown) => service.call(method, data, resourceCatalogContext())
+      const trace: unknown[] = []
+      try {
+        trace.push(await call('register', { descriptor, ownerReleaseSetId: 'fixture-release' }))
+        trace.push(await call('list', { kind: 'skill', filter: {}, cursor: null, limit: 10 }))
+        const retained = await call('retain', { resource: resourceRef(descriptor), purpose: 'artifact' })
+        trace.push(retained)
+        trace.push(await call('retain', { resource: resourceRef(descriptor), purpose: 'artifact' }))
+        trace.push(await call('retain', { resource: resourceRef(descriptor), purpose: 'history' }))
+        if (!retained.ok) throw new Error(refusal(retained))
+        trace.push(await call('release', { retention: retained.value, reason: 'artifact kept' }))
+        trace.push(await call('release', { retention: retained.value, reason: 'other reason' }))
+        trace.push(await call('release', { retention: retained.value, reason: 'artifact kept' }))
+        traces.push(trace)
+      } finally {
+        service.close()
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+    expect(traces[0]).toEqual(traces[1])
+    expect(traces[0]?.[2]).toMatchObject({
+      ok: true,
+      value: { version: '1', kind: 'domain-record', authorityId: 'agh.resources' },
+    })
+    expect(traces[0]?.[5]).toMatchObject({ ok: true, value: { state: 'released' } })
+    expect(refusal(traces[0]?.[6] as Outcome<unknown>)).toBe('resources_release_conflict')
+  })
+
+  it('refuses the first retain and stores nothing when the row or grant changes first', async () => {
+    for (const impl of implementations) {
+      for (const change of ['remove', 'replace', 'revoke'] as const) {
+        const directory = mkdtempSync(join(tmpdir(), 'resource-pin-before-'))
+        const options = resourceCatalogFixtureInput(directory)
+        const service = impl.create(options)
+        const descriptor = resourceCatalogDescriptor()
+        const call = (method: string, data: unknown) => service.call(method, data, resourceCatalogContext())
+        try {
+          expect((await call('register', { descriptor, ownerReleaseSetId: 'fixture-release' })).ok).toBe(true)
+          expect((await call('describe', { resourceId: descriptor.id, version: '1' })).ok).toBe(true)
+          if (change === 'remove') {
+            expect((await call('remove', { id: descriptor.id, expectedRevision: 1 })).ok).toBe(true)
+          } else if (change === 'replace') {
+            expect(
+              (
+                await call('register', {
+                  descriptor: { ...descriptor, version: '2' },
+                  ownerReleaseSetId: 'fixture-release',
+                })
+              ).ok,
+            ).toBe(true)
+          } else options.authorize = () => false
+          expect(refusal(await call('retain', { resource: resourceRef(descriptor), purpose: 'job' }))).toBe(
+            change === 'remove'
+              ? 'resources_not_found'
+              : change === 'replace'
+                ? 'resources_version_stale'
+                : 'resources_denied',
+          )
+          options.authorize = () => true
+          expect(
+            refusal(await call('release', { retention: retainedRef(descriptor, 'job'), reason: 'absent' })),
+          ).toBe('resources_pin_unknown')
+        } finally {
+          service.close()
+          rmSync(directory, { recursive: true, force: true })
+        }
+      }
+    }
+  })
+
+  it('keeps the original version when removal, replacement, or revocation lands after the pending pin', async () => {
+    for (const impl of implementations) {
+      for (const change of ['remove', 'replace', 'revoke'] as const) {
+        const directory = mkdtempSync(join(tmpdir(), 'resource-pin-during-'))
+        const paused = pauseGate()
+        const options = {
+          ...resourceCatalogFixtureInput(directory),
+          pinGate: paused.gate,
+          holdPin: paused.gate,
+        }
+        const service = impl.create(options)
+        const descriptor = resourceCatalogDescriptor()
+        const call = (method: string, data: unknown) => service.call(method, data, resourceCatalogContext())
+        try {
+          expect((await call('register', { descriptor, ownerReleaseSetId: 'fixture-release' })).ok).toBe(true)
+          expect((await call('describe', { resourceId: descriptor.id, version: '1' })).ok).toBe(true)
+          const pending = call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })
+          await paused.entered
+          if (change === 'remove') {
+            expect((await call('remove', { id: descriptor.id, expectedRevision: 1 })).ok).toBe(true)
+          } else if (change === 'replace') {
+            expect(
+              (
+                await call('register', {
+                  descriptor: { ...descriptor, version: '2' },
+                  ownerReleaseSetId: 'fixture-release',
+                })
+              ).ok,
+            ).toBe(true)
+          } else options.authorize = () => false
+          paused.resume()
+          const retained = await pending
+          expect(retained.ok, JSON.stringify(retained)).toBe(true)
+          if (!retained.ok) throw new Error(retained.error.detailCode)
+          expect(retained.value).toMatchObject({
+            kind: 'domain-record',
+            authorityId: 'agh.resources',
+            resourceId: descriptor.id,
+            version: '1',
+            digest: descriptor.digest,
+          })
+          options.authorize = () => true
+          if (change === 'remove') {
+            expect(refusal(await call('describe', { resourceId: descriptor.id, version: null }))).toBe(
+              'resources_not_found',
+            )
+          }
+          if (change === 'replace') {
+            expect(refusal(await call('describe', { resourceId: descriptor.id, version: '1' }))).toBe(
+              'resources_version_stale',
+            )
+          }
+          expect(await call('release', { retention: retained.value, reason: 'race finished' })).toMatchObject(
+            { ok: true, value: { state: 'released' } },
+          )
+        } finally {
+          paused.resume()
+          service.close()
+          rmSync(directory, { recursive: true, force: true })
+        }
+      }
+    }
+  })
+
+  it('confirms a pending pin on the next retain after confirmation is interrupted', async () => {
+    for (const impl of implementations) {
+      const directory = mkdtempSync(join(tmpdir(), 'resource-pin-uncertain-'))
+      const gate = async () => {
+        throw new Error('confirmation interrupted')
+      }
+      const service = impl.create({
+        ...resourceCatalogFixtureInput(directory),
+        pinGate: gate,
+        holdPin: gate,
+      })
+      const descriptor = resourceCatalogDescriptor()
+      const call = (method: string, data: unknown) => service.call(method, data, resourceCatalogContext())
+      try {
+        expect((await call('register', { descriptor, ownerReleaseSetId: 'fixture-release' })).ok).toBe(true)
+        expect((await call('describe', { resourceId: descriptor.id, version: '1' })).ok).toBe(true)
+        expect(
+          refusal(await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })),
+        ).toBe('resources_dependency_unavailable')
+        const retained = await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })
+        expect(retained.ok, JSON.stringify(retained)).toBe(true)
+        if (!retained.ok) throw new Error(retained.error.detailCode)
+        expect(retained.value).toMatchObject({ version: descriptor.version, digest: descriptor.digest })
+        expect(await call('release', { retention: retained.value, reason: 'recovered' })).toMatchObject({
+          ok: true,
+          value: { state: 'released' },
+        })
+      } finally {
+        service.close()
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  })
+
+  it('keeps a reference pin while its external ledger still names it or cannot be read', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'resource-pin-ledger-'))
+    const live: DataRef[] = []
+    let rejectKeep = false
+    let failKeep = false
+    const service = createReferenceResources({
+      ...resourceCatalogFixtureInput(directory),
+      externalLedger: {
+        async keep(pin) {
+          if (failKeep) throw new Error('ledger down')
+          if (rejectKeep) return ledgerError('release_route_unavailable')
+          const receipt = packageReceipt(pin)
+          live.push(receipt)
+          return { ok: true, value: receipt }
+        },
+        async current() {
+          return { ok: true, value: live.slice() }
+        },
+      },
+    })
+    const descriptor = resourceCatalogDescriptor()
+    const call = (method: string, data: unknown) => service.call(method, data, resourceCatalogContext())
+    try {
+      expect((await call('register', { descriptor, ownerReleaseSetId: 'fixture-release' })).ok).toBe(true)
+      expect((await call('list', { kind: 'skill', filter: {}, cursor: null, limit: 10 })).ok).toBe(true)
+      const retained = await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })
+      expect(retained.ok, JSON.stringify(retained)).toBe(true)
+      if (!retained.ok) throw new Error(retained.error.detailCode)
+      expect(await call('release', { retention: retained.value, reason: 'still listed' })).toMatchObject({
+        ok: true,
+        value: { state: 'release-pending' },
+      })
+      live.splice(0, live.length)
+      expect(await call('release', { retention: retained.value, reason: 'still listed' })).toMatchObject({
+        ok: true,
+        value: { state: 'released' },
+      })
+      rejectKeep = true
+      expect(
+        refusal(await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })),
+      ).toBe('resources_package_pin_rejected')
+      expect(
+        refusal(
+          await call('release', { retention: retainedRef(descriptor, 'continuation'), reason: 'absent' }),
+        ),
+      ).toBe('resources_pin_unknown')
+      rejectKeep = false
+      failKeep = true
+      expect(
+        refusal(await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })),
+      ).toBe('resources_pin_uncertain')
+      const recovered = await call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })
+      expect(recovered.ok, JSON.stringify(recovered)).toBe(true)
+      if (!recovered.ok) throw new Error(recovered.error.detailCode)
+      expect(await call('release', { retention: recovered.value, reason: 'uncertain ledger' })).toMatchObject(
+        {
+          ok: true,
+          value: { state: 'release-pending' },
+        },
+      )
+    } finally {
+      service.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('binds a resource pin to the published release and stores nothing when that bind is refused', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'resource-package-pin-'))
+    const input = upgradeAssemblyFixture()
+    const release = input.plan.targetReleaseSet
+    const fixture = await persistentAssemblyFixture(input, join(directory, 'maintenance.sqlite'), {
+      lifecycle: false,
+    })
+    const admit = fixture.ports.authorize.bind(fixture.ports)
+    fixture.ports.authorize = async (context, plan) => {
+      if (
+        context.scope.kind === 'workspace' &&
+        context.principalRef === 'fixture-principal' &&
+        context.authorizationRef === 'fixture-authorization' &&
+        plan === null
+      )
+        return true
+      return admit(context, plan)
+    }
+    const store = fixture.ports.store
+    fixture.ports.store = {
+      query: (request, context) => store.query(request, runtimeCaller(context)),
+      commit: (request, context) => store.commit(request, runtimeCaller(context)),
+    }
+    try {
+      const missing = createResourcesService({
+        ...resourceCatalogFixtureInput(join(directory, 'missing')),
+        maintenance: fixture.ports,
+      })
+      const missingDescriptor = resourceCatalogDescriptor('missing-pin')
+      const missingCall = (method: string, data: unknown) =>
+        missing.call(method, data, resourceCatalogContext())
+      expect(
+        (
+          await missingCall('register', {
+            descriptor: missingDescriptor,
+            ownerReleaseSetId: 'fixture-release',
+          })
+        ).ok,
+      ).toBe(true)
+      expect((await missingCall('describe', { resourceId: missingDescriptor.id, version: '1' })).ok).toBe(
+        true,
+      )
+      expect(
+        refusal(
+          await missingCall('retain', { resource: resourceRef(missingDescriptor), purpose: 'continuation' }),
+        ),
+      ).toBe('resources_package_pin_rejected')
+      expect(
+        refusal(
+          await missingCall('release', {
+            retention: retainedRef(missingDescriptor, 'continuation'),
+            reason: 'absent',
+          }),
+        ),
+      ).toBe('resources_pin_unknown')
+      expect(fixture.database.inspect().records.some((row) => row.recordId.startsWith('pin:'))).toBe(false)
+      missing.close()
+
+      fixture.database.seed(
+        maintenanceFixtureRecord(
+          `release:${release.releaseSetId}`,
+          'release-snapshot',
+          releaseSnapshot(release),
+        ),
+      )
+      const paused = pauseGate()
+      const service = createResourcesService({
+        ...resourceCatalogFixtureInput(join(directory, 'bound')),
+        contributionReady: (_resource, id) => id === release.releaseSetId,
+        maintenance: fixture.ports,
+        pinGate: paused.gate,
+      })
+      const descriptor = resourceCatalogDescriptor('pinned-skill')
+      const call = (method: string, data: unknown) => service.call(method, data, resourceCatalogContext())
+      try {
+        expect((await call('register', { descriptor, ownerReleaseSetId: release.releaseSetId })).ok).toBe(
+          true,
+        )
+        expect((await call('describe', { resourceId: descriptor.id, version: '1' })).ok).toBe(true)
+        const pending = call('retain', { resource: resourceRef(descriptor), purpose: 'continuation' })
+        await paused.entered
+        expect((await call('remove', { id: descriptor.id, expectedRevision: 1 })).ok).toBe(true)
+        paused.resume()
+        const retained = await pending
+        expect(retained.ok, JSON.stringify(retained)).toBe(true)
+        if (!retained.ok) throw new Error(retained.error.detailCode)
+        const pin = retained.value as RetentionRef
+        expect(pin).toMatchObject({ version: '1', digest: descriptor.digest })
+        const stored = fixture.database.get(`pin:${pin.pinId}`)
+        expect(maintenancePayload(stored ?? undefined)).toMatchObject({
+          pinId: pin.pinId,
+          ownerId: 'fixture-principal',
+          ownerKind: 'action',
+          releaseSetId: release.releaseSetId,
+          status: 'active',
+          scope: { kind: 'workspace', workspaceId: 'fixture-workspace' },
+        })
+        expect(refusal(await call('describe', { resourceId: descriptor.id, version: null }))).toBe(
+          'resources_not_found',
+        )
+        expect(await call('release', { retention: pin, reason: 'package still active' })).toMatchObject({
+          ok: true,
+          value: { state: 'release-pending' },
+        })
+        expect(maintenancePayload(fixture.database.get(`pin:${pin.pinId}`) ?? undefined)).toMatchObject({
+          status: 'active',
+        })
+        const other = resourceCatalogDescriptor('gone')
+        expect(
+          (await call('register', { descriptor: other, ownerReleaseSetId: release.releaseSetId })).ok,
+        ).toBe(true)
+        expect((await call('describe', { resourceId: other.id, version: '1' })).ok).toBe(true)
+        expect((await call('remove', { id: other.id, expectedRevision: 3 })).ok).toBe(true)
+        expect(refusal(await call('retain', { resource: resourceRef(other), purpose: 'job' }))).toBe(
+          'resources_not_found',
+        )
+        expect(fixture.database.get(`pin:${pinIdentity(other, 'job')}`)).toBeNull()
+      } finally {
+        paused.resume()
+        service.close()
+      }
+    } finally {
+      await fixture.close()
+      rmSync(directory, { recursive: true, force: true })
     }
   })
 })

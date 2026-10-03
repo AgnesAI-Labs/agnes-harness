@@ -1489,7 +1489,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Authority transfer conformance cases. Measured 10213, exact, no spare.
   // Sourced memory and hybrid retrieval providers. Measured 11849, exact, no spare.
   // Durable run admission coordination. Measured 12086, exact, no spare.
-  'packages/extension-api/testkit': 12086,
+  // Durable resource pins. Measured 12187, exact, no spare.
+  'packages/extension-api/testkit': 12187,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2716,7 +2717,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // bounded export index. Measured 71812 (+769), exact, no spare.
   // Sourced memory and hybrid retrieval providers. Measured 73124, exact, no spare.
   // Durable run admission coordination. Measured 73401, exact, no spare.
-  'packages/host/src': 73401,
+  // Durable resource pins. Measured 73722, exact, no spare.
+  'packages/host/src': 73722,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
