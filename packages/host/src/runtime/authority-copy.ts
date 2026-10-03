@@ -546,6 +546,9 @@ export function openAuthorityCopy(kit: Kit): AuthorityCopyMethods & {
     const first = settled()
     if (first.done) return first.done
     const from = JSON.parse(first.row.source) as Wire.AuthorityExport
+    const { targetCheckpoint } = JSON.parse(
+      first.row.result ?? 'null',
+    ) as Wire.AuthorityTransferControlImportResult
     const route =
       input.publishedRoute.kind === 'inline'
         ? parse('AuthorityRoute', input.publishedRoute.value)
@@ -558,6 +561,9 @@ export function openAuthorityCopy(kit: Kit): AuthorityCopyMethods & {
       route.authorityEpoch <= from.checkpoint.authorityEpoch
     )
       refuse('revision_conflict', 'published route does not name this location after the fence')
+    // The route serves this candidate: its checkpoint is the import's, at the route's epoch.
+    if (jcs(route.checkpoint) !== jcs({ ...targetCheckpoint, authorityEpoch: route.authorityEpoch }))
+      refuse('revision_conflict', 'published route does not carry this candidate checkpoint')
     const published = await maintenance.readRoute(
       { logicalAuthorityId: route.logicalAuthorityId, upgradeId: input.upgradeId },
       context,
@@ -581,13 +587,7 @@ export function openAuthorityCopy(kit: Kit): AuthorityCopyMethods & {
           tenantId: maintenance.tenantId,
           authorityEpoch: route.authorityEpoch,
         },
-        checkpoint: {
-          authorityId: source.authorityId,
-          authorityEpoch: route.authorityEpoch,
-          checkpointId: randomUUID(),
-          ...kit.snapshot(),
-          bridgeWatermarks: source.bridges(),
-        },
+        checkpoint: route.checkpoint,
       })
       db.prepare(
         'UPDATE maintenance_imports SET activate_fingerprint = ?, activated = ? WHERE upgrade_id = ?',

@@ -843,8 +843,19 @@ const importRequest = (exported: Wire.AuthorityExport) => ({
   targetLocationRef: 'location-2',
 })
 
-const targetRoute = (over: Partial<Wire.AuthorityRoute> = {}) =>
-  recoveryRoute(2, { locationRef: 'location-2', cutoverId: 'cutover-1', ...over })
+/** The route serving a candidate: its checkpoint is the import's, at the route's epoch. */
+const targetRoute = (
+  imported: Wire.AuthorityTransferControlImportResult,
+  over: Partial<Wire.AuthorityRoute> = {},
+) => {
+  const authorityEpoch = over.authorityEpoch ?? 2
+  return recoveryRoute(authorityEpoch, {
+    locationRef: 'location-2',
+    cutoverId: 'cutover-1',
+    checkpoint: { ...imported.targetCheckpoint, authorityEpoch },
+    ...over,
+  })
+}
 
 const activation = (route: Wire.AuthorityRoute, cutoverId = route.cutoverId) => ({
   upgradeId: UPGRADE,
@@ -975,19 +986,18 @@ describe('default blob service authority copy', () => {
       ['deletion-watermark', true],
     ])
 
-    const route = targetRoute()
+    const route = targetRoute(imported)
     world.directory.route = route
     const activated = ok(await target.transfer.activate(activation(route), MAINTAINER))
-    expect(activated).toMatchObject({
+    expect(activated).toEqual({
       state: 'activated',
       cutoverId: 'cutover-1',
       authority: { ...EXPECTED, authorityEpoch: 2 },
-      checkpoint: {
-        authorityId: 'blob-authority',
-        authorityEpoch: 2,
-        snapshotDigest: fence.checkpoint.snapshotDigest,
-      },
+      checkpoint: { ...imported.targetCheckpoint, authorityEpoch: 2 },
     })
+    expect(activated.state === 'activated' && activated.checkpoint.snapshotDigest).toBe(
+      fence.checkpoint.snapshotDigest,
+    )
     expect(ok(await target.transfer.activate(activation(route), MAINTAINER))).toEqual(activated)
     expect(ok(await probe(target))).toEqual(activated)
     expect(ok(await probe(source))).toEqual({ state: 'fenced', fence })
@@ -1109,19 +1119,25 @@ describe('default blob service authority copy', () => {
   it('activates a candidate only onto the route the directory durably holds', async () => {
     const world = await exportedSource()
     const { target } = await candidate(world)
-    const route = targetRoute()
-    world.directory.route = route
-    expect(refused(await target.transfer.activate(activation(route), MAINTAINER))).toBe('not_found')
-    ok(await target.transfer.import(importRequest(world.exported), MAINTAINER))
+    const early = recoveryRoute(2, { locationRef: 'location-2', cutoverId: 'cutover-1' })
+    world.directory.route = early
+    expect(refused(await target.transfer.activate(activation(early), MAINTAINER))).toBe('not_found')
+    const imported = ok(await target.transfer.import(importRequest(world.exported), MAINTAINER))
+    const route = targetRoute(imported)
     expect(refused(await target.stage(newUpload, ctx()))).toBe('blocked')
 
-    world.directory.route = targetRoute({ cohortDigest: 'e'.repeat(64) })
+    world.directory.route = targetRoute(imported, { cohortDigest: 'e'.repeat(64) })
     expect(refused(await target.transfer.activate(activation(route), MAINTAINER))).toBe('revision_conflict')
     world.directory.route = route
     expect(refused(await target.transfer.activate(activation(route, 'cutover-2'), MAINTAINER))).toBe(
       'revision_conflict',
     )
-    for (const other of [targetRoute({ locationRef: 'location-1' }), targetRoute({ authorityEpoch: 1 })]) {
+    for (const other of [
+      targetRoute(imported, { locationRef: 'location-1' }),
+      targetRoute(imported, { authorityEpoch: 1 }),
+      // A route published for another candidate.
+      targetRoute(imported, { checkpoint: { ...route.checkpoint, checkpointId: 'other-candidate' } }),
+    ]) {
       world.directory.route = other
       expect(refused(await target.transfer.activate(activation(other), MAINTAINER))).toBe('revision_conflict')
     }
@@ -1131,7 +1147,9 @@ describe('default blob service authority copy', () => {
 
     ok(await target.transfer.activate(activation(route), MAINTAINER))
     expect(
-      refused(await target.transfer.activate(activation(targetRoute({ authorityEpoch: 3 })), MAINTAINER)),
+      refused(
+        await target.transfer.activate(activation(targetRoute(imported, { authorityEpoch: 3 })), MAINTAINER),
+      ),
     ).toBe('idempotency_conflict')
     ok(await target.stage(newUpload, ctx()))
   })
