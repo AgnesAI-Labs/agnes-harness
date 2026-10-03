@@ -14,6 +14,7 @@ export function openSettlementOutbox(path: string, authorityId: string) {
   db.exec(
     'PRAGMA journal_mode=WAL;PRAGMA synchronous=FULL;CREATE TABLE IF NOT EXISTS entries(id TEXT PRIMARY KEY,owner TEXT,stable TEXT UNIQUE,fingerprint TEXT,body TEXT,callback TEXT);',
   )
+  db.exec('CREATE TABLE IF NOT EXISTS usage_origins(origin TEXT PRIMARY KEY,entry TEXT NOT NULL);')
   function tx<T>(fn: () => T): T {
     db.exec('BEGIN IMMEDIATE')
     try {
@@ -36,7 +37,25 @@ export function openSettlementOutbox(path: string, authorityId: string) {
     return checked.value
   }
   return {
-    prepare(owner: string, key: string, fingerprint: string, entry: W.BillingEntry) {
+    replay(owner: string, account: W.DomainObjectRef, key: string, fingerprint: string) {
+      const stable = canonicalJsonDigest({
+        owner,
+        authorityId,
+        account: { authorityId: account.authorityId, id: account.id },
+        key,
+      })
+      const old = db.prepare('SELECT * FROM entries WHERE stable=?').get(stable)
+      if (!old) return undefined
+      if (old.fingerprint !== fingerprint) throw new BillingConflict('key input changed')
+      return value(old.body)
+    },
+    prepare(
+      owner: string,
+      key: string,
+      fingerprint: string,
+      entry: W.BillingEntry,
+      origins: readonly string[] = [],
+    ) {
       return tx(() => {
         const stable = canonicalJsonDigest({
           owner,
@@ -50,6 +69,20 @@ export function openSettlementOutbox(path: string, authorityId: string) {
           return { created: false, entry: value(old.body) }
         }
         if (entry.kind === 'charge') {
+          if (!origins.length) throw new BillingRefusal('original usage identities absent')
+          const legacy = db
+            .prepare(
+              "SELECT e.id FROM entries e WHERE json_extract(e.body,'$.kind')='charge' AND json_extract(e.body,'$.status')!='rejected' AND NOT EXISTS (SELECT 1 FROM usage_origins o WHERE o.entry=e.id)",
+            )
+            .get()
+          if (legacy) throw new BillingRefusal('original usage identities require migration')
+          for (const origin of origins) {
+            const old = db
+              .prepare('SELECT e.body FROM usage_origins o JOIN entries e ON e.id=o.entry WHERE o.origin=?')
+              .get(origin)
+            if (old && value(old.body).status !== 'rejected')
+              throw new BillingConflict('origin already charged')
+          }
           const prior = db
             .prepare('SELECT body FROM entries WHERE owner=?')
             .all(owner)
@@ -93,6 +126,10 @@ export function openSettlementOutbox(path: string, authorityId: string) {
           fingerprint,
           JSON.stringify(entry),
         )
+        for (const origin of origins)
+          db.prepare(
+            'INSERT INTO usage_origins VALUES (?,?) ON CONFLICT(origin) DO UPDATE SET entry=excluded.entry',
+          ).run(origin, entry.entryId)
         return { created: true, entry }
       })
     },

@@ -49,7 +49,13 @@ export async function killFixture(child: ChildProcess | undefined) {
 export function billingTraceProcessDriver(
   service: 'billing' | 'trace',
   kind: 'default' | 'reference',
-  options: { path?: string; level?: TelemetryConsent['level']; crashAfterSend?: boolean } = {},
+  options: {
+    path?: string
+    level?: TelemetryConsent['level']
+    crashAfterSend?: boolean
+    accountingChain?: boolean
+    crashBoundary?: 'usage' | 'budget' | 'intent' | 'callback'
+  } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'billing-trace-')),
     log = join(directory, 'peer.jsonl')
@@ -104,7 +110,7 @@ export function billingTraceProcessDriver(
     log,
     expectedProviderId: `agh.${kind}/${service}`,
     expectedPackageDigest: billingTraceProviderDigest(kind, service),
-    input: service === 'trace' ? traceInput : billingInput,
+    input: structuredClone(service === 'trace' ? traceInput : billingInput),
     exportInput: exportInput(options.level),
     refundInput,
     async start() {
@@ -115,6 +121,8 @@ export function billingTraceProcessDriver(
         peer = proc.child
         port = Number((await proc.ready).port)
         await launch()
+        if (options.accountingChain && !options.crashBoundary)
+          Object.assign(driver.input, await invoke('prepare-accounting'))
       }
       return descriptor
     },
@@ -135,10 +143,21 @@ export function billingTraceProcessDriver(
       const pid = await launch()
       return { previousPid, pid }
     },
+    async restartPeer() {
+      await killFixture(actor)
+      await killFixture(peer)
+      const proc = startFixture('billing-receipt-server.ts', [log])
+      peer = proc.child
+      port = Number((await proc.ready).port)
+      await launch()
+    },
     async deliveries() {
       return records().length
     },
     records,
+    retirePrice: () => invoke('retire-price') as Promise<void>,
+    accountingStats: () =>
+      invoke('accounting-stats') as Promise<{ usageFacts: number; origins: number; settled: string }>,
     async waitReceived() {
       const end = Date.now() + 10000
       while (Date.now() < end) {
@@ -166,10 +185,9 @@ export function traceContractDriver(kind: 'default' | 'reference', scenario: str
   }
 }
 export function billingContractDriver(kind: 'default' | 'reference', scenario: string) {
-  return {
-    ...billingTraceProcessDriver('billing', kind, {
-      path: ['cancel', 'dispose'].includes(scenario) ? '/hang' : '/billing',
-    }),
-    input: billingInput,
-  }
+  const driver = billingTraceProcessDriver('billing', kind, {
+    accountingChain: true,
+    path: ['cancel', 'dispose'].includes(scenario) ? '/hang' : '/billing',
+  })
+  return { ...driver, input: driver.input as typeof billingInput }
 }

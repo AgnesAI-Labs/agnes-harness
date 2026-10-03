@@ -19,10 +19,12 @@ import {
 } from '@agnes/protocol/runtime'
 import { createReferenceBillingFactory } from '../../../../examples/runtime-reference/src/providers/billing.js'
 import { createReferenceTraceFactory } from '../../../../examples/runtime-reference/src/providers/trace.js'
+import type { BillingAccountingPorts } from '../../src/runtime/billing/accounting.js'
 import { createBillingFactory } from '../../src/runtime/providers/billing.js'
 import { createNetworkService } from '../../src/runtime/providers/network.js'
 import { createTraceFactory } from '../../src/runtime/providers/trace.js'
 import { inline, refused } from '../../src/runtime/trace/provider-support.js'
+import { createAccountingChainFixture } from './billing-accounting-fixture.js'
 
 export type BillingTraceFixtureOptions = {
   directory: string
@@ -33,6 +35,9 @@ export type BillingTraceFixtureOptions = {
   level?: W.TelemetryConsent['level']
   capacity?: number
   crashAfterSend?: boolean
+  accountingChain?: boolean
+  crashBoundary?: 'usage' | 'budget' | 'intent' | 'callback'
+  accounting?: BillingAccountingPorts | null
 }
 export function billingTraceProviderDigest(
   kind: 'default' | 'reference',
@@ -46,6 +51,7 @@ export function billingTraceProviderDigest(
           `providers/${service}.ts`,
           'trace/provider-support.ts',
           service === 'trace' ? 'trace/export-queue.ts' : 'billing/settlement-outbox.ts',
+          ...(service === 'billing' ? ['billing/accounting.ts'] : []),
         ]
       : [`${service}.ts`, 'billing-trace-runtime.ts']
   const root = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -114,6 +120,49 @@ export function exportInput(level: W.TelemetryConsent['level'] = 'ANON'): W.Tele
     },
   }
 }
+export const syntheticUsage: W.UsageFact = {
+  usageId: 'synthetic-leaf',
+  actionId: 'synthetic-action',
+  attemptId: 'synthetic-attempt',
+  originKey: canonicalJsonDigest({
+    authorityId: 'synthetic-usage',
+    actionId: 'synthetic-action',
+    attemptId: 'synthetic-attempt',
+    externalRequest: {
+      system: 'synthetic-model',
+      requestId: 'synthetic-receipt',
+      requestDigest: canonicalJsonDigest({ input: 'synthetic' }),
+    },
+  }),
+  source: {
+    contract: 'agh.model',
+    bindingId: 'synthetic-model-binding',
+    logicalName: 'model',
+    providerId: 'synthetic-model',
+  },
+  dimensions: inline(
+    {
+      typeId: 'synthetic/measurement@1',
+      revision: 1,
+      digest: canonicalJsonDigest({ source: 'synthetic-counter' }),
+    },
+    {
+      kind: 'reported',
+      quantities: [{ unit: 'request', value: '1' }],
+      actualModel: 'synthetic-model',
+      source: 'adapter-counter',
+      sourceReceipt: null,
+      replacesFactIds: [],
+    },
+  ),
+  externalRequest: {
+    system: 'synthetic-model',
+    requestId: 'synthetic-receipt',
+    requestDigest: canonicalJsonDigest({ input: 'synthetic' }),
+  },
+  observedAt: '2026-10-04T00:00:00.000Z',
+  certainty: 'measured',
+}
 export const billingInput: W.BillingPostRequest = {
   chargeKey: 'synthetic-charge',
   accountRef: {
@@ -126,7 +175,7 @@ export const billingInput: W.BillingPostRequest = {
     {
       authorityId: 'synthetic-usage',
       usageId: 'synthetic-leaf',
-      digest: canonicalJsonDigest({ units: '1' }),
+      digest: canonicalJsonDigest(syntheticUsage),
     },
   ],
   quoteRef: inline(RuntimeMethodSchemaRefs['agh.pricing'].quote.output, {
@@ -157,6 +206,63 @@ export function refundInput(id: string): W.BillingRefundRequest {
 export async function createBillingTraceConsumer(
   options: BillingTraceFixtureOptions & { createEffects(handle: EffectPorts['invoke']): EffectPorts },
 ) {
+  const crash = (boundary: string) => {
+    const marker = join(options.directory, 'crashed-' + boundary)
+    if (options.crashBoundary === boundary && !existsSync(marker)) {
+      writeFileSync(marker, 'synthetic-crash', { mode: 0o600 })
+      process.kill(process.pid, 'SIGKILL')
+    }
+  }
+  const chain =
+    options.accountingChain && options.service === 'billing'
+      ? await createAccountingChainFixture(options.directory, fixtureScope, billingInput, crash)
+      : undefined
+  const fallbackAccounting: BillingAccountingPorts = {
+    async readUsage(ref) {
+      return ref.authorityId === 'synthetic-usage' && ref.usageId === syntheticUsage.usageId
+        ? { ok: true, value: structuredClone(syntheticUsage) }
+        : refused('denied', 'fixture_usage_absent')
+    },
+    async reservation() {
+      return {
+        ok: true,
+        value: {
+          authorityId: 'synthetic-budget',
+          typeId: 'agh.budget/reservation@1',
+          id: 'synthetic-reservation',
+          revision: 1,
+        },
+      }
+    },
+    async settle(input) {
+      if (billingInput.quoteRef.kind !== 'inline') throw new Error('Synthetic quote missing')
+      const quote = billingInput.quoteRef.value as unknown as W.PriceQuote
+      return {
+        ok: true,
+        value: {
+          reservation: {
+            ref: input.reservationRef,
+            actionId: syntheticUsage.actionId,
+            attemptId: syntheticUsage.attemptId,
+            accountRef: billingInput.accountRef,
+            parentReservationRef: null,
+            scopeIds: ['synthetic-scope'],
+            unitsByKind: [{ unit: 'request', value: '1' }],
+            held: quote.amount,
+            priceVersion: quote.priceVersion,
+            status: 'settled',
+            revision: 2,
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            settledAmount: quote.amount,
+            usageRefs: input.usageRefs,
+          },
+          balance: null,
+        },
+      }
+    },
+  }
+  const accounting =
+    options.accounting === null ? undefined : (options.accounting ?? chain?.ports ?? fallbackAccounting)
   const revocation = join(options.directory, 'synthetic-revoked')
   let revoked = existsSync(revocation),
     stopped = false,
@@ -166,6 +272,10 @@ export async function createBillingTraceConsumer(
     issued = new WeakSet<object>()
   mkdirSync(join(options.directory, 'content'), { recursive: true, mode: 0o700 })
   const retain = async (bytes: Uint8Array): Promise<W.BytesRef> => {
+    if (options.service === 'billing') {
+      const json = JSON.parse(new TextDecoder().decode(bytes))
+      if (validateRuntime('BillingEntry', json).ok) crash('intent')
+    }
     const digest = createHash('sha256').update(bytes).digest('hex')
     writeFileSync(join(options.directory, 'content', digest), bytes, { mode: 0o600 })
     return {
@@ -272,7 +382,8 @@ export async function createBillingTraceConsumer(
       : (options.kind === 'default' ? createBillingFactory : createReferenceBillingFactory)({
           ...common,
           authorityId: 'synthetic-billing',
-          priceVersions: ['synthetic-price-v1'],
+          priceVersions: existsSync(join(options.directory, 'retired-price')) ? [] : ['synthetic-price-v1'],
+          ...(accounting ? { accounting } : {}),
           readResponse: contentRead,
           async verifyEvidence(ref) {
             if (
@@ -368,7 +479,9 @@ export async function createBillingTraceConsumer(
       progress: async () => refused('incompatible', 'operation_not_supported'),
     }
     try {
-      return await leaf.execute(frame, ctx)
+      const result = await leaf.execute(frame, ctx)
+      if (options.service === 'billing' && result.outcome === 'succeeded') crash('callback')
+      return result
     } finally {
       inflight.delete(c.invocationId)
       if (mode === 'drain') await leaf.drain(c.deadline, c)
@@ -378,6 +491,18 @@ export async function createBillingTraceConsumer(
   return {
     factory,
     provider,
+    async prepareAccounting() {
+      if (!chain) throw new Error('Accounting chain absent')
+      const ctx = call()
+      try {
+        return await chain.prepare(ctx)
+      } finally {
+        inflight.delete(ctx.invocationId)
+      }
+    },
+    accountingStats: () => chain?.stats(),
+    retirePrice: () =>
+      writeFileSync(join(options.directory, 'retired-price'), 'synthetic-retired', { mode: 0o600 }),
     action,
     descriptor: factory.descriptor,
     async record(input: unknown, mode?: string) {
@@ -419,6 +544,7 @@ export async function createBillingTraceConsumer(
       for (const controller of inflight.values()) controller.abort()
       await provider.close('shutdown')
       await network.close()
+      await chain?.close()
     },
   }
 }

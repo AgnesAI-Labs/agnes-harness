@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { ActionContext, CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import { type BillingAccountingPorts, settleBillingUsage } from '../billing/accounting.js'
 import { BillingConflict, BillingRefusal, openSettlementOutbox } from '../billing/settlement-outbox.js'
 import {
   inline,
@@ -19,6 +20,7 @@ export type BillingDeployment = {
   packageDigest: string
   configSchema: W.SchemaRef
   priceVersions: readonly string[]
+  accounting?: BillingAccountingPorts
   authorize(
     context: CallContext,
     method: string,
@@ -32,6 +34,7 @@ export function createBillingFactory(deployment: BillingDeployment) {
   deployment = {
     ...deployment,
     priceVersions: [...deployment.priceVersions],
+    ...(deployment.accounting ? { accounting: { ...deployment.accounting } } : {}),
     outbound: { ...deployment.outbound, target: structuredClone(deployment.outbound.target) },
   }
   const refs = RuntimeMethodSchemaRefs['agh.billing']
@@ -62,6 +65,7 @@ export function createBillingFactory(deployment: BillingDeployment) {
       )
         return refused('denied', 'permission_absent')
       const owner = canonicalJsonDigest({ scope: context.call.scope, principal: context.call.principalRef })
+      let origins: string[] = []
       let entered = false,
         entry: W.BillingEntry | undefined
       try {
@@ -85,6 +89,16 @@ export function createBillingFactory(deployment: BillingDeployment) {
         }
         if (method === 'post') {
           const request = decoded.value as W.BillingPostRequest
+          const replay = outbox.replay(
+            owner,
+            request.accountRef,
+            request.chargeKey,
+            canonicalJsonDigest(request),
+          )
+          if (replay)
+            return ['posted', 'rejected'].includes(replay.status)
+              ? { ok: true, value: inline(schema.output, replay) }
+              : refused('unknown_effect', 'effect_unknown')
           const quote = read<W.PriceQuote>(
             request.quoteRef,
             RuntimeMethodSchemaRefs['agh.pricing'].quote.output,
@@ -118,6 +132,13 @@ export function createBillingFactory(deployment: BillingDeployment) {
             request.usageRefs.length === 0
           )
             return refused('invalid_input', 'billing_usage')
+          if (!deployment.accounting) return refused('denied', 'billing_accounting_absent')
+          const settled = await wait(
+            settleBillingUsage(deployment.accounting, request, quote.value, context.call),
+            context.call,
+          )
+          if (!settled.ok) return settled
+          origins = settled.value
           entry = {
             entryId: canonicalJsonDigest({
               owner,
@@ -165,7 +186,13 @@ export function createBillingFactory(deployment: BillingDeployment) {
             paymentReceipt: null,
           }
         }
-        const intent = outbox.prepare(owner, entry.chargeKey, canonicalJsonDigest(decoded.value), entry)
+        const intent = outbox.prepare(
+          owner,
+          entry.chargeKey,
+          canonicalJsonDigest(decoded.value),
+          entry,
+          origins,
+        )
         entry = intent.entry
         if (
           !(await wait(deployment.authorize(context.call, method, decoded.value), context.call)) ||
