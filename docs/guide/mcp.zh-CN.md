@@ -69,3 +69,13 @@ session worker 启动及资源变化后的轮次边界调用 `createMcpRowRuntim
 逐服务器运行器的源码与测试可在下方查阅。实际运行版本及外部服务验证范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
 源码入口：[管理命令](../../packages/resource-control-cli/src/resources.ts)、[Schema](../../packages/protocol/schema/resource-control.json)、[资源启动](../../packages/resource-control-worker/src/runtime-bootstrap.ts)、[Worker 启动](../../packages/worker-runtime/src/main.ts)、[轮次重载](../../packages/worker-runtime/src/commands.ts)、[逐服务器运行器](../../packages/worker-runtime/src/mcp-row-runtime.ts)与[派生](../../packages/worker-runtime/src/mcp-server-rows.ts)。校验位置记录在[源码锚点清单](../../tools/public-docs/source-checks.json)。
+
+## 可选的 runtime 服务
+
+资源 worker 还通过 `createMcpService()` 提供 `agh.mcp` 服务，供显式选择它的消费者使用。它与上面的会话行并行存在；现有 CLI 与会话启动仍走原路径。独立 reference 位于 `examples/runtime-reference/src/providers/mcp.ts`。
+
+消费者先用 `prepareConnection()` 准备受管凭据，再把返回的固定 `credentialRef` 交给 `connect()`。凭据解析与消费只经过所选密钥服务。HTTP 401 保留失败收据；刷新作为子 effect 执行，刷新后的 handle 需要新的连接或调用 action。缺少 OAuth client identity 时必须重新连接。MCP 收据与日志不存密钥明文。
+
+服务支持白名单内绝对路径可执行文件的 stdio 连接，子进程不继承环境；通过所选网络服务支持有认证、返回 JSON 的无状态 Streamable HTTP。此服务尚不支持 stdio 凭据映射、SSE 响应与服务端分配的 HTTP session ID。工具调用需要当前准入、匹配的 method schema，以及当前身份与 scope 授权。服务端内容标为 `untrusted-remote`。
+
+请求身份与未知结果在服务进程重启后保留。进程失联后，新调用可以重建连接；未知业务调用不重放。本地 owner 保留连接，最后一个 owner 释放才关闭，因此新代发布不会关闭仍被旧 run 持有的连接。这些 owner 位于内存；持久 run pin 与启动接线属于 assembly 生命周期。
