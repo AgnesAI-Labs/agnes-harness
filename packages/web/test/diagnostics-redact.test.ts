@@ -319,7 +319,7 @@ describe('redactDiagnosticText (common secret spellings)', () => {
 })
 
 describe('redactDiagnostic (common secret key names)', () => {
-  it('redacts token-suffixed, bearer, proxy-authorization and credentials keys', () => {
+  it('redacts token-suffixed, bearer, proxy-authorization, credentials and credential-exchange keys', () => {
     const input = {
       NPM_TOKEN: V,
       githubToken: V,
@@ -327,7 +327,11 @@ describe('redactDiagnostic (common secret key names)', () => {
       bearer: V,
       'Proxy-Authorization': `Basic ${V}`,
       credentials: { user: 'u', pass: V },
+      authorizationCode: V,
+      credentialEnvelope: { kind: 'inline', value: { material: V } },
+      escrowId: V,
     }
+    // An object under a matching key goes whole, not field by field.
     expect(redactDiagnostic(input)).toEqual({
       NPM_TOKEN: REDACTED,
       githubToken: REDACTED,
@@ -335,11 +339,23 @@ describe('redactDiagnostic (common secret key names)', () => {
       bearer: REDACTED,
       'Proxy-Authorization': REDACTED,
       credentials: REDACTED,
+      authorizationCode: REDACTED,
+      credentialEnvelope: REDACTED,
+      escrowId: REDACTED,
     })
   })
 
-  it('keeps count-shaped and near-miss keys, and non-string values under a token-suffixed key', () => {
-    const input = { maxTokens: 5, inputTokens: 3, sessionKey: 'k', tokenizer: 'bpe', firstToken: 12 }
+  it('keeps count-shaped and near-miss keys, and non-string values under a matching key', () => {
+    const input = {
+      maxTokens: 5,
+      inputTokens: 3,
+      sessionKey: 'k',
+      tokenizer: 'bpe',
+      firstToken: 12,
+      credentialRef: 'cred-1',
+      authorizationRef: 'auth-1',
+      escrowPolicyVersion: 3,
+    }
     expect(redactDiagnostic(input)).toEqual(input)
   })
 })

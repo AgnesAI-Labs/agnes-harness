@@ -68,6 +68,36 @@ async function readAll(ep: Endpoint, sessionId: string, limit: number, maxBytes:
   throw new Error('diagnostics.events never reached the end')
 }
 
+// Obviously fake credential material: none of it may leave the machine in an export.
+const FAKE = {
+  code: 'fake-authorization-code-0001',
+  envelope: 'fake-envelope-material-0001',
+  escrow: 'fake-escrow-0001',
+  cookie: 'fake-cookie-0001',
+  nested: 'fake-cookie-0002',
+  approver: 'fake-approver-credential-0001',
+  refresh: 'fake-refresh-0001',
+}
+const CARRIERS = {
+  authorizationCode: FAKE.code,
+  credentialEnvelope: { kind: 'inline', value: { material: FAKE.envelope }, bytes: 1 },
+  escrowId: FAKE.escrow,
+  refreshToken: FAKE.refresh,
+  'Set-Cookie': `sid=${FAKE.cookie}; HttpOnly`,
+  attempts: [
+    { cookie: `sid=${FAKE.nested}` },
+    { approverCredential: { kind: 'local', proof: FAKE.approver } },
+  ],
+}
+const REDACTED_CARRIERS = {
+  authorizationCode: '<redacted>',
+  credentialEnvelope: '<redacted>',
+  escrowId: '<redacted>',
+  refreshToken: '<redacted>',
+  'Set-Cookie': '<redacted>',
+  attempts: [{ cookie: '<redacted>' }, { approverCredential: '<redacted>' }],
+}
+
 describe('diagnostics.collect', () => {
   it('collect rejects non-local owner', async () => {
     const { ep } = await setup({ dataDir: tempDataDir() })
@@ -123,6 +153,12 @@ describe('diagnostics.collect', () => {
           kind: 'extension.service-call',
           detail: { [secretName]: 'abc' },
         }),
+        JSON.stringify({
+          at: '2026-09-24T00:00:01.000Z',
+          kind: 'daemon.request',
+          ...CARRIERS,
+          detail: { n: 1 },
+        }),
         '{not json',
         '',
       ].join('\n'),
@@ -138,9 +174,12 @@ describe('diagnostics.collect', () => {
         kind: 'extension.service-call',
         detail: { [secretName]: '<redacted>' },
       },
+      // Credential carriers outside detail lose their whole value, objects and arrays included.
+      { at: '2026-09-24T00:00:01.000Z', kind: 'daemon.request', ...REDACTED_CARRIERS, detail: { n: 1 } },
       { at: null, kind: 'unparseable' },
     ])
     expect(host?.text).not.toContain('abc')
+    for (const value of Object.values(FAKE)) expect(host?.text).not.toContain(value)
   })
 
   it('collect without dataDir marks both logs missing', async () => {
@@ -257,6 +296,40 @@ describe('diagnostics.events', () => {
         .map((event) => event.seq)
         .at(-1),
     ).toBe(session.lastSeq)
+  })
+
+  it('events replace credential carriers whole, keeping keys, bare references and near misses', async () => {
+    const { h, ep } = await setup()
+    const sessionId = await newSession(ep, h.dataDir)
+    const session = h.host.kernel.get(sessionId)
+    if (!session) throw new Error('session not open')
+    const nearMisses = { cookieConsent: true, maxTokens: 5, secretCount: 2, credentialRef: 'cred-1' }
+    await session.append([
+      session.ev(
+        'x/agnes/diagnostics-test/probe',
+        {
+          ...CARRIERS,
+          ...nearMisses,
+          apiKey: 'secret://p/x',
+          authorizationRef: 'auth-1',
+          authorizationRequired: true,
+          escrowPolicyVersion: 3,
+        },
+        { ignorable: true },
+      ),
+    ])
+    const pages = await readAll(ep, sessionId, 500, 1024 * 1024)
+    const probe = pages.flatMap((page) => page.events).find((event) => event.type.endsWith('/probe'))
+    // Matching keys keep a number or boolean; references and other authorization facts are not credentials.
+    expect(probe?.data).toEqual({
+      ...REDACTED_CARRIERS,
+      ...nearMisses,
+      apiKey: 'secret://p/x',
+      authorizationRef: 'auth-1',
+      authorizationRequired: true,
+      escrowPolicyVersion: 3,
+    })
+    for (const value of Object.values(FAKE)) expect(JSON.stringify(pages)).not.toContain(value)
   })
 
   it('events unknown session', async () => {
