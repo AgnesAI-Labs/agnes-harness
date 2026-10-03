@@ -8,6 +8,9 @@ import {
   judgeReport as judgeFromKit,
   SCENARIOS,
 } from '../../../packages/extension-api/testkit/index.js'
+import { registerExecContract } from '../../../packages/extension-api/testkit/runtime/contracts/exec.js'
+import { registerSandboxContract } from '../../../packages/extension-api/testkit/runtime/contracts/sandbox.js'
+import { getConformanceBuildIdentity } from './build-identity.js'
 import { SAMPLE_CLOCK, sampleAssertion, sampleDraft } from './fixtures.js'
 import { judgeReport, mergeReports, serializeReport, writeReport } from './report.js'
 import { conformanceBinderFiles, main, parseConformanceArgs, runConformance } from './run-conformance.js'
@@ -57,6 +60,54 @@ describe('conformance report entry', () => {
       )
     },
   )
+  it.each([
+    ['agh.sandbox', registerSandboxContract],
+    ['agh.exec', registerExecContract],
+  ] as const)('keeps checkout evidence and later scenarios after %s throws', async (contract, register) => {
+    const harness = createConformanceHarness()
+    const build = getConformanceBuildIdentity()
+    const observed = async () => ({
+      passed: true,
+      providerDigest: 'a'.repeat(64),
+      configDigest: 'b'.repeat(64),
+      releaseSetDigest: 'c'.repeat(64),
+      detail: 'later scenario observed',
+    })
+    register(harness, {
+      command: 'platform-case-failure',
+      build,
+      providerId: 'reference',
+      sources: [
+        {
+          recipe: 'failure-identity',
+          async select() {
+            throw new Error('platform selection failed')
+          },
+          normal: observed,
+          deny: observed,
+          cancel: observed,
+          recover: observed,
+          dispose: observed,
+        },
+      ],
+    })
+    const report = await harness.run({
+      contracts: [contract],
+      providers: ['reference'],
+      command: 'platform-case-failure',
+      clock: SAMPLE_CLOCK,
+    })
+    expect(report.status).toBe('failed')
+    expect(report.assertions).toHaveLength(6)
+    expect(report.assertions[0]).toMatchObject({
+      status: 'failed',
+      diagnostic: 'platform selection failed',
+      build,
+    })
+    expect(report.assertions.slice(1).every((row) => row.status === 'passed')).toBe(true)
+    for (const row of report.assertions) expect(row.build).toEqual(build)
+  })
+
   it('uses the testkit judge and keeps one input on the same bytes', () => {
     expect(judgeReport).toBe(judgeFromKit)
     const report = judgeReport(sampleDraft([sampleAssertion({ features: ['write', 'read'] })]))

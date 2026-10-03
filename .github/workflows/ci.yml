@@ -81,10 +81,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
-      # This repository-owned script is a no-op off macOS. Dependencies stay script-disabled; only
-      # the reviewed libproc helper needed by Host process identity is built explicitly.
+      # Build the POSIX execution governor and the macOS libproc identity helpers explicitly.
+      # Dependency installation remains script-disabled; Windows retains its existing build path.
       - run: pnpm --filter @agnes/host build:native
+      - run: node examples/runtime-reference/scripts/build-native.mjs
       - run: pnpm --filter @agnes/system-node build:native
+      - name: Windows unsupported execution admission
+        if: runner.os == 'Windows' && matrix.shard == '3/3'
+        run: pnpm exec vitest run packages/host/test/runtime/exec.test.ts --maxWorkers=1
       # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
       # Split Windows files across three runners while keeping two workers per runner.
       # The fast tier discovers and runs the complete Protocol fixture tree through the same
@@ -178,12 +182,24 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
       - run: pnpm --filter @agnes/host build:native
+      - run: node examples/runtime-reference/scripts/build-native.mjs
       - run: pnpm --filter @agnes/system-node build:native
       # These tests start real processes and are the most sensitive to a loaded runner, so they
       # run with less file fan-out than the fast tier. The check job spreads Windows files over
       # three runners, but this job holds every heavy file on one; two at a time there starved each
       # other's process startup, shutdown and file-handle release, so Windows runs them one at a
       # time. The files run alone below on Windows are held out here.
+      - name: delegated Linux execution ownership
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          group_root="/sys/fs/cgroup/agnes-owner-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          sudo mkdir "$group_root"
+          sudo chown -R "$(id -u):$(id -g)" "$group_root"
+          trap 'sudo rmdir "$group_root"' EXIT
+          # Enter the delegated parent before dropping privilege so migration
+          # needs only its delegated common ancestor, never host-root write access.
+          sudo bash -c 'echo $$ > "$1/cgroup.procs"; exec setpriv --reuid="$2" --regid="$3" --init-groups env PATH="$5" AGNES_TEST_CGROUP="$1" "$4" exec vitest run packages/host/test/runtime/cgroup-owner.e2e.test.ts --maxWorkers=1' -- "$group_root" "$(id -u)" "$(id -g)" "$(command -v pnpm)" "$PATH"
       - name: test heavy tier
         env:
           AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
