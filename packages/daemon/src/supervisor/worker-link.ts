@@ -177,10 +177,28 @@ export class WorkerLink {
           this.close('worker frame projection failed')
           return
         }
-        this.failedSessions.add(sessionKey)
-        this.options.onSessionFailure?.(sessionKey, error)
+        this.failSession(sessionKey, error)
       })
     this.frameChains.set(chainKey, next)
+  }
+
+  /**
+   * Marks the session failed and tells the observer, once. The observer's own failure stays here:
+   * this runs on the frame chain's rejection handler, which nothing awaits, so an exception escaping
+   * it would be an unhandled rejection (fatal to the daemon) and would re-run the handler for the
+   * session's next queued frame.
+   */
+  private failSession(sessionKey: string, error: unknown): void {
+    this.failedSessions.add(sessionKey)
+    try {
+      this.options.onSessionFailure?.(sessionKey, error)
+    } catch (observerError) {
+      this.options.onLog?.(
+        sessionKey,
+        'error',
+        `session failure handler threw: ${observerError instanceof Error ? observerError.name : typeof observerError}`,
+      )
+    }
   }
 
   private processFrame(frame: WorkerToSupervisor): void | Promise<void> {
@@ -203,8 +221,7 @@ export class WorkerLink {
       return
     }
     if (frame.kind === 'session.interrupted') {
-      this.failedSessions.add(frame.sessionKey)
-      this.options.onSessionFailure?.(frame.sessionKey, new Error(frame.reason))
+      this.failSession(frame.sessionKey, new Error(frame.reason))
       return
     }
     if (frame.kind === 'log') {

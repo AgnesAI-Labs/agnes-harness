@@ -42,6 +42,11 @@ function tokensSince(s: SessionImpl, anchor: { seq: Seq; total: number } | null)
   return n
 }
 
+/** Whether less than half the reserve is left below the window, so waiting for a later attempt is not safe. */
+export function nearlyFull(s: SessionImpl, contextWindow: number, reserveTokens: number): boolean {
+  return contextWindow - compactionTriggerTokens(s) < reserveTokens / 2
+}
+
 export function contextTokens(s: SessionImpl): number {
   return tokensSince(s, s.state.lastLedgerTokens)
 }
@@ -93,22 +98,32 @@ export function contextWindowFor(s: SessionImpl, route: string, model: string, s
   return window ?? modelCapacityFor(s, route, model)
 }
 
-/** Fit the preset policy to a reduced session window without changing the saved preset. */
-export function compactionSettingsFor(s: SessionImpl, contextWindow: number) {
+/** What the fixed instructions and tool schemas cost every request, estimated the way budgets judge it. */
+export function fixedPrefixTokens(prefix: { system: string; tools: readonly unknown[] }): number {
+  return estimateTokens(canonicalJson(prefix))
+}
+
+/**
+ * Fit the preset policy to a window without changing the saved preset. The recent tail kept by a
+ * compaction sits in the next request beside the fixed prefix and the summary, so it may take only
+ * half of what is left below the trigger line after that prefix; otherwise the first request after
+ * a compaction already lands on the line and compacts again. With a large window the configured
+ * keep stays the smaller bound, so only small windows change.
+ */
+export function compactionSettingsFor(s: SessionImpl, contextWindow: number, fixedTokens = 0) {
   const configured = s.preset.compaction
   if (!Number.isFinite(configured.reserveTokens) || configured.reserveTokens < 0)
     throw new CoreError('E_ENVELOPE', 'compaction reserveTokens must be nonnegative')
   const target = resolveModel(s, 'primary')
-  if (
+  // Fit to the selected budget itself, not its ratio to a potentially huge model capacity.
+  const reserveTokens =
     contextWindow >= modelCapacityFor(s, target.route, target.model) &&
     configured.reserveTokens < contextWindow
-  )
-    return configured
-  // Fit to the selected budget itself, not its ratio to a potentially huge model capacity.
-  const reserveTokens = Math.min(configured.reserveTokens, Math.floor(contextWindow / 4))
+      ? configured.reserveTokens
+      : Math.min(configured.reserveTokens, Math.floor(contextWindow / 4))
   const keepRecentTokens = Math.min(
     configured.keepRecentTokens,
-    Math.floor((contextWindow - reserveTokens) / 2),
+    Math.max(0, Math.floor((contextWindow - reserveTokens - Math.max(0, fixedTokens)) / 2)),
   )
   if (reserveTokens === configured.reserveTokens && keepRecentTokens === configured.keepRecentTokens)
     return configured
@@ -129,7 +144,7 @@ export function contextBudgetError(
   const target = resolveModel(s, slot)
   const capacity = modelCapacityFor(s, target.route, target.model)
   if (window >= capacity) return undefined
-  const fixedTokens = estimateTokens(canonicalJson(prefix))
+  const fixedTokens = fixedPrefixTokens(prefix)
   const { reserveTokens } = compactionSettingsFor(s, window)
   if (window >= minimumContextBudget(capacity) && fixedTokens + reserveTokens < window) return undefined
   return {
@@ -492,7 +507,11 @@ export async function checkpointRoutine(s: SessionImpl): Promise<StepOutcome> {
     const contextWindow = contextWindowFor(s, route, model)
     const { reserveTokens } = compactionSettingsFor(s, contextWindow)
     const cache = lastCacheHint(s)
+    // A route that failed outright is spared attempts, but never once the window is nearly full.
+    const held =
+      s.compaction.suspended?.(op.meta.turn) === true && !nearlyFull(s, contextWindow, reserveTokens)
     if (
+      !held &&
       s.compaction.shouldCompact({
         contextTokens: compactionTriggerTokens(s),
         contextWindow,

@@ -37,6 +37,7 @@ export interface CandidateLifecycle {
   drain(
     deadline: number,
   ): Promise<{ readonly state: string; readonly activeInvocationIds: readonly string[] }>
+  activate?(): void
   close(): Promise<CandidateView | undefined>
 }
 
@@ -95,6 +96,9 @@ export function candidateLifecycle(
       })),
     ),
     prepare: (signal) => root.prepare(fixed, signal),
+    activate() {
+      root.activate(fixed.generationId)
+    },
     view,
     drain: (deadline) => root.drain(fixed.generationId, deadline),
     async close() {

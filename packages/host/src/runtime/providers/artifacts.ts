@@ -72,7 +72,7 @@ export type ArtifactsServiceOptions = ArtifactAccessOptions &
     /** Action methods of the blob service the container selects; their binding must match it. */
     blobActions: SelectedBlobActions
     now?: () => number
-    /** The Host's maintenance assembly. Without it, every transfer call is refused as blocked. */
+    /** The Host's maintenance assembly. Without it, every transfer call is refused as not supported. */
     maintenance?: TransferMaintenance
   }>
 

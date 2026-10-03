@@ -12,6 +12,11 @@ export const RuntimeSchemaRefs = freeze({
     "revision": 3,
     "digest": "79eacd35466bb81e4b12a7ffd360b67436270077ab801a024008813c24877ba8"
   },
+  "EmbeddingVectors": {
+    "typeId": "agh.embedding/vectors@1",
+    "revision": 1,
+    "digest": "a6b1c7217fa28b4cddef04e08a7c2bc6140cc5f78a9b607bf2865e1dbd923e57"
+  },
   "RuntimeCommitData": {
     "typeId": "agh.runtime/state-commit@1",
     "revision": 1,

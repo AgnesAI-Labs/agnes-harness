@@ -3,6 +3,7 @@ import { constants, mkdirSync } from 'node:fs'
 import { type FileHandle, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
+  AuthorityTransferControl,
   BlobReadPort,
   ByteRangeResult,
   ByteReadStream,
@@ -16,7 +17,7 @@ import {
   RuntimeServiceCatalog,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-import type { AuthorityTransferSource, TransferMaintenance } from '../authority-transfer.js'
+import type { TransferMaintenance } from '../authority-transfer.js'
 import { gc, inspect, pin, promote, resolvePin, unpin } from '../blob/retention.js'
 import {
   BlobRefusal,
@@ -34,6 +35,11 @@ import {
 export const BLOB_CONTRACT = 'agh.blob'
 export const BLOB_MAJOR = 1
 export const BLOB_FEATURES = ['blob-read.v1'] as const
+
+/** Only a store with a maintenance assembly can take part in an authority transfer. */
+export function blobFeatures(options: Pick<BlobServiceOptions, 'maintenance'>): string[] {
+  return [...BLOB_FEATURES, ...(options.maintenance ? ['authority-transfer.v1'] : [])]
+}
 
 /**
  * The data directory of one default runtime service, `<hostDataDir>/runtime-services/<service>`,
@@ -56,9 +62,9 @@ export type ServiceDescriptorInput = Readonly<{
 
 /**
  * The validated descriptor of a default runtime service: one operation for each remote catalog method
- * whose required feature is declared; local port methods are not operations. Queries are read-only,
- * the `idempotent` actions return their first result again for the same input, and any other action
- * is never retried.
+ * whose required feature is declared; local port methods are not operations. Queries and the
+ * `readOnly` methods are read-only, the `idempotent` methods return their first result again for the
+ * same input, and any other method is never retried.
  */
 export function defaultServiceDescriptor(
   contract: 'agh.blob' | 'agh.artifacts',
@@ -66,6 +72,7 @@ export function defaultServiceDescriptor(
   features: readonly string[],
   requires: readonly Wire.ServiceRequirement[],
   idempotent: readonly string[],
+  readOnly: readonly string[] = [],
 ): Wire.ProviderDescriptor {
   if (input.binding.contract !== contract) throw new Error(`invalid ${contract} binding`)
   const methods: Readonly<Record<string, { kind?: string; local?: boolean; requiredFeature?: string }>> =
@@ -99,7 +106,11 @@ export function defaultServiceDescriptor(
               outputSchema: schemas[method]?.output,
               requiredCapabilities: [],
               retrySafety:
-                kind === 'query' ? 'read-only' : idempotent.includes(method) ? 'idempotent' : 'never',
+                kind === 'query' || readOnly.includes(method)
+                  ? 'read-only'
+                  : idempotent.includes(method)
+                    ? 'idempotent'
+                    : 'never',
             },
           ],
     ),
@@ -108,9 +119,32 @@ export function defaultServiceDescriptor(
   return checked.value
 }
 
-/** Stage, promote and pin return their first result again; unpin reports `released` only once. */
-export function blobProviderDescriptor(input: ServiceDescriptorInput): Wire.ProviderDescriptor {
-  return defaultServiceDescriptor(BLOB_CONTRACT, input, BLOB_FEATURES, [], ['stage', 'promote', 'pin'])
+/**
+ * Stage, promote, pin and every transfer step return their first result again; unpin reports
+ * `released` only once.
+ */
+export function blobProviderDescriptor(
+  input: ServiceDescriptorInput & Pick<BlobServiceOptions, 'maintenance'>,
+): Wire.ProviderDescriptor {
+  return defaultServiceDescriptor(
+    BLOB_CONTRACT,
+    input,
+    blobFeatures(input),
+    [],
+    [
+      'stage',
+      'promote',
+      'pin',
+      'authorityFence',
+      'authorityExport',
+      'authorityExportPage',
+      'authorityImport',
+      'authorityVerify',
+      'authorityActivate',
+      'authorityAbort',
+    ],
+    ['authorityProbe'],
+  )
 }
 
 const CHUNK_BYTES = RuntimeClientTransportPolicy.maxRangeBytes
@@ -125,8 +159,10 @@ export type BlobServiceOptions = Readonly<{
    * provide one yet, so without it every read is refused as blocked.
    */
   authorizeRead?: (context: CallContext, ref: Wire.BlobRef) => boolean
-  /** The Host's maintenance assembly. Without it, every transfer call is refused as blocked. */
+  /** The Host's maintenance assembly. Without it, every transfer call is refused as not supported. */
   maintenance?: TransferMaintenance
+  /** Opens a new store at a transfer target, refusing business writes until a transfer activates it. */
+  transferTarget?: boolean
 }>
 
 type Handler<T> = (request: unknown, context: CallContext) => Promise<Outcome<T>>
@@ -143,8 +179,10 @@ export type BlobService = Readonly<{
   blobRead: BlobReadPort
   /** Host-internal upload byte path; not an agh.blob method. */
   openWriter(uploadId: Wire.Id, context: CallContext): Outcome<UploadWriter>
-  /** Host-internal source side of an authority transfer; not offered by the descriptor. */
-  transfer: AuthorityTransferSource
+  /** Both sides of an authority transfer; offered only with a maintenance assembly. */
+  transfer: AuthorityTransferControl
+  /** Host-internal: a fenced store lends its content and export chunks to the target importing them. */
+  transferRead: Pick<BlobReadPort, 'openRead'>
   close(): void
 }>
 
@@ -262,6 +300,24 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
     }
   }
 
+  /** Only the maintenance controller reads, and only while this store is fenced for a transfer. */
+  const lend = (context: CallContext, ref: Wire.BlobRef) => {
+    live()
+    if (!options.maintenance?.authorize(context))
+      refuse('permission_denied', 'caller is not the maintenance controller')
+    if (store.role() !== 'fenced') refuse('blocked', 'only a store fenced for a transfer lends its bytes')
+    if (ref.authorityId !== store.authorityId) refuse('not_found', 'reference belongs to another authority')
+  }
+  const transferRead: Pick<BlobReadPort, 'openRead'> = {
+    openRead: (request, context) =>
+      call(context, async () => {
+        const { ref, offset } = parse('BlobOpenReadRequest', request)
+        lend(context, ref)
+        if (offset > ref.bytes) refuse('range_not_satisfiable', 'stream starts past the end')
+        return fileStream(await openContent(ref), ref, offset, () => lend(context, ref))
+      }),
+  }
+
   const blobRead: BlobReadPort = {
     readRange: (request, context) =>
       call(context, async (): Promise<ByteRangeResult> => {
@@ -301,9 +357,15 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
         : openUploadWriter(store, uploadId, context),
     transfer: {
       fence: (request, context) => call(context, () => store.fence(request, context)),
-      probe: (request, context) => call(context, () => store.probe(request, context)),
+      export: (request, context) => call(context, () => store.export(request, context)),
+      exportPage: (request, context) => call(context, () => store.exportPage(request, context)),
+      import: (request, context) => call(context, () => store.import(request, context)),
+      verify: (request, context) => call(context, () => store.verify(request, context)),
+      activate: (request, context) => call(context, () => store.activate(request, context)),
       abort: (request, context) => call(context, () => store.abort(request, context)),
+      probe: (request, context) => call(context, () => store.probe(request, context)),
     },
+    transferRead,
     close: () => {
       if (closed) return
       closed = true

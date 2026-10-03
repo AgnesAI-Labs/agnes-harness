@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
@@ -14,7 +16,9 @@ import {
 import { createPlatform } from '../../adapters/platform.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import { createPrivateArtifactStore, openPrivateArtifactDatabase } from '../../private-artifact-store.js'
+import type { AuthorityCopy } from '../authority-copy.js'
 import { type Authority, openAuthority, type TransferMaintenance } from '../authority-transfer.js'
+import type { IndexStorage } from '../migration/export-index.js'
 
 type Detail = keyof typeof RuntimeErrorDetails
 
@@ -85,6 +89,8 @@ const DDL = [
   'CREATE INDEX IF NOT EXISTS deletions_kind ON deletions (kind, digest, seq)',
   'CREATE INDEX IF NOT EXISTS blobs_digest ON blobs (digest, deleted)',
   'CREATE INDEX IF NOT EXISTS uploads_digest ON uploads (digest)',
+  // Maintenance, never part of a checkpoint: the bytes of one asset being copied from a source.
+  'CREATE TABLE IF NOT EXISTS maintenance_asset_chunks (at INTEGER PRIMARY KEY, bytes BLOB NOT NULL)',
 ]
 
 /** The business tables a checkpoint covers, in key order. */
@@ -111,8 +117,11 @@ export function openBlobStore(options: {
   authorityId: Wire.Id
   now?: () => number
   maintenance?: TransferMaintenance
+  /** Opens a new store as a transfer target; an existing store keeps its role. */
+  transferTarget?: boolean
 }): BlobStore {
   const db = openPrivateArtifactDatabase(options.dataDir, 'blob-service.db', 'blob service store')
+  const now = options.now ?? (() => Date.now())
   let authority: Authority
   try {
     db.exec('PRAGMA busy_timeout = 5000')
@@ -128,6 +137,9 @@ export function openBlobStore(options: {
       error: blobError,
       Refusal: BlobRefusal,
       ...(options.maintenance ? { maintenance: options.maintenance } : {}),
+      target: options.transferTarget === true,
+      now,
+      copy: contentCopy(db, options.dataDir, options.authorityId),
     })
   } catch (error) {
     db.close()
@@ -138,7 +150,7 @@ export function openBlobStore(options: {
     db,
     dataDir: options.dataDir,
     authorityId: options.authorityId,
-    now: options.now ?? (() => Date.now()),
+    now,
     writers: new Set(),
   }
 }
@@ -146,6 +158,115 @@ export function openBlobStore(options: {
 /** The content file of one digest in this store's content-addressed directory. */
 export const contentPath = (store: Pick<BlobStore, 'dataDir'>, digest: Wire.Digest) =>
   join(store.dataDir, 'artifacts', 'sha256', digest.slice(0, 2), digest)
+
+const CONTENT_TYPE = 'agh.host.blob/content@1'
+
+/** Export chunks, index pages and assets live in the content store; the transfer holds each one. */
+const transferRef = (
+  authorityId: Wire.Id,
+  upgradeId: Wire.Id,
+  digest: Wire.Digest,
+  bytes: number,
+  mediaType: string,
+): Wire.BlobRef => ({
+  authorityId,
+  blobId: `content-${digest}`,
+  digest,
+  bytes,
+  mediaType,
+  pinId: `transfer-${upgradeId}`,
+})
+
+/** Whether the content file of a digest holds exactly the referenced bytes. */
+async function holds(dataDir: string, ref: Wire.BlobRef): Promise<boolean> {
+  const path = contentPath({ dataDir }, ref.digest)
+  try {
+    const stat = await lstat(path)
+    if (!stat.isFile() || stat.size !== ref.bytes) return false
+    const hash = createHash('sha256')
+    for await (const chunk of createReadStream(path)) hash.update(chunk)
+    return hash.digest('hex') === ref.digest
+  } catch {
+    return false
+  }
+}
+
+/**
+ * How this store's rows and content move to another location. The assets are the digests
+ * `contentInUse` in retention keeps: an undeleted staged blob, or a sealed upload never promoted.
+ */
+function contentCopy(db: DatabaseSync, dataDir: string, authorityId: Wire.Id): AuthorityCopy {
+  const content = () => createPrivateArtifactStore(dataDir, createPlatform().os)
+  const storage = (upgradeId: Wire.Id): IndexStorage => ({
+    async put(bytes, typeId) {
+      const digest = createHash('sha256').update(bytes).digest('hex')
+      await content().put(digest, bytes)
+      return {
+        kind: 'blob',
+        schema: { typeId, revision: 1, digest: createHash('sha256').update(typeId).digest('hex') },
+        blob: transferRef(authorityId, upgradeId, digest, bytes.byteLength, 'application/json'),
+      }
+    },
+    read: (ref) => createReadStream(contentPath({ dataDir }, ref.digest)),
+  })
+  function* list(upgradeId: Wire.Id): Generator<Wire.DataRef> {
+    const rows = db
+      .prepare(
+        `SELECT digest, MAX(bytes) AS bytes, MIN(media_type) AS media_type FROM (
+           SELECT digest, json_extract(staged, '$.bytes') AS bytes,
+             json_extract(staged, '$.mediaType') AS media_type FROM blobs WHERE deleted = 0
+           UNION ALL SELECT u.digest, json_extract(u.result, '$.upload.bytes'),
+             json_extract(u.result, '$.upload.mediaType') FROM uploads u
+           WHERE u.digest IS NOT NULL AND u.deleted = 0
+             AND NOT EXISTS (SELECT 1 FROM blobs b WHERE b.upload_id = u.upload_id))
+         GROUP BY digest`,
+      )
+      .iterate() as Iterable<{ digest: Wire.Digest; bytes: number; media_type: string }>
+    const schema = {
+      typeId: CONTENT_TYPE,
+      revision: 1,
+      digest: createHash('sha256').update(CONTENT_TYPE).digest('hex'),
+    }
+    for (const row of rows)
+      yield {
+        kind: 'blob',
+        schema,
+        blob: transferRef(authorityId, upgradeId, row.digest, row.bytes, row.media_type),
+      }
+  }
+  function* staged(): Generator<Uint8Array> {
+    const rows = db.prepare('SELECT bytes FROM maintenance_asset_chunks ORDER BY at').iterate() as Iterable<{
+      bytes: Uint8Array
+    }>
+    for (const row of rows) yield row.bytes
+  }
+  return {
+    collection: 'blob',
+    storage,
+    assets: {
+      list,
+      present: (ref) => holds(dataDir, ref),
+      // The bytes stream through a staging table, as an upload's chunks do, so no asset is held in memory.
+      async copy(ref, read) {
+        if (await holds(dataDir, ref)) return
+        db.exec('DELETE FROM maintenance_asset_chunks')
+        const stage = db.prepare('INSERT INTO maintenance_asset_chunks (at, bytes) VALUES (?, ?)')
+        const hash = createHash('sha256')
+        let at = 0
+        for await (const chunk of read(ref)) {
+          if (at + chunk.byteLength > ref.bytes) refuse('integrity', 'asset bytes run past their size')
+          hash.update(chunk)
+          stage.run(at, chunk)
+          at += chunk.byteLength
+        }
+        if (at !== ref.bytes || hash.digest('hex') !== ref.digest)
+          refuse('integrity', 'asset bytes do not match their digest')
+        await content().putChunks(ref.digest, ref.bytes, staged())
+        db.exec('DELETE FROM maintenance_asset_chunks')
+      },
+    },
+  }
+}
 
 type UploadRow = {
   owner: string

@@ -1050,28 +1050,42 @@ describe('cache health on the live projection cell', () => {
     expect(cell.usage(usageOpts).cache?.lastInvalidation).toMatchObject({ cause: 'history-changed' })
   })
 
-  it('keeps guardian cost in totals without replacing the live context anchor', () => {
-    const cell = new UIProjectionCell('k', 'main', { maxEvents: 2, maxBytes: 1024 * 1024 })
-    const guardian = inferenceRow(2, 'guardian-1', { input: 1024, cacheRead: 0, cacheWrite: 0 })
-    guardian.data = { ...(guardian.data as object), purpose: 'approval-guardian', credits: 0.5 }
-    cell.apply([inferenceRow(1, 'inference-1', { input: 10, cacheRead: 3, cacheWrite: 4 }), guardian])
-    expect(cell.usage(usageOpts)).toMatchObject({
-      totals: { input: 1034, output: 2, cacheRead: 3, cacheWrite: 4 },
-      credits: { amount: 0.5 },
-      context: { tokens: 18 },
-    })
-  })
+  it.each([
+    ['approval-guardian', 1024, 0.5, { input: 1034 }],
+    ['media', 2048, 0.75, { input: 2058 }],
+    // The summary request's usage is not what the next request carries.
+    ['compaction', 9000, 0.5, { input: 9010 }],
+  ] as const)(
+    'keeps %s cost in totals without replacing the live context anchor',
+    (purpose, input, credits, totals) => {
+      const cell = new UIProjectionCell('k', 'main', { maxEvents: 2, maxBytes: 1024 * 1024 })
+      const other = inferenceRow(2, `${purpose}-1`, { input, cacheRead: 0, cacheWrite: 0 })
+      other.data = { ...(other.data as object), purpose, credits }
+      cell.apply([inferenceRow(1, 'inference-1', { input: 10, cacheRead: 3, cacheWrite: 4 }), other])
+      expect(cell.usage(usageOpts)).toMatchObject({
+        totals: { ...totals, output: 2, cacheRead: 3, cacheWrite: 4 },
+        credits: { amount: credits },
+        context: { tokens: 18 },
+      })
+    },
+  )
 
-  it('keeps auxiliary media cost in totals without replacing the live context anchor', () => {
+  it('reads the context from the estimate a compaction leaves behind, until the next request', () => {
     const cell = new UIProjectionCell('k', 'main', { maxEvents: 2, maxBytes: 1024 * 1024 })
-    const media = inferenceRow(2, 'media-1', { input: 2048, cacheRead: 0, cacheWrite: 0 })
-    media.data = { ...(media.data as object), purpose: 'media', credits: 0.75 }
-    cell.apply([inferenceRow(1, 'inference-1', { input: 10, cacheRead: 3, cacheWrite: 4 }), media])
-    expect(cell.usage(usageOpts)).toMatchObject({
-      totals: { input: 2058, output: 2, cacheRead: 3, cacheWrite: 4 },
-      credits: { amount: 0.75 },
-      context: { tokens: 18 },
-    })
+    const end = {
+      ...inferenceRow(3, 'end', { input: 0, cacheRead: 0, cacheWrite: 0 }),
+      type: 'x/core/compaction-end',
+      data: { tokensAfter: 7 },
+      ignorable: true,
+    } as Event
+    cell.apply([
+      inferenceRow(1, 'inference-1', { input: 10, cacheRead: 3, cacheWrite: 4 }),
+      inferenceRow(2, 'compaction-1', { input: 9000, cacheRead: 0, cacheWrite: 0 }),
+      end,
+    ])
+    expect(cell.usage(usageOpts).context.tokens).toBe(7)
+    cell.apply([inferenceRow(4, 'inference-2', { input: 50, cacheRead: 0, cacheWrite: 0 })])
+    expect(cell.usage(usageOpts).context.tokens).toBe(51)
   })
 })
 

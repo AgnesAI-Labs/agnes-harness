@@ -1,4 +1,5 @@
 import type { Billing, ModelRecord, ModelSettings, ThinkingLevel, UsageView } from '@agnes/protocol'
+import { contextAnchorOf } from '../reduce/anchor.js'
 import type { CostLedger } from '../reduce/shapes.js'
 import type { Event, Seq } from '../types.js'
 import { applyCacheHealthEvent, cacheHealthView, initialCacheHealthState } from './cache-health.js'
@@ -21,19 +22,8 @@ export function contextTokensAtCut(events: Iterable<Event>, lane: string, upto: 
   const prefix = [...events].filter((event) => event.seq <= upto)
   let last: { seq: Seq; total: number } | undefined
   for (const event of prefix) {
-    if ((event.lane ?? 'main') !== lane || event.type !== 'cost/ledger') continue
-    const row = event.data as CostLedger
-    if (
-      row.purpose !== 'title' &&
-      row.purpose !== 'approval-guardian' &&
-      row.purpose !== 'media' &&
-      !row.interrupted &&
-      !row.adjustment
-    )
-      last = {
-        seq: event.seq,
-        total: row.tokens.input + row.tokens.output + row.tokens.cacheRead + row.tokens.cacheWrite,
-      }
+    if ((event.lane ?? 'main') !== lane) continue
+    last = contextAnchorOf(event) ?? last
   }
   let total = last?.total ?? 0
   for (const node of computeSurface(prefix, { lane })) {

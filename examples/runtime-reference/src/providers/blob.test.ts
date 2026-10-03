@@ -1,15 +1,17 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { createConformanceHarness, SCENARIOS } from '@agnes/extension-api/testkit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { TransferContractPort } from '../../../../packages/extension-api/testkit/runtime/contracts/authority-transfer.js'
 import type { BlobContractPort } from '../../../../packages/extension-api/testkit/runtime/contracts/blob.js'
 import { createReferenceRegistry } from '../index.js'
-import { BLOB_PROVIDER, type BlobStore, openBlobStore, PIECE_BYTES } from './blob.js'
+import { BLOB_PROVIDER, type BlobStore, type BlobStoreOptions, openBlobStore, PIECE_BYTES } from './blob.js'
 import { bindBlobContract, damage } from './blob-contract.js'
+import type { BlobTransferMaintenance } from './blob-transfer.js'
 
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const bytesOf = (size: number) => new Uint8Array(size).map((_, index) => (index * 13) % 256)
@@ -227,6 +229,170 @@ describe('reference blob store', () => {
   })
 })
 
+describe('reference blob authority transfer', () => {
+  const MAINTAINER = ctx('maintainer')
+  const UPGRADE = 'upgrade-1'
+  const expected = { authorityId: 'reference-blob', tenantId: 'tenant-1', authorityEpoch: 1 }
+  const opened: BlobStore[] = []
+  afterEach(() => {
+    for (const each of opened.splice(0)) each.close()
+  })
+
+  /** A store at `locationRef` with a maintenance assembly; an import reads from `source`. */
+  function at(locationRef: string, options: BlobStoreOptions = {}, source?: BlobStore): BlobStore {
+    const maintenance: BlobTransferMaintenance = {
+      authorize: (context) => context.authorizationRef === 'maintainer',
+      tenantId: 'tenant-1',
+      locationRef,
+      readRoute: async () => {
+        throw new Error('these stores are never activated or aborted')
+      },
+      readSource: (ref, context) => {
+        if (!source) throw new Error('this store imports nothing')
+        return source.readExport(ref, context)
+      },
+      planFingerprint: sha(bytesOf(1)),
+    }
+    const opening = openBlobStore(join(directory, `${locationRef}.sqlite`), {
+      authorizeRead: (context) => context.authorizationRef === 'reader',
+      maintenance,
+      ...options,
+    })
+    opened.push(opening)
+    return opening
+  }
+
+  async function exported(source: BlobStore) {
+    const fence = must(
+      await source.transfer.fence(
+        { upgradeId: UPGRADE, expected, cohortDigest: sha(bytesOf(2)) },
+        MAINTAINER,
+      ),
+    )
+    return {
+      fence,
+      exported: must(
+        await source.transfer.export({ upgradeId: UPGRADE, fenceId: fence.fenceId }, MAINTAINER),
+      ),
+    }
+  }
+
+  it('refuses every business write as blocked while fenced, keeps reads, and a candidate serves nothing', async () => {
+    const source = at('source')
+    const ref = source.seed(bytesOf(5))
+    const upload = source.upload(bytesOf(6))
+    const stagedBlob = must(await source.promote({ upload, expectedDigest: upload.digest }, ctx()))
+    await exported(source)
+    const ownerRef = { kind: 'artifact', value: { artifactId: 'artifact-1', version: 1 } } as const
+    expect(() => source.seed(bytesOf(1))).toThrow('store is fenced or a transfer candidate')
+    expect(() => source.upload(bytesOf(1))).toThrow('store is fenced or a transfer candidate')
+    expect(refused(await source.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))).toBe('blocked')
+    expect(refused(await source.unpin({ pinId: ref.pinId, expectedRevision: 1 }, ctx()))).toBe('blocked')
+    const gc = { scopeRef: ctx().scope, dryRun: false, cursor: null, limit: 10 }
+    expect(refused(await source.gc(gc, ctx()))).toBe('blocked')
+    expect(must(await source.blobRead.readRange({ ref, offset: 0, length: 5 }, ctx())).bytes).toEqual(
+      bytesOf(5),
+    )
+    const candidate = at('target', { candidate: true })
+    expect(() => candidate.seed(bytesOf(1))).toThrow('store is fenced or a transfer candidate')
+    expect(refused(await candidate.blobRead.readRange({ ref, offset: 0, length: 1 }, ctx()))).toBe('blocked')
+  })
+
+  it('pages more than 500 parts through a two-level manifest and imports every one of them', async () => {
+    const source = at('source', { exportPart: { records: 1, bytes: PIECE_BYTES } })
+    for (let index = 0; index < 200; index += 1) source.seed(bytesOf(1))
+    const { fence, exported: manifest } = await exported(source)
+    expect(manifest).toMatchObject({ partCount: 600, collectionCount: 3, deletionWatermark: 0 })
+    const root = manifest.manifestRoot
+    if (root.kind !== 'blob') throw new Error('manifest root is not a blob')
+    expect(root.blob.bytes).toBeLessThanOrEqual(1024 * 1024)
+    const pieces: Uint8Array[] = []
+    for await (const piece of source.readExport(root.blob, MAINTAINER)) pieces.push(piece)
+    const top = JSON.parse(Buffer.concat(pieces).toString('utf8')) as {
+      level: number
+      entries: { count: number }[]
+    }
+    expect([top.level, top.entries.map((entry) => entry.count)]).toEqual([1, [500, 100]])
+
+    const page = (over: object) =>
+      source.transfer.exportPage(
+        {
+          upgradeId: UPGRADE,
+          fenceId: fence.fenceId,
+          manifestDigest: root.blob.digest,
+          cursor: null,
+          limit: 500,
+          ...over,
+        },
+        MAINTAINER,
+      )
+    expect(refused(await page({ limit: 501 }))).toBe('invalid_request')
+    expect(refused(await page({ cursor: 'not-a-cursor' }))).toBe('invalid_request')
+    const first = must(await page({}))
+    expect([first.items.length, first.complete]).toEqual([500, false])
+    expect(refused(await page({ cursor: first.nextCursor, manifestDigest: sha(bytesOf(3)) }))).toBe(
+      'revision_conflict',
+    )
+    const rest = must(await page({ cursor: first.nextCursor }))
+    expect([rest.items.length, rest.nextCursor, rest.complete]).toEqual([100, null, true])
+
+    const target = at('target', { candidate: true }, source)
+    const imported = must(
+      await target.transfer.import(
+        { upgradeId: UPGRADE, source: manifest, targetLocationRef: 'target' },
+        MAINTAINER,
+      ),
+    )
+    expect(imported.targetCheckpoint).toMatchObject({
+      snapshotDigest: fence.checkpoint.snapshotDigest,
+      recordCount: 600,
+    })
+  })
+
+  it('exports the same manifest for the same records and never imports past the deletion watermark', async () => {
+    let source = at('source')
+    const dropped = source.seed(bytesOf(3))
+    source.seed(bytesOf(PIECE_BYTES + 1))
+    must(await source.unpin({ pinId: dropped.pinId, expectedRevision: 1 }, ctx()))
+    must(await source.gc({ scopeRef: ctx().scope, dryRun: false, cursor: null, limit: 10 }, ctx()))
+    source.close()
+    copyFileSync(join(directory, 'source.sqlite'), join(directory, 'copy.sqlite'))
+    source = at('source')
+    const original = (await exported(source)).exported
+    expect((await exported(at('copy'))).exported.manifestRoot).toEqual(original.manifestRoot)
+    expect(original.deletionWatermark).toBe(2)
+
+    const request = (manifest: typeof original, targetLocationRef: string) => ({
+      upgradeId: UPGRADE,
+      source: manifest,
+      targetLocationRef,
+    })
+    const short = at('short', { candidate: true }, source)
+    expect(
+      refused(
+        await short.transfer.import(request({ ...original, deletionWatermark: 1 }, 'short'), MAINTAINER),
+      ),
+    ).toBe('integrity')
+    const target = at('target', { candidate: true }, source)
+    must(await target.transfer.import(request(original, 'target'), MAINTAINER))
+    expect(target.deletions().map((row) => [row.kind, row.digest])).toEqual(
+      source.deletions().map((row) => [row.kind, row.digest]),
+    )
+    const db = new DatabaseSync(join(directory, 'target.sqlite'))
+    try {
+      expect(
+        db
+          .prepare(
+            'SELECT deleted, (SELECT COUNT(*) FROM pieces WHERE blob_id = ?) AS pieces FROM objects WHERE blob_id = ?',
+          )
+          .get(dropped.blobId, dropped.blobId),
+      ).toEqual({ deleted: 1, pieces: 0 })
+    } finally {
+      db.close()
+    }
+  })
+})
+
 describe('reference blob: conformance', () => {
   it('fills the blob slot of the reference registry', () => {
     const slot = createReferenceRegistry([BLOB_PROVIDER]).find((item) => item.contract === 'agh.blob')
@@ -235,9 +401,12 @@ describe('reference blob: conformance', () => {
     expect(existsSync(new URL(`../../../../${slot?.providerFile}`, import.meta.url))).toBe(true)
   })
 
-  async function runContract(change: (port: BlobContractPort) => BlobContractPort) {
+  async function runContract(
+    change: (port: BlobContractPort) => BlobContractPort,
+    changeTransfer: (port: TransferContractPort) => TransferContractPort = (port) => port,
+  ) {
     const harness = createConformanceHarness()
-    const bound = bindBlobContract(harness, 'reference-blob-conformance', { change })
+    const bound = bindBlobContract(harness, 'reference-blob-conformance', { change, changeTransfer })
     try {
       return await harness.run({
         contracts: ['agh.blob'],
@@ -250,23 +419,32 @@ describe('reference blob: conformance', () => {
     }
   }
 
-  it('passes select, normal, deny, cancel, recover and dispose', async () => {
+  it('passes select, normal, deny, cancel, recover and dispose for reads and for authority transfer', async () => {
     const report = await runContract((port) => port)
-    expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
-      SCENARIOS.map((scenario) => [scenario, 'passed']),
+    expect(report.assertions.map((item) => [item.id, item.status])).toEqual(
+      ['', '/authority-transfer'].flatMap((suite) =>
+        SCENARIOS.map((scenario) => [`agh.blob/${BLOB_PROVIDER.id}${suite}/${scenario}`, 'passed']),
+      ),
     )
     expect(report.status).toBe('passed')
     expect(report.failures).toEqual([])
   })
 
   it('fails a scenario whose observations break the contract', async () => {
-    const report = await runContract((port) => ({
-      ...port,
-      recover: async (context) => ({ ...(await port.recover(context)), after: { refused: 'not_found' } }),
-    }))
-    expect(report.assertions.filter((item) => item.status === 'failed').map((item) => item.scenario)).toEqual(
-      ['recover'],
+    const report = await runContract(
+      (port) => ({
+        ...port,
+        recover: async (context) => ({ ...(await port.recover(context)), after: { refused: 'not_found' } }),
+      }),
+      (port) => ({
+        ...port,
+        deny: async (context) => ({ ...(await port.deny(context)), tampered: { refused: 'internal_error' } }),
+      }),
     )
+    expect(report.assertions.filter((item) => item.status === 'failed').map((item) => item.id)).toEqual([
+      `agh.blob/${BLOB_PROVIDER.id}/recover`,
+      `agh.blob/${BLOB_PROVIDER.id}/authority-transfer/deny`,
+    ])
     expect(report.status).toBe('failed')
   })
 

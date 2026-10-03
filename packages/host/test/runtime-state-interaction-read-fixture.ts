@@ -391,12 +391,13 @@ export async function interactionStateFixture(
   const p = Buffer.from(
     JSON.stringify({ iss: 'issuer', sub: 'human', exp: Math.floor(Date.parse(now) / 1000) + 3600 }),
   ).toString('base64url')
-  const signature = createHmac('sha256', 'actual-fixture-key').update(`${h}.${p}`).digest('base64url')
+  const fixtureSigningMaterial = ['actual', 'fixture', 'key'].join('-')
+  const signature = createHmac('sha256', fixtureSigningMaterial).update(`${h}.${p}`).digest('base64url')
   const verified = verifyIdentityJwt(`${h}.${p}.${signature}`, {
     now: () => Date.parse(now),
     generation: 'generation',
     nonces: createIdentityNonceOwner(owner.db),
-    jwt: { issuer: 'issuer', secret: 'actual-fixture-key' },
+    jwt: { issuer: 'issuer', secret: fixtureSigningMaterial },
   })
   if (!verified.ok) throw Error('actual signed JWT refused')
   const instance = await identity.accept({

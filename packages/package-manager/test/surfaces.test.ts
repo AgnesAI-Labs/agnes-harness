@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -106,7 +107,17 @@ it('retains verified surfaces in preview/inventory without executing entry', asy
     id: 'dashboard',
     descriptor: surface,
   })
-  expect(Object.isFrozen(readSurfaceInstances(deploy).instances[0]?.instance.config)).toBe(true)
+  const locked = readSurfaceInstances(deploy).instances[0]
+  expect(Object.isFrozen(locked?.instance.config)).toBe(true)
+  expect(locked?.digest).toBe(
+    createHash('sha256')
+      .update(readFileSync(join(deploy, 'surfaces/main.json')))
+      .digest('hex'),
+  )
+  writeFileSync(join(deploy, 'surfaces/main.json'), `${JSON.stringify(instance)}\n`)
+  const changed = readSurfaceInstances(deploy).instances[0]
+  expect(changed?.instance).toEqual(locked?.instance)
+  expect(changed?.digest).not.toBe(locked?.digest)
 })
 it.each(['disable', 'update', 'rollback', 'remove'] as const)(
   'blocks %s through the real PackageManager reference path',

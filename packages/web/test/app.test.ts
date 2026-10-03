@@ -466,6 +466,81 @@ describe('web permission synchronization', () => {
     40_000,
   )
 
+  describe('live approval card', () => {
+    const options = [
+      { optionId: 'allow_once', name: 'allow_once', kind: 'allow_once' },
+      { optionId: 'allow_always', name: 'allow_always', kind: 'allow_always' },
+      { optionId: 'reject_once', name: 'reject_once', kind: 'reject_once' },
+    ]
+    const card = (tool: string, kind: string, rawInput: unknown) => ({
+      sessionId: 'old',
+      toolCall: {
+        toolCallId: `call-${tool}`,
+        title: `${tool} summary`,
+        kind,
+        rawInput,
+        _meta: { 'ai.agnes.harness': { tool } },
+      },
+      options,
+    })
+    const ask = async (request: ReturnType<typeof card>) => {
+      await boot(false)
+      const permission = binding.loadWebSession.mock.calls.at(-1)?.[2]
+      const answer = permission(request, { signal: new AbortController().signal })
+      const region = document.getElementById('approval') as HTMLElement
+      await vi.waitFor(() => expect(region.querySelector('.approval-actions button')).toBeTruthy())
+      const buttons = () => [...region.querySelectorAll<HTMLButtonElement>('.approval-actions button')]
+      return { answer, region, buttons, preview: () => region.querySelector('pre')?.textContent ?? '' }
+    }
+
+    it('keeps the end of a long command on the card and says what the session choice covers', async () => {
+      const command = `${'a'.repeat(2900)} && touch TAIL_UNSEEN`
+      const { answer, region, buttons, preview } = await ask(card('shell', 'execute', { command }))
+      expect(region.textContent).toContain('将在此任务的工作目录执行命令')
+      expect(preview()).toContain('touch TAIL_UNSEEN')
+      expect(region.querySelector('.approval-warning')).toBeNull()
+      expect(buttons().map((b) => b.textContent)).toEqual([
+        '仅允许这次',
+        '本会话内允许所有 shell 调用',
+        '拒绝',
+      ])
+      buttons()[0]?.click()
+      await expect(answer).resolves.toEqual({ optionId: 'allow_once' })
+    })
+
+    it.each([
+      ['write', 'edit', { content: 'body', path: 'src/a.ts' }, '将创建或覆盖文件 src/a.ts'],
+      ['edit', 'edit', { edits: [], path: 'src/a.ts' }, '将修改文件 src/a.ts'],
+      ['web_fetch', 'fetch', { url: 'https://example.com/x' }, '将访问网址 https://example.com/x'],
+      ['read', 'read', { path: 'notes.md' }, '将读取 notes.md'],
+      ['mcp__db__query', 'other', { sql: 'select 1' }, '请核对工具及参数后决定是否继续'],
+    ])('%s says what it will do and puts its locating field first', async (tool, kind, input, text) => {
+      const { region, preview } = await ask(card(tool, kind, input))
+      expect(region.textContent).toContain(text)
+      expect(region.textContent).not.toContain('执行命令')
+      const first = Object.keys(JSON.parse(preview()))[0]
+      expect(first).toBe(Object.keys(input).includes('path') ? 'path' : Object.keys(input)[0])
+    })
+
+    it('puts path before content in the preview although it arrived after it', async () => {
+      const { preview } = await ask(card('write', 'edit', { content: 'body', path: 'src/a.ts' }))
+      expect(preview().indexOf('"path"')).toBeGreaterThan(-1)
+      expect(preview().indexOf('"path"')).toBeLessThan(preview().indexOf('"content"'))
+    })
+
+    it('does not offer the session grant when part of the call is not on the card, and says so', async () => {
+      const command = `${'a'.repeat(40_000)}TAIL_UNSEEN`
+      const { answer, region, buttons, preview } = await ask(card('shell', 'execute', { command }))
+      const total = JSON.stringify({ command }, null, 2).length
+      expect(preview()).toContain(`…[已显示 32768 / 共 ${total} 字符]`)
+      expect(preview()).not.toContain('TAIL_UNSEEN')
+      expect(region.querySelector('.approval-warning')?.textContent).toContain('内容未完整显示')
+      expect(buttons().map((b) => b.textContent)).toEqual(['仅允许这次', '拒绝'])
+      buttons()[1]?.click()
+      await expect(answer).resolves.toEqual({ optionId: 'reject_once' })
+    })
+  })
+
   it('requires a confirmed selection when an older backend omits its permission state', async () => {
     const { old, timeline, connect } = await boot(undefined)
     expect(label()).toBe('请选择权限')

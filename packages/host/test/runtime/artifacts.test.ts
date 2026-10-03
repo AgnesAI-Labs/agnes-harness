@@ -571,6 +571,8 @@ describe('default artifacts publication', () => {
           diagnosticId: 'test',
         },
       }),
+      sourceBlobs: { openRead: () => Promise.reject(new Error('this store never imports')) },
+      planFingerprint: () => Promise.reject(new Error('this store never verifies')),
     }
     const { artifacts, blob, dataDir } = await world(undefined, undefined, maintenance)
     const reserved = ok(await artifacts.reserve({ request: reserveRequest('pub-1'), owner: owner() }, ctx()))

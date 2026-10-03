@@ -6,6 +6,7 @@ import { jcs } from '../../../../packages/protocol/src/index.js'
 import type { RuntimeWireTypes as Wire } from '../../../../packages/protocol/src/runtime/index.js'
 
 export type BrokenPluginMode =
+  | 'approved-build'
   | 'normal'
   | 'malicious-manifest'
   | 'outside-path'
@@ -62,6 +63,8 @@ export function createBrokenPlugin(
     { path: 'package.json', bytes: packageJson },
     { path: entry, bytes: source },
   ]
+  if (mode === 'approved-build')
+    members.push({ path: 'src/runtime.txt', bytes: Buffer.from('fixture entry must never execute') })
   const manifest = {
     $schema: 'https://agnes.ai/schema/runtime/v1/plugin-manifest.schema.json',
     kind: 'agh.plugin',
@@ -185,6 +188,70 @@ export function writeBrokenPlugin(root: string, fixture: BrokenPluginFixture): v
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, file.bytes)
   }
+}
+
+/** Test-only compiler/repacker: derives the runtime entry from locked source text, then emits tar.
+ * Faults modify the real child-process output; the inspector never executes this program. */
+export function packageBuildProgram(fault = ''): string {
+  return String.raw`
+    const fs = require('node:fs'), zlib = require('node:zlib');
+    const fault = ${JSON.stringify(fault)};
+    let compressed = false;
+    const members = [];
+    if (fs.existsSync('source.archive')) {
+      const input = fs.readFileSync('source.archive');
+      compressed = input[0] === 0x1f && input[1] === 0x8b;
+      const raw = compressed ? zlib.gunzipSync(input) : input;
+      for (let offset = 0; offset < raw.length - 1024;) {
+        const header = Buffer.from(raw.subarray(offset, offset + 512));
+        const name = header.toString('utf8', 0, 100).replace(/\0.*$/, '');
+        const length = parseInt(header.toString('ascii', 124, 136).replace(/\0.*$/, ''), 8);
+        offset += 512;
+        members.push({ name, header, bytes: Buffer.from(raw.subarray(offset, offset + length)) });
+        offset += length + (512 - length % 512) % 512;
+      }
+    } else {
+      const path = require('node:path');
+      const walk = dir => {
+        for (const entry of fs.readdirSync(path.join('source', dir))) {
+          const name = path.posix.join(dir, entry), file = path.join('source', name);
+          const stat = fs.lstatSync(file);
+          if (stat.isDirectory()) { walk(name); continue; }
+          const header = Buffer.alloc(512), bytes = fs.readFileSync(file);
+          header.write(name, 0, 100, 'utf8');
+          for (const [offset, width, value] of [[100,8,stat.mode & 0o111 ? 0o755 : 0o644],[108,8,0],[116,8,0],[124,12,bytes.length],[136,12,0]])
+            header.write(value.toString(8).padStart(width-1,'0')+'\0',offset);
+          header[156]=0x30; header.write('ustar\0',257); header.write('00',263);
+          members.push({name,header,bytes});
+        }
+      };
+      walk('');
+      members.sort((a,b)=>Buffer.compare(Buffer.from(a.name),Buffer.from(b.name)));
+    }
+    const source = members.find(m => m.name.endsWith('src/runtime.txt'));
+    const entry = members.find(m => m.name.endsWith('runtime/index.js'));
+    entry.bytes = Buffer.from('throw new Error(' + JSON.stringify(source.bytes.toString('utf8')) + ');\n');
+    const manifest = members.find(m => m.name.endsWith('manifest.json'));
+    if (fault === 'entry-missing' || fault === 'malicious-manifest') {
+      const value = JSON.parse(manifest.bytes.toString('utf8'));
+      if (fault === 'entry-missing') value.entries.runtime = './runtime/missing.js';
+      else value.runtimeApiMajor = 99;
+      manifest.bytes = Buffer.from(JSON.stringify(value));
+    }
+    if (fault === 'corrupt') entry.bytes = Buffer.from('corrupt output');
+    const chunks = [];
+    for (const member of members) {
+      member.header.write(member.bytes.length.toString(8).padStart(11, '0') + '\0', 124);
+      if (fault === 'transport-metadata') member.header.write(process.pid.toString(8).padStart(11, '0') + '\0', 136);
+      member.header.fill(32, 148, 156);
+      const sum = member.header.reduce((a, b) => a + b, 0);
+      member.header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148);
+      chunks.push(member.header, member.bytes, Buffer.alloc((512 - member.bytes.length % 512) % 512));
+    }
+    chunks.push(Buffer.alloc(1024));
+    const output = Buffer.concat(chunks);
+    fs.writeFileSync('artifact.tar', fault === 'archive-corrupt' ? Buffer.from('broken') : compressed ? zlib.gzipSync(output) : output);
+  `
 }
 
 function tar(

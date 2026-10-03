@@ -2,6 +2,7 @@ export * from './artifacts.js'
 export * from './assembly.js'
 export * from './audit.js'
 export * from './authority-directory.js'
+export * from './authority-transfer.js'
 export * from './billing.js'
 export * from './blob.js'
 // Blob and projection cases both export a callContext helper; the aggregate keeps the blob one.

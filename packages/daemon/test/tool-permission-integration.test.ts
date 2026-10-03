@@ -88,7 +88,7 @@ it.each(['allow', 'reject', 'disconnect'])('real write approval over SDK/daemon:
         throw new Error(`turn ended before approval: ${JSON.stringify(value)}`)
       }),
     ])
-    expect(title).toBe('write {"content":"approved","path":"receipt.txt"}')
+    expect(title).toBe('write receipt.txt (8 chars)')
     expect(rawInput).toEqual({ content: 'approved', path: 'receipt.txt' })
     if (mode === 'disconnect') await client.close()
     const outcome = await result

@@ -143,4 +143,42 @@ describe('NoticeSink', () => {
     expect(attached.pending().events).toBe(1)
     expect(idle.pending().events).toBe(0)
   })
+
+  it('drops a notice the wire refuses, audits the drop, and still reaches the other connections', () => {
+    const attached = { cursor: { fromSeq: 1, generation: 1 }, filter: { preview: false, acpUpdates: false } }
+    const first = new LocalEndpoint({ clock: () => 0, principalId: 'first' })
+    const second = new LocalEndpoint({ clock: () => 0, principalId: 'second' })
+    for (const ep of [first, second]) ep.conn.attached.set('k1', attached)
+    const audit: Array<{ kind: string }> = []
+    const sink = new NoticeSink({
+      endpoints: () => [first, second].map((ep) => ({ ep, conn: ep.conn })),
+      audit: (r) => audit.push(r as { kind: string }),
+      clock: () => 42,
+    })
+    // `session_interrupted` is not in DaemonNotice['kind']; worker-pool used to emit it, and the
+    // endpoint refuses it with OUTBOUND_INVALID. Emitting must not throw into the caller.
+    expect(() => sink.emit('session_interrupted' as never, { sessionId: 'k1', detail: {} })).not.toThrow()
+    expect(first.pending().events + second.pending().events).toBe(0)
+    const failed = { method: '_agnes/v1/daemon.notice', errorCode: 'OUTBOUND_INVALID' }
+    expect(audit.filter((r) => r.kind === 'daemon.request_failed')).toEqual([
+      { kind: 'daemon.request_failed', detail: failed },
+      { kind: 'daemon.request_failed', detail: failed },
+    ])
+
+    // One connection failing a push must not starve the connections after it.
+    const broken = {
+      push: () => {
+        throw new Error('boom')
+      },
+    }
+    const sink2 = new NoticeSink({
+      endpoints: () => [
+        { ep: broken as unknown as LocalEndpoint, conn: first.conn },
+        { ep: second, conn: second.conn },
+      ],
+      clock: () => 42,
+    })
+    sink2.emit('resumed', { sessionId: 'k1', detail: { lastStep: 1 } })
+    expect(second.pending().events).toBe(1)
+  })
 })

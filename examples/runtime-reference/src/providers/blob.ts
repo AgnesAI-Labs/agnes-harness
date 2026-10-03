@@ -10,11 +10,13 @@ import type {
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import {
+  RuntimeAuthorityTransferAPI,
   RuntimeClientTransportPolicy,
   RuntimeErrorDetails,
   type RuntimeWireTypes,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { type BlobTransferMaintenance, openBlobTransfer } from './blob-transfer.js'
 
 export const BLOB_PROVIDER = { id: 'reference.blob', contract: 'agh.blob' } as const
 
@@ -66,6 +68,15 @@ export type BlobStoreOptions = Readonly<{
   authorityId?: Wire.Id
   /** The Host's check that a call may read this blob. Without one every read is refused as blocked. */
   authorizeRead?: (context: CallContext, ref: Wire.BlobRef) => boolean
+  /**
+   * The maintenance assembly. With it the store declares authority transfer; without it every transfer
+   * call is refused as unsupported.
+   */
+  maintenance?: BlobTransferMaintenance
+  /** Creates a new store as an import target, which serves nothing until a transfer activates it. */
+  candidate?: boolean
+  /** The most records and encoded bytes one exported part holds. */
+  exportPart?: Readonly<{ records: number; bytes: number }>
 }>
 
 /**
@@ -73,7 +84,9 @@ export type BlobStoreOptions = Readonly<{
  * missing piece is found at the read that needs it. A pin names the object a reference may read and
  * the owner it was taken for; a sealed upload names the object it promotes to. A collected object
  * keeps its row as a tombstone and loses its pieces. Every released pin and collected object appends
- * one row to the deletion log, whose seq only grows.
+ * one row to the deletion log, whose seq only grows. The authority row says whether the store serves:
+ * a fenced store keeps serving reads but refuses business writes, and a transfer candidate serves
+ * neither until it is activated.
  */
 const TABLES = `
 CREATE TABLE IF NOT EXISTS objects (
@@ -109,6 +122,11 @@ CREATE TABLE IF NOT EXISTS deletions (
   ref TEXT NOT NULL,
   digest TEXT NOT NULL,
   at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS authority (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  role TEXT NOT NULL CHECK (role IN ('serving', 'fenced', 'candidate')),
+  epoch INTEGER NOT NULL
 );`
 
 type ObjectRow = { digest: string; size: number; media_type: string }
@@ -137,16 +155,23 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
   db.exec('PRAGMA synchronous = FULL')
   db.exec('PRAGMA busy_timeout = 5000')
   db.exec(TABLES)
+  db.prepare('INSERT OR IGNORE INTO authority (id, role, epoch) VALUES (1, ?, ?)').run(
+    ...(options.candidate ? ['candidate', 0] : ['serving', 1]),
+  )
   let open = true
 
   const live = () => {
     if (!open) refuse('blocked', 'blob store is closed')
   }
 
-  function atomically<T>(body: () => T): T {
+  const role = () => (db.prepare('SELECT role FROM authority WHERE id = 1').get() as { role: string }).role
+
+  /** One transaction. A business write is gated: refused as blocked unless the store serves. */
+  function atomically<T>(body: () => T, gated = true): T {
     live()
     db.exec('BEGIN IMMEDIATE')
     try {
+      if (gated && role() !== 'serving') refuse('blocked', 'store is fenced or a transfer candidate')
       const result = body()
       db.exec('COMMIT')
       return result
@@ -196,6 +221,7 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
     live()
     if (!options.authorizeRead) refuse('blocked', 'no read authorization is configured')
     if (!options.authorizeRead(context, ref)) refuse('permission_denied', 'caller may not read this blob')
+    if (role() === 'candidate') refuse('blocked', 'a transfer candidate serves nothing until activated')
     pinned(ref)
     const stored = db
       .prepare('SELECT COALESCE(SUM(length(data)), 0) AS bytes FROM pieces WHERE blob_id = ?')
@@ -302,8 +328,23 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
     })
   }
 
+  const transfer = openBlobTransfer({
+    db,
+    authorityId,
+    maintenance: options.maintenance,
+    part: options.exportPart ?? { records: 1000, bytes: 8 * PIECE_BYTES },
+    live,
+    transaction: (body) => atomically(body, false),
+    refuse,
+    attempt,
+  })
+
   return {
     blobRead,
+    /** Authority transfer: declared, and its operations offered, only with a maintenance assembly. */
+    transfer: transfer.control,
+    readExport: transfer.readExport,
+    features: options.maintenance ? ['blob-read.v1', RuntimeAuthorityTransferAPI.feature] : ['blob-read.v1'],
 
     /**
      * Test write entry: stores bytes and pins them. The upload chain of agh.blob is not frozen yet, so
