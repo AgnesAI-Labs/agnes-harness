@@ -335,7 +335,7 @@ export async function peer() {
 }
 
 export async function selected(
-  service: NetworkService | SecretsService,
+  service: Pick<NetworkService, 'binding' | 'providerDigest' | 'features' | 'close'>,
   packageDigest = service.providerDigest,
 ) {
   const host = createHostScopedDependencies([])

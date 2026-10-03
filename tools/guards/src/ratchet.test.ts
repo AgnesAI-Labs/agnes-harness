@@ -1471,7 +1471,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Restricted installation proposal cases. Measured 8124, exact, no spare.
   // Billing and trace providers. Measured 8513, exact, no spare.
   // Read-only migration planning and receipt verification. Measured 8929, exact, no spare.
-  'packages/extension-api/testkit': 8929,
+  // Bounded sandbox and execution services. Measured 9078, exact, no spare.
+  'packages/extension-api/testkit': 9078,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2683,7 +2684,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Billing and trace providers. Measured 66992, exact, no spare.
   // Bounded migration export index and intake spool. Measured 67840, exact, no spare.
   // Read-only migration planning and receipt verification. Measured 68546, exact, no spare.
-  'packages/host/src': 68546,
+  // Bounded sandbox and execution services. Measured 69677, exact, no spare.
+  'packages/host/src': 69677,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
