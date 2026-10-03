@@ -79,3 +79,13 @@ Changing a definition changes the row's revision, while unchanged servers can re
 The runner's source and tests are linked below. Check [verification](../maintainers/verification.md) for the actual runtime version and external-service coverage.
 
 Source: [management commands](../../packages/resource-control-cli/src/resources.ts), [schema](../../packages/protocol/schema/resource-control.json), [resource bootstrap](../../packages/resource-control-worker/src/runtime-bootstrap.ts), [worker startup](../../packages/worker-runtime/src/main.ts), [turn reload](../../packages/worker-runtime/src/commands.ts), [per-server runner](../../packages/worker-runtime/src/mcp-row-runtime.ts), and [row derivation](../../packages/worker-runtime/src/mcp-server-rows.ts). Verified anchors are recorded in the [source-check manifest](../../tools/public-docs/source-checks.json).
+
+## Opt-in runtime service
+
+The resource worker also exports `createMcpService()` for consumers of `agh.mcp`. It runs separately from the session rows described above; existing CLI and session startup continue using their current paths. The independent reference provider is in `examples/runtime-reference/src/providers/mcp.ts`.
+
+Consumers prepare managed credentials through `prepareConnection()`, then pass the returned fixed `credentialRef` to `connect()`. Credentials are resolved and consumed through the selected secrets service. An HTTP 401 preserves the failed receipt. Refresh runs as a child effect, and the refreshed handle requires a new connect/call action. A missing OAuth client identity requires reconnection. Secret values are excluded from MCP receipts and journals.
+
+The service supports an allowlisted absolute executable over stdio with an empty inherited environment, and authenticated, stateless JSON responses over Streamable HTTP through the selected network service. Credentialed stdio mappings, SSE responses and server-assigned HTTP session IDs are unavailable in this service. Tool calls require current admission, matching method schema and current identity/scope authorization. Server content carries an `untrusted-remote` label.
+
+Request identities and uncertain outcomes survive a provider restart. After a process dies, a new call can rebuild the connection; an unknown business call is never replayed. Local owners retain connections until the last owner releases them, so publishing a new provider generation preserves a retained old connection. These owners are in memory; durable run pins and startup integration belong to the assembly lifecycle.

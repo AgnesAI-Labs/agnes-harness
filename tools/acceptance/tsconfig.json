@@ -20,7 +20,9 @@
     "runtime/run-conformance.ts",
     "runtime/sources.ts",
     "runtime/platform/assembly-conformance.ts",
-    "runtime/platform/resources-conformance.ts"
+    "runtime/platform/resources-conformance.ts",
+    "runtime/platform/mcp-conformance.ts",
+    "runtime/fixtures/mcp-http-server.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
   "references": [
@@ -38,6 +40,9 @@
     },
     {
       "path": "../../examples/runtime-reference"
+    },
+    {
+      "path": "../../packages/resource-control-worker"
     }
   ]
 }

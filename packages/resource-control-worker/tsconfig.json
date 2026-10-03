@@ -6,6 +6,7 @@
   "references": [
     { "path": "../../tsconfig.config.json" },
     { "path": "../base" },
+    { "path": "../extension-api" },
     { "path": "../protocol" },
     { "path": "../resource-control-runtime" },
     { "path": "../system-node" }
