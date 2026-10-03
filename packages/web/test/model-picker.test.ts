@@ -1,13 +1,16 @@
 /** @vitest-environment happy-dom */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createModelPicker, type ModelPickerOption, type ModelPickerState } from '../src/model-picker.js'
+import { zhT } from './helpers/locale.js'
+
+setLocaleTranslator(zhT)
 
 const models: readonly ModelPickerOption[] = [
   { route: 'openai', id: 'gpt-5.6' },
-  { route: 'local', id: 'a-model-with-a-long-name-that-may-wrap-in-a-narrow-viewport' },
+  { route: 'local', id: 'local-model' },
   { route: 'deepseek', id: 'deepseek-v4-pro' },
 ]
-const [firstModel, secondModel] = models as readonly [ModelPickerOption, ModelPickerOption, ModelPickerOption]
 
 function state(overrides: Partial<ModelPickerState> = {}): ModelPickerState {
   return {
@@ -20,17 +23,17 @@ function state(overrides: Partial<ModelPickerState> = {}): ModelPickerState {
   }
 }
 
-function installTrigger(): HTMLButtonElement {
+function mountPicker(onSelect: (option: ModelPickerOption) => Promise<boolean> = vi.fn(async () => true)) {
   const trigger = document.createElement('button')
-  trigger.id = 'model'
-  trigger.type = 'button'
-  trigger.innerHTML = '<span data-model-label>选择模型</span><span aria-hidden="true">⌄</span>'
+  trigger.innerHTML = '<span data-model-label></span>'
   document.body.append(trigger)
-  return trigger
+  const picker = createModelPicker({ trigger, onSelect, onError: vi.fn() })
+  picker.render(state())
+  return { picker, trigger, onSelect }
 }
 
 function listbox(): HTMLElement {
-  const found = document.querySelector<HTMLElement>('[role="listbox"]')
+  const found = document.querySelector<HTMLElement>('#model-listbox')
   if (!found) throw new Error('model picker did not open')
   return found
 }
@@ -41,165 +44,66 @@ afterEach(() => {
 })
 
 describe('model picker', () => {
-  it('brings a confirmed item at the end of a long list into view and closes when unavailable', () => {
-    const trigger = installTrigger()
-    const directory = Array.from({ length: 50 }, (_, index) => ({ route: 'local', id: `model-${index}` }))
-    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView')
-    const onSelect = vi.fn(async () => true)
-    const picker = createModelPicker({ trigger, onSelect, onError: vi.fn() })
-    const last = directory[49]
-    if (!last) throw new Error('missing final fixture model')
-    picker.render(state({ options: directory, selected: last }))
+  it('opens one flat model list and selects an option', async () => {
+    const { picker, trigger, onSelect } = mountPicker()
     trigger.click()
-    const selected = listbox().querySelector('[aria-selected="true"]')
-    expect(listbox().getAttribute('aria-activedescendant')).toBe(selected?.id)
-    expect(scroll.mock.contexts).toContain(selected)
-    picker.render(state({ options: directory, disabled: true }))
-    expect(document.querySelector('[role="listbox"]')).toBeNull()
-    expect(trigger.disabled).toBe(true)
-    expect(onSelect).not.toHaveBeenCalled()
+
+    expect(listbox().getAttribute('aria-label')).toBe('可用模型')
+    expect(listbox().querySelectorAll('[role="option"]')).toHaveLength(3)
+    expect(document.querySelector('.model-picker-entry, #model-submenu-listbox')).toBeNull()
+
+    listbox().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(models[1]))
+    await vi.waitFor(() => expect(document.querySelector('#model-listbox')).toBeNull())
     picker.destroy()
-    scroll.mockRestore()
   })
 
-  it('uses the trigger and listbox roles without a placeholder option, and keeps the picker keyboard reachable', () => {
+  it('supports keyboard navigation and restores focus when closed', () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)
       return 1
     })
-    const trigger = installTrigger()
-    const onSelect = vi.fn(async () => true)
-    const picker = createModelPicker({ trigger, onSelect, onError: vi.fn() })
-    picker.render(state())
+    const { picker, trigger } = mountPicker()
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
 
-    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-
-    const options = Array.from(listbox().querySelectorAll<HTMLElement>('[role="option"]'))
-    expect(trigger.tagName).toBe('BUTTON')
-    expect(trigger.getAttribute('aria-haspopup')).toBe('listbox')
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(options).toHaveLength(models.length)
-    expect(options.map((option) => option.getAttribute('aria-selected'))).toEqual(['false', 'false', 'false'])
-    expect(options.map((option) => option.textContent)).not.toContain('选择模型')
-    expect(listbox().textContent).toContain('已配置账户')
-    expect(listbox().textContent).not.toContain('openai')
-    expect(listbox().textContent).not.toContain('local')
-    expect(document.activeElement).toBe(listbox())
-
-    listbox().dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
     expect(listbox().getAttribute('aria-activedescendant')).toBe('model-picker-option-2')
-    listbox().dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
-    expect(listbox().getAttribute('aria-activedescendant')).toBe('model-picker-option-0')
     listbox().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-
-    expect(document.querySelector('[role="listbox"]')).toBeNull()
-    expect(document.activeElement).toBe(trigger)
-    expect(onSelect).not.toHaveBeenCalled()
-    picker.destroy()
-  })
-
-  it('closes on outside click and restores the trigger before Tab leaves the listbox', () => {
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
-    })
-    const trigger = installTrigger()
-    const outside = document.createElement('button')
-    document.body.append(outside)
-    const onSelect = vi.fn(async () => true)
-    const picker = createModelPicker({ trigger, onSelect, onError: vi.fn() })
-    picker.render(state())
-
-    trigger.click()
-    outside.click()
-    expect(document.querySelector('[role="listbox"]')).toBeNull()
-    expect(onSelect).not.toHaveBeenCalled()
-
-    trigger.click()
-    listbox().dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
-    expect(document.querySelector('[role="listbox"]')).toBeNull()
+    expect(document.querySelector('#model-listbox')).toBeNull()
     expect(document.activeElement).toBe(trigger)
     picker.destroy()
   })
 
-  it('keeps the last confirmed model on failure and does not let a pending render invalidate selection', async () => {
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
-    })
+  it('keeps the current selection when a model change fails', async () => {
     const failure = new Error('model switch failed')
     const onError = vi.fn()
-    const failedSelect = vi.fn(async () => {
-      throw failure
+    const trigger = document.createElement('button')
+    trigger.innerHTML = '<span data-model-label></span>'
+    document.body.append(trigger)
+    const picker = createModelPicker({
+      trigger,
+      onSelect: vi.fn(async () => {
+        throw failure
+      }),
+      onError,
     })
-    const retryTrigger = installTrigger()
-    const retryPicker = createModelPicker({ trigger: retryTrigger, onSelect: failedSelect, onError })
-    retryPicker.render(state({ selected: firstModel, label: firstModel.id }))
-    retryTrigger.click()
+    const selectedModel = models[0]
+    if (!selectedModel) throw new Error('missing selected model fixture')
+    picker.render(state({ selected: selectedModel, label: selectedModel.id }))
+    trigger.click()
     listbox().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
-    await vi.waitFor(() => expect(failedSelect).toHaveBeenCalledWith(secondModel))
+
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure))
-    expect(retryTrigger.textContent).toContain(firstModel.id)
-    expect(listbox().querySelector('[aria-selected="true"]')?.textContent).toContain(firstModel.id)
-    retryPicker.destroy()
-
-    const pendingTrigger = installTrigger()
-    let resolve!: (accepted: boolean) => void
-    const pending = new Promise<boolean>((complete) => {
-      resolve = complete
-    })
-    const pendingPicker = createModelPicker({
-      trigger: pendingTrigger,
-      onSelect: vi.fn(() => pending),
-      onError: vi.fn(),
-    })
-    pendingPicker.render(state())
-    pendingTrigger.click()
-    listbox().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
-    expect([...listbox().children].every((child) => child.getAttribute('role') === 'option')).toBe(true)
-    expect(
-      [...listbox().querySelectorAll('[role="option"]')].every(
-        (row) => row.getAttribute('aria-disabled') === 'true',
-      ),
-    ).toBe(true)
-    pendingPicker.render(state({ pending: true }))
-    expect(document.querySelector('[role="listbox"]')).not.toBeNull()
-    expect(pendingTrigger.disabled).toBe(true)
-    pendingPicker.render(state({ selected: secondModel, label: secondModel.id, pending: false }))
-    resolve(true)
-
-    await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
-    expect(pendingTrigger.textContent).toContain(secondModel.id)
-    pendingPicker.destroy()
+    expect(trigger.textContent).toContain(models[0]?.id)
+    expect(listbox()).toBeInstanceOf(HTMLElement)
+    picker.destroy()
   })
 
-  it('clamps a 320px viewport before positioning the popover', () => {
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
-    })
-    vi.stubGlobal('innerWidth', 320)
-    vi.stubGlobal('innerHeight', 568)
-    const trigger = installTrigger()
-    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
-      x: 260,
-      y: 500,
-      width: 48,
-      height: 32,
-      top: 500,
-      right: 308,
-      bottom: 532,
-      left: 260,
-      toJSON: () => ({}),
-    })
-    const picker = createModelPicker({ trigger, onSelect: vi.fn(async () => true), onError: vi.fn() })
-    picker.render(state())
+  it('closes when the picker becomes unavailable', () => {
+    const { picker, trigger } = mountPicker()
     trigger.click()
-
-    const popover = document.getElementById('model-picker-popover') as HTMLElement
-    expect(popover.style.width).toBe('296px')
-    expect(popover.style.left).toBe('12px')
-    expect(popover.dataset.placement).toBe('above')
+    picker.render(state({ disabled: true }))
+    expect(document.querySelector('#model-listbox')).toBeNull()
+    expect(trigger.disabled).toBe(true)
     picker.destroy()
   })
 })

@@ -30,12 +30,15 @@ let operationState: 'succeeded' | 'failed'
 let refused: boolean
 let offline: boolean
 let emptyMcp: boolean
+let failMcpList: boolean
 /** When set, the skills list reports a failed source with this reason code. */
 let rootFailureCode: string | undefined
 let failReload: boolean
 let failPolling: boolean
 let pendingPage: { promise: Promise<Response>; resolve: (response: Response) => void } | undefined
 let resourceMount: {
+  dispose(): void
+  reload(): Promise<void>
   sync(scope: { tab: 'skills' | 'mcp'; workspaceId?: string }, options?: { refresh?: boolean }): Promise<void>
 }
 const requests: Array<{ path: string; body: Record<string, unknown> }> = []
@@ -80,9 +83,11 @@ beforeEach(async () => {
   refused = false
   offline = false
   emptyMcp = false
+  failMcpList = false
   failReload = false
   failPolling = false
   pendingPage = undefined
+  document.documentElement.lang = 'en'
   document.documentElement.innerHTML = (
     await readFile(
       resolve(
@@ -121,6 +126,11 @@ beforeEach(async () => {
             : {}),
         })
       if (path === 'mcp/list' && failReload) throw new Error('private catalog detail')
+      if (path === 'mcp/list' && failMcpList)
+        return Response.json(
+          { error: { code: 'ADMIN_UNAVAILABLE', message: '资源管理后台暂时不可用。' } },
+          { status: 503 },
+        )
       if (path === 'mcp/list') {
         if (emptyMcp) return Response.json({ items: [] })
         if (body.cursor === 'page-1') {
@@ -190,6 +200,42 @@ it('keeps manual MCP creation hidden when the MCP tab is selected', () => {
   expect(byId<HTMLButtonElement>('mcp-create').hidden).toBe(true)
 })
 
+it('localizes the stable admin-unavailable code in the current locale', async () => {
+  failMcpList = true
+  await resourceMount.reload()
+  expect(byId('resource-notice').textContent).toBe(
+    'The resource admin service is temporarily unavailable. Try again later.',
+  )
+
+  document.documentElement.lang = 'zh-CN'
+  window.dispatchEvent(new Event('agnes:locale-changed'))
+
+  expect(byId('resource-notice').textContent).toBe('资源管理后台暂时不可用，请稍后重试。')
+})
+
+it('keeps the duplicate MCP environment-variable validation message in Chinese', async () => {
+  document.documentElement.lang = 'zh-CN'
+  window.dispatchEvent(new Event('agnes:locale-changed'))
+  byId<HTMLButtonElement>('mcp-create').click()
+  change('mcp-id', 'duplicate-env')
+  change('mcp-name', 'Duplicate env')
+  change('mcp-transport', 'stdio')
+  change('mcp-executable', 'fixture')
+  change('mcp-secret-kind', 'stdio-env')
+  const secret = byId<HTMLTextAreaElement>('mcp-secret')
+  secret.value = 'TOKEN=secret://namespace/one\nTOKEN=secret://namespace/two'
+  secret.dispatchEvent(new Event('input', { bubbles: true }))
+
+  byId('mcp-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await settle()
+
+  expect(byId('mcp-error').textContent).toBe(
+    '环境变量格式为 TOKEN=secret://namespace/name，每项只能出现一次。',
+  )
+  expect(submitted('mcp/create')).toHaveLength(0)
+  expect(byId<HTMLDialogElement>('admin-confirm').open).toBe(false)
+})
+
 it('refreshes Resource Admin when reopened with the same workspace and tab', async () => {
   expect(submitted('mcp/list')).toHaveLength(1)
 
@@ -207,7 +253,7 @@ it('does not append a stale load-more response after switching tabs', async () =
     resolve: (response) => resolvePage(response),
   }
   const more = [...byId('resource-list').querySelectorAll<HTMLButtonElement>('button')].find(
-    (button) => button.textContent === '加载更多',
+    (button) => button.textContent === 'Load more',
   )
   expect(more).toBeDefined()
   more?.click()
@@ -228,6 +274,8 @@ it('does not append a stale load-more response after switching tabs', async () =
   expect(byId('resource-list').querySelectorAll('.resource-row')).toHaveLength(0)
 })
 afterEach(() => {
+  resourceMount.dispose()
+  document.documentElement.lang = 'en'
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   document.head.replaceChildren()
@@ -280,7 +328,7 @@ it('flags an illegal tool name inline while typing and clears it once fixed', ()
   change('mcp-transport', 'http')
   change('mcp-url', 'https://example.com/mcp')
   change('mcp-tools', '1')
-  expect(byId('mcp-error').textContent).toContain('工具名')
+  expect(byId('mcp-error').textContent).toContain('Tool name')
   expect(byId<HTMLTextAreaElement>('mcp-tools').getAttribute('aria-invalid')).toBe('true')
   change('mcp-tools', 'fetch')
   expect(byId('mcp-error').textContent).toBe('')
@@ -308,7 +356,7 @@ it('blocks submit with a field message instead of posting an invalid definition'
   await settle()
   expect(byId<HTMLDialogElement>('admin-confirm').open).toBe(false)
   expect(submitted('mcp/create')).toHaveLength(0)
-  expect(byId('mcp-error').textContent).toContain('工具名')
+  expect(byId('mcp-error').textContent).toContain('Tool name')
   expect(byId<HTMLTextAreaElement>('mcp-tools').getAttribute('aria-invalid')).toBe('true')
 })
 
@@ -322,7 +370,7 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   byId('mcp-transport-listbox-1').click()
   expect(byId('mcp-executable-row').hidden).toBe(true)
   expect(byId('mcp-url-row').hidden).toBe(false)
-  expect(byId('mcp-secret-kind-trigger').textContent).toBe('无凭据')
+  expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
   byId('mcp-secret-kind-trigger').click()
   expect(document.querySelectorAll('#mcp-secret-kind-listbox [role="option"]')).toHaveLength(3)
   byId('mcp-secret-kind-listbox-2').click()
@@ -333,8 +381,8 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   byId('mcp-cancel').click()
   byId('mcp-create').click()
   await settle()
-  expect(byId('mcp-transport-trigger').textContent).toBe('本地 stdio')
-  expect(byId('mcp-secret-kind-trigger').textContent).toBe('无凭据')
+  expect(byId('mcp-transport-trigger').textContent).toBe('Local stdio')
+  expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
   expect(submitted('mcp/create')).toHaveLength(0)
 })
 
@@ -345,19 +393,21 @@ it('tells the user a newly created MCP server can be enabled directly', async ()
   change('mcp-executable', 'fixture')
   await submitMcpForm()
   await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
-  await vi.waitFor(() => expect(byId('resource-notice').textContent).toContain('已创建，但尚未可用'))
-  expect(byId('resource-notice').textContent).toContain('启用')
-  expect(byId('resource-notice').textContent).not.toContain('信任')
+  await vi.waitFor(() =>
+    expect(byId('resource-notice').textContent).toContain('was created but is not available yet'),
+  )
+  expect(byId('resource-notice').textContent).toContain('enable it')
+  expect(byId('resource-notice').textContent).not.toContain('trust')
   expect(byId('resource-notice').dataset.kind).toBe('success')
 })
 
 it('says why a skill source produced no results instead of only that it failed', async () => {
   rootFailureCode = 'invalid-frontmatter'
   byId('skills-tab').click()
-  await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('刷新失败'))
+  await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Refresh failed'))
   const rendered = byId('resource-list').textContent ?? ''
-  expect(rendered).toContain('技能来源 1 个')
-  expect(rendered).toContain('frontmatter 不合法')
+  expect(rendered).toContain('Skill sources: 1')
+  expect(rendered).toContain('A SKILL.md frontmatter block is invalid')
   // 旧文案是实现视角的措辞，现在不再出现。
   expect(rendered).not.toContain('没有可保留的目录')
 })
@@ -367,7 +417,7 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
   await vi.waitFor(() => expect(byId('resource-list').querySelector('.admin-empty-state')).not.toBeNull())
 
   const skillsEmpty = byId('resource-list').querySelector<HTMLElement>('.admin-empty-state')
-  expect(skillsEmpty?.querySelector('h2')?.textContent).toBe('还没有发现 Skill')
+  expect(skillsEmpty?.querySelector('h2')?.textContent).toBe('No Skills found')
   expect(skillsEmpty?.querySelectorAll('.admin-empty-state-hints li')).toHaveLength(5)
 
   emptyMcp = true
@@ -375,8 +425,22 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
   await vi.waitFor(() => expect(byId('resource-list').querySelector('.admin-empty-state')).not.toBeNull())
 
   const mcpEmpty = byId('resource-list').querySelector<HTMLElement>('.admin-empty-state')
-  expect(mcpEmpty?.querySelector('h2')?.textContent).toBe('还没有 MCP 服务')
+  expect(mcpEmpty?.querySelector('h2')?.textContent).toBe('No MCP services found')
   expect(mcpEmpty?.querySelector('.admin-empty-state-hints')).toBeNull()
+})
+
+it('updates static shell and React labels when the document locale changes', () => {
+  expect(byId('skills-tab').textContent).toBe('Skills')
+  expect(byId('admin-confirm-action').textContent).toBe('Confirm')
+  expect(byId('resource-detail').textContent).toContain('View connection status')
+
+  document.documentElement.lang = 'zh-CN'
+  window.dispatchEvent(new Event('agnes:locale-changed'))
+
+  expect(byId('skills-tab').textContent).toBe('技能')
+  expect(byId('admin-confirm-title').textContent).toBe('确认操作')
+  expect(byId('admin-confirm-cancel').textContent).toBe('取消')
+  expect(byId('resource-detail').textContent).toContain('查看连接状态')
 })
 
 it('resets incompatible SecretRef selection on transport change and cancellation does not submit', () => {
@@ -402,7 +466,7 @@ it('does not pop a detail modal from merely loading a list', async () => {
 })
 
 it('toggles the row Switch without opening that row in the detail modal', async () => {
-  action('关闭详情')
+  action('Close details')
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(false)
   const toggle = byId('resource-list').querySelector<HTMLButtonElement>('.switch')
   expect(toggle).not.toBeNull()
@@ -448,8 +512,8 @@ it('keeps the row Switch on the requested state so a failed MCP can still be sto
   expect(row?.textContent).toContain('stdio executable is not allowed by profile policy')
   row?.click()
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(true)
-  expect(byId('resource-detail').textContent).not.toContain('期望状态')
-  expect(byId('resource-detail').textContent).not.toContain('实际状态')
+  expect(byId('resource-detail').textContent).not.toContain('Desired state')
+  expect(byId('resource-detail').textContent).not.toContain('Actual state')
 
   toggle?.click()
   byId<HTMLButtonElement>('admin-confirm-action').click()
@@ -460,7 +524,7 @@ it('keeps the row Switch on the requested state so a failed MCP can still be sto
 })
 
 it('keeps Space on the row Switch from being read as "open detail"', async () => {
-  action('关闭详情')
+  action('Close details')
   const toggle = byId('resource-list').querySelector<HTMLButtonElement>('.switch')
   toggle?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
   // 行监听到的是冒泡上来的按键；只有焦点在行本身时才算"打开详情"。
@@ -476,7 +540,7 @@ it('returns focus to the row it was opened from when the detail modal closes', a
   opened?.click()
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(true)
 
-  action('关闭详情')
+  action('Close details')
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(false)
   const restored = byId('resource-list').querySelector<HTMLElement>('.resource-row')
   expect(restored).not.toBeNull()
@@ -485,27 +549,27 @@ it('returns focus to the row it was opened from when the detail modal closes', a
 })
 
 it('hides trust controls and binds enable and disable to the displayed revision', async () => {
-  expect(byId('resource-detail').textContent).not.toContain('信任')
+  expect(byId('resource-detail').textContent).not.toContain('trust')
   expect(
     [...document.querySelectorAll('#resource-detail button')].map((button) => button.textContent),
-  ).not.toContain('拒绝')
-  action('启用')
+  ).not.toContain('Reject')
+  action('Enable')
   await vi.waitFor(() => expect(submitted('mcp/trust')).toHaveLength(1))
   await vi.waitFor(() => expect(submitted('mcp/enable')).toHaveLength(1))
-  action('停用')
+  action('Disable')
   await settle()
   expect(submitted('mcp/disable').at(-1)?.body).toMatchObject({
     serverId: 'fixture',
     expectedRevision: revision,
   })
-  action('启用', { confirm: false })
+  action('Enable', { confirm: false })
   await settle()
   expect(submitted('mcp/enable')).toHaveLength(1)
 })
 
 it('preserves a failed operation notice after catalog reload', async () => {
   operationState = 'failed'
-  action('重连')
+  action('Reconnect')
   await vi.waitFor(() => expect(submitted('mcp/list')).toHaveLength(2))
   await settle()
   expect(byId('resource-notice').textContent).toBe('连接已断开，请重连。')
@@ -514,17 +578,21 @@ it('preserves a failed operation notice after catalog reload', async () => {
 
 it('shows rejected commands and disconnected status safely; Skills remains reachable', async () => {
   refused = true
-  action('启用')
+  action('Enable')
   await vi.waitFor(() => expect(byId('resource-notice').textContent).toBe('请先信任当前版本。'))
   expect(submitted('mcp/enable')).toHaveLength(0)
   expect(submitted('operations/get')).toHaveLength(0)
-  action('查看连接状态')
+  action('View connection status')
   await vi.waitFor(() =>
-    expect(byId('resource-detail').textContent).toContain('MCP_DISCONNECTED：连接已断开。'),
+    expect(byId('resource-detail').textContent).toContain('MCP_DISCONNECTED: 连接已断开。'),
   )
   offline = true
-  action('重连')
-  await vi.waitFor(() => expect(byId('resource-notice').textContent).toContain('资源管理后台暂时不可用'))
+  action('Reconnect')
+  await vi.waitFor(() =>
+    expect(byId('resource-notice').textContent).toContain(
+      'resource admin service is temporarily unavailable',
+    ),
+  )
   expect(document.body.textContent).not.toContain('private network detail')
   offline = false
   byId('skills-tab').click()
@@ -534,17 +602,23 @@ it('shows rejected commands and disconnected status safely; Skills remains reach
 })
 
 it('keeps successful control-plane notice without claiming every session switched', async () => {
-  action('启用')
+  action('Enable')
   await vi.waitFor(() => expect(submitted('mcp/list').length).toBeGreaterThan(2))
   await settle()
   expect(byId('resource-notice').dataset.kind).toBe('success')
-  expect(byId('resource-notice').textContent).toContain('刷新成功不等于所有会话已经切换')
+  expect(byId('resource-notice').textContent).toContain(
+    'a successful refresh does not mean every session has switched',
+  )
 })
 
 it('surfaces catalog reload failure instead of retaining a success notice', async () => {
   failReload = true
-  action('启用')
-  await vi.waitFor(() => expect(byId('resource-notice').textContent).toContain('资源管理后台暂时不可用'))
+  action('Enable')
+  await vi.waitFor(() =>
+    expect(byId('resource-notice').textContent).toContain(
+      'resource admin service is temporarily unavailable',
+    ),
+  )
   expect(byId('resource-notice').dataset.kind).toBe('error')
   expect(document.body.textContent).not.toContain('private catalog detail')
 })
@@ -569,7 +643,9 @@ it('shows polling failure after successful creation in the visible page notice',
   change('mcp-executable', 'fixture')
   await submitMcpForm()
   await vi.waitFor(() =>
-    expect(byId('resource-notice').textContent).toBe('资源管理后台暂时不可用，请稍后重试。'),
+    expect(byId('resource-notice').textContent).toBe(
+      'The resource admin service is temporarily unavailable. Try again later.',
+    ),
   )
   expect(submitted('operations/get')).toHaveLength(1)
   expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false)
@@ -644,7 +720,7 @@ it('offers permanent skill deletion and validates priority without submitting in
   await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Example skill'))
   const input = byId('resource-detail').querySelector<HTMLInputElement>('input[type="number"]')
   if (!input) throw new Error('missing priority input')
-  expect(input.closest('label')?.textContent).toContain('同名覆盖优先级')
+  expect(input.closest('label')?.textContent).toContain('Same-name priority')
   // React 受控字段跟随事件：原生 setter 写值再派发 input，onChange 才会更新组件状态。
   const setNativeValue = (element: HTMLInputElement, value: string): void => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -652,18 +728,18 @@ it('offers permanent skill deletion and validates priority without submitting in
     element.dispatchEvent(new Event('input', { bubbles: true }))
   }
   setNativeValue(input, '501')
-  action('保存优先级')
+  action('Save priority')
   await settle()
   expect(submitted('skills/priority')).toHaveLength(0)
   setNativeValue(input, '450')
-  action('保存优先级')
+  action('Save priority')
   await vi.waitFor(() => expect(submitted('skills/priority')).toHaveLength(1))
   expect(submitted('skills/priority')[0]?.body).toMatchObject({ expectedPriority: 400, priority: 450 })
   await settle()
-  action('永久删除', { confirm: false })
+  action('Delete permanently', { confirm: false })
   await settle()
   expect(submitted('skills/remove')).toHaveLength(0)
-  action('永久删除')
+  action('Delete permanently')
   await vi.waitFor(() => expect(submitted('skills/remove')).toHaveLength(1))
   expect(submitted('skills/remove')[0]?.body).toMatchObject({
     resourceId: 'skill/user/user-agnes/example',
@@ -690,9 +766,9 @@ it('enables an untrusted Skill without exposing a separate trust action', async 
   await resourceMount.sync({ tab: 'skills' }, { refresh: true })
   byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
   await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Example skill'))
-  expect(byId('resource-detail').textContent).not.toContain('信任')
+  expect(byId('resource-detail').textContent).not.toContain('trust')
 
-  action('启用')
+  action('Enable')
 
   await vi.waitFor(() => expect(submitted('skills/trust')).toHaveLength(1))
   await vi.waitFor(() => expect(submitted('skills/desired')).toHaveLength(1))

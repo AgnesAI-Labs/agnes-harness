@@ -13,6 +13,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebConversationMessages } from '../src/conversation-message-adapter.js'
 import { costDetails, costSummary } from '../src/usage.js'
+import { zhLocaleService, zhT } from './helpers/locale.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -63,6 +64,7 @@ function Harness({ store }: { store: ReturnType<typeof createConversationProject
     createElement(WebConversationMessages, {
       registry,
       claim: (entry, extId) => entry.owner === extId,
+      locale: zhLocaleService(),
     }),
   )
 }
@@ -310,12 +312,12 @@ it('uses the complete shared cost contract through the real adapter without an i
     expect(article?.querySelector('summary')).toBe(summary)
     expect(details.open).toBe(true)
     expect(document.activeElement).toBe(summary)
-    expect(summary.textContent).toBe(costSummary(next))
+    expect(summary.textContent).toBe(costSummary(next, zhT))
     const rows = Array.from(article?.querySelectorAll('dt') ?? []).map((term) => [
       term.textContent,
       term.nextElementSibling?.textContent,
     ])
-    expect(rows).toEqual(costDetails(next))
+    expect(rows).toEqual(costDetails(next, zhT))
     expect(article?.querySelector('img, strong, [data-agnes-cost-details]')).toBeNull()
     expect(
       Array.from(host.querySelectorAll('[data-node-id]')).map((el) => el.getAttribute('data-node-id')),
@@ -354,7 +356,7 @@ it.each([true, false])('shows a failed turn reason through the React adapter (%s
     return createElement(
       AssistantRuntimeProvider,
       { runtime },
-      createElement(WebConversationMessages, { registry, turns: [current] }),
+      createElement(WebConversationMessages, { registry, turns: [current], locale: zhLocaleService() }),
     )
   }
   await act(async () => root.render(createElement(FailedTurn, { current: turn })))
@@ -415,7 +417,7 @@ it('keeps each React action footer through replay and history prepend, then reti
     return createElement(
       AssistantRuntimeProvider,
       { runtime },
-      createElement(WebConversationMessages, { registry, turns, onFork }),
+      createElement(WebConversationMessages, { registry, turns, onFork, locale: zhLocaleService() }),
     )
   }
   await act(async () => root.render(createElement(TurnHarness, { turns: [first, second] })))

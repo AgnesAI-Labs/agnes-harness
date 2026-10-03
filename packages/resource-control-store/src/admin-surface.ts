@@ -99,22 +99,23 @@ function safeBackendMessage(code: string): string {
   return (
     (
       {
-        SKILL_SOURCE_MANAGED: '此 Skill 由插件提供，请通过插件管理移除。',
+        SKILL_SOURCE_MANAGED: 'This skill is provided by a plugin. Remove it from plugin management.',
         SKILL_DELETE_PREFLIGHT_FAILED:
-          '删除预检未通过，未更改 Skill 状态。请检查路径、版本和本机删除能力；Windows 网络共享路径暂不支持。',
-        SKILL_STALE: 'Skill 来源尚未成功刷新，请先刷新后重试。',
-        SKILL_REMOVED: '此 Skill 已进入永久删除流程，不能重新启用。',
-        RESOURCE_BUSY: '此 Skill 正在处理另一项操作，请等待完成。',
-        SKILL_DELETE_NOT_CANCELLABLE: '永久删除开始后不能取消。',
-        REVISION_CONFLICT: '资源已被另一项操作更新，请刷新后核对最新版本。',
-        MCP_NOT_FOUND: 'MCP 定义不存在或已被移除。',
-        RESOURCE_OPERATION_UNAVAILABLE: '操作不存在，或当前账户无权查看该操作。',
-        RESOURCE_OPERATION_OWNER_REQUIRED: '只能取消自己发起的资源操作。',
-        CAPABILITY_DENIED: '当前本地后台未授予此管理权限。',
-        SEMANTIC_REJECTED: '资源操作未通过当前状态校验。',
-        RESOURCE_RECONCILE_FAILED: '后台未能安全应用资源状态，请查看最新状态。',
+          'The delete preflight failed, so the skill was not changed. Check the path, version, and local delete support. Windows network-share paths are not supported yet.',
+        SKILL_STALE: 'The skill source has not refreshed successfully. Refresh it and try again.',
+        SKILL_REMOVED: 'This skill is being permanently deleted and cannot be enabled again.',
+        RESOURCE_BUSY: 'This skill is already handling another operation. Wait for it to finish.',
+        SKILL_DELETE_NOT_CANCELLABLE: 'A permanent delete cannot be cancelled after it starts.',
+        REVISION_CONFLICT: 'Another operation updated this resource. Refresh and check the latest version.',
+        MCP_NOT_FOUND: 'The MCP definition does not exist or has been removed.',
+        RESOURCE_OPERATION_UNAVAILABLE: 'The operation does not exist, or this account cannot view it.',
+        RESOURCE_OPERATION_OWNER_REQUIRED: 'You can only cancel resource operations that you started.',
+        CAPABILITY_DENIED: 'This local backend has not granted that admin permission.',
+        SEMANTIC_REJECTED: 'The resource operation does not match the current state.',
+        RESOURCE_RECONCILE_FAILED:
+          'The backend could not apply the resource state safely. Check the latest status.',
       } as Record<string, string>
-    )[code] ?? '后台拒绝了该资源操作，请刷新后核对状态。'
+    )[code] ?? 'The backend rejected the resource operation. Refresh and check its status.'
   )
 }
 
@@ -158,7 +159,7 @@ export function createResourceAdminSurface(options: ResourceAdminSurfaceOptions)
         url.origin !== options.origin ||
         url.search
       ) {
-        error(response, 403, 'E_RESOURCE_ADMIN_ORIGIN', '资源管理请求来源无效')
+        error(response, 403, 'E_RESOURCE_ADMIN_ORIGIN', 'The resource admin request origin is not valid.')
         return true
       }
       const action = url.pathname.slice(PREFIX.length)
@@ -178,7 +179,7 @@ export function createResourceAdminSurface(options: ResourceAdminSurfaceOptions)
         return true
       }
       if (request.method !== 'POST' || !Object.hasOwn(ACTIONS, action)) {
-        error(response, 404, 'E_RESOURCE_ADMIN_ROUTE', '资源管理操作不存在')
+        error(response, 404, 'E_RESOURCE_ADMIN_ROUTE', 'The resource admin operation does not exist.')
         return true
       }
       const name = action as ResourceAdminSurfaceAction
@@ -186,34 +187,61 @@ export function createResourceAdminSurface(options: ResourceAdminSurfaceOptions)
       try {
         const body = await readBody(request)
         if (!record(body) || !validateResourceControlCall(method, 'params', body).ok) {
-          error(response, 400, 'E_RESOURCE_ADMIN_REQUEST', '资源管理参数无效')
+          error(response, 400, 'E_RESOURCE_ADMIN_REQUEST', 'The resource admin parameters are not valid.')
           return true
         }
         if (body.profile !== options.profile || ('clientId' in body && body.clientId !== options.clientId)) {
-          error(response, 403, 'E_RESOURCE_ADMIN_SCOPE', '资源管理请求不属于当前配置')
+          error(
+            response,
+            403,
+            'E_RESOURCE_ADMIN_SCOPE',
+            'The resource admin request does not belong to this profile.',
+          )
           return true
         }
         if (readOnly && RESOURCE_CONTROL_METHODS[method].administration.execution !== 'read') {
-          error(response, 409, 'E_RESOURCE_ADMIN_READ_ONLY', '当前为只读恢复模式')
+          error(
+            response,
+            409,
+            'E_RESOURCE_ADMIN_READ_ONLY',
+            'The resource admin surface is in read-only recovery mode.',
+          )
           return true
         }
         const result = await options.invoke(name, body)
         if (!validateResourceControlCall(method, 'result', result).ok) {
-          error(response, 502, 'E_RESOURCE_ADMIN_RESPONSE', '后台返回的数据无法确认')
+          error(response, 502, 'E_RESOURCE_ADMIN_RESPONSE', 'The backend response could not be confirmed.')
           return true
         }
         reply(response, 200, result)
       } catch (cause) {
         if (cause instanceof ResourceAdminRequestError) {
           if (cause.reason === 'body-too-large')
-            error(response, 413, 'E_RESOURCE_ADMIN_BODY_TOO_LARGE', '资源管理请求体超过大小限制')
-          else error(response, 400, 'E_RESOURCE_ADMIN_REQUEST', '资源管理请求格式无效')
+            error(
+              response,
+              413,
+              'E_RESOURCE_ADMIN_BODY_TOO_LARGE',
+              'The resource admin request body is too large.',
+            )
+          else
+            error(response, 400, 'E_RESOURCE_ADMIN_REQUEST', 'The resource admin request is not valid JSON.')
         } else if (unavailable(cause))
-          error(response, 501, 'E_RESOURCE_UNSUPPORTED', '当前后台版本不支持此资源管理能力。')
+          error(
+            response,
+            501,
+            'E_RESOURCE_UNSUPPORTED',
+            'This backend version does not support that resource admin capability.',
+          )
         else {
           const code = safeBackendCode(cause)
           if (code) error(response, 409, code, safeBackendMessage(code))
-          else error(response, 502, 'E_RESOURCE_ADMIN_BACKEND', '操作未确认，请查询状态或重新连接后台')
+          else
+            error(
+              response,
+              502,
+              'E_RESOURCE_ADMIN_BACKEND',
+              'The operation was not confirmed. Check its status or reconnect to the backend.',
+            )
         }
       }
       return true

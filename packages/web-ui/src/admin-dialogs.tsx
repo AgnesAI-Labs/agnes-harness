@@ -1,4 +1,6 @@
 import type { JSX, ReactNode } from 'react'
+import { ADMIN_DIALOGS_LOCALE_NAMESPACE, adminDialogsLocaleCatalog } from './locales/admin-dialogs.js'
+import { useUiText } from './ui-locale.js'
 
 /**
  * 来源检查对话框的内容体。`<dialog>` 与 showModal/焦点归还留在壳里；字段受控，
@@ -33,6 +35,7 @@ export function SourceDialogContent({
   onSubmit(): void
   onCancel(): void
 }): JSX.Element {
+  const { t } = useUiText(ADMIN_DIALOGS_LOCALE_NAMESPACE, adminDialogsLocaleCatalog)
   return (
     <form
       id="source-form"
@@ -43,13 +46,13 @@ export function SourceDialogContent({
     >
       <div className="dialog-heading">
         <div>
-          <p className="dialog-kicker">来源</p>
+          <p className="dialog-kicker">{t('source.kicker')}</p>
           <h2 id="source-dialog-title">{title}</h2>
         </div>
       </div>
       <p className="dialog-intro">{intro}</p>
       <label className="form-field" htmlFor="source-type">
-        来源类型
+        {t('source.type')}
         <select id="source-type" value={type} onChange={(event) => onTypeChange(event.currentTarget.value)}>
           {typeOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -59,7 +62,7 @@ export function SourceDialogContent({
         </select>
       </label>
       <label className="form-field" htmlFor="source-ref">
-        来源引用
+        {t('source.reference')}
         <input
           id="source-ref"
           required
@@ -81,10 +84,10 @@ export function SourceDialogContent({
       </p>
       <div className="dialog-actions">
         <button id="source-cancel" type="button" className="secondary-button" onClick={onCancel}>
-          取消
+          {t('cancel')}
         </button>
         <button type="button" className="primary-button" disabled={busy} onClick={onSubmit}>
-          {busy ? '正在检查…' : '检查来源'}
+          {busy ? t('source.checking') : t('source.check')}
         </button>
       </div>
     </form>
@@ -112,11 +115,12 @@ export function ConfirmDialogContent({
   onAction(): void
   onCancel(): void
 }): JSX.Element {
+  const { t } = useUiText(ADMIN_DIALOGS_LOCALE_NAMESPACE, adminDialogsLocaleCatalog)
   return (
     <div className="plugin-dialog-form">
       <div className="dialog-heading">
         <div>
-          <p className="dialog-kicker">确认</p>
+          <p className="dialog-kicker">{t('confirmation.kicker')}</p>
           <h2 id="plugin-confirm-title">{title}</h2>
         </div>
       </div>
@@ -130,7 +134,7 @@ export function ConfirmDialogContent({
       )}
       <div className="dialog-actions">
         <button id="plugin-confirm-cancel" type="button" className="secondary-button" onClick={onCancel}>
-          取消
+          {t('cancel')}
         </button>
         <button
           id="plugin-confirm-action"

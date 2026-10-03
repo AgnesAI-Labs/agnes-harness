@@ -27,7 +27,7 @@ describe('TUI themes', () => {
   })
   it('opens at the current selection, cancels without changes and accepts keyboard selection', () => {
     const choose = vi.fn()
-    const picker = new ThemePicker(createAnsi('256'), choose)
+    const picker = new ThemePicker(createAnsi('256'), 'zh-CN', choose)
     picker.show('dark')
     expect(picker.render(90).join('\n')).toContain('▶ 2.')
     picker.handleInput('\x1b')

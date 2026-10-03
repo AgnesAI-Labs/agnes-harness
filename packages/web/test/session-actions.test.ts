@@ -4,6 +4,7 @@ import type { Client } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
 import { renderSessionNavigation } from '../src/navigation.js'
 import { createSessionActions, forkTitle } from '../src/session-actions.js'
+import { zhT } from './helpers/locale.js'
 
 const controllers: ReturnType<typeof createSessionActions>[] = []
 afterEach(() => {
@@ -34,7 +35,13 @@ function setup() {
   const changed = vi.fn(async () => {})
   const fork = vi.fn(async () => {})
   const error = vi.fn()
-  const actions = createSessionActions({ client: { session } as unknown as Client, changed, fork, error })
+  const actions = createSessionActions({
+    client: { session } as unknown as Client,
+    changed,
+    fork,
+    error,
+    translate: zhT,
+  })
   controllers.push(actions)
   return {
     session,
@@ -50,14 +57,18 @@ it('keeps the row menu out of the session button and hides archived rows', () =>
   const nav = document.createElement('nav')
   document.body.append(nav)
   const action = vi.fn()
-  renderSessionNavigation({
-    nav,
-    sessions: [row('visible'), row('hidden', true)],
-    workspaces: [],
-    labels: new Map(),
-    open: vi.fn(),
-    action,
-  })
+  renderSessionNavigation(
+    {
+      nav,
+      sessions: [row('visible'), row('hidden', true)],
+      workspaces: [],
+      labels: new Map(),
+      newSession: vi.fn(),
+      open: vi.fn(),
+      action,
+    },
+    zhT,
+  )
   expect(nav.querySelectorAll('button.session')).toHaveLength(1)
   expect(nav.querySelector('button button')).toBeNull()
   const trigger = nav.querySelector('.session-menu-trigger') as HTMLButtonElement
@@ -82,15 +93,19 @@ it('keeps the row menu out of the session button and hides archived rows', () =>
 it('marks the current session on the row so the highlight also covers the row actions', () => {
   const nav = document.createElement('nav')
   document.body.append(nav)
-  renderSessionNavigation({
-    nav,
-    sessions: [row('one'), row('two')],
-    workspaces: [],
-    labels: new Map(),
-    currentId: 'two',
-    open: vi.fn(),
-    action: vi.fn(),
-  })
+  renderSessionNavigation(
+    {
+      nav,
+      sessions: [row('one'), row('two')],
+      workspaces: [],
+      labels: new Map(),
+      currentId: 'two',
+      newSession: vi.fn(),
+      open: vi.fn(),
+      action: vi.fn(),
+    },
+    zhT,
+  )
   const rows = [...nav.querySelectorAll<HTMLElement>('.session-row')]
   // 底色画在行上（照 DSH 的 `.sessionRow.selected`），不是画在内层按钮上：行尾的三点动作槽
   // 是按钮的兄弟节点，底色画在按钮上会在动作槽左侧断掉。

@@ -184,7 +184,7 @@ describe('resource CLI argument boundary', () => {
         confirm: async () => true,
       },
     )
-    expect(output).toContain('MCP example 已创建，但尚未可用')
+    expect(output).toContain('was created but is not usable yet')
     // /mcp trust and /mcp enable both route through expected(), which throws UsageError without
     // --expected-revision <revision> -- the example command must include it or it cannot work.
     expect(output).toContain('/mcp trust example --expected-revision <revision>')

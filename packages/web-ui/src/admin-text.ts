@@ -4,6 +4,8 @@ import type {
   PackageOperation,
   PackagePreview,
 } from '@agnes/protocol'
+import { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
+import { createCatalogTranslator, type LocaleTranslator } from './ui-locale.js'
 
 /**
  * 浏览器 UI 运行状态的展示视图。结构与 web 包的 PluginRuntimeState 保持结构化等价
@@ -16,20 +18,40 @@ export type RuntimeStateView = Readonly<{
   error?: Readonly<{ message: string }>
 }>
 
+export type { LocaleTranslator as AdminTranslator }
+export { ADMIN_LOCALE_NAMESPACE }
+
+const englishText = createCatalogTranslator(adminLocaleCatalog, 'en')
+
 export function hasPermission(permissions: readonly string[], permission: string): boolean {
   return permissions.includes(permission)
 }
 
-export function sourceLabel(source: { type: string; ref: string }): string {
-  return `${source.type} · ${source.ref}`
+export function sourceLabel(
+  source: { type: string; ref: string },
+  t: LocaleTranslator = englishText,
+): string {
+  const sourceTypeKey = `source.${source.type}`
+  const translatedType = t(sourceTypeKey)
+  const type = translatedType === sourceTypeKey ? source.type : translatedType
+  return `${type} · ${source.ref}`
 }
 
-export function contributionText(item: { contributions: readonly { kind: string; id: string }[] }): string {
-  if (!item.contributions.length) return '未报告贡献'
-  const labels = item.contributions
-    .slice(0, 3)
-    .map((contribution) => `${contribution.kind} · ${contribution.id}`)
-  return `${labels.join('，')}${item.contributions.length > labels.length ? `，另有 ${item.contributions.length - labels.length} 项` : ''}`
+export function contributionText(
+  item: { contributions: readonly { kind: string; id: string }[] },
+  t: LocaleTranslator = englishText,
+): string {
+  if (!item.contributions.length) return t('contribution.none')
+  const labels = item.contributions.slice(0, 3).map((contribution) => {
+    const kindKey = `contribution.${contribution.kind}`
+    const translatedKind = t(kindKey)
+    const kind = translatedKind === kindKey ? contribution.kind : translatedKind
+    return `${kind} · ${contribution.id}`
+  })
+  const more = item.contributions.length - labels.length
+  return more
+    ? `${labels.join(t('list.separator'))}${t('list.separator')}${t('contribution.more', { count: more })}`
+    : labels.join(t('list.separator'))
 }
 
 export function integrityLabel(integrity: string): string {
@@ -39,103 +61,74 @@ export function integrityLabel(integrity: string): string {
 export function installedState(
   item: PackageInstalledDescriptor,
   effectiveActual: PackageInstalledDescriptor['actual'] = item.actual,
+  t: LocaleTranslator = englishText,
 ): string {
-  const desired = item.desired === 'enabled' ? '期望启用' : '期望停用'
-  const actual: Record<PackageInstalledDescriptor['actual'], string> = {
-    'not-running': '未运行',
-    starting: '正在启动',
-    running: '运行中',
-    failed: '运行失败',
-    'restart-required': '需要重启',
-    unavailable: '不可用',
-  }
-  const cleanup = item.cleanupPending ? ' · 旧资源待清理' : ''
-  return `${desired} · ${actual[effectiveActual]}${cleanup}`
+  const desired = t(item.desired === 'enabled' ? 'desired.enabled' : 'desired.disabled')
+  const actual = t(`actual.${effectiveActual}`)
+  const cleanup = item.cleanupPending ? t('actual.cleanup-pending') : ''
+  return t('state.separator', { desired, actual, cleanup: cleanup ? ` · ${cleanup}` : '' })
 }
 
-export function actualIdentity(item: PackageInstalledDescriptor): string {
+export function actualIdentity(item: PackageInstalledDescriptor, t: LocaleTranslator = englishText): string {
   if (item.actualVersion && item.actualIntegrity)
     return `${item.actualVersion} · ${integrityLabel(item.actualIntegrity)}`
-  if (item.actual === 'not-running') return '未运行'
-  return '后台未确认实际版本或摘要'
+  if (item.actual === 'not-running') return t('actual.not-running')
+  return t('actual.unknown-version')
 }
 
-export function runtimeStateLabel(state: RuntimeStateView | undefined): string {
-  if (!state) return '未确认'
-  return {
-    idle: '未加载',
-    loading: '正在加载',
-    active: '已加载',
-    stopping: '正在停用',
-    failed: '加载失败，可重试',
-  }[state.phase]
+export function runtimeStateLabel(
+  state: RuntimeStateView | undefined,
+  t: LocaleTranslator = englishText,
+): string {
+  if (!state) return t('runtime.unconfirmed')
+  return t(`runtime.${state.phase}`)
 }
 
-export function runtimeStateMessage(state: RuntimeStateView | undefined): string {
-  if (!state) return '浏览器 UI 状态将在工作台打开后确认。'
-  if (state.phase === 'failed') return 'Agnes 原界面保持可用，可重试。'
-  return runtimeStateLabel(state)
+export function runtimeStateMessage(
+  state: RuntimeStateView | undefined,
+  t: LocaleTranslator = englishText,
+): string {
+  if (!state) return t('runtime.waiting')
+  if (state.phase === 'failed') return t('runtime.retry')
+  return runtimeStateLabel(state, t)
 }
 
-export function operationLabel(operation: PackageOperation): string {
-  const state: Record<PackageOperation['state'], string> = {
-    received: '请求已记录',
-    inspecting: '正在检查内容',
-    installing: '正在安装',
-    staging: '正在准备切换',
-    quiescing: '正在等待安全边界',
-    switching: '正在切换',
-    draining: '正在排干旧版本',
-    completed: '已完成',
-    failed: '未完成',
-    cancelled: '已取消',
-    'rolled-back': '已回滚',
-  }
-  return `${operationName(operation.operation)}：${state[operation.state]}`
+export function operationLabel(operation: PackageOperation, t: LocaleTranslator = englishText): string {
+  return t('operation.label', {
+    operation: operationName(operation.operation, t),
+    state: t(`operation-state.${operation.state}`),
+  })
 }
 
-export function operationName(operation: PackageOperation['operation']): string {
-  return {
-    inspect: '预览',
-    install: '安装',
-    trust: '启用前校验',
-    untrust: '安全状态更新',
-    enable: '启用',
-    disable: '停用',
-    update: '更新',
-    rollback: '回滚',
-    remove: '卸载',
-  }[operation]
+export function operationName(
+  operation: PackageOperation['operation'],
+  t: LocaleTranslator = englishText,
+): string {
+  return t(`operation.${operation}`)
 }
 
 export function terminal(operation: PackageOperation): boolean {
   return ['completed', 'failed', 'cancelled', 'rolled-back'].includes(operation.state)
 }
 
-export function blockerText(blocker: PackageBlocker): string {
-  const name: Record<PackageBlocker['code'], string> = {
-    dependency: '依赖关系',
-    profile: 'Profile 配置',
-    generation: '运行代际',
-    deployment: '部署引用',
-    policy: '安全策略',
-    incompatible: '兼容性',
-    'unknown-contribution': '未知贡献',
-  }
-  const references = blocker.references.length ? `：${blocker.references.join('、')}` : ''
-  return `${name[blocker.code]}阻止此操作${references}`
+export function blockerText(blocker: PackageBlocker, t: LocaleTranslator = englishText): string {
+  const name = t(`blocker.${blocker.code}`)
+  const references = blocker.references.length
+    ? t('blocker.references', { references: blocker.references.join(t('list.separator')) })
+    : ''
+  return t('blocker.message', { name, references })
 }
 
-export function capabilitySummary(preview: PackagePreview): string {
+export function capabilitySummary(preview: PackagePreview, t: LocaleTranslator = englishText): string {
   const diff = preview.capabilityDiff
   const changes = [
-    ...diff.added.map((item) => `新增 ${item}`),
-    ...diff.removed.map((item) => `移除 ${item}`),
-    ...diff.runtimeSupportRemoved.map((item) => `不再支持 ${item}`),
-    ...diff.dependenciesAdded.map((item) => `新增依赖 ${item}`),
-    ...diff.serviceGrantsAdded.map((item) => `新增服务授权 ${item.extension} · ${item.name} · ${item.range}`),
+    ...diff.added.map((item) => t('capability.added', { item })),
+    ...diff.removed.map((item) => t('capability.removed', { item })),
+    ...diff.runtimeSupportRemoved.map((item) => t('capability.runtime-removed', { item })),
+    ...diff.dependenciesAdded.map((item) => t('capability.dependency-added', { item })),
+    ...diff.serviceGrantsAdded.map((item) =>
+      t('capability.service-added', { extension: item.extension, name: item.name, range: item.range }),
+    ),
   ]
-  return changes.length
-    ? changes.join('；')
-    : '后台未报告相对于当前基线的能力差异；这不表示这个包不包含能力。'
+  return changes.length ? changes.join(t('list.separator')) : t('capability.none')
 }

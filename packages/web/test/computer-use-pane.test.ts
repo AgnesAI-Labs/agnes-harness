@@ -76,8 +76,8 @@ async function fixture(
     await vi.waitFor(() => expect(host.querySelector('#computer-use-override')).not.toBeNull())
     return async () => {
       remove()
-      await vi.waitFor(() => expect(text('state')).toBe('运行中'))
-      await vi.waitFor(() => expect(text('permission-state')).toBe('需要授权'))
+      await vi.waitFor(() => expect(text('state')).toBe('Running'))
+      await vi.waitFor(() => expect(text('permission-state')).toBe('Authorization required'))
       await vi.waitFor(() => expect(button('operation-refresh').disabled).toBe(false))
     }
   }
@@ -103,7 +103,7 @@ it('keeps focus and controls through status updates, switching away, replacement
   const doctor = f.button('doctor-run')
   doctor.focus()
   doctor.click()
-  await vi.waitFor(() => expect(f.text('doctor-state')).toBe('检查通过'))
+  await vi.waitFor(() => expect(f.text('doctor-state')).toBe('Check passed'))
   expect(f.button('doctor-run')).toBe(doctor)
   expect(document.activeElement).toBe(doctor)
   f.region.open('appearance')
@@ -116,7 +116,7 @@ it('keeps focus and controls through status updates, switching away, replacement
   expect(f.region.pane('computer-use')?.hidden).toBe(false)
   expect(f.region.pane('model')).toBe(model)
   f.button('doctor-run').click()
-  await vi.waitFor(() => expect(f.text('doctor-state')).toBe('检查通过'))
+  await vi.waitFor(() => expect(f.text('doctor-state')).toBe('Check passed'))
   expect(call.mock.calls.filter(([method]) => method.endsWith('doctor'))).toHaveLength(2)
 })
 
@@ -152,7 +152,7 @@ it.each([
   else if (route === 'operation.status') action = f.owner.refreshOperation()
   else {
     void f.owner.install()
-    await vi.waitFor(() => expect(f.text('operation-state')).toBe('正在安装'))
+    await vi.waitFor(() => expect(f.text('operation-state')).toBe('Installing'))
     action = f.owner.cancelOperation()
   }
   await vi.waitFor(() => expect(heldCalls).toBe(1))
@@ -174,7 +174,7 @@ it.each([
   await new Promise((done) => setTimeout(done, 0))
   expect(f.host.innerHTML).toBe(before)
   f.button('doctor-run').click()
-  await vi.waitFor(() => expect(f.text('doctor-state')).toBe('检查通过'))
+  await vi.waitFor(() => expect(f.text('doctor-state')).toBe('Check passed'))
   expect(f.text('summary')).not.toContain('stale')
   expect(call.mock.calls.filter(([method]) => method.endsWith('operation.cancel'))).toHaveLength(
     route === 'operation.cancel' ? 1 : 0,
@@ -199,7 +199,7 @@ it('does not duplicate explicit maintenance in StrictMode and aborts waits when 
   await f.settled()
   f.button('install').click()
   f.button('install').click()
-  await vi.waitFor(() => expect(f.text('operation-state')).toBe('正在安装'))
+  await vi.waitFor(() => expect(f.text('operation-state')).toBe('Installing'))
   expect(call.mock.calls.filter(([method]) => method.endsWith('operation.start'))).toHaveLength(1)
   f.region.open('appearance')
   expect(signal?.aborted).toBe(false)
@@ -234,14 +234,14 @@ it('rediscovers a running maintenance ID after remount, confirms cancellation, t
   const f = await fixture(call, { wait: () => new Promise(() => {}) })
   await f.settled()
   f.button('update').click()
-  await vi.waitFor(() => expect(f.text('operation-state')).toBe('正在安装'))
+  await vi.waitFor(() => expect(f.text('operation-state')).toBe('Installing'))
   const restore = await f.replace()
   await restore()
-  await vi.waitFor(() => expect(f.text('operation-state')).toBe('正在安装'))
+  await vi.waitFor(() => expect(f.text('operation-state')).toBe('Installing'))
   expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.status', {})
   expect(f.button('update').disabled).toBe(true)
   f.button('operation-cancel').click()
-  await vi.waitFor(() => expect(f.text('operation-state')).toBe('已取消'))
+  await vi.waitFor(() => expect(f.text('operation-state')).toBe('Cancelled'))
   expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.cancel', { operationId: 'cu-fixture' })
   await f.settled()
   expect(f.button('update').disabled).toBe(false)
@@ -252,11 +252,11 @@ it('rediscovers a running maintenance ID after remount, confirms cancellation, t
 })
 
 it.each([
-  ['feature-disabled', '已关闭', true],
-  ['platform-unsupported', '暂不支持', true],
-  ['driver-not-prepared', '首次使用自动准备', false],
-  ['driver-preparing', '准备中', true],
-  ['driver-prepare-failed', '准备失败', false],
+  ['feature-disabled', 'Turned off', true],
+  ['platform-unsupported', 'Not supported on this system', true],
+  ['driver-not-prepared', 'Prepares automatically on first use', false],
+  ['driver-preparing', 'Preparing', true],
+  ['driver-prepare-failed', 'Preparation failed', false],
 ])('renders blocked %s and retry eligibility from the real state', async (blocker, label, disabled) => {
   const call = vi.fn(async (method: string) =>
     method.endsWith('operation.status')
@@ -277,11 +277,11 @@ it.each([
 })
 
 it.each([
-  ['required', '需要授权', false],
-  ['granted', '已授权', true],
-  ['not-required', '无需系统授权', true],
-  ['unknown', '无法确认', true],
-  ['unavailable', '不可用', true],
+  ['required', 'Authorization required', false],
+  ['granted', 'Authorized', true],
+  ['not-required', 'No system authorization required', true],
+  ['unknown', 'Could not confirm', true],
+  ['unavailable', 'Unavailable', true],
 ])('renders permission %s without inventing authorization', async (status, label, hidden) => {
   const call = vi.fn(async (method: string) =>
     method.endsWith('permissions.status')
@@ -296,14 +296,14 @@ it.each([
   await f.settled()
   expect(f.text('permission-state')).toBe(label)
   expect(f.button('permission-grant').hidden).toBe(hidden)
-  expect(f.text('runtime')).toBe('运行时：0 个活动会话')
+  expect(f.text('runtime')).toBe('Runtime: 0 active sessions')
 })
 
 it.each([
-  ['ready', '检查通过'],
-  ['failed', '检查失败'],
-  ['unreachable', '无法连接'],
-  ['unavailable', '未执行'],
+  ['ready', 'Check passed'],
+  ['failed', 'Check failed'],
+  ['unreachable', 'Could not connect'],
+  ['unavailable', 'Not run'],
 ])('renders doctor %s through its action and confirmed result', async (status, label) => {
   const call = vi.fn(async (method: string) =>
     method.endsWith('doctor') ? { status, admission: { reason: 'linux-verified-driver' } } : normal(method),
@@ -316,12 +316,12 @@ it.each([
 })
 
 it.each([
-  ['queued', '等待执行', false],
-  ['running', '正在安装', false],
-  ['cancelling', '正在取消', false],
-  ['succeeded', '操作完成', true],
-  ['failed', '操作失败', true],
-  ['cancelled', '已取消', true],
+  ['queued', 'Waiting to run', false],
+  ['running', 'Installing', false],
+  ['cancelling', 'Cancelling', false],
+  ['succeeded', 'Operation finished', true],
+  ['failed', 'Operation failed', true],
+  ['cancelled', 'Cancelled', true],
 ])('hydrates operation %s with the backend ID and correct controls', async (state, label, terminal) => {
   const call = vi.fn(async (method: string) =>
     method.endsWith('operation.status') ? { ...running, state, outcome: undefined } : normal(method),
@@ -345,10 +345,10 @@ it('clears old details on RPC failure and exposes safe retry text', async () => 
   failed = true
   await f.owner.refresh()
   await f.owner.doctor()
-  await vi.waitFor(() => expect(f.text('state')).toBe('无法读取'))
+  await vi.waitFor(() => expect(f.text('state')).toBe('Could not read status'))
   expect(f.text('runtime')).toBe('')
-  expect(f.text('permission-state')).toBe('无法读取')
-  expect(f.text('doctor-state')).toBe('检查失败')
+  expect(f.text('permission-state')).toBe('Could not read permissions')
+  expect(f.text('doctor-state')).toBe('Check failed')
   expect(f.host.textContent).not.toContain('synthetic-secret')
   expect(f.button('update').disabled).toBe(true)
 })
@@ -382,7 +382,7 @@ it('releases the pane state through actual client-module unit removal and runtim
   const first = await boot()
   let second: Awaited<ReturnType<typeof boot>> | undefined
   try {
-    await vi.waitFor(() => expect(host.querySelector('#computer-use-state')?.textContent).toBe('运行中'))
+    await vi.waitFor(() => expect(host.querySelector('#computer-use-state')?.textContent).toBe('Running'))
     await vi.waitFor(() =>
       expect(host.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
     )
@@ -403,7 +403,7 @@ it('releases the pane state through actual client-module unit removal and runtim
     )
     void owner.update()
     await vi.waitFor(() =>
-      expect(host.querySelector('#computer-use-operation-state')?.textContent).toBe('正在安装'),
+      expect(host.querySelector('#computer-use-operation-state')?.textContent).toBe('Installing'),
     )
     await second.dispose()
     expect(signal?.aborted).toBe(true)
@@ -433,7 +433,7 @@ it('restores only the selected pane after repeated replacement and a navigation 
     expect(f.region.pane('appearance')?.hidden).toBe(false)
     f.region.open('computer-use')
     f.button('doctor-run').click()
-    await vi.waitFor(() => expect(f.text('doctor-state')).toBe('检查通过'))
+    await vi.waitFor(() => expect(f.text('doctor-state')).toBe('Check passed'))
   }
   expect(call.mock.calls.filter(([method]) => method.endsWith('doctor'))).toHaveLength(3)
   expect(call.mock.calls.some(([method]) => method.endsWith('operation.start'))).toBe(false)

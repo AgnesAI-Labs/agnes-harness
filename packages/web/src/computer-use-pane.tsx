@@ -7,6 +7,7 @@ import {
   type ComputerUseStatusController,
   createComputerUseState,
 } from './computer-use-state.js'
+import { computerUseLocale, computerUseText } from './locales/computer-use.js'
 
 /** Web owns coordination; each real pane mount gets a fresh, independently retired state. */
 export function createComputerUsePaneController(
@@ -78,8 +79,16 @@ export function createComputerUsePaneController(
   }
   function ComputerUsePane() {
     const view = useSyncExternalStore(subscribe, getSnapshot)
+    const locale = useSyncExternalStore((listener) => {
+      window.addEventListener('agnes:locale-changed', listener)
+      return () => window.removeEventListener('agnes:locale-changed', listener)
+    }, computerUseLocale)
     useLayoutEffect(mount, [])
-    return createElement(SettingsComputerUse, { view, actions: controller })
+    return createElement(SettingsComputerUse, {
+      view,
+      actions: controller,
+      text: (key) => computerUseText(key, undefined, locale),
+    })
   }
   return { ...controller, render: () => createElement(ComputerUsePane) }
 }
