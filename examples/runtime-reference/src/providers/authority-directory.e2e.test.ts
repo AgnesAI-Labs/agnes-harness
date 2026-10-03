@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,9 +11,45 @@ import type {
   DataRef,
   JsonValue,
 } from '@agnes/protocol/runtime'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createConformanceHarness, SCENARIOS } from '../../../../packages/extension-api/testkit/index.js'
 import { inlineData } from '../../../../packages/host/src/runtime/maintenance/authority-publication.js'
-import { createReferenceAnchor, createReferenceAuthorityDirectory } from './authority-directory.ts'
+import * as buildIdentity from '../../../../tools/acceptance/runtime/build-identity.js'
+import { bindAuthorityDirectoryContracts } from '../../../../tools/acceptance/runtime/platform/authority-directory-conformance.js'
+import {
+  createReferenceAnchor,
+  createReferenceAuthorityDirectory,
+  readReferenceAnchor,
+} from './authority-directory.ts'
+
+const probe = vi.hoisted(() => ({ platform: null as string | null }))
+vi.mock('node:os', async (original) => {
+  const os = await original<typeof import('node:os')>()
+  return { ...os, platform: () => probe.platform ?? os.platform() }
+})
+vi.mock('@agnes/system-node', async (original) => {
+  const system = await original<typeof import('@agnes/system-node')>()
+  return {
+    ...system,
+    windowsVolumeInfoSync: (path: string) =>
+      probe.platform === 'win32'
+        ? { filesystem: 'NTFS', driveType: 3, readOnly: false }
+        : system.windowsVolumeInfoSync(path),
+    windowsReplaceFileSync: (from: string, to: string) => {
+      if (probe.platform !== 'win32') return system.windowsReplaceFileSync(from, to)
+      renameSync(from, to)
+      system.syncFileSync(to)
+    },
+    syncDirectorySync: (path: string) => {
+      if (probe.platform === 'win32') throw new Error('Windows directory flush unavailable')
+      return system.syncDirectorySync(path)
+    },
+  }
+})
+afterEach(() => {
+  probe.platform = null
+  vi.restoreAllMocks()
+})
 
 const fixture = fileURLToPath(
   new URL('../../../../tools/acceptance/runtime/fixtures/authority-directory-process.ts', import.meta.url),
@@ -297,57 +333,110 @@ describe('reference authority directory process durability', () => {
     }
   }, 90_000)
 
-  it('lets exactly one of two processes publish a different cutover of the same revision', async () => {
-    const opened = await prepared()
-    const leftPayload = join(opened.root, 'left.json')
-    const rightPayload = join(opened.root, 'right.json')
-    const go = join(opened.root, 'go')
-    const children: ChildProcess[] = []
-    try {
-      const shared = {
-        implementation: 'reference' as const,
-        authority: AUTHORITY,
-        principalRef: PRINCIPAL,
-        phase: null,
-      }
-      writeFileSync(
-        leftPayload,
-        JSON.stringify({
-          ...shared,
-          request: requestFor(opened.route, 'cutover-a', COHORT, opened.proof),
-        }),
-      )
-      writeFileSync(
-        rightPayload,
-        JSON.stringify({
-          ...shared,
-          request: requestFor(opened.route, 'cutover-b', '22'.repeat(32), opened.proof),
-        }),
-      )
-      const left = startChild(['race', opened.directory, opened.anchor, leftPayload, go])
-      const right = startChild(['race', opened.directory, opened.anchor, rightPayload, go])
-      children.push(left.child, right.child)
-      await Promise.all([left.ready, right.ready])
-      writeFileSync(go, 'go')
-      const finished = await Promise.all([left.done, right.done])
-      const endings = finished
-        .map((item) =>
-          item.stdout
-            .split('\n')
-            .filter((line) => line !== '')
-            .at(-1),
+  it.each(['route', 'locator'] as const)(
+    'lets exactly one of two processes publish the same %s revision',
+    async (kind) => {
+      const opened = await prepared()
+      const leftPayload = join(opened.root, 'left.json')
+      const rightPayload = join(opened.root, 'right.json')
+      const go = join(opened.root, 'go')
+      const children: ChildProcess[] = []
+      try {
+        const view = readReferenceAnchor(opened.anchor)
+        expect(view.ok && view.value).toBeTruthy()
+        if (!view.ok || !view.value) throw new Error('Reference anchor missing')
+        const locator = view.value.locator
+        const locatorPublication = (cutoverId: string) =>
+          kind === 'route'
+            ? {}
+            : {
+                locatorPublication: {
+                  expectedRevision: 1,
+                  next: { ...locator, epoch: 2, revision: 2, cutoverId },
+                },
+              }
+        const shared = {
+          implementation: 'reference' as const,
+          authority: AUTHORITY,
+          principalRef: PRINCIPAL,
+          phase: null,
+        }
+        writeFileSync(
+          leftPayload,
+          JSON.stringify({
+            ...shared,
+            ...locatorPublication('cutover-a'),
+            request: requestFor(opened.route, 'cutover-a', COHORT, opened.proof),
+          }),
         )
-        .sort()
-      expect(endings, finished.map((item) => item.stderr).join('\n')).toEqual([
-        'LOSE conflict/revision_mismatch',
-        'WIN',
-      ])
-      expect(await revisionAt(opened.directory, opened.anchor)).toBe(2)
-    } finally {
-      for (const child of children) {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+        writeFileSync(
+          rightPayload,
+          JSON.stringify({
+            ...shared,
+            ...locatorPublication('cutover-b'),
+            request: requestFor(opened.route, 'cutover-b', '22'.repeat(32), opened.proof),
+          }),
+        )
+        const left = startChild(['race', opened.directory, opened.anchor, leftPayload, go])
+        const right = startChild(['race', opened.directory, opened.anchor, rightPayload, go])
+        children.push(left.child, right.child)
+        await Promise.all([left.ready, right.ready])
+        writeFileSync(go, 'go')
+        const finished = await Promise.all([left.done, right.done])
+        const endings = finished
+          .map((item) =>
+            item.stdout
+              .split('\n')
+              .filter((line) => line !== '')
+              .at(-1),
+          )
+          .sort()
+        expect(endings, finished.map((item) => item.stderr).join('\n')).toEqual([
+          kind === 'route' ? 'LOSE conflict/revision_mismatch' : 'LOSE conflict/locator_revision',
+          'WIN',
+        ])
+        if (kind === 'route') expect(await revisionAt(opened.directory, opened.anchor)).toBe(2)
+        else {
+          const current = readReferenceAnchor(opened.anchor)
+          expect(current.ok && current.value?.locator).toMatchObject({ revision: 2, epoch: 2 })
+          expect(current.ok && current.value?.locator.cutoverId).toMatch(/^cutover-(a|b)$/)
+        }
+      } finally {
+        for (const child of children) {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+        }
+        rmSync(opened.root, { recursive: true, force: true })
       }
-      rmSync(opened.root, { recursive: true, force: true })
+    },
+    60_000,
+  )
+  it('executes all six Windows scenarios for each provider and reports the durability limit', async () => {
+    probe.platform = 'win32'
+    const build = buildIdentity.getConformanceBuildIdentity()
+    vi.spyOn(buildIdentity, 'getConformanceBuildIdentity').mockReturnValue({
+      ...build,
+      platform: 'win32-test',
+    })
+    const harness = createConformanceHarness()
+    await bindAuthorityDirectoryContracts(harness, 'windows-injected', ['default', 'reference'])
+    const report = await harness.run({
+      contracts: ['agh.authority-directory'],
+      providers: ['default', 'reference'],
+      command: 'windows-injected',
+      clock: { startedAt: '2026-10-03T00:00:00.000Z', finishedAt: '2026-10-03T00:00:01.000Z' },
+    })
+    expect(report.assertions).toHaveLength(12)
+    for (const providerId of ['default', 'reference']) {
+      const rows = report.assertions.filter((row) => row.providerId === providerId)
+      expect(rows.map((row) => row.scenario)).toEqual([...SCENARIOS])
+      expect(
+        rows.every(
+          (row) =>
+            row.status === 'passed' &&
+            row.diagnostic?.includes('no POSIX parent-directory fsync equivalence'),
+        ),
+      ).toBe(true)
     }
-  }, 60_000)
+    expect(report.failures).toEqual([])
+  })
 })

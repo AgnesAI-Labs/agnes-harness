@@ -32,6 +32,18 @@ CLI 启动测试仍要求启动和创建会话成功。共享 CI 机器上的耗
 
 在 Windows 上，检查符号链接越界的测试需要具备创建符号链接的权限（开发者模式或对应账户权限）。如果准备夹具时 `symlinkSync` 返回 `EPERM`，说明环境前提未满足，安全断言尚未执行。共享 CI 的启动耗时诊断在完整测试失败后仍会运行；测试未执行或任务取消时不会运行。
 
+## 本地文件系统上的权威目录
+
+[默认目录](../../packages/host/src/runtime/providers/authority-directory.ts)与[独立 SQLite reference](../../examples/runtime-reference/src/providers/authority-directory.ts)支持 Windows 固定本地 NTFS/ReFS 卷。资格判断读取实际对象句柄的卷 GUID、驱动器类型和文件系统名称；Windows Node 的 statfs.type 不能标识文件系统。UNC、映射网络盘、可移动、只读与未知卷明确拒绝。显式设备与扩展命名空间路径拒绝；普通本地长路径在系统层内部转换。
+
+默认实现先刷新文件内容，再作同卷 write-through 替换并刷新已发布文件；reference 使用 SQLite FULL 事务，在发布定位锚前刷新复制的数据库文件。Windows 不宣称具备 POSIX 父目录 fsync 或等价的目录断电持久性，每条 Windows 符合性场景均记录此限制。POSIX 持久化行为不变。macOS 注入测试覆盖 Windows 判定、失败路径和六类场景，真实 Windows 进程恢复与并发仍需 Windows CI 分片验证。杀进程不能验证断电。
+
+
+```sh
+pnpm exec tsx tools/acceptance/runtime/run-conformance.ts --contracts agh.authority-directory --providers default,reference
+pnpm exec vitest run packages/host/test/runtime/authority-directory.test.ts packages/host/test/runtime/authority-directory.e2e.test.ts examples/runtime-reference/src/providers/authority-directory-lock.test.ts examples/runtime-reference/src/providers/authority-directory.e2e.test.ts packages/system-node/test/windows-volume.test.ts --maxWorkers=1
+```
+
 ## 构建与真实本地进程
 
 ```sh

@@ -19,6 +19,7 @@ export interface AuthorityDirectoryScenarioEvidence {
   readonly configDigest: string
   readonly releaseSetDigest: string
   readonly detail: string
+  readonly diagnostic?: string
 }
 
 /** One authority directory provider. The registrar does not import an implementation. */
@@ -81,7 +82,9 @@ export function registerAuthorityDirectoryContract(
           consumer: 'authority-directory-consumer',
           command: binding.command,
           status: evidence.status === 'skipped' ? 'skipped' : complete(evidence) ? 'passed' : 'failed',
-          ...(evidence.status === 'skipped' ? { diagnostic: evidence.detail } : {}),
+          ...(evidence.diagnostic !== undefined || evidence.status === 'skipped'
+            ? { diagnostic: evidence.diagnostic ?? evidence.detail }
+            : {}),
           configDigest: evidence.configDigest,
           releaseSetDigest: evidence.releaseSetDigest,
           attachmentDigest: null,

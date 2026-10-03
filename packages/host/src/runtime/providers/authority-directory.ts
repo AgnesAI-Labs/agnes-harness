@@ -30,13 +30,7 @@ import type {
   StateAuthorityRef,
 } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
-import {
-  createPrivateDirectorySync,
-  createPrivateFileSync,
-  renameWriteThroughSync,
-  syncDirectorySync,
-  syncFileSync,
-} from '@agnes/system-node'
+import { createPrivateDirectorySync, createPrivateFileSync, syncFileSync } from '@agnes/system-node'
 import {
   activateHead,
   type DirectoryHead,
@@ -50,6 +44,7 @@ import {
   unfenceHead,
 } from '../maintenance/authority-publication.js'
 import {
+  authorityDurability,
   type BootstrapAnchor,
   type BootstrapLocator,
   createBootstrapAnchor,
@@ -57,7 +52,9 @@ import {
   openBootstrapAnchor,
   pathsAreSeparate,
   readStageZero,
+  replaceAuthorityFileSync,
   type StageZeroView,
+  syncAuthorityDirectorySync,
 } from '../maintenance/bootstrap-locator.js'
 
 export const AUTHORITY_DIRECTORY_CONTRACT = 'agh.authority-directory' as const
@@ -146,8 +143,15 @@ export function createAuthorityDirectoryProvider(
     options.filesystem !== 'unsupported' &&
     filesystemSupportsLocalRename(directory) &&
     filesystemSupportsLocalRename(anchor)
+  const fileFlush = authorityDurability() === 'windows-file-flush'
   const features: readonly string[] = localFs
-    ? ['cutover-replay', 'external-anchor', 'local-fs-rename', 'exclusive-lock']
+    ? [
+        'cutover-replay',
+        'external-anchor',
+        'local-fs-rename',
+        'exclusive-lock',
+        ...(fileFlush ? ['windows-file-flush'] : []),
+      ]
     : ['cutover-replay', 'external-anchor']
 
   function refused<T>(refusal: PublicationRefusal): Outcome<T> {
@@ -723,7 +727,7 @@ function writeGeneration(
     if (descriptor !== undefined) closeSync(descriptor)
   }
   try {
-    renameWriteThroughSync(temp, finalPath)
+    replaceAuthorityFileSync(temp, finalPath)
     fire(onPhase, 'rename')
     publishOrigins(directory, document)
     if (previousId !== null) seal(directory, previousId)
@@ -735,7 +739,7 @@ function writeGeneration(
     } finally {
       closeSync(pointerFd)
     }
-    renameWriteThroughSync(pointerTemp, join(directory, 'current'))
+    replaceAuthorityFileSync(pointerTemp, join(directory, 'current'))
     fire(onPhase, 'commit')
   } catch {
     if (pointerShows(directory, document.id)) throw new PhaseStop('commit')
@@ -757,7 +761,7 @@ function seal(directory: string, id: string): void {
   } finally {
     closeSync(descriptor)
   }
-  renameWriteThroughSync(temp, finalPath)
+  replaceAuthorityFileSync(temp, finalPath)
 }
 
 function readApproval(
@@ -810,7 +814,7 @@ function publishOrigins(directory: string, document: GenerationDocument): void {
     } finally {
       closeSync(fd)
     }
-    renameWriteThroughSync(temp, join(folder, name))
+    replaceAuthorityFileSync(temp, join(folder, name))
   }
 }
 
@@ -908,7 +912,7 @@ function copyStore(from: string, to: string): void {
     if (existsSync(source)) copyTree(source, join(to, name))
   }
   for (let folder = to; ; folder = dirname(folder)) {
-    syncDirectorySync(folder)
+    syncAuthorityDirectorySync(folder)
     if (folder === existingAncestor) break
   }
 }
@@ -929,7 +933,7 @@ function copyTree(from: string, to: string): void {
   } finally {
     folder.closeSync()
   }
-  syncDirectorySync(to)
+  syncAuthorityDirectorySync(to)
 }
 
 function ensurePrivateDir(folder: string): void {

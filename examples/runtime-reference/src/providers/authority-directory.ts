@@ -1,4 +1,5 @@
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, realpathSync, statfsSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, realpathSync, statfsSync } from 'node:fs'
+import { platform } from 'node:os' // guards-allow-platform: independent authority filesystem and durability boundary.
 import { basename, dirname, resolve, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
@@ -17,6 +18,8 @@ import type {
   StateAuthorityRef,
 } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
+
+import { syncDirectorySync, syncFileSync, windowsVolumeInfoSync } from '@agnes/system-node'
 
 export const REFERENCE_AUTHORITY_CONTRACT = 'agh.authority-directory' as const
 export const REFERENCE_AUTHORITY_DIRECTORY_ID = 'agh.reference/authority-directory' as const
@@ -209,8 +212,13 @@ export function createReferenceAuthorityDirectory(options: {
   return {
     providerId: REFERENCE_AUTHORITY_DIRECTORY_ID,
     contract: REFERENCE_AUTHORITY_CONTRACT,
-    features: ['cutover-replay', 'external-anchor', 'sqlite-immediate'],
-    unsupported: UNSUPPORTED,
+    features: [
+      'cutover-replay',
+      'external-anchor',
+      'sqlite-immediate',
+      ...(platform() === 'win32' ? ['windows-file-flush'] : []),
+    ],
+    unsupported: [...UNSUPPORTED, ...(platform() === 'win32' ? ['power-loss-directory-durability'] : [])],
     async read(request, context) {
       const gated = admit(context, request, 'AuthorityDirectoryReadRequest')
       if (!gated.ok) return gated
@@ -575,20 +583,16 @@ function relocate(
     mkdirSync(dirname(standby), { recursive: true, mode: 0o700 })
     mkdirSync(standby, { mode: 0o700 })
     cloneRows(store, resolve(standby, 'routes.sqlite'))
-    const durablePaths = [resolve(standby, 'routes.sqlite')]
-    let folder = standby
-    while (true) {
-      durablePaths.push(folder)
-      if (folder === durableAncestor) break
-      folder = dirname(folder)
-    }
-    for (const path of durablePaths) {
-      const descriptor = openSync(path, 'r')
-      try {
-        fsyncSync(descriptor)
-      } finally {
-        closeSync(descriptor)
+    syncFileSync(resolve(standby, 'routes.sqlite'))
+    for (let folder = standby; ; folder = dirname(folder)) {
+      if (platform() !== 'win32') syncDirectorySync(folder)
+      else {
+        const entry = lstatSync(folder)
+        if (!entry.isDirectory() || entry.isSymbolicLink() || !localSqliteLocation(folder))
+          throw new Error('Candidate directory metadata is unavailable')
+        // SQLite/file flush is supported; Windows parent-directory power-loss durability is not.
       }
+      if (folder === durableAncestor) break
     }
   } catch {
     return halt('retryable', 'durability_failed')
@@ -1396,7 +1400,13 @@ function credential(principalRef: string, directoryId: string): ReferenceCredent
 function localSqliteLocation(directory: string): boolean {
   try {
     let parent = resolve(directory)
+    if (platform() === 'win32' && /^[\\\\/]{2}/.test(parent)) return false
     while (!existsSync(parent) && dirname(parent) !== parent) parent = dirname(parent)
+    if (platform() === 'win32') {
+      const info = windowsVolumeInfoSync(parent)
+      if (info.readOnly !== false || info.driveType !== 3) return false
+      return /^(ntfs|refs)$/i.test(info.filesystem)
+    }
     switch (statfsSync(parent).type) {
       case 1:
       case 4:
@@ -1431,9 +1441,11 @@ function separated(left: string, right: string): boolean {
   const first = physicalLocation(left)
     .split(sep)
     .filter((part) => part !== '')
+    .map((part) => (platform() === 'win32' ? part.toLowerCase() : part))
   const second = physicalLocation(right)
     .split(sep)
     .filter((part) => part !== '')
+    .map((part) => (platform() === 'win32' ? part.toLowerCase() : part))
   if (first.join('/') === second.join('/')) return false
   const nests = (outer: string[], inner: string[]) =>
     inner.length > outer.length && outer.every((part, index) => inner[index] === part)

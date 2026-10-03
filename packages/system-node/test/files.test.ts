@@ -19,6 +19,8 @@ import {
   renameWriteThroughSync,
   syncDirectorySync,
   syncFileSync,
+  windowsReplaceFileSync,
+  windowsVolumeInfoSync,
 } from '../src/index.js'
 
 let root: string
@@ -147,3 +149,21 @@ it.runIf(process.platform === 'win32')('native entry points reject missing or ma
     expect(() => native[name](42, root)).toThrow(expect.objectContaining({ code: 'EINVAL' }))
   }
 })
+
+it.runIf(process.platform === 'win32')(
+  'probes a real fixed local volume and replaces a flushed file without directory fsync',
+  () => {
+    expect(windowsVolumeInfoSync(root)).toMatchObject({ driveType: 3, readOnly: false })
+    expect(windowsVolumeInfoSync(root).filesystem).toMatch(/^(NTFS|ReFS)$/i)
+    const source = join(root, 'local-source'),
+      target = join(root, 'local-target')
+    writeFileSync(source, 'new', { flush: true })
+    writeFileSync(target, 'old', { flush: true })
+    windowsReplaceFileSync(source, target)
+    expect(readFileSync(target, 'utf8')).toBe('new')
+    expect(existsSync(source)).toBe(false)
+    expect(() => windowsVolumeInfoSync(join(root, 'absent'))).toThrow(
+      expect.objectContaining({ code: 'ENOENT' }),
+    )
+  },
+)

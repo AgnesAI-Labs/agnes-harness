@@ -68,7 +68,9 @@ async function waitForGo(goPath: string): Promise<void> {
 async function main(): Promise<void> {
   const [mode, directory, anchor, payloadPath, goPath] = process.argv.slice(2)
   if (mode === undefined || directory === undefined || anchor === undefined || payloadPath === undefined) {
-    throw new Error('usage: authority-directory-process <kill|race> <directory> <anchor> <payload> [go]')
+    throw new Error(
+      'usage: authority-directory-process <kill|race|recover> <directory> <anchor> <payload> [go]',
+    )
   }
   const payload = JSON.parse(readFileSync(payloadPath, 'utf8')) as Payload
   const provider = open(payload, directory, anchor)
@@ -91,6 +93,12 @@ async function main(): Promise<void> {
           : openedAnchor
         : await provider.compareAndSwap(payload.request, context(payload.principalRef))
     process.stdout.write(outcome.ok ? 'WIN\n' : `LOSE ${outcome.error.code}/${outcome.error.detailCode}\n`)
+    return
+  }
+  if (mode === 'recover') {
+    const outcome = await provider.compareAndSwap(payload.request, context(payload.principalRef))
+    await provider.dispose()
+    process.stdout.write(JSON.stringify(outcome))
     return
   }
   if (mode === 'kill') {

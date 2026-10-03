@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -217,7 +218,9 @@ function openAt(
     return {
       providerId: provider.providerId,
       features: provider.features,
-      unsupported: [],
+      unsupported: provider.features.includes('windows-file-flush')
+        ? ['power-loss-directory-durability']
+        : [],
       seedRoute: (route, call) => provider.seedRoute(route, call),
       read: (request, call) => provider.read(request, call),
       compareAndSwap: (request, call) => provider.compareAndSwap(request, call),
@@ -293,7 +296,17 @@ function evidence(
   releaseSetDigest: string,
   detail: string,
 ): AuthorityDirectoryScenarioEvidence {
-  return { passed: true, providerDigest: providerDigest(recipe), configDigest, releaseSetDigest, detail }
+  const limitation = getConformanceBuildIdentity().platform.startsWith('win32-')
+    ? '; Windows file FlushFileBuffers/SQLite FULL; no POSIX parent-directory fsync equivalence or power-loss directory guarantee'
+    : ''
+  return {
+    passed: true,
+    providerDigest: providerDigest(recipe),
+    configDigest,
+    releaseSetDigest,
+    detail,
+    ...(limitation ? { diagnostic: detail + limitation } : {}),
+  }
 }
 
 function repoRoot(): string {
@@ -443,19 +456,40 @@ async function recover(recipe: Recipe): Promise<AuthorityDirectoryScenarioEviden
     const request = requestFor(route, 1, proof)
     const published = must(await first.compareAndSwap(request, context()))
     await first.dispose()
-    const second = openAt(recipe, root, undefined, true)
-    try {
-      const replay = must(await second.compareAndSwap(request, context()))
-      assert.deepEqual(replay, published)
-      return evidence(
-        recipe,
-        documentDigest({ revision: replay.routes[0]?.revision ?? 0 }),
-        documentDigest({ recipe, scenario: 'recover' }),
-        'replay revision 2',
-      )
-    } finally {
-      await second.dispose()
-    }
+    const payload = join(root, 'recover.json')
+    writeFileSync(
+      payload,
+      JSON.stringify({
+        implementation: recipe,
+        authority: AUTHORITY,
+        principalRef: PRINCIPAL,
+        phase: null,
+        request,
+      }),
+    )
+    const recovered = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          fileURLToPath(new URL('../fixtures/authority-directory-process.ts', import.meta.url)),
+          'recover',
+          join(root, 'dir'),
+          join(root, 'anchor'),
+          payload,
+        ],
+        { cwd: repoRoot(), encoding: 'utf8', timeout: 30_000 },
+      ),
+    ) as Outcome<AuthorityDirectoryCompareAndSwapResult>
+    const replay = must(recovered)
+    assert.deepEqual(replay, published)
+    return evidence(
+      recipe,
+      documentDigest({ revision: replay.routes[0]?.revision ?? 0 }),
+      documentDigest({ recipe, scenario: 'recover' }),
+      'fresh-process replay revision 2',
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
