@@ -17,6 +17,7 @@ export type {
   WorkflowContribution,
 } from './authoring.js'
 export * from './authoring.js'
+export { assertAuthorSchema } from './authoring-schemas.js'
 export { defineGeneratedAuthorSchema } from './authoring-source.js'
 export type * from './public-api.js'
 export * from './routing-authoring.js'
