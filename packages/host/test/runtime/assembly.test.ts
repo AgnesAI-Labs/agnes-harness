@@ -77,22 +77,31 @@ describe('detached immutable assembly plans', () => {
         expect(result.value.configSnapshotRef).toEqual(input.plan.targetReleaseSet.configSnapshotRef)
       }
       for (const implementation of implementations) {
-        const provider = implementation.create(input)
-        const outcome = await provider.plan(
-          { configRef: input.graph.configRef, lock: input.graph.lock },
-          context(),
-        )
-        expect(outcome).toEqual({ ok: true, value: input.graph })
-        input.graph.digest = '0'.repeat(64)
-        const repeat = await provider.plan(
-          { configRef: input.plan.targetReleaseSet.configSnapshotRef, lock: input.resolution.lockGraph },
-          context(),
-        )
-        expect(repeat).toEqual(outcome)
-        input.graph.digest = outcome.ok ? outcome.value.digest : ''
         const fixture = await memoryAssemblyLifecycle(input)
-        const candidate = implementation.create(input, fixture.lifecycle)
+        const provider = implementation.create(input, fixture.lifecycle)
         try {
+          const outcome = await provider.plan(
+            { configRef: input.graph.configRef, lock: input.graph.lock },
+            context(),
+          )
+          expect(outcome).toEqual({ ok: true, value: input.graph })
+          input.graph.digest = '0'.repeat(64)
+          const repeat = await provider.plan(
+            { configRef: input.plan.targetReleaseSet.configSnapshotRef, lock: input.resolution.lockGraph },
+            context(),
+          )
+          expect(repeat).toEqual(outcome)
+          input.graph.digest = outcome.ok ? outcome.value.digest : ''
+          expect(
+            await provider.plan(
+              { configRef: { ...input.graph.configRef, digest: '0'.repeat(64) }, lock: input.graph.lock },
+              context(),
+            ),
+          ).toMatchObject({
+            ok: false,
+            error: { detailCode: 'plan_input_mismatch' },
+          })
+          const candidate = provider
           const prepared = await candidate.prepare({ graph: input.graph }, context())
           expect(prepared.ok).toBe(true)
           expect(prepared).toMatchObject({ ok: true, value: { readiness: { state: 'ready' } } })
@@ -101,6 +110,12 @@ describe('detached immutable assembly plans', () => {
           expect(fixture.root.view('fixture-current').published).toBe(true)
           expect(fixture.lifecycle.view()).toMatchObject({ staged: true, state: 'ready' })
           expect(await candidate.prepare({ graph: input.graph }, context())).toEqual(prepared)
+          expect(
+            await candidate.prepare({ graph: { ...input.graph, digest: '0'.repeat(64) } }, context()),
+          ).toMatchObject({
+            ok: false,
+            error: { detailCode: 'prepare_input_mismatch' },
+          })
           preparedResults.push(prepared)
           expect(
             await candidate.drain(
@@ -112,7 +127,7 @@ describe('detached immutable assembly plans', () => {
             [...fixture.mounted].reverse().map((id) => id.slice(fixture.lifecycle.generationId.length + 1)),
           )
         } finally {
-          await candidate.dispose()
+          await provider.dispose()
           await fixture.cleanup()
         }
       }

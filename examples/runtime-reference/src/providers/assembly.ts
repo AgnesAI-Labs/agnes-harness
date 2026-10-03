@@ -930,6 +930,10 @@ export function createReferenceAssemblyProvider(raw: unknown, lifecycle?: Refere
       error instanceof InvalidRelease ? error.message : undefined,
     )
   }
+  let decoded: ReturnType<typeof decodeSnapshot> | undefined
+  let validation: Outcome<ReleaseSet> | undefined
+  const fixedSnapshot = () => (decoded ??= immutable(decodeSnapshot(pinned)))
+  const fixedRelease = () => (validation ??= immutable(constructReferenceReleaseSet(pinned)))
   let candidate: ReturnType<typeof referenceCandidate> | undefined
   let disposed = false
   return {
@@ -946,12 +950,12 @@ export function createReferenceAssemblyProvider(raw: unknown, lifecycle?: Refere
       if (captureRefusal) return captureRefusal
       try {
         const operation = decode('AssemblyPlanRequest', request),
-          s = decodeSnapshot(pinned)
+          s = fixedSnapshot()
         demand(
           matches(operation.configRef, s.assembly.configRef) && matches(operation.lock, s.assembly.lock),
           'plan_input_mismatch',
         )
-        const checked = constructReferenceReleaseSet(pinned)
+        const checked = fixedRelease()
         return checked.ok ? { ok: true, value: immutable(s.assembly) } : checked
       } catch (error) {
         return refusal(
@@ -970,12 +974,12 @@ export function createReferenceAssemblyProvider(raw: unknown, lifecycle?: Refere
       if (candidate) return candidate.prepare(request, context)
       if (captureRefusal) return captureRefusal
       try {
-        const snapshot = decodeSnapshot(pinned)
+        const snapshot = fixedSnapshot()
         demand(
           matches(decode('AssemblyPrepareRequest', request).graph, snapshot.assembly),
           'prepare_input_mismatch',
         )
-        const locked = constructReferenceReleaseSet(pinned)
+        const locked = fixedRelease()
         if (!locked.ok) return locked
         if (!lifecycle) return refusal('candidate_lifecycle_unavailable')
         candidate ??= referenceCandidate(snapshot.assembly, locked.value, snapshot.releasePlan, lifecycle)

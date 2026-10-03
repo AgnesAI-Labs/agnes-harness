@@ -24,6 +24,10 @@ export function createAssemblyProvider(input: unknown, lifecycle?: CandidateLife
     fields(input, ['plan', 'graph', 'configuration', 'resolution', 'fixture'], '/')
     return freeze(structuredClone(input))
   })
+  let decoded: ReturnType<typeof readInputs> | undefined
+  let checked: ReturnType<typeof constructReleaseSet> | undefined
+  const snapshot = () => (decoded ??= freeze(readInputs(captured.ok ? captured.value : undefined)))
+  const release = () => (checked ??= freeze(constructReleaseSet(snapshot())))
   let candidate: AssemblyCandidate | undefined
   let disposed = false
   return {
@@ -37,7 +41,7 @@ export function createAssemblyProvider(input: unknown, lifecycle?: CandidateLife
       if (!captured.ok) return captured
       const accepted = attempt(() => {
         const parsed = readWire('AssemblyPlanRequest', request)
-        const fixed = readInputs(captured.value)
+        const fixed = snapshot()
         requireRelease(
           equal(parsed.configRef, fixed.graph.configRef) && equal(parsed.lock, fixed.graph.lock),
           'plan_input_mismatch',
@@ -46,8 +50,8 @@ export function createAssemblyProvider(input: unknown, lifecycle?: CandidateLife
         return fixed
       })
       if (!accepted.ok) return accepted
-      const release = constructReleaseSet(accepted.value)
-      if (!release.ok) return release
+      const validated = release()
+      if (!validated.ok) return validated
       return { ok: true, value: freeze(accepted.value.graph) }
     },
     async prepare(request: unknown, context: CallContext): Promise<Outcome<AssemblyPrepareResult>> {
@@ -58,15 +62,15 @@ export function createAssemblyProvider(input: unknown, lifecycle?: CandidateLife
       if (!captured.ok) return captured
       const fixed = attempt(() => {
         const parsed = readWire('AssemblyPrepareRequest', request)
-        const inputs = readInputs(captured.value)
+        const inputs = snapshot()
         requireRelease(equal(parsed.graph, inputs.graph), 'prepare_input_mismatch', '/prepare/graph')
         return inputs
       })
       if (!fixed.ok) return fixed
-      const release = constructReleaseSet(fixed.value)
-      if (!release.ok) return release
+      const validated = release()
+      if (!validated.ok) return validated
       if (!lifecycle) return { ok: false, error: releaseError('candidate_lifecycle_unavailable') }
-      candidate ??= new AssemblyCandidate(fixed.value.graph, release.value, fixed.value.plan, lifecycle)
+      candidate ??= new AssemblyCandidate(fixed.value.graph, validated.value, fixed.value.plan, lifecycle)
       return candidate.prepare(request, context)
     },
     async dispose(): Promise<readonly string[]> {

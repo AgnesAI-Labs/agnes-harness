@@ -2669,8 +2669,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Detached release planning: measured 64517, exact, no spare.
   // Default blob and artifacts provider descriptors, the ticket feature only with a ticket key, and
   // per-service data directories. Measured 64597 (+80), exact, no spare.
-  // Staged generations and prepare conformance: combined measured 65489, exact, no spare.
-  'packages/host/src': 65489,
+  // Staged generations and prepare conformance: combined measured 65493, exact, no spare.
+  'packages/host/src': 65493,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
