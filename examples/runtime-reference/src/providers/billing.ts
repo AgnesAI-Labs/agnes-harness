@@ -20,6 +20,11 @@ export interface ReferenceBillingDeployment {
   readonly packageDigest: string
   readonly configSchema: R.SchemaRef
   readonly priceVersions: readonly string[]
+  readonly accounting?: {
+    readUsage(ref: R.UsageFactRef, call: CallContext): Promise<Outcome<R.UsageFact>>
+    reservation(request: R.BillingPostRequest, call: CallContext): Promise<Outcome<R.DomainObjectRef>>
+    settle(request: R.BudgetSettleRequest, call: CallContext): Promise<Outcome<R.BudgetSettleResult>>
+  }
   readonly outbound: RemotePort
   authorize(
     call: CallContext,
@@ -36,12 +41,14 @@ type Book = {
     signature: string
     entry: R.BillingEntry
     confirmation: string | null
+    origins?: string[]
   }[]
 }
 export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
   d = {
     ...d,
     priceVersions: d.priceVersions.slice(),
+    ...(d.accounting ? { accounting: { ...d.accounting } } : {}),
     outbound: { ...d.outbound, target: structuredClone(d.outbound.target) },
   }
   const schemas = RuntimeMethodSchemaRefs['agh.billing']
@@ -110,14 +117,32 @@ export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
           const output = confirm(entry.entryId, owner, verified.value, command.evidenceRef)
           return output.ok ? { ok: true, value: serial(refs.output, output.value) } : output
         }
+        const origins: string[] = []
         let candidate: R.BillingEntry
         if (method === 'post') {
-          const command = parsed as R.BillingPostRequest,
-            quote = unserial<R.PriceQuote>(
-              command.quoteRef,
-              RuntimeMethodSchemaRefs['agh.pricing'].quote.output,
-              'PriceQuote',
-            )
+          const command = parsed as R.BillingPostRequest
+          const previous = book.view().rows.find(
+            (r) =>
+              r.key ===
+              canonicalJsonDigest({
+                owner,
+                authorityId: d.authorityId,
+                account: { authorityId: command.accountRef.authorityId, id: command.accountRef.id },
+                key: command.chargeKey,
+              }),
+          )
+          if (previous) {
+            if (previous.signature !== canonicalJsonDigest(command))
+              return rejection('conflict', 'idempotency_conflict')
+            return ['posted', 'rejected'].includes(previous.entry.status)
+              ? { ok: true, value: serial(refs.output, previous.entry) }
+              : rejection('unknown_effect', 'effect_unknown')
+          }
+          const quote = unserial<R.PriceQuote>(
+            command.quoteRef,
+            RuntimeMethodSchemaRefs['agh.pricing'].quote.output,
+            'PriceQuote',
+          )
           if (!d.priceVersions.includes(quote.priceVersion)) return rejection('incompatible', 'price_version')
           if (
             !/^(0|[1-9][0-9]*)$/.test(quote.amount.units) ||
@@ -140,6 +165,66 @@ export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
           const usages = command.usageRefs.map((r) => `${r.authorityId}/${r.usageId}`)
           if (!usages.length || new Set(usages).size !== usages.length)
             return rejection('invalid_input', 'billing_usage')
+          if (!d.accounting) return rejection('denied', 'billing_accounting_absent')
+          const verifiedFacts: R.UsageFact[] = []
+          for (const ref of command.usageRefs) {
+            if (ctx.call.signal.aborted) return rejection('denied', 'permission_absent')
+            const fetched = await until(d.accounting.readUsage(ref, ctx.call), ctx.call)
+            if (!fetched.ok) return fetched
+            const checked = validateRuntime('UsageFact', fetched.value)
+            if (
+              !checked.ok ||
+              checked.value.usageId !== ref.usageId ||
+              canonicalJsonDigest(checked.value) !== ref.digest
+            )
+              return rejection('conflict', 'billing_usage_source')
+            const leaf = structuredClone(checked.value)
+            const identity = canonicalJsonDigest({
+              authorityId: ref.authorityId,
+              actionId: leaf.actionId,
+              attemptId: leaf.attemptId,
+              externalRequest: {
+                system: leaf.externalRequest.system,
+                requestId: leaf.externalRequest.requestId,
+              },
+            })
+            if (origins.includes(identity)) return rejection('conflict', 'idempotency_conflict')
+            origins.push(identity)
+            verifiedFacts.push(leaf)
+          }
+          const original = await until(d.accounting.reservation(command, ctx.call), ctx.call)
+          if (!original.ok) return original
+          if (ctx.call.signal.aborted) return rejection('denied', 'permission_absent')
+          const settled = await until(
+            d.accounting.settle(
+              {
+                reservationRef: original.value,
+                usageRefs: command.usageRefs,
+              },
+              ctx.call,
+            ),
+            ctx.call,
+          )
+          if (!settled.ok) return settled
+          if (verifiedFacts.some((f) => f.certainty === 'unknown'))
+            return rejection('unknown_effect', 'billing_usage_unknown')
+          const valid = validateRuntime('BudgetSettleResult', settled.value)
+          if (!valid.ok) return rejection('conflict', 'billing_settlement_source')
+          const budget = valid.value.reservation
+          if (budget.status !== 'settled' || budget.settledAmount === null)
+            return rejection('unknown_effect', 'billing_settlement_unknown')
+          const pairs = [
+            [budget.ref, original.value],
+            [budget.accountRef, command.accountRef],
+            [budget.usageRefs, command.usageRefs],
+            [budget.settledAmount, quote.amount],
+          ] as const
+          if (
+            pairs.some(([a, b]) => canonicalJsonDigest(a) !== canonicalJsonDigest(b)) ||
+            budget.priceVersion !== quote.priceVersion ||
+            verifiedFacts.some((f) => f.actionId !== budget.actionId || f.attemptId !== budget.attemptId)
+          )
+            return rejection('conflict', 'billing_settlement_source')
           const identity = {
             owner,
             authorityId: d.authorityId,
@@ -206,6 +291,13 @@ export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
           if (
             candidate.kind === 'charge' &&
             doc.rows.some(
+              (r) => r.entry.kind === 'charge' && r.entry.status !== 'rejected' && !r.origins?.length,
+            )
+          )
+            return rejection('denied', 'billing_balance')
+          if (
+            candidate.kind === 'charge' &&
+            doc.rows.some(
               (r) =>
                 r.owner === owner &&
                 r.entry.kind === 'charge' &&
@@ -213,6 +305,14 @@ export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
                 r.entry.usageRefs.some((a) =>
                   candidate.usageRefs.some((b) => a.authorityId === b.authorityId && a.usageId === b.usageId),
                 ),
+            )
+          )
+            return rejection('conflict', 'idempotency_conflict')
+          if (
+            candidate.kind === 'charge' &&
+            doc.rows.some(
+              (r) =>
+                r.entry.status !== 'rejected' && (r.origins ?? []).some((origin) => origins.includes(origin)),
             )
           )
             return rejection('conflict', 'idempotency_conflict')
@@ -238,7 +338,7 @@ export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
             if (available < BigInt(candidate.amount.units)) return rejection('denied', 'billing_balance')
           }
           first = true
-          doc.rows.push({ owner, key: index, signature, entry: candidate, confirmation: null })
+          doc.rows.push({ owner, key: index, signature, entry: candidate, confirmation: null, origins })
           return { ok: true as const, value: candidate }
         })
         if (!prepared.ok) return prepared

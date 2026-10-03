@@ -15,6 +15,15 @@ process.on('message', async (data: { id: number; method: string; input: unknown;
   try {
     let result: unknown
     switch (data.method) {
+      case 'prepare-accounting':
+        result = await consumer.prepareAccounting()
+        break
+      case 'accounting-stats':
+        result = consumer.accountingStats()
+        break
+      case 'retire-price':
+        consumer.retirePrice()
+        break
       case 'record':
         result = await consumer.record(data.input, data.mode)
         break

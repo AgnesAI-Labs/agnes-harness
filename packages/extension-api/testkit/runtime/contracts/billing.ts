@@ -21,6 +21,8 @@ export type BillingContractDriver = {
   stop(): Promise<void>
   restart(): Promise<{ previousPid: number; pid: number }>
   deliveries(): Promise<number>
+  retirePrice(): Promise<void>
+  accountingStats(): Promise<{ usageFacts: number; origins: number; settled: string }>
   waitReceived(): Promise<void>
   input: BillingPostRequest
   refundInput(entryId: string): BillingRefundRequest
@@ -67,6 +69,15 @@ export async function runBillingContractScenario(
           jcs(first) === jcs(again),
         'posted-once',
       )
+      assert(
+        reply(
+          await driver.post({
+            ...driver.input,
+            accountRef: { ...driver.input.accountRef, revision: 2 },
+          }),
+        ).error?.code === 'conflict',
+        'changed-post-key-refused',
+      )
       const id = reply(first).result?.value?.entryId
       assert(typeof id === 'string', 'entry-identity')
       if (typeof id !== 'string') throw new Error('Billing entry identity absent')
@@ -75,8 +86,13 @@ export async function runBillingContractScenario(
         b = await driver.refund(refund)
       assert(reply(a).outcome === 'succeeded' && jcs(a) === jcs(b), 'refund-once')
       assert(
-        reply(await driver.post({ ...driver.input, usageRefs: [] })).error?.code === 'invalid_input',
+        reply(await driver.post({ ...driver.input, chargeKey: 'empty-usage', usageRefs: [] })).error?.code ===
+          'invalid_input',
         'bad-usage-refused',
+      )
+      assert(
+        reply(await driver.post({ ...driver.input, usageRefs: [] })).error?.code === 'conflict',
+        'changed-post-usage-refused',
       )
       assert(
         reply(await driver.refund({ ...refund, reason: 'changed' })).error?.code === 'conflict',
@@ -102,6 +118,15 @@ export async function runBillingContractScenario(
         ).error?.code === 'denied',
         'cross-currency-refused',
       )
+      const stats = await driver.accountingStats()
+      assert(
+        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === '100',
+        'one-public-usage-and-budget-settlement',
+      )
+      assert(
+        reply(await driver.post({ ...driver.input, chargeKey: 'other-charge' })).error?.code === 'conflict',
+        'same-usage-new-charge-refused',
+      )
       assert((await driver.deliveries()) === 2, 'two-real-receipts')
     }
     if (scenario === 'deny') {
@@ -110,6 +135,8 @@ export async function runBillingContractScenario(
         'untrusted-post-refused',
       )
       assert((await driver.deliveries()) === 0, 'deny-zero-network')
+      const stats = await driver.accountingStats()
+      assert(stats.origins === 0 && stats.settled === '0', 'deny-no-budget-settlement')
     }
     if (scenario === 'cancel') {
       assert(reply(await driver.post(driver.input, 'cancel')).outcome === 'cancelled', 'pre-cancel-refused')
@@ -119,6 +146,11 @@ export async function runBillingContractScenario(
       assert(reply(await pending).outcome === 'unknown_effect', 'sent-cancel-unknown')
       assert(reply(await driver.post(driver.input, 'hang')).outcome === 'unknown_effect', 'cancel-no-repost')
       assert((await driver.deliveries()) === 1, 'cancel-send-boundary')
+      const stats = await driver.accountingStats()
+      assert(
+        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === '100',
+        'cancel-retains-real-settlement',
+      )
     }
     if (scenario === 'recover') {
       const first = await driver.post(driver.input),
@@ -127,11 +159,25 @@ export async function runBillingContractScenario(
       assert(typeof id === 'string', 'entry-identity-before-restart')
       if (typeof id !== 'string') throw new Error('Billing entry identity absent')
       const refund = driver.refundInput(id),
-        a = await driver.refund(refund),
-        identity = await driver.restart()
+        a = await driver.refund(refund)
+      await driver.retirePrice()
+      const identity = await driver.restart()
       assert(identity.previousPid !== identity.pid, 'actual-cold-process')
-      assert(jcs(await driver.post(driver.input)) === jcs(first), 'original-charge-after-restart')
+      assert(
+        jcs(await driver.post(driver.input)) === jcs(first),
+        'original-charge-and-price-after-retirement-and-restart',
+      )
       assert(jcs(await driver.refund(refund)) === jcs(a), 'original-refund-after-restart')
+      assert(
+        reply(await driver.post({ ...driver.input, chargeKey: 'retired-price-new-charge' })).error?.code ===
+          'incompatible',
+        'retired-price-refuses-new-post',
+      )
+      const stats = await driver.accountingStats()
+      assert(
+        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === '100',
+        'cold-original-usage-and-settled-amount',
+      )
       assert((await driver.deliveries()) === 2, 'cold-no-double-settlement')
     }
     if (scenario === 'dispose') {
@@ -141,6 +187,11 @@ export async function runBillingContractScenario(
       assert(reply(await pending).outcome === 'unknown_effect', 'dispose-sent-unknown')
       assert(reply(await driver.post(driver.input)).outcome === 'failed', 'disposed-post-refused')
       assert((await driver.deliveries()) === 1, 'disposed-no-new-network')
+      const stats = await driver.accountingStats()
+      assert(
+        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === '100',
+        'dispose-retains-real-settlement',
+      )
     }
     return checked
   } finally {

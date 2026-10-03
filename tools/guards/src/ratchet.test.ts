@@ -1495,7 +1495,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable resource pins. Measured 12187, exact, no spare.
   // Recoverable embedding providers. Measured 12446, exact, no spare.
   // Fixed package plan apply. Measured 12543, exact, no spare.
-  'packages/extension-api/testkit': 12543,
+  // Usage and budget settlement for billing. Measured 12594, exact, no spare.
+  'packages/extension-api/testkit': 12594,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2727,7 +2728,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable resource pins. Measured 73722, exact, no spare.
   // Windows Job execution backends. Measured 73901, exact, no spare.
   // Artifact ticket key port. Measured 74321, exact, no spare.
-  'packages/host/src': 74321,
+  // Usage and budget settlement for billing. Measured 74449, exact, no spare.
+  'packages/host/src': 74449,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

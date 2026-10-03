@@ -14,8 +14,12 @@ Trace `export` 是 leaf action，在调用受限 `agh.network.request` 端口前
 
 账务发送前固定账户、usage 引用、原 quote 和价格版本。同 charge/refund key 不能用于变化的输入。退款要求原 charge 已 posted、同币种且有足够可退余额；pending/unknown 退款仍占用余额。未知价格、重复 usage、跨币种与矛盾回执明确拒绝；核对证据必须经受信部署端口验证。
 
+账务部署必须注入受信 accounting adapter：`readUsage` 读取所选 C33 公开 query，`reservation` 定位原接纳 reservation，`settle` 用该引用与精确 usage 引用调用 C32。缺端口时拒绝新 post。连接器核验 fact 摘要及原 attempt/外部请求身份，再要求已知的 settledAmount、原 priceVersion、账户和 usage 集与报价一致。未知 usage 交给 Budget，但不补造价格、不 post；更正不能为同一 origin 创建第二次 charge。这些 adapter 不新增 Pricing 合同或计算替代价格。
+
+已完成请求先从 outbox 读取，再考虑当前价格或 accounting 来源。缺 origin 元数据的旧 outbox 仍可重读原结果；该 outbox 的新 charge 在受信元数据迁移完成前明确拒绝。
+
 两类 provider 均先持久 outbound intent 再发送。已完成重试返回原回执；中断或不确定请求不自动重发。取消与释放关闭新操作，已发送请求仍保留核对责任。这不代表跨外部系统的 exactly-once。
 
-验收夹具以真实进程运行 OTLP/HTTP JSON receiver 与账务 receipt endpoint，并通过受管 Network 实现通信。公开套件覆盖选择、正常、拒绝、取消、进程冷启与释放；受限 effect 夹具不证明生产 Budget/Usage/Effects 链已接通。会话装配、权威价格与用量消费，以及既有轨迹上传器迁移仍属后续集成。
+验收夹具以真实进程运行 OTLP/HTTP JSON receiver 与账务 receipt endpoint，并通过受管 Network 实现通信。公开套件覆盖选择、正常、拒绝、取消、进程冷启与释放；账务场景还经 Core 的公开 Usage/Budget 工厂操作隔离 SQLite owner。进程测试在 usage 提交、预算结算、发送意图、对端接收和 callback 提交后杀死消费进程，冷恢复保留一个 usage fact 与原 settledAmount。明确合成来源及受限 effects 不证明生产 State/Effects 或权威替代 Pricing 已接通；会话装配、Pricing 来源绑定及既有轨迹上传器迁移仍属后续集成。
 
 源码：[Host Trace](../../packages/host/src/runtime/providers/trace.ts)、[Host Billing](../../packages/host/src/runtime/providers/billing.ts)、[Trace 合同](../../packages/extension-api/testkit/runtime/contracts/trace.ts)、[Billing 合同](../../packages/extension-api/testkit/runtime/contracts/billing.ts)。
