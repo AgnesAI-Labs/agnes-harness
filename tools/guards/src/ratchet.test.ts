@@ -1,3 +1,4 @@
+// Persisted installer proposals and local proposal contracts: exact measured counts, no spare allocation.
 // Windows authority directory: exact filesystem probe, file-flush boundary and evidence allocation.
 // Measure merged main and runtime integration sources with exact countLines() ceilings.
 // Versioned resource discovery and process-local ownership: exact measured source/testkit caps.
@@ -342,7 +343,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
   // Immutable package snapshots and the lock resolver. Measured 7784, exact, no spare.
   // Static runtime package inspection without script execution. Measured 8247, exact, no spare.
-  'packages/package-manager/src': 8247,
+  'packages/package-manager/src': 8971,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -1466,7 +1467,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Staged candidate preparation cases: measured 7896, exact, no spare.
   // Absent non-reference providers name their missing binding. Measured 7899, exact, no spare.
   // Exact measured MCP session contract and alphabetical export; no spare allocation.
-  'packages/extension-api/testkit': 7963,
+  // Restricted installation proposal cases. Measured 8124, exact, no spare.
+  'packages/extension-api/testkit': 8124,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
