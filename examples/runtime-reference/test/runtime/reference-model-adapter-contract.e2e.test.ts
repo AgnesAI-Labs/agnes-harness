@@ -5,11 +5,13 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import { expect, it } from 'vitest'
-import { createReferenceModelAdapterFactory } from '../../../../examples/runtime-reference/src/providers/model-adapter.js'
+import { createReferenceModelAdapterFactory } from '../../src/providers/model-adapter.js'
 import { referenceModelFixture } from './reference-model-fixture.js'
 
-const tckUrl = new URL('../../../extension-api/testkit/runtime/contracts/model-adapter.ts', import.meta.url)
-  .href
+const tckUrl = new URL(
+  '../../../../packages/extension-api/testkit/runtime/contracts/model-adapter.ts',
+  import.meta.url,
+).href
 it.each(['select', 'normal', 'deny', 'cancel', 'recover', 'dispose'] as const)(
   'runs actual independent reference model adapter contract %s',
   async (scenario) => {
@@ -18,7 +20,12 @@ it.each(['select', 'normal', 'deny', 'cancel', 'recover', 'dispose'] as const)(
       receipt = join(directory, 'receipt.json')
     const child: ChildProcess = spawn(
       process.execPath,
-      [fileURLToPath(new URL('./fixtures/model-http.mjs', import.meta.url)), requests],
+      [
+        fileURLToPath(
+          new URL('../../../../packages/ai/test/runtime/fixtures/model-http.mjs', import.meta.url),
+        ),
+        requests,
+      ],
       { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { PATH: process.env.PATH, LANG: 'C' } },
     )
     const port = await new Promise<number>((resolve, reject) => {

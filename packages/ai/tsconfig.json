@@ -15,9 +15,6 @@
     },
     {
       "path": "../extension-api/tsconfig.tests.json"
-    },
-    {
-      "path": "../../examples/runtime-reference"
     }
   ]
 }

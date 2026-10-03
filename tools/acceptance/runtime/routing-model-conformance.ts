@@ -108,7 +108,7 @@ function selection(contract: Contract, kind: Kind, scenario: ScenarioName) {
             name.includes('recovers the default ') && name.includes('fresh PID after SIGKILL'),
         }
       : {
-          file: 'packages/ai/test/runtime/reference-model-process-recovery.e2e.test.ts',
+          file: 'examples/runtime-reference/test/runtime/reference-model-process-recovery.e2e.test.ts',
           count: 1,
           match: (name: string) =>
             name.includes('different process') && name.includes('original durable receipt without resend'),
@@ -117,7 +117,7 @@ function selection(contract: Contract, kind: Kind, scenario: ScenarioName) {
     file:
       kind === 'default'
         ? 'packages/ai/test/runtime/model-adapter-contract.e2e.test.ts'
-        : 'packages/ai/test/runtime/reference-model-adapter-contract.e2e.test.ts',
+        : 'examples/runtime-reference/test/runtime/reference-model-adapter-contract.e2e.test.ts',
     count: 6,
     match: (name: string) => name.endsWith(`model adapter contract ${scenario}`),
   }
@@ -146,7 +146,7 @@ function sourceDigest(contract: Contract, kind: Kind, file: string) {
       : [
           kind === 'default'
             ? 'packages/ai/test/runtime/model-fixture.ts'
-            : 'packages/ai/test/runtime/reference-model-fixture.ts',
+            : 'examples/runtime-reference/test/runtime/reference-model-fixture.ts',
           'packages/ai/test/runtime/fixtures/model-http.mjs',
           ...(file.includes('model-adapter-crash')
             ? [
@@ -155,7 +155,7 @@ function sourceDigest(contract: Contract, kind: Kind, file: string) {
                 'packages/ai/test/runtime/fixtures/model-crash-storage.ts',
               ]
             : file.includes('process-recovery')
-              ? ['packages/ai/test/runtime/fixtures/reference-model-worker.ts']
+              ? ['examples/runtime-reference/test/runtime/fixtures/reference-model-worker.ts']
               : []),
         ]
   const source = [provider, helper, file, ...related].map((path) => ({

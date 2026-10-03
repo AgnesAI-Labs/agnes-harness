@@ -4,15 +4,18 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { validateRuntime } from '@agnes/protocol/runtime'
 import { expect, it } from 'vitest'
-import { modelFixture } from './model-fixture.js'
-import { referenceModelFixture } from './reference-model-fixture.js'
+import { referenceModelFixture } from '../../../examples/runtime-reference/test/runtime/reference-model-fixture.js'
+import { modelFixture } from '../../../packages/ai/test/runtime/model-fixture.js'
+import { validateRuntime } from '../../../packages/protocol/src/runtime/index.js'
 
 async function server(journal: string): Promise<{ child: ChildProcess; url: string }> {
   const child = spawn(
     process.execPath,
-    [fileURLToPath(new URL('./fixtures/model-http.mjs', import.meta.url)), journal],
+    [
+      fileURLToPath(new URL('../../../packages/ai/test/runtime/fixtures/model-http.mjs', import.meta.url)),
+      journal,
+    ],
     { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { PATH: process.env.PATH, LANG: 'C' } },
   )
   const port = await new Promise<number>((resolve, reject) => {

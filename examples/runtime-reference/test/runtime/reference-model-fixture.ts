@@ -12,12 +12,9 @@ import {
   RuntimeMethodSchemaRefs,
   type UsageMeasurement,
 } from '@agnes/protocol/runtime'
-import type {
-  ReferenceModelDeployment,
-  ReferenceModelSource,
-} from '../../../../examples/runtime-reference/src/providers/model-adapter.js'
-import { createReferenceModelAdapterFactory } from '../../../../examples/runtime-reference/src/providers/model-adapter.js'
-import { fakeModel } from '../../testkit/index.js'
+import { fakeModel } from '../../../../packages/ai/testkit/index.js'
+import type { ReferenceModelDeployment, ReferenceModelSource } from '../../src/providers/model-adapter.js'
+import { createReferenceModelAdapterFactory } from '../../src/providers/model-adapter.js'
 
 const string = (maxLength = 256) => ({ type: 'string', minLength: 0, maxLength })
 const integer = (maximum = 9007199254740991) => ({ type: 'integer', minimum: 0, maximum })

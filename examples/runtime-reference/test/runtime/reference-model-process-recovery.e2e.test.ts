@@ -57,7 +57,10 @@ it('reopens an independent model owner in a different process and reads the orig
     return child
   }
   try {
-    const http = run([fileURLToPath(new URL('./fixtures/model-http.mjs', import.meta.url)), requests])
+    const http = run([
+      fileURLToPath(new URL('../../../../packages/ai/test/runtime/fixtures/model-http.mjs', import.meta.url)),
+      requests,
+    ])
     const address = await wait(http, (message) => typeof message.port === 'number')
     const endpoint = `http://127.0.0.1:${address.port}/v1`
     const start = async () => {

@@ -6,7 +6,13 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.compile.ts", "test/**/*.compile.tsx"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.compile.ts",
+    "test/**/*.compile.tsx",
+    "test/runtime/reference-model-fixture.ts"
+  ],
   "exclude": ["dist", "node_modules", "**/*.test.ts"],
   "references": [
     {
@@ -20,6 +26,9 @@
     },
     {
       "path": "../../packages/core/tsconfig.runtime.json"
+    },
+    {
+      "path": "../../packages/ai"
     }
   ]
 }

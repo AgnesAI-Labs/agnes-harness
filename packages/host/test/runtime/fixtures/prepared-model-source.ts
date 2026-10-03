@@ -16,9 +16,9 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { createReferenceModelAdapterFactory } from '../../../../../examples/runtime-reference/src/providers/model-adapter.js'
+import { referenceModelFixture } from '../../../../../examples/runtime-reference/test/runtime/reference-model-fixture.js'
 import { createModelAdapterFactory } from '../../../../ai/src/runtime/providers/model-adapter.js'
 import { modelFixture } from '../../../../ai/test/runtime/model-fixture.js'
-import { referenceModelFixture } from '../../../../ai/test/runtime/reference-model-fixture.js'
 import { stableId } from '../../../src/runtime/state/records.js'
 import { RuntimeStateDatabase } from '../../../src/runtime/state/transactions.js'
 import {

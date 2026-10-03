@@ -438,6 +438,7 @@ function isPublicTestkitPath(rel: string): boolean {
 function testkitImportAllowed(rel: string): boolean {
   return (
     isTestFile(rel) ||
+    /^packages\/[^/]+\/test\//.test(rel) ||
     rel.endsWith('.test-d.ts') ||
     rel.split('/').includes('examples') ||
     rel.startsWith('tools/acceptance/')
@@ -885,6 +886,8 @@ describe('test fixtures stay out of product source', () => {
           "import { createRestrictedEffectsFixture } from '../../../packages/extension-api/testkit/index.js'\n",
         'packages/cli/test/main.test.ts':
           "import { createTestServiceContainer } from '@agnes/extension-api/testkit'\n",
+        'packages/cli/test/helper.ts':
+          "import { createTestServiceContainer } from '@agnes/extension-api/testkit'\n",
       },
       (base) => {
         const problems = testkitProblems(base)
@@ -895,6 +898,7 @@ describe('test fixtures stay out of product source', () => {
         expect(text).not.toContain('examples/demo/src/main.ts')
         expect(text).not.toContain('tools/acceptance/runtime/run.ts')
         expect(text).not.toContain('main.test.ts')
+        expect(text).not.toContain('packages/cli/test/helper.ts')
       },
     )
   })
