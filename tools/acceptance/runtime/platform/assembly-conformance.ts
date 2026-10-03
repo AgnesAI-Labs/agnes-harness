@@ -91,6 +91,7 @@ export async function bindConformance(
     readonly contracts: readonly string[] | 'all'
     readonly providers: readonly string[]
   },
+  part: 'all' | 'plan' | 'prepare' | 'publish' | 'admission' = 'all',
 ): Promise<{ readonly contracts: readonly string[]; readonly providers: readonly string[] }> {
   if (request.contracts !== 'all' && !request.contracts.includes('agh.assembly'))
     return { contracts: [], providers: [] }
@@ -149,25 +150,27 @@ export async function bindConformance(
       lifecycle: memoryAssemblyLifecycle,
       construct: providerId === 'default' ? constructReleaseSet : constructReferenceReleaseSet,
     }
-    registerAssemblyPlanContract(harness, binding)
-    registerAssemblyPrepareContract(harness, binding)
-    registerAssemblyPublishContract(harness, { ...publicationBinding, providerDigest })
-    registerAssemblyAdmissionContract(harness, {
-      ...admissionTestBinding(providerId as 'default' | 'reference', admissionFixtureInput()),
-      command: request.command,
-      providerDigest: hash(
-        providerId === 'default'
-          ? [
-              'packages/host/src/runtime/assembly/admission.ts',
-              'packages/host/src/runtime/assembly/admission-ticket.ts',
-            ]
-          : [
-              'examples/runtime-reference/src/providers/assembly-admission-coordinator.ts',
-              'examples/runtime-reference/src/providers/assembly-admission.ts',
-            ],
-      ),
-      build: getConformanceBuildIdentity(),
-    })
+    if (part === 'all' || part === 'plan') registerAssemblyPlanContract(harness, binding)
+    if (part === 'all' || part === 'prepare') registerAssemblyPrepareContract(harness, binding)
+    if (part === 'all' || part === 'publish')
+      registerAssemblyPublishContract(harness, { ...publicationBinding, providerDigest })
+    if (part === 'all' || part === 'admission')
+      registerAssemblyAdmissionContract(harness, {
+        ...admissionTestBinding(providerId as 'default' | 'reference', admissionFixtureInput()),
+        command: request.command,
+        providerDigest: hash(
+          providerId === 'default'
+            ? [
+                'packages/host/src/runtime/assembly/admission.ts',
+                'packages/host/src/runtime/assembly/admission-ticket.ts',
+              ]
+            : [
+                'examples/runtime-reference/src/providers/assembly-admission-coordinator.ts',
+                'examples/runtime-reference/src/providers/assembly-admission.ts',
+              ],
+        ),
+        build: getConformanceBuildIdentity(),
+      })
   }
   return { contracts: ['agh.assembly'], providers }
 }
