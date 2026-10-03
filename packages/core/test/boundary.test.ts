@@ -29,10 +29,56 @@ const EXT_VALUE_ALLOWED = new Set([
   'extEventType',
   'unavailableProjections', // authority-free default; Host supplies the scoped invocation reader
 ])
+// The built-in Budget config uses the same generated AuthorSchema registry as authored configs.
+// Keep this exception on its one declaration file; it does not admit other Core value imports.
+const BUDGET_AUTHOR_SCHEMA_FILE = join(src, 'runtime', 'budget', 'config.ts')
+const ACCOUNTING_AUTHOR_SCHEMA_FILE = join(src, 'runtime', 'providers', 'accounting.ts')
+function allowedExtensionValue(file: string, module: string, name: string): boolean {
+  if (EXT_VALUE_ALLOWED.has(name)) return true
+  if (module !== '@agnes/extension-api/runtime') return false
+  return (
+    (file === BUDGET_AUTHOR_SCHEMA_FILE && name === 'defineGeneratedAuthorSchema') ||
+    (file === ACCOUNTING_AUTHOR_SCHEMA_FILE && name === 'assertAuthorSchema')
+  )
+}
 
 describe('core src boundary', () => {
   it('found source files to scan', () => {
     expect(files.length).toBeGreaterThan(5)
+  })
+
+  it('limits generated author schema value imports to their two owners', () => {
+    expect(
+      allowedExtensionValue(
+        BUDGET_AUTHOR_SCHEMA_FILE,
+        '@agnes/extension-api/runtime',
+        'defineGeneratedAuthorSchema',
+      ),
+    ).toBe(true)
+    expect(
+      allowedExtensionValue(
+        ACCOUNTING_AUTHOR_SCHEMA_FILE,
+        '@agnes/extension-api/runtime',
+        'assertAuthorSchema',
+      ),
+    ).toBe(true)
+    expect(
+      allowedExtensionValue(
+        ACCOUNTING_AUTHOR_SCHEMA_FILE,
+        '@agnes/extension-api/runtime',
+        'defineGeneratedAuthorSchema',
+      ),
+    ).toBe(false)
+    expect(
+      allowedExtensionValue(BUDGET_AUTHOR_SCHEMA_FILE, '@agnes/extension-api/runtime', 'assertAuthorSchema'),
+    ).toBe(false)
+    expect(
+      allowedExtensionValue(
+        BUDGET_AUTHOR_SCHEMA_FILE,
+        '@agnes/extension-api/runtime/authoring',
+        'defineGeneratedAuthorSchema',
+      ),
+    ).toBe(false)
   })
 
   it('imports only @agnes/protocol, plus a named allowlist from @agnes/extension-api', () => {
@@ -42,16 +88,15 @@ describe('core src boundary', () => {
       expect(nodeImports, f).toEqual(nodeImports.filter((specifier) => specifier === 'node:util'))
       expect(text, f).not.toMatch(/from ['"]@agnes\/(ai|host|base|code|daemon|sdk|cli|channels|bridges)/)
       for (const m of text.matchAll(
-        /(?<!type )import\s*\{([^}]*)\}\s*from ['"]@agnes\/extension-api[^'"]*['"]/g,
+        /(?<!type )import\s*\{([^}]*)\}\s*from ['"](@agnes\/extension-api[^'"]*)['"]/g,
       )) {
         for (const raw of (m[1] as string).split(',')) {
           const spec = raw.trim()
           if (spec === '') continue
           if (spec.startsWith('type ')) continue
           const name = (spec.split(/\s+as\s+/)[0] as string).trim()
-          expect(EXT_VALUE_ALLOWED.has(name), `${f}: value import ${name} from @agnes/extension-api`).toBe(
-            true,
-          )
+          const allowed = allowedExtensionValue(f, m[2] as string, name)
+          expect(allowed, `${f}: value import ${name} from @agnes/extension-api`).toBe(true)
         }
       }
       expect(text, f).not.toMatch(/pi-ai/)
