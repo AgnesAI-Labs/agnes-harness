@@ -5769,7 +5769,9 @@ body.admin-page {
   grid-column: 1 / -1;
 }
 :is(#config-form, #account-dialog) input,
-:is(#config-form, #account-dialog) select {
+:is(#config-form, #account-dialog) select,
+:is(#config-form, #account-dialog) .select-picker-trigger {
+  height: var(--control-height-form);
   min-height: var(--control-height-form);
   padding: 0.625rem 0.75rem;
   border-color: var(--agnes-input-border);
@@ -5845,6 +5847,10 @@ body.admin-page {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 1rem;
+}
+:is(#config-form, #account-dialog) .config-validation-controls > #config-test {
+  height: var(--control-height-form);
+  min-height: var(--control-height-form);
 }
 :is(#config-form, #account-dialog) .config-validation-section #config-state,
 :is(#config-form, #account-dialog) .config-validation-section #config-error {

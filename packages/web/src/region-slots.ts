@@ -373,14 +373,17 @@ export function mountSettingsPaneRegion(
   }
   const handle = { current: null as SettingsRegionHandle | null }
   const root = createAntdRoot(container)
-  flushSync(() => {
-    root.render(
-      createElement(SettingsBuiltin, {
-        ref: handle,
-        options: locale ? { ...options, translate: (key: string) => locale.t(key) } : options,
-      }),
-    )
-  })
+  const renderSettingsShell = (): void => {
+    flushSync(() => {
+      root.render(
+        createElement(SettingsBuiltin, {
+          ref: handle,
+          options: locale ? { ...options, translate: (key: string) => locale.t(key) } : options,
+        }),
+      )
+    })
+  }
+  renderSettingsShell()
   const dshRoots = new Map<string, AntdRoot>()
   const dshPaneSlots = new Map<SettingsPane, string[]>()
   const mountDshOutlet = (name: string, host: HTMLElement, pane?: SettingsPane): void => {
@@ -447,6 +450,7 @@ export function mountSettingsPaneRegion(
   translateSettingsMarkup()
   const stopLocaleUpdates = locale?.subscribe(() => {
     translateSettingsMarkup()
+    renderSettingsShell()
     const modelRoot = paneRoots.get('model')
     if (!modelRoot) return
     flushSync(() => {
