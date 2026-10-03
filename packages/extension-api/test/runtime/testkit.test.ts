@@ -897,6 +897,26 @@ describe('conformance harness', () => {
   })
 })
 
+describe('absent provider diagnostics', () => {
+  it('names the missing binding instead of the reference file for other providers', async () => {
+    const report = await createConformanceHarness().run({
+      contracts: ['agh.context'],
+      providers: ['default'],
+      command: 'conformance',
+      clock,
+    })
+    expect(report.assertions[0]).toMatchObject({
+      providerId: 'default',
+      providerDigest: PROVIDER_ABSENT,
+      recipe: 'binding for provider default',
+    })
+    expect(report.failures).toContainEqual({
+      code: 'missing-evidence',
+      detail: 'required agh.context missing binding for provider default',
+    })
+  })
+})
+
 describe('restricted legacy fixtures', () => {
   it('keeps fault points and does not treat structure as behavior', () => {
     expect(LEGACY_FIXTURES.map((item) => item.name)).toEqual([

@@ -280,6 +280,11 @@ const ABSENT_REUSE: EvidenceReuse = {
   undeclaredConnection: false,
 }
 
+// Only the reference provider has a conventional file; any other provider is missing its binding.
+function absentRecipe(contract: string, providerId: string): string {
+  return providerId === 'reference' ? providerFileForContract(contract) : `binding for provider ${providerId}`
+}
+
 function absentAssertion(
   contract: string,
   providerId: string,
@@ -293,7 +298,7 @@ function absentAssertion(
     qualification: 'required',
     providerId,
     providerDigest: PROVIDER_ABSENT,
-    recipe: providerFileForContract(contract),
+    recipe: absentRecipe(contract, providerId),
     features: [],
     build,
     consumer: 'unregistered',

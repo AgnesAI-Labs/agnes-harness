@@ -1464,7 +1464,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Preserve case failure diagnostics and record unsupported authority directory scenarios. Exact count.
   // Shell contract cases join the contract aggregate. Measured 7741, exact, no spare.
   // Staged candidate preparation cases: measured 7896, exact, no spare.
-  'packages/extension-api/testkit': 7896,
+  // Absent non-reference providers name their missing binding. Measured 7899, exact, no spare.
+  'packages/extension-api/testkit': 7899,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
