@@ -15,12 +15,25 @@
     "runtime/report.test.ts",
     "runtime/fixtures.ts",
     "runtime/run-conformance.ts",
-    "runtime/sources.ts"
+    "runtime/sources.ts",
+    "runtime/platform/assembly-conformance.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
   "references": [
-    { "path": "../../packages/extension-api" },
-    { "path": "../../packages/plugin-runtime" },
-    { "path": "../../packages/protocol" }
+    {
+      "path": "../../packages/extension-api"
+    },
+    {
+      "path": "../../packages/plugin-runtime"
+    },
+    {
+      "path": "../../packages/protocol"
+    },
+    {
+      "path": "../../packages/host"
+    },
+    {
+      "path": "../../examples/runtime-reference"
+    }
   ]
 }
