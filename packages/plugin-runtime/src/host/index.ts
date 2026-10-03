@@ -70,10 +70,15 @@ export type {
   CommunityContractDefinition,
   CommunityContractRef,
   CommunityOperation,
+  CommunityProviderMetadata,
   ContractCapability,
   ContractSchemaRef,
 } from '../runtime/community-contract.js'
-export { communityDefinitionDigest, isCommunityContractName } from '../runtime/community-contract.js'
+export {
+  assertCommunityContracts,
+  communityDefinitionDigest,
+  isCommunityContractName,
+} from '../runtime/community-contract.js'
 export type {
   AssemblyPlan,
   AssemblyProvider,

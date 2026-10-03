@@ -65,9 +65,21 @@ export function communityDefinitionDigest(definition: CommunityContractDefinitio
   return createHash('sha256').update(canonicalJson(definition)).digest('hex')
 }
 
+export type CommunityProviderMetadata = Pick<
+  AssemblyProvider,
+  | 'providerId'
+  | 'contract'
+  | 'major'
+  | 'logicalName'
+  | 'scope'
+  | 'features'
+  | 'operations'
+  | 'contractDefinition'
+> & { readonly requires: readonly Omit<ServiceRequirement, 'capture'>[] }
+
 export function assertCommunityContracts(
   contracts: readonly CommunityContractDefinition[],
-  providers: readonly AssemblyProvider[],
+  providers: readonly CommunityProviderMetadata[],
 ): void {
   const catalog = indexCatalog(contracts)
   for (const provider of providers) {
@@ -110,9 +122,9 @@ export function assertCommunityContracts(
 }
 
 function assertRequirement(
-  requirement: ServiceRequirement,
-  provider: AssemblyProvider,
-  providers: readonly AssemblyProvider[],
+  requirement: Omit<ServiceRequirement, 'capture'>,
+  provider: CommunityProviderMetadata,
+  providers: readonly CommunityProviderMetadata[],
   catalog: ReadonlyMap<string, CommunityContractDefinition>,
 ): void {
   if (isOfficialContract(requirement.contract)) {

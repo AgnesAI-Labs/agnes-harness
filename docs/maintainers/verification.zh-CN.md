@@ -61,6 +61,17 @@ pnpm exec vitest run packages/host/test/runtime/network-secrets.test.ts packages
 
 默认 refresh 与 exchange 需要部署侧受限效果端口。刷新身份和凭据锁跨崩溃保留；缺少证据返回 unknown，不重发旋转 token。回调授权码仅进入短期、单次使用的加密 escrow；exchange 可以为 `initialVersion: null` 的目录项安装首次凭据。Reference OAuth 能力明确登记为未声明，返回 incompatible/unsupported。材料扫描覆盖 broker 持久化和诊断结果；凭据来源存储不写入 broker 元数据库。
 
+## 脱离启动路径的发布计划检查
+
+[Host 装配计划提供方](../../packages/host/src/runtime/providers/assembly.ts)和[独立 reference](../../examples/runtime-reference/src/providers/assembly.ts)从固定计划、有效配置、包解析结果及公开 fixture 构造不可变发布锁。检查覆盖内容身份、依赖、schema 与恢复引用、必需 UI bundle、权限差异、joint-dispatch 声明和迁移前置证据。
+
+```sh
+pnpm exec tsx tools/acceptance/runtime/run-conformance.ts --contracts agh.assembly --providers default,reference
+pnpm exec vitest run packages/host/test/runtime/assembly.test.ts --maxWorkers=1
+```
+
+可执行符合性覆盖仅有 plan 选择、成功构造和拒绝用例。准备、发布、drain、准入与冷恢复仍未完成；提供方未登记到普通启动路径。UI manifest、包权限请求与维护提交观察均明确使用合成 fixture，生产输入适配器尚未交付。Blob 引用只从固定 fixture 内容解析，并校验摘要和字节数；不读取 latest 文档、不调用迁移方法、不接触发布权威。
+
 ## 记录验证结果
 
 每次验收记录源码 revision、OS/架构、Node/pnpm 版本、执行命令，以及通过、失败和跳过数量。修复后采用定向回归时注明覆盖范围，不将它描述成一次全仓重跑。

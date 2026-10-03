@@ -218,7 +218,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // lines, tightened to the exact measurement). Re-measured with this guard's countLines(): 1992.
   // Fixed Cordis generation assembly, one hook snapshot, and community contract binding.
   // Re-measured with this guard's countLines(): 4117, exact cap, no spare.
-  'packages/plugin-runtime/src': 4117,
+  // Detached release planning: measured 4133, exact, no spare.
+  'packages/plugin-runtime/src': 4133,
   'packages/cosmokit/src': 483,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.
@@ -1454,7 +1455,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI registry contract cases join the contract aggregate. Measured 5728, exact, no spare.
   // The UI registry bindings share one client restart helper there. Measured 5771, exact, no spare.
   // UI registry recover no longer judges the stand-in host's handles. Measured 5761, exact, no spare.
-  'packages/extension-api/testkit': 5761,
+  // Detached release planning: measured 6849, exact, no spare.
+  'packages/extension-api/testkit': 6849,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2655,7 +2657,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Constrained network and secret providers. Measured 63169, exact, no spare.
   // Default interaction provider over the State approval entries. Measured 63248, exact, no spare (+79).
   // The executor reports a cancel that came first as the cause, not a timeout (exec, exec-win32). Measured 38306 (+9), exact cap.
-  'packages/host/src': 63470,
+  // Detached release planning: measured 64517, exact, no spare.
+  'packages/host/src': 64517,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

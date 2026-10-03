@@ -73,6 +73,17 @@ Default refresh and exchange require deployment-owned restricted effect ports. R
 
 <a id="记录验证结果"></a>
 
+## Detached release planning checks
+
+The [Host assembly planner](../../packages/host/src/runtime/providers/assembly.ts) and [independent reference](../../examples/runtime-reference/src/providers/assembly.ts) construct immutable release locks from fixed plans, effective configuration, package resolution and public fixtures. The checks cover content identity, dependencies, schema and recovery references, required UI bundles, permission differences, joint-dispatch declarations and prerequisite migration evidence.
+
+```sh
+pnpm exec tsx tools/acceptance/runtime/run-conformance.ts --contracts agh.assembly --providers default,reference
+pnpm exec vitest run packages/host/test/runtime/assembly.test.ts --maxWorkers=1
+```
+
+Only plan selection, successful planning and refusal cases are executable conformance coverage. Preparation, publication, drain, admission and cold recovery remain unfinished. The planners are not registered in ordinary startup. UI manifests, package permission requests and maintenance commit observations are explicitly synthetic fixtures; their production input adapters are not delivered. Blob references resolve only against fixed fixture content, with digest and byte-count checks. No latest document, migration method or publication authority is accessed.
+
 ## Record results
 
 For each acceptance run, record source revision, OS/architecture, Node/pnpm versions, commands, and passed/failed/skipped counts. If fixes are followed by focused regression tests, state their coverage without presenting them as another full-suite run.
