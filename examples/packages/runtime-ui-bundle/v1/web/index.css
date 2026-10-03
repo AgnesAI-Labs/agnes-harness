@@ -1,0 +1,6 @@
+/* Declared in clientAssets.styles; the client loads it with the web entry. */
+:root {
+  --example-status-card-ok: #1a7f37;
+  --example-status-card-warning: #9a6700;
+  --example-status-card-error: #cf222e;
+}

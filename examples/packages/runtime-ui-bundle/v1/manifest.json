@@ -1,0 +1,84 @@
+{
+  "$schema": "https://agnes.ai/schema/runtime/v1/plugin-manifest.schema.json",
+  "kind": "agh.plugin",
+  "schemaVersion": "1.0",
+  "id": "example.runtime-ui-bundle",
+  "version": "1.0.0",
+  "runtimeApiMajor": 1,
+  "packageDigest": "c94d97171c283376381d9be40e83a8d93c5a7375615e759a1fb2ce6e32eb1179",
+  "entries": {
+    "web": "./web/index.js"
+  },
+  "schemas": [
+    {
+      "ref": {
+        "typeId": "example.runtime-ui-bundle/status-card@1",
+        "revision": 1,
+        "digest": "d02ddc188473b8c3681a6bf1319d0c744be73884a08e630f588431308b0209af"
+      },
+      "path": "./schemas/status-card.schema.json"
+    }
+  ],
+  "providers": [],
+  "domains": [],
+  "tools": [],
+  "renderers": [
+    {
+      "id": "example.runtime-ui-bundle/status-card.web",
+      "packageDigest": "c94d97171c283376381d9be40e83a8d93c5a7375615e759a1fb2ce6e32eb1179",
+      "renderKey": "example.status-card",
+      "targets": ["web"],
+      "viewSchemaRanges": [
+        {
+          "typeId": "example.runtime-ui-bundle/status-card@1",
+          "minRevision": 1,
+          "maxRevision": 1
+        }
+      ],
+      "requiredFeatures": [],
+      "optionalFeatures": [],
+      "scope": "view",
+      "entry": "./web/index.js"
+    }
+  ],
+  "permissions": {
+    "runtime": [],
+    "web": [],
+    "tui": [],
+    "im": [],
+    "sdk": []
+  },
+  "dependencies": [],
+  "files": [
+    {
+      "path": "./schemas/status-card.schema.json",
+      "digest": "d1a8241a7c40caef61ee7b2de19300ba08e376d0123f33d158632fc43bdac523",
+      "bytes": 408
+    },
+    {
+      "path": "./web/index.css",
+      "digest": "e0d58d4c7b5982a4d3f89933d7796fdc0418bee35edc737721201d65c1b28982",
+      "bytes": 208
+    },
+    {
+      "path": "./web/index.js",
+      "digest": "0c3504faf7cf1864ea722eefdcd44b9f3d8b90d82967e69fc873ce39d6852f5d",
+      "bytes": 452
+    }
+  ],
+  "build": {
+    "generatorVersion": "0.0.0",
+    "sourceDigest": "bf51c066ffe354feb035d6c0cddc294cb29b2a24dfb478ff3c921ebf5623f1c6",
+    "authorDefinitionDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "reproducible": false
+  },
+  "clientServices": [],
+  "clientAssets": {
+    "styles": [
+      {
+        "kind": "stylesheet",
+        "path": "./web/index.css"
+      }
+    ]
+  }
+}
