@@ -183,6 +183,7 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // See execution/2026-09-17-codex-oauth.md; no scan exclusions or spare budget added.
 // 2026-09-18 Computer Use PR integration: values touched by the two diverged histories were
 // remeasured against the resolved tree with this guard's own countLines() implementation.
+// Read-only migration planning, evidence verification and local testkit: exact measured allocations; no spare.
 const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
@@ -1469,7 +1470,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact measured MCP session contract and alphabetical export; no spare allocation.
   // Restricted installation proposal cases. Measured 8124, exact, no spare.
   // Billing and trace providers. Measured 8513, exact, no spare.
-  'packages/extension-api/testkit': 8513,
+  // Read-only migration planning and receipt verification. Measured 8929, exact, no spare.
+  'packages/extension-api/testkit': 8929,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2680,7 +2682,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // fence, probe and abort. Measured 65845 (+352), exact, no spare.
   // Billing and trace providers. Measured 66992, exact, no spare.
   // Bounded migration export index and intake spool. Measured 67840, exact, no spare.
-  'packages/host/src': 67840,
+  // Read-only migration planning and receipt verification. Measured 68546, exact, no spare.
+  'packages/host/src': 68546,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
