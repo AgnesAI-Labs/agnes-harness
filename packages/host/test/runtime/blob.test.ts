@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1055,7 +1055,7 @@ describe('default blob service authority copy', () => {
     expect(businessRows(targetDir)).toBe(world.fence.checkpoint.recordCount)
   })
 
-  it('refuses export chunks and assets whose bytes do not match their digest', async () => {
+  it('refuses export chunks and assets whose bytes do not match their digest, and parts that do not match their counts', async () => {
     const world = await exportedSource()
     const parts = await manifestParts(world)
     const chunks = new Set(parts.map(({ contentDigest }) => contentDigest))
@@ -1094,6 +1094,12 @@ describe('default blob service authority copy', () => {
     expect(ok(await target.transfer.import(request, MAINTAINER)).targetCheckpoint.snapshotDigest).toBe(
       world.fence.checkpoint.snapshotDigest,
     )
+    // The manifest's parts name five collections, so an export declaring other counts is refused.
+    for (const counts of [{ collectionCount: 4 }, { partCount: world.exported.partCount + 1 }]) {
+      const { target: other } = await candidate(world)
+      const forged = importRequest({ ...world.exported, ...counts })
+      expect(refused(await other.transfer.import(forged, MAINTAINER))).toBe('integrity')
+    }
   })
 
   it('fails verification for a row or content missing behind the import', async () => {
@@ -1226,6 +1232,18 @@ type BlobSuite = {
   blobContractPort(subject: object): unknown
   registerBlobContract(harness: ConformanceHarness, binding: object): void
 }
+type TransferSuite = {
+  TRANSFER_MAINTAINER: string
+  transferContractPort(subject: object): unknown
+  registerAuthorityTransferContract(harness: ConformanceHarness, contract: string, binding: object): void
+}
+type TransferStore = {
+  control(): AuthorityTransferControl
+  write(): Promise<string | null>
+  serves(): Promise<boolean>
+  reopen(): Promise<void>
+  close(): Promise<void>
+}
 
 const BUILD: BuildIdentity = {
   codeSha: 'host-test',
@@ -1237,12 +1255,142 @@ const BUILD: BuildIdentity = {
   platform: 'host-test-platform',
 }
 const fileDigest = (path: string) => sha(readFileSync(new URL(path, import.meta.url)))
+const CONFORMANCE_BINDING = { ...BINDING, logicalName: 'conformance', providerId: 'default' }
+
+/**
+ * Default blob worlds for the authority transfer suite: a source holding live, released and collected
+ * content and no upload still receiving bytes, so one of its tables exports no part; candidate targets
+ * in their own directories; and a directory holding the one published route of the blob authority.
+ */
+function blobTransferSubject(maintainer: string) {
+  return {
+    async open(maintained: boolean) {
+      const root = await fresh()
+      const directory: { route?: Wire.AuthorityRoute; targetActivated?: boolean } = {}
+      let cut: number | null = null
+      const lender: Pick<BlobReadPort, 'openRead'> = {
+        openRead: async (request, context) => {
+          if (cut === 0) return unavailable('lender_unavailable', 'the source stopped lending')
+          if (cut !== null) cut -= 1
+          return source.current().transferRead.openRead(request, context)
+        },
+      }
+      const fixture = (locationRef: string) =>
+        maintained
+          ? maintenance(directory, {
+              authorize: (context) => context.authorizationRef === maintainer,
+              locationRef,
+              sourceBlobs: lender,
+            })
+          : undefined
+      const seeded = { live: [] as [Wire.BlobRef, Uint8Array][], deleted: [] as Wire.BlobRef[] }
+      const store = (locationRef: string, target: boolean) => {
+        const dataDir = join(root, locationRef)
+        mkdirSync(dataDir, { recursive: true })
+        const start = () => open(dataDir, trusted, fixture(locationRef), target)
+        let current = start()
+        let writes = 0
+        return {
+          dataDir,
+          current: () => current,
+          control: () => current.transfer,
+          async write() {
+            const outcome = await current.stage({ ...newUpload, uploadId: `upload-write-${++writes}` }, ctx())
+            return outcome.ok ? null : outcome.error.detailCode
+          },
+          async serves() {
+            for (const [ref, bytes] of seeded.live) {
+              const read = await current.blobRead.readRange(
+                { ref, offset: 0, length: bytes.byteLength },
+                ctx(),
+              )
+              if (!read.ok || Buffer.compare(read.value.bytes, bytes) !== 0) return false
+            }
+            for (const ref of seeded.deleted) {
+              const read = await current.blobRead.readRange({ ref, offset: 0, length: 1 }, ctx())
+              if (read.ok || read.error.detailCode !== 'artifact_deleted') return false
+            }
+            return true
+          },
+          async reopen() {
+            current.close()
+            current = start()
+          },
+          close: async () => current.close(),
+        } satisfies TransferStore & { dataDir: string; current(): BlobService }
+      }
+      const source = store('location-1', false)
+      const stores = new Map([['location-1', source]])
+      const blob = source.current()
+      for (const [at, bytes] of [text('live bytes'), text('more live bytes')].entries())
+        seeded.live.push([await pinned(blob, bytes, `upload-live-${at}`), bytes])
+      const gone = await sealed(blob, 'upload-gone', text('collected bytes'))
+      const stagedBlob = ok(
+        await blob.promote({ upload: gone.upload, expectedDigest: gone.upload.digest }, ctx()),
+      )
+      const ownerRef: Wire.PublicRef = {
+        kind: 'artifact',
+        value: { artifactId: 'artifact-gone', version: 1 },
+      }
+      const collected = ok(await blob.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))
+      for (const pinId of [collected.pinId, gone.retention.pinId])
+        ok(await blob.unpin({ pinId, expectedRevision: 1 }, ctx()))
+      ok(await blob.gc({ scopeRef: scope(), dryRun: false, cursor: null, limit: 100 }, ctx()))
+      seeded.deleted.push(collected)
+      const configSchema = { typeId: 'agh.test/config@1', revision: 1, digest: 'c'.repeat(64) }
+      return {
+        descriptor: blobProviderDescriptor({
+          binding: CONFORMANCE_BINDING,
+          packageVersion: '1.0.0',
+          packageDigest: fileDigest('../../src/runtime/providers/blob.ts'),
+          configSchema,
+          ...(maintained ? { maintenance: maintenance(directory) } : {}),
+        }),
+        source,
+        authority: EXPECTED,
+        locationRef: 'location-1',
+        providerBinding: CONFORMANCE_BINDING,
+        async target(locationRef: string) {
+          const found = stores.get(locationRef) ?? store(locationRef, true)
+          stores.set(locationRef, found)
+          return found
+        },
+        publish(route: Wire.AuthorityRoute, targetActivated: boolean) {
+          directory.route = route
+          directory.targetActivated = targetActivated
+        },
+        cut(after: number | null) {
+          cut = after
+        },
+        // One hex letter changes, so the chunk still parses and only its digest tells.
+        async tamper(chunk: Wire.BlobRef) {
+          const file = contentFile(source.dataDir, chunk.digest)
+          const bytes = readFileSync(file)
+          const at = bytes.findIndex((byte) => byte >= 0x61 && byte <= 0x66)
+          if (at < 0) throw new Error('the chunk has no hex letter to change')
+          bytes[at] = bytes[at] === 0x61 ? 0x62 : 0x61
+          writeFileSync(file, bytes)
+        },
+        async damage(locationRef: string) {
+          sql(join(root, locationRef), 'UPDATE roots SET revision = revision + 1')
+        },
+        async dispose() {
+          for (const each of stores.values()) await each.close()
+          await rm(root, { recursive: true, force: true })
+        },
+      }
+    },
+  }
+}
 
 describe('default blob service: conformance', () => {
-  it('passes the shared blob suite in all six scenarios', async () => {
+  it('passes the shared blob suite and the authority transfer suite in all six scenarios', async () => {
     const suite = (await import(
       new URL('../../../extension-api/testkit/runtime/contracts/blob.ts', import.meta.url).href
     )) as BlobSuite
+    const transfer = (await import(
+      new URL('../../../extension-api/testkit/runtime/contracts/authority-transfer.ts', import.meta.url).href
+    )) as TransferSuite
     const dataDir = await fresh()
     const gate = suite.createBlobReadGate()
     const start = () =>
@@ -1269,7 +1417,7 @@ describe('default blob service: conformance', () => {
           scope: 'runtime',
           optional: false,
         },
-        binding: { ...BINDING, logicalName: 'conformance', providerId: 'default' },
+        binding: CONFORMANCE_BINDING,
         blobRead: current.blobRead,
       },
       gate,
@@ -1286,7 +1434,7 @@ describe('default blob service: conformance', () => {
       remains: () => existsSync(join(dataDir, 'artifacts', 'blob-service.db')),
     })
     const harness = createConformanceHarness()
-    suite.registerBlobContract(harness, {
+    const binding = {
       providerId: 'default',
       recipe: 'packages/host/src/runtime/providers/blob.ts',
       command: 'host-blob-conformance',
@@ -1294,7 +1442,11 @@ describe('default blob service: conformance', () => {
       providerDigest: fileDigest('../../src/runtime/providers/blob.ts'),
       configDigest: canonicalJsonDigest({ authorityId: 'blob-authority' }),
       releaseSetDigest: fileDigest('../../package.json'),
-      port,
+    }
+    suite.registerBlobContract(harness, { ...binding, port })
+    transfer.registerAuthorityTransferContract(harness, 'agh.blob', {
+      ...binding,
+      port: transfer.transferContractPort(blobTransferSubject(transfer.TRANSFER_MAINTAINER)),
     })
     try {
       const report = await harness.run({
@@ -1303,8 +1455,10 @@ describe('default blob service: conformance', () => {
         command: 'host-blob-conformance',
         clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
       })
-      expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
-        SCENARIOS.map((scenario) => [scenario, 'passed']),
+      expect(report.assertions.map((item) => [item.id, item.status])).toEqual(
+        ['', '/authority-transfer'].flatMap((name) =>
+          SCENARIOS.map((scenario) => [`agh.blob/default${name}/${scenario}`, 'passed']),
+        ),
       )
     } finally {
       shut()

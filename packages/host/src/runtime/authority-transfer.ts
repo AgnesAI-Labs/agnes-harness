@@ -1,11 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type {
-  AuthorityTransferControl,
-  BlobReadPort,
-  CallContext,
-  Outcome,
-} from '@agnes/extension-api/runtime'
+import type { BlobReadPort, CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import { type RuntimeErrorDetails, type RuntimeWireTypes, validateRuntime } from '@agnes/protocol/runtime'
@@ -33,9 +28,6 @@ export type TransferMaintenance = Readonly<{
   /** The verify request carries no plan fingerprint, so the maintenance assembly supplies it. */
   planFingerprint(upgradeId: Wire.Id, context: CallContext): Promise<Outcome<Wire.Digest>>
 }>
-
-/** The source side of an authority transfer, for a store that cannot export its rows yet. */
-export type AuthorityTransferSource = Pick<AuthorityTransferControl, 'fence' | 'probe' | 'abort'>
 
 export type AuthorityRole = 'serving' | 'fenced' | 'candidate' | 'aborted'
 
