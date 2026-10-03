@@ -1,8 +1,21 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
+
+const pathStyle = vi.hoisted(() => ({ separator: '/' }))
+vi.mock('node:path', async (importOriginal) => {
+  const path = await importOriginal<typeof import('node:path')>()
+  return {
+    ...path,
+    relative: (...args: Parameters<typeof path.relative>) =>
+      path
+        .relative(...args)
+        .replaceAll('\\', '/')
+        .replaceAll('/', pathStyle.separator),
+  }
+})
 
 const root = repoRoot()
 const factory = 'createHostScopedDependencies'
@@ -26,17 +39,21 @@ function constructions(source: string) {
 }
 
 describe('Host selected service construction', () => {
-  it('constructs the fixed service root exactly once in product source, in Host assembly', () => {
-    const calls: string[] = []
-    for (const file of listSourceFiles(join(root, 'packages'))) {
-      const path = relative(root, file)
-      if (!path.includes('/src/') || isTestFile(path)) continue
-      const found = constructions(readFileSync(file, 'utf8'))
-      expect(found.aliases, `${path}: do not alias the service construction factory`).toEqual([])
-      calls.push(...found.calls.map(() => path))
-    }
-    expect(calls).toEqual(['packages/host/src/assemble.ts'])
-  })
+  it.each(['/', '\\'])(
+    'constructs the fixed service root exactly once in product source, in Host assembly (%s)',
+    (separator) => {
+      pathStyle.separator = separator
+      const calls: string[] = []
+      for (const file of listSourceFiles(join(root, 'packages'))) {
+        const path = relative(root, file).replaceAll('\\', '/')
+        if (!path.includes('/src/') || isTestFile(path)) continue
+        const found = constructions(readFileSync(file, 'utf8'))
+        expect(found.aliases, `${path}: do not alias the service construction factory`).toEqual([])
+        calls.push(...found.calls.map(() => path))
+      }
+      expect(calls).toEqual(['packages/host/src/assemble.ts'])
+    },
+  )
 
   it('pins the bundled default provider source identity without claiming a release lock', () => {
     const directory = join(root, 'packages/package-manager')

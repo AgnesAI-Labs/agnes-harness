@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createFilesService,
   type FilesService,
@@ -41,8 +41,32 @@ function sharedFraction(left: Set<string>, right: Set<string>): number {
   return shared / smaller
 }
 
+const durability = vi.hoisted(() => ({ fail: false, recoverFail: false }))
+vi.mock('@agnes/system-node', async (importOriginal) => {
+  const system = await importOriginal<typeof import('@agnes/system-node')>()
+  return {
+    ...system,
+    syncDirectory: async (...args: Parameters<typeof system.syncDirectory>) => {
+      if (durability.recoverFail) throw new Error('Injected recovery flush failure')
+      await system.syncDirectory(...args)
+    },
+    renameWriteThrough: async (...args: Parameters<typeof system.renameWriteThrough>) => {
+      await system.renameWriteThrough(...args)
+      if (durability.fail) {
+        durability.fail = false
+        durability.recoverFail = false
+        throw new Error('Injected publication flush failure')
+      }
+    },
+  }
+})
+
 const roots: string[] = []
+const disposals: (() => void)[] = []
 afterEach(() => {
+  durability.fail = false
+  durability.recoverFail = false
+  for (const dispose of disposals.splice(0).reverse()) dispose()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -149,6 +173,7 @@ async function side(kind: 'default' | 'reference', hooks?: { lose?: boolean }): 
   mkdirSync(data)
   if (kind === 'default') {
     const store = openWorkspaceStore({ directory: join(directory, 'store') })
+    disposals.push(() => store.close())
     const workspace = createWorkspaceService({ store, authorityId: 'authority-1', tenantId: 'tenant-1' })
     const files = createFilesService({
       store,
@@ -174,6 +199,7 @@ async function side(kind: 'default' | 'reference', hooks?: { lose?: boolean }): 
       close: () => {
         files.close()
         workspace.close()
+        store.close()
       },
     }
   }
@@ -335,108 +361,129 @@ describe('reference workspace and file providers', () => {
     ])
   })
 
-  it('replays one lost write from the journal and keeps the directory after close', async () => {
-    const directory = scratch()
-    const work = join(directory, 'work')
-    mkdirSync(work)
-    const desk = openReferenceDesk(join(directory, 'store'))
-    const workspace = createReferenceWorkspace({ desk, authorityId: 'authority-1', tenantId: 'tenant-1' })
-    const files = createReferenceFiles({
-      desk,
-      authorityId: 'authority-1',
-      policy: policy(),
-      places: { home: work, data: work },
-      stall: 'landed',
-    })
-    expect((await workspace.bind('ws-1', work)).ok).toBe(true)
-    const acquired = await workspace.acquire(
-      { workspaceId: 'ws-1', mode: 'write', expectedRevision: null },
-      call(),
-    )
-    expect(acquired.ok).toBe(true)
-    if (!acquired.ok) return
-    const staged = await files.stageBytes(Buffer.from('durable'))
-    expect(staged.ok).toBe(true)
-    if (!staged.ok) return
-    const context = call()
-    const lost = await files.write(
-      {
-        mountRef: acquired.value.mountRef,
-        path: 'notes.txt',
-        bytesRef: staged.value,
-        expectedVersion: { kind: 'absent' },
-      },
-      context,
-    )
-    expect(detail(lost)).toBe('effect_unknown')
-    if (!lost.ok) expect(lost.error.retryAdvice.kind).toBe('reconcile')
-    files.close()
-    workspace.close()
-    desk.close()
-    const reopened = openReferenceDesk(join(directory, 'store'))
-    const againWorkspace = createReferenceWorkspace({
-      desk: reopened,
-      authorityId: 'authority-1',
-      tenantId: 'tenant-1',
-    })
-    const againFiles = createReferenceFiles({
-      desk: reopened,
-      authorityId: 'authority-1',
-      policy: policy(),
-      places: { home: work, data: work },
-    })
-    const recovered = await againFiles.write(
-      {
-        mountRef: acquired.value.mountRef,
-        path: 'notes.txt',
-        bytesRef: staged.value,
-        expectedVersion: { kind: 'absent' },
-      },
-      context,
-    )
-    expect(recovered.ok && recovered.value.version).toBe(1)
-    const other = await againFiles.stageBytes(Buffer.from('other'))
-    expect(other.ok).toBe(true)
-    if (!other.ok) return
-    expect(
-      detail(
-        await againFiles.write(
-          {
-            mountRef: acquired.value.mountRef,
-            path: 'notes.txt',
-            bytesRef: other.value,
-            expectedVersion: { kind: 'exact', revision: 1 },
-          },
-          context,
+  it.each(['response', 'flush'])(
+    'replays a lost %s from the journal and keeps the directory after close',
+    async (failure) => {
+      const directory = scratch()
+      const work = join(directory, 'work')
+      mkdirSync(work)
+      const desk = openReferenceDesk(join(directory, 'store'))
+      const workspace = createReferenceWorkspace({ desk, authorityId: 'authority-1', tenantId: 'tenant-1' })
+      const files = createReferenceFiles({
+        desk,
+        authorityId: 'authority-1',
+        policy: policy(),
+        places: { home: work, data: work },
+        ...(failure === 'response' ? { stall: 'landed' as const } : {}),
+      })
+      expect((await workspace.bind('ws-1', work)).ok).toBe(true)
+      const acquired = await workspace.acquire(
+        { workspaceId: 'ws-1', mode: 'write', expectedRevision: null },
+        call(),
+      )
+      expect(acquired.ok).toBe(true)
+      if (!acquired.ok) return
+      const staged = await files.stageBytes(Buffer.from('durable'))
+      expect(staged.ok).toBe(true)
+      if (!staged.ok) return
+      durability.fail = failure === 'flush'
+      const context = call()
+      const lost = await files.write(
+        {
+          mountRef: acquired.value.mountRef,
+          path: 'notes.txt',
+          bytesRef: staged.value,
+          expectedVersion: { kind: 'absent' },
+        },
+        context,
+      )
+      expect(detail(lost)).toBe('effect_unknown')
+      if (!lost.ok) expect(lost.error.retryAdvice.kind).toBe('reconcile')
+      files.close()
+      workspace.close()
+      desk.close()
+      const reopened = openReferenceDesk(join(directory, 'store'))
+      const againWorkspace = createReferenceWorkspace({
+        desk: reopened,
+        authorityId: 'authority-1',
+        tenantId: 'tenant-1',
+      })
+      const againFiles = createReferenceFiles({
+        desk: reopened,
+        authorityId: 'authority-1',
+        policy: policy(),
+        places: { home: work, data: work },
+      })
+      if (failure === 'flush') {
+        durability.recoverFail = true
+        expect(
+          detail(
+            await againFiles.write(
+              {
+                mountRef: acquired.value.mountRef,
+                path: 'notes.txt',
+                bytesRef: staged.value,
+                expectedVersion: { kind: 'absent' },
+              },
+              context,
+            ),
+          ),
+        ).toBe('effect_unknown')
+        durability.recoverFail = false
+      }
+      const recovered = await againFiles.write(
+        {
+          mountRef: acquired.value.mountRef,
+          path: 'notes.txt',
+          bytesRef: staged.value,
+          expectedVersion: { kind: 'absent' },
+        },
+        context,
+      )
+      expect(recovered.ok && recovered.value.version).toBe(1)
+      const other = await againFiles.stageBytes(Buffer.from('other'))
+      expect(other.ok).toBe(true)
+      if (!other.ok) return
+      expect(
+        detail(
+          await againFiles.write(
+            {
+              mountRef: acquired.value.mountRef,
+              path: 'notes.txt',
+              bytesRef: other.value,
+              expectedVersion: { kind: 'exact', revision: 1 },
+            },
+            context,
+          ),
         ),
-      ),
-    ).toBe('idempotency_conflict')
-    expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('durable')
-    againFiles.close()
-    againWorkspace.close()
-    reopened.close()
-    expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('durable')
-    const remote = createReferenceFiles({
-      desk: openReferenceDesk(join(directory, 'remote')),
-      authorityId: 'authority-1',
-      policy: policy(),
-      places: { home: work, data: work },
-      remote: true,
-    })
-    expect(detail(await remote.authorityFence({}, call()))).toBe('unsupported')
-    expect(
-      detail(
-        await remote.write(
-          {
-            mountRef: acquired.value.mountRef,
-            path: 'notes.txt',
-            bytesRef: staged.value,
-            expectedVersion: { kind: 'exact', revision: 1 },
-          },
-          call(),
+      ).toBe('idempotency_conflict')
+      expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('durable')
+      againFiles.close()
+      againWorkspace.close()
+      reopened.close()
+      expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('durable')
+      const remote = createReferenceFiles({
+        desk: openReferenceDesk(join(directory, 'remote')),
+        authorityId: 'authority-1',
+        policy: policy(),
+        places: { home: work, data: work },
+        remote: true,
+      })
+      expect(detail(await remote.authorityFence({}, call()))).toBe('unsupported')
+      expect(
+        detail(
+          await remote.write(
+            {
+              mountRef: acquired.value.mountRef,
+              path: 'notes.txt',
+              bytesRef: staged.value,
+              expectedVersion: { kind: 'exact', revision: 1 },
+            },
+            call(),
+          ),
         ),
-      ),
-    ).toBe('unsupported')
-    remote.close()
-  })
+      ).toBe('unsupported')
+      remote.close()
+    },
+  )
 })

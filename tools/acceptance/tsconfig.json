@@ -13,6 +13,7 @@
     "runtime/record-baseline-inventory.ts",
     "runtime/report.ts",
     "runtime/report.test.ts",
+    "runtime/report.e2e.test.ts",
     "runtime/fixtures.ts",
     "runtime/fixtures/resources-cold-process.ts",
     "runtime/build-identity.ts",

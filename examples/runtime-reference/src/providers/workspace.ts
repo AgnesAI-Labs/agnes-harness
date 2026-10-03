@@ -10,6 +10,7 @@ import {
   type RuntimeWireTypes,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { syncDirectorySync } from '@agnes/system-node'
 
 export const REFERENCE_WORKSPACE_CONTRACT = 'agh.workspace'
 export const REFERENCE_WORKSPACE_PROVIDER_ID = 'agh.reference/workspace'
@@ -67,12 +68,7 @@ export function openReferenceDesk(directory: string, now: () => number = () => D
   if (!existsSync(file)) {
     const created = openSync(file, 'w')
     closeSync(created)
-    const parent = openSync(directory, 'r')
-    try {
-      fsyncSync(parent)
-    } finally {
-      closeSync(parent)
-    }
+    syncDirectorySync(directory)
   }
   const lines = readFileSync(file, 'utf8')
     .split('\n')

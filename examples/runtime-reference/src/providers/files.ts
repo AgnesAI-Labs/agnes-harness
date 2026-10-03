@@ -1,21 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import {
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
+import { renameWriteThrough, syncDirectory } from '@agnes/system-node'
 import { admit, demand, fault, fold, Halt, type ReferenceDesk } from './workspace.js'
 
 export const REFERENCE_FILES_CONTRACT = 'agh.files'
@@ -428,6 +418,11 @@ export function createReferenceFiles(options: {
           if (prior.phase === 'landed' && prior.result) return demand('FilesWriteResult', prior.result)
           if (onDisk !== digest) throw new Halt('effect_unknown', 'effect is unknown')
           if (!prior.intent) throw new Halt('effect_unknown', 'effect is unknown')
+          try {
+            await syncDirectory(dirname(found.absolute), { noFollow: true })
+          } catch {
+            throw new Halt('effect_unknown', 'effect is unknown')
+          }
           options.desk.append('version', `${held.workspaceId}\0${body.path}`, {
             version: prior.version,
             digest,
@@ -485,16 +480,10 @@ export function createReferenceFiles(options: {
           } finally {
             await handle.close()
           }
-          await rename(partial, found.absolute)
-          const directory = await open(dirname(found.absolute), constants.O_RDONLY)
-          try {
-            await directory.sync()
-          } finally {
-            await directory.close()
-          }
-        } catch (error) {
+          await renameWriteThrough(partial, found.absolute, { noFollow: true })
+        } catch {
           await rm(partial, { force: true })
-          throw error
+          throw new Halt('effect_unknown', 'effect is unknown')
         }
         if (options.stall === 'landed') throw new Halt('effect_unknown', 'effect is unknown')
         options.desk.append('version', `${held.workspaceId}\0${body.path}`, { version, digest })

@@ -1,23 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import {
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import type { CheckpointSeam } from '@agnes/core'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
+import { renameWriteThrough, syncDirectory } from '@agnes/system-node'
 import {
   anyLiveLease,
   checked,
@@ -417,6 +407,11 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
           if (onDisk !== digest) throw new StoreFault('effect_unknown', 'effect is unknown')
           const intent = JSON.parse(prior.resultJson ?? 'null') as Intent | null
           if (!intent) throw new StoreFault('effect_unknown', 'effect is unknown')
+          try {
+            await syncDirectory(dirname(found.absolute), { noFollow: true })
+          } catch {
+            throw new StoreFault('effect_unknown', 'effect is unknown')
+          }
           putFileVersion(options.store, {
             workspaceId: held.workspaceId,
             path: body.path,
@@ -469,16 +464,10 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
           } finally {
             await handle.close()
           }
-          await rename(partial, found.absolute)
-          const directory = await open(dirname(found.absolute), constants.O_RDONLY)
-          try {
-            await directory.sync()
-          } finally {
-            await directory.close()
-          }
-        } catch (error) {
+          await renameWriteThrough(partial, found.absolute, { noFollow: true })
+        } catch {
           await rm(partial, { force: true })
-          throw error
+          throw new StoreFault('effect_unknown', 'effect is unknown')
         }
         try {
           options.afterDurableWrite?.()

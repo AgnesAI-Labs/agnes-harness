@@ -1,12 +1,32 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   identifyPackage,
   readPackageTree,
 } from '../../../../packages/package-manager/src/runtime/source-snapshot.ts'
 import { digestDirectory, digestMembers } from './local-tree.ts'
+
+const listing = vi.hoisted(() => ({ directory: '' }))
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...fs,
+    readdirSync: (...args: Parameters<typeof fs.readdirSync>) => {
+      if (String(args[0]) !== listing.directory) return fs.readdirSync(...args)
+      return typeof args[1] === 'object' && args[1]?.withFileTypes ? [{ name: 'a\\b.txt' }] : ['a\\b.txt']
+    },
+  }
+})
 
 const REFERENCE_FILES = ['local-tree.ts', 'package-source.ts', 'package-resolver.ts'] as const
 
@@ -90,7 +110,8 @@ describe('reference package providers', () => {
         join(escaped, 'pkg', 'manifest.json'),
         JSON.stringify({ id: 'acme.tools', version: '1.0.0' }),
       )
-      writeFileSync(join(escaped, 'pkg', 'a\\b.txt'), 'nope')
+      // Inject a nonportable directory entry: Windows treats the backslash as a separator.
+      listing.directory = realpathSync(join(escaped, 'pkg'))
       const defaultEscape = readPackageTree(join(escaped, 'pkg'))
       const referenceEscape = digestDirectory(join(escaped, 'pkg'))
       expect(defaultEscape.ok).toBe(false)
@@ -99,6 +120,7 @@ describe('reference package providers', () => {
       expect(referenceEscape.detailCode).toBe(defaultEscape.detailCode)
       expect(referenceEscape.detailCode).toBe('path_escape')
     } finally {
+      listing.directory = ''
       rmSync(root, { recursive: true, force: true })
       rmSync(linked, { recursive: true, force: true })
       rmSync(escaped, { recursive: true, force: true })

@@ -20,6 +20,7 @@ function hold(args: readonly string[]): Promise<string> {
     let stdout = ''
     let stderr = ''
     let settled = false
+    let lease: string | undefined
     const finish = (error?: Error, lease?: string) => {
       if (settled) return
       settled = true
@@ -41,18 +42,21 @@ function hold(args: readonly string[]): Promise<string> {
     errors.setEncoding('utf8')
     output.on('data', (chunk: string) => {
       stdout += chunk
-      if (!stdout.includes('READY\n')) return
+      if (lease !== undefined || !stdout.includes('READY\n')) return
       const match = stdout.match(/LEASE (.+)\n/)
+      lease = match?.[1]
       subprocess.kill('SIGKILL')
-      if (!match?.[1]) finish(new Error(`missing lease line\n${stdout}`))
-      else finish(undefined, match[1])
+      if (!lease) finish(new Error(`missing lease line\n${stdout}`))
     })
     errors.on('data', (chunk: string) => {
       stderr += chunk
     })
     subprocess.on('error', (error) => finish(error))
-    subprocess.on('exit', (code, signal) => {
-      if (signal === 'SIGKILL') return
+    subprocess.on('close', (code, signal) => {
+      if (signal === 'SIGKILL' && lease !== undefined) {
+        finish(undefined, lease)
+        return
+      }
       finish(new Error(`ownership child exited ${code ?? 'null'}\n${stderr}\n${stdout}`))
     })
   })
@@ -76,12 +80,14 @@ describe('workspace ownership across a killed process', () => {
     const directory = mkdtempSync(join(tmpdir(), 'workspace-kill-'))
     const store = join(directory, 'store')
     const work = join(directory, 'work')
+    const handles: ReturnType<typeof openWorkspaceStore>[] = []
     try {
       const expiresAt = await hold([store, work])
       expect(expiresAt).toMatch(/Z$/)
       expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('kept')
       const expiry = Date.parse(expiresAt)
       const live = openWorkspaceStore({ directory: store, now: () => expiry - 1 })
+      handles.push(live)
       const holder = createWorkspaceService({
         store: live,
         authorityId: 'authority-1',
@@ -95,7 +101,9 @@ describe('workspace ownership across a killed process', () => {
       expect(conflict.ok).toBe(false)
       if (!conflict.ok) expect(conflict.error.detailCode).toBe('revision_conflict')
       holder.close()
+      live.close()
       const later = openWorkspaceStore({ directory: store, now: () => expiry })
+      handles.push(later)
       const next = createWorkspaceService({
         store: later,
         authorityId: 'authority-1',
@@ -109,7 +117,9 @@ describe('workspace ownership across a killed process', () => {
       expect(reclaimed.ok).toBe(true)
       expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('kept')
       next.close()
+      later.close()
     } finally {
+      for (const handle of handles) handle.close()
       rmSync(directory, { recursive: true, force: true })
     }
   }, 20_000)

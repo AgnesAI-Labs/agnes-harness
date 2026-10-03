@@ -5,13 +5,37 @@ import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFilesService } from '../../src/runtime/providers/files.js'
 import { createWorkspaceService } from '../../src/runtime/providers/workspace.js'
 
+const durability = vi.hoisted(() => ({ fail: false, recoverFail: false }))
+vi.mock('@agnes/system-node', async (importOriginal) => {
+  const system = await importOriginal<typeof import('@agnes/system-node')>()
+  return {
+    ...system,
+    syncDirectory: async (...args: Parameters<typeof system.syncDirectory>) => {
+      if (durability.recoverFail) throw new Error('Injected recovery flush failure')
+      await system.syncDirectory(...args)
+    },
+    renameWriteThrough: async (...args: Parameters<typeof system.renameWriteThrough>) => {
+      await system.renameWriteThrough(...args)
+      if (durability.fail) {
+        durability.fail = false
+        durability.recoverFail = false
+        throw new Error('Injected publication flush failure')
+      }
+    },
+  }
+})
+
 const roots: string[] = []
+const disposals: (() => void)[] = []
 
 afterEach(() => {
+  durability.fail = false
+  durability.recoverFail = false
+  for (const dispose of disposals.splice(0).reverse()) dispose()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -111,6 +135,7 @@ async function opened(options?: { afterDurableWrite?: () => void; checkpoint?: b
     authorityId: 'authority-1',
     tenantId: 'tenant-1',
   })
+  disposals.push(() => workspace.close())
   expect((await workspace.bind('ws-1', work)).ok).toBe(true)
   const acquired = await workspace.acquire(
     { workspaceId: 'ws-1', mode: 'write', expectedRevision: null },
@@ -246,49 +271,65 @@ describe('file service', () => {
     workspace.close()
   })
 
-  it('reconciles one lost write and refuses a second payload for the same invocation', async () => {
-    let trip = true
-    const { files, mount, work, workspace } = await opened({
-      afterDurableWrite() {
-        if (trip) {
-          trip = false
-          throw new Error('response lost')
-        }
-      },
-    })
-    const bytes = await stage(files, 'durable')
-    const context = call()
-    const lost = await files.write(
-      { mountRef: mount, path: 'notes.txt', bytesRef: bytes, expectedVersion: { kind: 'absent' } },
-      context,
-    )
-    expect(detail(lost)).toBe('effect_unknown')
-    expect(lost.ok).toBe(false)
-    if (!lost.ok) expect(lost.error.retryAdvice.kind).toBe('reconcile')
-    expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('durable')
-    const recovered = await files.write(
-      { mountRef: mount, path: 'notes.txt', bytesRef: bytes, expectedVersion: { kind: 'absent' } },
-      context,
-    )
-    expect(recovered.ok && recovered.value.version).toBe(1)
-    const other = await stage(files, 'other')
-    expect(
-      detail(
-        await files.write(
-          {
-            mountRef: mount,
-            path: 'notes.txt',
-            bytesRef: other,
-            expectedVersion: { kind: 'exact', revision: 1 },
-          },
-          context,
+  it.each(['response', 'flush'])(
+    'reconciles a lost %s and refuses a second payload for the same invocation',
+    async (failure) => {
+      let trip = failure === 'response'
+      const { files, mount, work, workspace } = await opened({
+        afterDurableWrite() {
+          if (trip) {
+            trip = false
+            throw new Error('response lost')
+          }
+        },
+      })
+      durability.fail = failure === 'flush'
+      const bytes = await stage(files, 'durable')
+      const context = call()
+      const lost = await files.write(
+        { mountRef: mount, path: 'notes.txt', bytesRef: bytes, expectedVersion: { kind: 'absent' } },
+        context,
+      )
+      expect(detail(lost)).toBe('effect_unknown')
+      expect(lost.ok).toBe(false)
+      if (!lost.ok) expect(lost.error.retryAdvice.kind).toBe('reconcile')
+      expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('durable')
+      if (failure === 'flush') {
+        durability.recoverFail = true
+        expect(
+          detail(
+            await files.write(
+              { mountRef: mount, path: 'notes.txt', bytesRef: bytes, expectedVersion: { kind: 'absent' } },
+              context,
+            ),
+          ),
+        ).toBe('effect_unknown')
+        durability.recoverFail = false
+      }
+      const recovered = await files.write(
+        { mountRef: mount, path: 'notes.txt', bytesRef: bytes, expectedVersion: { kind: 'absent' } },
+        context,
+      )
+      expect(recovered.ok && recovered.value.version).toBe(1)
+      const other = await stage(files, 'other')
+      expect(
+        detail(
+          await files.write(
+            {
+              mountRef: mount,
+              path: 'notes.txt',
+              bytesRef: other,
+              expectedVersion: { kind: 'exact', revision: 1 },
+            },
+            context,
+          ),
         ),
-      ),
-    ).toBe('idempotency_conflict')
-    expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('durable')
-    files.close()
-    workspace.close()
-  })
+      ).toBe('idempotency_conflict')
+      expect(readFileSync(join(work, 'notes.txt'), 'utf8')).toBe('durable')
+      files.close()
+      workspace.close()
+    },
+  )
 
   it('hides a hard-deny child and refuses a read of it', async () => {
     const { files, mount, work, workspace } = await opened()
