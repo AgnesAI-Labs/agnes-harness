@@ -731,9 +731,13 @@ it('preserves a failed tool result through a reopen without declaring completion
 })
 
 describe('approval cards', () => {
-  it.each(['allowed-once', 'rejected', 'unavailable'] as ApprovalVerdict[])(
-    'shows real %s decision and result',
-    async (verdict) => {
+  it.each([
+    ['allowed-once', undefined],
+    ['rejected', undefined],
+    ['unavailable', 'no_approver'],
+  ] as [ApprovalVerdict, string | undefined][])(
+    'shows real %s decision and result, with its reason when it has one',
+    async (verdict, reason) => {
       const registry = new ToolRegistry()
       registry.add(shellTool(), { source: 'test', trust: 'builtin' })
       const { session } = await open({
@@ -744,10 +748,14 @@ describe('approval cards', () => {
       await input(session)
       await run(session)
       const timeline = await session.projectUI()
-      expect(kind(timeline.nodes, 'approval')[0]).toMatchObject({
+      const card = kind(timeline.nodes, 'approval')[0]
+      expect(card).toMatchObject({
         state: 'decided',
-        decision: { verdict: verdict === 'unavailable' ? 'rejected' : verdict, via: 'sync' },
+        decision: { verdict, via: 'sync', ...(reason ? { reason } : {}) },
       })
+      // A decision with no reason on the ledger, which is every one written before reasons existed,
+      // shows none rather than a guess.
+      if (!reason) expect(card?.decision).not.toHaveProperty('reason')
       expect(kind(timeline.nodes, 'tool')[0]?.status).toBe(
         verdict === 'allowed-once' ? 'completed' : 'failed',
       )

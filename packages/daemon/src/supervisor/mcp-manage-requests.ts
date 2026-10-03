@@ -308,7 +308,7 @@ export function createMcpManageRequests(options: {
             return ep
           },
         })
-        const verdict = await prompt.ask(
+        const verdict = await prompt.askVerdict(
           {
             requestId: `mcp-${randomUUID()}`,
             kind: 'tool',

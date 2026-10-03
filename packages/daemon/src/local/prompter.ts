@@ -12,6 +12,10 @@ import { toolKind } from './project.js'
 // cannot drift. When the shape moves to protocol this becomes an import from there.
 export type ApprovalRequest = Parameters<Prompter['ask']>[0]
 export type { Prompter }
+/** What a prompter hands back: a bare verdict, or a verdict with the reason behind it. */
+export type PrompterAnswer = Awaited<ReturnType<Prompter['ask']>>
+const verdictOf = (answer: PrompterAnswer): ApprovalVerdict =>
+  typeof answer === 'string' ? answer : answer.verdict
 
 export type AskOutcome = {
   requestId: string
@@ -38,12 +42,17 @@ export type PrompterRouterOptions = {
 export class PrompterRouter implements Prompter {
   constructor(private readonly o: PrompterRouterOptions) {}
 
-  private done(requestId: string, via: AskOutcome['via'], verdict: ApprovalVerdict): ApprovalVerdict {
-    this.o.record?.({ requestId, via, verdict })
-    return verdict
+  private done(requestId: string, via: AskOutcome['via'], answer: PrompterAnswer): PrompterAnswer {
+    this.o.record?.({ requestId, via, verdict: verdictOf(answer) })
+    return answer
   }
 
-  async ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<ApprovalVerdict> {
+  /** For callers that only need to know whether the answer was a yes. */
+  async askVerdict(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<ApprovalVerdict> {
+    return verdictOf(await this.ask(req, opts))
+  }
+
+  async ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<PrompterAnswer> {
     if (this.o.local) return this.done(req.requestId, 'local', await this.o.local.ask(req, opts))
     const origin = this.o.originOf(req.sessionKey)
     const candidates = [
@@ -80,10 +89,16 @@ export class PrompterRouter implements Prompter {
         ...(Number.isFinite(deadlineMs) && deadlineMs > 0 ? { timeoutMs: deadlineMs } : {}),
       })
     } catch (e) {
-      if (opts.signal.aborted) return this.done(req.requestId, 'aborted', 'cancelled')
+      if (opts.signal.aborted)
+        return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
       // A timeout, a transport fault and a client-side JSON-RPC error all fail closed. Turning any of
       // them into 'unavailable' would let an outage pick up whatever on_unavailable allows.
-      return this.done(req.requestId, causeOf(e), 'rejected')
+      const cause = causeOf(e)
+      return this.done(
+        req.requestId,
+        cause,
+        cause === 'timeout' ? { verdict: 'rejected', reason: 'timeout' } : 'rejected',
+      )
     }
     const outcome = (res as { outcome?: { outcome?: unknown; optionId?: unknown } } | undefined)?.outcome
     if (outcome?.outcome === 'cancelled') return this.done(req.requestId, 'answered', 'cancelled')
@@ -91,8 +106,14 @@ export class PrompterRouter implements Prompter {
       outcome?.outcome === 'selected' &&
       typeof outcome.optionId === 'string' &&
       OPTION_IDS.has(outcome.optionId)
-    )
-      return this.done(req.requestId, 'answered', fromAcpOptionKind(outcome.optionId as AcpPermissionKind))
+    ) {
+      const verdict = fromAcpOptionKind(outcome.optionId as AcpPermissionKind)
+      return this.done(
+        req.requestId,
+        'answered',
+        verdict === 'rejected' ? { verdict, reason: 'user_rejected' } : verdict,
+      )
+    }
     return this.done(req.requestId, 'malformed', 'rejected')
   }
 }

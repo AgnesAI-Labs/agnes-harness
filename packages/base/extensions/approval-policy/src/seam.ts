@@ -1,4 +1,4 @@
-import type { ApprovalSeam, Pending, Verdict } from '@agnes/core'
+import type { ApprovalAnswer, ApprovalSeam, Pending, Verdict } from '@agnes/core'
 import type { SeamFactory } from '../../../src/seam-init.js'
 import { matchPolicy, normalizeArgv } from './normalize.js'
 import { readApprovalConfig } from './policy.js'
@@ -16,7 +16,7 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
   const cfg = readApprovalConfig(ctx.profile.preset)
   const tickets = createTicketStore(ctx, cfg.pendingTtlMs)
   const bind = (workspaceRoot: string): ApprovalSeam => ({
-    async ask(req): Promise<Verdict | Pending> {
+    async ask(req): Promise<Verdict | ApprovalAnswer | Pending> {
       const tool = req.tool
       // A budget quote or an unknown-outcome question carries no tool, so the command table has
       // nothing to say about it and it goes straight to the prompter. Deliberate: an allow list
@@ -38,7 +38,7 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
         }
         if (argv !== null) {
           const action = matchPolicy(cfg.rules, tool.name, argv)
-          if (action === 'deny') return 'rejected'
+          if (action === 'deny') return { verdict: 'rejected', reason: 'policy_denied' }
           // Tainted context and an `always` tool both keep the human in the loop whatever the table
           // says: a rule cannot pre-approve a call the model may have been talked into.
           if (

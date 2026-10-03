@@ -13,6 +13,19 @@ import type { FsPolicy } from './fs-guard.js'
 
 export type Verdict = ApprovalVerdict
 export type Pending = { ticket: string; expiresAt: string }
+/** Why an approval ended the way it did. `approval/decided.reason` carries one of these. */
+export type ApprovalReason =
+  | 'user_rejected'
+  | 'timeout'
+  | 'no_approver'
+  | 'stopped'
+  | 'policy_denied'
+  | 'subagent_scope'
+/**
+ * A verdict with the reason behind it. Seams and prompters may return it in place of a bare
+ * `Verdict`; the bare string stays valid and means "no reason given".
+ */
+export type ApprovalAnswer = { verdict: Verdict; reason?: ApprovalReason }
 export type ApprovalRequest = {
   requestId: string
   kind: 'tool' | 'budget' | 'unknown-outcome' | 'refine'
@@ -51,7 +64,7 @@ export type ApprovalWorkspaceBinding = Readonly<{ root: string }>
 export interface ApprovalSeam {
   /** Dynamic seams fit the shared implementation to the session before it enters an invocation. */
   forWorkspace?(workspace: ApprovalWorkspaceBinding): ApprovalSeam | Promise<ApprovalSeam>
-  ask(req: ApprovalRequest): Promise<Verdict | Pending>
+  ask(req: ApprovalRequest): Promise<Verdict | ApprovalAnswer | Pending>
   resume(
     ticket: string,
     verdict: Verdict,

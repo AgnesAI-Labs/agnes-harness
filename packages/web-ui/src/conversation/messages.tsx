@@ -42,6 +42,15 @@ const verdictLabels: Record<string, string> = {
   rejected: '已拒绝',
   cancelled: '已取消',
 }
+/** Why the decision ended as it did. A ledger from before reasons existed has none and falls back to the verdict. */
+const reasonLabels: Record<string, string> = {
+  user_rejected: '已拒绝',
+  timeout: '等待超时，未执行',
+  no_approver: '无人审批，未执行',
+  stopped: '已停止',
+  policy_denied: '被命令策略拦截',
+  subagent_scope: '子代理权限范围内，已自动拒绝',
+}
 const toolLabels: Record<ToolNode['status'], string> = {
   planned: '等待执行',
   awaiting_approval: '等待审批',
@@ -77,7 +86,9 @@ export function toolOutcome(node: ToolNode): { label: string; section: string; t
 
 const approvalStatus = (node: ApprovalNode) =>
   node.state === 'decided' && node.decision
-    ? (verdictLabels[node.decision.verdict] ?? approvalLabels.decided)
+    ? ((node.decision.reason ? reasonLabels[node.decision.reason] : undefined) ??
+      verdictLabels[node.decision.verdict] ??
+      approvalLabels.decided)
     : approvalLabels[node.state]
 
 function UserMessage({ node }: { node: Extract<UINode, { kind: 'user' }> }) {

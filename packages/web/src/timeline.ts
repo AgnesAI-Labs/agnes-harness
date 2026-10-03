@@ -81,6 +81,16 @@ const APPROVAL_DECISION_LABEL = new Map<string, string>([
   ['cancelled', '已取消'],
 ])
 
+/** Why the decision ended as it did. A ledger from before reasons existed has none and falls back to the verdict. */
+const APPROVAL_REASON_LABEL = new Map<string, string>([
+  ['user_rejected', '已拒绝'],
+  ['timeout', '等待超时，未执行'],
+  ['no_approver', '无人审批，未执行'],
+  ['stopped', '已停止'],
+  ['policy_denied', '被命令策略拦截'],
+  ['subagent_scope', '子代理权限范围内，已自动拒绝'],
+])
+
 const textContent = (node: UserNode): string =>
   node.content
     .filter(
@@ -119,7 +129,7 @@ function fingerprint(node: UINode): string {
         node.argsPreview,
       )}:${sampledPart(node.resultPreview)}`
     case 'approval':
-      return `${node.kind}:${node.id}:${node.state}:${node.summary}:${node.decision?.verdict ?? ''}`
+      return `${node.kind}:${node.id}:${node.state}:${node.summary}:${node.decision?.verdict ?? ''}:${node.decision?.reason ?? ''}`
     case 'contribute-conflict':
       return `${node.kind}:${node.id}:${node.key}:${JSON.stringify(node.ops)}`
     case 'compaction':
@@ -182,7 +192,8 @@ function article(node: UINode): HTMLElement {
 
 const approvalStatus = (node: ApprovalNode): string =>
   (node.state === 'decided' && node.decision
-    ? APPROVAL_DECISION_LABEL.get(node.decision.verdict)
+    ? (APPROVAL_REASON_LABEL.get(node.decision.reason ?? '') ??
+      APPROVAL_DECISION_LABEL.get(node.decision.verdict))
     : undefined) ?? APPROVAL_LABEL[node.state]
 
 function approvalLabel(node: ApprovalNode): string {
