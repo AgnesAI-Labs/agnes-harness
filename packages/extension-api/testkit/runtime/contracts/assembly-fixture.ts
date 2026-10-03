@@ -38,9 +38,8 @@ export function fixtureRef<T>(value: T, typeId = 'acme.release/fixture@1') {
   }
 }
 export const ASSEMBLY_UNFINISHED = Object.freeze([
-  'prepare',
   'publish',
-  'drain',
+  'persistent-pin-drain',
   'admission',
   'cold-recovery',
 ] as const)

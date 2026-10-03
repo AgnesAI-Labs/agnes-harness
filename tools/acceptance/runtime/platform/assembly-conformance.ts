@@ -7,10 +7,12 @@ import {
 import {
   type AssemblyPlanContractBinding,
   registerAssemblyPlanContract,
+  registerAssemblyPrepareContract,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/assembly.js'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import { constructReleaseSet } from '../../../../packages/host/src/runtime/assembly/release-set.js'
 import { createAssemblyProvider } from '../../../../packages/host/src/runtime/providers/assembly.js'
+import { memoryAssemblyLifecycle } from '../../../../packages/host/test/runtime/fixtures/assembly-lifecycle.js'
 import { getConformanceBuildIdentity } from '../build-identity.js'
 
 function hash(files: string[]): string {
@@ -46,20 +48,29 @@ export async function bindConformance(
         ? [
             'packages/host/src/runtime/providers/assembly.ts',
             'packages/host/src/runtime/assembly/release-set.ts',
+            'packages/host/src/runtime/assembly/candidate.ts',
+            'packages/host/src/runtime/scoped-dependencies.ts',
+            'packages/plugin-runtime/src/runtime/cordis-adapter.ts',
             'packages/host/src/runtime/assembly/inputs.ts',
             'packages/host/src/runtime/assembly/primitives.ts',
           ]
-        : ['examples/runtime-reference/src/providers/assembly.ts']
+        : [
+            'examples/runtime-reference/src/providers/assembly.ts',
+            'examples/runtime-reference/src/providers/assembly-candidate.ts',
+          ]
     const providerDigest = hash(implementation)
-    registerAssemblyPlanContract(harness, {
+    const binding: AssemblyPlanContractBinding = {
       providerId,
       command: request.command,
       providerDigest,
       build: getConformanceBuildIdentity(),
       context,
       create: providerId === 'default' ? createAssemblyProvider : createReferenceAssemblyProvider,
+      lifecycle: memoryAssemblyLifecycle,
       construct: providerId === 'default' ? constructReleaseSet : constructReferenceReleaseSet,
-    })
+    }
+    registerAssemblyPlanContract(harness, binding)
+    registerAssemblyPrepareContract(harness, binding)
   }
   return { contracts: ['agh.assembly'], providers }
 }
