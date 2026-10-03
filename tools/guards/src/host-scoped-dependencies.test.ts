@@ -18,11 +18,11 @@ vi.mock('node:path', async (importOriginal) => {
 })
 
 const root = repoRoot()
-const factory = 'createHostScopedDependencies'
+const factories = ['createHostScopedDependencies', 'selectDefaultHostServices'] as const
 
 // Scan the construction literal conservatively, including templates. A token-only scanner without
 // parser context can swallow executable code after a template interpolation.
-function constructions(source: string) {
+function constructions(source: string, factory: string) {
   const pattern = new RegExp(`\\b${factory}\\s*\\(|\\[\\s*['"]${factory}['"]\\s*\\]\\s*\\(`, 'g')
   const calls = [...source.matchAll(pattern)].filter(
     (match) => !/function\s*$/.test(source.slice(0, match.index)),
@@ -39,15 +39,16 @@ function constructions(source: string) {
 }
 
 describe('Host selected service construction', () => {
-  it.each(['/', '\\'])(
-    'constructs the fixed service root exactly once in product source, in Host assembly (%s)',
-    (separator) => {
+  it.each(factories.flatMap((factory) => ['/', '\\'].map((separator) => [factory, separator])))(
+    'calls %s exactly once in product source, in Host startup assembly (%s)',
+    (factory, separator) => {
       pathStyle.separator = separator
       const calls: string[] = []
       for (const file of listSourceFiles(join(root, 'packages'))) {
         const path = relative(root, file).replaceAll('\\', '/')
-        if (!path.includes('/src/') || isTestFile(path)) continue
-        const found = constructions(readFileSync(file, 'utf8'))
+        // Packaged CLI/worker composition lives under launch/, outside src/.
+        if ((!path.includes('/src/') && !path.includes('/launch/')) || isTestFile(path)) continue
+        const found = constructions(readFileSync(file, 'utf8'), factory)
         expect(found.aliases, `${path}: do not alias the service construction factory`).toEqual([])
         calls.push(...found.calls.map(() => path))
       }
@@ -69,13 +70,13 @@ describe('Host selected service construction', () => {
     expect(identity).toBe(digest.digest('hex'))
   })
 
-  it('detects multiline and namespace construction and rejects import aliases', () => {
-    expect(constructions(`function ${factory}() {}; ${factory}\n ([])`).calls).toHaveLength(1)
-    expect(constructions(`services['${factory}'] ([])`).calls).toHaveLength(1)
-    expect(constructions(`import { ${factory} as open } from '@agnes/host'`).aliases).toHaveLength(1)
-    expect(constructions(`const value = factoryName([])`).calls).toEqual([])
-    expect(constructions(`const alternate = ${factory}`).aliases).toHaveLength(1)
-    expect(constructions(`const open = services.${factory}; open([])`).aliases).toHaveLength(1)
-    expect(constructions(`const open = services['${factory}']; open([])`).aliases).toHaveLength(1)
+  it.each(factories)('detects multiline/namespace calls and rejects aliases of %s', (factory) => {
+    expect(constructions(`function ${factory}() {}; ${factory}\n ([])`, factory).calls).toHaveLength(1)
+    expect(constructions(`services['${factory}'] ([])`, factory).calls).toHaveLength(1)
+    expect(constructions(`import { ${factory} as open } from '@agnes/host'`, factory).aliases).toHaveLength(1)
+    expect(constructions(`const value = factoryName([])`, factory).calls).toEqual([])
+    expect(constructions(`const alternate = ${factory}`, factory).aliases).toHaveLength(1)
+    expect(constructions(`const open = services.${factory}; open([])`, factory).aliases).toHaveLength(1)
+    expect(constructions(`const open = services['${factory}']; open([])`, factory).aliases).toHaveLength(1)
   })
 })
