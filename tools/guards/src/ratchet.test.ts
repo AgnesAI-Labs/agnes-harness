@@ -2146,7 +2146,8 @@ const INITIAL_CEILING: Record<string, number> = {
 
   // Digest-pinned client module stylesheets (integrity, declared order, fail-closed digest check).
   // Measured 13139, exact (+15).
-  'packages/web/src': 13426,
+  // Web shell switch: candidate validation, view state hand-over and fallback. Measured 13614, exact (+188).
+  'packages/web/src': 13614,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
