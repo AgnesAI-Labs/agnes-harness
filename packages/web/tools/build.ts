@@ -1,6 +1,6 @@
 import { appendFile, cp, mkdir, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
@@ -17,7 +17,10 @@ const markdownLightCss = require.resolve('@ant-design/x-markdown/themes/light.cs
 const markdownDarkCss = require.resolve('@ant-design/x-markdown/themes/dark.css', {
   paths: [join(root, '..', 'web-ui')],
 })
-const out = join(root, 'dist', 'web')
+const args = process.argv.slice(2)
+if (args.length && (args.length !== 2 || args[0] !== '--output-dir' || !isAbsolute(args[1] ?? '')))
+  throw new Error('Expected --output-dir with an absolute directory')
+const out = args[1] ?? join(root, 'dist', 'web')
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
 // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的
