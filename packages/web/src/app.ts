@@ -452,6 +452,7 @@ async function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise
   }
 }
 const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
+clientModules.locale.subscribe(() => settings.refreshLocale())
 const sessionActions = createSessionActions({
   client,
   changed: () => list(),

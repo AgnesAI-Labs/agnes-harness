@@ -22,6 +22,7 @@ export type SettingsControllerOptions = {
 export type SettingsController = {
   open(): Promise<void>
   close(): void
+  refreshLocale(): void
   setConnected(connected: boolean): void
 }
 
@@ -863,5 +864,5 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (connected && ui.dialog.open && !opening) void open()
   }
 
-  return { open, close, setConnected }
+  return { open, close, refreshLocale: renderAccounts, setConnected }
 }

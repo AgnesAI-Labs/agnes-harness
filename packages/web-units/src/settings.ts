@@ -87,7 +87,10 @@ function templateFromSettingsMarkup(): HTMLTemplateElement {
 function applySettingsLocale(root: ParentNode, translate: (key: string) => string): void {
   for (const node of root.querySelectorAll<HTMLElement>('[data-i18n]')) {
     const key = node.getAttribute('data-i18n')
-    if (key) node.textContent = translate(key)
+    if (key) {
+      const value = translate(key)
+      if (value !== key) node.textContent = value
+    }
   }
   for (const [marker, attribute] of [
     ['data-i18n-aria', 'aria-label'],
@@ -96,7 +99,10 @@ function applySettingsLocale(root: ParentNode, translate: (key: string) => strin
   ] as const) {
     for (const node of root.querySelectorAll<HTMLElement>(`[${marker}]`)) {
       const key = node.getAttribute(marker)
-      if (key) node.setAttribute(attribute, translate(key))
+      if (key) {
+        const value = translate(key)
+        if (value !== key) node.setAttribute(attribute, value)
+      }
     }
   }
 }

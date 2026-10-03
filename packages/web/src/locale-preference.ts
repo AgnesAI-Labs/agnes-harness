@@ -43,7 +43,8 @@ export function applyLocaleText(root: ParentNode, translate: (key: string) => st
   for (const node of root.querySelectorAll<HTMLElement>('[data-i18n]')) {
     const key = node.getAttribute('data-i18n')
     if (!key) continue
-    node.textContent = translate(key)
+    const value = translate(key)
+    if (value !== key) node.textContent = value
   }
   for (const [marker, attribute] of [
     ['data-i18n-aria', 'aria-label'],
@@ -53,7 +54,8 @@ export function applyLocaleText(root: ParentNode, translate: (key: string) => st
     for (const node of root.querySelectorAll<HTMLElement>(`[${marker}]`)) {
       const key = node.getAttribute(marker)
       if (!key) continue
-      node.setAttribute(attribute, translate(key))
+      const value = translate(key)
+      if (value !== key) node.setAttribute(attribute, value)
     }
   }
 }

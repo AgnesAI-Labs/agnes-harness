@@ -63,6 +63,7 @@ import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
 import type { DocumentPreviewInput, DocumentPreviewKind } from './document-preview.js'
+import { applyLocaleText } from './locale-preference.js'
 import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
 import { createPermissionPicker } from './permission-picker.js'
@@ -440,6 +441,24 @@ export function mountSettingsPaneRegion(
       mountDshOutlet(name, dshHost, pane)
     }
   }
+  const translateSettingsMarkup = (): void => {
+    if (locale) applyLocaleText(container, (key) => locale.t(key))
+  }
+  translateSettingsMarkup()
+  const stopLocaleUpdates = locale?.subscribe(() => {
+    translateSettingsMarkup()
+    const modelRoot = paneRoots.get('model')
+    if (!modelRoot) return
+    flushSync(() => {
+      modelRoot.render(
+        createElement(
+          SlotsProvider,
+          { registry },
+          createElement(SlotOutlet, { name: settingsPaneSlot('model') }),
+        ),
+      )
+    })
+  })
   let disposed = false
   return {
     open(pane: SettingsPane) {
@@ -470,6 +489,7 @@ export function mountSettingsPaneRegion(
         dshRoot.unmount()
         dshRoots.delete(name)
       }
+      stopLocaleUpdates?.()
       root.unmount()
     },
   }
