@@ -474,12 +474,16 @@ export function readReferenceAnchor(
     return halt('incompatible', 'anchor_unreadable')
   }
   try {
+    // A competing rollback-journal commit briefly takes an exclusive lock on a valid anchor.
+    db.exec('PRAGMA busy_timeout=5000')
     const row = db.prepare('SELECT payload FROM anchor_view WHERE slot = 1').get() as
       | { payload: string }
       | undefined
     if (!row) return { ok: true, value: null }
     return parseAnchor(row.payload)
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && 'errcode' in error && (error.errcode === 5 || error.errcode === 6))
+      return halt('retryable', 'anchor_unreadable')
     return halt('incompatible', 'anchor_corrupt')
   } finally {
     db.close()

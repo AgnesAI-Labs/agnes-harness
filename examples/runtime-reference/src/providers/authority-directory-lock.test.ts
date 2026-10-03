@@ -774,52 +774,69 @@ describe('reference authority directory', () => {
     },
   )
 
-  it.each(['replace', 'flush', 'committed-flush'] as const)(
-    'recovers Windows default publication after a %s failure',
-    async (fault) => {
-      probe.platform = 'win32'
-      const driver = openDefault('authority-windows-publish-fault')
-      try {
-        const route = makeRoute('state-auth', 1, 'seed-state-auth', null)
-        expect(code(await driver.provider.seedRoute(route, context()))).toBe('ok')
-        const validation = proof()
-        expect(
-          code(
-            await driver.provider.approveUpgrade(
-              { upgradeId: 'upgrade-1', validationRef: validation, authorityIds: ['state-auth'] },
-              context(),
-            ),
+  it.each([
+    ...(['replace', 'flush', 'committed-flush', 'temp', 'fsync', 'rename', 'commit', 'notify'] as const).map(
+      (fault) => ['default', fault] as const,
+    ),
+    ...(['transaction', 'commit', 'notify'] as const).map((fault) => ['reference', fault] as const),
+  ])('recovers Windows %s publication after a %s failure', async (implementation, fault) => {
+    probe.platform = 'win32'
+    const driver = (implementation === 'default' ? openDefault : openReference)(
+      'authority-windows-publish-fault',
+    )
+    try {
+      const route = makeRoute('state-auth', 1, 'seed-state-auth', null)
+      expect(code(await driver.provider.seedRoute(route, context()))).toBe('ok')
+      const validation = proof()
+      expect(
+        code(
+          await driver.provider.approveUpgrade(
+            { upgradeId: 'upgrade-1', validationRef: validation, authorityIds: ['state-auth'] },
+            context(),
           ),
-        ).toBe('ok')
-        const request = publication([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', validation)
-        probe.failReplacement = fault === 'replace'
-        probe.failFileFlush = fault === 'flush'
-        probe.failCommittedFlush = fault === 'committed-flush'
-        if (probe.failCommittedFlush)
-          await expect(driver.provider.compareAndSwap(request, context())).rejects.toThrow()
-        else
-          expect(code(await driver.provider.compareAndSwap(request, context()))).toBe(
-            'retryable/durability_failed',
-          )
-        probe.failReplacement = probe.failFileFlush = probe.failCommittedFlush = false
-        await driver.provider.dispose()
-        const recovered = createAuthorityDirectoryProvider({
-          directory: driver.directory,
-          anchor: driver.anchor,
-          authority: AUTHORITY,
-        })
-        try {
-          expect(
-            await recovered.read({ kind: 'authority', logicalAuthorityId: 'state-auth' }, context()),
-          ).toMatchObject({ ok: true, value: { revision: fault === 'committed-flush' ? 2 : 1 } })
-          expect(code(await recovered.compareAndSwap(request, context()))).toBe('ok')
-        } finally {
-          await recovered.dispose()
-        }
-      } finally {
-        await driver.provider.dispose()
-        rmSync(driver.root, { recursive: true, force: true })
+        ),
+      ).toBe('ok')
+      const request = publication([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', validation)
+      probe.failReplacement = fault === 'replace'
+      probe.failFileFlush = fault === 'flush'
+      probe.failCommittedFlush = fault === 'committed-flush'
+      const options = {
+        directory: driver.directory,
+        anchor: driver.anchor,
+        authority: AUTHORITY,
+        onPhase: (phase: string) => {
+          if (phase === fault) throw new Error(`stop ${phase}`)
+        },
       }
-    },
-  )
+      const publishing =
+        implementation === 'default'
+          ? createAuthorityDirectoryProvider(options)
+          : createReferenceAuthorityDirectory(options)
+      const committed = ['committed-flush', 'commit', 'notify'].includes(fault)
+      if (committed) await expect(publishing.compareAndSwap(request, context())).rejects.toThrow()
+      else
+        expect(code(await publishing.compareAndSwap(request, context()))).toBe(
+          implementation === 'default' ? 'retryable/durability_failed' : 'retryable/directory_unavailable',
+        )
+      await publishing.dispose()
+      probe.failReplacement = probe.failFileFlush = probe.failCommittedFlush = false
+      await driver.provider.dispose()
+      const recovering = { directory: driver.directory, anchor: driver.anchor, authority: AUTHORITY }
+      const recovered =
+        implementation === 'default'
+          ? createAuthorityDirectoryProvider(recovering)
+          : createReferenceAuthorityDirectory(recovering)
+      try {
+        expect(
+          await recovered.read({ kind: 'authority', logicalAuthorityId: 'state-auth' }, context()),
+        ).toMatchObject({ ok: true, value: { revision: committed ? 2 : 1 } })
+        expect(code(await recovered.compareAndSwap(request, context()))).toBe('ok')
+      } finally {
+        await recovered.dispose()
+      }
+    } finally {
+      await driver.provider.dispose()
+      rmSync(driver.root, { recursive: true, force: true })
+    }
+  })
 })

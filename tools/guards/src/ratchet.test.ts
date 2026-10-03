@@ -1002,7 +1002,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 3891,
+  // Model adapter provider and typed ports. Measured 4612, exact, no spare.
+  'packages/ai/src': 4612,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1420,7 +1421,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported as constants. Measured 981 (+3), exact, no spare.
   // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
   // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
-  'packages/extension-api/src': 2825, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // Routing authoring and model adapter interfaces. Measured 3215, exact, no spare.
+  'packages/extension-api/src': 3215,
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1471,7 +1473,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Restricted installation proposal cases. Measured 8124, exact, no spare.
   // Billing and trace providers. Measured 8513, exact, no spare.
   // Read-only migration planning and receipt verification. Measured 8929, exact, no spare.
-  'packages/extension-api/testkit': 8929,
+  // Bounded sandbox and execution services. Measured 9078, exact, no spare.
+  // Routing and model adapter contracts. Measured 9378, exact, no spare.
+  'packages/extension-api/testkit': 9378,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2683,7 +2687,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Billing and trace providers. Measured 66992, exact, no spare.
   // Bounded migration export index and intake spool. Measured 67840, exact, no spare.
   // Read-only migration planning and receipt verification. Measured 68546, exact, no spare.
-  'packages/host/src': 68546,
+  // Bounded sandbox and execution services. Measured 69677, exact, no spare.
+  // Routing provider and prepared route. Measured 69827, exact, no spare.
+  'packages/host/src': 69827,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
