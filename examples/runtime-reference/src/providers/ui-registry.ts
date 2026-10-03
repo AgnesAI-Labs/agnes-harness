@@ -1,6 +1,5 @@
-import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync, writeSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { UIRegistryFactory } from '@agnes/extension-api/client'
 import {
@@ -10,8 +9,10 @@ import {
 } from '@agnes/extension-api/testkit'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import {
+  holdUIRegistryClient,
   recoverUIRegistry,
   registerUIRegistryContract,
+  restartUIRegistryClient,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.js'
 import { createReferenceUIRegistry } from '../client/ui-registry.js'
 
@@ -45,47 +46,6 @@ const self = fileURLToPath(import.meta.url)
 const root = fileURLToPath(new URL('../../../..', import.meta.url))
 
 /**
- * Runs this file as a client process and kills it with SIGKILL once it prints READY. Settles only once
- * the child's pipes have closed, so neither the process nor its handles outlive the call; a child that
- * neither gets ready nor exits within 15 seconds is killed and the call rejects.
- */
-function runClient(args: readonly string[]): Promise<{ signal: string | null; pid: number | null }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', self, ...args], {
-      cwd: root,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    let killed = false
-    let timedOut = false
-    const kill = () => {
-      killed = true
-      child.kill('SIGKILL')
-    }
-    const timer = setTimeout(() => {
-      timedOut = true
-      kill()
-    }, 15_000)
-    child.stdout.setEncoding('utf8')
-    child.stderr.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk
-      if (!killed && stdout.includes('READY\n')) kill()
-    })
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk
-    })
-    child.on('error', reject)
-    child.on('close', (_code, signal) => {
-      clearTimeout(timer)
-      if (timedOut) reject(new Error(`ui registry client timed out\n${stderr}\n${stdout}`))
-      else resolve({ signal, pid: child.pid ?? null })
-    })
-  })
-}
-
-/**
  * Registers the six UI registry cases for the browser-side reference registry, reported under
  * `providerId` (the runner passes the name it was asked for, such as `reference`). `change` lets a test
  * break the registry, in this process and in the client processes `recover` starts, to prove the
@@ -106,10 +66,7 @@ export async function bindUIRegistryContract(
     configDigest: canonicalJsonDigest({}),
     releaseSetDigest: sha256(new URL('../../package.json', import.meta.url)),
     factory: await registryWith(options.change),
-    async restart(directory) {
-      const killed = await runClient([directory, ...changed])
-      return [killed, await runClient([directory, ...changed])]
-    },
+    restart: (directory) => restartUIRegistryClient(['--import', 'tsx', self, directory, ...changed], root),
   })
 }
 
@@ -118,11 +75,7 @@ async function client(argv: readonly string[]): Promise<void> {
   const [directory, module, name] = argv
   if (directory === undefined) throw new Error('expected: <directory> [<change module> <change name>]')
   const change = module !== undefined && name !== undefined ? { module: new URL(module), name } : undefined
-  recoverUIRegistry(await registryWith(change), directory, () => {
-    writeSync(1, 'READY\n')
-    // Blocks this thread, so the registry stays as it is until the process is killed.
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60_000)
-  })
+  recoverUIRegistry(await registryWith(change), directory, holdUIRegistryClient)
 }
 
 const entry = process.argv[1]
