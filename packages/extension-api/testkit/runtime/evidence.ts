@@ -4,7 +4,12 @@ export const QUALIFICATIONS = ['required', 'advertised', 'not-advertised'] as co
 export type Qualification = (typeof QUALIFICATIONS)[number]
 export const ASSERTION_STATUSES = ['passed', 'failed', 'skipped'] as const
 export type AssertionStatus = (typeof ASSERTION_STATUSES)[number]
-export const FIXTURE_MARKS = ['runtime-inbox', 'test-service-container', 'restricted-effects'] as const
+export const FIXTURE_MARKS = [
+  'runtime-inbox',
+  'test-service-container',
+  'restricted-effects',
+  'test-client-host',
+] as const
 export type FixtureMark = (typeof FIXTURE_MARKS)[number]
 export const REUSE_LIFECYCLES = ['call', 'cancel', 'recover', 'dispose'] as const
 export type ReuseLifecycle = (typeof REUSE_LIFECYCLES)[number]
