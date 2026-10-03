@@ -720,9 +720,15 @@ importers:
       '@agnes/cordis':
         specifier: workspace:*
         version: link:../cordis
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/web-slots':
         specifier: workspace:*
         version: link:../web-slots
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../web-ui
     devDependencies:
       '@agnes/protocol':
         specifier: workspace:*
