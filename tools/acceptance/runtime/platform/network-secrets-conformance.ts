@@ -43,6 +43,7 @@ import {
 } from '../../../../packages/host/test/runtime/network-secrets-process.js'
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
 import { getConformanceBuildIdentity } from '../build-identity.js'
+import { bindArtifactTicketKeyConformance } from './artifact-ticket-key-scenarios.js'
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 const OWNED = ['agh.network', 'agh.secrets'] as const
@@ -384,6 +385,7 @@ export async function bindConformance(
           }),
         })
       registerSecretsContract(harness, { command: request.command, build: identity, providerId, sources })
+      bindArtifactTicketKeyConformance(harness, request.command, kind, providerId, identity)
     }
   }
   return { contracts: wanted, providers }

@@ -6,6 +6,10 @@ import type { ActionContext, CallContext, Outcome, TrustedIngressContext } from 
 import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import { createPrivateDirectorySync, createPrivateFileSync, hasPrivateDaclSync } from '@agnes/system-node'
+import {
+  createReferenceArtifactTicketKeyPort,
+  type ReferenceTicketDeployment,
+} from './artifact-ticket-key.js'
 
 type Permit = {
   readonly principalRef: string
@@ -20,6 +24,7 @@ type Slot = { id: string; pointer: string; version: string; sequence: number; re
 type Ticket = { locator: W.SecretHandle; permit: string; sequence: number }
 type Cabinet = { tenant: string; slots: Slot[]; tickets: Ticket[] }
 export interface ReferenceSecretsOptions {
+  readonly artifactTickets?: ReferenceTicketDeployment
   readonly directory: string
   readonly tenantId: string
   readonly entries: readonly Credential[]
@@ -73,7 +78,20 @@ export function createReferenceSecrets(settings: ReferenceSecretsOptions) {
     ...item,
     versions: item.versions.map((value) => ({ ...value })),
   }))
+  const ticketSecretId = settings.artifactTickets?.installation.binding.secretId
   const permissions = settings.grants.map((item) => JSON.parse(JSON.stringify(item)) as Permit)
+  if (settings.artifactTickets) {
+    const secrets = catalogue.filter((item) => item.secretId === ticketSecretId)
+    if (
+      secrets.length !== 1 ||
+      catalogue.some(
+        (item) =>
+          item.secretId !== ticketSecretId &&
+          item.versions.some((version) => secrets[0]?.versions.some((secret) => secret.ref === version.ref)),
+      )
+    )
+      throw new Error('Ticket key catalogue must be isolated')
+  }
   for (const item of catalogue)
     for (const value of item.versions)
       if (!/^secret:\/\/[a-z0-9-]+\/[a-z0-9._-]+$/u.test(value.ref))
@@ -161,6 +179,7 @@ export function createReferenceSecrets(settings: ReferenceSecretsOptions) {
     signal: AbortSignal,
   ): Promise<Permit> {
     await actor(call, signal)
+    if (id === ticketSecretId) throw new Stop('secret_ticket_only')
     for (const candidate of permissions) {
       if (
         candidate.principalRef === call.principalRef &&
@@ -210,7 +229,46 @@ export function createReferenceSecrets(settings: ReferenceSecretsOptions) {
     contract: 'agh.secrets',
     bindingId: 'agh.reference/secrets/binding',
   }
+  let companion: ReturnType<typeof createReferenceArtifactTicketKeyPort> | undefined
+  try {
+    if (settings.artifactTickets)
+      companion = createReferenceArtifactTicketKeyPort({
+        ...settings.artifactTickets,
+        directory: join(settings.directory, 'artifact-ticket-keys'),
+        tenantId: settings.tenantId,
+        now: clock,
+        current: () => {
+          const item = view().slots.find((entry) => entry.id === ticketSecretId)
+          if (!item) throw new Error('Missing ticket secret')
+          return { version: item.version, revoked: item.removed }
+        },
+        identity: async (call, signal) => {
+          try {
+            await actor(call, signal)
+            return true
+          } catch {
+            return false
+          }
+        },
+        reference: (version) =>
+          catalogue
+            .find((entry) => entry.secretId === ticketSecretId)
+            ?.versions.find((item) => item.version === version)?.ref,
+        resolve: (pointer) => settings.source.resolve(pointer),
+      })
+  } catch (problem) {
+    disk.close()
+    throw problem
+  }
   return {
+    ...(companion
+      ? {
+          artifactTicketKeyPort: Object.freeze({
+            sealNonce: companion.sealNonce,
+            openNonce: companion.openNonce,
+          }),
+        }
+      : {}),
     binding,
     providerDigest: canonicalJsonDigest({ contract: binding.contract, recipe: 'document-cabinet' }),
     features: [
@@ -328,7 +386,7 @@ export function createReferenceSecrets(settings: ReferenceSecretsOptions) {
             () => reject(new Error('Secret broker did not drain')),
             Math.max(1, Math.min(settings.drainMs ?? 5000, 5000)),
           )
-          Promise.allSettled([...pending]).then(() => {
+          Promise.allSettled([...pending, companion?.close()]).then(() => {
             clearTimeout(deadline)
             disk.close()
             resolve()
