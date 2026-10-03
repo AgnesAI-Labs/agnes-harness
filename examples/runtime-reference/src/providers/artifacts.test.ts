@@ -191,11 +191,23 @@ describe('reference artifacts store', () => {
   it('stops a grant and a version at the next check, leaving other versions readable', async () => {
     const first = publish('one')
     const second = publish('two', first.ref.artifactId)
-    const revoked = artifacts.revokeGrant(first.grant.grantId)
+    const revoked = artifacts.revokeGrant(first.grant.grantId, 'request-1')
     expect(revoked).toMatchObject({ status: 'revoked', revision: 2 })
-    expect(artifacts.revokeGrant(first.grant.grantId)).toEqual(revoked)
+    expect(artifacts.revokeGrant(first.grant.grantId, 'request-2')).toEqual(revoked)
     expect(refused(await artifacts.artifactAccess.describe(first.ref, ctx()))).toBe('permission_denied')
+    clock += 1
     artifacts.revoke(second.ref)
+    artifacts.revoke(second.ref)
+    expect(artifacts.revocations()).toEqual([
+      {
+        seq: 1,
+        kind: 'revokeGrant',
+        ref: { grantId: first.grant.grantId },
+        requestId: 'request-1',
+        at: START,
+      },
+      { seq: 2, kind: 'revoke', ref: second.ref, requestId: null, at: START + 1 },
+    ])
     expect(must(await artifacts.artifactAccess.describe(second.ref, ctx())).status).toBe('revoked')
     expect(
       refused(await artifacts.artifactAccess.readRange({ ...second.ref, offset: 0, length: 1 }, ctx())),
