@@ -89,6 +89,31 @@ export function withTimeout<T>(
   })
 }
 
+/**
+ * Waits up to `ms` for `p` to settle, either way. True means it has come to rest; false means it had
+ * not when the time ran out, and says nothing more about it. Never rejects, so a caller that only
+ * wants to know whether the work has stopped does not have to absorb the work's own failure.
+ */
+export async function settlesWithin(
+  p: Promise<unknown>,
+  ms: number,
+  timers: Timers = defaultTimers,
+): Promise<boolean> {
+  let handle: unknown
+  const rested = p.then(
+    () => true,
+    () => true,
+  )
+  const timedOut = new Promise<boolean>((resolve) => {
+    handle = timers.setTimeout(() => resolve(false), ms)
+  })
+  try {
+    return await Promise.race([rested, timedOut])
+  } finally {
+    timers.clearTimeout(handle)
+  }
+}
+
 export type SeamFailure = { seam: SeamName; op: string; message: string }
 
 /**

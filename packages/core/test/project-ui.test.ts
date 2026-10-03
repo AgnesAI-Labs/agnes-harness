@@ -692,6 +692,43 @@ it('cancelled planned tools remain cancelled after close, reopen and resume', as
   await expect(session.projectUI()).rejects.toMatchObject({ code: 'E_CLOSED' })
 })
 
+it('shows a Stop on a running shell call as cancelled, not failed', async () => {
+  let started!: () => void
+  const running = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const registry = new ToolRegistry()
+  registry.add(
+    shellTool(
+      (_args, ctx) =>
+        new Promise((resolve) => {
+          ctx.signal.addEventListener(
+            'abort',
+            () => resolve({ content: [{ type: 'text', text: 'killed' }] }),
+            { once: true },
+          )
+          started()
+        }),
+    ),
+    { source: 'test', trust: 'builtin' },
+  )
+  const { session } = await open({
+    provider: fakeProvider([toolTurn('shell', { command: 'sleep 30' })]),
+    registry,
+  })
+  await input(session)
+  const ac = new AbortController()
+  const turn = session.run({ until: 'turn-end', signal: ac.signal })
+  await running
+  ac.abort()
+  expect((await turn).reason).toBe('aborted')
+  expect(kind((await session.projectUI()).nodes, 'tool')[0]).toMatchObject({
+    name: 'shell',
+    status: 'cancelled',
+    resultPreview: expect.stringMatching(/cancelled while running.*partial effect/s),
+  })
+})
+
 it('preserves a turn error before inference in live patches and through a reopen', async () => {
   const provider = fakeProvider([])
   const { session, storage } = await open({ provider })
