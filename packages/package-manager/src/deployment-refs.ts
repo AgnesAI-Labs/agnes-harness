@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { validateSurfaceInstance } from '@agnes/protocol'
@@ -26,12 +27,13 @@ export function readSurfaceInstances(directory: string) {
   safe('manifest.json')
   const manifest = readDeployManifest(root)
   const instances = (manifest.surfaces ?? []).map((path) => {
-    const text = readFileSync(safe(path), 'utf8')
+    const bytes = readFileSync(safe(path))
+    const text = bytes.toString('utf8')
     if (Buffer.byteLength(text) > 1048576)
       throw new PackageError('E_EXT_LOAD', 'deployment file is too large')
     const checked = validateSurfaceInstance(JSON.parse(text))
     if (!checked.ok) throw new PackageError('E_EXT_LOAD', 'deployment instance is invalid')
-    return { path, instance: checked.value }
+    return { path, digest: createHash('sha256').update(bytes).digest('hex'), instance: checked.value }
   })
   return freezeData({ manifest, instances })
 }

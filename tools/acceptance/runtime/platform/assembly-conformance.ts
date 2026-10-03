@@ -1,5 +1,8 @@
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   constructReferenceReleaseSet,
   createReferenceAssemblyProvider,
@@ -9,16 +12,72 @@ import {
   registerAssemblyPlanContract,
   registerAssemblyPrepareContract,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/assembly.js'
+import {
+  type AssemblyPublishContractBinding,
+  registerAssemblyPublishContract,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/assembly-publish.js'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import { constructReleaseSet } from '../../../../packages/host/src/runtime/assembly/release-set.js'
 import { createAssemblyProvider } from '../../../../packages/host/src/runtime/providers/assembly.js'
 import { memoryAssemblyLifecycle } from '../../../../packages/host/test/runtime/fixtures/assembly-lifecycle.js'
+import {
+  assemblyMaintenanceContext,
+  persistentAssemblyFixture,
+} from '../../../../packages/host/test/runtime/fixtures/assembly-maintenance.js'
 import { getConformanceBuildIdentity } from '../build-identity.js'
 
 function hash(files: string[]): string {
   const digest = createHash('sha256')
   for (const file of files) digest.update(readFileSync(new URL(`../../../../${file}`, import.meta.url)))
   return digest.digest('hex')
+}
+export function assemblyPublishBinding(
+  providerId: 'default' | 'reference',
+  command: string,
+): AssemblyPublishContractBinding {
+  const files =
+    providerId === 'default'
+      ? [
+          'packages/host/src/runtime/providers/assembly.ts',
+          'packages/host/src/runtime/assembly/publication.ts',
+          'packages/host/src/runtime/assembly/maintenance-journal.ts',
+          'packages/host/src/runtime/assembly/admission-ticket.ts',
+          'packages/host/src/runtime/assembly/package-pins.ts',
+          'packages/host/src/runtime/assembly/release-set.ts',
+          'packages/host/src/runtime/assembly/client-bundles.ts',
+          'packages/host/src/runtime/assembly/candidate.ts',
+        ]
+      : [
+          'examples/runtime-reference/src/providers/assembly.ts',
+          'examples/runtime-reference/src/providers/assembly-publication.ts',
+          'examples/runtime-reference/src/providers/assembly-journal.ts',
+          'examples/runtime-reference/src/providers/assembly-admission.ts',
+          'examples/runtime-reference/src/providers/assembly-candidate.ts',
+        ]
+  return {
+    providerId,
+    command,
+    providerDigest: hash(files),
+    build: getConformanceBuildIdentity(),
+    context: assemblyMaintenanceContext,
+    create: providerId === 'default' ? createAssemblyProvider : createReferenceAssemblyProvider,
+    async open(input, directory) {
+      const fixture = await persistentAssemblyFixture(input, join(directory, 'maintenance.sqlite'))
+      if (!fixture.memory) throw new Error('fixture lifecycle missing')
+      return { ...fixture, lifecycle: fixture.memory.lifecycle, snapshot: fixture.database.inspect }
+    },
+    async coldReplay(directory) {
+      const script = fileURLToPath(new URL('../fixtures/assembly-cold-process.ts', import.meta.url))
+      const child = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', script, providerId, directory, 'replay'],
+        { encoding: 'utf8', timeout: 30_000 },
+      )
+      if (child.status !== 0 || child.error)
+        throw new Error(`assembly cold process failed: ${child.stderr}`, { cause: child.error })
+      return JSON.parse(child.stdout) as Awaited<ReturnType<AssemblyPublishContractBinding['coldReplay']>>
+    },
+  }
 }
 export async function bindConformance(
   harness: ConformanceHarness,
@@ -58,7 +117,23 @@ export async function bindConformance(
             'examples/runtime-reference/src/providers/assembly.ts',
             'examples/runtime-reference/src/providers/assembly-candidate.ts',
           ]
-    const providerDigest = hash(implementation)
+    const publicationBinding = assemblyPublishBinding(providerId as 'default' | 'reference', request.command)
+    const providerDigest = hash([
+      ...implementation,
+      ...(providerId === 'default'
+        ? [
+            'packages/host/src/runtime/assembly/client-bundles.ts',
+            'packages/host/src/runtime/assembly/publication.ts',
+            'packages/host/src/runtime/assembly/maintenance-journal.ts',
+            'packages/host/src/runtime/assembly/admission-ticket.ts',
+            'packages/host/src/runtime/assembly/package-pins.ts',
+          ]
+        : [
+            'examples/runtime-reference/src/providers/assembly-publication.ts',
+            'examples/runtime-reference/src/providers/assembly-journal.ts',
+            'examples/runtime-reference/src/providers/assembly-admission.ts',
+          ]),
+    ])
     const binding: AssemblyPlanContractBinding = {
       providerId,
       command: request.command,
@@ -71,6 +146,7 @@ export async function bindConformance(
     }
     registerAssemblyPlanContract(harness, binding)
     registerAssemblyPrepareContract(harness, binding)
+    registerAssemblyPublishContract(harness, { ...publicationBinding, providerDigest })
   }
   return { contracts: ['agh.assembly'], providers }
 }

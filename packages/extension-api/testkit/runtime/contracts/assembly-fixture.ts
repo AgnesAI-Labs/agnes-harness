@@ -18,6 +18,8 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 
+import { assemblyUiFixture } from './assembly-ui-fixture.js'
+
 export function fixtureWire<K extends keyof RuntimeWireTypes>(
   schema: K,
   value: unknown,
@@ -46,6 +48,8 @@ export const ASSEMBLY_UNFINISHED = Object.freeze([
 
 /** Synthetic public locks and observations, never a deployable provider or authority proof. */
 export function assemblyFixture() {
+  const ui = assemblyUiFixture()
+  const uiManifest = fixtureRef(ui.manifest)
   const packageId = 'acme.release',
     tree = fixtureHash('synthetic package tree')
   const source = {
@@ -214,9 +218,7 @@ export function assemblyFixture() {
     kind: 'assembly-effective-fixture',
     configuration,
     features: [] as { bindingId: string; features: string[]; path: string; sourceId: string }[],
-    bundles: [
-      { bundleId: 'shell', digest: fixtureHash('synthetic client bundle'), platform: 'browser', schema },
-    ],
+    bundles: [ui.bundle],
     jointDomains: [] as RuntimeWireTypes['DispatchAtomicDomain'][],
     directory,
     deployments: {
@@ -240,6 +242,14 @@ export function assemblyFixture() {
         integrityRef: manifest.digest,
         entries: { backend: { digest: fixtureHash('synthetic backend entry'), platform: 'node' } },
       },
+      {
+        packageId: ui.manifest.id,
+        version: ui.manifest.version,
+        digest: ui.manifest.packageDigest,
+        sourceRef: 'fixture-ui-source',
+        integrityRef: uiManifest.digest,
+        entries: { web: { digest: ui.bundle.digest, platform: 'web' } },
+      },
     ],
     bindings,
     profileRef: {
@@ -256,7 +266,7 @@ export function assemblyFixture() {
     },
     configSnapshotRef: fixtureRef(effective),
     schemasRef: fixtureRef({
-      schemas: [source],
+      schemas: [source, ui.source],
       builtinContracts: Object.entries(methodSchemas).map(([contract, schemas]) => ({
         contract,
         digest: fixtureHash(schemas),
@@ -277,6 +287,19 @@ export function assemblyFixture() {
         manifestRef: manifest,
         dependencies: [],
       }),
+      fixtureWire('PackageLockEntry', {
+        packageId: ui.manifest.id,
+        version: ui.manifest.version,
+        digest: ui.manifest.packageDigest,
+        locator: {
+          kind: 'local',
+          sourceId: 'fixture-ui-source',
+          pathRef: 'fixture-ui-path',
+          digest: ui.manifest.packageDigest,
+        },
+        manifestRef: uiManifest,
+        dependencies: [],
+      }),
     ],
     digest: '',
   }
@@ -293,15 +316,15 @@ export function assemblyFixture() {
     planId: 'fixture-plan',
     upgradeId: 'fixture-upgrade',
     planFingerprint: '',
-    operation: 'install' as const,
+    operation: 'install' as ReleasePlan['operation'],
     routeId: directory.routeId,
-    expectedRouteRevision: null,
-    sourceReleaseSetId: null,
+    expectedRouteRevision: null as number | null,
+    sourceReleaseSetId: null as string | null,
     targetReleaseSet: release,
     affectedContributions: graph.requiredContributions,
     configDigest: '',
     permissionDifference: {
-      beforeProfileDigest: null,
+      beforeProfileDigest: null as string | null,
       afterProfileDigest: configuration.profileDigest,
       added: [model],
       removed: [] as RuntimeWireTypes['CapabilityRequirement'][],

@@ -20,8 +20,9 @@ import {
   validateOwnedAuthorSchemaSource,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-
 import { type ReferenceCandidateLifecycle, referenceCandidate } from './assembly-candidate.js'
+import { type ReferenceMaintenancePorts, referenceAuthorized, referenceResult } from './assembly-journal.js'
+import { referencePublication } from './assembly-publication.js'
 
 const wireMethods: Readonly<
   Record<
@@ -570,24 +571,61 @@ function materialPhase(s: Snapshot) {
   }
   const client = object(content(target.clientBundlesRef), ['bundles'])
   const bundles = list(client.bundles)
-  for (const raw of bundles) {
-    const bundle = object(raw, ['bundleId', 'digest', 'platform', 'schema'])
-    decode('Id', bundle.bundleId)
-    decode('Digest', bundle.digest)
-    decode('Id', bundle.platform)
-    demand(hasSchema(decode('SchemaRef', bundle.schema)), 'schema_missing')
-  }
-  for (const raw of list(fixed.bundles)) {
-    const required = object(raw, ['bundleId', 'digest', 'platform', 'schema'])
-    decode('Id', required.bundleId)
-    decode('Digest', required.digest)
-    decode('Id', required.platform)
-    demand(hasSchema(decode('SchemaRef', required.schema)), 'schema_missing')
+  const checkBundle = (raw: unknown) => {
+    const item = object(raw, [
+      'bundleId',
+      'digest',
+      'target',
+      'schemas',
+      'packageId',
+      'version',
+      'entry',
+      'viewSchemaRanges',
+    ])
+    decode('Id', item.bundleId)
+    decode('Digest', item.digest)
+    const packageId = decode('Id', item.packageId),
+      version = decode('Id', item.version),
+      entry = decode('Id', item.entry)
+    demand(new Set(['sdk', 'im', 'tui', 'web']).has(String(item.target)), 'schema_invalid')
+    const refs = list(item.schemas).map((raw) => decode('SchemaRef', raw))
+    for (const ref of refs) demand(hasSchema(ref), 'schema_missing')
+    const artifacts = target.packages
+      .filter((pkg) => pkg.packageId === packageId && pkg.version === version)
+      .flatMap((pkg) => Object.entries(pkg.entries))
+      .filter(([key]) => key === entry)
     demand(
-      bundles.some((bundle) => matches(bundle, required)),
+      artifacts.length === 1 &&
+        artifacts[0]?.[1].digest === item.digest &&
+        artifacts[0]?.[1].platform === item.target,
+      'bundle_package_mismatch',
+    )
+    for (const range of list(item.viewSchemaRanges).map((raw) => decode('ViewSchemaRange', raw))) {
+      decode('TypeId', range.typeId)
+      decode('UInt53', range.minRevision)
+      decode('UInt53', range.maxRevision)
+      const supported = refs
+        .filter((schema) => schema.typeId === range.typeId)
+        .some((schema) => range.minRevision <= schema.revision && schema.revision <= range.maxRevision)
+      demand(supported && range.minRevision <= range.maxRevision, 'bundle_schema_range_mismatch')
+    }
+  }
+  bundles.forEach(checkBundle)
+  for (const required of list(fixed.bundles)) {
+    checkBundle(required)
+    demand(
+      bundles.some((available) => matches(available, required)),
       'required_ui_bundle_missing',
     )
   }
+  const identities = bundles.map((raw) => {
+    const item = raw as Record<string, unknown>
+    return `${String(item.bundleId)}/${String(item.target)}`
+  })
+  demand(
+    identities.every((id, index) => identities.indexOf(id) === index),
+    'duplicate_ui_bundle',
+  )
   const definitions = list(schemas.contracts).map((raw) => decode('CommunityContractDefinition', raw))
   checkCommunity(definitions, target.bindings)
   for (const definition of definitions) {
@@ -917,8 +955,12 @@ export function constructReferenceReleaseSet(raw: unknown): Outcome<ReleaseSet> 
     )
   }
 }
-/** This independent example plans and prepares detached fixtures; publication and migration stay unavailable. */
-export function createReferenceAssemblyProvider(raw: unknown, lifecycle?: ReferenceCandidateLifecycle) {
+/** Independent detached assembly; durable publication requires explicit synthetic maintenance ports. */
+export function createReferenceAssemblyProvider(
+  raw: unknown,
+  lifecycle?: ReferenceCandidateLifecycle,
+  maintenance?: ReferenceMaintenancePorts,
+) {
   let pinned: unknown
   let captureRefusal: Outcome<never> | null = null
   try {
@@ -936,11 +978,75 @@ export function createReferenceAssemblyProvider(raw: unknown, lifecycle?: Refere
   const fixedRelease = () => (validation ??= immutable(constructReferenceReleaseSet(pinned)))
   let candidate: ReturnType<typeof referenceCandidate> | undefined
   let disposed = false
+  const shutdown = new AbortController()
+  let prepareQueue: Promise<unknown> = Promise.resolve()
+  let publishQueue: Promise<unknown> = Promise.resolve()
+  let durable: ReturnType<typeof referencePublication> | undefined
+  const publisher = () => {
+    if (!maintenance) throw new InvalidRelease('maintenance_store_unavailable')
+    const s = fixedSnapshot()
+    durable ??= referencePublication({ plan: s.releasePlan, graph: s.assembly, raw: pinned }, maintenance)
+    return durable
+  }
+  const activeCall = (ctx: CallContext) => ({
+    ...ctx,
+    signal: AbortSignal.any([shutdown.signal, ctx.signal]),
+  })
+  const prepareCandidate = async (
+    request: unknown,
+    context: CallContext,
+  ): Promise<Outcome<AssemblyPrepareResult>> => {
+    if (context.signal.aborted) {
+      const stopped = refusal('prepare_cancelled')
+      if (!stopped.ok) stopped.error.code = 'cancelled'
+      return stopped
+    }
+    if (disposed) return refusal('candidate_disposed')
+    if (candidate) {
+      const ready = await candidate.prepare(request, context)
+      return maintenance && ready.ok
+        ? publisher().verified(ready.value, candidate.inspect().generationId, context)
+        : ready
+    }
+    if (captureRefusal) return captureRefusal
+    try {
+      const snapshot = fixedSnapshot()
+      demand(
+        matches(decode('AssemblyPrepareRequest', request).graph, snapshot.assembly),
+        'prepare_input_mismatch',
+      )
+      const locked = fixedRelease()
+      if (!locked.ok) return locked
+      if (!lifecycle) return refusal('candidate_lifecycle_unavailable')
+      if (maintenance) {
+        const staged = await publisher().stage(context)
+        if (!staged.ok) return staged
+        const begun = await publisher().beginPrepare(context)
+        if (!begun.ok) return begun
+        if (disposed) return refusal('candidate_disposed')
+      }
+      candidate ??= referenceCandidate(snapshot.assembly, locked.value, snapshot.releasePlan, lifecycle)
+      const prepared = await candidate.prepare(request, context)
+      return maintenance && prepared.ok
+        ? publisher().verified(prepared.value, lifecycle.generationId, context)
+        : prepared
+    } catch (error) {
+      return refusal(error instanceof InvalidRelease ? error.reason : 'schema_invalid')
+    }
+  }
   return {
     providerId: 'agh.reference/assembly',
     contract: 'agh.assembly',
-    implemented: Object.freeze(['plan', 'prepare', 'memory-drain']),
-    incomplete: Object.freeze(['publish', 'persistent-pin-drain', 'admission', 'cold-recovery']),
+    implemented: Object.freeze(
+      maintenance
+        ? ['plan', 'prepare', 'publish', 'maintenance-replay']
+        : ['plan', 'prepare', 'memory-drain'],
+    ),
+    incomplete: Object.freeze(
+      maintenance
+        ? ['persistent-pin-drain', 'admission', 'runtime-cold-recovery', 'production-wiring']
+        : ['publish', 'persistent-pin-drain', 'admission', 'cold-recovery'],
+    ),
     async plan(request: unknown, context: CallContext): Promise<Outcome<AssemblyGraph>> {
       if (context.signal.aborted) {
         const stopped = refusal('plan_cancelled')
@@ -956,6 +1062,12 @@ export function createReferenceAssemblyProvider(raw: unknown, lifecycle?: Refere
           'plan_input_mismatch',
         )
         const checked = fixedRelease()
+        if (maintenance && checked.ok) {
+          const permitted = await referenceResult(() =>
+            referenceAuthorized(maintenance, context, s.releasePlan),
+          )
+          if (!permitted.ok) return permitted
+        }
         return checked.ok ? { ok: true, value: immutable(s.assembly) } : checked
       } catch (error) {
         return refusal(
@@ -966,39 +1078,52 @@ export function createReferenceAssemblyProvider(raw: unknown, lifecycle?: Refere
     },
     async prepare(request: unknown, context: CallContext): Promise<Outcome<AssemblyPrepareResult>> {
       if (context.signal.aborted) {
-        const stopped = refusal('prepare_cancelled')
-        if (!stopped.ok) stopped.error.code = 'cancelled'
-        return stopped
+        const halted = refusal('prepare_cancelled')
+        if (!halted.ok) halted.error.code = 'cancelled'
+        return halted
       }
       if (disposed) return refusal('candidate_disposed')
-      if (candidate) return candidate.prepare(request, context)
-      if (captureRefusal) return captureRefusal
+      let copy: RuntimeWireTypes['AssemblyPrepareRequest']
       try {
-        const snapshot = fixedSnapshot()
-        demand(
-          matches(decode('AssemblyPrepareRequest', request).graph, snapshot.assembly),
-          'prepare_input_mismatch',
-        )
-        const locked = fixedRelease()
-        if (!locked.ok) return locked
-        if (!lifecycle) return refusal('candidate_lifecycle_unavailable')
-        candidate ??= referenceCandidate(snapshot.assembly, locked.value, snapshot.releasePlan, lifecycle)
-        return await candidate.prepare(request, context)
-      } catch (error) {
-        return refusal(error instanceof InvalidRelease ? error.reason : 'schema_invalid')
+        copy = immutable(decode('AssemblyPrepareRequest', request))
+      } catch {
+        return refusal('schema_invalid')
       }
+      const pending = prepareQueue.then(() => prepareCandidate(copy, activeCall(context)))
+      prepareQueue = pending.then(() => undefined)
+      return pending
     },
     async dispose(): Promise<readonly string[]> {
       disposed = true
+      shutdown.abort()
+      await Promise.all([prepareQueue, publishQueue])
       return candidate ? candidate.dispose() : []
     },
     inspectCandidate() {
       return candidate?.inspect()
     },
-    async publish(_request: unknown, _context: CallContext): Promise<Outcome<AssemblyPublishResult>> {
-      return refusal('assembly_publish_unimplemented')
+    async publish(request: unknown, context: CallContext): Promise<Outcome<AssemblyPublishResult>> {
+      if (!maintenance) return refusal('assembly_publish_unimplemented')
+      if (disposed) return refusal('candidate_disposed')
+      if (captureRefusal) return captureRefusal
+      let decoded: RuntimeWireTypes['AssemblyPublishRequest']
+      try {
+        decoded = immutable(decode('AssemblyPublishRequest', request))
+      } catch {
+        return refusal('schema_invalid')
+      }
+      const operation = publishQueue.then(() => {
+        try {
+          return publisher().publish(decoded, candidate?.inspect(), lifecycle, activeCall(context))
+        } catch (error) {
+          return refusal(error instanceof InvalidRelease ? error.reason : 'schema_invalid')
+        }
+      })
+      publishQueue = operation.then(() => undefined)
+      return operation
     },
     async drain(request: unknown, context: CallContext): Promise<Outcome<AssemblyDrainResult>> {
+      if (maintenance) return refusal('persistent_pin_drain_unimplemented')
       if (!candidate) return refusal('candidate_not_prepared')
       return candidate.drain(request, context)
     },
