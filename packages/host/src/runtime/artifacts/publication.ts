@@ -6,6 +6,7 @@ import type * as Wire from '@agnes/protocol/runtime'
 import { RuntimeErrorDetails, type RuntimeWireTypes, validateRuntime } from '@agnes/protocol/runtime'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import { openPrivateArtifactDatabase } from '../../private-artifact-store.js'
+import { type Authority, openAuthority, type TransferMaintenance } from '../authority-transfer.js'
 
 type Detail = keyof typeof RuntimeErrorDetails
 
@@ -79,15 +80,44 @@ const DDL = [
     artifact_id TEXT NOT NULL, version INTEGER NOT NULL, disposition TEXT NOT NULL, grant_id TEXT NOT NULL,
     grant_revision INTEGER NOT NULL, pin_id TEXT NOT NULL, expires_at INTEGER NOT NULL, UNIQUE (actor, request_id))`,
   `CREATE TABLE IF NOT EXISTS outbox (
-    event_key TEXT PRIMARY KEY, publication_id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
-    reason TEXT, delivery TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+    seq INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT NOT NULL UNIQUE, publication_id TEXT NOT NULL,
+    kind TEXT NOT NULL, payload TEXT NOT NULL, reason TEXT, delivery TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+  // The revocation log; its last seq is the revocation watermark.
+  `CREATE TABLE IF NOT EXISTS revocations (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL CHECK (kind IN ('revoke', 'revokeGrant')),
+    ref TEXT NOT NULL, request_id TEXT, at INTEGER NOT NULL)`,
 ]
 
-export type ArtifactsStore = {
+/**
+ * The business tables a checkpoint covers, in key order. Tickets stay out: they hold sealed key
+ * material that never leaves this store.
+ */
+const TABLES = {
+  artifacts: 'artifact_id',
+  reservations: 'publication_id',
+  grants: 'grant_id',
+  requests: 'method, request_id',
+  outbox: 'seq',
+  revocations: 'seq',
+}
+
+/** The outbox as one bridge: produced through its last seq, accepted through its delivered prefix. */
+function outboxWatermarks(db: DatabaseSync): Wire.AuthorityCheckpoint['bridgeWatermarks'] {
+  const head = db
+    .prepare(
+      `SELECT COALESCE(MAX(seq), 0) AS produced,
+         COALESCE((SELECT MIN(seq) - 1 FROM outbox WHERE delivery = 'pending'), MAX(seq), 0) AS accepted
+       FROM outbox`,
+    )
+    .get() as { produced: number; accepted: number }
+  return [{ bridgeId: 'outbox', producedThrough: head.produced, acceptedThrough: head.accepted }]
+}
+
+/** Every business write goes through `write`, the authority's gate. */
+export type ArtifactsStore = Authority & {
   readonly db: DatabaseSync
   readonly authorityId: Wire.Id
   readonly now: () => number
-  transaction<T>(body: () => T): T
   close(): void
 }
 
@@ -96,14 +126,25 @@ export function openArtifactsStore(options: {
   dataDir: string
   authorityId: Wire.Id
   now?: () => number
+  maintenance?: TransferMaintenance
 }): ArtifactsStore {
   const db = openPrivateArtifactDatabase(options.dataDir, 'artifacts-service.db', 'artifacts service store')
+  let authority: Authority
   try {
     db.exec('PRAGMA busy_timeout = 5000')
     db.exec('PRAGMA journal_mode = WAL')
     db.exec('PRAGMA synchronous = NORMAL')
     syncCheckpointsToMedium(db)
     for (const statement of DDL) db.exec(statement)
+    authority = openAuthority(db, {
+      authorityId: options.authorityId,
+      tables: TABLES,
+      log: 'revocations',
+      bridges: () => outboxWatermarks(db),
+      error: artifactsError,
+      Refusal: ArtifactsRefusal,
+      ...(options.maintenance ? { maintenance: options.maintenance } : {}),
+    })
   } catch (error) {
     db.close()
     throw error
@@ -126,17 +167,21 @@ export function openArtifactsStore(options: {
       closed = true
       db.close()
     },
-    transaction(body) {
+    write(body) {
       live()
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        const result = body()
-        db.exec('COMMIT')
-        return result
-      } catch (error) {
-        db.exec('ROLLBACK')
-        throw error
-      }
+      return authority.write(body)
+    },
+    fence(request, context) {
+      live()
+      return authority.fence(request, context)
+    },
+    probe(request, context) {
+      live()
+      return authority.probe(request, context)
+    },
+    abort(request, context) {
+      live()
+      return authority.abort(request, context)
     },
   }
 }
@@ -252,7 +297,7 @@ export function reserve(
   if ('existingActionId' in ref && ref.existingActionId !== input.owner.actionId)
     refuse('permission_denied', 'owner action does not match the committed action')
   const fingerprint = digestOf({ request, owner: input.owner, bindingId: context.bindingId })
-  return store.transaction(() => {
+  return store.write(() => {
     const prior = byPublication(store, request.publicationId)
     if (prior) {
       if (prior.reserve_fingerprint === fingerprint)
@@ -319,7 +364,7 @@ export async function publish(
 ): Promise<Wire.ArtifactReservation> {
   const request = parse('ArtifactsPublishRequest', input.request)
   const fingerprint = digestOf({ request, owner: input.owner })
-  const accepted = store.transaction(() => {
+  const accepted = store.write(() => {
     const row = byPublication(store, request.publicationId)
     if (!row) refuse('not_found', 'no such publication')
     const record = JSON.parse(row.record) as Wire.ArtifactReservation
@@ -372,7 +417,7 @@ export async function publish(
     pinned.bytes !== upload.bytes
   )
     refuse('integrity', 'blob service did not confirm the pin')
-  return store.transaction(() => {
+  return store.write(() => {
     const row = byPublication(store, request.publicationId)
     const record = JSON.parse(row?.record ?? 'null') as Wire.ArtifactReservation
     if (record.state === 'ready') return record
@@ -400,7 +445,7 @@ export function fail(
 ): Wire.ArtifactReservation {
   const request = parse('ArtifactsFailRequest', input.request)
   const receipt = parse('ReceiptRef', input.receipt)
-  return store.transaction(() => {
+  return store.write(() => {
     const row = byPublication(store, request.publicationId)
     if (!row) refuse('not_found', 'no such publication')
     const record = JSON.parse(row.record) as Wire.ArtifactReservation
@@ -435,7 +480,7 @@ export function fail(
 /** Revokes one exact artifact version; other versions stay readable. */
 export function revoke(store: ArtifactsStore, request: unknown): Wire.ArtifactReservation {
   const { artifactRef, reason } = parse('ArtifactsRevokeRequest', request)
-  return store.transaction(() => {
+  return store.write(() => {
     const record = reservationOf(store, artifactRef.artifactId, artifactRef.version)
     if (!record) refuse('not_found', 'no such artifact version')
     if (record.state === 'revoked') return record
@@ -446,8 +491,20 @@ export function revoke(store: ArtifactsStore, request: unknown): Wire.ArtifactRe
     })
     save(store, revoked)
     emit(store, revoked, 'revoked', reason)
+    logRevocation(store, 'revoke', jcs(artifactRef), null)
     return revoked
   })
+}
+
+function logRevocation(
+  store: ArtifactsStore,
+  kind: 'revoke' | 'revokeGrant',
+  ref: string,
+  requestId: Wire.Id | null,
+) {
+  store.db
+    .prepare('INSERT INTO revocations (kind, ref, request_id, at) VALUES (?, ?, ?, ?)')
+    .run(kind, ref, requestId, store.now())
 }
 
 function replay(store: ArtifactsStore, method: string, requestId: Wire.Id, fingerprint: string) {
@@ -483,7 +540,7 @@ export function grant(
 ): Wire.ArtifactAccessGrantValue {
   const request = parse('ArtifactsGrantRequest', input.request)
   const fingerprint = digestOf({ request, owner: input.owner, source: input.sourceAuthorizationRef })
-  return store.transaction(() => {
+  return store.write(() => {
     const prior = replay(store, 'grant', request.requestId, fingerprint)
     if (prior) return prior
     if (!within(request.scope, context.scope))
@@ -522,7 +579,7 @@ export function revokeGrant(
 ): Wire.ArtifactAccessGrantValue {
   const request = parse('ArtifactsRevokeGrantRequest', input.request)
   const fingerprint = digestOf({ request, owner: input.owner })
-  return store.transaction(() => {
+  return store.write(() => {
     const prior = replay(store, 'revokeGrant', request.requestId, fingerprint)
     if (prior) return prior
     const current = grantOf(store, request.grantId)
@@ -540,6 +597,7 @@ export function revokeGrant(
       .prepare('UPDATE grants SET record = ? WHERE grant_id = ?')
       .run(JSON.stringify(revoked), revoked.grantId)
     remember(store, 'revokeGrant', request.requestId, fingerprint, revoked.grantId)
+    logRevocation(store, 'revokeGrant', revoked.grantId, request.requestId)
     return revoked
   })
 }

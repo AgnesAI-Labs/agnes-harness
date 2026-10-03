@@ -23,6 +23,7 @@ import {
   revokeGrant,
   type SelectedBlobActions,
 } from '../artifacts/publication.js'
+import type { AuthorityTransferSource, TransferMaintenance } from '../authority-transfer.js'
 import { defaultServiceDescriptor, type ServiceDescriptorInput } from './blob.js'
 
 export type { ArtifactAccessOptions } from '../artifacts/access.js'
@@ -71,6 +72,8 @@ export type ArtifactsServiceOptions = ArtifactAccessOptions &
     /** Action methods of the blob service the container selects; their binding must match it. */
     blobActions: SelectedBlobActions
     now?: () => number
+    /** The Host's maintenance assembly. Without it, every transfer call is refused as blocked. */
+    maintenance?: TransferMaintenance
   }>
 
 type Owned = { request: unknown; owner: OwnerAction }
@@ -92,6 +95,8 @@ export type ArtifactsService = Readonly<{
   query(request: unknown, context: CallContext): Promise<Outcome<Wire.ArtifactViewRef>>
   artifactAccess: ArtifactAccessPort
   pendingEvents(): readonly ArtifactEvent[]
+  /** Host-internal source side of an authority transfer; not offered by the descriptor. */
+  transfer: AuthorityTransferSource
   close(): void
 }>
 
@@ -141,6 +146,11 @@ export function createArtifactsService(options: ArtifactsServiceOptions): Outcom
       },
       artifactAccess,
       pendingEvents: () => pendingEvents(store),
+      transfer: {
+        fence: (request, context) => run(context, () => store.fence(request, context)),
+        probe: (request, context) => run(context, () => store.probe(request, context)),
+        abort: (request, context) => run(context, () => store.abort(request, context)),
+      },
       close: () => store.close(),
     }),
   }

@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
+import { rmSync } from 'node:fs'
 import type { CallContext } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
-import { type BlobStore, checked, loadUpload, parse, refuse, within } from './uploads.js'
+import { type BlobStore, checked, contentPath, loadUpload, parse, refuse, within } from './uploads.js'
 
-type BlobRow = { blob_id: string; upload_id: string; staged: string; deleted: number }
+type BlobRow = { blob_id: string; upload_id: string; staged: string; digest: string; deleted: number }
 type RootRow = {
   pin_id: string
   target: 'upload' | 'blob'
@@ -34,12 +35,71 @@ function liveRoots(store: BlobStore, target: RootRow['target'], targetId: Wire.I
 
 const ownersOf = (roots: readonly RootRow[]) => roots.map((root) => JSON.parse(root.owner ?? 'null'))
 
+type DeletionKind =
+  | 'upload-aborted'
+  | 'upload-deleted'
+  | 'blob-deleted'
+  | 'pin-released'
+  | 'content-unlink-pending'
+  | 'content-unlinked'
+  | 'content-retained'
+
+/** Appends to the deletion log inside the caller's transaction; its last seq is the watermark. */
+function logDeletion(store: BlobStore, kind: DeletionKind, ref: string, digest: Wire.Digest | null = null) {
+  store.db
+    .prepare('INSERT INTO deletions (kind, ref, digest, at) VALUES (?, ?, ?, ?)')
+    .run(kind, ref, digest, store.now())
+}
+
+/**
+ * Content stays while an undeleted staged blob, or a sealed upload that can still be promoted, names
+ * its digest. A promoted upload counts through its blob row, which gc may have deleted.
+ */
+const contentInUse = (store: BlobStore, digest: Wire.Digest) =>
+  store.db
+    .prepare(
+      `SELECT 1 FROM blobs WHERE digest = ? AND deleted = 0
+       UNION ALL SELECT 1 FROM uploads u WHERE u.digest = ? AND u.deleted = 0
+         AND NOT EXISTS (SELECT 1 FROM blobs b WHERE b.upload_id = u.upload_id)
+       LIMIT 1`,
+    )
+    .get(digest, digest) !== undefined
+
+/**
+ * The second phase of a content deletion, after the collect committed. Each digest still pending is
+ * unlinked, or retained when an upload sealed the same content again since; a missing file counts as
+ * unlinked. Unlink and record share one gated transaction, so a failed record only leaves the digest
+ * pending and the next gc completes it.
+ * ponytail: a seal commits in the same macrotask its content file lands, so an in-process gc cannot
+ * unlink content between the two; a seal that awaits I/O there needs a content check in its commit.
+ */
+function finishUnlinks(store: BlobStore) {
+  const pending = store.db
+    .prepare(
+      `SELECT DISTINCT p.digest FROM deletions p WHERE p.kind = 'content-unlink-pending' AND NOT EXISTS (
+         SELECT 1 FROM deletions d WHERE d.kind IN ('content-unlinked', 'content-retained')
+           AND d.digest = p.digest AND d.seq > p.seq)`,
+    )
+    .all() as { digest: Wire.Digest }[]
+  for (const { digest } of pending) {
+    try {
+      store.write(() => {
+        if (contentInUse(store, digest)) return logDeletion(store, 'content-retained', digest, digest)
+        rmSync(contentPath(store, digest), { force: true })
+        logDeletion(store, 'content-unlinked', digest, digest)
+      })
+    } catch {
+      // Still pending: the next gc completes it.
+    }
+  }
+}
+
 /** A sealed upload becomes one staged content object; repeating the promote returns the same object. */
 export function promote(store: BlobStore, request: unknown): Wire.StagedBlobRef {
   const { upload, expectedDigest } = parse('BlobPromoteRequest', request)
   if (upload.authorityId !== store.authorityId) refuse('not_found', 'upload belongs to another authority')
   if (expectedDigest !== upload.digest) refuse('integrity', 'expected digest differs from the sealed upload')
-  return store.transaction(() => {
+  return store.write(() => {
     const row = loadUpload(store, upload.uploadId)
     if (!row?.result) refuse('not_found', 'no such sealed upload')
     const sealed = JSON.parse(row.result) as Wire.UploadResult
@@ -58,8 +118,8 @@ export function promote(store: BlobStore, request: unknown): Wire.StagedBlobRef 
       reservationId: randomUUID(),
     })
     store.db
-      .prepare('INSERT INTO blobs (blob_id, upload_id, staged) VALUES (?, ?, ?)')
-      .run(staged.blobId, upload.uploadId, jcs(staged))
+      .prepare('INSERT INTO blobs (blob_id, upload_id, staged, digest) VALUES (?, ?, ?, ?)')
+      .run(staged.blobId, upload.uploadId, jcs(staged), staged.digest)
     return staged
   })
 }
@@ -69,7 +129,7 @@ export function pin(store: BlobStore, request: unknown): Wire.BlobRef {
   const { stagedBlob, ownerRef, retentionUntil } = parse('BlobPinRequest', request)
   const until = retentionUntil === null ? null : Date.parse(retentionUntil)
   if (until !== null && until <= store.now()) refuse('invalid_request', 'retention already ended')
-  return store.transaction(() => {
+  return store.write(() => {
     const blob = loadBlob(store, stagedBlob.blobId)
     if (!blob || blob.staged !== jcs(stagedBlob)) refuse('not_found', 'no such staged blob')
     if (blob.deleted) refuse('artifact_deleted', 'staged blob was collected')
@@ -100,7 +160,7 @@ export function pin(store: BlobStore, request: unknown): Wire.BlobRef {
 /** Releases one pin or sealed-upload root. Releasing a released root changes nothing. */
 export function unpin(store: BlobStore, request: unknown): Wire.BlobUnpinResult {
   const { pinId, expectedRevision } = parse('BlobUnpinRequest', request)
-  return store.transaction(() => {
+  return store.write(() => {
     const root = loadRoot(store, pinId)
     if (!root) refuse('not_found', 'no such pin')
     if (root.active === 0) return { released: false }
@@ -108,6 +168,7 @@ export function unpin(store: BlobStore, request: unknown): Wire.BlobUnpinResult 
     store.db
       .prepare('UPDATE roots SET active = 0, revision = ? WHERE pin_id = ?')
       .run(root.revision + 1, pinId)
+    logDeletion(store, 'pin-released', pinId)
     return { released: true }
   })
 }
@@ -169,9 +230,10 @@ type Candidate = {
 /**
  * Trusted cleanup. An uploading reservation turns aborted only after its owner scope is inside the
  * request scope, its TTL has passed, no writer is open and it has no root; a later pass deletes the
- * aborted bytes. A staged blob is tombstoned once no pin and no sealed-upload root holds it.
- * The shared CAS file stays: other stores may hold the same digest, and only their owners can prove
- * it unreferenced.
+ * aborted bytes. A staged blob is tombstoned once no pin and no sealed-upload root holds it. Every
+ * collect is logged in its transaction. The content directory belongs to this store alone
+ * (runtimeServiceDataDir gives each service its own data directory), so its rows prove a digest
+ * unreferenced: the collect marks the file pending in its transaction and gc unlinks it after commit.
  */
 export function gc(store: BlobStore, request: unknown, context: CallContext): Wire.BlobGcResult {
   const input = parse('BlobGcRequest', request)
@@ -179,7 +241,7 @@ export function gc(store: BlobStore, request: unknown, context: CallContext): Wi
   if (!within(input.scopeRef, context.scope))
     refuse('permission_denied', 'gc scope is outside the caller scope')
   const inScope = (scope: string) => within(JSON.parse(scope) as Wire.ScopeRef, input.scopeRef)
-  return store.transaction(() => {
+  const result = store.write(() => {
     const now = store.now()
     const candidates: Candidate[] = []
     const uploads = store.db
@@ -204,6 +266,7 @@ export function gc(store: BlobStore, request: unknown, context: CallContext): Wi
             store.db
               .prepare('UPDATE uploads SET session = ? WHERE upload_id = ?')
               .run(JSON.stringify(aborted), row.upload_id)
+            logDeletion(store, 'upload-aborted', row.upload_id)
             return { ref: { kind: 'upload', value: aborted }, deleted: false }
           },
         })
@@ -215,15 +278,16 @@ export function gc(store: BlobStore, request: unknown, context: CallContext): Wi
           collect() {
             store.db.prepare('DELETE FROM upload_chunks WHERE upload_id = ?').run(row.upload_id)
             store.db.prepare('UPDATE uploads SET deleted = 1 WHERE upload_id = ?').run(row.upload_id)
+            logDeletion(store, 'upload-deleted', row.upload_id)
             return { deleted: true }
           },
         })
     }
     const blobs = store.db
       .prepare(
-        'SELECT b.blob_id, b.upload_id, b.staged, u.scope FROM blobs b JOIN uploads u USING (upload_id) WHERE b.deleted = 0',
+        'SELECT b.blob_id, b.upload_id, b.staged, b.digest, u.scope FROM blobs b JOIN uploads u USING (upload_id) WHERE b.deleted = 0',
       )
-      .all() as { blob_id: string; upload_id: string; staged: string; scope: string }[]
+      .all() as { blob_id: string; upload_id: string; staged: string; digest: string; scope: string }[]
     for (const row of blobs)
       candidates.push({
         key: `blob:${row.blob_id}`,
@@ -234,6 +298,9 @@ export function gc(store: BlobStore, request: unknown, context: CallContext): Wi
         ref: { kind: 'staged-blob', value: JSON.parse(row.staged) },
         collect() {
           store.db.prepare('UPDATE blobs SET deleted = 1 WHERE blob_id = ?').run(row.blob_id)
+          logDeletion(store, 'blob-deleted', row.blob_id, row.digest)
+          if (!contentInUse(store, row.digest))
+            logDeletion(store, 'content-unlink-pending', row.digest, row.digest)
           return { deleted: true }
         },
       })
@@ -259,4 +326,6 @@ export function gc(store: BlobStore, request: unknown, context: CallContext): Wi
     const more = last !== null && pending[pending.length - 1]?.key !== last
     return checked('BlobGcResult', { eligibleRefs, deletedRefs, nextCursor: more ? last : null })
   })
+  if (!input.dryRun) finishUnlinks(store)
+  return result
 }

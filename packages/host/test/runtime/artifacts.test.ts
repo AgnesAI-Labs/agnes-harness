@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type {
   ArtifactAccessPort,
   BlobReadPort,
@@ -27,6 +28,7 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { TransferMaintenance } from '../../src/runtime/authority-transfer.js'
 import {
   type ArtifactsService,
   artifactsFeatures,
@@ -110,6 +112,7 @@ type World = { dataDir: string; blob: BlobService; artifacts: ArtifactsService; 
 async function world(
   dataDir?: string,
   adjust: (blob: BlobService) => Partial<SelectedBlobActions> = () => ({}),
+  maintenance?: TransferMaintenance,
 ): Promise<World> {
   const dir = dataDir ?? (await mkdtemp(join(tmpdir(), 'agh-artifacts-')))
   if (!dataDir) dirs.push(dir)
@@ -140,10 +143,21 @@ async function world(
       dependencies: container.dependencies,
       blobActions: { ...blob, ...adjust(blob) },
       authorize: (context) => context.authorizationRef === 'auth-ok',
+      ...(maintenance ? { maintenance } : {}),
     }),
   )
   closers.push(() => artifacts.close())
   return { dataDir: dir, blob, artifacts, reads }
+}
+
+/** Reads the persisted artifacts store, as a restarted process would find it. */
+function stored(dataDir: string, statement: string): Record<string, unknown>[] {
+  const db = new DatabaseSync(join(dataDir, 'artifacts', 'artifacts-service.db'), { readOnly: true })
+  try {
+    return db.prepare(statement).all()
+  } finally {
+    db.close()
+  }
 }
 
 function reserveRequest(publicationId: string, over: Record<string, unknown> = {}) {
@@ -435,7 +449,7 @@ describe('default artifacts publication', () => {
   })
 
   it('keeps grants idempotent per request id and revokes one exact version', async () => {
-    const { artifacts, blob } = await world()
+    const { artifacts, blob, dataDir } = await world()
     const v1 = ok(await artifacts.reserve({ request: reserveRequest('pub-1'), owner: owner() }, ctx()))
     ok(
       await artifacts.publish(
@@ -530,6 +544,79 @@ describe('default artifacts publication', () => {
     expect(
       ok(await artifacts.artifactAccess.readRange({ ...ref1, offset: 0, length: 3 }, ctx())).bytes,
     ).toEqual(text('one'))
+    // Each revocation is logged once in its own transaction, and outbox events take increasing seqs.
+    expect(stored(dataDir, 'SELECT kind, ref, request_id FROM revocations ORDER BY seq')).toEqual([
+      { kind: 'revokeGrant', ref: grant1.grantId, request_id: 'revoke-1' },
+      { kind: 'revoke', ref: JSON.stringify(ref2), request_id: null },
+    ])
+    expect(stored(dataDir, 'SELECT seq, event_key FROM outbox ORDER BY seq')).toEqual([
+      { seq: 1, event_key: 'pub-1:ready' },
+      { seq: 2, event_key: 'pub-2:ready' },
+      { seq: 3, event_key: 'pub-2:revoked' },
+    ])
+  })
+
+  it('fences publication writes and reports the outbox head and revocation watermark with the fence', async () => {
+    const maintenance: TransferMaintenance = {
+      authorize: (context) => context.authorizationRef === 'maintenance',
+      tenantId: 'tenant-1',
+      locationRef: 'location-1',
+      readRoute: async () => ({
+        ok: false,
+        error: {
+          code: 'invalid_input',
+          detailCode: 'not_found',
+          message: 'no published route',
+          retryAdvice: { kind: 'never' },
+          diagnosticId: 'test',
+        },
+      }),
+    }
+    const { artifacts, blob, dataDir } = await world(undefined, undefined, maintenance)
+    const reserved = ok(await artifacts.reserve({ request: reserveRequest('pub-1'), owner: owner() }, ctx()))
+    const upload = await sealedUpload(blob, 'u1', text('one'))
+    ok(await artifacts.publish({ request: publishRequest('pub-1', upload), owner: owner() }, ctx()))
+    const ref = { artifactId: reserved.artifactId, version: 1 }
+    await readGrant(artifacts, ref)
+    const other = await readGrant(artifacts, ref, 'grant-2')
+    const revokeGrant = (requestId: string) =>
+      artifacts.revokeGrant(
+        {
+          request: { requestId, grantId: other.grantId, expectedRevision: 1, reason: 'done' },
+          owner: owner(),
+        },
+        ctx(),
+      )
+    ok(await revokeGrant('revoke-1'))
+    const maintainer = ctx({ authorizationRef: 'maintenance' })
+    const expected = { authorityId: 'artifacts-authority', tenantId: 'tenant-1', authorityEpoch: 1 }
+    const fence = ok(
+      await artifacts.transfer.fence(
+        { upgradeId: 'upgrade-1', expected, cohortDigest: 'c'.repeat(64) },
+        maintainer,
+      ),
+    )
+    expect(fence).toMatchObject({
+      source: expected,
+      fenceEpoch: 1,
+      writerCredentialsRevoked: true,
+      checkpoint: { bridgeWatermarks: [{ bridgeId: 'outbox', producedThrough: 1, acceptedThrough: 0 }] },
+    })
+    expect(stored(dataDir, 'SELECT watermark FROM maintenance_transfers')).toEqual([{ watermark: 1 }])
+
+    expect(
+      refused(await artifacts.reserve({ request: reserveRequest('pub-2'), owner: owner() }, ctx())),
+    ).toBe('blocked')
+    expect(refused(await artifacts.revoke({ artifactRef: ref, reason: 'withdrawn' }, ctx()))).toBe('blocked')
+    expect(refused(await revokeGrant('revoke-2'))).toBe('blocked')
+    expect(ok(await artifacts.artifactAccess.describe(ref, ctx())).status).toBe('ready')
+    expect(
+      ok(await artifacts.artifactAccess.readRange({ ...ref, offset: 0, length: 3 }, ctx())).bytes,
+    ).toEqual(text('one'))
+    expect(ok(await artifacts.transfer.probe({ upgradeId: 'upgrade-1' }, maintainer))).toEqual({
+      state: 'fenced',
+      fence,
+    })
   })
 })
 
