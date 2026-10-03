@@ -1460,7 +1460,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI registry recover no longer judges the stand-in host's handles. Measured 5761, exact, no spare.
   // Detached release planning: measured 6849, exact, no spare.
   // Preserve case failure diagnostics and record unsupported authority directory scenarios. Exact count.
-  'packages/extension-api/testkit': 7239,
+  // Shell contract cases join the contract aggregate. Measured 7741, exact, no spare.
+  'packages/extension-api/testkit': 7741,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

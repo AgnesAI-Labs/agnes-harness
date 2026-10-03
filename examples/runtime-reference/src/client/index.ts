@@ -9,3 +9,4 @@ export const referenceRenderers: ReferenceRendererRegistry = Object.freeze({
 
 export { referenceOutlineText, referenceOutlineWeb } from './renderer.js'
 export { createReferenceUIRegistry } from './ui-registry.js'
+export { createWorkbenchShell } from './workbench-shell.js'
