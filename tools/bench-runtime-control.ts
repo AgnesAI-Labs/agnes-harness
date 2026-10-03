@@ -63,7 +63,8 @@ import {
   snapshotProfile,
 } from '../packages/host/src/runtime/state/profile.js'
 import { digestOf, stableId } from '../packages/host/src/runtime/state/records.js'
-import type { CommitNotice } from '../packages/host/src/runtime/state/transactions.js'
+import { type CommitNotice, RuntimeStateDatabase } from '../packages/host/src/runtime/state/transactions.js'
+import { createAdmissionAcceptanceIssuer } from '../packages/host/test/helpers/runtime-admission-issuer.js'
 
 const SEGMENT = 100
 const CUT_FRAMES = 500
@@ -1187,6 +1188,44 @@ function attestedCommits(file: string): number {
   }
 }
 
+/** Install and issue on the original State connection before starting any measurement. */
+async function openBenchmarkState(file: string, text: string) {
+  const frozen = Date.parse(ADMITTED_AT)
+  const usageSource = createBenchmarkUsageSource()
+  const options = {
+    verifyUsageSettlement: usageSource.verify,
+    file,
+    authority,
+    now: () => frozen,
+    onCommit: (commit: CommitNotice) => storeNotice?.(commit),
+  }
+  const database = new RuntimeStateDatabase(options)
+  try {
+    const issuer = createAdmissionAcceptanceIssuer(database, authority, options.now)
+    try {
+      const store = createRuntimeStateStore(options, database)
+      benchmarkUsageSources.set(store, usageSource)
+      const admission = admissionFor(text)
+      const context = await issuer.issue(admission, callContext())
+      return {
+        store,
+        admission,
+        context,
+        close() {
+          issuer.close()
+          store.close()
+        },
+      }
+    } catch (error) {
+      issuer.close()
+      throw error
+    }
+  } catch (error) {
+    database.close()
+    throw error
+  }
+}
+
 export async function runCandidate(name: string, ports?: LegacyPorts): Promise<Sample> {
   assertStateBackend(ports)
   const spec = scenarioInput(name)
@@ -1194,17 +1233,9 @@ export async function runCandidate(name: string, ports?: LegacyPorts): Promise<S
   const directory = mkdtempSync(join(tmpdir(), 'agnes-bench-rc-state-'))
   const file = join(directory, 'state.sqlite')
   const commits: CommitRecord[] = []
-  const frozen = Date.parse(ADMITTED_AT)
   try {
-    const usageSource = createBenchmarkUsageSource()
-    const store = createRuntimeStateStore({
-      verifyUsageSettlement: usageSource.verify,
-      file,
-      authority,
-      now: () => frozen,
-      onCommit: (commit) => storeNotice?.(commit),
-    })
-    benchmarkUsageSources.set(store, usageSource)
+    const benchmark = await openBenchmarkState(file, spec.userText)
+    const { store, admission, context } = benchmark
     const probe = openWalProbe(file)
     const record = (commit: CommitRecord) => {
       commits.push(commit)
@@ -1214,7 +1245,7 @@ export async function runCandidate(name: string, ports?: LegacyPorts): Promise<S
     try {
       unwrap(
         await timed(record, 'createRun', 'ticket-1', 'preamble', [], () =>
-          store.createRun(admissionFor(spec.userText), callContext()),
+          store.createRun(admission, context),
         ),
         'createRun',
       )
@@ -1306,7 +1337,7 @@ export async function runCandidate(name: string, ports?: LegacyPorts): Promise<S
       await drainOutbox(store, record)
       void revision
     } finally {
-      store.close()
+      benchmark.close()
     }
     const wallMs = performance.now() - started
     const wal = probe.finish()
@@ -1655,19 +1686,12 @@ type ProfileCampaign = {
 async function profileOneDatabase(): Promise<ProfileCampaign['samples'][number]> {
   const directory = mkdtempSync(join(tmpdir(), 'agnes-profile-rc-'))
   const file = join(directory, 'state.sqlite')
-  const frozen = Date.parse(ADMITTED_AT)
-  const usageSource = createBenchmarkUsageSource()
-  const store = createRuntimeStateStore({
-    verifyUsageSettlement: usageSource.verify,
-    file,
-    authority,
-    now: () => frozen,
-    onCommit: (commit) => storeNotice?.(commit),
-  })
-  benchmarkUsageSources.set(store, usageSource)
+  let benchmark: Awaited<ReturnType<typeof openBenchmarkState>> | undefined
   const record = (): void => undefined
   try {
-    unwrap(await store.createRun(admissionFor('one call'), callContext()), 'createRun')
+    benchmark = await openBenchmarkState(file, 'one call')
+    const { store, admission, context } = benchmark
+    unwrap(await store.createRun(admission, context), 'createRun')
     unwrap(
       await store.open(
         {
@@ -1802,7 +1826,7 @@ async function profileOneDatabase(): Promise<ProfileCampaign['samples'][number]>
     }
   } finally {
     setProfiling(false)
-    store.close()
+    benchmark?.close()
     rmSync(directory, { recursive: true, force: true })
   }
 }
