@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -26,7 +25,6 @@ import {
   type AuthorityDirectoryScenarioEvidence,
   registerAuthorityDirectoryContract,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/authority-directory.ts'
-import type { BuildIdentity } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
 import { documentDigest } from '../../../../packages/host/src/runtime/config/config-digest.ts'
 import { inlineData } from '../../../../packages/host/src/runtime/maintenance/authority-publication.ts'
@@ -34,8 +32,8 @@ import {
   createAuthorityDirectoryProvider,
   createDirectoryAnchor,
 } from '../../../../packages/host/src/runtime/providers/authority-directory.ts'
-
 import { createHostScopedDependencies } from '../../../../packages/host/src/runtime/scoped-dependencies.ts'
+import { getConformanceBuildIdentity } from '../build-identity.js'
 
 type Recipe = 'default' | 'reference'
 
@@ -302,28 +300,6 @@ function repoRoot(): string {
   return fileURLToPath(new URL('../../../../', import.meta.url))
 }
 
-function createBuild(): BuildIdentity {
-  const root = repoRoot()
-  const lockDigest = createHash('sha256')
-    .update(readFileSync(join(root, 'pnpm-lock.yaml')))
-    .digest('hex')
-  const sdk = JSON.parse(readFileSync(join(root, 'packages/extension-api/package.json'), 'utf8')) as {
-    name: string
-    version: string
-  }
-  const codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
-  const specVersion = 'runtime-services-1'
-  return {
-    codeSha,
-    buildDigest: documentDigest({ codeSha, specVersion }),
-    lockDigest,
-    specVersion,
-    sdkVersion: sdk.version,
-    sdkDigest: documentDigest({ name: sdk.name, version: sdk.version }),
-    platform: `${process.platform}-${process.arch}`, // guards-allow-platform: evidence only, no branch
-  }
-}
-
 async function select(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidence> {
   return withProvider(recipe, undefined, async (provider) => {
     assert.equal(provider.providerId.endsWith('/authority-directory'), true)
@@ -523,7 +499,7 @@ export async function bindAuthorityDirectoryContracts(
   filesystem?: 'unsupported',
 ): Promise<void> {
   assert.notEqual(command, '')
-  const build = createBuild()
+  const build = getConformanceBuildIdentity()
   for (const providerId of providers) {
     const recipe = recipeOf(providerId)
     // Probe the implementation on the same temporary filesystem before running its scenarios.

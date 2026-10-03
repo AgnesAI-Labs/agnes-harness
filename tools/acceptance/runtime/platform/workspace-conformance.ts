@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import {
   createReferenceFiles,
@@ -28,7 +25,6 @@ import {
   type WorkspacePort,
   type WorkspaceScenarioEvidence,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/workspace.ts'
-import type { BuildIdentity } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
 import {
   createFilesService,
@@ -45,6 +41,7 @@ import {
 import { WORKSPACE_SECRET_DIRS } from '../../../../packages/protocol/src/constants.ts'
 import type * as Wire from '../../../../packages/protocol/src/runtime/index.ts'
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
+import { getConformanceBuildIdentity } from '../build-identity.js'
 
 import { workspaceDirectory } from '../fixtures/workspace-directory.ts'
 
@@ -219,32 +216,6 @@ function evidence(providerDigest: string, recipe: string, note: string): Workspa
     configDigest: canonicalJsonDigest({ recipe }),
     releaseSetDigest: canonicalJsonDigest({ recipe, note }),
     detail: note,
-  }
-}
-
-function repoRoot(): string {
-  return fileURLToPath(new URL('../../../../', import.meta.url))
-}
-
-function createBuild(): BuildIdentity {
-  const root = repoRoot()
-  const lockDigest = createHash('sha256')
-    .update(readFileSync(join(root, 'pnpm-lock.yaml')))
-    .digest('hex')
-  const sdk = JSON.parse(readFileSync(join(root, 'packages/extension-api/package.json'), 'utf8')) as {
-    name: string
-    version: string
-  }
-  const codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
-  const specVersion = 'runtime-services-1'
-  return {
-    codeSha,
-    buildDigest: canonicalJsonDigest({ codeSha, specVersion }),
-    lockDigest,
-    specVersion,
-    sdkVersion: sdk.version,
-    sdkDigest: canonicalJsonDigest({ name: sdk.name, version: sdk.version }),
-    platform: `${process.platform}-${process.arch}`, // guards-allow-platform: evidence only, no branch
   }
 }
 
@@ -687,7 +658,7 @@ export async function bindConformance(
   if (wanted.length === 0) return { contracts: [], providers: [] }
   const matched = [...new Set(request.providers.filter((providerId) => kindOf(providerId) !== null))]
   if (matched.length === 0) return { contracts: wanted, providers: [] }
-  const build = createBuild()
+  const build = getConformanceBuildIdentity()
   for (const providerId of matched) {
     const kind = kindOf(providerId)
     if (kind === null) continue

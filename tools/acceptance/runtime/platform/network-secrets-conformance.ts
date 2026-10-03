@@ -13,10 +13,7 @@ import {
   registerSecretsContract,
   type SecretsPort,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/secrets.js'
-import type {
-  BuildIdentity,
-  ScenarioName,
-} from '../../../../packages/extension-api/testkit/runtime/evidence.js'
+import type { ScenarioName } from '../../../../packages/extension-api/testkit/runtime/evidence.js'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import {
   action,
@@ -45,28 +42,10 @@ import {
   recoverSecrets,
 } from '../../../../packages/host/test/runtime/network-secrets-process.js'
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
+import { getConformanceBuildIdentity } from '../build-identity.js'
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 const OWNED = ['agh.network', 'agh.secrets'] as const
-function build(): BuildIdentity {
-  const codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()
-  const sdk = JSON.parse(readFileSync(join(ROOT, 'packages/extension-api/package.json'), 'utf8')) as {
-    name: string
-    version: string
-  }
-  const specVersion = 'runtime-services-1'
-  return {
-    codeSha,
-    specVersion,
-    buildDigest: canonicalJsonDigest({ codeSha, specVersion }),
-    sdkVersion: sdk.version,
-    sdkDigest: canonicalJsonDigest({ name: sdk.name, version: sdk.version }),
-    lockDigest: createHash('sha256')
-      .update(readFileSync(join(ROOT, 'pnpm-lock.yaml')))
-      .digest('hex'),
-    platform: `${process.platform}-${process.arch}`, // guards-allow-platform: evidence only
-  }
-}
 function evidence(kind: Kind, name: 'network' | 'secrets', detail: string): NetworkScenarioEvidence {
   const path =
     kind === 'default' ? 'packages/host/src/runtime/providers/' : 'examples/runtime-reference/src/providers/'
@@ -361,7 +340,7 @@ export async function bindConformance(
     request.contracts === 'all' ? [...OWNED] : OWNED.filter((name) => request.contracts.includes(name))
   const providers = request.providers.filter((id) => kindOf(id) !== null)
   if (!wanted.length) return { contracts: [], providers: [] }
-  const identity = build()
+  const identity = getConformanceBuildIdentity()
   for (const providerId of providers) {
     const kind = kindOf(providerId)
     if (kind === null) continue

@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
@@ -8,11 +9,50 @@ import {
   judgeReport as judgeFromKit,
   SCENARIOS,
 } from '../../../packages/extension-api/testkit/index.js'
+import { getConformanceBuildIdentity } from './build-identity.js'
 import { SAMPLE_CLOCK, sampleAssertion, sampleDraft } from './fixtures.js'
 import { judgeReport, mergeReports, serializeReport, writeReport } from './report.js'
 import { conformanceBinderFiles, main, parseConformanceArgs, runConformance } from './run-conformance.js'
 
 describe('conformance report entry', () => {
+  it('keeps the cached checkout identity equal in a fresh recover process and rejects a mismatch', () => {
+    const build = getConformanceBuildIdentity()
+    expect(getConformanceBuildIdentity()).toBe(build)
+    expect(Object.isFrozen(build)).toBe(true)
+    const root = fileURLToPath(new URL('../../../', import.meta.url))
+    const module = new URL('./build-identity.ts', import.meta.url).href
+    const child = execFileSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        `import { getConformanceBuildIdentity } from ${JSON.stringify(module)}; process.stdout.write(JSON.stringify(getConformanceBuildIdentity()))`,
+      ],
+      { cwd: root, encoding: 'utf8', timeout: 30_000 },
+    )
+    expect(JSON.parse(child)).toEqual(build)
+    const directory = mkdtempSync(join(tmpdir(), 'recover-build-'))
+    try {
+      const rejected = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          fileURLToPath(new URL('./client/ui-registry-conformance.ts', import.meta.url)),
+          directory,
+          JSON.stringify({ ...build, codeSha: 'other-checkout' }),
+        ],
+        { cwd: root, encoding: 'utf8', timeout: 30_000 },
+      )
+      expect(rejected.status).toBe(1)
+      expect(rejected.stderr).toContain('AssertionError')
+      expect(rejected.stderr).toContain('other-checkout')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 60_000)
   it.each([new Error('case exploded'), 'non-Error refusal'])(
     'records a thrown case and continues: %s',
     async (error) => {
@@ -159,6 +199,7 @@ describe('conformance report entry', () => {
       })
       expect(run.report.status).toBe('failed')
       expect(run.report.failures.some((failure) => failure.code === 'empty-run')).toBe(false)
+      expect(run.report.failures.some((failure) => failure.code === 'mixed-version')).toBe(false)
       expect(run.report.failures).toContainEqual({
         code: 'missing-evidence',
         detail: 'required agh.loop missing examples/runtime-reference/src/providers/loop.ts',
@@ -216,6 +257,7 @@ describe('conformance report entry', () => {
         ],
       })
       expect(run.report.status).toBe('failed')
+      expect(run.report.failures.some((failure) => failure.code === 'mixed-version')).toBe(false)
       expect(
         run.report.assertions
           .slice(0, SCENARIOS.length * 2)
@@ -366,7 +408,7 @@ describe('conformance report entry', () => {
     expect(runner).toMatch(/pathToFileURL/)
   })
 
-  it('passes the config contract for the default provider and the reference provider', async () => {
+  it('shares one build identity across config and package bindings for both providers', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'conformance-config-'))
     const clock = {
       startedAt: '2026-10-01T00:00:00.000Z',
@@ -375,7 +417,7 @@ describe('conformance report entry', () => {
     try {
       for (const providers of [['reference'], ['default', 'reference']] as const) {
         const run = await runConformance({
-          contracts: ['agh.config'],
+          contracts: ['agh.config', 'agh.package-source'],
           providers: [...providers],
           command: 'conformance',
           clock,
@@ -384,6 +426,7 @@ describe('conformance report entry', () => {
         expect(run.report.status).toBe('passed')
         expect(run.report.failures).toEqual([])
         expect(run.report.assertions.length).toBeGreaterThan(0)
+        expect(new Set(run.report.assertions.map((row) => JSON.stringify(row.build))).size).toBe(1)
         for (const providerId of providers) {
           const rows = run.report.assertions.filter(
             (item) => item.contract === 'agh.config' && item.providerId === providerId,

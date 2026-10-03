@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { referenceConfigPorts } from '../../../../examples/runtime-reference/src/providers/config.ts'
 import {
   type ConfigConformanceBinding,
@@ -12,7 +9,6 @@ import {
   type ConfigSourcePort,
   registerConfigContract,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/config.ts'
-import type { BuildIdentity } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
 import {
   CONFIG_CONTRACT,
@@ -31,6 +27,7 @@ import {
   type SchemaCatalog,
   type SchemaRef,
 } from '../../../../packages/host/src/runtime/providers/config.ts'
+import { getConformanceBuildIdentity } from '../build-identity.js'
 
 const PROFILE_SCHEMA = 'https://agnes.ai/schema/runtime/v1/profile.schema.json'
 const PRESET_SCHEMA = 'https://agnes.ai/schema/runtime/v1/preset.schema.json'
@@ -214,32 +211,6 @@ function evidence(
   detail: string,
 ): ConfigScenarioEvidence {
   return { passed: true, providerDigest: providerDigest(recipe), configDigest, releaseSetDigest, detail }
-}
-
-function repoRoot(): string {
-  return fileURLToPath(new URL('../../../../', import.meta.url))
-}
-
-function createBuild(): BuildIdentity {
-  const root = repoRoot()
-  const lockDigest = createHash('sha256')
-    .update(readFileSync(join(root, 'pnpm-lock.yaml')))
-    .digest('hex')
-  const sdk = JSON.parse(readFileSync(join(root, 'packages/extension-api/package.json'), 'utf8')) as {
-    name: string
-    version: string
-  }
-  const codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
-  const specVersion = 'runtime-services-1'
-  return {
-    codeSha,
-    buildDigest: documentDigest({ codeSha, specVersion }),
-    lockDigest,
-    specVersion,
-    sdkVersion: sdk.version,
-    sdkDigest: documentDigest({ name: sdk.name, version: sdk.version }),
-    platform: `${process.platform}-${process.arch}`, // guards-allow-platform: evidence only, no branch
-  }
 }
 
 async function select(recipe: Recipe): Promise<ConfigScenarioEvidence> {
@@ -475,7 +446,7 @@ export async function bindConfigContract(
   assert.notEqual(command, '')
   const binding: ConfigConformanceBinding = {
     command,
-    build: createBuild(),
+    build: getConformanceBuildIdentity(),
     sources: [port('file'), port('fetch')],
     providerId,
   }
@@ -490,7 +461,7 @@ export async function bindReferenceConfigContract(
   assert.notEqual(command, '')
   const binding: ConfigConformanceBinding = {
     command,
-    build: createBuild(),
+    build: getConformanceBuildIdentity(),
     sources: referenceConfigPorts(),
     providerId,
   }

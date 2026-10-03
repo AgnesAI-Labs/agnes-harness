@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { createPackageResolverProvider as createReferenceResolver } from '../../../../examples/runtime-reference/src/providers/package-resolver.ts'
 import { createPackageSourceProvider as createReferenceSource } from '../../../../examples/runtime-reference/src/providers/package-source.ts'
 import {
@@ -17,7 +16,6 @@ import {
   type PackageSourcePort,
   registerPackageSourceContract,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/package-source.ts'
-import type { BuildIdentity } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
 import { createPackageResolverProvider as createDefaultResolver } from '../../../../packages/package-manager/src/runtime/providers/package-resolver.ts'
 import {
@@ -31,6 +29,7 @@ import {
   readPackageTree,
   sha256Hex,
 } from '../../../../packages/package-manager/src/runtime/source-snapshot.ts'
+import { getConformanceBuildIdentity } from '../build-identity.js'
 import { initGitPackage, startNpmRegistry, writePackageTree } from '../fixtures/package-sources.ts'
 
 const SOURCE_ID = {
@@ -57,30 +56,6 @@ function evidence(
   detail: string,
 ): PackageScenarioEvidence {
   return { passed: true, providerDigest, configDigest, releaseSetDigest, detail }
-}
-
-function repoRoot(): string {
-  return fileURLToPath(new URL('../../../../', import.meta.url))
-}
-
-function createBuild(): BuildIdentity {
-  const root = repoRoot()
-  const lockDigest = sha256Hex(readFileSync(join(root, 'pnpm-lock.yaml')))
-  const sdk = JSON.parse(readFileSync(join(root, 'packages/extension-api/package.json'), 'utf8')) as {
-    name: string
-    version: string
-  }
-  const codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
-  const specVersion = 'runtime-services-1'
-  return {
-    codeSha,
-    buildDigest: sha256Hex(`${codeSha}\n${specVersion}`),
-    lockDigest,
-    specVersion,
-    sdkVersion: sdk.version,
-    sdkDigest: sha256Hex(`${sdk.name}@${sdk.version}`),
-    platform: `${process.platform}-${process.arch}`, // guards-allow-platform: evidence only, no branch
-  }
 }
 
 function temp(prefix: string): string {
@@ -558,7 +533,7 @@ export async function bindPackageContracts(
   selected: { readonly source: boolean; readonly resolver: boolean },
 ): Promise<void> {
   assert.notEqual(command, '')
-  const build = createBuild()
+  const build = getConformanceBuildIdentity()
   const sources: Record<Kind, SourceFactory> = {
     default: createDefaultSource,
     reference: createReferenceSource,
