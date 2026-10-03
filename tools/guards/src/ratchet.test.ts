@@ -349,7 +349,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Immutable package snapshots and the lock resolver. Measured 7784, exact, no spare.
   // Static runtime package inspection without script execution. Measured 8247, exact, no spare.
   // Maintenance publication and immutable client bundles. Measured 9457, exact, no spare.
-  'packages/package-manager/src': 9457,
+  // Normalized package self digests. Measured 9479, exact, no spare.
+  'packages/package-manager/src': 9479,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.

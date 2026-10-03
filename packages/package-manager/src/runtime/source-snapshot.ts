@@ -25,7 +25,7 @@ export const REFERENCE_SOURCE_PROVIDER_ID = 'agh.reference/package-source'
 export const REFERENCE_RESOLVER_PROVIDER_ID = 'agh.reference/package-resolver'
 export const SNAPSHOT_FORMAT = 'agh.package-snapshot/1'
 export const ZERO_DIGEST = '0'.repeat(64)
-export const MANIFEST_FILE = 'manifest.json'
+export const MANIFEST_FILE = 'agnes.plugin.json'
 export const LOCK_FILE = 'runtime-package-lock.json'
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024
@@ -445,6 +445,30 @@ function dependenciesOf(value: unknown): PackageOutcome<PackageDependency[]> {
   return { ok: true, value: dependencies }
 }
 
+/** Replace only schema-owned self references; payload and content digests remain part of the tree. */
+function manifestWithDigest(author: Record<string, unknown>, digest: string): Record<string, unknown> {
+  const replace = (value: unknown): unknown =>
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.hasOwn(value, 'packageDigest')
+      ? { ...value, packageDigest: digest }
+      : value
+  const manifest: Record<string, unknown> = { ...author, packageDigest: digest }
+  for (const key of ['renderers', 'clientServices']) {
+    const rows = author[key]
+    if (Array.isArray(rows)) manifest[key] = rows.map(replace)
+  }
+  if (Array.isArray(author.providers)) {
+    manifest.providers = author.providers.map((value: unknown) => {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+      const row = value as Record<string, unknown>
+      return Object.hasOwn(row, 'descriptor') ? { ...row, descriptor: replace(row.descriptor) } : row
+    })
+  }
+  return manifest
+}
+
 export function identifyPackage(files: readonly TreeFile[]): PackageOutcome<IdentifiedPackage> {
   const manifestFile = files.find((file) => file.path === MANIFEST_FILE)
   if (manifestFile === undefined)
@@ -495,11 +519,11 @@ export function identifyPackage(files: readonly TreeFile[]): PackageOutcome<Iden
     contractRefs.push(ref.value)
   }
   const claimed = typeof author.packageDigest === 'string' ? author.packageDigest : null
-  const zeroed = { ...author, packageDigest: ZERO_DIGEST }
+  const zeroed = manifestWithDigest(author, ZERO_DIGEST)
   const manifestBytes = Buffer.from(jcs(zeroed))
-  const members = files.map((file) =>
-    file.path === MANIFEST_FILE ? { ...file, bytes: manifestBytes } : file,
-  )
+  const members = files
+    .map((file) => (file.path === MANIFEST_FILE ? { ...file, bytes: manifestBytes } : file))
+    .sort((left, right) => compareUtf8(left.path, right.path))
   const records = members.map((file) => ({
     bytes: file.bytes.length,
     digest: sha256Hex(file.bytes),
@@ -507,7 +531,7 @@ export function identifyPackage(files: readonly TreeFile[]): PackageOutcome<Iden
     path: file.path,
   }))
   const treeDigest = digestJson(records)
-  const manifest = { ...author, packageDigest: treeDigest }
+  const manifest = manifestWithDigest(author, treeDigest)
   const manifestDigest = digestJson(manifest)
   const archive = packTar(
     members.map((file) => ({

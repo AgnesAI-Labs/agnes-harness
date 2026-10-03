@@ -12,7 +12,7 @@ export function writePackageTree(
 ): string {
   const dir = join(root, packageId, version)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ id: packageId, version, ...extra }))
+  writeFileSync(join(dir, 'agnes.plugin.json'), JSON.stringify({ id: packageId, version, ...extra }))
   writeFileSync(join(dir, 'readme.txt'), body)
   return dir
 }

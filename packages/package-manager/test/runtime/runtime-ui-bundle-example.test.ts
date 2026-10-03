@@ -1,7 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { jcs } from '@agnes/protocol'
 import { validateOwnedAuthorSchemaSource, validateRuntime } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
+import { createPackageSourceProvider as createDefaultSource } from '../../src/runtime/providers/package-source.js'
 import {
   digestJson,
   identifyPackage,
@@ -9,6 +13,7 @@ import {
   readPackageTree,
   sha256Hex,
   type TreeFile,
+  unpackTar,
   ZERO_DIGEST,
 } from '../../src/runtime/source-snapshot.js'
 
@@ -46,18 +51,26 @@ const manifestOf = (files: readonly TreeFile[]): Manifest =>
 const memberOf = (files: readonly TreeFile[], ref: string): TreeFile | undefined =>
   files.find((file) => `./${file.path}` === ref)
 
-/** The contract digest: the reader zeroes the top-level field, this zeroes the nested ones first. */
+/** Independently hash the canonical fixture tree, without calling either reader. */
 function contractDigest(files: readonly TreeFile[]): string {
   const zero = (rows: readonly Row[]) => rows.map((row) => ({ ...row, packageDigest: ZERO_DIGEST }))
   const manifest = manifestOf(files)
   const zeroed = {
     ...manifest,
+    packageDigest: ZERO_DIGEST,
     renderers: zero(manifest.renderers),
     clientServices: zero(manifest.clientServices),
   }
-  const identified = identifyPackage(withMember(files, MANIFEST_FILE, Buffer.from(JSON.stringify(zeroed))))
-  if (!identified.ok) throw new Error(identified.message)
-  return identified.value.treeDigest
+  return digestJson(
+    withMember(files, MANIFEST_FILE, Buffer.from(jcs(zeroed)))
+      .map((file) => ({
+        path: file.path,
+        mode: file.mode,
+        bytes: file.bytes.length,
+        digest: sha256Hex(file.bytes),
+      }))
+      .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path))),
+  )
 }
 
 function withMember(files: readonly TreeFile[], path: string, bytes: Buffer): TreeFile[] {
@@ -93,15 +106,21 @@ describe('runtime UI bundle example package', () => {
     expect(manifest.renderers.map((renderer) => renderer.packageDigest)).toEqual([digest])
   })
 
-  it('documents that the default reader zeroes only the top-level packageDigest', () => {
-    // identifyPackage keeps renderers[].packageDigest in the digested manifest, so a package whose
-    // renderer carries its digest cannot match. Update this case when the reader follows the contract.
+  it('reproduces the declared tree and final manifest digests with the default reader and a cold archive read', () => {
     const files = readTree()
     const manifest = manifestOf(files)
     const identified = identifyPackage(files)
     if (!identified.ok) throw new Error(identified.message)
     expect(identified.value.claimedPackageDigest).toBe(manifest.packageDigest)
-    expect(identified.value.treeDigest).not.toBe(manifest.packageDigest)
+    expect(identified.value.treeDigest).toBe(manifest.packageDigest)
+    expect(identified.value.manifest).toEqual(manifest)
+    expect(identified.value.manifestDigest).toBe(digestJson(manifest))
+    const unpacked = unpackTar(identified.value.archive)
+    if (!unpacked.ok) throw new Error(unpacked.message)
+    const recovered = identifyPackage(unpacked.value)
+    if (!recovered.ok) throw new Error(recovered.message)
+    expect(recovered.value.treeDigest).toBe(manifest.packageDigest)
+    expect(recovered.value.manifestDigest).toBe(identified.value.manifestDigest)
   })
 
   it('names its own view schema, renderer entry and stylesheet', () => {
@@ -129,7 +148,7 @@ describe('runtime UI bundle example package', () => {
       expect(memberOf(files, path), path).toBeDefined()
   })
 
-  it('changes the digest when web/index.js changes, even under the same id and version', () => {
+  it('changes the digest and refuses tampered or republished bytes with the default reader', async () => {
     const files = readTree()
     const manifest = manifestOf(files)
     const original = memberOf(files, './web/index.js')?.bytes ?? Buffer.alloc(0)
@@ -152,5 +171,41 @@ describe('runtime UI bundle example package', () => {
     )
     expect(manifestOf(republished)).toMatchObject({ id: manifest.id, version: '1.0.0' })
     expect(contractDigest(republished)).not.toBe(manifest.packageDigest)
+    const root = mkdtempSync(join(tmpdir(), 'runtime-ui-digest-'))
+    const source = join(root, 'source')
+    const directory = join(source, manifest.id, manifest.version)
+    try {
+      for (const [index, variant] of [files, tampered, republished].entries()) {
+        for (const file of variant) {
+          mkdirSync(join(directory, dirname(file.path)), { recursive: true })
+          writeFileSync(join(directory, file.path), file.bytes)
+        }
+        const provider = createDefaultSource({
+          cacheDir: join(root, 'default', String(index)),
+          localRoots: { local: source },
+        })
+        try {
+          const outcome = await provider.fetch({
+            locator: {
+              kind: 'local',
+              sourceId: 'local',
+              pathRef: `${manifest.id}@${manifest.version}`,
+              digest: manifest.packageDigest,
+            },
+            expectedDigest: manifest.packageDigest,
+          })
+          expect(outcome).toMatchObject(
+            index === 0
+              ? { ok: true, value: { verifiedDigest: manifest.packageDigest } }
+              : { ok: false, code: 'denied', detailCode: 'digest_mismatch' },
+          )
+          expect(provider.executedEntries()).toEqual([])
+        } finally {
+          provider.dispose()
+        }
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

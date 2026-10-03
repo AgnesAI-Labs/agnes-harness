@@ -12,7 +12,7 @@ export function assemblyUiFixture() {
   const base = new URL('../../../../../examples/packages/runtime-ui-bundle/v1/', import.meta.url)
   const manifest = validateRuntime(
     'RuntimePluginManifest',
-    JSON.parse(readFileSync(new URL('manifest.json', base), 'utf8')),
+    JSON.parse(readFileSync(new URL('agnes.plugin.json', base), 'utf8')),
   )
   if (!manifest.ok) throw new Error('Invalid static UI manifest')
   const pkg = manifest.value
@@ -31,7 +31,7 @@ export function assemblyUiFixture() {
   }
   const bytes = Buffer.from(jcs(normalized))
   records.push({
-    path: 'manifest.json',
+    path: 'agnes.plugin.json',
     mode: 'file',
     bytes: bytes.length,
     digest: createHash('sha256').update(bytes).digest('hex'),

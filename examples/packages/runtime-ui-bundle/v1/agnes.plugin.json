@@ -5,7 +5,7 @@
   "id": "example.runtime-ui-bundle",
   "version": "1.0.0",
   "runtimeApiMajor": 1,
-  "packageDigest": "c94d97171c283376381d9be40e83a8d93c5a7375615e759a1fb2ce6e32eb1179",
+  "packageDigest": "fcbfda800820cc87ff541328358adcea1518bb2a94555d8e5e07b704be124828",
   "entries": {
     "web": "./web/index.js"
   },
@@ -25,7 +25,7 @@
   "renderers": [
     {
       "id": "example.runtime-ui-bundle/status-card.web",
-      "packageDigest": "c94d97171c283376381d9be40e83a8d93c5a7375615e759a1fb2ce6e32eb1179",
+      "packageDigest": "fcbfda800820cc87ff541328358adcea1518bb2a94555d8e5e07b704be124828",
       "renderKey": "example.status-card",
       "targets": ["web"],
       "viewSchemaRanges": [

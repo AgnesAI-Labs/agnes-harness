@@ -100,7 +100,7 @@ export function createBrokenPlugin(
   if (mode === 'omitted-files') manifest.files.pop()
   if (mode === 'entry-missing') manifest.entries.runtime = './runtime/missing.js'
   if (mode === 'case-conflict') members.push({ path: 'Runtime/index.js', bytes: source })
-  const sorted = [...members, { path: 'manifest.json', bytes: Buffer.from(jcs(manifest)) }].sort((a, b) =>
+  const sorted = [...members, { path: 'agnes.plugin.json', bytes: Buffer.from(jcs(manifest)) }].sort((a, b) =>
     Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)),
   )
   const packageDigest = digest(
@@ -113,7 +113,7 @@ export function createBrokenPlugin(
   )
   manifest.packageDigest = packageDigest
   const files = sorted.map((file) =>
-    file.path === 'manifest.json' ? { ...file, bytes: Buffer.from(jcs(manifest)) } : file,
+    file.path === 'agnes.plugin.json' ? { ...file, bytes: Buffer.from(jcs(manifest)) } : file,
   )
   const packed = tar(
     kind === 'npm' ? files.map((file) => ({ ...file, path: `package/${file.path}` })) : files,
@@ -231,7 +231,7 @@ export function packageBuildProgram(fault = ''): string {
     const source = members.find(m => m.name.endsWith('src/runtime.txt'));
     const entry = members.find(m => m.name.endsWith('runtime/index.js'));
     entry.bytes = Buffer.from('throw new Error(' + JSON.stringify(source.bytes.toString('utf8')) + ');\n');
-    const manifest = members.find(m => m.name.endsWith('manifest.json'));
+    const manifest = members.find(m => m.name.endsWith('agnes.plugin.json'));
     if (fault === 'entry-missing' || fault === 'malicious-manifest') {
       const value = JSON.parse(manifest.bytes.toString('utf8'));
       if (fault === 'entry-missing') value.entries.runtime = './runtime/missing.js';
