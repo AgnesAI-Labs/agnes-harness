@@ -1,4 +1,5 @@
-import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { mkdirSync } from 'node:fs'
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FsPolicy } from '@agnes/core'
@@ -6,11 +7,14 @@ import type { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExecAdapter } from '../../src/adapters/exec.js'
 import { createPlatform } from '../../src/adapters/platform.js'
-import type { RemoteTransport } from '../../src/adapters/remote-transport.js'
+import { createLoopbackTransport, type RemoteTransport } from '../../src/adapters/remote-transport.js'
 import { createSessionWorkspaceAdapterFactory } from '../../src/adapters/session-workspace.js'
+import { withSessionFileAccess } from '../../src/session-file-access.js'
 import { CliWorkspaceAuthority } from '../../src/workspace-authority.js'
 
 const roots: string[] = []
+// guards-allow-platform: the loopback spawns remote POSIX commands on this machine.
+const posixIt = process.platform === 'win32' ? it.skip : it
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
@@ -134,5 +138,56 @@ describe('session workspace adapters', () => {
     expect(released).toEqual(['a'])
     await b.close()
     expect(released).toEqual(['a', 'b'])
+  })
+
+  posixIt('applies the read-only roots to a local workspace but never to a remote one', async () => {
+    const base = await realpath(await mkdtemp(join(tmpdir(), 'agnes-ws-ro-')))
+    roots.push(base)
+    const work = join(base, 'work')
+    const protectedRoot = join(base, 'home', 'profiles')
+    mkdirSync(work, { recursive: true })
+    mkdirSync(protectedRoot, { recursive: true })
+    const target = join(protectedRoot, 'profile.yaml')
+    const bytes = new TextEncoder().encode('approvals: off')
+    const fullAccess = (fs: object, invoke: () => Promise<void>) =>
+      withSessionFileAccess(fs, () => true, invoke)
+    const readOnlyRoots = () => [protectedRoot]
+    const exec = { run: vi.fn() as ExecAdapter['run'], killAll: async () => undefined }
+
+    // Control: the same roots on a local workspace refuse the write under full access.
+    const local = createSessionWorkspaceAdapterFactory({
+      platform: createPlatform(),
+      exec,
+      fullAccessReadOnlyRoots: readOnlyRoots,
+    })
+    const localHandle = await local.openWorkspace(new CliWorkspaceAuthority(work).bind('local'))
+    const localFence = await local.openFence(localHandle)
+    await fullAccess(localFence.fs, async () => {
+      await expect(localFence.fs.write(target, bytes)).rejects.toThrow(/denied by policy/)
+    })
+    await localFence.close()
+    await localHandle.close()
+
+    // A remote workspace is a different machine's disk: this machine's state paths mean nothing there,
+    // so the roots are not applied and the write goes through to the remote io.
+    const pool = {
+      acquire: async () => ({ root: work, close: async () => undefined }),
+    } as unknown as RemoteWorkspacePool
+    const remote = createSessionWorkspaceAdapterFactory({
+      platform: createPlatform(),
+      exec,
+      transport: createLoopbackTransport({ root: base }),
+      remotePool: pool,
+      fullAccessReadOnlyRoots: readOnlyRoots,
+    })
+    const remoteHandle = await remote.openWorkspace(new CliWorkspaceAuthority(work).bind('remote'))
+    expect(remoteHandle.kind).toBe('remote')
+    const remoteFence = await remote.openFence(remoteHandle)
+    await fullAccess(remoteFence.fs, async () => {
+      await remoteFence.fs.write(target, bytes)
+    })
+    expect(await readFile(target, 'utf8')).toBe('approvals: off')
+    await remoteFence.close()
+    await remoteHandle.close()
   })
 })

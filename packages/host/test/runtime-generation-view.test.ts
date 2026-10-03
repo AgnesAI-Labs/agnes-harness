@@ -5,6 +5,7 @@ import {
   generationRegistries,
   prepareGenerationOwnerReplacement,
   publishedSessionRuntime,
+  retainGenerationRegistries,
 } from '../src/runtime-generation-view.js'
 
 describe('published generation runtime view', () => {
@@ -31,6 +32,17 @@ describe('published generation runtime view', () => {
     expect(first.resources).not.toBe(second.resources)
     expect(again.tools).toBe(first.tools)
     expect(generationRegistries(cache, '1'.repeat(64)).tools).toBe(first.tools)
+  })
+
+  it('snapshots a revision afresh once it is no longer the retained one', () => {
+    const cache = new Map()
+    const a = generationRegistries(cache, 'a'.repeat(64))
+    const b = generationRegistries(cache, 'b'.repeat(64))
+    retainGenerationRegistries(cache, 'b'.repeat(64))
+    expect(generationRegistries(cache, 'b'.repeat(64)).tools).toBe(b.tools)
+    expect(generationRegistries(cache, 'a'.repeat(64)).tools).not.toBe(a.tools)
+    retainGenerationRegistries(cache, undefined)
+    expect(cache.size).toBe(0)
   })
 
   it('keys overlay candidate runtime by the candidate composite revision, not a live Kernel table', () => {

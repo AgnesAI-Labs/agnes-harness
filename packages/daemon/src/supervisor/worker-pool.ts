@@ -4,6 +4,7 @@ import type { Duplex, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { ResolvedProfile } from '@agnes/host'
 import {
+  type DaemonNotice,
   type EventEnvelope,
   type McpStatus,
   rpcError,
@@ -31,7 +32,11 @@ import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
  * Once it lands it satisfies this structurally (it is at minimum an `emit(kind, info)` method), so
  * nothing here needs to change; this is a standalone local type, not an import of a missing module.
  */
-export type NoticeEmitter = { emit(kind: string, info?: { sessionId?: string; detail?: unknown }): void }
+export type NoticeEmitter = {
+  // The protocol's closed kind set, not `string`: a kind outside it is refused at the wire by
+  // LocalEndpoint, and a typo here must fail to compile instead of at the first attached connection.
+  emit(kind: DaemonNotice['kind'], info?: { sessionId?: string; detail?: unknown }): void
+}
 
 /** Immutable worker inputs selected when a session is first acquired. */
 export type WorkerProfile = Readonly<{ profile: ResolvedProfile; profileFile: string }>
@@ -158,7 +163,8 @@ export class WorkerPool {
       onLog: (sessionKey, level, message) => this.o.onLog?.({ sessionKey, level, message }),
       onActivity: (sessionKey) => this.touch(sessionKey),
       onSessionFailure: (sessionKey, error) => {
-        this.o.notices.emit('session_interrupted', { sessionId: sessionKey })
+        // No notice here: the protocol has no kind for a session-scoped interruption, and the
+        // registry reopens a watched session on its own, so attached clients see a reconnect.
         this.retire([sessionKey], 'session-projection-failed')
         this.o.onSessionFailure?.(sessionKey, error)
       },

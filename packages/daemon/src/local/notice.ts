@@ -42,6 +42,12 @@ export type TreeChangedDetail = {
  * recipient. `packages_changed` is profile-scoped rather than session-scoped: it reaches every
  * initialized, credential-verified connection bound by the server to the matching profile,
  * including pages which have not attached to a session.
+ *
+ * A notice is best-effort and `emit` never throws: callers are lifecycle paths (worker failure
+ * handling, lease reclaim, shutdown) that run detached from any request, where an exception has no
+ * handler and ends the daemon. A connection that refuses the frame (its endpoint measures it against
+ * the protocol table and throws OUTBOUND_INVALID) or fails the push drops that one notice for that one
+ * connection and leaves an audit record; the other connections and the caller are unaffected.
  */
 export class NoticeSink {
   constructor(
@@ -88,10 +94,30 @@ export class NoticeSink {
             conn.clientModuleNotices
           : o.sessionId !== undefined && conn.attached.has(o.sessionId))
       )
-        ep.push(n)
+        this.deliver(ep, n)
     // Nested rather than spread: `params` is a DaemonNotice and carries its own `kind` (e.g.
     // 'resumed'), which would silently clobber the audit record's own 'daemon.notice' discriminator
     // if spread in - the two `kind` fields name different things (audit-record type vs. notice type).
     this.o.audit?.({ kind: 'daemon.notice', notice: params })
+  }
+
+  private deliver(ep: LocalEndpoint, n: ReturnType<typeof notify>): void {
+    try {
+      ep.push(n)
+    } catch (error) {
+      try {
+        // Method and error code only, never the notice or the exception message.
+        const code = (error as { data?: { code?: unknown } } | null)?.data?.code
+        this.o.audit?.({
+          kind: 'daemon.request_failed',
+          detail: {
+            method: n.method,
+            errorCode: code === 'OUTBOUND_INVALID' || code === 'OUTBOUND_WRONG_DIRECTION' ? code : 'UNKNOWN',
+          },
+        })
+      } catch {
+        /* A failing diagnostic must not turn a dropped notice back into a thrown one. */
+      }
+    }
   }
 }

@@ -213,6 +213,18 @@ describe('Task 5 production workspace acceptance', () => {
       await expect(invocation.run((view) => view.fs().read('.git/config'))).rejects.toMatchObject({
         code: 'E_FS_DENIED',
       })
+      // The test home is the workspace, so its profiles are inside the allow rule; full access still
+      // reads them but may not rewrite them.
+      const profileYaml = join(root, 'profiles', 'local-dev', 'profile.yaml')
+      mkdirSync(join(root, 'profiles', 'local-dev'), { recursive: true })
+      writeFileSync(profileYaml, 'name: local-dev\n')
+      await expect(invocation.run((view) => view.fs().read(profileYaml))).resolves.toEqual(
+        new TextEncoder().encode('name: local-dev\n'),
+      )
+      await expect(
+        invocation.run((view) => view.fs().write(profileYaml, new TextEncoder().encode('approvals: off'))),
+      ).rejects.toMatchObject({ code: 'E_FS_DENIED', message: expect.stringContaining('denied by policy') })
+      expect(readFileSync(profileYaml, 'utf8')).toBe('name: local-dev\n')
       const saved = await invocation.run((view) => view.checkpointContext().snapshot([path], 'external'))
       const allowed = await results(session)
       expect(allowed).toHaveLength(calls.length)
@@ -260,6 +272,50 @@ describe('Task 5 production workspace acceptance', () => {
       await expect(
         restoredWorkspace.d.workspaceInvocation?.run((view) => view.fs().read(path)),
       ).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+    } finally {
+      await host.close()
+    }
+  })
+
+  it('keeps a pinned secrets directory outside the home read-only under full access', async () => {
+    const dataDir = tempDir()
+    const root = realpathSync.native(dataDir)
+    // Not <home>/secrets: only the profile's own pin names this directory.
+    const secrets = join(realpathSync.native(tempDir()), 'vault')
+    mkdirSync(secrets, { recursive: true })
+    writeFileSync(join(secrets, 'token'), 'CANARY-PINNED')
+    const { host } = await createTestHost({
+      dataDir,
+      profileInputs: { user: { name: 'local-dev', adapters: { secrets: { kind: 'file', path: secrets } } } },
+      disableSessionTitle: true,
+    })
+    try {
+      const session = await host.createSession({
+        key: 'pinned-secrets',
+        binding: host.acceptWorkspaceBinding(
+          {
+            version: 1,
+            sessionKey: 'pinned-secrets',
+            workspaceId: 'd'.repeat(64),
+            revision: 1,
+            canonicalRoot: root,
+          },
+          'pinned-secrets',
+        ),
+      })
+      const invocation = session.d.workspaceInvocation
+      if (!invocation) throw new Error('test session needs a workspace invocation')
+      await session.setYolo(true, session.d.actor)
+      await expect(invocation.run((view) => view.fs().read(join(secrets, 'token')))).resolves.toEqual(
+        new TextEncoder().encode('CANARY-PINNED'),
+      )
+      await expect(
+        invocation.run((view) => view.fs().write(join(secrets, 'token'), new TextEncoder().encode('x'))),
+      ).rejects.toMatchObject({ code: 'E_FS_DENIED', message: expect.stringContaining('denied by policy') })
+      await expect(
+        invocation.run((view) => view.fs().write(join(secrets, 'fresh'), new TextEncoder().encode('x'))),
+      ).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+      expect(readFileSync(join(secrets, 'token'), 'utf8')).toBe('CANARY-PINNED')
     } finally {
       await host.close()
     }

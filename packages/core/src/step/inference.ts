@@ -52,6 +52,7 @@ import {
   type ProviderCountAttempt,
   quoteBudget,
 } from './calibrate.js'
+import { finishAborted } from './control.js'
 import { contextBudgetError } from './gate.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
 import { type OpStateObj, type ToolCallState, withPhase } from './op-state.js'
@@ -464,6 +465,9 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   const step = op.step + 1
   const gate = await s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 })
   if (gate.block) {
+    // A fail-closed hook that the cancel cut off reports a block, but nobody blocked the turn: the
+    // user stopped it, and that is what the ledger and the client should say.
+    if (s.ac.signal.aborted) return finishAborted(s)
     await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: gate.reason ?? '' } })
     return { phase: 'terminal', reason: 'blocked' }
   }

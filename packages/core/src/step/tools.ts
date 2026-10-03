@@ -16,7 +16,6 @@ import {
   hasTrustedToolCallProvenance,
   toolPolicyBindingProblem,
 } from '../registry/tool-policy.js'
-import { canonicalJson } from '../request/hash.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
 import {
   approvalBindingHash,
@@ -33,6 +32,7 @@ import { resolveModel } from './inference.js'
 import { type OpStateObj, type ToolCallState, withPhase } from './op-state.js'
 import { approvalContinuation } from './parked.js'
 import type { ChainStep, SessionImpl, StepOutcome } from './session.js'
+import { summarizeCall } from './summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from './verify-input.js'
 
 export type ExecOpts = {
@@ -567,7 +567,7 @@ export async function approveAndExecute(
         requestId,
         kind: 'tool' as const,
         toolUseId: call.toolUseId,
-        summary: `${call.name} ${canonicalJson(call.args).slice(0, 200)}`,
+        summary: summarizeCall(call.name, call.args),
         risk: risk === 'always' ? ('always' as const) : ('destructive' as const),
         bindingHash,
         scope,

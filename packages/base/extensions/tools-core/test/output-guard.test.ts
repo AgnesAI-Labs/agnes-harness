@@ -314,6 +314,15 @@ describe('guardOutputSet', () => {
     // The full ten blocks are still reachable -- hitting the call limit loses the inline view,
     // not the data.
     expect(out.ref).toBeDefined()
+    // Reachable by what the model is actually shown: the note carries the whole locator, ?size=
+    // included, which is the only form read and grep accept. A digest prefix cannot be turned back
+    // into a reference.
+    const note = out.blocks.find((b) => b.type === 'text' && b.text.includes('[omitted'))
+    const locator = /artifact:\/\/[0-9a-f]{64}\?size=\d+/.exec((note as { text: string }).text)?.[0]
+    expect(locator).toBe(spillLocator(out.ref as ArtifactRef))
+    const ref = parseSpillLocator(locator as string) as ArtifactRef
+    const stored = JSON.parse(new TextDecoder().decode(await ctx.artifacts.get(ref)))
+    expect(stored).toHaveLength(10)
   })
 
   it('charges the budget for passthrough blocks too, the gap codex leaves open', async () => {

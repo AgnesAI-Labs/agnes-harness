@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -66,6 +67,31 @@ async function realOneToolServerScript(directory: string): Promise<string> {
       "const server = new Server({ name: 'real-one-tool-mcp', version: '1.0.0' }, { capabilities: { tools: {} } })",
       "server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [{ name: 'read', description: 'read something', inputSchema: { type: 'object' } }] }))",
       "server.setRequestHandler(CallToolRequestSchema, async () => ({ content: [{ type: 'text', text: 'ok' }] }))",
+      'await server.connect(new StdioServerTransport())',
+    ].join('\n'),
+    'utf8',
+  )
+  return script
+}
+
+/** A real MCP stdio server with a `pid` tool and a `noise` tool that prints a non-JSON line to stdout first. */
+async function realNoisyServerScript(directory: string): Promise<string> {
+  const script = join(directory, 'real-noisy-mcp.mjs')
+  await writeFile(
+    script,
+    [
+      "import { createRequire } from 'node:module'",
+      'const require = createRequire(import.meta.url)',
+      `const { Server } = require(${JSON.stringify(sdkPaths.server)})`,
+      `const { StdioServerTransport } = require(${JSON.stringify(sdkPaths.stdio)})`,
+      `const { ListToolsRequestSchema, CallToolRequestSchema } = require(${JSON.stringify(sdkPaths.types)})`,
+      "const server = new Server({ name: 'real-noisy-mcp', version: '1.0.0' }, { capabilities: { tools: {} } })",
+      "const tools = ['pid', 'noise'].map((name) => ({ name, description: name, inputSchema: { type: 'object' } }))",
+      'server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }))',
+      'server.setRequestHandler(CallToolRequestSchema, async (request) => {',
+      "  if (request.params.name === 'noise') process.stdout.write('listening on stdout, not JSON-RPC\\n')",
+      "  return { content: [{ type: 'text', text: String(process.pid) }] }",
+      '})',
       'await server.connect(new StdioServerTransport())',
     ].join('\n'),
     'utf8',
@@ -302,6 +328,95 @@ describe('createMcpRowRuntime keeps a row live against the real tool registry', 
     // The bound session's tool is the re-registered one, served by the new connection.
     await run(`${ALPHA_PREFIX}ping`)
     expect(served).toEqual([2])
+  })
+
+  it('stores an oversized MCP result as an artifact the model can read back (single block and many blocks)', async () => {
+    const host = await testHost()
+    const big = Array.from({ length: 400 }, (_, i) => `line ${i} ${'x'.repeat(60)}`).join('\n')
+    let content: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: big }]
+    const opener: McpServerOpener = {
+      async connect(definition) {
+        const connection: McpConnection = {
+          id: definition.serverId,
+          async listTools() {
+            return [{ name: 'dump', description: 'dump', inputSchema: { type: 'object' } }]
+          },
+          async callTool() {
+            return { content }
+          },
+          async close() {},
+          onClose: () => () => undefined,
+          onToolsChanged: () => () => undefined,
+        }
+        return connection
+      },
+    }
+    await createMcpRowRuntime({ host, opener }).apply([entry('alpha')])
+    const session = await host.createSession({ key: 'bound-spill', cwd: hostDir })
+    // A content-addressed in-memory store standing in for the artifact seam; what is under test is
+    // that the Host lets the MCP row reach it at all.
+    const store = new Map<string, Uint8Array>()
+    const run = (name: string, args: unknown) =>
+      (
+        session.currentTools().resolve(name) as unknown as {
+          execute(
+            args: unknown,
+            ctx: unknown,
+          ): Promise<{ content: Array<{ type: string; text?: string; ref?: { sha256: string } }> }>
+        }
+      ).execute(args, {
+        signal: new AbortController().signal,
+        session: { key: session.key, lane: session.lane, workspaceRoot: hostDir },
+        outputMaxBytes: 8192,
+        artifacts: {
+          async put(bytes: Uint8Array, meta?: { mime?: string }) {
+            const sha256 = createHash('sha256').update(bytes).digest('hex')
+            store.set(sha256, bytes)
+            return { sha256, size: bytes.byteLength, mime: meta?.mime ?? 'text/plain' }
+          },
+          async get(ref: { sha256: string }) {
+            const bytes = store.get(ref.sha256)
+            if (!bytes) throw new Error('missing artifact')
+            return bytes
+          },
+        },
+      })
+    const textOf = (result: Awaited<ReturnType<typeof run>>) =>
+      result.content.map((block) => block.text ?? '').join('\n')
+    await vi.waitFor(() => expect(session.currentTools().resolve(`${ALPHA_PREFIX}dump`)).toBeDefined())
+
+    const single = await run(`${ALPHA_PREFIX}dump`, {})
+    expect(textOf(single)).not.toContain('E_CAPABILITY_UNDECLARED')
+    expect(textOf(single)).not.toContain('could not be stored')
+    const locator = /artifact:\/\/[0-9a-f]{64}\?size=\d+/.exec(textOf(single))?.[0]
+    expect(locator).toBeDefined()
+    const readBack = await run('read', { path: locator, offset: 390 })
+    // The line the inline view cut away (the tail window starts after it) is reachable.
+    expect(textOf(readBack)).toContain('line 399')
+
+    // Many small blocks: each fits on its own, the call as a whole does not.
+    content = Array.from({ length: 20 }, (_, i) => ({
+      type: 'text' as const,
+      text: `row ${i} ${'y'.repeat(7000)}`,
+    }))
+    const many = await run(`${ALPHA_PREFIX}dump`, {})
+    expect(textOf(many)).toContain('full text set stored')
+    expect(textOf(many)).not.toContain('could not be stored')
+    const setRef = many.content.find((block) => block.type === 'ref')?.ref
+    expect(setRef).toBeDefined()
+    expect(new TextDecoder().decode(store.get(setRef?.sha256 as string))).toContain('=== text block 20 of 20')
+    // The set comes back through the locator in the note, by read and by grep, like a single block.
+    const setLocator = /artifact:\/\/[0-9a-f]{64}\?size=\d+/.exec(textOf(many))?.[0]
+    expect(setLocator).toBeDefined()
+    expect(textOf(await run('read', { path: setLocator }))).toContain('row 0')
+    expect(textOf(await run('grep', { pattern: 'row 19 ', path: setLocator }))).toContain('row 19')
+
+    // A result past the most `read` can give back is cut before it is stored, and the note says so.
+    content = [{ type: 'text', text: 'z'.repeat(5 * 1024 * 1024) }]
+    const huge = await run(`${ALPHA_PREFIX}dump`, {})
+    expect(textOf(huge)).toContain('only the first 4194304 bytes were kept')
+    const hugeLocator = /artifact:\/\/[0-9a-f]{64}\?size=(\d+)/.exec(textOf(huge))
+    expect(Number(hugeLocator?.[1])).toBe(4 * 1024 * 1024)
   })
 })
 
@@ -677,6 +792,59 @@ describe('createMcpRowRuntime against real MCP servers (real-machine collision v
     expect(tool(host, dotName)?.source.trust).toBe('builtin')
     expect(tool(host, underscoreName)?.source.trust).toBe('builtin')
     expect(tool(host, dotName)?.source.source).not.toBe(tool(host, underscoreName)?.source.source)
+  })
+})
+
+describe('createMcpRowRuntime with a real server that prints non-JSON lines to stdout', () => {
+  it('keeps one connection and one server process however many stray lines arrive', async () => {
+    const scriptDir = await mkdtemp(join(tmpdir(), 'mcp-real-noisy-'))
+    cleanup.push(() => rm(scriptDir, { recursive: true, force: true }))
+    const script = await realNoisyServerScript(scriptDir)
+    const noisyEntry: McpServerSnapshotEntry = {
+      definition: {
+        serverId: 'alpha',
+        displayName: 'alpha',
+        transport: { kind: 'stdio', executable: process.execPath, args: [script] },
+        secretBinding: { kind: 'none' },
+      } as McpServerDefinitionInput,
+      revision: 'r1',
+      desired: 'enabled',
+      trust: 'trusted',
+    }
+    const host = await testHost()
+    let connects = 0
+    const opener: McpServerOpener = {
+      connect: (definition, signal) => {
+        connects += 1
+        return realOpener().connect(definition, signal)
+      },
+    }
+    const runtime = createMcpRowRuntime({ host, opener })
+    cleanup.push(() => runtime.apply([]))
+    await runtime.apply([noisyEntry])
+    const session = await host.createSession({ key: 'noisy', cwd: hostDir })
+    const call = async (name: string): Promise<number> => {
+      const resolved = session.currentTools().resolve(`${ALPHA_PREFIX}${name}`) as unknown as {
+        execute(args: unknown, ctx: unknown): Promise<{ content: Array<{ text: string }> }>
+      }
+      const out = await resolved.execute(
+        {},
+        {
+          signal: new AbortController().signal,
+          session: { key: session.key, lane: session.lane, workspaceRoot: hostDir },
+        },
+      )
+      // The test Host may prepend a truncation notice; the pid is the last token.
+      return Number(/(\d+)\s*$/.exec(out.content[0]?.text ?? '')?.[1])
+    }
+    const pid = await call('pid')
+    expect(pid).toBeGreaterThan(0)
+    for (let i = 0; i < 3; i += 1) expect(await call('noise')).toBe(pid)
+    // Give a (wrongly) triggered reconnect time to show up: the first backoff step is 500 ms.
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    expect(await call('pid')).toBe(pid)
+    expect(connects).toBe(1)
+    expect(() => process.kill(pid, 0)).not.toThrow()
   })
 })
 
