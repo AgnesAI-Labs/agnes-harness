@@ -32,6 +32,11 @@ export function createAdmissionAcceptanceIssuer(
   state: RuntimeStateDatabase,
   authority: StateAuthorityRef,
   now: () => number,
+  actorIdentity: Pick<CallContext, 'principalRef' | 'bindingId' | 'scope'> = {
+    principalRef: 'principal-1',
+    bindingId: 'binding-1',
+    scope: { installationId: 'install-1', kind: 'installation' },
+  },
 ) {
   const selectedDatabase = Object.values(Object.getOwnPropertyDescriptors(state))
     .map((d) => d.value)
@@ -77,7 +82,7 @@ export function createAdmissionAcceptanceIssuer(
     const payload = Buffer.from(
       JSON.stringify({
         iss: 'acceptance-issuer',
-        sub: 'principal-1',
+        sub: actorIdentity.principalRef,
         exp: (now() + 180 * 24 * 60 * 60 * 1000) / 1000,
       }),
     ).toString('base64url')
@@ -91,10 +96,10 @@ export function createAdmissionAcceptanceIssuer(
     if (!verified.ok) throw Error('actual acceptance JWT refused')
     const actor = await identity.accept({
       verified: verified.value,
-      principalRef: 'principal-1',
+      principalRef: actorIdentity.principalRef,
       tenantRef: authority.tenantId,
-      bindingId: 'binding-1',
-      scope: { installationId: 'install-1', kind: 'installation' as const },
+      bindingId: actorIdentity.bindingId,
+      scope: actorIdentity.scope,
       signal: new AbortController().signal,
       source: { kind: 'deployment', generation: 'acceptance', keyId: 'fixture' },
     })
@@ -180,5 +185,5 @@ export function createAdmissionAcceptanceIssuer(
     }
     return context
   }
-  return { issue, source, identity, db, close: () => identity.close() }
+  return { issue, ready, source, identity, db, close: () => identity.close() }
 }

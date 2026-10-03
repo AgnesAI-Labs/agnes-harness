@@ -569,7 +569,7 @@ function preparedAction(key: string, inputValue: unknown): PreparedAction {
 }
 
 /** Source owned by this local, non-billable benchmark adapter, never a production settlement owner. */
-export function createBenchmarkUsageSource() {
+export function createBenchmarkUsageSource(producer: typeof toolBinding = toolBinding) {
   const originals = new Map<string, string>()
   return {
     observe(request: DispatchAdmissionRequest, authorizationId: string, intake: ReceiptIntakeRequest): void {
@@ -586,7 +586,7 @@ export function createBenchmarkUsageSource() {
         if (
           fact.actionId !== request.actionId ||
           fact.attemptId !== request.attemptId ||
-          canonicalJson(fact.source) !== canonicalJson(toolBinding) ||
+          canonicalJson(fact.source) !== canonicalJson(producer) ||
           !intake.receipt.usageRefs.includes(fact.usageId)
         )
           throw new Error('benchmark usage differs from the actual local producer')

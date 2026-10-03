@@ -28,7 +28,10 @@ import type {
 } from '../packages/extension-api/src/runtime/index.ts'
 import { createRuntimeStateStore } from '../packages/host/src/runtime/providers/state.ts'
 import { digestOf as canonicalDigest, stableId } from '../packages/host/src/runtime/state/records.ts'
+import { RuntimeStateDatabase } from '../packages/host/src/runtime/state/transactions.ts'
+import { createAdmissionAcceptanceIssuer } from '../packages/host/test/helpers/runtime-admission-issuer.ts'
 import { jcs } from '../packages/protocol/src/jcs.ts'
+import { createBenchmarkUsageSource } from './bench-runtime-control.ts'
 
 const CALLS = 1200
 const WINDOW = 100
@@ -310,13 +313,30 @@ async function main(): Promise<void> {
   const call = context(deadline)
   const directory = mkdtempSync(join(tmpdir(), 'agnes-state-writes-'))
   const file = join(directory, 'state.sqlite')
-  const store = createRuntimeStateStore({ file, authority, now: () => Date.now() })
+  const usageSource = createBenchmarkUsageSource(toolBinding)
+  const options = { file, authority, now: () => Date.now(), verifyUsageSettlement: usageSource.verify }
+  const database = new RuntimeStateDatabase(options)
+  const { issuer, store } = (() => {
+    try {
+      const issuer = createAdmissionAcceptanceIssuer(database, authority, options.now, context(deadline))
+      try {
+        return { issuer, store: createRuntimeStateStore(options, database) }
+      } catch (error) {
+        issuer.close()
+        throw error
+      }
+    } catch (error) {
+      database.close()
+      throw error
+    }
+  })()
   const admitMs: number[] = []
   const advanceMs: number[] = []
   const dispatchMs: number[] = []
   const intakeMs: number[] = []
   try {
-    unwrap(await store.createRun(admission(deadline), call), 'createRun')
+    const initial = admission(deadline)
+    unwrap(await store.createRun(initial, await issuer.issue(initial, call)), 'createRun')
     unwrap(
       await store.open(
         {
@@ -348,8 +368,10 @@ async function main(): Promise<void> {
       })
       let attemptId = ''
       let authorizationId = ''
+      let dispatched: DispatchAdmissionRequest | null = null
       await timeCall(dispatchMs, async () => {
         const request = dispatchBody(index, action, invocationId, revision, deadline)
+        dispatched = request
         attemptId = request.attemptId
         const admitted = unwrap(await store.dispatchAdmission(request, call), `dispatch ${index}`)
         if (admitted.state !== 'admitted') throw new Error(`dispatch ${index} settled as ${admitted.state}`)
@@ -367,6 +389,8 @@ async function main(): Promise<void> {
       }
       unwrap(await store.commitControl(mark, call), `mark ${index}`)
       const intake = intakeBody(index, action, attemptId, authorizationId)
+      if (!dispatched) throw new Error(`dispatch ${index} source is absent`)
+      usageSource.observe(dispatched, authorizationId, intake)
       await timeCall(intakeMs, async () => {
         const accepted = unwrap(await store.intakeReceipt(intake, call), `intake ${index}`)
         if (accepted.state !== 'accepted') throw new Error(`intake ${index} settled as ${accepted.state}`)
@@ -387,6 +411,7 @@ async function main(): Promise<void> {
       }),
     )
   } finally {
+    issuer.close()
     store.close()
   }
 }
