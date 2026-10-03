@@ -13,12 +13,17 @@ import {
   registerAssemblyPrepareContract,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/assembly.js'
 import {
+  admissionFixtureInput,
+  registerAssemblyAdmissionContract,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/assembly-admission.js'
+import {
   type AssemblyPublishContractBinding,
   registerAssemblyPublishContract,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/assembly-publish.js'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import { constructReleaseSet } from '../../../../packages/host/src/runtime/assembly/release-set.js'
 import { createAssemblyProvider } from '../../../../packages/host/src/runtime/providers/assembly.js'
+import { admissionTestBinding } from '../../../../packages/host/test/runtime/fixtures/assembly-admission-binding.js'
 import { memoryAssemblyLifecycle } from '../../../../packages/host/test/runtime/fixtures/assembly-lifecycle.js'
 import {
   assemblyMaintenanceContext,
@@ -147,6 +152,22 @@ export async function bindConformance(
     registerAssemblyPlanContract(harness, binding)
     registerAssemblyPrepareContract(harness, binding)
     registerAssemblyPublishContract(harness, { ...publicationBinding, providerDigest })
+    registerAssemblyAdmissionContract(harness, {
+      ...admissionTestBinding(providerId as 'default' | 'reference', admissionFixtureInput()),
+      command: request.command,
+      providerDigest: hash(
+        providerId === 'default'
+          ? [
+              'packages/host/src/runtime/assembly/admission.ts',
+              'packages/host/src/runtime/assembly/admission-ticket.ts',
+            ]
+          : [
+              'examples/runtime-reference/src/providers/assembly-admission-coordinator.ts',
+              'examples/runtime-reference/src/providers/assembly-admission.ts',
+            ],
+      ),
+      build: getConformanceBuildIdentity(),
+    })
   }
   return { contracts: ['agh.assembly'], providers }
 }

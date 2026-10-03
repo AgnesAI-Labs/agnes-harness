@@ -20,6 +20,7 @@ import {
   validateOwnedAuthorSchemaSource,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { createReferenceAdmissionCoordinator } from './assembly-admission-coordinator.js'
 import { type ReferenceCandidateLifecycle, referenceCandidate } from './assembly-candidate.js'
 import { type ReferenceMaintenancePorts, referenceAuthorized, referenceResult } from './assembly-journal.js'
 import { referencePublication } from './assembly-publication.js'
@@ -960,7 +961,9 @@ export function createReferenceAssemblyProvider(
   raw: unknown,
   lifecycle?: ReferenceCandidateLifecycle,
   maintenance?: ReferenceMaintenancePorts,
+  admissionState?: Parameters<typeof createReferenceAdmissionCoordinator>[1],
 ) {
+  const admission = createReferenceAdmissionCoordinator(maintenance, admissionState)
   let pinned: unknown
   let captureRefusal: Outcome<never> | null = null
   try {
@@ -1036,6 +1039,7 @@ export function createReferenceAssemblyProvider(
   }
   return {
     providerId: 'agh.reference/assembly',
+    admission,
     contract: 'agh.assembly',
     implemented: Object.freeze(
       maintenance
@@ -1096,6 +1100,7 @@ export function createReferenceAssemblyProvider(
     async dispose(): Promise<readonly string[]> {
       disposed = true
       shutdown.abort()
+      await admission.dispose()
       await Promise.all([prepareQueue, publishQueue])
       return candidate ? candidate.dispose() : []
     },

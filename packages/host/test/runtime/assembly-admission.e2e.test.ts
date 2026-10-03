@@ -6,10 +6,21 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  admissionFixtureInput,
+  exerciseAssemblyAdmission,
+} from '../../../extension-api/testkit/runtime/contracts/assembly-admission.js'
+import {
   exerciseAssemblyPublication,
   maintenanceData,
   upgradeAssemblyFixture,
 } from '../../../extension-api/testkit/runtime/contracts/assembly-publish.js'
+import {
+  admissionCold,
+  admissionProcessScript,
+  admissionTestBinding,
+} from './fixtures/assembly-admission-binding.js'
+import { openAdmissionFixture } from './fixtures/assembly-admission-fixture.js'
+import { assemblyMaintenanceContext } from './fixtures/assembly-maintenance.js'
 import { assemblyTestBinding } from './fixtures/assembly-publish-binding.js'
 
 const script = fileURLToPath(
@@ -132,5 +143,183 @@ describe('maintenance process persistence (Runtime State admission unavailable)'
       }
     },
     120_000,
+  )
+})
+
+describe('restricted persistent State admission process recovery', { timeout: 120_000 }, () => {
+  it.each(['default', 'reference'] as const)(
+    '%s races creation and cancellation in two real State processes',
+    async (provider) => {
+      const directory = mkdtempSync(join(tmpdir(), 'agnes-admission-race-'))
+      const seed = await openAdmissionFixture(directory, provider, admissionFixtureInput())
+      const issued = await seed.tickets.issue(seed.draft(), assemblyMaintenanceContext())
+      expect(issued.ok).toBe(true)
+      await seed.close()
+      const children = ['coordinate', 'cancel'].map((operation) => {
+        const child = fork(admissionProcessScript, [provider, directory, operation, 'race-start'], {
+          execArgv: ['--import', 'tsx'],
+          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+        })
+        let stdout = '',
+          stderr = ''
+        child.stdout?.on('data', (chunk) => {
+          stdout += String(chunk)
+        })
+        child.stderr?.on('data', (chunk) => {
+          stderr += String(chunk)
+        })
+        const ready = Promise.race([
+          once(child, 'message'),
+          once(child, 'exit').then(([code]) => {
+            throw new Error(`Race fixture exited ${code}: ${stderr}`)
+          }),
+        ])
+        const done = once(child, 'exit').then(([code]) => {
+          expect(code, stderr).toBe(0)
+          return JSON.parse(stdout) as ReturnType<typeof admissionCold>
+        })
+        return { child, ready, done }
+      })
+      try {
+        await Promise.all(children.map((entry) => entry.ready))
+        for (const entry of children) entry.child.send('go')
+        const [created, cancelled] = await Promise.all(children.map((entry) => entry.done))
+        expect(created?.result).toEqual(cancelled?.result)
+        expect(created?.result.ok).toBe(true)
+        const recovered = admissionCold(provider, directory)
+        expect(recovered.result).toEqual(created?.result)
+        expect(recovered.state.admissions).toHaveLength(1)
+        expect(recovered.state.runs.length).toBe(
+          recovered.state.admissions[0]?.proof.state === 'created' ? 1 : 0,
+        )
+      } finally {
+        for (const { child } of children)
+          if (child.exitCode === null && child.signalCode === null) {
+            const exited = once(child, 'exit')
+            child.kill('SIGKILL')
+            await exited
+          }
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
+  it.each(['default', 'reference'] as const)(
+    '%s executes the admission cold-recover contract',
+    async (provider) => {
+      expect(
+        (await exerciseAssemblyAdmission(admissionTestBinding(provider, admissionFixtureInput()), 'recover'))
+          .passed,
+      ).toBe(true)
+    },
+  )
+  it.each(
+    (['default', 'reference'] as const).flatMap((provider) =>
+      [
+        ['coordinate', 'issue:before'],
+        ['coordinate', 'issue:after'],
+        ['coordinate', 'create:before'],
+        ['coordinate', 'create:after'],
+        ['confirm-created', 'confirm:before'],
+        ['confirm-created', 'confirm:after'],
+        ['cancel', 'cancel:before'],
+        ['cancel', 'cancel:after'],
+        ['confirm-cancelled', 'confirm:before'],
+        ['confirm-cancelled', 'confirm:after'],
+        ['parameters', 'create:before'],
+        ['parameters', 'create:after'],
+      ].map(([operation, checkpoint]) => ({
+        provider,
+        operation: operation ?? '',
+        checkpoint: checkpoint ?? '',
+      })),
+    ),
+  )(
+    '$provider survives SIGKILL at $operation/$checkpoint with one durable result and no lost pin',
+    async ({ provider, operation, checkpoint }) => {
+      const directory = mkdtempSync(join(tmpdir(), 'agnes-admission-state-kill-'))
+      const child = fork(admissionProcessScript, [provider, directory, operation, checkpoint], {
+        execArgv: ['--import', 'tsx'],
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      })
+      let stderr = ''
+      child.stderr?.on('data', (value) => {
+        stderr += String(value)
+      })
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        const message = await Promise.race([
+          once(child, 'message').then(([value]) => value),
+          once(child, 'exit').then(([code]) => {
+            throw new Error(`State fixture exited ${code}: ${stderr}`)
+          }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`State checkpoint timeout: ${stderr}`)), 30_000)
+          }),
+        ])
+        expect(message).toMatchObject({ checkpoint })
+        const exited = once(child, 'exit')
+        child.kill('SIGKILL')
+        await exited
+        const killed = admissionCold(provider, directory, 'inspect')
+        const active = killed.snapshot.pins.filter((pin) => pin.status === 'active')
+        for (const run of killed.snapshot.runs)
+          expect(active.some((pin) => pin.ticketId === run.admission.ticketId)).toBe(true)
+        const ticket = killed.maintenance.records.find(
+          (row) => row.recordId === `ticket:fixture-ticket-${operation === 'parameters' ? 'new' : 'old'}`,
+        )
+        const pin = killed.snapshot.pins.find(
+          (row) => row.ticketId === `fixture-ticket-${operation === 'parameters' ? 'new' : 'old'}`,
+        )
+        expect(Boolean(ticket)).toBe(Boolean(pin))
+        if (operation === 'parameters') {
+          expect(
+            killed.state.runs.find((run) => run.admission.runId === 'fixture-run-old')?.binding.providers[0]
+              ?.descriptor.packageVersion,
+          ).toBe('1.0.0')
+          expect(killed.state.runs.length).toBe(checkpoint === 'create:before' ? 1 : 2)
+          expect(killed.control).toMatchObject({
+            ok: true,
+            value: { status: checkpoint === 'create:before' ? 'accepted' : 'applied' },
+          })
+          expect(killed.state.session.activeRunId).toBe(
+            checkpoint === 'create:before' ? 'fixture-run-old' : 'fixture-run-new',
+          )
+          const recovered = admissionCold(provider, directory, 'parameters')
+          expect(recovered.result).toMatchObject({
+            ok: true,
+            value: { state: 'created', runId: 'fixture-run-new' },
+          })
+          expect(recovered.state.runs).toHaveLength(2)
+          const old = recovered.state.runs.find((run) => run.admission.runId === 'fixture-run-old')
+          expect(old).toEqual(killed.state.runs.find((run) => run.admission.runId === 'fixture-run-old'))
+          expect(
+            recovered.state.runs.find((run) => run.admission.runId === 'fixture-run-new')?.binding
+              .providers[0]?.descriptor.packageVersion,
+          ).toBe('2.0.0')
+        } else {
+          const recovered = admissionCold(
+            provider,
+            directory,
+            operation === 'cancel' || operation === 'confirm-cancelled' ? 'cancel' : 'coordinate',
+          )
+          expect(recovered.result.ok).toBe(true)
+          const outcome = recovered.state.admissions[0]?.proof
+          expect(recovered.state.admissions).toHaveLength(1)
+          expect(recovered.state.runs.length).toBe(outcome?.state === 'created' ? 1 : 0)
+          expect(recovered.snapshot.pins[0]?.status).toBe(
+            outcome?.state === 'created' ? 'active' : 'released',
+          )
+          expect(admissionCold(provider, directory, 'coordinate').result).toEqual(recovered.result)
+        }
+      } finally {
+        clearTimeout(timer)
+        if (child.exitCode === null && child.signalCode === null) {
+          const exited = once(child, 'exit')
+          child.kill('SIGKILL')
+          await exited
+        }
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
   )
 })
