@@ -9,6 +9,12 @@
   "references": [
     {
       "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../extension-api/tsconfig.runtime.json"
+    },
+    {
+      "path": "../extension-api/tsconfig.tests.json"
     }
   ]
 }
