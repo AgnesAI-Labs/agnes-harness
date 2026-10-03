@@ -239,7 +239,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
   'packages/web-ui/src': 4977,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 4638,
+  // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
+  'packages/web-units/src': 4645,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.

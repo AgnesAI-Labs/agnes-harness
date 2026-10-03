@@ -63,13 +63,22 @@ const RUNTIME_SCRIPT = `
 (function () {
   'use strict';
   var dataEl = document.getElementById('agh-bundle');
-  var bundle = JSON.parse(dataEl ? dataEl.textContent : 'null');
+  var bundle = null;
+  try { bundle = JSON.parse(dataEl ? dataEl.textContent : 'null'); } catch (e) {}
 
   function el(tag, text, cls) {
     var node = document.createElement(tag);
     if (cls) node.className = cls;
     if (text !== undefined && text !== null) node.textContent = text;
     return node;
+  }
+
+  // A missing or unreadable bundle, or a format this viewer predates, gets a notice instead of tabs.
+  if (!bundle || bundle.bundleVersion !== 1) {
+    var version = bundle ? bundle.bundleVersion : null;
+    document.getElementById('agh-tabs').remove();
+    document.querySelector('main').replaceChildren(el('p', '此查看器不支持该诊断包版本：' + (version == null ? '未知' : String(version))));
+    return;
   }
   function notIncluded(target) {
     target.appendChild(el('p', '未包含', 'agh-empty'));

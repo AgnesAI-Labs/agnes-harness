@@ -38,6 +38,11 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
     },
   }
 })
+const diagnosticsCollect = vi.hoisted(() => vi.fn((..._args: unknown[]) => new Promise<never>(() => {})))
+vi.mock('../src/diagnostics-bundle.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/diagnostics-bundle.js')>()),
+  collectDiagnostics: diagnosticsCollect,
+}))
 vi.mock('../src/settings.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/settings.js')>()
   return {
@@ -1879,6 +1884,36 @@ describe('incremental opening', () => {
     const approval = document.getElementById('approval') as HTMLElement
     await vi.waitFor(() => expect(approval.textContent).toContain('正在查找'))
     expect(approval.querySelectorAll('button')).toHaveLength(0)
+  })
+
+  it('tells the diagnostics export that the loaded window has earlier history', async () => {
+    await bootWith(
+      async () => idleTimeline('old'),
+      true,
+      (old) => {
+        old.projectUIOpening.mockImplementation(async () => ({
+          timeline: idleTimeline('old'),
+          history: { hasEarlier: true, startIndex: 3, totalNodes: 3, cursor: 'c' },
+        }))
+        old.projectUIHistory.mockImplementation(() => new Promise(() => undefined))
+      },
+    )
+    await vi.waitFor(() =>
+      expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old', hasEarlier: true }),
+    )
+    document.getElementById('report-problem')?.click()
+    const dialog = document.querySelector('dialog.diagnostics-dialog') as HTMLDialogElement
+    const press = (label: string) =>
+      [...dialog.querySelectorAll<HTMLButtonElement>('section:not([hidden]) button')]
+        .find((b) => b.textContent === label)
+        ?.click()
+    press('分享诊断')
+    press('生成诊断包')
+    await vi.waitFor(() => expect(diagnosticsCollect).toHaveBeenCalledTimes(1))
+    expect(diagnosticsCollect.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: 'old',
+      projectionHasEarlier: true,
+    })
   })
 
   describe('recovery after the connection is gone', () => {
