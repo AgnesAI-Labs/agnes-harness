@@ -213,6 +213,16 @@ export type {
 } from './runtime/interaction/authority.js'
 export { createInteractionAuthority } from './runtime/interaction/authority.js'
 export type { SessionOverlayPort } from './runtime/overlay.js'
+export type {
+  AccountingDispatch,
+  AccountingMethod,
+  AccountingProviderAuthority,
+} from './runtime/providers/accounting.js'
+export { createAccountingFactory } from './runtime/providers/accounting.js'
+export type { DefaultBudgetAuthority } from './runtime/providers/budget.js'
+export { createDefaultBudgetFactory } from './runtime/providers/budget.js'
+export type { DefaultUsageAuthority } from './runtime/providers/usage.js'
+export { createDefaultUsageFactory } from './runtime/providers/usage.js'
 export { approvalDeadlineMs } from './step/approval-callback.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './step/compaction.js'
 export { CompactionRunner, runCompaction } from './step/compaction.js'
