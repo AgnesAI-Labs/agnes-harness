@@ -34,7 +34,7 @@ describe('reference workbench shell: conformance', () => {
     expect(report.failures).toEqual([
       {
         code: 'missing-evidence',
-        detail: `required ${CONTRACT} missing examples/runtime-reference/src/providers/shell.ts`,
+        detail: `required ${CONTRACT} missing binding for provider default`,
       },
       ...['recover', 'select'].map((scenario) => ({
         code: 'missing-evidence',
