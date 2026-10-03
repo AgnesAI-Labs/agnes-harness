@@ -7,6 +7,8 @@ export const EXPORT_INDEX = 'agh.migration/export-index@1'
 export const ASSET_INDEX = 'agh.migration/asset-index@1'
 export const INDEX_MAX_ITEMS = 500
 export const INDEX_MAX_BYTES = 1024 * 1024
+// Keep normal pages below V8 large-object allocations; the wire ceiling still permits 1 MiB.
+const PAGE_TARGET_BYTES = 64 * 1024
 const MAX_DEPTH = 32
 const MAX_ITEM_BYTES = 16 * 1024 * 1024
 export type IndexType = typeof EXPORT_INDEX | typeof ASSET_INDEX
@@ -167,7 +169,7 @@ export async function buildExportIndex(
     const size = knownSize ?? encoded(entry).length
     if (
       pending[level]!.length &&
-      (pending[level]!.length === INDEX_MAX_ITEMS || sizes[level]! + size + 1 > INDEX_MAX_BYTES)
+      (pending[level]!.length === INDEX_MAX_ITEMS || sizes[level]! + size + 1 > PAGE_TARGET_BYTES)
     ) {
       await append(level + 1, await flush(level))
     }
