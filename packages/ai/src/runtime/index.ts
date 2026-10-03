@@ -3,3 +3,10 @@ export type { ModelAdapterDeployment, ModelWireSource } from './model-adapter/po
 export type { EmbeddingDeployment } from './providers/embedding.js'
 export { createEmbeddingFactory } from './providers/embedding.js'
 export { createModelAdapterFactory } from './providers/model-adapter.js'
+export type {
+  PricingCatalogCapture,
+  PricingCurrentCapture,
+  PricingFactoryOptions,
+  PricingProviderOwner,
+} from './providers/pricing-factory.js'
+export { createPricingProviderFactory } from './providers/pricing-factory.js'
