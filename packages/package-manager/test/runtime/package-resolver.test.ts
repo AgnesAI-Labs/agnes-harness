@@ -34,7 +34,7 @@ function writePackage(
 ): string {
   const dir = join(source, packageId, version)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ id: packageId, version, ...extra }))
+  writeFileSync(join(dir, 'agnes.plugin.json'), JSON.stringify({ id: packageId, version, ...extra }))
   for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
   return dir
 }

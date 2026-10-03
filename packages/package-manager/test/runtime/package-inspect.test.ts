@@ -247,9 +247,12 @@ describe('immutable runtime package inspection', () => {
     const fixture = fixtures.createBrokenPlugin(),
       root = temporary()
     fixtures.writeBrokenPlugin(root, fixture)
-    const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')) as Record<string, unknown>
+    const manifest = JSON.parse(readFileSync(join(root, 'agnes.plugin.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >
     mutate(manifest)
-    writeFileSync(join(root, 'manifest.json'), jcs(manifest))
+    writeFileSync(join(root, 'agnes.plugin.json'), jcs(manifest))
     const lock =
       detailCode === 'manifest_digest_mismatch' && fixture.lock.manifestRef.kind === 'inline'
         ? { ...fixture.lock, manifestRef: { ...fixture.lock.manifestRef, digest: 'f'.repeat(64) } }
@@ -276,7 +279,7 @@ describe('immutable runtime package inspection', () => {
     const tree = readPackageTree(root)
     if (!tree.ok) throw new Error(tree.detailCode)
     const manifest = JSON.parse(
-      readFileSync(join(root, 'manifest.json'), 'utf8'),
+      readFileSync(join(root, 'agnes.plugin.json'), 'utf8'),
     ) as Wire['RuntimePluginManifest']
     const locator: Wire['PackageLocator'] = {
       kind: 'local',
@@ -307,14 +310,14 @@ describe('immutable runtime package inspection', () => {
         requiredUi: [{ target: 'web', rendererId: 'example.runtime-ui-bundle/status-card.web' }],
       }),
     ).toMatchObject({ ok: true, value: { packageDigest: manifest.packageDigest } })
-    const oldReader = identifyPackage(tree.value)
-    expect(oldReader.ok && oldReader.value.treeDigest).not.toBe(manifest.packageDigest)
+    const reader = identifyPackage(tree.value)
+    expect(reader.ok && reader.value.treeDigest).toBe(manifest.packageDigest)
     const changedRoot = temporary()
     fixtures.writeBrokenPlugin(changedRoot, { ...fixtures.createBrokenPlugin(), files: tree.value })
     const renderer = manifest.renderers[0]
     if (!renderer) throw new Error('missing example renderer')
     renderer.packageDigest = '0'.repeat(64)
-    writeFileSync(join(changedRoot, 'manifest.json'), jcs(manifest))
+    writeFileSync(join(changedRoot, 'agnes.plugin.json'), jcs(manifest))
     expect(
       await inspectLockedPackage({
         lock,

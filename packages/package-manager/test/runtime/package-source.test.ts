@@ -42,7 +42,7 @@ function writeTree(
 ): string {
   const dir = join(root, packageId, version)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ id: packageId, version, ...extra }))
+  writeFileSync(join(dir, 'agnes.plugin.json'), JSON.stringify({ id: packageId, version, ...extra }))
   for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
   return dir
 }
@@ -86,6 +86,15 @@ describe('package tree identity', () => {
       '1.2.3',
       {
         packageDigest: 'ab'.repeat(32),
+        providers: [
+          { descriptor: { packageDigest: 'ab'.repeat(32), configSchema: { digest: 'cd'.repeat(32) } } },
+        ],
+        renderers: [{ packageDigest: 'ab'.repeat(32), entry: './postinstall.js' }],
+        clientServices: [
+          { packageDigest: 'ab'.repeat(32), entry: { entry: './postinstall.js', export: 'shell' } },
+        ],
+        entries: { web: { digest: 'ef'.repeat(32), platform: 'web' } },
+        payload: { packageDigest: '12'.repeat(32) },
         entry: 'postinstall.js',
       },
       {
@@ -102,9 +111,72 @@ describe('package tree identity', () => {
     expect(identified.value.treeDigest).not.toBe(identified.value.claimedPackageDigest)
     expect(identified.value.treeDigest).toMatch(/^[a-f0-9]{64}$/)
     expect(identified.value.manifest.packageDigest).toBe(identified.value.treeDigest)
+    expect(identified.value.manifest).toMatchObject({
+      providers: [
+        {
+          descriptor: {
+            packageDigest: identified.value.treeDigest,
+            configSchema: { digest: 'cd'.repeat(32) },
+          },
+        },
+      ],
+      renderers: [{ packageDigest: identified.value.treeDigest }],
+      clientServices: [{ packageDigest: identified.value.treeDigest }],
+      entries: { web: { digest: 'ef'.repeat(32), platform: 'web' } },
+      payload: { packageDigest: '12'.repeat(32) },
+    })
+    const finalManifest = identified.value.manifest
+    for (const replacement of ['34'.repeat(32), ZERO_DIGEST]) {
+      const selfChanged = identifyPackage(
+        tree.value
+          .map((file) =>
+            file.path === 'agnes.plugin.json'
+              ? {
+                  ...file,
+                  bytes: Buffer.from(
+                    JSON.stringify(finalManifest).replaceAll(identified.value.treeDigest, replacement),
+                  ),
+                }
+              : file,
+          )
+          .reverse(),
+      )
+      expect(selfChanged).toMatchObject({
+        ok: true,
+        value: { treeDigest: identified.value.treeDigest, manifestDigest: identified.value.manifestDigest },
+      })
+    }
+    for (const contentDigest of ['cd'.repeat(32), 'ef'.repeat(32), '12'.repeat(32)]) {
+      const changed = identifyPackage(
+        tree.value.map((file) =>
+          file.path === 'agnes.plugin.json'
+            ? {
+                ...file,
+                bytes: Buffer.from(JSON.stringify(finalManifest).replaceAll(contentDigest, '56'.repeat(32))),
+              }
+            : file,
+        ),
+      )
+      expect(changed.ok).toBe(true)
+      if (!changed.ok) throw new Error(changed.message)
+      expect(changed.value.treeDigest).not.toBe(identified.value.treeDigest)
+    }
     expect(existsSync(marker)).toBe(false)
     expect(identified.value.integrity).toBe(`sha256-${identified.value.archiveDigest}`)
     expect(ZERO_DIGEST).toHaveLength(64)
+  })
+
+  it('requires the contract manifest name and refuses the legacy name', () => {
+    const bytes = Buffer.from(JSON.stringify({ id: 'acme.tools', version: '1.0.0' }))
+    expect(identifyPackage([{ path: 'manifest.json', mode: 'file', bytes }])).toMatchObject({
+      ok: false,
+      code: 'invalid_input',
+      detailCode: 'manifest_missing',
+    })
+    expect(identifyPackage([{ path: 'agnes.plugin.json', mode: 'file', bytes }])).toMatchObject({
+      ok: true,
+      value: { packageId: 'acme.tools', version: '1.0.0' },
+    })
   })
 
   it('refuses a symbolic link that leaves the package root', () => {

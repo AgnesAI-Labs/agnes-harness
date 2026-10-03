@@ -147,7 +147,10 @@ describe('package source process recovery', () => {
     const packageDir = join(directory, 'acme.tools', '1.0.0')
     try {
       mkdirSync(packageDir, { recursive: true })
-      writeFileSync(join(packageDir, 'manifest.json'), JSON.stringify({ id: 'acme.tools', version: '1.0.0' }))
+      writeFileSync(
+        join(packageDir, 'agnes.plugin.json'),
+        JSON.stringify({ id: 'acme.tools', version: '1.0.0' }),
+      )
       writeFileSync(join(packageDir, 'readme.txt'), 'process')
       const tree = readPackageTree(packageDir)
       expect(tree.ok).toBe(true)

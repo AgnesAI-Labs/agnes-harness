@@ -19,7 +19,7 @@ import {
 
 const LIMITS = { maxBytes: 1_000_000, maxDepth: 32, maxMembers: 10_000 } as const
 const ZERO = '0'.repeat(64)
-const MANIFEST = 'manifest.json'
+const MANIFEST = 'agnes.plugin.json'
 const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.]+)?$/
 const FILE_LIMIT = 8 * 1024 * 1024
 const TREE_LIMIT = 32 * 1024 * 1024
@@ -119,6 +119,28 @@ function outside(root: string, target: string): boolean {
   return rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
 }
 
+function identityDocument(record: Record<string, unknown>, identity: string): Record<string, unknown> {
+  const copy = JSON.parse(JSON.stringify(record)) as Record<string, unknown>
+  copy.packageDigest = identity
+  for (const group of ['providers', 'renderers', 'clientServices']) {
+    const items = copy[group]
+    if (!Array.isArray(items)) continue
+    for (const item of items) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+      const owned = group === 'providers' ? item.descriptor : item
+      if (
+        owned !== null &&
+        typeof owned === 'object' &&
+        !Array.isArray(owned) &&
+        Object.hasOwn(owned, 'packageDigest')
+      ) {
+        owned.packageDigest = identity
+      }
+    }
+  }
+  return copy
+}
+
 function digestFiles(files: readonly StoredFile[]): ReferenceOutcome<PackageIdentity> {
   const listed = files.slice().sort((left, right) => comparePath(left.path, right.path))
   const manifestFile = listed.find((file) => file.path === MANIFEST)
@@ -140,7 +162,7 @@ function digestFiles(files: readonly StoredFile[]): ReferenceOutcome<PackageIden
   if (!VERSION.test(record.version)) {
     return refuse('invalid_input', 'schema_invalid', 'package version is not a semver version')
   }
-  const zeroed = canonicalText({ ...record, packageDigest: ZERO })
+  const zeroed = canonicalText(identityDocument(record, ZERO))
   if (!zeroed.ok) return zeroed
   const replaced = listed.map((file) =>
     file.path === MANIFEST ? { ...file, bytes: Buffer.from(zeroed.value.text) } : file,
@@ -154,7 +176,7 @@ function digestFiles(files: readonly StoredFile[]): ReferenceOutcome<PackageIden
   const treeText = canonicalText(records)
   if (!treeText.ok) return treeText
   const treeDigest = canonicalJsonDigest(treeText.value.json)
-  const manifest = canonicalText({ ...record, packageDigest: treeDigest })
+  const manifest = canonicalText(identityDocument(record, treeDigest))
   if (!manifest.ok) return manifest
   const payloadText = canonicalText(records)
   if (!payloadText.ok) return payloadText
