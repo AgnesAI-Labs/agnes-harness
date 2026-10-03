@@ -1,6 +1,7 @@
 import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
 import { isRegisterTombstone, registerKey } from '../log/storage.js'
 import { CoreError, type Event, type Seq } from '../types.js'
+import { contextAnchorOf } from './anchor.js'
 import { ChunkedMap } from './chunked-map.js'
 import type {
   ApprovalAsked,
@@ -330,24 +331,13 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         if (!c.adjustment || !s.session?.parent || c.adjustment.of > s.session.parent.boundarySeq)
           s.creditsUsed += c.adjustment?.delta ?? c.credits ?? 0
       }
-      if (
-        c.purpose !== 'title' &&
-        c.purpose !== 'approval-guardian' &&
-        c.purpose !== 'media' &&
-        !c.interrupted &&
-        !c.adjustment
-      )
-        s.lastLedgerTokens = {
-          seq: e.seq,
-          total: c.tokens.input + c.tokens.output + c.tokens.cacheRead + c.tokens.cacheWrite,
-          cacheRead: c.tokens.cacheRead,
-          input: c.tokens.input,
-        }
       break
     }
     case 'subagent/cost':
       break
   }
+  const anchor = contextAnchorOf(e)
+  if (anchor) s.lastLedgerTokens = anchor
   // Taint is a property of the turn in progress, so a row arriving outside one taints nothing, and
   // turn/start above clears it for the turn it opens.
   if (

@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { testFsPolicy } from '@agnes/core/testkit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createFs, type FsBinding } from '../../src/adapters/fs.js'
+import { withSessionFileAccess } from '../../src/session-file-access.js'
 
 const directoryLink = process.platform === 'win32' ? 'junction' : 'dir' // guards-allow-platform: actual directory-link fixtures.
 
@@ -148,6 +149,27 @@ describe('fs adapter', () => {
     await expect(f.write(out, new Uint8Array())).rejects.toThrow(/E_FS_DENIED/)
     await expect(f.mkdir(join(outside, 'd'))).rejects.toThrow(/E_FS_DENIED/)
     await expect(f.rm(out)).rejects.toThrow(/E_FS_DENIED/)
+    let full = true
+    await withSessionFileAccess(
+      f,
+      () => full,
+      async () => {
+        await f.write(out, new TextEncoder().encode('full'))
+        expect(new TextDecoder().decode(await f.read(out))).toBe('full')
+        expect((await f.stat(out)).kind).toBe('file')
+        expect((await f.list(outside)).map((entry) => entry.name)).toContain('x')
+        expect(await f.realpath(out)).toBe(join(realpathSync.native(outside), 'x'))
+        await f.mkdir(join(outside, 'd'))
+        await f.rm(join(outside, 'd'), { recursive: true })
+        await expect(f.write('.git/config', new Uint8Array())).rejects.toThrow(/denied by policy/)
+        await expect(fs().read(out)).rejects.toThrow(/E_FS_DENIED/)
+        full = false
+        await expect(f.read(out)).rejects.toThrow(/完全权限/)
+        full = true
+        await f.rm(out)
+      },
+    )
+    await expect(f.list(outside)).rejects.toThrow(/E_FS_DENIED/)
   })
   // The escape does not have to be the last segment: a symlinked directory in the middle of the
   // path leaves every later segment outside the fence too.
@@ -310,5 +332,136 @@ describe('fs adapter, stat at the workspace root', () => {
     symlinkSync(join(root, 'real'), join(root, 'link'), directoryLink)
     expect((await f.stat('link')).kind).toBe('symlink')
     expect((await f.stat('real')).kind).toBe('dir')
+  })
+})
+
+// Full access widens every path no rule names, and the installation's own state - credentials and
+// profiles - is such a path. The model may read it (a deliberate trade-off), but the file tools must
+// not rewrite it: a profile.yaml saying `approvals.mode: off` outlives the session that wrote it.
+describe('fs adapter, full access over the installation own state', () => {
+  let base: string
+  let root: string
+  let home: string
+  let protectedRoots: string[]
+  beforeEach(() => {
+    base = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-own-state-')))
+    root = join(base, 'work')
+    home = join(base, 'home')
+    mkdirSync(join(root, '.git'), { recursive: true })
+    for (const dir of ['secrets/canary', 'auth/canary', 'profiles/local-dev', 'profiles-extra', 'other'])
+      mkdirSync(join(home, dir), { recursive: true })
+    writeFileSync(join(home, 'secrets', 'canary', 'probe'), 'CANARY-SECRETS')
+    writeFileSync(join(home, 'auth', 'canary', 'probe.json'), 'CANARY-AUTH')
+    writeFileSync(join(home, 'profiles', 'local-dev', 'profile.yaml'), 'name: local-dev\n')
+    protectedRoots = ['secrets', 'auth', 'profiles'].map((dir) => join(home, dir))
+  })
+  afterEach(() => rmSync(base, { recursive: true, force: true }))
+  const bytes = (text: string) => new TextEncoder().encode(text)
+  const fenceFor = (workspace = root, caseSensitive = true) =>
+    createFs(
+      () => ({ policy: testFsPolicy(workspace, { deny: ['.git'] }), caseSensitive }),
+      undefined,
+      undefined,
+      () => protectedRoots,
+    )
+  const full = <T>(f: object, invoke: () => Promise<T>): Promise<T> =>
+    withSessionFileAccess(f, () => true, invoke)
+  const profileYaml = () => join(home, 'profiles', 'local-dev', 'profile.yaml')
+
+  it('keeps the state readable and refuses every way of changing it', async () => {
+    const f = fenceFor()
+    await full(f, async () => {
+      expect(new TextDecoder().decode(await f.read(join(home, 'secrets', 'canary', 'probe')))).toBe(
+        'CANARY-SECRETS',
+      )
+      expect(new TextDecoder().decode(await f.read(join(home, 'auth', 'canary', 'probe.json')))).toBe(
+        'CANARY-AUTH',
+      )
+      expect((await f.list(join(home, 'profiles'))).map((e) => e.name)).toEqual(['local-dev'])
+      expect((await f.stat(profileYaml())).kind).toBe('file')
+      expect(await f.realpath(profileYaml())).toBe(profileYaml())
+      const refused = /denied by policy/
+      await expect(f.write(profileYaml(), bytes('approvals:\n  mode: off\n'))).rejects.toThrow(refused)
+      await expect(f.write(join(home, 'profiles', 'local-dev', 'new.yaml'), bytes('x'))).rejects.toThrow(
+        refused,
+      )
+      await expect(f.write(join(home, 'secrets', 'fresh', 'k'), bytes('x'))).rejects.toThrow(refused)
+      await expect(f.mkdir(join(home, 'auth', 'new'))).rejects.toThrow(refused)
+      await expect(f.rm(profileYaml())).rejects.toThrow(refused)
+      await expect(f.rm(join(home, 'profiles'), { recursive: true })).rejects.toThrow(refused)
+      // The home itself holds all of it: removing it recursively is removing the state.
+      await expect(f.rm(home, { recursive: true })).rejects.toThrow(refused)
+      await expect(f.write(profileYaml(), bytes('x'))).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+    })
+    expect(readFileSync(profileYaml(), 'utf8')).toBe('name: local-dev\n')
+    expect(existsSync(join(home, 'profiles', 'local-dev', 'new.yaml'))).toBe(false)
+    expect(existsSync(join(home, 'auth', 'new'))).toBe(false)
+  })
+
+  it('changes nothing else under full access: other home paths, siblings and the workspace stay writable', async () => {
+    const f = fenceFor()
+    await full(f, async () => {
+      await f.write(join(home, 'other', 'x'), bytes('ok'))
+      await f.write(join(home, 'profiles-extra', 'x'), bytes('ok'))
+      await f.write('inside.txt', bytes('ok'))
+      await f.rm(join(home, 'other', 'x'))
+      await expect(f.write('.git/config', bytes('x'))).rejects.toThrow(/denied by policy/)
+    })
+    expect(readFileSync(join(root, 'inside.txt'), 'utf8')).toBe('ok')
+  })
+
+  it('does not touch the answer without full access', async () => {
+    const f = fenceFor()
+    await expect(f.read(profileYaml())).rejects.toThrow(/完全权限/)
+    await expect(f.write(profileYaml(), bytes('x'))).rejects.toThrow(/完全权限/)
+    await f.write('inside.txt', bytes('ok'))
+    // The revocation is seen at once, mid-invocation.
+    let on = true
+    await withSessionFileAccess(
+      f,
+      () => on,
+      async () => {
+        await expect(f.write(profileYaml(), bytes('x'))).rejects.toThrow(/denied by policy/)
+        on = false
+        await expect(f.write(profileYaml(), bytes('x'))).rejects.toThrow(/完全权限/)
+      },
+    )
+  })
+
+  it('holds through symlinks, case and dot segments, and reads the roots on every call', async () => {
+    const f = fenceFor(root, false)
+    symlinkSync(join(home, 'profiles'), join(root, 'alias'), directoryLink)
+    symlinkSync(profileYaml(), join(root, 'file-alias'))
+    symlinkSync(join(home, 'profiles', 'later'), join(root, 'dangling'))
+    await full(f, async () => {
+      expect(new TextDecoder().decode(await f.read('alias/local-dev/profile.yaml'))).toBe('name: local-dev\n')
+      for (const spelling of [
+        'alias/local-dev/profile.yaml',
+        'alias/new.yaml',
+        'file-alias',
+        'dangling',
+        join(home, 'PROFILES', 'local-dev', 'profile.yaml'),
+        join(home, 'other', '..', 'profiles', 'local-dev', 'profile.yaml'),
+        join(home, 'profiles', 'a', '..', 'local-dev', 'profile.yaml'),
+      ])
+        await expect(f.write(spelling, bytes('x')), spelling).rejects.toThrow(/denied by policy/)
+      await expect(f.rm('file-alias')).rejects.toThrow(/denied by policy/)
+      protectedRoots = []
+      await f.write(join(home, 'other', 'y'), bytes('ok'))
+      await f.write('alias/new.yaml', bytes('now writable'))
+    })
+    expect(existsSync(join(home, 'profiles', 'later'))).toBe(false)
+  })
+
+  it('refuses under full access even when the workspace itself covers the state, and leaves the workspace case alone otherwise', async () => {
+    const f = fenceFor(home)
+    // An explicit workspace over the home keeps its ordinary behaviour without full access ...
+    await f.write(join(home, 'profiles', 'local-dev', 'plain.txt'), bytes('ok'))
+    // ... and loses the write to the state once the session has full access, reads included staying open.
+    await full(f, async () => {
+      expect(new TextDecoder().decode(await f.read(profileYaml()))).toBe('name: local-dev\n')
+      await expect(f.write(profileYaml(), bytes('x'))).rejects.toThrow(/denied by policy/)
+      await f.write(join(home, 'other', 'z'), bytes('ok'))
+    })
   })
 })

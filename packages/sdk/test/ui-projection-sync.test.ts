@@ -73,6 +73,20 @@ function patchOf(from: number, upto: number, totalNodes: number, changes: UITime
 }
 
 describe('the pure patch functions', () => {
+  it.each([
+    [false, true, true],
+    [true, false, false],
+    [true, undefined, true],
+    [undefined, undefined, undefined],
+  ])('applies permission state %s -> %s without node changes', (before, yolo, expected) => {
+    const current = deepFreeze({ ...timeline(1, []), ...(before === undefined ? {} : { yolo: before }) })
+    const patch = deepFreeze({ ...patchOf(1, 2, 0, []), ...(yolo === undefined ? {} : { yolo }) })
+    expect(applyUITimelinePatch(current, patch).yolo).toBe(expected)
+    expect(applyWindowedUITimelinePatch(current, { startIndex: 0, totalNodes: 0 }, patch).timeline.yolo).toBe(
+      expected,
+    )
+  })
+
   it('keep unchanged nodes and turns by identity and never write to their inputs', () => {
     const a = text('a', 1)
     const b = text('b', 2)

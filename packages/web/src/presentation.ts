@@ -1,5 +1,4 @@
-import type { ThinkingLevel } from '@agnes/protocol'
-import type { LocaleVars } from '@agnes/web-client'
+import type { ModelSettings } from '@agnes/protocol'
 
 export { shouldShowEmptyState } from './conversation-visibility.js'
 
@@ -21,7 +20,7 @@ export type ComposerActionPresentation = {
   title: string
 }
 
-export type KnownSessionModel = { route: string; id: string; thinking?: ThinkingLevel }
+export type KnownSessionModel = { route: string; id: string; settings?: ModelSettings }
 
 type ResizeableComposer = {
   scrollHeight: number

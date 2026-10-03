@@ -11,6 +11,7 @@ import type {
   ApprovalMode,
   ExecutionDomain,
   InferenceEvent,
+  ModelRecord,
   Provider,
   RequestBody,
   RequestMediaHeader,
@@ -158,7 +159,8 @@ export type InboxReplacementInput = { inbox: Inbox | undefined; target: 'next-st
 export type InboxReplacementOutput = { action: 'none' } | { action: 'claim'; itemId: string }
 export type BudgetReplacementInput = {
   nextStep: number
-  maxSteps: number
+  /** null means no cumulative step ceiling; credit checks still apply. */
+  maxSteps: number | null
   creditsUsed: number
   creditsCap: number | null
 }
@@ -292,6 +294,8 @@ export const noopHooks: HookPort = {
 export type CompactionPort = {
   /** Absent is treated as false so older policy-only adapters cannot accidentally disclose a stub. */
   readonly runnable?: boolean
+  /** Whether threshold compaction is held back this turn because the summary route failed outright. */
+  suspended?(turn: number): boolean
   shouldCompact(p: {
     contextTokens: number
     contextWindow: number
@@ -647,11 +651,39 @@ export class SessionImpl {
     return this.d.tracker.state
   }
 
+  private initialModelSettingsRestored = false
+
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
     if (this.state.session) {
+      if (!this.initialModelSettingsRestored)
+        this.restoreInitialModelSettings(this.state.session.modelSettings)
       await this.restoreYolo()
       return
+    }
+    const modelSettings: NonNullable<SessionStart['modelSettings']> = []
+    let records: ModelRecord[] = []
+    try {
+      records = this.d.provider.models()
+    } catch {
+      // Match resolveModel's fallback when a provider cannot publish its catalogue.
+    }
+    for (const slot of Object.keys(this.preset.model.route)) {
+      const target = resolveModel(this, slot)
+      const record = records.find((m) => m.route === target.route && m.id === target.model)
+      if (!record) continue
+      const thinking = this.preset.model.thinking[slot] ?? record.defaultSettings?.thinking
+      modelSettings.push({
+        slot,
+        ...target,
+        settings: {
+          ...(thinking === undefined ? {} : { thinking }),
+          contextWindow:
+            this.preset.model.contextWindow?.[slot] ??
+            record.defaultSettings?.contextWindow ??
+            record.contextWindow,
+        },
+      })
     }
     await this.d.log.append([
       // The one row that carries no lane: a session opens once, not once per lane.
@@ -665,10 +697,33 @@ export class SessionImpl {
           resolvedProfileHash: this.d.resolvedProfileHash,
           preset: this.preset.name,
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
+          ...(modelSettings.length ? { modelSettings } : {}),
           ...(this.d.imported ? { imported: this.d.imported } : {}),
         },
       },
     ])
+    this.restoreInitialModelSettings(modelSettings)
+  }
+
+  private restoreInitialModelSettings(models: SessionStart['modelSettings']): void {
+    this.initialModelSettingsRestored = true
+    if (!models) return
+    const model = {
+      ...this.preset.model,
+      route: { ...this.preset.model.route },
+      id: { ...this.preset.model.id },
+      thinking: { ...this.preset.model.thinking },
+      contextWindow: { ...this.preset.model.contextWindow },
+    }
+    for (const selection of models) {
+      const slot = selection.slot
+      model.route[slot] = selection.route
+      model.id[slot] = selection.model
+      model.thinking[slot] = selection.settings.thinking
+      model.contextWindow[slot] = selection.settings.contextWindow
+    }
+    this.preset = { ...this.preset, model }
+    this.d.runtime.preset = this.preset
   }
 
   /**
@@ -1539,13 +1594,17 @@ export class SessionImpl {
     // cancelled run that runs.
     if (opts.signal.aborted) onAbort()
     // A phase edge that reports where it went without writing where it went leaves step() reading
-    // the same phase forever, and the loop appends a row every pass. The budget bounds steps, not
-    // edges, and a stuck phase never spends a step — so the loop carries its own bound and fails
-    // loudly rather than filling the ledger with a livelock nobody is watching.
-    const maxEdges = this.preset.budget.maxSteps * 16 + 64
+    // the same phase forever. Bound consecutive edges without a committed program-counter change,
+    // independently of the optional step budget. Real tool dispatch and model steps advance the
+    // counter, so long tasks and large tool batches do not consume this livelock allowance.
+    const maxEdges = 64
     let edges = 0
+    let cursor = this.opSeq()
     try {
       for (;;) {
+        const nextCursor = this.opSeq()
+        if (nextCursor !== cursor) edges = 0
+        cursor = nextCursor
         if (++edges > maxEdges) {
           // A bound that throws hands the caller an exception off the declared outcome contract and
           // leaves the turn open with no `turn/end`, which is a state no resume can read. The turn
@@ -1556,6 +1615,12 @@ export class SessionImpl {
           if (this.op()) await this.abandon('run-no-progress', error)
           return { reason: 'error', lastSeq: this.lastSeq, error }
         }
+        // A cancel that arrived while no turn was open (a Stop sent right behind a Send) could only
+        // pull the signal: there was no row to mark. The turn exists now, so put the request on the
+        // ledger before anything runs under it; step() ends a marked turn without starting more work.
+        const open = this.op()
+        if (open && this.ac.signal.aborted && !this.closing && open.control.status !== 'cancel_requested')
+          await this.abort()
         let out: StepOutcome
         const quietEntry = this.d.quiet?.enter(this.d.quietGroup ?? this.key)
         if (quietEntry) await quietEntry
@@ -1571,6 +1636,24 @@ export class SessionImpl {
           const error = {
             code: 'E_STEP_FAILED',
             message: err instanceof Error ? err.message : String(err),
+          }
+          // A fail-closed hook or request stage that the cancel cut off throws like a failure, but
+          // the user asked for the stop. End the turn as the stop it was, with no invariant row for
+          // what the cancel itself caused; if even that cannot be written, the failure path below
+          // still records and closes the turn.
+          if (this.ac.signal.aborted && !this.closing) {
+            try {
+              await this.abort()
+              const stopped = await finishAborted(this)
+              if (stopped.phase === 'terminal')
+                return {
+                  reason: stopped.reason ?? 'aborted',
+                  lastSeq: this.lastSeq,
+                  ...(this.turnEndError ? { error: this.turnEndError } : {}),
+                }
+            } catch {
+              /* fall through to the failure close */
+            }
           }
           await this.diag('invariant', { kind: 'step-threw', phase, message: error.message })
           if (this.op()) await this.abandon('step-threw', error)
@@ -1688,7 +1771,13 @@ export class SessionImpl {
     return setPreset(this, view)
   }
 
-  setModel(sel: { slot: string; route: string; model: string; thinking?: ThinkingLevel }): Promise<Seq> {
+  setModel(sel: {
+    slot: string
+    route: string
+    model: string
+    thinking?: ThinkingLevel | null
+    contextWindow?: number | null
+  }): Promise<Seq> {
     return setModel(this, sel)
   }
 
@@ -1699,24 +1788,27 @@ export class SessionImpl {
     const checked = validateActor(inspected.value)
     if (!checked.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
     const actor = checked.value
-    const r = await this.d.log.append([
-      sysEvent(
-        { actor, lane: this.lane },
-        'x/core/yolo-switch',
-        {
-          version: 1,
-          to: enabled,
-          operatorId: actor.id,
-          sessionKey: this.key,
-          lane: this.lane,
-          profileHash: this.d.resolvedProfileHash,
-          sessionOwner: { id: this.d.actor.id, org: this.d.actor.org },
-        },
-        { ignorable: true },
-      ),
-    ])
-    this.yolo = enabled
-    return r.firstSeq
+    // A projection triggered by the committed event must wait for the matching live flag.
+    return this.exclusively(async () => {
+      const r = await this.d.log.append([
+        sysEvent(
+          { actor, lane: this.lane },
+          'x/core/yolo-switch',
+          {
+            version: 1,
+            to: enabled,
+            operatorId: actor.id,
+            sessionKey: this.key,
+            lane: this.lane,
+            profileHash: this.d.resolvedProfileHash,
+            sessionOwner: { id: this.d.actor.id, org: this.d.actor.org },
+          },
+          { ignorable: true },
+        ),
+      ])
+      this.yolo = enabled
+      return r.firstSeq
+    })
   }
 
   append(tx: EventInput[]) {
@@ -1742,7 +1834,7 @@ export class SessionImpl {
       return Promise.reject(
         new CoreError('E_ENVELOPE', 'UI upper bound must be a nonnegative safe sequence number'),
       )
-    return this.exclusively(() => this.projectFull(upto, opts))
+    return this.exclusively(async () => ({ ...(await this.projectFull(upto, opts)), yolo: this.yolo }))
   }
 
   private async projectFull(
@@ -1769,7 +1861,7 @@ export class SessionImpl {
       (upto !== undefined && (!Number.isSafeInteger(upto) || upto < after))
     )
       return Promise.reject(new CoreError('E_ENVELOPE', 'invalid UI projection patch bounds'))
-    return this.exclusively(async () => {
+    return this.exclusively<CoreUIProjectionUpdate>(async () => {
       this.guardProjection()
       // Historical cuts and dynamic extension fills retain the authoritative slow path. Production
       // daemon calls do not supply fills, so a live head hit stays wholly on the event-driven cell.
@@ -1821,7 +1913,11 @@ export class SessionImpl {
       }
       upserts.sort((a, b) => a.index - b.index)
       return { kind: 'patch', patch: { ...patch, turnChanges: [...removals, ...upserts] } }
-    })
+    }).then((update) =>
+      update.kind === 'patch'
+        ? { ...update, patch: { ...update.patch, yolo: this.yolo } }
+        : { ...update, timeline: { ...update.timeline, yolo: this.yolo } },
+    )
   }
 
   projectUIOpening(
@@ -1874,7 +1970,7 @@ export class SessionImpl {
         startIndex: page.startIndex,
         totalNodes: page.totalNodes,
       }
-    })
+    }).then((opening) => ({ ...opening, timeline: { ...opening.timeline, yolo: this.yolo } }))
   }
 
   projectUIHistory(
@@ -1972,7 +2068,17 @@ export class SessionImpl {
       .find((entry) => entry.route === target.route && entry.id === target.model)
     return this.d.ui.usage({
       route: target.route,
-      model: model ?? { id: target.model, contextWindow: contextWindowFor(this, target.route, target.model) },
+      model: {
+        ...model,
+        id: target.model,
+        contextWindow: contextWindowFor(this, target.route, target.model),
+      },
+      settings: {
+        ...(this.preset.model.thinking.primary === undefined
+          ? {}
+          : { thinking: this.preset.model.thinking.primary }),
+        contextWindow: contextWindowFor(this, target.route, target.model),
+      },
       thinking: this.preset.model.thinking.primary ?? 'off',
       autoCompact: this.preset.compaction.enabled,
     })
@@ -2015,7 +2121,17 @@ export class SessionImpl {
       upto: cut,
       lane: this.lane,
       route: target.route,
-      model: model ?? { id: target.model, contextWindow: contextWindowFor(this, target.route, target.model) },
+      model: {
+        ...model,
+        id: target.model,
+        contextWindow: contextWindowFor(this, target.route, target.model),
+      },
+      settings: {
+        ...(this.preset.model.thinking.primary === undefined
+          ? {}
+          : { thinking: this.preset.model.thinking.primary }),
+        contextWindow: contextWindowFor(this, target.route, target.model),
+      },
       thinking: this.preset.model.thinking.primary ?? 'off',
       contextTokens: contextTokensAtCut(events, this.lane, cut),
       autoCompact: this.preset.compaction.enabled,

@@ -31,8 +31,8 @@ describe('write', () => {
     expect(r.details).toEqual({ path: 'n.txt', bytes: 6 })
   })
 
-  it('overwrites an existing file and says overwrote', async () => {
-    const ctx = fakeToolContext({ files: { 'a.txt': 'x'.repeat(10) } })
+  it.each(['', 'x'.repeat(10)])('overwrites existing content %j and says overwrote', async (old) => {
+    const ctx = fakeToolContext({ files: { 'a.txt': old } })
     const r = await writeTool.execute({ path: 'a.txt', content: 'y'.repeat(10) }, ctx)
     expect(textOf(r)).toBe('overwrote a.txt (10 chars)')
     expect(dec.decode(ctx.mem.files.get('/work/proj/a.txt'))).toBe('y'.repeat(10))
@@ -75,6 +75,45 @@ describe('write', () => {
   )
 })
 
+describe('a file that is readable but not writable', () => {
+  const message = 'E_FS_DENIED: /work/proj/state.yaml is denied by policy'
+  const locked = () =>
+    fakeToolContext({
+      files: { 'state.yaml': 'name: a\n' },
+      writeErrors: { 'state.yaml': { code: 'E_FS_DENIED', message } },
+    })
+
+  it('write names the refusal and leaves the file alone', async () => {
+    const ctx = locked()
+    const result = await writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toBe(`write failed before writing: ${message}`)
+    expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
+  })
+
+  it('edit names the refusal and leaves the file alone', async () => {
+    const ctx = locked()
+    const result = await editTool.execute(
+      { path: 'state.yaml', edits: [{ oldText: 'name: a', newText: 'name: b' }] },
+      ctx,
+    )
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toBe(`edit failed: ${message}`)
+    expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
+  })
+
+  it('still lets any other write failure propagate', async () => {
+    const ctx = fakeToolContext({
+      files: { 'state.yaml': 'name: a\n' },
+      writeErrors: { 'state.yaml': { code: 'EIO', message: 'EIO: disk' } },
+    })
+    await expect(writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)).rejects.toThrow('EIO')
+    await expect(
+      editTool.execute({ path: 'state.yaml', edits: [{ oldText: 'name: a', newText: 'name: b' }] }, ctx),
+    ).rejects.toThrow('EIO')
+  })
+})
+
 describe('edit', () => {
   it('has a complete definition', () => {
     expect(checkToolDef(editTool)).toEqual({ ok: true })
@@ -105,15 +144,18 @@ describe('edit', () => {
     expect(r.details).toEqual({ path: 'a.ts', bytes: 39 })
   })
 
-  it('rejects missing or ambiguous oldText without writing', async () => {
-    const ctx = fakeToolContext({ files: { 'a.ts': 'x x' } })
+  it.each([
+    ['x x', 'x'],
+    ['aaa', 'aa'],
+  ])('rejects missing or ambiguous oldText in %j without writing', async (original, oldText) => {
+    const ctx = fakeToolContext({ files: { 'a.ts': original } })
     const missing = await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'zzz', newText: '' }] }, ctx)
     expect(missing.isError).toBe(true)
     expect(textOf(missing)).toContain('not found')
-    const ambiguous = await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'x', newText: 'y' }] }, ctx)
+    const ambiguous = await editTool.execute({ path: 'a.ts', edits: [{ oldText, newText: 'y' }] }, ctx)
     expect(ambiguous.isError).toBe(true)
     expect(textOf(ambiguous)).toContain('ambiguous (2 matches)')
-    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('x x')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(original)
   })
 
   it('replaces the match literally, not as a replacement pattern', async () => {
@@ -132,14 +174,26 @@ describe('edit', () => {
     expect(ctx.mem.files.has('/work/proj/nope.ts')).toBe(false)
   })
 
-  it('refuses to edit a binary file rather than rewriting it as text', async () => {
+  it.each([
+    [new Uint8Array([0x61, 0x00, 0xff, 0x62]), 'binary'],
+    [new Uint8Array([0x61, 0xff, 0x62]), 'UTF-8'],
+    [new Uint8Array([0x61, 0xc3]), 'UTF-8'],
+  ])('refuses non-text bytes %j without writing', async (bytes, error) => {
     // Decoding bytes that are not text and writing the decoded form back replaces every byte that
     // is not valid UTF-8 with a replacement character, which corrupts the file silently.
-    const ctx = fakeToolContext({ files: { 'b.bin': new Uint8Array([0x61, 0x00, 0xff, 0x62]) } })
+    const ctx = fakeToolContext({ files: { 'b.bin': bytes } })
     const r = await editTool.execute({ path: 'b.bin', edits: [{ oldText: 'a', newText: 'z' }] }, ctx)
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toContain('binary')
-    expect([...(ctx.mem.files.get('/work/proj/b.bin') as Uint8Array)]).toEqual([0x61, 0x00, 0xff, 0x62])
+    expect(textOf(r)).toContain(error)
+    expect([...(ctx.mem.files.get('/work/proj/b.bin') as Uint8Array)]).toEqual([...bytes])
+  })
+
+  it('preserves a UTF-8 BOM and counts its bytes in the result', async () => {
+    const ctx = fakeToolContext({ files: { 'a.txt': new Uint8Array([0xef, 0xbb, 0xbf, 0x61, 0x62]) } })
+    const r = await editTool.execute({ path: 'a.txt', edits: [{ oldText: 'a', newText: 'z' }] }, ctx)
+    expect(r.isError).toBeUndefined()
+    expect([...(ctx.mem.files.get('/work/proj/a.txt') as Uint8Array)]).toEqual([0xef, 0xbb, 0xbf, 0x7a, 0x62])
+    expect(r.details).toEqual({ path: 'a.txt', bytes: 5 })
   })
 
   it('refuses an edit that truncates the file', async () => {

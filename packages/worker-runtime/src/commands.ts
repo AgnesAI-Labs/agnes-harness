@@ -280,7 +280,9 @@ export async function handleCommand(
       let releaseResources: (() => void) | undefined
       try {
         releaseResources = await admitResourceRun(o, ac.signal)
-        if (!releaseResources) return { reason: 'aborted', lastSeq: session.lastSeq }
+        // A run cancelled while it waited for admission still reaches the core, with its signal
+        // already aborted: the prompt it was sent for is queued, and the core ends that turn as
+        // aborted without doing work. Answering here instead would leave it to run under the next one.
         return await session.run({ until: (p.until as 'turn-end' | 'idle') ?? 'turn-end', signal: ac.signal })
       } finally {
         releaseResources?.()

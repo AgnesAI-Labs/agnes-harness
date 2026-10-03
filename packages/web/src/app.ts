@@ -1,5 +1,6 @@
 import {
   type ConfigSnapshot,
+  type ModelSettings,
   type PageSessionMeta,
   readSessionTitle,
   type UITimeline,
@@ -18,6 +19,7 @@ import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
+import { liveApprovalCard } from './approval-card.js'
 import { installBrowserLogCapture } from './browser-log.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
@@ -284,6 +286,7 @@ const clientModules = await startClientModules({
     onDraftChange: handleComposerDraftChange,
     onError: showError,
     onModelSelect: selectModel,
+    onModelSettingsChange: selectModelSettings,
     onPermissionSelect: selectPermission,
     onSubmit: submitComposer,
     onWorkspace: handleComposerWorkspace,
@@ -378,15 +381,21 @@ let workspacePickerReady: boolean | undefined
 let workspacePickerBusy = false
 let stopAfterSeq = 0
 let approvalBusy = false
-let runtimeModels: Array<{ route: string; id: string; label?: string }> = []
+let runtimeModels: ModelPickerOption[] = []
 let accountLabels = new Map<string, string>()
 let accountProvider: { route?: string; id?: string; model?: string } | null = null
 let knownSessionModel: KnownSessionModel | undefined
 let initialModelPending: KnownSessionModel | undefined
 let modelChangePending = false
+let modelSelectionSeq = 0
+let draftModelSettingsEdited = false
 let permissionMode: PermissionMode = 'workspace'
+let initialPermissionPending: PermissionMode | undefined
 let permissionChangePending = false
-let sessionYoloEnabled = false
+let permissionRefreshPending = false
+let permissionConnectionEpoch = 0
+let sessionYoloEnabled: boolean | undefined
+let permissionSelectionSeq = 0
 let submissionGeneration = 0
 // daemon 自己报出的 profile（config.get() 后才知道）；皮肤清单与客户端模块名册都必须把它传回去。
 let profileName = ''
@@ -566,8 +575,15 @@ function clearSessionRecovery(): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
-  // 顶栏只在异常时显示连接状态，判据走 body 属性，样式不必再猜 #connection 的 data-state。
-  document.body.dataset.connection = value
+  if (!connected) {
+    permissionConnectionEpoch++
+    if (current) {
+      permissionRefreshPending = true
+      sessionYoloEnabled = undefined
+      // An interrupted first submission must not replay its permission choice after reconnecting.
+      initialPermissionPending = undefined
+    }
+  }
   topbarRuntime.setConnectionState(value)
   settings.setConnected(connected)
   renderControls()
@@ -584,6 +600,11 @@ function renderControls(): void {
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
     control.disabled = recoveryDisabled()
   const canStartDraft = draftingNew && selectedWorkspace?.available === true
+  const permissionUnknown =
+    current !== undefined && (permissionRefreshPending || sessionYoloEnabled === undefined)
+  const selectedRecord = runtimeModels.find(
+    (m) => m.route === knownSessionModel?.route && m.id === knownSessionModel?.id,
+  )
   const composerView: ComposerView = {
     cancel: {
       disabled: !connected || !busy || stopping || sessionPending,
@@ -593,20 +614,23 @@ function renderControls(): void {
     connected,
     configured,
     hasSession: current !== undefined || draftingNew,
-    hint:
-      knownSessionModel && !selectedModelAvailable()
-        ? { kind: 'state', text: t('composer.hint.modelUnavailable') }
-        : composerHintPresentation(
-            {
-              connected,
-              configured,
-              hasSession: current !== undefined || draftingNew,
-              busy,
-              stopping,
-              loading: sessionPending,
-            },
-            t,
-          ),
+    hint: permissionUnknown
+      ? {
+          kind: 'state',
+          text: permissionRefreshPending
+            ? '正在同步会话权限，请稍后发送'
+            : '请先选择本会话权限，确认后再发送',
+        }
+      : knownSessionModel && !selectedModelAvailable()
+        ? { kind: 'state', text: '当前模型已不可用，请重新选择模型' }
+        : composerHintPresentation({
+            connected,
+            configured,
+            hasSession: current !== undefined || draftingNew,
+            busy,
+            stopping,
+            loading: sessionPending,
+          }),
     input: {
       disabled:
         !available || (!current && !draftingNew) || stopping || sessionPending || initialSubmissionPending,
@@ -627,11 +651,26 @@ function renderControls(): void {
       pending: modelChangePending,
       ...(knownSessionModel ? { selected: knownSessionModel } : {}),
     },
+    ...(knownSessionModel && selectedRecord?.contextWindow
+      ? {
+          modelSettings: {
+            key: current?.id ?? 'draft',
+            settings: knownSessionModel.settings ?? modelDefaults(knownSessionModel).settings ?? {},
+            contextWindow: selectedRecord.contextWindow,
+            thinkingLevelMap: selectedRecord.thinkingLevelMap,
+          },
+        }
+      : {}),
     permission: {
       disabled:
-        !available || (!current && !draftingNew) || busy || sessionPending || initialSubmissionPending,
-      pending: permissionChangePending,
-      selected: permissionMode,
+        !available ||
+        (!current && !draftingNew) ||
+        busy ||
+        sessionPending ||
+        initialSubmissionPending ||
+        permissionRefreshPending,
+      pending: permissionChangePending || permissionRefreshPending,
+      selected: permissionUnknown ? null : permissionMode,
     },
     sending,
     send: {
@@ -643,7 +682,9 @@ function renderControls(): void {
         !hasInput ||
         sending ||
         stopping ||
-        sessionPending,
+        sessionPending ||
+        permissionChangePending ||
+        permissionUnknown,
       label: action.label,
       mode: action.mode,
       title: action.title,
@@ -720,8 +761,30 @@ function render(): void {
   // 上一会话：此时屏幕上保留的正是上一会话画面，任何重绘都会把旧投影的
   // 模型、标题、审批卡写进新会话的控件。等投影换代后再渲染。
   if (!current || projection.sessionId !== current.id) return
-  if (projection.usage?.model && !knownSessionModel && !modelChangePending && !initialModelPending) {
-    knownSessionModel = { route: projection.usage.model.route, id: projection.usage.model.id }
+  if (
+    typeof projection.yolo === 'boolean' &&
+    !permissionChangePending &&
+    !permissionRefreshPending &&
+    projection.upto >= permissionSelectionSeq
+  ) {
+    sessionYoloEnabled = projection.yolo
+    if (initialPermissionPending === undefined)
+      permissionMode = projection.yolo ? 'full' : permissionMode === 'view' ? 'view' : 'workspace'
+  }
+  if (
+    projection.usage?.model &&
+    !modelChangePending &&
+    !initialModelPending &&
+    projection.upto >= modelSelectionSeq
+  ) {
+    knownSessionModel = {
+      route: projection.usage.model.route,
+      id: projection.usage.model.id,
+      settings: projection.usage.model.settings ?? {
+        contextWindow: projection.usage.context.window,
+        thinking: projection.usage.model.thinking,
+      },
+    }
     rememberWebComposer({ model: knownSessionModel })
   }
   const receipt = current ? receipts.get(current.id) : undefined
@@ -797,22 +860,15 @@ function renderApproval(): void {
   }
 
   const liveTitle = liveApproval?.request.toolCall.title
-  const summary =
-    typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? t('app.approval.defaultSummary'))
-  const kind = liveApproval?.request.toolCall.kind
+  const summary = typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? '允许执行此操作？')
   const risks = {
     destructive: t('app.risk.destructive'),
     always: t('app.risk.always'),
     budget: t('app.risk.budget'),
     unknown: t('app.risk.unknown'),
   }
-  const impact = durable
-    ? risks[durable.risk]
-    : kind === 'execute'
-      ? t('app.approval.executeImpact')
-      : t('app.approval.toolImpact')
-  const input = liveApproval?.request.toolCall.rawInput
-  const serializedInput = input === undefined ? undefined : JSON.stringify(input, null, 2)
+  const card = liveApproval ? liveApprovalCard(liveApproval.request.toolCall) : undefined
+  const impact = durable ? risks[durable.risk] : (card?.impact ?? '请核对工具及参数后决定是否继续。')
   const actions: ApprovalAction[] = []
   const decide = (id: string, label: string, action: () => Promise<void>): void => {
     actions.push({
@@ -836,15 +892,18 @@ function renderApproval(): void {
   if (liveApproval) {
     const request = liveApproval
     const labels: Record<string, string> = {
-      allow_once: t('app.approval.allowOnce'),
-      allow_always: t('app.approval.allowAlways'),
-      reject_once: t('app.approval.rejectOnce'),
-      reject_always: t('app.approval.rejectAlways'),
+      allow_once: '仅允许这次',
+      reject_once: '拒绝',
+      reject_always: '始终拒绝',
+      // Absent when the card cannot show the whole call: that choice would also cover later calls.
+      ...(card?.sessionLabel === undefined ? {} : { allow_always: card.sessionLabel }),
     }
-    for (const option of request.request.options)
+    for (const option of request.request.options) {
+      if (option.name === 'allow_always' && labels.allow_always === undefined) continue
       decide(`live:${option.name}`, labels[option.name] ?? option.name, async () =>
         request.finish({ optionId: option.optionId }),
       )
+    }
   } else if (durable?.ticket) {
     const ticket = durable.ticket
     for (const { label, verdict } of durableApprovalActions(durable, t))
@@ -859,7 +918,8 @@ function renderApproval(): void {
     title: t('app.approval.title'),
     summary,
     impact,
-    ...(serializedInput === undefined ? {} : { preview: serializedInput.slice(0, 2048) }),
+    ...(card?.warning === undefined ? {} : { warning: card.warning }),
+    ...(card?.preview === undefined ? {} : { preview: card.preview }),
     actions,
     disabled: approvalBusy || stopping || !connected,
   })
@@ -953,7 +1013,11 @@ async function open(
   // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
   current = undefined
   clientModules.session.setSession(undefined)
-  sessionYoloEnabled = false
+  sessionYoloEnabled = options.created ? false : undefined
+  permissionRefreshPending = false
+  initialPermissionPending = options.created ? permissionMode : undefined
+  permissionSelectionSeq = 0
+  permissionChangePending = false
   stopping = false
   if (!options.preserveSending) {
     sending = false
@@ -961,6 +1025,7 @@ async function open(
   }
   knownSessionModel = undefined
   initialModelPending = options.initialModel
+  modelSelectionSeq = 0
   selectedWorkspace = undefined
   modelChangePending = false
   renderControls()
@@ -1027,6 +1092,17 @@ async function open(
     const liveProjection = createLiveProjection(loaded, client, {
       timeline(value, window) {
         if (!selected()) return
+        // The SDK discards projections from older connections; history cannot confirm current permissions.
+        if (connected && window.reason !== 'history' && value.upto >= permissionSelectionSeq)
+          permissionRefreshPending = false
+        if (
+          window.reason === 'opening' &&
+          value.yolo === undefined &&
+          initialPermissionPending === undefined &&
+          !permissionChangePending &&
+          value.upto >= permissionSelectionSeq
+        )
+          sessionYoloEnabled = undefined
         windowAtStart = window.startIndex === 0
         // A reopened window may reach further back; look for a parked approval again.
         if (window.reason === 'opening' && approvalSearch !== 'searching') approvalSearch = 'idle'
@@ -1271,9 +1347,12 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   clientModules.session.setSession(undefined)
   projection = undefined
   draftingNew = true
+  draftModelSettingsEdited = false
   pendingSessionKey = crypto.randomUUID()
-  knownSessionModel = inherited.model
+  knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
   permissionMode = inherited.permission
+  permissionRefreshPending = false
+  initialPermissionPending = undefined
   initialModelPending = undefined
   submissionGeneration++
   offPermission?.()
@@ -1335,22 +1414,17 @@ function selectedModelAvailable(): boolean {
 async function refreshModels(): Promise<ModelPickerOption[]> {
   const generation = ++modelReadGeneration
   const apis = await client.apis()
-  // 思考能力必须原样带到前端：模型选择器的第二层完全靠 reasoning / thinkingLevelMap
-  // 决定「要不要问档位、能问哪几档」，丢掉它们就等于没有思考强度可选。
-  const models = (apis.profile.models ?? []).map(({ route, id, reasoning, thinkingLevelMap }) => ({
-    route,
-    id,
-    ...(accountLabels.has(route) ? { label: accountLabels.get(route) as string } : {}),
-    ...(reasoning === undefined ? {} : { reasoning }),
-    ...(thinkingLevelMap === undefined ? {} : { thinkingLevelMap }),
+  const models = (apis.profile.models ?? []).map((model) => ({
+    ...model,
+    ...(accountLabels.has(model.route) ? { label: accountLabels.get(model.route) as string } : {}),
   }))
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
     configured = runtimeModels.length > 0
-    if (draftingNew && !modelChangePending && !permissionChangePending) {
+    if (draftingNew && !draftModelSettingsEdited && !modelChangePending && !permissionChangePending) {
       const next = selectionFromMemory(runtimeModels, accountProvider)
-      knownSessionModel = next.model
+      knownSessionModel = next.model ? modelDefaults(next.model) : undefined
       permissionMode = next.permission
     }
     renderControls()
@@ -1358,7 +1432,7 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
   return models
 }
 async function selectPermission(mode: PermissionMode): Promise<boolean> {
-  if (sessionPending || permissionChangePending) return false
+  if (!connected || sessionPending || permissionChangePending || permissionRefreshPending) return false
   if (!current && draftingNew) {
     permissionMode = mode
     rememberWebComposer({ permission: mode })
@@ -1370,19 +1444,28 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   if (!current) return false
   const session = current
   const epoch = selection
+  const connectionEpoch = permissionConnectionEpoch
   const requestedYolo = yoloEnabled(mode)
   permissionChangePending = true
   renderControls()
   try {
-    if (requestedYolo !== sessionYoloEnabled) await session.setYolo(requestedYolo)
-    if (current !== session || selection !== epoch || sessionPending) return false
+    const applied = await session.setYolo(requestedYolo)
+    if (
+      current !== session ||
+      selection !== epoch ||
+      sessionPending ||
+      connectionEpoch !== permissionConnectionEpoch
+    )
+      return false
+    permissionSelectionSeq = applied.effectiveFromSeq
+    initialPermissionPending = undefined
     sessionYoloEnabled = requestedYolo
     permissionMode = mode
     rememberWebComposer({ permission: mode })
     notice.textContent =
       mode === 'full'
-        ? t('app.permission.fullNotice')
-        : t('app.permission.sessionNotice', { mode: permissionLabel(mode) })
+        ? '本会话已开启完全权限，可读写工作区内外文件。'
+        : `本会话权限已设为「${permissionLabel(mode)}」。`
     notice.dataset.kind = ''
     return true
   } catch (error) {
@@ -1391,25 +1474,50 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   } finally {
     if (current === session && selection === epoch && !sessionPending) {
       permissionChangePending = false
-      renderControls()
+      render()
     }
   }
 }
-/** 档位只跟着支持思考的模型走：不支持的模型不带 thinking，后台据此清掉旧档位。 */
-function modelSelection(option: ModelPickerOption): KnownSessionModel {
+function modelDefaults(option: ModelPickerOption): KnownSessionModel {
+  const record = runtimeModels.find((m) => m.route === option.route && m.id === option.id)
   return {
     route: option.route,
     id: option.id,
-    ...(option.thinking ? { thinking: option.thinking } : {}),
+    settings: {
+      ...record?.defaultSettings,
+      ...(record?.contextWindow
+        ? { contextWindow: record.defaultSettings?.contextWindow ?? record.contextWindow }
+        : {}),
+    },
   }
 }
-async function selectModel(option: ModelPickerOption): Promise<boolean> {
+async function selectModelSettings(settings: ModelSettings): Promise<boolean> {
+  if (!knownSessionModel) return false
+  return selectModel(knownSessionModel, settings)
+}
+async function selectModel(option: ModelPickerOption, settings?: ModelSettings): Promise<boolean> {
+  const sameModel = knownSessionModel?.route === option.route && knownSessionModel.id === option.id
+  const window =
+    settings?.contextWindow ??
+    runtimeModels.find((m) => m.route === option.route && m.id === option.id)?.contextWindow
+  const selected: KnownSessionModel =
+    settings === undefined
+      ? sameModel && knownSessionModel
+        ? knownSessionModel
+        : modelDefaults(option)
+      : {
+          route: option.route,
+          id: option.id,
+          settings: { ...settings, ...(window === undefined ? {} : { contextWindow: window }) },
+        }
   const session = current
   if (sessionPending || modelChangePending) return false
   if (!session && draftingNew) {
-    knownSessionModel = modelSelection(option)
+    if (settings !== undefined) draftModelSettingsEdited = true
+    else if (!sameModel) draftModelSettingsEdited = false
+    knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
-    notice.textContent = t('app.model.draftNotice')
+    notice.textContent = '新会话将使用所选模型与配置。'
     notice.dataset.kind = ''
     renderControls()
     return true
@@ -1419,17 +1527,19 @@ async function selectModel(option: ModelPickerOption): Promise<boolean> {
   modelChangePending = true
   renderControls()
   try {
-    await session.setModel({
+    const applied = await session.setModel({
       slot: 'primary',
       route: option.route,
       model: option.id,
-      ...(option.thinking ? { thinking: option.thinking } : {}),
+      thinking: selected.settings?.thinking ?? null,
+      contextWindow: selected.settings?.contextWindow ?? null,
     })
     if (current !== session || selection !== epoch || sessionPending) return false
-    knownSessionModel = modelSelection(option)
+    modelSelectionSeq = applied.effectiveFromSeq
+    knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
-    notice.textContent = t('app.model.updatedNotice')
+    notice.textContent = '模型配置已保存，后续请求将使用新的思考强度和上下文窗口。'
     notice.dataset.kind = ''
     live?.refresh()
     return true
@@ -1733,6 +1843,9 @@ function submitComposer(): void {
     !input ||
     !configured ||
     !selectedModelAvailable() ||
+    permissionChangePending ||
+    permissionRefreshPending ||
+    (session && sessionYoloEnabled === undefined) ||
     (!session && (!draftingNew || !selectedWorkspace?.available)) ||
     !canSubmitComposer({ connected, hasSession: true, sending, stopping, loading: sessionPending })
   )
@@ -1740,6 +1853,7 @@ function submitComposer(): void {
   notice.textContent = ''
   notice.dataset.kind = ''
   const submission = ++submissionGeneration
+  const connectionEpoch = permissionConnectionEpoch
   let ownedSelection = selection
   const busy = projection?.opState !== null && projection?.opState !== undefined
   sending = true
@@ -1773,24 +1887,37 @@ function submitComposer(): void {
     if (!session) throw new Error(t('app.session.createFailed'))
     if (initialModelPending) {
       const selectedModel = initialModelPending
-      await session.setModel({
+      const applied = await session.setModel({
         slot: 'primary',
         route: selectedModel.route,
         model: selectedModel.id,
-        ...(selectedModel.thinking ? { thinking: selectedModel.thinking } : {}),
+        thinking: selectedModel.settings?.thinking ?? null,
+        contextWindow: selectedModel.settings?.contextWindow ?? null,
       })
-      if (current !== session || selection !== ownedSelection)
-        throw new Error(t('app.session.selectionChanged'))
+      if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
+      modelSelectionSeq = applied.effectiveFromSeq
       knownSessionModel = selectedModel
       initialModelPending = undefined
       renderControls()
     }
-    if (yoloEnabled(permissionMode) && !sessionYoloEnabled) {
-      await session.setYolo(true)
-      if (current !== session || selection !== ownedSelection)
-        throw new Error(t('app.session.selectionChanged'))
-      sessionYoloEnabled = true
+    if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
+      throw new Error('连接已变化，请等待权限同步后重新发送。')
+    if (initialPermissionPending !== undefined) {
+      const selectedPermission = initialPermissionPending
+      const enabled = yoloEnabled(selectedPermission)
+      const applied = await session.setYolo(enabled)
+      if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
+      if (connectionEpoch !== permissionConnectionEpoch)
+        throw new Error('连接已变化，请等待权限同步后重新发送。')
+      permissionSelectionSeq = applied.effectiveFromSeq
+      sessionYoloEnabled = enabled
+      permissionMode = selectedPermission
+      initialPermissionPending = undefined
     }
+    if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
+      throw new Error('连接已变化，请等待权限同步后重新发送。')
+    if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
+    if (sessionYoloEnabled === undefined) throw new Error('请先选择本会话权限，确认后再发送。')
     const result = await (busy ? session.followUp(input) : session.prompt(input))
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
@@ -1800,7 +1927,14 @@ function submitComposer(): void {
   void work
     .catch((error: unknown) => {
       if (submission === submissionGeneration && ownedSelection === selection) {
-        if (!composerRuntime.getDraft()) {
+        if (connectionEpoch !== permissionConnectionEpoch) {
+          initialPermissionPending = undefined
+          sessionYoloEnabled = undefined
+          render()
+        }
+        // Closing the connection on purpose (page unload, manual disconnect) rejects a prompt the daemon
+        // already accepted. That is not a failed send, so the sent text must not come back as a draft.
+        if (!intentionalClose && !composerRuntime.getDraft()) {
           composerRuntime.setDraft(input)
           sessionStorage.setItem(composerDraftKey, input)
           composerRuntime.resize()

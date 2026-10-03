@@ -15,6 +15,7 @@ export {
   ConversationMessages,
   type ConversationMessagesProps,
   ConversationToolCard,
+  toolOutcome,
 } from './conversation/messages.js'
 export {
   type ConversationMessage,

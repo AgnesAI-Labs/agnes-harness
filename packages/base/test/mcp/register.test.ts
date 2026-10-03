@@ -4,7 +4,8 @@ import { createRequire } from 'node:module'
 import { deflateSync } from 'node:zlib'
 import { checkToolDef, type ExtensionAPI, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CALL_OUTPUT_LIMIT_BYTES } from '../../extensions/tools-core/src/guards/output.js'
+import { MAX_READ_BYTES, readTool } from '../../extensions/tools-core/src/tools/read.js'
+import { grepTool } from '../../extensions/tools-search/src/tools/grep.js'
 import { connectMcp, MAX_MCP_REDIRECTS, type McpSdkDeps } from '../../src/mcp/connect.js'
 import { mcpLocalToolPrefix } from '../../src/mcp/naming.js'
 import {
@@ -16,6 +17,13 @@ import {
   registerRemoteToolsStrict,
 } from '../../src/mcp/register.js'
 import { fakeToolContext } from '../../testkit/tool-context.js'
+
+// The sizes in these cases are built from an 8 KiB single-block limit and the call limit that follows
+// from it, so they ask for that limit explicitly instead of taking the deployment default.
+const SMALL = 8192
+const CALL_OUTPUT_LIMIT_BYTES = 4 * SMALL
+const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
+  fakeToolContext({ outputMaxBytes: SMALL, ...o })
 
 // Loaded via createRequire (untyped) rather than a static import: the SDK's server-side
 // StreamableHTTPServerTransport/SSEServerTransport options are not exactOptionalPropertyTypes-clean,
@@ -229,7 +237,7 @@ describe('registerRemoteToolsStrict', () => {
     }
     const { api, tools } = fakeApi()
     await registerRemoteToolsStrict(api, conn, stdio, { mediaLimits: TEST_MEDIA_LIMITS })
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const result = await (tools[0] as ToolDef).execute({ repo: 'a/b' }, ctx)
 
     expect(result).toEqual({
@@ -252,7 +260,7 @@ describe('registerRemoteToolsStrict', () => {
     textConn.callTool = async () => ({ content: [{ type: 'text', text: 'x'.repeat(9000) }] })
     const textState = fakeApi()
     await registerRemoteToolsStrict(textState.api, textConn, stdio)
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const guarded = await (textState.tools[0] as ToolDef).execute({}, ctx)
     expect(guarded.content).toEqual([
       { type: 'text', text: expect.stringContaining('[truncated:') },
@@ -268,7 +276,7 @@ describe('registerRemoteToolsStrict', () => {
     await registerRemoteToolsStrict(imageState.api, imageConn, stdio, {
       mediaLimits: TEST_MEDIA_LIMITS,
     })
-    await expect((imageState.tools[0] as ToolDef).execute({}, fakeToolContext())).resolves.toMatchObject({
+    await expect((imageState.tools[0] as ToolDef).execute({}, ctxOf())).resolves.toMatchObject({
       isError: true,
       content: [{ text: expect.stringContaining('invalid content') }],
     })
@@ -287,12 +295,92 @@ describe('registerRemoteToolsStrict', () => {
     })
     const manyRowsState = fakeApi()
     await registerRemoteToolsStrict(manyRowsState.api, manyRowsConn, stdio)
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const guarded = await (manyRowsState.tools[0] as ToolDef).execute({}, ctx)
     const total = modelVisibleTextBytes(guarded.content)
     expect(total).toBeLessThanOrEqual(CALL_OUTPUT_LIMIT_BYTES)
     // The full hundred rows are still reachable through the artifact store, not just dropped.
     expect(guarded.content.some((b) => b.type === 'ref')).toBe(true)
+    // ... and reachable the way the model reaches them: by the locator the note shows, ?size=
+    // included. A digest prefix is not something read or grep can use.
+    const noteText = guarded.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n')
+    const locator = /artifact:\/\/[0-9a-f]{64}\?size=\d+/.exec(noteText)?.[0] as string
+    expect(locator).toBeDefined()
+    const first = await readTool.execute({ path: locator }, ctx)
+    expect(first.isError).toBeUndefined()
+    expect((first.content[0] as { text: string }).text).toContain('row 0')
+    // One block per line: each marker line starts its own line, so grep reports a match at its own
+    // row and a page of read does not run two blocks together.
+    const stored = ctx.calls.artifacts.map((a) => new TextDecoder().decode(a.bytes))
+    const lines = (stored.find((text) => text.startsWith('=== text block 1 of 100 ')) as string).split('\n')
+    expect(lines.slice(0, 4)).toEqual([
+      `=== text block 1 of 100 (${'row 0 '.length + 7000} bytes) ===`,
+      `row 0 ${'x'.repeat(7000)}`,
+      `=== text block 2 of 100 (${'row 1 '.length + 7000} bytes) ===`,
+      `row 1 ${'x'.repeat(7000)}`,
+    ])
+    const hit = await grepTool.execute({ pattern: 'row 99 ', path: locator }, ctx)
+    expect(hit.isError).toBeUndefined()
+    expect((hit.content[0] as { text: string }).text).toContain('row 99')
+  })
+
+  it('keeps only what read can give back of an oversized result, and says what was left out', async () => {
+    const MiB = 1024 * 1024
+    const cap = MAX_READ_BYTES
+    const textOf = (content: readonly { type: string; text?: string }[]) =>
+      content.map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n')
+    const run = async (content: Array<{ type: 'text'; text: string }>) => {
+      const conn = connection()
+      conn.callTool = async () => ({ content })
+      const state = fakeApi()
+      await registerRemoteToolsStrict(state.api, conn, stdio)
+      const ctx = ctxOf()
+      const result = await (state.tools[0] as ToolDef).execute({}, ctx)
+      return { ctx, result, text: textOf(result.content) }
+    }
+
+    // One block over the cap: the store gets the first `cap` bytes and the note gives the real size.
+    const line = (i: number) => `line ${i} ${'x'.repeat(100)}\n`
+    const big = Array.from({ length: Math.ceil((5 * MiB) / line(0).length) }, (_, i) => line(i)).join('')
+    const single = await run([{ type: 'text', text: big }])
+    expect(single.ctx.calls.artifacts).toHaveLength(1)
+    expect(single.ctx.calls.artifacts[0]?.bytes.byteLength).toBe(cap)
+    expect(single.text).toContain(`returned ${Buffer.byteLength(big)} bytes of text`)
+    expect(single.text).toContain(`only the first ${cap} bytes were kept`)
+    expect(single.text).toContain('not stored')
+    const locator = /artifact:\/\/[0-9a-f]{64}\?size=(\d+)/.exec(single.text)
+    expect(Number(locator?.[1])).toBe(cap)
+    expect(modelVisibleTextBytes(single.result.content)).toBeLessThanOrEqual(CALL_OUTPUT_LIMIT_BYTES)
+
+    // A cut inside a multi-byte character moves back to the character boundary; no U+FFFD appears.
+    const cjk = await run([{ type: 'text', text: '汉'.repeat(2 * MiB) }])
+    const kept = cjk.ctx.calls.artifacts[0]?.bytes as Uint8Array
+    expect(kept.byteLength).toBeLessThanOrEqual(cap)
+    expect(kept.byteLength % 3).toBe(0)
+    expect(new TextDecoder().decode(kept)).not.toContain('\uFFFD')
+
+    // Several blocks that together pass the cap: later ones are cut, then dropped, and counted.
+    const block = (c: string) => ({ type: 'text' as const, text: c.repeat(2 * MiB) })
+    const many = await run([block('a'), block('b'), block('c'), block('d')])
+    const storedBytes = many.ctx.calls.artifacts.reduce((n, a) => n + a.bytes.byteLength, 0)
+    expect(storedBytes).toBeLessThanOrEqual(cap)
+    expect(many.text).toContain(`returned ${8 * MiB} bytes of text`)
+    expect(many.text).toContain('2 text blocks after that point were dropped')
+
+    // The cut note is paid for out of the call budget, like the omission note: with the budget nearly
+    // spent by admitted blocks and a cut result behind them, everything shown still fits.
+    const tight = await run([
+      ...Array.from({ length: 4 }, () => ({ type: 'text' as const, text: 'q'.repeat(8080) })),
+      { type: 'text', text: 'r'.repeat(5 * MiB) },
+    ])
+    expect(tight.text).toContain('bytes of text')
+    expect(tight.text).toContain('omitted')
+    expect(modelVisibleTextBytes(tight.result.content)).toBeLessThanOrEqual(CALL_OUTPUT_LIMIT_BYTES)
+
+    // At the cap exactly nothing is cut and no note is added.
+    const exact = await run([{ type: 'text', text: 'z'.repeat(cap) }])
+    expect(exact.text).not.toContain('bytes of text')
+    expect(exact.ctx.calls.artifacts[0]?.bytes.byteLength).toBe(cap)
   })
 
   it.each([
@@ -310,7 +398,7 @@ describe('registerRemoteToolsStrict', () => {
     })
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, stdio)
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
 
     await expect((state.tools[0] as ToolDef).execute({}, ctx)).resolves.toMatchObject({
       isError: true,
@@ -329,7 +417,7 @@ describe('registerRemoteToolsStrict', () => {
     })
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, stdio)
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const put = ctx.artifacts.put.bind(ctx.artifacts)
     let attempts = 0
     ctx.artifacts.put = async (bytes, meta) => {
@@ -365,7 +453,7 @@ describe('registerRemoteToolsStrict', () => {
     })
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, stdio, { mediaLimits: TEST_MEDIA_LIMITS })
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const result = await (state.tools[0] as ToolDef).execute({}, ctx)
 
     expect(result.isError).not.toBe(true)
@@ -394,7 +482,7 @@ describe('registerRemoteToolsStrict', () => {
       conn.callTool = async () => ({ content: [imageBlock(SMALL_PNG), invalid] })
       const state = fakeApi()
       await registerRemoteToolsStrict(state.api, conn, stdio, { mediaLimits: TEST_MEDIA_LIMITS })
-      const ctx = fakeToolContext()
+      const ctx = ctxOf()
       await expect((state.tools[0] as ToolDef).execute({}, ctx)).resolves.toMatchObject({
         isError: true,
         content: [{ text: expect.stringContaining('invalid content') }],
@@ -423,7 +511,7 @@ describe('registerRemoteToolsStrict', () => {
       await registerRemoteToolsStrict(state.api, conn, stdio, {
         mediaLimits: { ...TEST_MEDIA_LIMITS, ...mediaLimits } as McpMediaLimits,
       })
-      const ctx = fakeToolContext()
+      const ctx = ctxOf()
       await expect((state.tools[0] as ToolDef).execute({}, ctx)).resolves.toMatchObject({
         isError: true,
         content: [{ text: expect.stringContaining('invalid content') }],
@@ -465,7 +553,7 @@ describe('registerRemoteToolsStrict', () => {
     conn.callTool = async () => ({ content: [imageBlock(SMALL_PNG)] })
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, stdio)
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     await expect((state.tools[0] as ToolDef).execute({}, ctx)).resolves.toMatchObject({
       isError: true,
       content: [{ text: expect.stringContaining('explicit media limits') }],
@@ -481,7 +569,7 @@ describe('registerRemoteToolsStrict', () => {
     await registerRemoteToolsStrict(rejected.api, conn, stdio, {
       mediaLimits: { ...TEST_MEDIA_LIMITS, maxBlocks: 1 },
     })
-    await expect((rejected.tools[0] as ToolDef).execute({}, fakeToolContext())).resolves.toMatchObject({
+    await expect((rejected.tools[0] as ToolDef).execute({}, ctxOf())).resolves.toMatchObject({
       isError: true,
       content: [{ text: expect.stringContaining('label and data blocks') }],
     })
@@ -490,7 +578,7 @@ describe('registerRemoteToolsStrict', () => {
     await registerRemoteToolsStrict(accepted.api, conn, stdio, {
       mediaLimits: { ...TEST_MEDIA_LIMITS, maxBlocks: 2 },
     })
-    await expect((accepted.tools[0] as ToolDef).execute({}, fakeToolContext())).resolves.toMatchObject({
+    await expect((accepted.tools[0] as ToolDef).execute({}, ctxOf())).resolves.toMatchObject({
       content: [{ type: 'image' }],
     })
   })
@@ -498,7 +586,7 @@ describe('registerRemoteToolsStrict', () => {
   it('turns a call-time outage into an error result without leaking an exception', async () => {
     const { api, tools } = fakeApi()
     await registerRemoteToolsStrict(api, connection(), stdio)
-    const result = await (tools[1] as ToolDef).execute({}, fakeToolContext())
+    const result = await (tools[1] as ToolDef).execute({}, ctxOf())
     expect(result).toEqual({
       content: [{ type: 'text', text: 'mcp server gh unavailable: boom' }],
       isError: true,
@@ -523,7 +611,7 @@ describe('registerRemoteToolsStrict', () => {
       throw new Error('remote echoed credential-test-marker')
     }
     await registerRemoteToolsStrict(active.api, conn, cfg)
-    const result = await (active.tools[0] as ToolDef).execute({}, fakeToolContext())
+    const result = await (active.tools[0] as ToolDef).execute({}, ctxOf())
     expect(JSON.stringify(result)).not.toContain('credential-test-marker')
     expect(result.content[0]).toMatchObject({ text: expect.stringContaining('[REDACTED]') })
 
@@ -533,7 +621,7 @@ describe('registerRemoteToolsStrict', () => {
       content: [{ type: 'text', text: 'value=credential-test-marker' }],
     })
     await registerRemoteToolsStrict(echoed.api, echoConn, cfg)
-    expect(JSON.stringify(await (echoed.tools[0] as ToolDef).execute({}, fakeToolContext()))).not.toContain(
+    expect(JSON.stringify(await (echoed.tools[0] as ToolDef).execute({}, ctxOf()))).not.toContain(
       'credential-test-marker',
     )
 
@@ -545,7 +633,7 @@ describe('registerRemoteToolsStrict', () => {
     await registerRemoteToolsStrict(artifactFailure.api, artifactConn, cfg)
     const guarded = await (artifactFailure.tools[0] as ToolDef).execute(
       {},
-      fakeToolContext({ artifactsFail: 'backend echoed credential-test-marker' }),
+      ctxOf({ artifactsFail: 'backend echoed credential-test-marker' }),
     )
     expect(JSON.stringify(guarded)).not.toContain('credential-test-marker')
     expect(JSON.stringify(guarded)).toContain('[REDACTED]')
@@ -558,7 +646,7 @@ describe('registerRemoteToolsStrict', () => {
     })
     const imageResult = await (imageFailure.tools[0] as ToolDef).execute(
       {},
-      fakeToolContext({ artifactsFail: 'backend echoed credential-test-marker' }),
+      ctxOf({ artifactsFail: 'backend echoed credential-test-marker' }),
     )
     expect(JSON.stringify(imageResult)).not.toContain('credential-test-marker')
   })
@@ -573,7 +661,7 @@ describe('registerRemoteToolsStrict', () => {
 
     const result = await (state.tools[0] as ToolDef).execute(
       {},
-      fakeToolContext({ artifactsFail: `backend exposed ${secret}` }),
+      ctxOf({ artifactsFail: `backend exposed ${secret}` }),
     )
     expect(JSON.stringify(result)).toContain('[REDACTED]')
     expect(JSON.stringify(result)).not.toContain('secret-start-')
@@ -589,7 +677,7 @@ describe('registerRemoteToolsStrict', () => {
       })
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, stdio)
-    await expect((state.tools[0] as ToolDef).execute({}, fakeToolContext())).resolves.toEqual({
+    await expect((state.tools[0] as ToolDef).execute({}, ctxOf())).resolves.toEqual({
       content: [{ type: 'text', text: 'mcp server gh unavailable: unknown failure' }],
       isError: true,
     })
@@ -603,7 +691,7 @@ describe('registerRemoteToolsStrict', () => {
     callConn.callTool = async () => Promise.reject(callFailure.error)
     const callState = fakeApi()
     await registerRemoteToolsStrict(callState.api, callConn, cfg)
-    const callResult = await (callState.tools[0] as ToolDef).execute({}, fakeToolContext())
+    const callResult = await (callState.tools[0] as ToolDef).execute({}, ctxOf())
     expect(callFailure.exposedArguments).toEqual([])
     expect(JSON.stringify(callResult)).not.toContain('credential-test-marker')
 
@@ -614,7 +702,7 @@ describe('registerRemoteToolsStrict', () => {
     await registerRemoteToolsStrict(artifactState.api, artifactConn, cfg, {
       mediaLimits: TEST_MEDIA_LIMITS,
     })
-    const artifactCtx = fakeToolContext()
+    const artifactCtx = ctxOf()
     artifactCtx.artifacts.put = async () => Promise.reject(artifactFailure.error)
     const artifactResult = await (artifactState.tools[0] as ToolDef).execute({}, artifactCtx)
     expect(artifactFailure.exposedArguments).toEqual([])
@@ -644,7 +732,7 @@ describe('registerRemoteToolsStrict', () => {
       headers: { authorization: 'Bearer bearer-marker' },
       defer: false,
     })
-    const result = await (tools[0] as ToolDef).execute({}, fakeToolContext())
+    const result = await (tools[0] as ToolDef).execute({}, ctxOf())
     expect(JSON.stringify(result)).not.toContain('bearer-marker')
     expect(result).toMatchObject({ content: [{ text: expect.stringContaining('[REDACTED]') }] })
   })
@@ -679,7 +767,7 @@ describe('registerRemoteToolsStrict', () => {
     })
     const first = fakeApi()
     await registerRemoteToolsStrict(first.api, conn, stdio, { mediaLimits: TEST_MEDIA_LIMITS })
-    await expect((first.tools[0] as ToolDef).execute({}, fakeToolContext())).resolves.toMatchObject({
+    await expect((first.tools[0] as ToolDef).execute({}, ctxOf())).resolves.toMatchObject({
       isError: true,
       content: [{ text: expect.stringContaining('invalid content') }],
     })
@@ -693,7 +781,7 @@ describe('registerRemoteToolsStrict', () => {
       mediaLimits: TEST_MEDIA_LIMITS,
     })
     await expect(
-      (second.tools[0] as ToolDef).execute({}, fakeToolContext({ artifactsFail: 'store down' })),
+      (second.tools[0] as ToolDef).execute({}, ctxOf({ artifactsFail: 'store down' })),
     ).resolves.toMatchObject({
       isError: true,
       content: [{ text: expect.stringContaining('store down') }],
@@ -713,7 +801,7 @@ describe('registerRemoteToolsStrict', () => {
     await registerRemoteToolsStrict(oversized.api, oversizedConn, stdio, {
       mediaLimits: TEST_MEDIA_LIMITS,
     })
-    const oversizedCtx = fakeToolContext()
+    const oversizedCtx = ctxOf()
     await expect((oversized.tools[0] as ToolDef).execute({}, oversizedCtx)).resolves.toMatchObject({
       isError: true,
       content: [{ text: expect.stringContaining('byte limit') }],
@@ -726,7 +814,7 @@ describe('registerRemoteToolsStrict', () => {
     conn.callTool = async () => ({ content: [imageBlock(SMALL_PNG), imageBlock(SMALL_PNG)] })
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, stdio, { mediaLimits: TEST_MEDIA_LIMITS })
-    const ctx = fakeToolContext()
+    const ctx = ctxOf()
     const put = ctx.artifacts.put.bind(ctx.artifacts)
     let writes = 0
     ctx.artifacts.put = async (bytes, meta) => {
@@ -866,6 +954,31 @@ describe('connectMcp', () => {
     await conn.close()
     fireNotification()
     expect(heardAfterClose).toEqual([])
+  })
+
+  it('treats a stdio transport error (a stray non-JSON stdout line) as noise, and only the process exit as a disconnect', async () => {
+    const { deps, transports } = fakeSdk()
+    const conn = await connectMcp({ ...stdio, cmd: ['gh-mcp', '--stdio'] }, deps)
+    const lost = vi.fn()
+    conn.onClose?.(lost)
+    const transport = transports[0] as { onerror?: (error: Error) => void; onclose?: () => void }
+    // The SDK reports a line that is not a JSON-RPC message through onerror and keeps reading.
+    transport.onerror?.(new SyntaxError('Unexpected token S in JSON at position 0'))
+    expect(lost).not.toHaveBeenCalled()
+    transport.onclose?.()
+    expect(lost).toHaveBeenCalledOnce()
+  })
+
+  it('still treats an HTTP transport error as a lost connection', async () => {
+    const { deps, transports } = fakeSdk()
+    const conn = await connectMcp(
+      { id: 'web', transport: 'http', url: 'https://mcp.example/mcp', defer: false },
+      deps,
+    )
+    const lost = vi.fn()
+    conn.onClose?.(lost)
+    ;(transports[0] as { onerror?: (error: Error) => void }).onerror?.(new Error('stream failed'))
+    expect(lost).toHaveBeenCalledOnce()
   })
 
   it('builds the HTTP transport, follows tool-list pagination, and forwards call cancellation', async () => {

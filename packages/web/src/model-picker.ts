@@ -1,5 +1,4 @@
-import { tr } from './locale-bridge.js'
-import type { ThinkingLevel } from '@agnes/protocol'
+import type { ModelSettings } from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 import { thinkingLevelLabel } from './presentation.js'
@@ -8,12 +7,10 @@ export type ModelPickerOption = {
   id: string
   route: string
   label?: string
-  /** 模型是否支持思考档位；来自 apis.list 的 profile.models[].reasoning。 */
   reasoning?: boolean
-  /** 模型声明的「档位 → provider 取值」映射；缺省表示任意合法档位都接受。 */
   thinkingLevelMap?: Record<string, string>
-  /** 本次要应用的思考档位；只在模型支持思考时随选择结果一起出现。 */
-  thinking?: ThinkingLevel
+  contextWindow?: number
+  defaultSettings?: ModelSettings
 }
 
 export type ModelPickerState = {

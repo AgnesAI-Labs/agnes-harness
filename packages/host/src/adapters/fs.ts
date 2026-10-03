@@ -1,6 +1,7 @@
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:path'
 import { decideFsPath, FS_DENIED, type FsPolicy } from '@agnes/core'
 import type { FsEntry, FsStat } from '@agnes/extension-api'
+import { sessionHasFullFileAccess } from '../session-file-access.js'
 import type { FsIo } from './fs-io.js'
 import { localFsIo } from './fs-io-local.js'
 
@@ -111,11 +112,18 @@ const missing = (requested: string): Error =>
  * real directories of the Skills a session can use. It never widens a write, never overrides a
  * rule that matched (a deny, hard or not, still refuses), and is asked on every call so a Skill
  * that stops being usable closes at once. The policy and its digest are untouched.
+ *
+ * `fullAccessReadOnlyRoots` names the installation's own state - credentials and profiles. Under
+ * full file access those paths stay readable like any other, but write, mkdir and rm refuse them
+ * even where the policy allows them (an unmatched path widened by full access, or a workspace that
+ * happens to cover them). It is a refusal layered on the policy's answer, never a widening, and it
+ * is asked on every call. The policy and its digest are untouched.
  */
 export function createFs(
   binding: () => FsBinding,
   io: FsIo = localFsIo,
   readRoots?: () => readonly string[],
+  fullAccessReadOnlyRoots?: () => readonly string[],
 ): FencedFs {
   /**
    * The one choke point every method goes through: resolve the caller's spelling against the
@@ -124,14 +132,36 @@ export function createFs(
    * `/work/ab` - and case folds only where the volume does. Nothing is authorised at init; this
    * runs again on every operation.
    */
-  async function authorize(p: string): Promise<{ real: string; abs: string }> {
+  async function authorize(
+    p: string,
+    mode: 'read' | 'write' | 'remove' = 'read',
+  ): Promise<{ real: string; abs: string }> {
     const { policy, caseSensitive } = binding()
     usable(p)
     const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
     const real = await canonicalize(io, abs, p)
     const decision = decideFsPath(policy, real, { caseSensitive })
-    if (decision.effect !== 'allow')
-      refuse(p, decision.reason === 'no-match' ? 'is outside every allow rule' : 'is denied by policy')
+    // Full session access widens unmatched paths; matching denies remain authoritative.
+    if (decision.effect !== 'allow' && !(decision.reason === 'no-match' && sessionHasFullFileAccess(fs)))
+      refuse(
+        p,
+        decision.reason === 'no-match'
+          ? 'is outside every allow rule; 请选择“完全权限”或将目标所在目录设为工作区。'
+          : 'is denied by policy',
+      )
+    if (mode !== 'read' && fullAccessReadOnlyRoots && sessionHasFullFileAccess(fs)) {
+      // Each root is canonicalized the way the path was, so a symlink on either side and the
+      // volume's own spelling cannot make two names for one directory compare apart. A root that
+      // cannot be canonicalized is compared as spelled: failing open here would drop the guard.
+      const roots = await Promise.all(
+        fullAccessReadOnlyRoots().map((root) => canonicalize(io, resolve(root)).catch(() => resolve(root))),
+      )
+      const inside = (outer: string, inner: string): boolean =>
+        decideFsPath(overlay(outer), inner, { caseSensitive }).effect === 'allow'
+      // Removing the directory that holds a protected root removes the root with it.
+      if (roots.some((root) => inside(root, real) || (mode === 'remove' && inside(real, root))))
+        refuse(p, 'is denied by policy')
+    }
     return { real, abs }
   }
 
@@ -167,7 +197,7 @@ export function createFs(
     return (await authorize(p)).real
   }
 
-  return {
+  const fs: FencedFs = {
     resolveInside,
     async canonicalize(p, opts) {
       usable(p)
@@ -191,7 +221,7 @@ export function createFs(
       )
     },
     async write(p, data) {
-      const { real } = await authorize(p)
+      const { real } = await authorize(p, 'write')
       await io.mkdir(dirname(real))
       await io.writeFile(real, data)
     },
@@ -213,17 +243,19 @@ export function createFs(
       return { kind: st.kind, size: st.size, mtimeMs: st.mtimeMs }
     },
     async mkdir(p) {
-      const { real } = await authorize(p)
+      const { real } = await authorize(p, 'write')
       await io.mkdir(real)
     },
     async rm(p, opts = {}) {
       // Removing is answered twice: the target, and the resolved parent it is removed from. A
       // policy that allows a leaf but not its directory is not a licence to unlink there.
-      const { real } = await authorize(p)
+      const { real } = await authorize(p, 'remove')
       const { policy, caseSensitive } = binding()
-      if (decideFsPath(policy, dirname(real), { caseSensitive }).effect !== 'allow')
+      const parent = decideFsPath(policy, dirname(real), { caseSensitive })
+      if (parent.effect !== 'allow' && !(parent.reason === 'no-match' && sessionHasFullFileAccess(fs)))
         refuse(p, 'is denied by policy at its parent')
       await io.rm(real, { recursive: opts.recursive ?? false })
     },
   }
+  return fs
 }

@@ -268,6 +268,57 @@ describe('W3b projected message DOM', () => {
     expect(item('tool')).toBeNull()
   })
 
+  it('names a failed shell call by its exit code and shows what it printed as output', async () => {
+    const shell = (
+      id: string,
+      name: string,
+      resultPreview: string,
+      status: 'failed' | 'completed' = 'failed',
+    ): UINode => ({
+      kind: 'tool',
+      id,
+      seq: 1,
+      toolUseId: id,
+      name,
+      status,
+      summary: '失败',
+      resultPreview,
+    })
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        shell('exit', 'shell', 'hello\n[exit 1]'),
+        shell('silent', 'shell', '[exit 2] [output truncated by sandbox]'),
+        shell('cut', 'shell', 'partial output with no exit line'),
+        shell('other', 'read', 'x\n[exit 3]'),
+        // A timed-out call ends with its marker and has no exit line, so it keeps the general wording.
+        shell(
+          'timeout',
+          'shell',
+          'part\n[exit 1]\n[timed out after 118000ms: the command and the processes in its process group were killed]',
+        ),
+        shell('done', 'shell', 'fine\n[exit 0]', 'completed'),
+      ],
+    })
+    await mount(store)
+    const detail = (id: string) => item(id)?.querySelector('.tool-detail-text')?.textContent
+    expect(item('exit')?.getAttribute('aria-label')).toBe('工具 shell：退出码 1')
+    expect(item('exit')?.querySelector('.tool-status')?.textContent).toBe('退出码 1')
+    expect(detail('exit')).toContain('输出\nhello')
+    expect(detail('exit')).not.toContain('[exit 1]')
+    expect(detail('exit')).not.toContain('错误详情')
+    expect(detail('silent')).toContain('输出\n（无输出）')
+    expect(item('silent')?.getAttribute('aria-label')).toBe('工具 shell：退出码 2')
+    expect(item('cut')?.getAttribute('aria-label')).toBe('工具 shell：执行失败')
+    expect(detail('cut')).toContain('错误详情\npartial output')
+    expect(item('other')?.getAttribute('aria-label')).toBe('工具 read：执行失败')
+    expect(item('timeout')?.getAttribute('aria-label')).toBe('工具 shell：执行失败')
+    expect(detail('timeout')).toContain('错误详情\npart')
+    expect(detail('timeout')).toContain('[timed out after 118000ms')
+    expect(item('done')?.getAttribute('aria-label')).toBe('工具 shell：执行完成')
+    expect(detail('done')).toContain('执行结果\nfine\n[exit 0]')
+  })
+
   it('shows lost output, terminal failure and expiry without inventing authorization controls', async () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',

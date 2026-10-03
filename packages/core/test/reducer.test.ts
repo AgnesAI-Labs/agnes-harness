@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { checkRelations } from '../src/log/relations.js'
+import { contextAnchorOf } from '../src/reduce/anchor.js'
 import { ChunkedMap } from '../src/reduce/chunked-map.js'
 import { foldEvents, initialState, reduce } from '../src/reduce/reducer.js'
 import { effectTree, type LedgerState } from '../src/reduce/state.js'
@@ -38,6 +39,24 @@ const opstate = (step: number) => ({
   latestAssistantSeq: null,
   taint: false,
   phase: { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: 1 },
+})
+
+describe('contextAnchorOf', () => {
+  const tokens = { input: 10, output: 5, cacheRead: 3, cacheWrite: 2 }
+  const row = (extra: object) => ev('cost/ledger', { purpose: 'inference', effectId: 'e', tokens, ...extra })
+
+  it('anchors on an inference row but not on an interrupted or adjusting one', () => {
+    expect(contextAnchorOf(row({}))).toMatchObject({ total: 20, input: 10, cacheRead: 3 })
+    expect(contextAnchorOf(row({ interrupted: true }))).toBeUndefined()
+    expect(contextAnchorOf(row({ adjustment: { of: 1, delta: -1 } }))).toBeUndefined()
+  })
+
+  it('anchors on a compaction end only when tokensAfter is a nonnegative safe integer', () => {
+    const end = (data: unknown) => contextAnchorOf(ev('x/core/compaction-end', data))
+    expect(end({ tokensAfter: 0 })).toMatchObject({ total: 0, input: 0, cacheRead: 0 })
+    for (const bad of [-1, 1.5, '9', null, 2 ** 53]) expect(end({ tokensAfter: bad })).toBeUndefined()
+    expect(end(null)).toBeUndefined()
+  })
 })
 
 describe('reducer', () => {
@@ -180,6 +199,25 @@ describe('reducer', () => {
     )
     expect(s.creditsUsed).toBe(3.5)
     expect(s.lastLedgerTokens).toEqual(contextAnchor)
+    // A compaction's own request (failed rows are all zero) is not the context the next request carries.
+    s = reduce(
+      s,
+      ev('cost/ledger', {
+        purpose: 'compaction',
+        effectId: 'compaction-1',
+        tokens: { input: 9000, output: 900, cacheRead: 0, cacheWrite: 0 },
+        credits: 1,
+        creditSource: 'gateway',
+        model: 'summary-model',
+      }),
+    )
+    expect(s.creditsUsed).toBe(4.5)
+    expect(s.lastLedgerTokens).toEqual(contextAnchor)
+    // What the compaction leaves behind is anchored by its own end row, as a cold-cache estimate.
+    s = reduce(s, ev('x/core/compaction-end', { tokensAfter: 321 }, { ignorable: true }))
+    expect(s.lastLedgerTokens).toMatchObject({ total: 321, input: 321, cacheRead: 0 })
+    s = reduce(s, ev('x/core/compaction-end', {}, { ignorable: true }))
+    expect(s.lastLedgerTokens).toMatchObject({ total: 321 })
     s = reduce(s, ev('effect/settled', { effectId: 'e2', outcome: 'ok' }))
     s = reduce(s, ev('approval/decided', { requestId: 'a1', verdict: 'allowed-once', via: 'sync' }))
     s = reduce(s, ev('step/end', { turn: 1, step: 1 }))

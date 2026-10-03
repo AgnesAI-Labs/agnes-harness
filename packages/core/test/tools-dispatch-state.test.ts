@@ -215,6 +215,8 @@ describe('durable tool dispatch state', () => {
     expect((await opened.log.scan({ type: 'tool/result', limit: 10 }))[0]?.data).toMatchObject({
       code: 'TOOL_OUTCOME_UNKNOWN',
       isError: true,
+      // A genuine transport failure keeps the plain wording: no timeout or cancel is claimed.
+      content: [{ text: 'the outcome of computer_use is unknown after dispatch' }],
     })
     expect(
       (await opened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,
@@ -299,6 +301,9 @@ describe('durable tool dispatch state', () => {
       expect((await opened.log.scan({ type: 'tool/result', limit: 10 }))[0]?.data).toMatchObject({
         code: 'TOOL_OUTCOME_UNKNOWN',
         isError: true,
+        content: [
+          { text: expect.stringMatching(mode === 'timeout' ? /5 ms limit.*aborted/s : /was cancelled/) },
+        ],
       })
       expect(
         (await opened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,

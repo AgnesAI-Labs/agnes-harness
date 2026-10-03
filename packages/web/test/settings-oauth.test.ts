@@ -244,7 +244,12 @@ it('offers subscription controls, keeps polling during manual input and commits 
     new (must(window).Event)('submit', { cancelable: true }),
   )
   await vi.waitFor(() => expect(h.onSaved).toHaveBeenCalled())
-  expect(h.oauth).toHaveBeenCalledWith({ action: 'commit', operationId: 'op', model: 'gpt-codex' })
+  expect(h.oauth).toHaveBeenCalledWith({
+    action: 'commit',
+    operationId: 'op',
+    model: 'gpt-codex',
+    defaultSettings: {},
+  })
   expect(h.save).not.toHaveBeenCalled()
   h.controller.close()
 })

@@ -27,6 +27,7 @@ export const writeTool = defineTool({
     // file, and two spellings taking two locks is the same as taking no lock at all.
     withFileLock(normalizeWorkspacePath(args.path, ctx.cwd).abs, async () => {
       let old = ''
+      let existed = true
       try {
         old = dec.decode(await ctx.fs.read(args.path))
       } catch (e) {
@@ -39,6 +40,7 @@ export const writeTool = defineTool({
             content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
             isError: true,
           }
+        existed = false
       }
       const t = looksTruncated(old, args.content)
       if (t.truncated)
@@ -51,12 +53,23 @@ export const writeTool = defineTool({
           ],
           isError: true,
         }
-      await ctx.fs.write(args.path, args.content)
+      try {
+        await ctx.fs.write(args.path, args.content)
+      } catch (e) {
+        // A file the fence lets the model read but not replace fails here, not at the read above.
+        // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
+        // outcome is unknown, and nothing in it would say the policy said no.
+        if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
+        return {
+          content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
+          isError: true,
+        }
+      }
       return {
         content: [
           {
             type: 'text',
-            text: `${old === '' ? 'created' : 'overwrote'} ${args.path} (${args.content.length} chars)`,
+            text: `${existed ? 'overwrote' : 'created'} ${args.path} (${args.content.length} chars)`,
           },
         ],
         details: { path: args.path, bytes: enc.encode(args.content).byteLength },

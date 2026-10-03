@@ -20,6 +20,8 @@ export interface ApprovalView {
   summary: string
   title: string
   impact: string
+  /** Says that part of the call is not shown; rendered before the preview so it is read first. */
+  warning?: string
   preview?: string
   actions: readonly ApprovalAction[]
   disabled: boolean
@@ -85,7 +87,13 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           createElement('p', null, view.summary),
           createElement('p', { className: 'approval-impact' }, view.impact),
           detail,
-          ...(view.preview === undefined ? [] : [createElement('pre', { key: 'preview' }, view.preview)]),
+          ...(view.warning === undefined
+            ? []
+            : [createElement('p', { key: 'warning', className: 'approval-warning' }, view.warning)]),
+          // Focusable so a keyboard user can scroll arguments that are longer than the card.
+          ...(view.preview === undefined
+            ? []
+            : [createElement('pre', { key: 'preview', tabIndex: 0 }, view.preview)]),
           createElement(
             'div',
             { className: 'approval-actions' },

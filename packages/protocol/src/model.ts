@@ -1,6 +1,9 @@
 import * as M from '../gen/ts/model.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
+/** A basic usability floor; runtime still checks the actual fixed prompt and tool cost. */
+export const minimumContextBudget = (capacity = Number.POSITIVE_INFINITY): number => Math.min(2048, capacity)
+
 // AI_ERROR_CODES / SLOT_NAMES and their types are deliberately not redeclared here. They already
 // exist on src/provider.ts, are consumed by core's request builder and by the host's route
 // assembly, and are pinned by test/boundary.test.ts. Two tuples for one closed set is exactly the

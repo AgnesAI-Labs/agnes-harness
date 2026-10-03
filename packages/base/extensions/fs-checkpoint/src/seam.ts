@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { CheckpointSeam } from '@agnes/core'
 import type { HostFs, SeamFactory, SeamInitContext } from '../../../src/seam-init.js'
 import { type Captured, ShadowGit } from './shadow-git.js'
@@ -15,6 +15,8 @@ const within = (root: string, path: string): boolean => {
   const rel = relative(root, path)
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
+const storedPath = (root: string, path: string): string =>
+  within(root, path) ? relative(root, path).split('\\').join('/') : path
 
 // biome-ignore format: the three deterministic test seams form one dependency contract.
 export type CheckpointDeps = { now(): number; nextId(): string; workspaceHash(value: string): string }
@@ -47,18 +49,17 @@ function workspaceSerial(): WorkspaceSerial {
 async function canonicalMissing(fs: HostFs, root: string, input: string): Promise<string> {
   const absolute = isAbsolute(input) ? input : resolve(root, input)
   let probe = dirname(absolute)
-  const suffix: string[] = [absolute.slice(probe.length + (probe.endsWith('/') ? 0 : 1))]
+  const suffix: string[] = [basename(absolute)]
   for (;;) {
     try {
       const base = await fs.realpath(probe)
       const target = resolve(base, ...suffix.reverse())
-      if (!within(root, target)) throw error('E_FS_DENIED', input)
       return target
     } catch (cause) {
       if (!isMissing(cause)) throw cause
       const parent = dirname(probe)
       if (parent === probe) throw cause
-      suffix.push(probe.slice(parent.length + (parent.endsWith('/') ? 0 : 1)))
+      suffix.push(basename(probe))
       probe = parent
     }
   }
@@ -77,14 +78,13 @@ async function capture(fs: HostFs, root: string, input: string, maxBytes: number
       } catch (second) {
         if (!isMissing(second)) throw second
         const last = await canonicalMissing(fs, root, input)
-        if (first === last) return { rel: relative(root, first).split('\\').join('/'), state: 'absent' }
+        if (first === last) return { rel: storedPath(root, first), state: 'absent' }
         continue
       }
       continue
     }
     if (before.kind !== 'file') throw error('E_CHECKPOINT_UNSUPPORTED', `${input} is ${before.kind}`)
     const real = await fs.realpath(input)
-    if (!within(root, real)) throw error('E_FS_DENIED', input)
     const value = await fs.read(real)
     let after: Awaited<ReturnType<HostFs['stat']>>
     try {
@@ -102,7 +102,7 @@ async function capture(fs: HostFs, root: string, input: string, maxBytes: number
     if (value.length > maxBytes || value.subarray(0, 8192).includes(0))
       throw error('E_CHECKPOINT_UNRESTORABLE', input, { size: value.length, sha256: digest })
     // biome-ignore format: this mirrors the compact Captured schema.
-    return { rel: relative(root, real).split('\\').join('/'), state: 'file', bytes: value, size: value.length, sha256: digest }
+    return { rel: storedPath(root, real), state: 'file', bytes: value, size: value.length, sha256: digest }
   }
   throw error('E_CHECKPOINT_RACE', input)
 }
@@ -153,7 +153,7 @@ async function createBoundFsCheckpoint(
         const checkpoint = await shadow.read(id)
         const preflight: Array<{ path: string; exists: boolean; bytes?: Uint8Array }> = []
         for (const entry of checkpoint.manifest.entries) {
-          const path = join(root, ...entry.rel.split('/'))
+          const path = isAbsolute(entry.rel) ? entry.rel : join(root, ...entry.rel.split('/'))
           let exists = true
           try {
             const stat = await fs.stat(path)
@@ -173,7 +173,7 @@ async function createBoundFsCheckpoint(
           for (const item of preflight) {
             if (item.bytes) await fs.write(item.path, item.bytes)
             else if (item.exists) await fs.rm(item.path)
-            applied.push(relative(root, item.path).split('\\').join('/'))
+            applied.push(storedPath(root, item.path))
           }
         } catch (cause) {
           if (cause instanceof Error) Object.assign(cause, { applied })

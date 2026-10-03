@@ -12,6 +12,14 @@
     "ThinkingLevel": {
       "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
     },
+    "ModelSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "thinking": { "$ref": "#/$defs/ThinkingLevel" },
+        "contextWindow": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
     "AiErrorCode": {
       "enum": [
         "AUTH",
@@ -187,6 +195,7 @@
         "input": { "type": "array", "items": { "enum": ["text", "image"] } },
         "cost": { "$ref": "#/$defs/ModelCost" },
         "contextWindow": { "type": "integer", "minimum": 1 },
+        "defaultSettings": { "$ref": "#/$defs/ModelSettings" },
         "maxTokens": { "type": "integer", "minimum": 1 },
         "samplingParams": { "$ref": "#/$defs/JsonValue" },
         "headers": { "type": "object", "additionalProperties": { "type": "string" } },

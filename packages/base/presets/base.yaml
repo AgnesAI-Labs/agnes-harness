@@ -6,7 +6,7 @@
 # any test that only reads the resolved view, so nothing below should be read as evidence that
 # inheritance ran. What this file settles is the keys the kernel has no default for at all.
 name: base
-tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch], timeout_ms: 120000, timeouts: { web_fetch: 30000, skill_helper_import: 240000 } }
+tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch], timeout_ms: 120000, output_max_bytes: 32768, timeouts: { web_fetch: 30000, skill_helper_import: 240000, shell: 600000 } }
 mcp: { servers: [], defer: true }
 # Written unexpanded on purpose: a `~` here is the operator's home, and whoever reads this key is
 # the one that knows whose home that is. Nothing expands it yet, so nothing may join these onto a
@@ -14,7 +14,7 @@ mcp: { servers: [], defer: true }
 skills_roots: [~/.agh/skills, ~/.agents/skills, ~/.claude/skills, ~/.codex/skills]
 compaction: { enabled: true, reserve_tokens: 16384, keep_recent_tokens: 20000, agent_callable: true }
 checkpoint: { keep: 200, max_file_bytes: 10485760 }
-budget: { preflight: estimate, per_request_cap: null, on_exceed: quote, max_steps: 50, attribution: aggregate }
+budget: { preflight: estimate, per_request_cap: null, on_exceed: quote, max_steps: null, attribution: aggregate }
 approval: { on_unavailable: deny, on_timeout: rejected, timeout_ms: 60000, pending_ttl_ms: 86400000, command_policy: [] }
 sandbox: { level: L1, required: false, on_unavailable: deny, extra_paths: [], deny_paths: [], network_allow: [] }
 loop: { repeat_threshold: 3, no_progress_steps: 4 }

@@ -10,6 +10,8 @@ import { windowsProcessStartTimeSync } from '@agnes/system-node'
 import { describe, expect, it, vi } from 'vitest'
 import { CompositeRuntimeDelivery } from '../src/composite-runtime-delivery.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { LocalEndpoint } from '../src/local/endpoint.js'
+import { NoticeSink } from '../src/local/notice.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 import { encodeFrame } from '../src/supervisor/framing.js'
 import { listenUnix } from '../src/supervisor/socket.js'
@@ -153,6 +155,68 @@ describe('WorkerPool', () => {
     await new Promise((r) => setTimeout(r, 10))
     expect(previews).toEqual([{ key: 's', delta: 'from a' }])
     for (const end of [poolA, poolB, workerA, workerB]) end.destroy()
+  })
+
+  it('survives a session interruption on a link whose session has an attached connection', async () => {
+    // A worker that loses its session tail reports `session.interrupted`. The daemon retires the
+    // session and reports the failure; it must not push a notice the protocol cannot carry, and a
+    // refused push must never escape as an unhandled rejection that takes the daemon down.
+    const ep = new LocalEndpoint({ clock: () => 0, principalId: 'a' })
+    ep.conn.attached.set('s', {
+      cursor: { fromSeq: 1, generation: 1 },
+      filter: { preview: false, acpUpdates: false },
+    })
+    const failures: string[] = []
+    const audited: unknown[] = []
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    const pool = new WorkerPool({
+      config: {
+        profileName: 'p',
+        dataDir: '/unused',
+        socketPath: '/unused/client.sock',
+        workersSocketPath: '/unused/worker.sock',
+        limits: DEFAULT_LIMITS,
+      },
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile: '/unused/profile.json',
+      clock: () => 0,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      onSessionFailure: (key) => failures.push(key),
+      notices: new NoticeSink({
+        endpoints: () => [{ ep, conn: ep.conn }],
+        audit: (record) => audited.push(record),
+        clock: () => 0,
+      }),
+    })
+    const [poolSide, workerSide] = duplexPair()
+    pool.adopt(poolSide)
+    workerSide.write(
+      Buffer.concat([
+        encodeFrame({
+          kind: 'hello',
+          token: 'token',
+          workerKey: '@shared',
+          workerKind: 'session',
+          workerGeneration: 1,
+          profileHash: 'h1',
+        }),
+        encodeFrame({ kind: 'session.interrupted', sessionKey: 's', reason: 'tail failed' }),
+      ]),
+    )
+    try {
+      await vi.waitFor(() => expect(failures).toEqual(['s']))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(unhandled).toEqual([])
+      // Nothing was pushed and nothing was refused: no notice, so no dropped-notice record either.
+      expect(audited).toEqual([])
+      expect(ep.pending().events).toBe(0)
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+      for (const end of [poolSide, workerSide]) end.destroy()
+    }
   })
 
   it('reserves @shared for the Host worker and refuses a mismatched live slot', async () => {

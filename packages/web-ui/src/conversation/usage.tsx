@@ -45,10 +45,10 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
     : ''
   const rows: Array<[string, string]> = usage
     ? [
-        [t('usage.rows.context'), `${count(usage.context.tokens)} Token`],
-        [t('usage.rows.window'), `${count(usage.context.window)} Token`],
+        ['上下文占用', `${count(usage.context.tokens)} Token`],
+        ['本会话预算', `${count(usage.context.window)} Token`],
         ...(usage.model.maxTokens
-          ? [[t('usage.rows.maxOutput'), `${count(usage.model.maxTokens)} Token`] as [string, string]]
+          ? [['模型最大输出', `${count(usage.model.maxTokens)} Token`] as [string, string]]
           : []),
         [t('usage.rows.autoCompact'), usage.context.autoCompact ? t('usage.enabled') : t('usage.disabled')],
       ]
@@ -84,7 +84,9 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
             </Fragment>
           ))}
         </dl>
-        <p className="usage-note">{t('usage.note')}</p>
+        <p className="usage-note">
+          上下文为后台估算，包含当前保留的对话等内容；会话预算用于自动整理，不改变模型容量。模型最大输出来自模型目录。
+        </p>
       </div>
     </details>
   )

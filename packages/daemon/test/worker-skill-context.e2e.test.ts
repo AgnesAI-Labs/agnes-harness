@@ -16,7 +16,8 @@ const roots: string[] = []
 // Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
 // discovery and read tools remain available for the loaded and generic turns alike.
 // Pagination changes both read-tool schemas; pin the merged, model-visible tool set.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'c35a8f64eefcf614f96ae3f4eb3f2c221091f4f3973f07d79cee004dd12efa69'
+// The write description also includes the incremental-generation guidance shipped with the tools.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '1f38d67cc65637ee005dcc05a2c2c7fa25a1eefa03431da132655c898da82a80'
 const expectedToolNames = [
   'compact',
   'edit',

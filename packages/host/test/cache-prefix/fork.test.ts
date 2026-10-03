@@ -300,8 +300,18 @@ describe('delegated child wire prefixes', () => {
         expect(child.surface()[0]?.seq).toBe(inherited.seq)
         expect(child.preset.compaction.enabled).toBe(true)
         await prompt(child, 'child first task')
-        primaryWindow = 1
-        await prompt(child, `child threshold ${'c'.repeat(800)}`)
+        // A session keeps the context window it was given, so the child's own window shrinks along with
+        // what the provider advertises. The smallest one the budget check accepts still has to hold the
+        // fixed instructions and tools, so the prompt that crosses the threshold is long instead.
+        primaryWindow = 4096
+        child.preset = {
+          ...child.preset,
+          model: {
+            ...child.preset.model,
+            contextWindow: { ...child.preset.model.contextWindow, primary: 4096 },
+          },
+        }
+        await prompt(child, `child threshold ${'c'.repeat(20_000)}`)
 
         expect(plans).toContainEqual({ reason: 'threshold', previousSummarySeq: inherited.seq })
         const summaryRequest = requests.findLast(

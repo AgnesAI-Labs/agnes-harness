@@ -163,7 +163,10 @@ describe('web projections embed child traces on the owner span', () => {
         maxBytes: MiB,
         ...(usage ? { usage } : {}),
       })
-      expect(JSON.stringify(opening)).toBe(JSON.stringify(direct))
+      // The session adds its permission state to the opening's timeline; the view alone does not.
+      expect(JSON.stringify(opening)).toBe(
+        JSON.stringify({ ...direct, timeline: { ...direct.timeline, yolo: parent.yolo } }),
+      )
       const history = await parent.projectUIHistory(opening.timeline.upto, opening.startIndex, {
         ...opts,
         limit: 2,
@@ -179,7 +182,7 @@ describe('web projections embed child traces on the owner span', () => {
       const update = await parent.projectUIPatch(before, undefined, surface ? { surface } : {})
       if (update.kind !== 'patch') throw new Error('expected a live patch')
       expect(JSON.stringify(update.patch)).toBe(
-        JSON.stringify(parent.d.ui.journalPatch(before, update.patch.usage)),
+        JSON.stringify({ ...parent.d.ui.journalPatch(before, update.patch.usage), yolo: parent.yolo }),
       )
     }
   })

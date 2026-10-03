@@ -8,7 +8,9 @@ English | [简体中文](mhs.zh-CN.md)
 
 > **Coming soon: AGH's MHS integration documentation and examples.**
 
-From inspection and maintenance to instrument coordination, field work connects device state, human judgment, and business workflows. AGH plans to explore physical device integration through MHS (Model Hardware Standard), bringing state reads, operation requests, and execution receipts into one task flow.
+From inspection and maintenance to instrument coordination, field work connects device state, human judgment, and business workflows. AGH plans to explore physical device integration through MHS (Model Hardware Standard), built on MCP (Model Context Protocol) as the device connection layer, bringing state reads, operation requests, and execution receipts into one task flow.
+
+In AGH's [brain, cerebellum, memory, and body metaphor](../develop/architecture.md#brain-cerebellum-memory-and-body), MHS represents the body: the interface to physical capabilities. The devices and their controllers supply those capabilities, while AGH contributes task orchestration, human confirmation, and records. This direction can be part of an FDE deployment using the same software foundation.
 
 We plan to publish guides and reproducible examples around these scenarios, helping developers combine device capabilities, human confirmation, and business interfaces into applications.
 
@@ -28,7 +30,7 @@ flowchart LR
   Receipt --> AGH
 ```
 
-AGH organizes tasks, authorization interactions, and result records. An adapter connects device capabilities to task execution, while the device controller owns actual motion and site protections. The adapter may explore MHS, a vendor SDK, or another device interface. A connection through an SDK, ROS, or MCP alone does not demonstrate MHS compatibility.
+AGH organizes tasks, authorization interactions, and result records. An adapter connects device capabilities to task execution, while the device controller owns actual motion and site protections. AGH's device integration direction builds the adapter on MCP (Model Context Protocol), a model-agnostic, versioned protocol, rather than a vendor-specific SDK or a ROS bridge. A bare MCP connection alone does not demonstrate MHS compatibility, since no public MHS specification is open for certification.
 
 For example, an inspection task might follow: read status → detect an anomaly → obtain human confirmation → perform a constrained action → verify the receipt. This describes a target workflow. Each device model, action, and failure path needs its own implementation and validation.
 

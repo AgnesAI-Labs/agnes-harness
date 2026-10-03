@@ -47,7 +47,7 @@ Type `/` to see the current menu. Common actions:
 
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
-When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` skips approvals for the remainder of the current session and cannot be undone in that session. It is not a beginner default and does not remove sandbox or other permission constraints.
+When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` enables full access for the current session: it skips tool approvals and allows file reads and writes inside and outside the workspace. Explicit policy denies, operating-system permissions, and configured command sandbox limits still apply. New sessions inherit the saved permission selection. The TUI has no command to disable full access.
 
 <a id="退出码"></a>
 

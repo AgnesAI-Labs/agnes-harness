@@ -62,6 +62,7 @@ describe('protocol src boundary', () => {
         'SESSION_TITLE_EVENT',
         'SessionTitleRecord',
         'readSessionTitle',
+        'minimumContextBudget',
         'BRIDGE_ERRORS',
         'validateServiceCapability',
         'validateSurfaceArtifact',

@@ -7,7 +7,8 @@ import {
   type SubscriptionProviderId,
   subscriptionAuth,
 } from '@agnes/ai'
-import type { ConfigOAuthInput, ConfigOAuthResult, ConfigSnapshot } from '@agnes/protocol'
+import type { ConfigOAuthInput, ConfigOAuthResult, ConfigSnapshot, ModelSettings } from '@agnes/protocol'
+import { normalizeModelSettings } from './configuration-models.js'
 
 type Start = {
   accountId: string
@@ -25,6 +26,7 @@ type Operation = {
   refresh?: () => Promise<unknown>
   committing: boolean
   committedModel?: string
+  committedSettings?: string | undefined
   timer: ReturnType<typeof setTimeout>
   detach(): void
 }
@@ -45,6 +47,7 @@ export type CodexLoginDependencies = {
     credential: SubscriptionCredential,
     model: string,
     signal: AbortSignal,
+    defaultSettings?: ModelSettings,
   ): Promise<ConfigSnapshot>
 }
 
@@ -72,7 +75,7 @@ export function createCodexLogin(deps: CodexLoginDependencies) {
       start: ['action', 'accountId', 'providerId', 'label', 'expectedRevision', 'loginMethod'],
       poll: ['action', 'operationId'],
       answer: ['action', 'operationId', 'promptId', 'answer'],
-      commit: ['action', 'operationId', 'model'],
+      commit: ['action', 'operationId', 'model', 'defaultSettings'],
       test: ['action', 'operationId', 'model'],
       cancel: ['action', 'operationId'],
     }
@@ -242,7 +245,13 @@ export function createCodexLogin(deps: CodexLoginDependencies) {
           if (!op.credential) error('CONFIG_AUTH_FAILED')
           op.result.models = (
             await subscriptionAuth(selectedProvider.id, store).available(controller.signal)
-          ).map((m) => ({ id: m.id, name: m.name }))
+          ).map((m) => ({
+            id: m.id,
+            name: m.name,
+            reasoning: m.reasoning,
+            ...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
+            contextWindow: m.contextWindow,
+          }))
           controller.signal.throwIfAborted()
           op.result.state = 'ready'
         } catch {
@@ -273,8 +282,15 @@ export function createCodexLogin(deps: CodexLoginDependencies) {
       op.answer?.(input.answer as string)
     }
     if (input.action === 'commit' || input.action === 'test') {
+      const defaults =
+        input.defaultSettings === undefined ? undefined : normalizeModelSettings(input.defaultSettings)
+      if (input.defaultSettings !== undefined && defaults === undefined) error()
+      const settingsKey =
+        defaults === undefined
+          ? undefined
+          : JSON.stringify([defaults.thinking ?? null, defaults.contextWindow ?? null])
       if (input.action === 'commit' && op.result.state === 'saved') {
-        if (input.model !== op.committedModel) error()
+        if (input.model !== op.committedModel || settingsKey !== op.committedSettings) error()
         return structuredClone(op.result)
       }
       if (
@@ -308,9 +324,11 @@ export function createCodexLogin(deps: CodexLoginDependencies) {
           op.credential as SubscriptionCredential,
           input.model as string,
           op.controller.signal,
+          defaults,
         )
         op.credential = undefined
         op.committedModel = input.model as string
+        op.committedSettings = settingsKey
         op.result = { operationId: op.id, state: 'saved', snapshot }
       } finally {
         op.committing = false

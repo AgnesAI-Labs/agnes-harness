@@ -24,13 +24,18 @@ const PERMISSION_OPTION_DESCRIPTION_KEYS: Record<PermissionMode, string> = {
 
 /** 静态 id 行：label/description 渲染时经 tr 取词，不在模块加载期写死。 */
 export const PERMISSION_OPTIONS: readonly PermissionOption[] = [
-  { id: 'view', label: '', description: '' },
-  { id: 'workspace', label: '', description: '' },
-  { id: 'full', label: '', description: '' },
+  { id: 'view', label: '仅可查看', description: '本会话弹出的命令审批一律拒绝' },
+  { id: 'workspace', label: '工作区内修改', description: '仅工作区内读写；越界需切换完全权限或选择目录' },
+  {
+    id: 'full',
+    label: '完全权限',
+    description: '工作区内外文件读写；跳过审批，保留安全禁令和系统权限',
+  },
 ]
 
-export function permissionLabel(mode: PermissionMode): string {
-  return tr(PERMISSION_OPTION_LABEL_KEYS[mode] ?? 'settings.picker.workspaceFallback')
+export function permissionLabel(mode: PermissionMode | null): string {
+  if (mode === null) return '请选择权限'
+  return PERMISSION_OPTIONS.find((option) => option.id === mode)?.label ?? '工作区内修改'
 }
 
 export function yoloEnabled(mode: PermissionMode): boolean {
@@ -40,7 +45,7 @@ export function yoloEnabled(mode: PermissionMode): boolean {
 export type PermissionPickerState = {
   disabled: boolean
   pending: boolean
-  selected: PermissionMode
+  selected: PermissionMode | null
 }
 
 export type PermissionPicker = {

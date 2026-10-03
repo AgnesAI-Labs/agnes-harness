@@ -42,11 +42,11 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[<slot> <route>/<model> [<thinking>]]',
     descriptionKey: 'commands.model',
   },
-  { name: '/yolo', descriptionKey: 'commands.yolo' },
-  { name: '/export', descriptionKey: 'commands.export' },
-  { name: '/refine', descriptionKey: 'commands.refine' },
-  { name: '/packages', descriptionKey: 'commands.packages' },
-  { name: '/install', args: '<source>|confirm|cancel', descriptionKey: 'commands.install' },
+  { name: '/yolo', description: '启用完全权限：工作区内外读写并跳过工具审批；TUI 无关闭命令' },
+  { name: '/export', description: '导出当前会话' },
+  { name: '/refine', description: '查看精炼提案（尚未投影到时间线）' },
+  { name: '/packages', description: '查看已安装插件及其期望/实际状态' },
+  { name: '/install', args: '<source>|confirm|cancel', description: '预览、确认或取消插件安装' },
   {
     name: '/package',
     args: '[status|catalog|inspect|trust|enable|disable|update|rollback|remove|operation|cancel] ...',
@@ -369,7 +369,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       })) as { effectiveFromSeq: number }
       writeComposerMemoryFile(app.composerSelectionPath, { permission: 'full' })
       return {
-        text: `yolo on from seq ${r.effectiveFromSeq} — every ask for the rest of this session is skipped`,
+        text: `full access from seq ${r.effectiveFromSeq}: read/write inside and outside the workspace; tool approvals skipped. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.`,
       }
     }
     case '/export':

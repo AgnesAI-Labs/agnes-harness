@@ -1,7 +1,14 @@
-import { checkToolDef, type ToolResult } from '@agnes/extension-api'
+import { checkToolDef, type ToolContext, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
-import { fakeToolContext } from '../../../testkit/tool-context.js'
-import { MAX_READ_BYTES } from '../../tools-core/src/tools/read.js'
+import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-context.js'
+
+// These cases are sized against an 8 KiB limit, so they ask for it explicitly rather than taking the
+// deployment default.
+const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
+  fakeToolContext({ outputMaxBytes: 8192, ...o })
+
+import { spillLocator } from '../../tools-core/src/guards/output.js'
+import { MAX_READ_BYTES, readTool } from '../../tools-core/src/tools/read.js'
 import { findTool } from '../src/tools/find.js'
 import { grepTool } from '../src/tools/grep.js'
 import { lsTool } from '../src/tools/ls.js'
@@ -40,7 +47,7 @@ describe('walk', () => {
   it('reports that it stopped rather than returning a short list as if it were complete', async () => {
     // A bare return at the entry ceiling tells the caller "that is everything", and a search that
     // silently ends early reads as "there is nothing more to find".
-    const ctx = fakeToolContext({ files: { 'a.ts': '1', 'b.ts': '2', 'c.ts': '3' } })
+    const ctx = ctxOf({ files: { 'a.ts': '1', 'b.ts': '2', 'c.ts': '3' } })
     const report = newWalkReport()
     const seen: string[] = []
     for await (const e of walk(ctx, ctx.cwd, report, { maxEntries: 2 })) seen.push(e.rel)
@@ -51,7 +58,7 @@ describe('walk', () => {
   it('orders entries by code point, so the same tree always yields the same list', async () => {
     // Locale-sensitive collation depends on the machine's environment, and a tool whose output
     // ordering moves with the host cannot be compared across runs.
-    const ctx = fakeToolContext({ files: { 'B.ts': '1', 'a.ts': '2', 'Z.ts': '3' } })
+    const ctx = ctxOf({ files: { 'B.ts': '1', 'a.ts': '2', 'Z.ts': '3' } })
     const report = newWalkReport()
     const seen: string[] = []
     for await (const e of walk(ctx, ctx.cwd, report, { maxEntries: 10 })) seen.push(e.rel)
@@ -61,7 +68,7 @@ describe('walk', () => {
   it('does not descend a symlink, and reports it as one', async () => {
     // A link is the ordinary way out of a workspace, and following one lexically would walk a tree
     // the fence never cleared.
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: { 'a.ts': '1' },
       entries: {
         '/work/proj': [{ name: 'link', kind: 'symlink' }],
@@ -85,7 +92,7 @@ describe('grep', () => {
   })
 
   it('finds matches, honours ignoreCase and glob, skips node_modules and binaries', async () => {
-    const ctx = fakeToolContext({ files })
+    const ctx = ctxOf({ files })
     const r = await grepTool.execute({ pattern: 'foo' }, ctx)
     // node_modules/x/c.ts holds `foo` and bin.dat holds `foo` after a NUL; neither is a result,
     // though the skipped directory is named in the trailing note.
@@ -99,7 +106,7 @@ describe('grep', () => {
   })
 
   it('treats literal patterns literally and says when nothing matched', async () => {
-    const ctx = fakeToolContext({ files })
+    const ctx = ctxOf({ files })
     const r = await grepTool.execute({ pattern: 'ba.', literal: true }, ctx)
     expect(textOf(r).split('\n')[0]).toBe('no matches')
     expect((await grepTool.execute({ pattern: 'ba.' }, ctx)).content[0]).toMatchObject({
@@ -108,20 +115,20 @@ describe('grep', () => {
   })
 
   it('reports an unparseable pattern instead of throwing', async () => {
-    const ctx = fakeToolContext({ files })
+    const ctx = ctxOf({ files })
     const r = await grepTool.execute({ pattern: '([', ignoreCase: false }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('invalid pattern')
   })
 
   it('shows context lines around a match, marked apart from the match itself', async () => {
-    const ctx = fakeToolContext({ files: { 'c.ts': 'one\ntwo\nHIT\nfour\nfive' } })
+    const ctx = ctxOf({ files: { 'c.ts': 'one\ntwo\nHIT\nfour\nfive' } })
     const r = await grepTool.execute({ pattern: 'HIT', context: 1 }, ctx)
     expect(textOf(r).split('\n').slice(0, 3)).toEqual(['c.ts-2-two', 'c.ts:3:HIT', 'c.ts-4-four'])
   })
 
   it('clips a very long matching line instead of pasting the whole of it', async () => {
-    const ctx = fakeToolContext({ files: { 'long.ts': `hit${'x'.repeat(2000)}` } })
+    const ctx = ctxOf({ files: { 'long.ts': `hit${'x'.repeat(2000)}` } })
     const r = await grepTool.execute({ pattern: 'hit' }, ctx)
     const line = textOf(r).split('\n')[0] as string
     expect(line.length).toBe('long.ts:1:'.length + 500)
@@ -129,7 +136,7 @@ describe('grep', () => {
   })
 
   it('says when it stopped at the match limit', async () => {
-    const ctx = fakeToolContext({ files: { 'many.ts': 'hit\nhit\nhit\nhit' } })
+    const ctx = ctxOf({ files: { 'many.ts': 'hit\nhit\nhit\nhit' } })
     const r = await grepTool.execute({ pattern: 'hit', limit: 2 }, ctx)
     const lines = textOf(r).split('\n')
     expect(lines.filter((l) => l.startsWith('many.ts:'))).toHaveLength(2)
@@ -139,7 +146,7 @@ describe('grep', () => {
   it('defaults the match limit to 100 and says so when it is reached', async () => {
     // The default is the value every real call takes, and a call that passes `limit` explicitly is
     // the only kind the other cases make.
-    const ctx = fakeToolContext({ files: { 'many.ts': 'hit\n'.repeat(150) } })
+    const ctx = ctxOf({ files: { 'many.ts': 'hit\n'.repeat(150) } })
     const r = await grepTool.execute({ pattern: 'hit' }, ctx)
     expect(
       textOf(r)
@@ -150,7 +157,7 @@ describe('grep', () => {
   })
 
   it('names the directories it walked past, rather than reporting no matches in them', async () => {
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: {
         'node_modules/a.ts': 'hit',
         '.git/b.ts': 'hit',
@@ -165,12 +172,12 @@ describe('grep', () => {
     expect(textOf(r)).toContain('not searched')
   })
 
-  it('does not walk into a path the shipped deny list covers', async () => {
+  it.each([false, true])('does not walk into a denied path with full access %s', async (fullAccess) => {
     // These are the paths the deployment defaults refuse to open: the secret store, the seam
     // tables, the audit log and the session database. A tool that walks a tree has to keep away
     // from them on its own - the kernel's own check compares the string it was handed, so a tool
     // that reaches them by absolute path walks straight past it.
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: {
         'secrets/key.txt': 'hit',
         'tables/t.json': 'hit',
@@ -180,23 +187,30 @@ describe('grep', () => {
         'ok.txt': 'hit',
       },
     })
-    const r = await grepTool.execute({ pattern: 'hit' }, ctx)
+    const selected = { ...ctx, session: { ...ctx.session, fullAccess } }
+    const r = await grepTool.execute({ pattern: 'hit' }, selected)
     expect(
       textOf(r)
         .split('\n')
         .filter((l) => l.includes(':1:hit')),
     ).toEqual(['ok.txt:1:hit'])
     expect(textOf(r)).toContain('denied by policy')
-    const f = await findTool.execute({ pattern: '**' }, ctx)
+    const f = await findTool.execute({ pattern: '**' }, selected)
     expect(
       textOf(f)
         .split('\n')
         .filter((l) => !l.startsWith('[')),
     ).toEqual(['ok.txt'])
+    for (const tool of [grepTool, findTool]) {
+      const denied = await tool.execute({ pattern: 'hit', path: 'secrets' }, selected)
+      expect(denied.isError, tool.name).toBe(true)
+      expect(textOf(denied), tool.name).toContain('denied by policy')
+      expect(textOf(denied), tool.name).not.toContain('完全权限')
+    }
   })
 
   it('keeps out of the workspace secrets directory under both .agh and the legacy .agnes name', async () => {
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: { '.agh/secrets/token': 'hit', '.agnes/secrets/token': 'hit', '.agh/notes.txt': 'hit' },
     })
     const r = await grepTool.execute({ pattern: 'hit' }, ctx)
@@ -214,7 +228,7 @@ describe('grep', () => {
   })
 
   it('skips a file over the read ceiling and counts it, instead of pretending it held nothing', async () => {
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: { 'huge.ts': 'x'.repeat(MAX_READ_BYTES + 1), 'small.ts': 'hit' },
     })
     const r = await grepTool.execute({ pattern: 'hit' }, ctx)
@@ -223,7 +237,7 @@ describe('grep', () => {
   })
 
   it('skips a file it cannot read and counts it, instead of ending the turn', async () => {
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: { 'locked.ts': 'hit', 'open.ts': 'hit' },
       readErrors: { 'locked.ts': { code: 'EACCES', message: 'EACCES: permission denied' } },
     })
@@ -237,7 +251,7 @@ describe('a guarded result', () => {
   it('carries a reference to the whole output whenever the guard had to cut', async () => {
     // Truncating and dropping the pointer would leave the model with the middle of a search gone
     // and no way to reach it. One place decides this for every tool, so one case pins it.
-    const ctx = fakeToolContext({ files: { 'wide.ts': `${'hit long line here '.repeat(60)}\n`.repeat(60) } })
+    const ctx = ctxOf({ files: { 'wide.ts': `${'hit long line here '.repeat(60)}\n`.repeat(60) } })
     const r = await grepTool.execute({ pattern: 'hit' }, ctx)
     expect(textOf(r)).toContain('[truncated:')
     expect(r.content).toHaveLength(2)
@@ -247,19 +261,19 @@ describe('a guarded result', () => {
 
 describe('find', () => {
   it('lists workspace-relative paths matching the glob', async () => {
-    const ctx = fakeToolContext({ files })
+    const ctx = ctxOf({ files })
     const r = await findTool.execute({ pattern: '**/*.ts' }, ctx)
     expect(textOf(r).split('\n')).toEqual(['src/a.ts', 'src/sub/b.ts', '[not searched: node_modules]'])
   })
 
   it('says when it stopped at the result limit', async () => {
-    const ctx = fakeToolContext({ files: { 'a.ts': '', 'b.ts': '', 'c.ts': '' } })
+    const ctx = ctxOf({ files: { 'a.ts': '', 'b.ts': '', 'c.ts': '' } })
     const r = await findTool.execute({ pattern: '**/*.ts', limit: 2 }, ctx)
     expect(textOf(r).split('\n')).toEqual(['a.ts', 'b.ts', '[limit 2 reached; there may be more]'])
   })
 
   it('defaults the result limit to 1000', async () => {
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: Object.fromEntries(
         Array.from({ length: 1001 }, (_, i) => [`f${String(i).padStart(4, '0')}.ts`, '']),
       ),
@@ -271,9 +285,58 @@ describe('find', () => {
   })
 })
 
+describe('search access scope', () => {
+  it.each(
+    [lsTool, findTool, grepTool].flatMap((tool) =>
+      ['/elsewhere', '/', 'C:/'].map((path) => ({ tool, path })),
+    ),
+  )('$tool.name only searches external root $path with full access', async ({ tool, path }) => {
+    const original = ctxOf()
+    const backing = ctxOf({
+      files: { 'external.ts': 'external match', 'nested/second.ts': 'external match' },
+    })
+    const prefix = path.endsWith('/') ? path : `${path}/`
+    const mapped = (input: string) => {
+      if (input === path) return backing.cwd
+      if (!input.startsWith(prefix) || input.slice(prefix.length).startsWith('/'))
+        throw new Error('not the requested absolute search root')
+      return `${backing.cwd}/${input.slice(prefix.length)}`
+    }
+    const ctx: ToolContext = {
+      ...original,
+      fs: {
+        ...original.fs,
+        list: (input) => backing.fs.list(mapped(input)),
+        stat: (input) => backing.fs.stat(mapped(input)),
+        read: (input, options) => backing.fs.read(mapped(input), options),
+      },
+    }
+    const args = { path, pattern: tool.name === 'grep' ? 'external match' : '**/*.ts' }
+    const full = { ...ctx, session: { ...ctx.session, fullAccess: true } }
+    const permitted = await tool.execute(args, full)
+    expect.soft(permitted.isError).toBeUndefined()
+    expect
+      .soft(textOf(permitted))
+      .toBe(
+        tool.name === 'grep'
+          ? 'external.ts:1:external match\nnested/second.ts:1:external match'
+          : tool.name === 'find'
+            ? 'external.ts\nnested/second.ts'
+            : 'external.ts\nnested/',
+      )
+    for (const selected of [ctx, { ...ctx, session: { ...ctx.session, fullAccess: false } }]) {
+      const denied = await tool.execute(args, selected)
+      expect.soft(denied.isError).toBe(true)
+      expect.soft(textOf(denied)).toContain('outside the workspace')
+      expect.soft(textOf(denied)).toContain('完全权限')
+      expect.soft(textOf(denied)).toContain('选择目标目录作为工作区')
+    }
+  })
+})
+
 describe('ls', () => {
   it('marks each entry kind, so a symlink is not shown as an ordinary file', async () => {
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: { 'src/a.ts': '', 'top.txt': '' },
       entries: {
         '/work/proj': [
@@ -288,13 +351,13 @@ describe('ls', () => {
 
   it('lists the working directory when no path is given', async () => {
     // The default is the path every bare `ls` call takes, and every other case here names a path.
-    const ctx = fakeToolContext({ cwd: '/elsewhere', files: { '/elsewhere/only.txt': '' } })
+    const ctx = ctxOf({ cwd: '/elsewhere', files: { '/elsewhere/only.txt': '' } })
     const r = await lsTool.execute({}, ctx)
     expect(textOf(r)).toBe('only.txt')
   })
 
   it('says how many entries it did not show', async () => {
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`f${i}.txt`, ''])),
     })
     const r = await lsTool.execute({ limit: 2 }, ctx)
@@ -303,7 +366,7 @@ describe('ls', () => {
 
   it('shows at most 500 entries when no limit is given', async () => {
     // The default is the ceiling every bare `ls` call runs into, and the case above names a limit.
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: Object.fromEntries(
         Array.from({ length: 501 }, (_, i) => [`f${String(i).padStart(3, '0')}.txt`, '']),
       ),
@@ -315,18 +378,20 @@ describe('ls', () => {
   })
 
   it('says a directory is empty rather than answering with nothing at all', async () => {
-    const ctx = fakeToolContext({ files: { 'a/keep.txt': '' } })
+    const ctx = ctxOf({ files: { 'a/keep.txt': '' } })
     const r = await lsTool.execute({ path: 'nothing-here' }, ctx)
     expect(textOf(r)).toBe('(no entries)')
     expect(r.isError).toBeUndefined()
   })
 
-  it('refuses a denied directory and hides denied entries from a listing', async () => {
-    const ctx = fakeToolContext({ files: { 'secrets/key.txt': '', 'src/a.ts': '', 'sessions.db': '' } })
-    const denied = await lsTool.execute({ path: 'secrets' }, ctx)
+  it.each([false, true])('refuses and hides denied entries with full access %s', async (fullAccess) => {
+    const ctx = ctxOf({ files: { 'secrets/key.txt': '', 'src/a.ts': '', 'sessions.db': '' } })
+    const selected = { ...ctx, session: { ...ctx.session, fullAccess } }
+    const denied = await lsTool.execute({ path: 'secrets' }, selected)
     expect(denied.isError).toBe(true)
     expect(textOf(denied)).toContain('denied by policy')
-    const root = await lsTool.execute({}, ctx)
+    expect(textOf(denied)).not.toContain('完全权限')
+    const root = await lsTool.execute({}, selected)
     expect(textOf(root).split('\n')[0]).toBe('src/')
     expect(textOf(root)).not.toContain('secrets')
     expect(textOf(root)).not.toContain('sessions.db')
@@ -334,7 +399,7 @@ describe('ls', () => {
   })
 
   it('reports a listing failure rather than throwing', async () => {
-    const ctx = fakeToolContext({
+    const ctx = ctxOf({
       files: { 'a.txt': '' },
       listErrors: { locked: { code: 'EACCES', message: 'EACCES: permission denied' } },
     })
@@ -342,5 +407,69 @@ describe('ls', () => {
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('ls failed')
     expect(textOf(r)).toContain('EACCES')
+  })
+})
+
+describe('grep in an artifact the output guard stored', () => {
+  const store = async (ctx: FakeToolContext, text: string | Uint8Array): Promise<string> =>
+    spillLocator(
+      await ctx.artifacts.put(typeof text === 'string' ? new TextEncoder().encode(text) : text, {
+        mime: 'text/plain',
+      }),
+    )
+
+  it('reports line numbers that are the offsets read pages by, with context and a limit', async () => {
+    const ctx = ctxOf()
+    const wrapped = `${'a'.repeat(5000)}NEEDLE${'b'.repeat(500)}`
+    const lines = Array.from({ length: 133 }, (_, i) => `line ${i + 1} ${'x'.repeat(70)}`)
+    const path = await store(ctx, [...lines, wrapped, 'HIT 1', 'HIT 2'].join('\n'))
+    for (const [pattern, shows] of [
+      ['line 100 ', 'line 100 '],
+      ['NEEDLE', 'NEEDLE'],
+    ] as const) {
+      const found = textOf(await grepTool.execute({ pattern, path }, ctx))
+      const n = Number(/^artifact:\/\/[0-9a-f]{12}:(\d+):/.exec(found)?.[1])
+      // A long line is reported where it begins; the match is in the rows that follow it.
+      expect(textOf(await readTool.execute({ path, offset: n, limit: 4 }, ctx))).toContain(shows)
+    }
+    const limited = textOf(
+      await grepTool.execute({ pattern: 'HIT', context: 1, limit: 1, glob: '*.ts', path }, ctx),
+    )
+    expect(limited).toMatch(/-\d+-.*\n.*:\d+:HIT 1\n.*-\d+-HIT 2\n\[limit 1 reached/)
+    expect(textOf(await grepTool.execute({ pattern: 'ZZZ', path }, ctx))).toBe('no matches')
+  })
+
+  it('finds a match that straddles a fold, and says when only part of a large output was searched', async () => {
+    const ctx = ctxOf()
+    // The fold falls inside NEEDLE. Lines are searched whole and reported at the row where they begin.
+    const folded = await store(ctx, `x\n${'a'.repeat(2046)}NEEDLE${'b'.repeat(10)}`)
+    expect(textOf(await grepTool.execute({ pattern: 'NEEDLE', literal: true, path: folded }, ctx))).toMatch(
+      /:2:a+/,
+    )
+    expect(textOf(await readTool.execute({ path: folded, offset: 2, limit: 1 }, ctx))).toMatch(/^2\ta+/)
+    // Past the byte ceiling nothing was searched, and a bare "no matches" would claim otherwise.
+    const large = await store(ctx, `${'a\n'.repeat(MAX_READ_BYTES / 2 + 10)}NEEDLE\n`)
+    expect(textOf(await grepTool.execute({ pattern: 'NEEDLE', path: large }, ctx))).toContain(
+      `only the first ${MAX_READ_BYTES} bytes`,
+    )
+  })
+
+  it.each([
+    ['malformed', 'artifact://abc', 0],
+    ['not stored', `artifact://${'a'.repeat(64)}?size=3`, 1],
+  ])('refuses a locator that is %s', async (_why, path, asked) => {
+    const ctx = ctxOf()
+    const r = await grepTool.execute({ pattern: 'x', path }, ctx)
+    expect(r.isError).toBe(true)
+    expect(ctx.calls.artifactGets).toHaveLength(asked)
+  })
+
+  it('does not search binary content', async () => {
+    const ctx = ctxOf()
+    const r = await grepTool.execute(
+      { pattern: 'foo', path: await store(ctx, new Uint8Array([102, 0, 111])) },
+      ctx,
+    )
+    expect(r.isError).toBe(true)
   })
 })

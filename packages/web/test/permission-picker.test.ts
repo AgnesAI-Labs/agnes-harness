@@ -30,6 +30,8 @@ it('opens the list and reports the chosen mode', async () => {
   document.body.append(trigger)
   const onSelect = vi.fn(async () => true)
   const picker = createPermissionPicker({ trigger, onSelect, onError: () => undefined })
+  picker.render({ disabled: false, pending: false, selected: null })
+  expect(label.textContent).toBe('请选择权限')
   picker.render({ disabled: false, pending: false, selected: 'workspace' })
   expect(label.textContent).toBe('工作区内修改')
   trigger.click()
@@ -40,10 +42,16 @@ it('opens the list and reports the chosen mode', async () => {
     'option',
     'option',
   ])
-  const full = [...document.querySelectorAll('[role="option"]')].find((row) =>
-    row.textContent?.includes('完全权限'),
+  const full = [...document.querySelectorAll('[role="option"]')].find(
+    (row) => row.querySelector('.permission-picker-label')?.textContent === '完全权限',
   )
   expect(full).toBeDefined()
+  expect(full?.textContent).toContain('工作区内外文件读写')
+  expect(full?.textContent).toContain('保留安全禁令和系统权限')
+  const workspace = [...document.querySelectorAll('[role="option"]')].find(
+    (row) => row.querySelector('.permission-picker-label')?.textContent === '工作区内修改',
+  )
+  expect(workspace?.textContent).toContain('越界需切换完全权限或选择目录')
   full?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith('full'))
   picker.destroy()

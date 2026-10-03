@@ -210,8 +210,9 @@ it('projects the actual core timeline with generation and historical cuts throug
       reasoningComplete: false,
       billingComplete: false,
       context: { tokens: 0, window: 128000, autoCompact: true, source: 'estimated' },
-      model: { route: 'gw', id: 'm1', thinking: 'off' },
+      model: { route: 'gw', id: 'm1', thinking: 'off', settings: { contextWindow: 128000 } },
     },
+    yolo: false,
   })
   await expect(session.projectUI(Number.MAX_SAFE_INTEGER + 1)).rejects.toMatchObject({ code: -32602 })
   await expect(s.client.call('_agnes/v1/session.projectUI', { sessionId: 'absent' })).rejects.toMatchObject({

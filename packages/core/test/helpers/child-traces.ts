@@ -237,5 +237,6 @@ export async function uncachedProjection(
     reasoning: 0,
   }
   await attachChildTraces(base.turns, load, totals)
-  return { current, reference: base }
+  // The session adds its permission state on top of the view, so the reference carries it too.
+  return { current, reference: { ...base, yolo: parent.yolo } }
 }

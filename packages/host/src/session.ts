@@ -438,12 +438,10 @@ export async function createSession(
   ) {
     await session.step()
   }
-  // core's setPreset/setModel (Task 32/32a) take effect in memory only, recorded as an ignorable
-  // audit row - nothing about a live switch survives a fresh process opening the same ledger except
-  // that row, so every open reads it back and replays whatever it last settled on before the session
-  // is handed to the caller. A session that never switched, or one that already agrees with its own
-  // ledger (the common in-process case - Kernel.session() hands back the live instance, and this
-  // runs again), does no work; see session-switch.ts for the guard.
+  // core's setPreset/setModel take effect in memory and record an audit row. Every fresh open
+  // recovers the latest preset baseline and then its later model switches before handing the
+  // session to the caller; see session-switch.ts. A session that never switched keeps its
+  // session/start snapshot.
   await replaySwitchesOnOpen(session, profile, a)
   return session
 }

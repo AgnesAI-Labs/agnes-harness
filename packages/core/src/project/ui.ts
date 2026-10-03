@@ -8,6 +8,7 @@ import {
   type EffectIntent,
   type EffectSettled,
   isEventType,
+  type ModelSettings,
   normalize,
   type OpState,
   type SlotFillView,
@@ -28,6 +29,7 @@ import {
   validateSlotPayload,
 } from '@agnes/protocol'
 import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
+import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState } from '../reduce/state.js'
 import type { Conflict, ContextBreakdownDiag } from '../request/contribute.js'
@@ -85,6 +87,7 @@ export type UIProjectionUsageOptions = {
   route: string
   model: { id: string; contextWindow: number; maxTokens?: number }
   thinking: ThinkingLevel
+  settings?: ModelSettings
   autoCompact: boolean
 }
 
@@ -334,6 +337,7 @@ export class UIProjectionCell {
         route: options.route,
         id: options.model.id,
         thinking: options.thinking,
+        ...(options.settings ? { settings: options.settings } : {}),
         ...(options.model.maxTokens ? { maxTokens: options.model.maxTokens } : {}),
       },
       ...(Object.keys(cacheHealthView(this.cacheHealth)).length > 0
@@ -554,21 +558,13 @@ export class UIProjectionCell {
       return
     }
     if ((event.lane ?? 'main') !== this.lane) return
+    const anchor = contextAnchorOf(event)
+    if (anchor) {
+      this.contextBase = { seq: anchor.seq, total: anchor.total }
+      this.contextTokensValue = anchor.total
+    }
     if (event.type === 'cost/ledger') {
       const row = event.data as CostLedger
-      if (
-        row.purpose !== 'title' &&
-        row.purpose !== 'approval-guardian' &&
-        row.purpose !== 'media' &&
-        !row.interrupted &&
-        !row.adjustment
-      ) {
-        this.contextBase = {
-          seq: event.seq,
-          total: row.tokens.input + row.tokens.output + row.tokens.cacheRead + row.tokens.cacheWrite,
-        }
-        this.contextTokensValue = this.contextBase.total
-      }
       if (this.seenCostEffects.has(row.effectId)) return
       this.seenCostEffects.add(row.effectId)
       if (row.adjustment) {

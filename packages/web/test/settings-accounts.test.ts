@@ -36,7 +36,16 @@ const account = (id: string): ConfigAccount => ({
   route: `account-${id}`,
   baseUrl: `https://${id}.example/v1`,
   model: 'm',
-  models: [{ id: 'm', name: 'Model' }],
+  models: [
+    {
+      id: 'm',
+      name: 'Model',
+      reasoning: true,
+      thinkingLevelMap: { low: 'low', high: 'high' },
+      contextWindow: 128000,
+      defaultSettings: { thinking: 'low', contextWindow: 64000 },
+    },
+  ],
   enabled: true,
   credentialConfigured: true,
   authType: 'api-key',
@@ -75,7 +84,7 @@ async function setup() {
         { id: 'openai', label: 'OpenAI', api: 'openai-completions', baseUrl: 'https://api.openai.com/v1' },
       ],
     })),
-    test: vi.fn(async () => ({ verified: true, models: [{ id: 'm', name: 'Model' }] })),
+    test: vi.fn(async () => ({ verified: true, models: account('work').models })),
     save: vi.fn(async () => snapshot),
     account: vi.fn(async () => ({ ...snapshot, revision: 5, defaultAccountId: 'personal' })),
   }
@@ -167,12 +176,24 @@ it('selects an exact account, clears transient keys and sends account-scoped tes
     baseUrl: 'https://personal.example/v1',
   })
   h.input('config-model').value = 'm'
+  expect(h.input('config-thinking').value).toBe('low')
+  expect(h.input('config-context-window').value).toBe('64000')
+  expect(
+    [...h.doc.querySelectorAll('#config-thinking option')].map((option) => option.getAttribute('value')),
+  ).toEqual(['', 'low', 'high'])
+  h.input('config-thinking').value = 'high'
+  h.input('config-context-window').value = '32K'
   h.doc
     .getElementById('config-form')
     ?.dispatchEvent(new (window as Window).Event('submit', { cancelable: true }))
   await settle()
   expect(h.config.save).toHaveBeenCalledWith(
-    expect.objectContaining({ accountId: 'personal', label: 'personal', expectedRevision: 4 }),
+    expect.objectContaining({
+      accountId: 'personal',
+      label: 'personal',
+      expectedRevision: 4,
+      defaultSettings: { thinking: 'high', contextWindow: 32000 },
+    }),
   )
   expect(h.doc.body.textContent).not.toContain('unsaved-secret')
 })

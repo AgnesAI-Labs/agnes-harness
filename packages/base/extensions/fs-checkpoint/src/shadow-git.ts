@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isAbsolute, resolve, win32 } from 'node:path'
 // biome-ignore format: plumbing names are clearer together and the extension has a strict line budget.
 import { init as initGit, listRefs, readBlob, readCommit, deleteRef as removeRef, resolveRef, writeBlob, writeCommit, writeRef, writeTree } from 'isomorphic-git'
 import type { HostFs } from '../../../src/seam-init.js'
@@ -17,7 +18,7 @@ export type ManifestEntry =
   | { rel: string; state: 'absent' }
   | { rel: string; state: 'file'; payload: string; size: number; sha256: string }
 export type CheckpointManifest = {
-  schema: 1
+  schema: 1 | 2
   id: string
   workspaceHash: string
   stepId: string
@@ -28,17 +29,27 @@ export type Captured =
   | { rel: string; state: 'absent' }
   | { rel: string; state: 'file'; bytes: Uint8Array; size: number; sha256: string }
 
+function canonicalPath(path: string, schema: 1 | 2): boolean {
+  if (path.includes('\0')) return false
+  if (isAbsolute(path)) return schema === 2 && resolve(path) === path
+  return (
+    !win32.isAbsolute(path) &&
+    !path.includes('\\') &&
+    !path.split('/').some((part) => part === '' || part === '.' || part === '..')
+  )
+}
+
 function validate(value: unknown, id: string, workspaceHash: string): CheckpointManifest {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw fault('E_CHECKPOINT_CORRUPT', `${id} manifest`)
   const manifest = value as Partial<CheckpointManifest>
   // biome-ignore format: this is one manifest-header invariant.
-  if (manifest.schema !== 1 || manifest.id !== id || manifest.workspaceHash !== workspaceHash || typeof manifest.stepId !== 'string' || !Number.isSafeInteger(manifest.createdAt) || !Array.isArray(manifest.entries))
+  if ((manifest.schema !== 1 && manifest.schema !== 2) || manifest.id !== id || manifest.workspaceHash !== workspaceHash || typeof manifest.stepId !== 'string' || !Number.isSafeInteger(manifest.createdAt) || !Array.isArray(manifest.entries))
     throw fault('E_CHECKPOINT_CORRUPT', `${id} manifest fields`)
   let previous = ''
   for (const entry of manifest.entries) {
-    // biome-ignore format: this is one canonical-relative-path invariant.
-    if (!entry || typeof entry !== 'object' || typeof entry.rel !== 'string' || entry.rel <= previous || entry.rel.includes('\\') || entry.rel.split('/').some((part) => part === '' || part === '.' || part === '..'))
+    // biome-ignore format: this is one canonical-path invariant, including legacy relative entries.
+    if (!entry || typeof entry !== 'object' || typeof entry.rel !== 'string' || entry.rel <= previous || !canonicalPath(entry.rel, manifest.schema))
       throw fault('E_CHECKPOINT_CORRUPT', `${id} entry order`)
     previous = entry.rel
     if (entry.state === 'absent') continue
@@ -97,9 +108,9 @@ export class ShadowGit {
         entries.push({ rel: file.rel, state: 'file', payload: `payload/${path}`, size: file.size, sha256: file.sha256 })
       }
     }
-    entries.sort((a, b) => a.rel.localeCompare(b.rel))
+    entries.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
     // biome-ignore format: this mirrors the compact manifest schema.
-    const manifest: CheckpointManifest = { schema: 1, id: input.id, workspaceHash: this.workspaceHash, stepId: input.stepId, createdAt: input.createdAt, entries }
+    const manifest: CheckpointManifest = { schema: entries.some((entry) => isAbsolute(entry.rel)) ? 2 : 1, id: input.id, workspaceHash: this.workspaceHash, stepId: input.stepId, createdAt: input.createdAt, entries }
     // biome-ignore format: one plumbing operation.
     const manifestOid = await writeBlob({ fs: this.fs, gitdir: this.gitdir, blob: encoder.encode(JSON.stringify(manifest)) })
     // biome-ignore format: one root-tree declaration.

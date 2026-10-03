@@ -397,7 +397,11 @@ export async function connectMcp(
   }
   // Client.connect installs its own transport callbacks. Chain them after the handshake so SDK
   // request bookkeeping remains intact while resource lifecycle can observe an unexpected disconnect.
-  const stopTransportHealth = observeTransportDisconnect(transport, reportUnexpectedClose)
+  // A stdio server may print non-JSON lines to stdout; the SDK reports each through onerror and keeps
+  // reading, so for stdio only the child process closing is a disconnect.
+  const stopTransportHealth = observeTransportDisconnect(transport, reportUnexpectedClose, {
+    errorIsDisconnect: cfg.transport !== 'stdio',
+  })
   const toolsChangedListeners = new Set<() => void>()
   client.setToolListChangedHandler(() => {
     if (closed) return

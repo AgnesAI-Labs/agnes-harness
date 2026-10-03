@@ -54,6 +54,50 @@ type ConversationMessageContextValue = {
   turnStatus?: UITurn['status']
   thinkingHost?: RefObject<HTMLDivElement>
 }
+const verdictLabels: Record<string, string> = {
+  'allowed-once': '仅允许这次',
+  'allowed-session': '本会话允许',
+  'allowed-permanent': '对此配置始终允许',
+  rejected: '已拒绝',
+  cancelled: '已取消',
+}
+const toolLabels: Record<ToolNode['status'], string> = {
+  planned: '等待执行',
+  awaiting_approval: '等待审批',
+  running: '正在执行',
+  completed: '执行完成',
+  failed: '执行失败',
+  cancelled: '已取消',
+}
+// A shell result ends with `[exit N]`. When the projection marks that call failed, N says why: a
+// nonzero exit is the command's own answer, and what it printed is its output, not an error report.
+// A result cut before its last line has no marker and keeps the general wording.
+const SHELL_EXIT = /\n?\[exit (-?\d+)\](?: \[output truncated by sandbox\])?\s*$/
+
+/** How a tool call's outcome is named and its result introduced, for the card and its detail. */
+export function toolOutcome(node: ToolNode): { label: string; section: string; text: string | undefined } {
+  const preview = node.resultPreview
+  const exit =
+    node.name === 'shell' && node.status === 'failed' && preview !== undefined
+      ? SHELL_EXIT.exec(preview)
+      : null
+  if (exit && preview !== undefined)
+    return {
+      label: `退出码 ${exit[1]}`,
+      section: '输出',
+      text: preview.slice(0, exit.index).trimEnd() || '（无输出）',
+    }
+  return {
+    label: toolLabels[node.status],
+    section: node.status === 'failed' ? '错误详情' : '执行结果',
+    text: preview,
+  }
+}
+
+const approvalStatus = (node: ApprovalNode) =>
+  node.state === 'decided' && node.decision
+    ? (verdictLabels[node.decision.verdict] ?? approvalLabels.decided)
+    : approvalLabels[node.state]
 
 const ConversationMessageContext = createContext<ConversationMessageContextValue | null>(null)
 
@@ -317,14 +361,12 @@ export function ConversationToolCard({
   const remainder = summary.startsWith(node.name) ? summary.slice(node.name.length).trim() : summary
   const meaningful =
     summary && summary !== node.name && remainder && !remainder.startsWith('{') && !remainder.startsWith('[')
-  const statusLabel = t(toolLabelKeys[node.status])
+  const outcome = toolOutcome(node)
   const nextDetail = [
-    t('tool.detail.header', { name: node.name }),
-    t('tool.detail.status', { status: statusLabel }),
-    ...(node.argsPreview ? ['', t('tool.detail.args'), node.argsPreview] : []),
-    ...(node.resultPreview
-      ? ['', node.status === 'failed' ? t('tool.detail.error') : t('tool.detail.result'), node.resultPreview]
-      : []),
+    `工具：${node.name}`,
+    `状态：${outcome.label}`,
+    ...(node.argsPreview ? ['', '执行参数', node.argsPreview] : []),
+    ...(outcome.text ? ['', outcome.section, outcome.text] : []),
   ].join('\n')
   const detail = useInteractionSnapshot(detailHost, nextDetail)
   return (
@@ -338,7 +380,7 @@ export function ConversationToolCard({
         <div className="tool-meta">
           {icon}
           <span className="tool-name">{node.name}</span>
-          <span className="tool-status">{statusLabel}</span>
+          <span className="tool-status">{outcome.label}</span>
         </div>
         <button
           type="button"
@@ -519,13 +561,7 @@ function Message({
         ? { 'data-streaming': String(markdownState(node, turnStatus).streaming) }
         : {})}
       {...(node.kind === 'tool'
-        ? {
-            'data-status': node.status,
-            'aria-label': props.t('tool.card.aria', {
-              name: node.name,
-              status: props.t(toolLabelKeys[node.status]),
-            }),
-          }
+        ? { 'data-status': node.status, 'aria-label': `工具 ${node.name}：${toolOutcome(node).label}` }
         : {})}
       {...(node.kind === 'approval'
         ? { 'data-state': node.state, 'aria-label': approvalStatus(node, props.t) }
@@ -698,6 +734,13 @@ function Turn({
             </div>
           )}
         </details>
+        {turn.status === 'failed' && (
+          <p className="turn-error" role="alert">
+            {turn.error
+              ? `${turn.error.code}：${turn.error.message}`
+              : `本次执行未完成（${turn.reason ?? '未知原因'}），暂未收到具体错误信息。`}
+          </p>
+        )}
         <div className="turn-node-flow">
           {ordered.map((node) => {
             const final = node.id === turn.finalAssistantId

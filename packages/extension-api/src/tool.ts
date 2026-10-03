@@ -39,6 +39,13 @@ export const RESOLVED_TOOL_CALL_POLICY_KEYS = [
 ] as const
 export const MAX_APPROVAL_SCOPES = 16
 
+// The most text of one tool result that reaches the model before the output guard cuts it. The preset
+// key `tools.output_max_bytes` sets it per deployment; the bounds keep a page and the notes the
+// guard writes inside it, and keep a result from outgrowing what an artifact is expected to hold.
+export const DEFAULT_OUTPUT_MAX_BYTES = 32768
+export const MIN_OUTPUT_MAX_BYTES = 4096
+export const MAX_OUTPUT_MAX_BYTES = 1048576
+
 // All eight keys must be written out on every tool, including the ones a tool has nothing to
 // say about: "no cost hint" is spelled `costHint: undefined`, not an omitted key. That is why
 // the last three are required keys typed `T | undefined` rather than optional `?:` members —
@@ -80,7 +87,17 @@ export interface ToolResult {
   structured?: unknown // machine-readable payload alongside content; mirrors tool/result.data.structured on the wire
 }
 
-export type ExecResult = { code: number; stdout: string; stderr: string; truncated: boolean }
+export type ExecResult = {
+  code: number
+  stdout: string
+  stderr: string
+  truncated: boolean
+  /**
+   * True when the executor's own deadline was the first cause to cut the command short: the process
+   * was killed and the output is what it had printed so far. Absent means the executor did not say.
+   */
+  timedOut?: boolean
+}
 export type FsEntry = { name: string; kind: 'file' | 'dir' | 'symlink' | 'other' }
 export type FsStat = { kind: FsEntry['kind']; size: number; mtimeMs: number }
 export type FetchInit = {
@@ -223,7 +240,12 @@ export interface ToolContext {
   requestCompaction(instructions?: string): void
   progress(note: string): void
   readonly signal: AbortSignal
+  /** Soft deadline for this call; the kernel cuts the call off a short grace later (see CHANGELOG). */
   readonly timeoutMs: number
+  /** The preset-wide default (`tools.timeout_ms`), for a tool that lets a caller ask for more time up to `timeoutMs`. */
+  readonly defaultTimeoutMs?: number
+  /** Bytes of one result's text the model sees before the output guard cuts it (preset `tools.output_max_bytes`). */
+  readonly outputMaxBytes: number
   readonly lease: LeaseView
   readonly log: Logger
 }
