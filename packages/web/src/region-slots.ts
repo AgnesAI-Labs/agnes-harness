@@ -448,9 +448,14 @@ export function mountSettingsPaneRegion(
     if (locale) applyLocaleText(container, (key) => locale.t(key))
   }
   translateSettingsMarkup()
+  // 不重渲染外壳。外壳用 dangerouslySetInnerHTML 渲染，字符串随语言变化，重渲染会整段替换
+  // innerHTML，把每个面板与各 DSH 出口的宿主元素一起换掉；面板的 React 根绑在旧宿主上，结果右侧
+  // 内容区变空白，要刷新页面才恢复。其余面板的文本由 applyLocaleText 就地回填。
+  //
+  // 模型面板是例外：它由 React 组件 SettingsModelPane 渲染，没有 data-i18n 节点，回填够不着，
+  // 只能重渲染它的根换语言。React 这次是就地协调、不替换 DOM，所以面板内的 DSH 宿主仍然存活。
   const stopLocaleUpdates = locale?.subscribe(() => {
     translateSettingsMarkup()
-    renderSettingsShell()
     const modelRoot = paneRoots.get('model')
     if (!modelRoot) return
     flushSync(() => {

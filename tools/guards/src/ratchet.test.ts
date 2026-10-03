@@ -184,6 +184,10 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // re-translation, Web copy migration, removal of the dead picker thinking-level fields and keys).
 // Measured with this guard's countLines(): web-ui/src 6626, web/src 15977, web/src/settings 900,
 // cli/launch 1110, web/src/app 2016, web-units/src 5532. Both files set to the measured value.
+// I18N-20261004: restored the settings language card and the Computer Use / search markers that the
+// origin/main merge dropped, and removed the destructive settings-shell re-render on locale change
+// (it replaced the pane hosts and left the content area blank). The model pane still re-renders because
+// it is a React component with no data-i18n nodes. web/src remeasured at 15977; the other keys are exact.
 const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
@@ -2066,7 +2070,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // The live approval card's wording, preview and session-choice rule (new file). Measured 13463 (+52), exact cap.
-  'packages/web/src': 15978,
+  'packages/web/src': 15977,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
