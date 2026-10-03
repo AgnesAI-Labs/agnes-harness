@@ -103,6 +103,46 @@ describe('worker command dispatch against a real host+session', () => {
     await t.close()
   })
 
+  it('ends a prompt cancelled while it waits for resource admission as an aborted turn, not a queued leftover', async () => {
+    const t = await openTestHost({ script: [say('hi')] })
+    const session = await t.host.createSession({ cwd: t.dataDir })
+    const aborts = new Map<string, AbortController>()
+    // An admission that is held by another run, as during a resource reload.
+    const waiters: Array<() => void> = []
+    const resources = {
+      staleMarks: 0,
+      reloadedMarks: 0,
+      runAdmissions: { locked: true, waiters, active: 0, idleWaiters: new Set() },
+    } as unknown as NonNullable<Parameters<typeof handleCommand>[2]['resources']>
+    const ctx = { host: t.host, aborts, resources }
+    await handleCommand(
+      session,
+      {
+        kind: 'command',
+        requestId: '1',
+        method: 'enqueue',
+        params: {
+          target: 'next-turn',
+          msg: { content: [{ type: 'text', text: 'hi' }], actor, kind: 'prompt' },
+        },
+      },
+      ctx,
+    )
+    const running = handleCommand(
+      session,
+      { kind: 'command', requestId: '2', method: 'run', params: { runId: 'r3', until: 'turn-end' } },
+      ctx,
+    )
+    aborts.get('r3')?.abort()
+    waiters.shift()?.()
+    expect(((await running) as { reason: string }).reason).toBe('aborted')
+
+    // The prompt it was sent for must not stay queued to run under whatever is sent next.
+    const ends = (await session.scan({ type: 'turn/end', limit: 5 } as never)) as Array<{ data: unknown }>
+    expect(ends.map((e) => e.data)).toEqual([expect.objectContaining({ reason: 'aborted' })])
+    await t.close()
+  })
+
   it('abort() reaches a still-running turn through the stored AbortController', async () => {
     const t = await openTestHost({ script: [say('hi')] })
     const session = await t.host.createSession({ cwd: t.dataDir })

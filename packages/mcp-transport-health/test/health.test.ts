@@ -112,6 +112,21 @@ describe('MCP transport health callbacks', () => {
     expect(notify).not.toHaveBeenCalled()
   })
 
+  it('can ignore errors for a transport whose close is the only authoritative disconnect', () => {
+    const priorClose = vi.fn()
+    const priorError = vi.fn()
+    const transport = { onclose: priorClose, onerror: priorError }
+    const notify = vi.fn()
+    observeTransportDisconnect(transport, notify, { errorIsDisconnect: false })
+    const cause = new Error('not a JSON-RPC message')
+    transport.onerror?.(cause)
+    expect(priorError).toHaveBeenCalledExactlyOnceWith(cause)
+    expect(notify).not.toHaveBeenCalled()
+    transport.onclose?.()
+    expect(priorClose).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledTimes(1)
+  })
+
   it('supports absent SDK callbacks and does not coalesce error plus close', () => {
     const transport: CloseObservableTransport = {}
     const notify = vi.fn()

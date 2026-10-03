@@ -45,6 +45,32 @@ describe('RemoteSession switch result bridge', () => {
     )
   })
 
+  it.each(['before', 'during'] as const)(
+    'forwards a cancel that arrived %s the run command to the worker, after the run itself',
+    async (when) => {
+      const sent: string[] = []
+      let finish: (value: unknown) => void = () => undefined
+      const link = {
+        alive: true,
+        async command(method: string) {
+          sent.push(method)
+          if (method === 'run') return new Promise((resolve) => (finish = resolve))
+          return {}
+        },
+      }
+      const session = new RemoteSession('s', 'run', 1, link as never, '/workspace')
+      const controller = new AbortController()
+      // A cancel that lands while the prompt is still being enqueued has already fired when run()
+      // starts listening, so only an explicit check can deliver it.
+      if (when === 'before') controller.abort()
+      const running = session.run({ until: 'turn-end', signal: controller.signal })
+      if (when === 'during') controller.abort()
+      expect(sent).toEqual(['run', 'abort'])
+      finish({ reason: 'aborted', lastSeq: 3 })
+      await expect(running).resolves.toMatchObject({ reason: 'aborted' })
+    },
+  )
+
   it('still throws when the terminal ledger commit landed but its run reply was lost', async () => {
     const link = {
       alive: true,

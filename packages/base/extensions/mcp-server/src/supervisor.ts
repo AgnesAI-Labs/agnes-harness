@@ -191,12 +191,17 @@ export function superviseConnection(
   function generationDown(generation: McpConnection): void {
     if (!isCurrent(generation)) return
     current = undefined
-    scheduleReconnect(true)
+    // A transport that reported a disconnect may still own a live resource (a stdio child after a
+    // transport error, an HTTP session), so the replacement must not connect until the old
+    // generation is closed; dispose waits on the same close.
+    const close = generation.close().catch(() => undefined)
+    pendingFailedClose = { generation, close }
+    scheduleReconnect(true, close)
   }
 
   /** @param hadConnection Whether this outage followed a connection that was actually established
    * (vs. a connect attempt that never succeeded in the first place) -- purely for the log message. */
-  function scheduleReconnect(hadConnection: boolean): void {
+  function scheduleReconnect(hadConnection: boolean, superseded?: Promise<void>): void {
     // A connection that stayed up past the stability window ended the previous outage: start a
     // fresh budget.
     if (connectedAt !== undefined && Date.now() - connectedAt >= policy.maxDelayMs) failedAttempts = 0
@@ -230,7 +235,21 @@ export function superviseConnection(
     })
     settling = deps
       .sleep(delayMs, abort.signal)
-      .then(() => (disposed ? undefined : connectGeneration()))
+      .then(async () => {
+        if (disposed) return
+        if (superseded && !(await withTimeout(superseded, CLOSE_TIMEOUT_MS))) {
+          log.error(
+            `dropped generation did not close within ${CLOSE_TIMEOUT_MS}ms -- reconnect stopped to avoid overlapping connections; reload to retry`,
+          )
+          deps.onStatus?.({
+            state: 'unavailable',
+            error: new Error('MCP transport did not close'),
+            reason: 'exhausted',
+          })
+          return
+        }
+        await connectGeneration()
+      })
       .catch(() => undefined)
   }
 

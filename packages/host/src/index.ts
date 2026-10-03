@@ -374,6 +374,7 @@ export {
   hasLegacySessionsDb,
   inDataDir,
   legacySessionsDbPath,
+  ownStateRoots,
 } from './paths.js'
 export * from './presets/index.js'
 export { canonicalJson, sha256hex } from './profile/canonical.js'

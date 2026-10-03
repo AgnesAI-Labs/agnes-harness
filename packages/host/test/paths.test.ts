@@ -10,6 +10,7 @@ import {
   hasLegacySessionsDb,
   inDataDir,
   legacySessionsDbPath,
+  ownStateRoots,
 } from '../src/paths.js'
 
 const roots: string[] = []
@@ -166,5 +167,33 @@ describe('legacy session database detection', () => {
     mkdirSync(dataDir(home), { recursive: true })
     writeFileSync(join(dataDir(home), 'sessions.db'), 'current')
     expect(hasLegacySessionsDb(home)).toBe(false)
+  })
+})
+
+describe('ownStateRoots', () => {
+  it('names credentials and profiles beside data/, and the pinned secrets directory', () => {
+    const home = join(tmpdir(), 'agnes-own-roots')
+    expect(
+      ownStateRoots({
+        profileDir: join(home, 'profiles', 'local-dev'),
+        dataDir: dataDir(home),
+        secretsDir: join(tmpdir(), 'pinned-secrets'),
+      }).sort(),
+    ).toEqual(
+      [
+        join(home, 'profiles', 'local-dev'),
+        join(home, 'secrets'),
+        join(home, 'auth'),
+        join(home, 'profiles'),
+        join(tmpdir(), 'pinned-secrets'),
+      ].sort(),
+    )
+  })
+
+  it('infers no home from a layout that is not the conventional one', () => {
+    const odd = join(tmpdir(), 'agnes-odd-layout')
+    expect(ownStateRoots({ profileDir: join(odd, 'p'), dataDir: join(odd, 'state') })).toEqual([
+      join(odd, 'p'),
+    ])
   })
 })

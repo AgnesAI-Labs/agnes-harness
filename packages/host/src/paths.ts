@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, parse, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, parse, sep } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { HostError } from './errors.js'
 
@@ -89,4 +89,26 @@ export function legacySessionsDbPath(home: string): string {
 /** True when a database from the old home-root default is still sitting where doctor can find it. */
 export function hasLegacySessionsDb(home: string): boolean {
   return existsSync(legacySessionsDbPath(home))
+}
+
+/**
+ * The installation's own state that file tools may read but never rewrite under full file access:
+ * credentials and profiles. They sit beside `data/` in the home root, so the data fence does not
+ * cover them. The home is inferred only from the conventional layout - `<home>/profiles/<name>` for
+ * the profile directory, `<home>/data` for the data directory - and never guessed from anything
+ * else, so an unconventional layout narrows the guard instead of widening it to a stranger's
+ * directory. A profile that pins its own secrets directory has that listed too.
+ */
+export function ownStateRoots(paths: {
+  profileDir: string
+  dataDir: string
+  secretsDir?: string | undefined
+}): string[] {
+  const homes = new Set<string>()
+  if (basename(dirname(paths.profileDir)) === 'profiles') homes.add(dirname(dirname(paths.profileDir)))
+  if (basename(paths.dataDir) === 'data') homes.add(dirname(paths.dataDir))
+  const roots = [paths.profileDir]
+  for (const home of homes) roots.push(join(home, 'secrets'), join(home, 'auth'), join(home, 'profiles'))
+  if (paths.secretsDir !== undefined) roots.push(paths.secretsDir)
+  return [...new Set(roots)]
 }
