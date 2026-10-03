@@ -69,7 +69,13 @@ export const editTool = defineTool({
       }
       const t = looksTruncated(original, text)
       if (t.truncated) return fail(`edit refused (truncation guard): ${t.reason}`)
-      await ctx.fs.write(args.path, text)
+      try {
+        await ctx.fs.write(args.path, text)
+      } catch (e) {
+        // See write: a read-only file is refused here, and the refusal has to stay a named one.
+        if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
+        return fail(`edit failed: ${(e as Error).message}`)
+      }
       const delta = text.split('\n').length - original.split('\n').length
       return {
         content: [

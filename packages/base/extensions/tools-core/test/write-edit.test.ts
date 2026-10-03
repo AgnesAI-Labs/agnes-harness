@@ -75,6 +75,45 @@ describe('write', () => {
   )
 })
 
+describe('a file that is readable but not writable', () => {
+  const message = 'E_FS_DENIED: /work/proj/state.yaml is denied by policy'
+  const locked = () =>
+    fakeToolContext({
+      files: { 'state.yaml': 'name: a\n' },
+      writeErrors: { 'state.yaml': { code: 'E_FS_DENIED', message } },
+    })
+
+  it('write names the refusal and leaves the file alone', async () => {
+    const ctx = locked()
+    const result = await writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toBe(`write failed before writing: ${message}`)
+    expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
+  })
+
+  it('edit names the refusal and leaves the file alone', async () => {
+    const ctx = locked()
+    const result = await editTool.execute(
+      { path: 'state.yaml', edits: [{ oldText: 'name: a', newText: 'name: b' }] },
+      ctx,
+    )
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toBe(`edit failed: ${message}`)
+    expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
+  })
+
+  it('still lets any other write failure propagate', async () => {
+    const ctx = fakeToolContext({
+      files: { 'state.yaml': 'name: a\n' },
+      writeErrors: { 'state.yaml': { code: 'EIO', message: 'EIO: disk' } },
+    })
+    await expect(writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)).rejects.toThrow('EIO')
+    await expect(
+      editTool.execute({ path: 'state.yaml', edits: [{ oldText: 'name: a', newText: 'name: b' }] }, ctx),
+    ).rejects.toThrow('EIO')
+  })
+})
+
 describe('edit', () => {
   it('has a complete definition', () => {
     expect(checkToolDef(editTool)).toEqual({ ok: true })

@@ -2316,6 +2316,25 @@ button.trace-gantt-bar:focus-visible {
 #approval .approval-impact {
   font-family: inherit;
 }
+#approval .approval-warning {
+  color: var(--agnes-status-warning-text);
+  font-family: inherit;
+}
+/* The arguments can be long: they scroll inside the card instead of pushing the choices off screen. */
+#approval pre {
+  max-height: 14rem;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  overflow: auto;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 0.5rem;
+  background: var(--agnes-bg-code);
+  color: var(--agnes-text-primary);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .approval-actions {
   display: flex;
   flex-wrap: wrap;

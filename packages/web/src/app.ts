@@ -19,6 +19,7 @@ import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
+import { liveApprovalCard } from './approval-card.js'
 import { installBrowserLogCapture } from './browser-log.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
@@ -841,20 +842,14 @@ function renderApproval(): void {
 
   const liveTitle = liveApproval?.request.toolCall.title
   const summary = typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? '允许执行此操作？')
-  const kind = liveApproval?.request.toolCall.kind
   const risks = {
     destructive: '可能修改或删除内容',
     always: '此操作需要明确确认',
     budget: '涉及预算使用',
     unknown: '影响范围需要确认',
   }
-  const impact = durable
-    ? risks[durable.risk]
-    : kind === 'execute'
-      ? '将在此任务的工作目录执行命令。请核对命令后决定。'
-      : '请核对工具及参数后决定是否继续。'
-  const input = liveApproval?.request.toolCall.rawInput
-  const serializedInput = input === undefined ? undefined : JSON.stringify(input, null, 2)
+  const card = liveApproval ? liveApprovalCard(liveApproval.request.toolCall) : undefined
+  const impact = durable ? risks[durable.risk] : (card?.impact ?? '请核对工具及参数后决定是否继续。')
   const actions: ApprovalAction[] = []
   const decide = (id: string, label: string, action: () => Promise<void>): void => {
     actions.push({
@@ -879,14 +874,17 @@ function renderApproval(): void {
     const request = liveApproval
     const labels: Record<string, string> = {
       allow_once: '仅允许这次',
-      allow_always: '本会话允许',
       reject_once: '拒绝',
       reject_always: '始终拒绝',
+      // Absent when the card cannot show the whole call: that choice would also cover later calls.
+      ...(card?.sessionLabel === undefined ? {} : { allow_always: card.sessionLabel }),
     }
-    for (const option of request.request.options)
+    for (const option of request.request.options) {
+      if (option.name === 'allow_always' && labels.allow_always === undefined) continue
       decide(`live:${option.name}`, labels[option.name] ?? option.name, async () =>
         request.finish({ optionId: option.optionId }),
       )
+    }
   } else if (durable?.ticket) {
     const ticket = durable.ticket
     for (const { label, verdict } of durableApprovalActions(durable))
@@ -901,7 +899,8 @@ function renderApproval(): void {
     title: '需要你的确认',
     summary,
     impact,
-    ...(serializedInput === undefined ? {} : { preview: serializedInput.slice(0, 2048) }),
+    ...(card?.warning === undefined ? {} : { warning: card.warning }),
+    ...(card?.preview === undefined ? {} : { preview: card.preview }),
     actions,
     disabled: approvalBusy || stopping || !connected,
   })

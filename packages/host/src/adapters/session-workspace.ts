@@ -93,6 +93,8 @@ export function createSessionWorkspaceAdapterFactory(
     remotePool?: RemoteWorkspacePool
     /** Skill directories local reads may reach; a remote workspace never gets them. */
     skillReadRoots?: () => readonly string[]
+    /** The installation's own state, read-only under full file access; ignored for a remote workspace. */
+    fullAccessReadOnlyRoots?: () => readonly string[]
   }>,
 ): SessionWorkspaceAdapterFactory {
   if ((input.transport === undefined) !== (input.remotePool === undefined))
@@ -229,6 +231,7 @@ export function createSessionWorkspaceAdapterFactory(
         },
         state.io,
         handle.kind === 'local' ? input.skillReadRoots : undefined,
+        handle.kind === 'local' ? input.fullAccessReadOnlyRoots : undefined,
       )
       const exec = createPolicyExec(input.exec, {
         boundDigest: () => bound?.digest ?? null,
