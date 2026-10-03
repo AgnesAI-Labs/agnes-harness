@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
@@ -146,7 +147,7 @@ async function prepared(): Promise<{
   proof: DataRef
   request: AuthorityDirectoryCompareAndSwapRequest
 }> {
-  const tree = mkdtempSync('/tmp/authority-directory-e2e-')
+  const tree = mkdtempSync(join(tmpdir(), 'authority-directory-e2e-'))
   const directory = join(tree, 'dir')
   const anchor = join(tree, 'anchor')
   const created = createDirectoryAnchor(

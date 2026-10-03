@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "@agnes/cordis": "workspace:*",
-    "@agnes/web-slots": "workspace:*"
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/web-slots": "workspace:*",
+    "@agnes/web-ui": "workspace:*"
   },
   "peerDependencies": {
     "react": "18.3.1"

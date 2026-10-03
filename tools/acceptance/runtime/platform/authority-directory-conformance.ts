@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
@@ -244,7 +245,7 @@ async function withProvider<T>(
   filesystem: 'unsupported' | undefined,
   run: (provider: DirectoryProvider) => Promise<T>,
 ): Promise<T> {
-  const root = mkdtempSync(`/tmp/authority-directory-${recipe}-`)
+  const root = mkdtempSync(join(tmpdir(), `authority-directory-${recipe}-`))
   let provider: DirectoryProvider | null = null
   try {
     provider = openAt(recipe, root, filesystem)
@@ -445,7 +446,7 @@ async function cancel(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidenc
 }
 
 async function recover(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidence> {
-  const root = mkdtempSync(`/tmp/authority-directory-${recipe}-recover-`)
+  const root = mkdtempSync(join(tmpdir(), `authority-directory-${recipe}-recover-`))
   const first = openAt(recipe, root)
   try {
     const route = await seeded(first)
@@ -478,8 +479,8 @@ async function recover(recipe: Recipe): Promise<AuthorityDirectoryScenarioEviden
 }
 
 async function dispose(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidence> {
-  const leftRoot = mkdtempSync(`/tmp/authority-directory-${recipe}-dispose-`)
-  const rightRoot = mkdtempSync(`/tmp/authority-directory-${recipe}-sibling-`)
+  const leftRoot = mkdtempSync(join(tmpdir(), `authority-directory-${recipe}-dispose-`))
+  const rightRoot = mkdtempSync(join(tmpdir(), `authority-directory-${recipe}-sibling-`))
   let left: DirectoryProvider | null = null
   let right: DirectoryProvider | null = null
   try {

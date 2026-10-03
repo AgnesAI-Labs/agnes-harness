@@ -1,4 +1,5 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type {
@@ -155,7 +156,7 @@ function openAt(
 }
 
 function fresh(label: string, phase?: DurabilityPhase) {
-  const root = mkdtempSync(`/tmp/${label}-`)
+  const root = mkdtempSync(join(tmpdir(), `${label}-`))
   return { root, ...openAt(root, phase) }
 }
 
@@ -352,7 +353,7 @@ describe('authority directory', () => {
 
   it('refuses a bad principal, a cancelled call, a disposed handle, and an unsupported filesystem', async () => {
     const opened = fresh('authority-directory-refuse')
-    const unsupportedRoot = mkdtempSync('/tmp/authority-directory-nfs-')
+    const unsupportedRoot = mkdtempSync(join(tmpdir(), 'authority-directory-nfs-'))
     try {
       const route = makeRoute('state-auth', 1, 'seed-state-auth', null)
       expect(detail(await opened.provider.seedRoute(route, context('other-principal')))).toBe(
@@ -366,7 +367,7 @@ describe('authority directory', () => {
       expect(readFileSync.bind(null, join(opened.directory, 'current'))).toThrow()
       await opened.provider.dispose()
       expect(detail(await opened.provider.seedRoute(route, context()))).toBe('denied/directory_disposed')
-      const sibling = openAt(mkdtempSync('/tmp/authority-directory-sibling-'))
+      const sibling = openAt(mkdtempSync(join(tmpdir(), 'authority-directory-sibling-')))
       expect(detail(await sibling.provider.seedRoute(route, context()))).toBe('ok')
       rmSync(join(sibling.directory, '..'), { recursive: true, force: true })
 

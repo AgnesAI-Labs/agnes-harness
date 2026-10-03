@@ -12,7 +12,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import { createScanner } from 'typescript/unstable/ast/scanner'
 import { describe, expect, it } from 'vitest'
-import { repoRoot } from './repo.js'
+import { importEdges } from './module-edges.js'
+import { listSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
 
@@ -285,6 +286,24 @@ function componentLayerGaps(packageDir: string): string[] {
   return gaps
 }
 
+function clientApiGaps(base: string): string[] {
+  const gaps: string[] = []
+  for (const file of listSourceFiles(join(base, 'packages/web-client/src'), {
+    excludeDirs: [...SKIP_DIRS],
+  })) {
+    for (const { specifier } of importEdges(readFileSync(file, 'utf8'))) {
+      if (specifier !== '@agnes/extension-api' && !specifier.startsWith('@agnes/extension-api/')) continue
+      if (
+        specifier !== '@agnes/extension-api/client' &&
+        !specifier.startsWith('@agnes/extension-api/client/')
+      ) {
+        gaps.push(`${posix(relative(base, file))}: imports ${specifier}`)
+      }
+    }
+  }
+  return gaps
+}
+
 // The web-ui import fence scans this directory, so fixture specifiers are assembled at runtime.
 function valueImport(binding: string, specifier: string): string {
   return `import { ${binding} } from '${specifier}'\n`
@@ -397,21 +416,23 @@ describe('UI libraries stay in the component layer', () => {
     expect(violations, violations.join('\n')).toEqual([])
   })
 
-  it('rejects antd outside web-ui', () => {
+  it('rejects direct antd and assistant-ui imports and dependencies in web-client', () => {
     withTemp(
       {
-        'packages/stray/package.json': JSON.stringify({
-          name: '@agnes/stray',
+        'packages/web-client/package.json': JSON.stringify({
+          name: '@agnes/web-client',
           dependencies: { antd: '1.0.0' },
         }),
-        'packages/stray/src/panel.tsx': valueImport('Thread', '@assistant-ui/react'),
+        'packages/web-client/src/panel.tsx':
+          valueImport('Thread', '@assistant-ui/react') + valueImport('Button', 'antd'),
         'packages/web/tools/vendor/antd-entry.js': valueImport('Button', 'antd'),
       },
       (base) => {
         const violations = externalUiViolations(base)
         const text = violations.join('\n')
         expect(text).toContain('dependencies: antd')
-        expect(text).toContain('@assistant-ui/react')
+        expect(text).toContain('packages/web-client/src/panel.tsx: imports @assistant-ui/react')
+        expect(text).toContain('packages/web-client/src/panel.tsx: imports antd')
         expect(text).not.toContain('tools/vendor')
       },
     )
@@ -422,20 +443,62 @@ describe('UI libraries stay in the component layer', () => {
     expect(gaps, gaps.join('\n')).toEqual([])
   })
 
-  it('rejects a web-ui import of web-client', () => {
-    withTemp(
-      {
-        'package.json': JSON.stringify({
-          name: '@agnes/web-ui',
-          dependencies: { '@agnes/web-client': 'workspace:*' },
-        }),
-        'src/panel.tsx': valueImport('app', '@agnes/web-client'),
-      },
-      (base) => {
-        const gaps = componentLayerGaps(base)
-        expect(gaps.join('\n')).toContain('@agnes/web-client')
-      },
-    )
+  it.each(['@agnes/sdk', '@agnes/web-client', '@agnes/extension-api/client', '@agnes/cordis', 'cordis'])(
+    'rejects a web-ui import of %s',
+    (specifier) => {
+      withTemp(
+        {
+          'package.json': JSON.stringify({
+            name: '@agnes/web-ui',
+            dependencies: { [specifier]: 'workspace:*' },
+          }),
+          'src/panel.tsx': valueImport('app', specifier),
+        },
+        (base) => {
+          const gaps = componentLayerGaps(base)
+          expect(gaps).toContain(`dependencies: ${specifier}`)
+          expect(gaps).toContain(`src/panel.tsx: imports ${specifier}`)
+        },
+      )
+    },
+  )
+})
+
+describe('web-client uses the extension API client entry', () => {
+  it('keeps extension API backend and test entries out of web-client source', () => {
+    const gaps = clientApiGaps(root)
+    expect(gaps, gaps.join('\n')).toEqual([])
+  })
+
+  it.each([
+    ['@agnes/extension-api/client', true],
+    ['@agnes/extension-api/client/types', true],
+    ['@agnes/web-ui', true],
+    ['@agnes/extension-api', false],
+    ['@agnes/extension-api/runtime', false],
+    ['@agnes/extension-api/runtime/authoring', false],
+    ['@agnes/extension-api/testkit', false],
+    ['@agnes/extension-api/testkit/runtime', false],
+    ['@agnes/extension-api/client-other', false],
+  ])('checks value and type imports of %s (allowed: %s)', (specifier, allowed) => {
+    const sources = [
+      valueImport('api', specifier),
+      `import type { API } from '${specifier}'`,
+      `export * from '${specifier}'`,
+      `export type { API } from '${specifier}'`,
+      `const api = import('${specifier}')`,
+      `const api = require('${specifier}')`,
+      `type API = import('${specifier}').API`,
+      `const api = import(\`${specifier}\`)`,
+    ]
+    for (const [index, source] of sources.entries()) {
+      const ext = ['ts', 'tsx', 'mts', 'cts'][index % 4]
+      const dir = ['nested', 'gen', 'generated'][index % 3]
+      const file = `packages/web-client/src/${dir}/panel.${ext}`
+      withTemp({ [file]: source }, (base) => {
+        expect(clientApiGaps(base), source).toEqual(allowed ? [] : [`${file}: imports ${specifier}`])
+      })
+    }
   })
 })
 

@@ -275,7 +275,7 @@ describe('reference workspace and file providers', () => {
           await opened.files.write(
             {
               mountRef: mount,
-              path: '/tmp/outside',
+              path: join(tmpdir(), 'outside'),
               bytesRef: staged.value,
               expectedVersion: { kind: 'absent' },
             },
