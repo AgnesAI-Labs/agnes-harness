@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
+import { HOOK_UNHANDLED, type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
 import { testFsPolicy } from '@agnes/core/testkit'
 import type {
   ExtensionAPI,
@@ -611,5 +611,116 @@ describe('trusted unconfined command Hooks', () => {
       ['$SHELL', './workspace.sh'],
       expect.objectContaining({ cwd: '/workspace/two' }),
     )
+  })
+})
+
+describe('PreCompact is an observer, never a compaction decision', () => {
+  const bytes = JSON.stringify({
+    hooks: {
+      PreCompact: [{ hooks: [{ type: 'command', command: './backup.sh' }] }],
+      PreToolUse: [{ hooks: [{ type: 'command', command: './guard.sh' }] }],
+    },
+  })
+  const digest = `sha256-${createHash('sha256').update(bytes).digest('hex')}`
+  const beforeCompact: HookPayloadMap['before_compact'] = {
+    contextTokens: 90,
+    contextWindow: 100,
+    reserveTokens: 10,
+    reason: 'threshold',
+    getSurface: () => [{ seq: 1, type: 'user/message' }],
+  }
+  const ok = { code: 0, stdout: '', stderr: '', truncated: false }
+
+  async function load(exec: SandboxSeam['exec']) {
+    const init = fakeSeamInit({ files: { '.agh/hooks.json': bytes } })
+    const state = fakeApi()
+    await hooksRunnerExtension(init, { map, sandbox: sandbox(exec) })(state.api)
+    return state
+  }
+
+  // Core reads any value that is not HOOK_UNHANDLED as "this hook took the decision", and a null as
+  // "compaction is opted out". A hook that only wants to look must never be read that way.
+  it('hands the decision back to the built-in compaction after a hook that succeeded', async () => {
+    const exec = vi.fn(async () => ok)
+    const state = await load(exec)
+    expect(await invoke(state, 'before_compact', beforeCompact)).toBe(HOOK_UNHANDLED)
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands the decision back after a hook that exits with a blocking code', async () => {
+    const exec = vi.fn(async () => ({ code: 2, stdout: '', stderr: 'no', truncated: false }))
+    const state = await load(exec)
+    expect(await invoke(state, 'before_compact', beforeCompact)).toBe(HOOK_UNHANDLED)
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands the decision back after a hook that could not run at all', async () => {
+    const exec = vi.fn(async () => {
+      throw new Error('spawn failed')
+    })
+    const state = await load(exec)
+    expect(await invoke(state, 'before_compact', beforeCompact)).toBe(HOOK_UNHANDLED)
+    expect(state.warnings.some((w) => w.message.includes('PreCompact'))).toBe(true)
+  })
+
+  it('does not fail compaction when the permission to run a command is withdrawn after loading', async () => {
+    const init = fakeSeamInit({
+      platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
+      files: { '.agh/hooks.json': bytes },
+      preset: { sandbox: { on_unavailable: 'allow' } },
+    })
+    let allowed = true
+    init.trustedHookCommands = {
+      allowsUnconfined: (source: string, value: string) =>
+        allowed && source === 'workspace' && value === digest,
+    }
+    const exec = vi.fn(async () => ok)
+    const state = fakeApi()
+    await hooksRunnerExtension(init, {
+      map,
+      sandbox: sandbox(exec, { level: 'partial', scope: ['file'] }),
+    })(state.api)
+    expect(await invoke(state, 'before_compact', beforeCompact)).toBe(HOOK_UNHANDLED)
+    expect(exec).toHaveBeenCalledTimes(1)
+    allowed = false
+    // The observer is skipped, compaction goes on; a guarding event keeps failing closed.
+    expect(await invoke(state, 'before_compact', beforeCompact)).toBe(HOOK_UNHANDLED)
+    expect(exec).toHaveBeenCalledTimes(1)
+    await expect(invoke(state, 'tool_call', toolCall('shell'))).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
+  })
+
+  it('still hands back when no hook is bound to the event', async () => {
+    const exec = vi.fn(async () => ok)
+    const init = fakeSeamInit({
+      files: {
+        '.agh/hooks.json': JSON.stringify({
+          hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'x' }] }] },
+        }),
+      },
+    })
+    const state = fakeApi()
+    await hooksRunnerExtension(init, { map, sandbox: sandbox(exec) })(state.api)
+    expect(await invoke(state, 'before_compact', beforeCompact)).toBe(HOOK_UNHANDLED)
+    expect(exec).not.toHaveBeenCalled()
+  })
+
+  it('hands the decision back within the dispatcher deadline when a hook never returns', async () => {
+    vi.useFakeTimers()
+    try {
+      const exec = vi.fn(() => new Promise<never>(() => undefined))
+      const state = await load(exec)
+      let settled = false
+      const pending = invoke(state, 'before_compact', beforeCompact).then((value) => {
+        settled = true
+        return value
+      })
+      await vi.advanceTimersByTimeAsync(2400)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(200)
+      expect(await pending).toBe(HOOK_UNHANDLED)
+      expect(state.warnings.some((w) => w.message.includes('PreCompact'))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
