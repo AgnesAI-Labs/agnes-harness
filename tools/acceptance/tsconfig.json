@@ -33,7 +33,10 @@
     "runtime/platform/migration-conformance.ts",
     "runtime/platform/execution.ts",
     "runtime/platform/sandbox-exec-conformance.ts",
-    "runtime/fixtures/platform-exec-agent.ts"
+    "runtime/fixtures/platform-exec-agent.ts",
+    "runtime/platform/memory-conformance.ts",
+    "runtime/fixtures/memory-cold-process.ts",
+    "runtime/fixtures/retrieval-remote-peer.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
   "references": [
@@ -57,6 +60,9 @@
     },
     {
       "path": "../../packages/package-manager"
+    },
+    {
+      "path": "../../packages/core"
     }
   ]
 }

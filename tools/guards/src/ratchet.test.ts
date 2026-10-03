@@ -997,7 +997,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // prefix, so the first request after a compaction lands below the threshold (+8).
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
-  'packages/core/src': 30837,
+  // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
+  'packages/core/src': 32058,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1485,7 +1486,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Read-only migration planning and receipt verification. Measured 8929, exact, no spare.
   // Bounded sandbox and execution services. Measured 9078, exact, no spare.
   // Authority transfer conformance cases. Measured 10213, exact, no spare.
-  'packages/extension-api/testkit': 10959,
+  // Sourced memory and hybrid retrieval providers. Measured 11849, exact, no spare.
+  'packages/extension-api/testkit': 11849,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2710,7 +2712,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Bounded sandbox and execution services. Measured 69677, exact, no spare.
   // Default blob service export, import, verify and activate of an authority transfer, over the
   // bounded export index. Measured 71812 (+769), exact, no spare.
-  'packages/host/src': 72969,
+  // Sourced memory and hybrid retrieval providers. Measured 73124, exact, no spare.
+  'packages/host/src': 73124,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
