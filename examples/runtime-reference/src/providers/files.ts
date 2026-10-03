@@ -223,6 +223,8 @@ export function createReferenceFiles(options: {
   providerId?: Wire.Id
   checkpoint?: { snapshot(absolutePath: string, stepId: string): Promise<{ id: string }> }
   stall?: 'landed'
+  /** Holds after the replacement name is durable and before the landed note. */
+  afterRename?: () => void
   remote?: boolean
 }): ReferenceFiles {
   const providerId = options.providerId ?? REFERENCE_FILES_PROVIDER_ID
@@ -415,8 +417,8 @@ export function createReferenceFiles(options: {
               prior.phase === 'landed' ? 'invocation already wrote different bytes' : 'effect is unknown',
             )
           }
-          if (prior.phase === 'landed' && prior.result) return demand('FilesWriteResult', prior.result)
           if (onDisk !== digest) throw new Halt('effect_unknown', 'effect is unknown')
+          if (prior.phase === 'landed' && prior.result) return demand('FilesWriteResult', prior.result)
           if (!prior.intent) throw new Halt('effect_unknown', 'effect is unknown')
           try {
             await syncDirectory(dirname(found.absolute), { noFollow: true })
@@ -485,6 +487,7 @@ export function createReferenceFiles(options: {
           await rm(partial, { force: true })
           throw new Halt('effect_unknown', 'effect is unknown')
         }
+        if (options.afterRename) options.afterRename()
         if (options.stall === 'landed') throw new Halt('effect_unknown', 'effect is unknown')
         options.desk.append('version', `${held.workspaceId}\0${body.path}`, { version, digest })
         const result = written(body.path, context.invocationId, intent, version, digest)

@@ -402,9 +402,9 @@ export function createFilesService(options: FilesServiceOptions): FilesService {
               prior.state === 'confirmed' ? 'invocation already wrote different bytes' : 'effect is unknown',
             )
           }
+          if (onDisk !== digest) throw new StoreFault('effect_unknown', 'effect is unknown')
           if (prior.state === 'confirmed' && prior.resultJson)
             return parsed('FilesWriteResult', JSON.parse(prior.resultJson) as unknown)
-          if (onDisk !== digest) throw new StoreFault('effect_unknown', 'effect is unknown')
           const intent = JSON.parse(prior.resultJson ?? 'null') as Intent | null
           if (!intent) throw new StoreFault('effect_unknown', 'effect is unknown')
           try {
