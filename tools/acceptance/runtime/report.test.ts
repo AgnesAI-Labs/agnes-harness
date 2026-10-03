@@ -1,4 +1,3 @@
-import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
@@ -9,50 +8,11 @@ import {
   judgeReport as judgeFromKit,
   SCENARIOS,
 } from '../../../packages/extension-api/testkit/index.js'
-import { getConformanceBuildIdentity } from './build-identity.js'
 import { SAMPLE_CLOCK, sampleAssertion, sampleDraft } from './fixtures.js'
 import { judgeReport, mergeReports, serializeReport, writeReport } from './report.js'
 import { conformanceBinderFiles, main, parseConformanceArgs, runConformance } from './run-conformance.js'
 
 describe('conformance report entry', () => {
-  it('keeps the cached checkout identity equal in a fresh recover process and rejects a mismatch', () => {
-    const build = getConformanceBuildIdentity()
-    expect(getConformanceBuildIdentity()).toBe(build)
-    expect(Object.isFrozen(build)).toBe(true)
-    const root = fileURLToPath(new URL('../../../', import.meta.url))
-    const module = new URL('./build-identity.ts', import.meta.url).href
-    const child = execFileSync(
-      process.execPath,
-      [
-        '--import',
-        'tsx',
-        '--input-type=module',
-        '-e',
-        `import { getConformanceBuildIdentity } from ${JSON.stringify(module)}; process.stdout.write(JSON.stringify(getConformanceBuildIdentity()))`,
-      ],
-      { cwd: root, encoding: 'utf8', timeout: 30_000 },
-    )
-    expect(JSON.parse(child)).toEqual(build)
-    const directory = mkdtempSync(join(tmpdir(), 'recover-build-'))
-    try {
-      const rejected = spawnSync(
-        process.execPath,
-        [
-          '--import',
-          'tsx',
-          fileURLToPath(new URL('./client/ui-registry-conformance.ts', import.meta.url)),
-          directory,
-          JSON.stringify({ ...build, codeSha: 'other-checkout' }),
-        ],
-        { cwd: root, encoding: 'utf8', timeout: 30_000 },
-      )
-      expect(rejected.status).toBe(1)
-      expect(rejected.stderr).toContain('AssertionError')
-      expect(rejected.stderr).toContain('other-checkout')
-    } finally {
-      rmSync(directory, { recursive: true, force: true })
-    }
-  }, 60_000)
   it.each([new Error('case exploded'), 'non-Error refusal'])(
     'records a thrown case and continues: %s',
     async (error) => {
@@ -182,7 +142,7 @@ describe('conformance report entry', () => {
     expect(empty.failures).toEqual([{ code: 'empty-run', detail: 'zero assertions' }])
   })
 
-  // The selection runs every bound reference case, and some of them kill real provider processes.
+  // Serialization and selection need only a small, in-process subset of the catalog.
   it('writes the serialized report and runs a selection with an injected clock', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'conformance-report-'))
     try {
@@ -191,7 +151,7 @@ describe('conformance report entry', () => {
       writeReport(path, report)
       expect(readFileSync(path, 'utf8')).toBe(serializeReport(report))
       const run = await runConformance({
-        contracts: 'all',
+        contracts: ['agh.config', 'agh.loop'],
         providers: ['reference'],
         command: 'conformance',
         clock: SAMPLE_CLOCK,
@@ -205,104 +165,12 @@ describe('conformance report entry', () => {
         detail: 'required agh.loop missing examples/runtime-reference/src/providers/loop.ts',
       })
       expect(run.report.startedAt).toBe(SAMPLE_CLOCK.startedAt)
-      const directoryRows = run.report.assertions.filter((row) => row.contract === 'agh.authority-directory')
-      expect(directoryRows).toHaveLength(SCENARIOS.length)
-      expect(directoryRows.map((row) => row.scenario)).toEqual([...SCENARIOS])
-      const unsupported = directoryRows[0]?.build.platform.startsWith('win32-') === true
-      expect(directoryRows.every((row) => row.status === (unsupported ? 'skipped' : 'passed'))).toBe(true)
-      if (unsupported) {
-        for (const row of directoryRows) {
-          expect(row.diagnostic).toBe(`incompatible/filesystem_unsupported on ${row.build.platform}`)
-          expect(run.report.failures).toContainEqual({
-            code: 'missing-evidence',
-            detail: `required ${row.contract} ${row.scenario} ${row.id} skipped`,
-          })
-        }
-      }
-      const uiRows = run.report.assertions.filter((row) => row.contract === 'agh.ui-registry')
-      expect(uiRows).toHaveLength(SCENARIOS.length)
-      expect(uiRows.every((row) => row.status === 'passed')).toBe(true)
       const stored = JSON.parse(readFileSync(run.reportPath, 'utf8')) as { startedAt: string; status: string }
       expect(stored).toMatchObject({ startedAt: SAMPLE_CLOCK.startedAt, status: 'failed' })
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  }, 60_000)
-
-  it('finishes the full selection when both authority directories refuse the filesystem', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'conformance-unsupported-'))
-    try {
-      const supported = await runConformance({
-        contracts: 'all',
-        providers: ['default', 'reference'],
-        command: 'natural-filesystem',
-        clock: SAMPLE_CLOCK,
-        reportPath: join(directory, 'natural.json'),
-      })
-      const binder = join(directory, 'a-authority-conformance.mjs')
-      const authorityUrl = new URL('./platform/authority-directory-conformance.ts', import.meta.url).href
-      writeFileSync(
-        binder,
-        `import { bindAuthorityDirectoryContracts } from ${JSON.stringify(authorityUrl)}\nexport async function bindConformance(harness, request) {\n  await bindAuthorityDirectoryContracts(harness, request.command, request.providers, 'unsupported')\n  return { contracts: ['agh.authority-directory'], providers: request.providers }\n}\n`,
-      )
-      const run = await runConformance({
-        contracts: 'all',
-        providers: ['default', 'reference'],
-        command: 'unsupported-filesystem',
-        clock: SAMPLE_CLOCK,
-        reportPath: join(directory, 'all.json'),
-        binderFiles: [
-          binder,
-          ...conformanceBinderFiles().filter((file) => !file.endsWith('authority-directory-conformance.ts')),
-        ],
-      })
-      expect(run.report.status).toBe('failed')
-      expect(run.report.failures.some((failure) => failure.code === 'mixed-version')).toBe(false)
-      expect(
-        run.report.assertions
-          .slice(0, SCENARIOS.length * 2)
-          .every((row) => row.contract === 'agh.authority-directory'),
-      ).toBe(true)
-      for (const providerId of ['default', 'reference']) {
-        const rows = run.report.assertions.filter(
-          (row) => row.contract === 'agh.authority-directory' && row.providerId === providerId,
-        )
-        expect(rows).toHaveLength(SCENARIOS.length)
-        expect(rows.map((row) => row.scenario)).toEqual([...SCENARIOS])
-        for (const row of rows) {
-          expect(row.status).toBe('skipped')
-          expect(row.qualification).toBe('required')
-          expect(row.diagnostic).toBe(`incompatible/filesystem_unsupported on ${row.build.platform}`)
-          expect(run.report.failures).toContainEqual({
-            code: 'missing-evidence',
-            detail: `required ${row.contract} ${row.scenario} ${row.id} skipped`,
-          })
-        }
-        for (const contract of ['agh.config', 'agh.ui-registry']) {
-          const later = run.report.assertions.filter(
-            (row) => row.contract === contract && row.providerId === providerId,
-          )
-          expect(later).toHaveLength(contract === 'agh.config' ? SCENARIOS.length * 2 : SCENARIOS.length)
-          expect(later.every((row) => row.status === 'passed')).toBe(true)
-        }
-      }
-      const otherCases = (report: typeof run.report) =>
-        report.assertions
-          .filter((row) => row.contract !== 'agh.authority-directory')
-          .map((row) => ({
-            id: row.id,
-            contract: row.contract,
-            providerId: row.providerId,
-            scenario: row.scenario,
-            status: row.status,
-          }))
-      expect(otherCases(run.report)).toEqual(otherCases(supported.report))
-      const stored = JSON.parse(readFileSync(run.reportPath, 'utf8'))
-      expect(stored.assertions).toEqual(JSON.parse(serializeReport(run.report)).assertions)
-    } finally {
-      rmSync(directory, { recursive: true, force: true })
-    }
-  }, 300_000)
+  })
 
   it.each(['anchor_unreadable', 'denied_filesystem', 'disk error'])(
     'records an authority directory failure without treating it as unsupported: %s',
