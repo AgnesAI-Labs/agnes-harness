@@ -2710,7 +2710,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Bounded sandbox and execution services. Measured 69677, exact, no spare.
   // Default blob service export, import, verify and activate of an authority transfer, over the
   // bounded export index. Measured 71812 (+769), exact, no spare.
-  'packages/host/src': 71962,
+  'packages/host/src': 72969,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

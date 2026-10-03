@@ -25,8 +25,10 @@ import { validateRuntime } from '@agnes/protocol/runtime'
 import type { ApprovalPreparationInput, ApprovalResolutionInput } from '../state/approval.js'
 import { enterPhase, leavePhase, profiling } from '../state/profile.js'
 import {
+  matchesRuntimeStateDatabaseOptions,
   openRuntimeStateDatabase,
   type RuntimeDurability,
+  type RuntimeStateDatabase,
   type RuntimeStateDatabaseOptions,
   StateRefusal,
 } from '../state/transactions.js'
@@ -40,14 +42,12 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'appendStream',
   'beginMigration',
   'beginReconciliation',
-  'cancelAdmission',
   'cancelPreparedActionAdmission',
   'commitMigratedRun',
   'completeReconciliation',
   'createChild',
   'fireTimer',
   'importConversation',
-  'probeAdmission',
   'probeBridgeChild',
   'probeConversationImport',
   'probeMigration',
@@ -120,8 +120,17 @@ function validateProfiled<K extends 'DispatchAdmissionRequest' | 'ReceiptIntakeR
   }
 }
 
-export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): RuntimeStateStore {
-  const database = openRuntimeStateDatabase(options)
+export function createRuntimeStateStore(
+  options: RuntimeStateDatabaseOptions,
+  supplied?: RuntimeStateDatabase,
+): RuntimeStateStore {
+  if (supplied && !matchesRuntimeStateDatabaseOptions(supplied, options))
+    throw new StateRefusal({
+      code: 'denied',
+      detailCode: 'state_owner',
+      message: 'supplied State owner does not match its original native configuration',
+    })
+  const database = supplied ?? openRuntimeStateDatabase(options)
   const ids = defaultIds(options.now ?? (() => Date.now()))
   const error = (code: RuntimeErrorCode, detailCode: string, message: string): RuntimeError => ({
     code,
@@ -201,14 +210,21 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
     createRun: (admission, context) => {
       const result = validateRuntime('RunAdmission', admission)
       if (!result.ok) return Promise.resolve(failure('invalid_input', 'schema', 'RunAdmission is not valid'))
-      return run(context, () => database.createRun({ admission: result.value, scope: context.scope }))
+      return run(context, () =>
+        database.createRun({ admission: result.value, scope: context.scope }, context),
+      )
     },
     acceptServiceCommand: (_request, context) => unavailable('acceptServiceCommand', context),
     readServiceCommand: (_request, context) => unavailable('readServiceCommand', context),
     importConversation: (_request, context) => unavailable('importConversation', context),
     probeConversationImport: (_requestId, context) => unavailable('probeConversationImport', context),
     createChild: (_request, context) => unavailable('createChild', context),
-    cancelAdmission: (_ticketId, _fingerprint, context) => unavailable('cancelAdmission', context),
+    cancelAdmission: (ticketId, fingerprint, context) => {
+      const checked = validateRuntime('StateCancelAdmissionRequest', { ticketId, fingerprint })
+      if (!checked.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'StateCancelAdmissionRequest is not valid'))
+      return run(context, () => database.cancelAdmission(ticketId, fingerprint, context))
+    },
     cancelPreparedActionAdmission: (_request, context) =>
       unavailable('cancelPreparedActionAdmission', context),
     probePreparedActionAdmission: (_request, context) => unavailable('probePreparedActionAdmission', context),
@@ -226,7 +242,12 @@ export function createRuntimeStateStore(options: RuntimeStateDatabaseOptions): R
     commitMigratedRun: (_request, context) => unavailable('commitMigratedRun', context),
     abortMigration: (_request, context) => unavailable('abortMigration', context),
     probeMigration: (_upgradeId, context) => unavailable('probeMigration', context),
-    probeAdmission: (_ticketId, context) => unavailable('probeAdmission', context),
+    probeAdmission: (ticketId, context) => {
+      const checked = validateRuntime('Id', ticketId)
+      if (!checked.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'admission ticket Id is not valid'))
+      return run(context, () => database.probeAdmission(ticketId, context))
+    },
     admitInvocation: (request, context) => {
       const result = validateRuntime('InvocationAdmission', request)
       if (!result.ok)

@@ -39629,6 +39629,7 @@
     "StateLeaseProofValue": "agh.runtime/state-lease-proof@1",
     "SessionIdentityValue": "agh.runtime/session-identity-record@1",
     "RunRecordValue": "agh.runtime/run-record@1",
+    "RunBinding": "agh.runtime/run-binding@1",
     "RunTaintRecordValue": "agh.runtime/run-taint-record@1",
     "ActionRecordValue": "agh.runtime/action-record@1",
     "AttemptRecordValue": "agh.runtime/attempt-record@1",

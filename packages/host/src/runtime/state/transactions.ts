@@ -67,6 +67,14 @@ import { TypeCompiler } from '@sinclair/typebox/compiler'
 import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import {
+  admissionSourceUsesDatabase,
+  captureAdmissionStateFence,
+  isRuntimeAdmissionSource,
+  type RuntimeAdmissionCapture,
+  type RuntimeAdmissionProof,
+  type RuntimeAdmissionSource,
+} from './admission.js'
+import {
   type ApprovalJointPorts,
   type ApprovalPreparation,
   type ApprovalPreparationInput,
@@ -151,12 +159,14 @@ import {
   mutationDigest,
   protectEvent,
   type RecordOwner,
+  RUN_BINDING_SCHEMA,
   RUN_RECORD_SCHEMA,
   RUN_TAINT_SCHEMA,
   RUNTIME_ACTOR,
   RUNTIME_SCHEMA_MAJOR,
   type RunRecordValue,
   type RuntimeCommitData,
+  runBindingRecordId,
   runRecordId,
   SESSION_IDENTITY_SCHEMA,
   type SessionIdentityValue,
@@ -237,6 +247,8 @@ const RUNTIME_DDL = [
      run_id TEXT NOT NULL,
      probe_json TEXT NOT NULL
    ) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS runtime_admission_tombstones (ticket_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, tombstone_id TEXT NOT NULL UNIQUE, authority_json TEXT NOT NULL, source_json TEXT NOT NULL, source_digest TEXT NOT NULL, created_at TEXT NOT NULL, proof_json TEXT NOT NULL, proof_digest TEXT NOT NULL, body_digest TEXT NOT NULL) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS runtime_admission_source_proofs (ticket_id TEXT PRIMARY KEY, commit_id TEXT NOT NULL, proof_json TEXT NOT NULL, proof_digest TEXT NOT NULL) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS runtime_request_results (
      method TEXT NOT NULL,
      request_id TEXT NOT NULL,
@@ -719,6 +731,7 @@ export type RuntimeApprovalJointOwner = {
 export type RuntimeStateDatabaseOptions = {
   file: string
   authority: StateAuthorityRef
+  admissionSource?: RuntimeAdmissionSource
   approvalJoint?: RuntimeApprovalJointOwner
   interactionRead?: RuntimeInteractionReadOwner
   now?: () => number
@@ -798,6 +811,38 @@ type CommitStaging = {
   runRevision: number
 }
 
+const runtimeDatabaseConfigurations = new WeakMap<
+  RuntimeStateDatabase,
+  { database: DatabaseSync; options: RuntimeStateDatabaseOptions; authorityDigest: string }
+>()
+export function matchesRuntimeStateDatabaseOptions(
+  database: RuntimeStateDatabase,
+  options: RuntimeStateDatabaseOptions,
+): boolean {
+  const selected = runtimeDatabaseConfigurations.get(database)
+  if (
+    !selected ||
+    Object.getPrototypeOf(database) !== RuntimeStateDatabase.prototype ||
+    Object.getOwnPropertyDescriptor(database, 'db')?.value !== selected.database ||
+    selected.authorityDigest !== digestOf(options.authority)
+  )
+    return false
+  const original = selected.options
+  return (
+    original.file === options.file &&
+    original.now === options.now &&
+    original.beforeCommit === options.beforeCommit &&
+    original.onCommit === options.onCommit &&
+    original.admissionSource === options.admissionSource &&
+    original.approvalJoint === options.approvalJoint &&
+    original.interactionRead === options.interactionRead &&
+    original.verifyUsageSettlement === options.verifyUsageSettlement &&
+    original.verifyRetentionPin === options.verifyRetentionPin &&
+    original.verifyLegacySource === options.verifyLegacySource &&
+    original.legacySourcePolicy === options.legacySourcePolicy
+  )
+}
+
 export class RuntimeStateDatabase {
   private readonly db: DatabaseSync
   private readonly statements = new Map<string, StatementSync>()
@@ -810,6 +855,7 @@ export class RuntimeStateDatabase {
   private readonly approvalJoint: RuntimeApprovalJointOwner | undefined
   private readonly interactionRead: RuntimeInteractionReadOwner | undefined
   private readonly reservedCommitEvents = new Map<string, string>()
+  private admissionSource: RuntimeAdmissionSource | undefined
   private readonly beforeCommit: (() => void) | undefined
   private readonly onCommit: ((commit: CommitNotice) => void) | undefined
   private readonly ids: ReturnType<typeof defaultIds>
@@ -854,6 +900,9 @@ export class RuntimeStateDatabase {
     this.interactionRead = options.interactionRead
     this.verifyUsageSettlement = options.verifyUsageSettlement
     this.verifyRetentionPin = options.verifyRetentionPin
+    this.admissionSource = options.admissionSource
+    if (this.admissionSource && !isRuntimeAdmissionSource(this.admissionSource))
+      refuse('denied', 'admission_source', 'unregistered admission source')
     this.beforeCommit = options.beforeCommit
     this.onCommit = options.onCommit
     this.ids = defaultIds(this.now)
@@ -866,6 +915,13 @@ export class RuntimeStateDatabase {
       this.db.exec('PRAGMA foreign_keys = ON')
       for (const statement of DDL) this.db.exec(statement)
       for (const statement of RUNTIME_DDL) this.db.exec(statement)
+      if (this.admissionSource && !admissionSourceUsesDatabase(this.admissionSource, this.db))
+        refuse('denied', 'admission_source', 'admission source belongs to another State connection')
+      runtimeDatabaseConfigurations.set(this, {
+        database: this.db,
+        options: { ...options },
+        authorityDigest: digestOf(options.authority),
+      })
     } catch (error) {
       this.db.close()
       throw error
@@ -961,11 +1017,38 @@ export class RuntimeStateDatabase {
     return written.result
   }
 
-  async createRun(input: CreateRunInput): Promise<AdmissionProbe> {
+  installAdmissionSource(source: RuntimeAdmissionSource): void {
+    if (
+      this.admissionSource ||
+      !isRuntimeAdmissionSource(source) ||
+      !admissionSourceUsesDatabase(source, this.db)
+    )
+      refuse(
+        'denied',
+        'admission_source',
+        'admission source must be installed once on its original State connection',
+      )
+    this.admissionSource = source
+  }
+
+  async createRun(input: CreateRunInput, context?: CallContext): Promise<AdmissionProbe> {
+    const capture = context ? this.captureAdmission('create', input.admission, context) : undefined
+    if (capture) input = { admission: capture.proof.facts.admission, scope: capture.proof.facts.scope }
+    if (this.admissionSource && !capture)
+      refuse('denied', 'identity', 'selected admission source requires original context')
+    let nativeCheck: (() => void) | undefined
+    const seal = () => {
+      nativeCheck = captureAdmissionStateFence(this.db)
+    }
+
     const committed = await this.tx(
       'createRun',
       input.admission.ticketId,
       async (): Promise<CommittedRun> => {
+        const originalDecision = capture?.readDecision()
+        capture?.dynamicCheck()
+        if (this.admissionTombstone(input.admission.ticketId))
+          refuse('conflict', 'admission_cancelled', 'admission was durably cancelled')
         const stored = this.get<AdmissionRow>(
           'SELECT ticket_id, fingerprint, run_id, probe_json FROM runtime_admissions WHERE ticket_id = ?',
           input.admission.ticketId,
@@ -987,8 +1070,11 @@ export class RuntimeStateDatabase {
             integrity('admission replay does not match the attested run')
           if (probe.commit.transactionFingerprint !== digestOf(input.admission))
             integrity('admission replay does not match the attested commit')
+          if (capture) this.verifyCreatedAdmissionSource(stored, probe, capture.proof)
+          seal()
           return { probe }
         }
+        if (originalDecision) integrity('original issuer consumed admission but State decision is absent')
         if (
           this.get(
             'SELECT record_id FROM runtime_record_heads WHERE record_id = ?',
@@ -1007,6 +1093,16 @@ export class RuntimeStateDatabase {
         const at = input.admission.admittedAt
         const owner = this.owner(input.admission.bindingId, input.scope)
         const records = this.createRunRecords(input, owner, existing === undefined)
+        if (capture) {
+          records.push({
+            recordId: runBindingRecordId(input.admission.runId),
+            schema: RUN_BINDING_SCHEMA,
+            minReader: MIN_READER,
+            recordRevision: 1,
+            owner,
+            value: capture.proof.facts.runBinding,
+          })
+        }
         const prepared = records.map((record) => {
           const encoded = this.encodeFreshRecord(record)
           return { record, encoded, manifest: createManifest(commitId, record, null, encoded.digest) }
@@ -1094,6 +1190,23 @@ export class RuntimeStateDatabase {
           input.admission.runId,
           JSON.stringify(probe),
         )
+        if (capture)
+          this.run(
+            'INSERT INTO runtime_admission_source_proofs (ticket_id, commit_id, proof_json, proof_digest) VALUES (?, ?, ?, ?)',
+            input.admission.ticketId,
+            commitId,
+            JSON.stringify(capture.proof),
+            digestOf(capture.proof),
+          )
+        capture?.recordDecision({
+          ticketId: input.admission.ticketId,
+          fingerprint: input.admission.fingerprint,
+          sourceDigest: capture.proof.sourceDigest,
+          kind: 'created',
+          targetId: commitId,
+          bodyDigest: digestOf(probe),
+        })
+        seal()
         // Remember the new head only after commit, so a rolled-back write cannot advance the cache.
         return {
           probe,
@@ -1113,9 +1226,262 @@ export class RuntimeStateDatabase {
           },
         }
       },
+      capture
+        ? () => {
+            capture.dynamicCheck()
+            capture.finalCheck(() => {
+              if (!nativeCheck) integrity('admission native seal absent')
+              nativeCheck()
+            })
+          }
+        : undefined,
     )
     if (committed.head) this.rememberVerified(committed.head.sessionId, committed.head.verified)
     return committed.probe
+  }
+
+  private captureAdmission(
+    operation: 'create' | 'cancel' | 'probe',
+    request: RunAdmission | { ticketId: string; fingerprint?: string },
+    context: CallContext,
+  ): RuntimeAdmissionCapture {
+    if (!this.admissionSource)
+      refuse('denied', 'admission_source', 'trusted admission source is not installed')
+    const source = this.admissionSource
+    const capture = source.capture(operation, request, context, this.authority)
+    return Object.freeze({
+      ...capture,
+      finalCheck: (check?: () => void) =>
+        capture.finalCheck(() => {
+          if (Object.getOwnPropertyDescriptor(this, 'admissionSource')?.value !== source)
+            refuse('denied', 'admission_source', 'selected admission source changed')
+          check?.()
+        }),
+    })
+  }
+
+  private admissionTombstone(ticketId: string): AdmissionProbe | undefined {
+    const row = this.get<Record<string, unknown>>(
+      'SELECT * FROM runtime_admission_tombstones WHERE ticket_id = ?',
+      ticketId,
+    )
+    if (!row) return undefined
+    if (this.get('SELECT ticket_id FROM runtime_admissions WHERE ticket_id = ?', ticketId))
+      integrity('ticket has both created and cancelled decisions')
+    if (
+      !this.admissionSource ||
+      typeof row.proof_json !== 'string' ||
+      typeof row.authority_json !== 'string' ||
+      typeof row.source_json !== 'string' ||
+      typeof row.tombstone_id !== 'string'
+    )
+      integrity('cancelled admission has no original authority proof')
+    const link = this.get<{ commit_id: string; proof_json: string; proof_digest: string }>(
+      'SELECT commit_id,proof_json,proof_digest FROM runtime_admission_source_proofs WHERE ticket_id = ?',
+      ticketId,
+    )
+    if (
+      !link ||
+      link.commit_id !== row.tombstone_id ||
+      link.proof_json !== row.proof_json ||
+      link.proof_digest !== row.body_digest
+    )
+      integrity('cancelled ticket lost original authority proof link')
+    const proof = this.parseJson<RuntimeAdmissionProof>(
+      row.proof_json,
+      'admission cancellation proof is invalid',
+    )
+    const { body_digest, ...body } = row
+    if (
+      digestOf(body) !== body_digest ||
+      digestOf(proof) !== row.proof_digest ||
+      row.source_digest !== proof.sourceDigest ||
+      !sameJson(this.parseJson(row.authority_json, 'admission authority invalid'), this.authority) ||
+      !sameJson(this.parseJson(row.source_json, 'admission source invalid'), proof.facts) ||
+      proof.facts.admission.ticketId !== ticketId ||
+      proof.facts.admission.fingerprint !== row.fingerprint
+    )
+      integrity('admission tombstone original proof differs')
+    const source = this.admissionSource.readHistorical(proof, this.authority)
+    if (
+      !sameJson(source.decision, {
+        ticketId,
+        fingerprint: row.fingerprint,
+        sourceDigest: proof.sourceDigest,
+        kind: 'cancelled',
+        targetId: row.tombstone_id,
+        bodyDigest: row.body_digest,
+      })
+    )
+      integrity('cancelled admission differs from original issuer consumption')
+    source.staticCheck()
+    return { state: 'cancelled', tombstoneId: row.tombstone_id }
+  }
+
+  private verifyCreatedAdmissionSource(
+    row: AdmissionRow,
+    probe: AdmissionProbe,
+    expected?: RuntimeAdmissionProof,
+  ): void {
+    if (probe.state !== 'created' || !this.admissionSource) integrity('created admission source unavailable')
+    const original = this.get<{ commit_id: string; proof_json: string; proof_digest: string }>(
+      'SELECT commit_id, proof_json, proof_digest FROM runtime_admission_source_proofs WHERE ticket_id = ?',
+      row.ticket_id,
+    )
+    if (!original || original.commit_id !== probe.commit.commitId)
+      integrity('created admission lost original source proof')
+    const proof = this.parseJson<RuntimeAdmissionProof>(
+      original.proof_json,
+      'created admission source invalid',
+    )
+    if (digestOf(proof) !== original.proof_digest || (expected !== undefined && !sameJson(proof, expected)))
+      integrity('created admission original source changed')
+    const source = this.admissionSource.readHistorical(proof, this.authority)
+    if (
+      !sameJson(source.decision, {
+        ticketId: row.ticket_id,
+        fingerprint: row.fingerprint,
+        sourceDigest: proof.sourceDigest,
+        kind: 'created',
+        targetId: probe.commit.commitId,
+        bodyDigest: digestOf(probe),
+      })
+    )
+      integrity('created admission differs from original issuer consumption')
+    source.staticCheck()
+    const binding = this.get<{ value_json: string }>(
+      'SELECT value_json FROM runtime_records WHERE record_id = ?',
+      runBindingRecordId(row.run_id),
+    )
+    if (
+      !binding ||
+      !sameJson(this.parseJson(binding.value_json, 'run binding invalid'), proof.facts.runBinding)
+    )
+      integrity('created run binding differs from original ticket')
+  }
+
+  private async originalAdmission(capture: RuntimeAdmissionCapture): Promise<AdmissionProbe> {
+    const ticketId = capture.proof.facts.admission.ticketId
+    const originalDecision = capture.readDecision()
+    const tombstone = this.admissionTombstone(ticketId)
+    if (tombstone) return tombstone
+    const row = this.get<AdmissionRow>(
+      'SELECT ticket_id, fingerprint, run_id, probe_json FROM runtime_admissions WHERE ticket_id = ?',
+      ticketId,
+    )
+    if (row) {
+      const verified = await this.requireSession(capture.proof.facts.admission.sessionId)
+      const probe = this.rebuildStoredAdmission(row, verified, capture.proof.facts.admission.sessionId)
+      if (
+        !sameJson(this.parseJson(row.probe_json, 'admission probe invalid'), probe) ||
+        row.fingerprint !== capture.proof.facts.admission.fingerprint ||
+        probe.state !== 'created' ||
+        probe.commit.transactionFingerprint !== digestOf(capture.proof.facts.admission)
+      )
+        integrity('original admission differs from attested creation')
+      this.verifyCreatedAdmissionSource(row, probe, capture.proof)
+      return probe
+    }
+    const original = this.get(
+      "SELECT v.record_id FROM runtime_record_versions v JOIN runtime_version_bodies b ON b.record_id = v.record_id AND b.record_revision = v.record_revision WHERE json_extract(b.value_json, '$.admissionTicketId') = ? LIMIT 1",
+      ticketId,
+    )
+    if (
+      originalDecision ||
+      original ||
+      this.get('SELECT ticket_id FROM runtime_admission_source_proofs WHERE ticket_id = ?', ticketId)
+    )
+      integrity('admission index absent but original decision remains')
+    return { state: 'absent' }
+  }
+
+  async probeAdmission(ticketId: string, context: CallContext): Promise<AdmissionProbe> {
+    const capture = this.captureAdmission('probe', { ticketId }, context)
+    let check: (() => void) | undefined
+    return this.interactionReadSnapshot(
+      async () => {
+        capture.readDecision()
+        capture.dynamicCheck()
+        const result = await this.originalAdmission(capture)
+        if (result.state === 'absent')
+          refuse(
+            'denied',
+            'admission_absence_unproven',
+            'authority completeness proof for admission absence is not installed',
+          )
+        check = captureAdmissionStateFence(this.db)
+        return result
+      },
+      () => {
+        capture.dynamicCheck()
+        capture.finalCheck(() => {
+          if (!check) integrity('admission read seal absent')
+          check()
+        })
+      },
+    )
+  }
+
+  async cancelAdmission(
+    ticketId: string,
+    fingerprint: string,
+    context: CallContext,
+  ): Promise<AdmissionProbe> {
+    const capture = this.captureAdmission('cancel', { ticketId, fingerprint }, context)
+    let check: (() => void) | undefined
+    return this.tx(
+      'cancelAdmission',
+      ticketId,
+      async () => {
+        capture.readDecision()
+        capture.dynamicCheck()
+        let probe = await this.originalAdmission(capture)
+        if (probe.state === 'absent') {
+          const body = {
+            ticket_id: ticketId,
+            fingerprint,
+            tombstone_id: stableId('admission-cancel', `${this.authority.authorityId}\0${ticketId}`),
+            authority_json: JSON.stringify(this.authority),
+            source_json: JSON.stringify(capture.proof.facts),
+            source_digest: capture.proof.sourceDigest,
+            created_at: new Date(this.now()).toISOString(),
+            proof_json: JSON.stringify(capture.proof),
+            proof_digest: digestOf(capture.proof),
+          }
+          this.run(
+            'INSERT INTO runtime_admission_tombstones (ticket_id,fingerprint,tombstone_id,authority_json,source_json,source_digest,created_at,proof_json,proof_digest,body_digest) VALUES (?,?,?,?,?,?,?,?,?,?)',
+            ...Object.values(body),
+            digestOf(body),
+          )
+          this.run(
+            'INSERT INTO runtime_admission_source_proofs (ticket_id,commit_id,proof_json,proof_digest) VALUES (?,?,?,?)',
+            ticketId,
+            body.tombstone_id,
+            body.proof_json,
+            digestOf(body),
+          )
+          capture.recordDecision({
+            ticketId,
+            fingerprint,
+            sourceDigest: capture.proof.sourceDigest,
+            kind: 'cancelled',
+            targetId: body.tombstone_id,
+            bodyDigest: digestOf(body),
+          })
+          this.pendingWrite = true
+          probe = { state: 'cancelled', tombstoneId: body.tombstone_id }
+        }
+        check = captureAdmissionStateFence(this.db)
+        return probe
+      },
+      () => {
+        capture.dynamicCheck()
+        capture.finalCheck(() => {
+          if (!check) integrity('admission cancellation seal absent')
+          check()
+        })
+      },
+    )
   }
 
   async admitInvocation(request: InvocationAdmission): Promise<AdmitInvocationResult> {
@@ -2885,6 +3251,17 @@ export class RuntimeStateDatabase {
         const stored = this.parseJson<unknown>(row.probe_json, 'stored admission probe cannot be decoded')
         if (!this.admissionMatches(stored, rebuilt))
           integrity('admission replay does not match the attested run')
+        if (
+          this.get(
+            'SELECT ticket_id FROM runtime_admission_source_proofs WHERE ticket_id = ?',
+            row.ticket_id,
+          ) ||
+          this.get(
+            'SELECT record_id FROM runtime_record_heads WHERE record_id = ?',
+            runBindingRecordId(row.run_id),
+          )
+        )
+          this.verifyCreatedAdmissionSource(row, rebuilt)
       }
       const last = rows[rows.length - 1]
       if (!last || rows.length < PROOF_PAGE) break
