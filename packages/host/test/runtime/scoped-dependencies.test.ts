@@ -560,6 +560,79 @@ describe('host scoped dependencies', () => {
     expect(host.dependencies.get(wire('installation', ['read'], 'holder', 'agh.holder')).ok).toBe(true)
   })
 
+  it('keeps old run and explicit binding views on the same root while current changes', async () => {
+    const closed: string[] = []
+    const root = createHostScopedDependencies([grant({ permissions: [] })])
+    const old = selected({
+      permissions: [],
+      binding: {
+        bindingId: 'old-binding',
+        contract: 'agh.loop',
+        logicalName: 'loop',
+        providerId: 'owner-1',
+      },
+      query: async () => providerFailure('old-selected'),
+      close() {
+        closed.push('old')
+      },
+    })
+    const next = selected({
+      permissions: [],
+      binding: { ...old.binding, bindingId: 'new-binding' },
+      packageDigest: DIGEST_B,
+      query: async () => providerFailure('new-selected'),
+      close() {
+        closed.push('next')
+      },
+    })
+    await root.publish({ generationId: 'old', providers: [old] })
+    root.pinRun('run-old', 'old')
+    const pinned = root.forRun('run-old')
+    if (!pinned.ok) throw new Error(pinned.error.detailCode)
+    await root.prepare({ generationId: 'next', providers: [next] })
+    expect(root.view('old').published).toBe(true)
+    expect(root.dependencies.get(wire('runtime', ['read']))).toMatchObject({
+      ok: true,
+      value: { binding: old.binding },
+    })
+    expect(() => root.pinRun('run-next', 'next')).toThrow(expect.objectContaining({ code: 'unpublished' }))
+    expect(root.forBinding('next', next.binding.bindingId)).toMatchObject({ ok: false })
+    root.activate('next')
+    expect(root.dependencies.get(wire('runtime', ['read']))).toMatchObject({
+      ok: true,
+      value: { binding: next.binding },
+    })
+    expect(() => root.pinRun('run-old', 'next')).toThrow(
+      expect.objectContaining({ code: 'run_binding_conflict' }),
+    )
+    const bound = pinned.value.get(wire('runtime', ['read']))
+    if (!bound.ok) throw new Error(bound.error.detailCode)
+    const oldContext = { ...contextFor('runtime'), bindingId: old.binding.bindingId }
+    expect(await bound.value.query({} as never, oldContext)).toMatchObject({
+      error: { detailCode: 'old-selected' },
+    })
+    expect(
+      await bound.value.query({} as never, { ...oldContext, bindingId: next.binding.bindingId }),
+    ).toMatchObject({ error: { detailCode: 'binding_mismatch' } })
+    const byBinding = root.forBinding('old', old.binding.bindingId)
+    expect(byBinding.ok && byBinding.value.get(wire('runtime', ['read']))).toMatchObject({
+      ok: true,
+      value: { binding: old.binding },
+    })
+    await root.close('next')
+    expect(await bound.value.query({} as never, oldContext)).toMatchObject({
+      error: { detailCode: 'old-selected' },
+    })
+    root.unpinRun('run-old')
+    expect(await bound.value.query({} as never, oldContext)).toMatchObject({
+      error: { detailCode: 'service_container_closed' },
+    })
+    expect(root.forRun('run-old')).toMatchObject({ error: { detailCode: 'run_not_pinned' } })
+    await root.close('old')
+    expect(byBinding.ok && byBinding.value.get(wire('runtime', ['read']))).toMatchObject({ ok: false })
+    expect(closed).toEqual(['next', 'old'])
+  })
+
   it('rolls back a failed ready, drains, and closes one shared broker holder at a time', async () => {
     let starts = 0
     let stops = 0

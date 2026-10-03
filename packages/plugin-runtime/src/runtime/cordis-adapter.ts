@@ -183,6 +183,7 @@ export type ResourceOwner = {
 export type AuthorizedPorts = {
   readonly generationId: string
   readonly providerId: string
+  readonly signal?: AbortSignal
   get(requirement: Pick<ServiceRequirement, 'contract' | 'logicalName' | 'scope'>): unknown
 }
 
@@ -287,6 +288,8 @@ export type GenerationView = {
   readonly generationId: string
   readonly state: 'ready' | 'draining' | 'closed' | 'cold' | 'residual'
   readonly published: boolean
+  readonly staged: boolean
+  readonly readiness: readonly { readonly providerId: string; readonly ready: boolean }[]
   readonly bindings: readonly {
     readonly providerId: string
     readonly packageDigest: string
@@ -388,6 +391,9 @@ type Generation = {
   drained: boolean
   forced: boolean
   disabled: boolean
+  activated: boolean
+  prepareSignal: boolean
+  cleanupOwners: Set<string>
   byProvider: Map<string, Mounted>
   byCell: Map<string, LockedProvider>
 }
@@ -564,6 +570,7 @@ export class FixedCordisAssembly {
   readonly #broker: SharedResourceBroker
   readonly #generations = new Map<string, Generation>()
   readonly #runs = new Map<string, string>()
+  readonly #preparing = new Map<string, Promise<GenerationView>>()
   readonly #hooksRank: number
   #published: Generation | undefined
   #hooksMode: HooksRunnerStatus['mode'] = 'builtin'
@@ -578,6 +585,35 @@ export class FixedCordisAssembly {
   }
 
   async open(plan: AssemblyPlan): Promise<GenerationView> {
+    const generationId = plan.generationId
+    await this.prepare(plan)
+    return this.activate(generationId)
+  }
+
+  async prepare(plan: AssemblyPlan, signal?: AbortSignal): Promise<GenerationView> {
+    const generationId = plan.generationId
+    if (this.#preparing.has(generationId))
+      throw new AssemblyRefusal('duplicate_generation', `generation already exists: ${plan.generationId}`)
+    const pending = this.#prepare(plan, signal)
+    this.#preparing.set(generationId, pending)
+    try {
+      return await pending
+    } finally {
+      this.#preparing.delete(generationId)
+    }
+  }
+
+  activate(generationId: string): GenerationView {
+    const generation = this.#require(generationId)
+    if (generation.state !== 'ready' || generation.disabled || generation.closeStarted)
+      throw new AssemblyRefusal('closed', 'only a ready generation can activate', { generationId })
+    generation.activated = true
+    this.#published = generation
+    return this.view(generationId)
+  }
+
+  async #prepare(plan: AssemblyPlan, signal?: AbortSignal): Promise<GenerationView> {
+    if (signal?.aborted) throw new AssemblyRefusal('cancelled', 'candidate preparation cancelled')
     this.#rejectContainer(plan)
     if (this.#generations.has(plan.generationId)) {
       throw new AssemblyRefusal('duplicate_generation', `generation already exists: ${plan.generationId}`)
@@ -625,23 +661,25 @@ export class FixedCordisAssembly {
     }
     assertCommunityContracts(plan.contracts ?? [], plan.providers)
     const generation = this.#createGeneration(plan, locked, contributions, admission, brokerKeys)
+    generation.prepareSignal = signal !== undefined
     this.#generations.set(generation.id, generation)
+    const cancel = () => generation.controller.abort()
+    signal?.addEventListener('abort', cancel, { once: true })
+    if (signal?.aborted) cancel()
     try {
       await this.#mount(generation)
       await this.#ready(generation)
+      this.#checkCancelled(generation)
       for (const key of generation.brokerKeys) this.#broker.hold(generation.id, key)
     } catch (error) {
-      this.#broker.releaseGeneration(generation.id, generation.brokerKeys)
+      this.#releaseBroker(generation)
       await this.#rollback(generation)
-      generation.state =
-        generation.instances.some((instance) => instance.owners.some((owner) => owner.residual)) ||
-        generation.observers.some((observer) => observer.owners.some((owner) => owner.residual))
-          ? 'residual'
-          : 'closed'
+      generation.state = this.#residualIds(generation).length > 0 ? 'residual' : 'closed'
       throw error
+    } finally {
+      signal?.removeEventListener('abort', cancel)
     }
     generation.state = 'ready'
-    this.#published = generation
     return this.view(generation.id)
   }
 
@@ -651,6 +689,15 @@ export class FixedCordisAssembly {
       generationId: generation.id,
       state: generation.state,
       published: this.#published === generation && generation.state === 'ready',
+      staged: !generation.activated && generation.state === 'ready',
+      readiness: Object.freeze(
+        generation.locked.map((item) =>
+          Object.freeze({
+            providerId: item.providerId,
+            ready: generation.byProvider.get(item.providerId)?.readied === true,
+          }),
+        ),
+      ),
       bindings: Object.freeze(
         generation.locked.map((item) =>
           Object.freeze({
@@ -683,7 +730,7 @@ export class FixedCordisAssembly {
     const id = generationId ?? this.#published?.id
     if (!id) throw new AssemblyRefusal('unpublished', 'no published generation')
     const generation = this.#require(id)
-    if (generation.state !== 'ready')
+    if (generation.state !== 'ready' || !generation.activated)
       throw new AssemblyRefusal('closed', 'run cannot pin a generation that is not ready')
     if (generation.disabled) {
       throw new AssemblyRefusal('disabled', 'a disabled generation cannot accept a new binding', {
@@ -707,7 +754,7 @@ export class FixedCordisAssembly {
         generationId: id,
       })
     }
-    if (generation.state !== 'ready')
+    if (generation.state !== 'ready' || !generation.activated)
       throw new AssemblyRefusal('closed', 'generation is not accepting work', { generationId: id })
     const mounted = generation.byProvider.get(providerId)
     if (!mounted)
@@ -721,7 +768,7 @@ export class FixedCordisAssembly {
 
   beginInvocation(generationId: string, invocationId: string): void {
     const generation = this.#require(generationId)
-    if (generation.state !== 'ready') {
+    if (generation.state !== 'ready' || !generation.activated) {
       throw new AssemblyRefusal(
         generation.state === 'draining' ? 'draining' : 'closed',
         'generation is not accepting work',
@@ -778,6 +825,7 @@ export class FixedCordisAssembly {
   }
 
   async close(generationId: string): Promise<CloseResult> {
+    await this.#preparing.get(generationId)?.catch(() => undefined)
     const generation = this.#require(generationId)
     if (generation.closeStarted) {
       return Object.freeze({
@@ -790,13 +838,14 @@ export class FixedCordisAssembly {
       })
     }
     generation.closeStarted = true
+    generation.controller.abort()
     const active = [...generation.invocations]
     generation.forced = active.length > 0
     await this.#releaseMounted(generation)
-    this.#broker.releaseGeneration(generation.id, generation.brokerKeys)
-    generation.state = this.#residualIds(generation).length > 0 ? 'residual' : 'closed'
+    this.#releaseBroker(generation)
     if (this.#published === generation) this.#published = undefined
     await this.#disposeFibers(generation)
+    generation.state = this.#residualIds(generation).length > 0 ? 'residual' : 'closed'
     return Object.freeze({
       repeated: false,
       forced: generation.forced,
@@ -816,7 +865,7 @@ export class FixedCordisAssembly {
     }
     generation.closeStarted = true
     await this.#releaseMounted(generation)
-    this.#broker.releaseGeneration(generation.id, generation.brokerKeys)
+    this.#releaseBroker(generation)
     await this.#disposeFibers(generation)
     if (this.#residualIds(generation).length > 0) {
       generation.state = 'residual'
@@ -847,6 +896,7 @@ export class FixedCordisAssembly {
     await this.#ready(generation)
     for (const key of generation.brokerKeys) this.#broker.hold(generation.id, key)
     generation.state = 'ready'
+    generation.activated = true
     this.#published = generation
     return this.view(generation.id)
   }
@@ -909,7 +959,7 @@ export class FixedCordisAssembly {
   async deliver(generationId: string, delivery: ObserverDelivery): Promise<ObserverResult> {
     const generation = this.#require(generationId)
     const none = Object.freeze([]) as readonly never[]
-    if (generation.state !== 'ready') {
+    if (generation.state !== 'ready' || !generation.activated) {
       return Object.freeze({ status: 'closed', logs: Object.freeze([]), acceptedEffects: none })
     }
     const matches = generation.observers.filter((item) => item.mount.event.typeId === delivery.typeId)
@@ -1119,6 +1169,9 @@ export class FixedCordisAssembly {
       drained: false,
       forced: false,
       disabled: false,
+      activated: false,
+      prepareSignal: false,
+      cleanupOwners: new Set(),
       byProvider: new Map(),
       byCell: new Map(locked.map((item) => [item.cell, item])),
     }
@@ -1128,6 +1181,7 @@ export class FixedCordisAssembly {
     const root = generation.context
     if (!root) throw new AssemblyRefusal('closed', 'generation has no container')
     for (const locked of generation.locked) {
+      this.#checkCancelled(generation)
       const dependencyNames = locked.provider.requires.flatMap((requirement) => {
         const target = generation.byCell.get(cellOf(requirement))
         return target ? [target.serviceName] : []
@@ -1155,9 +1209,14 @@ export class FixedCordisAssembly {
       await this.#awaitFiber(fiber, locked.providerId)
       const ports = mounted.ports
       if (!ports) throw new AssemblyRefusal('closed', `provider did not mount: ${locked.providerId}`)
+      this.#checkCancelled(generation)
       await locked.provider.create?.(ports)
+      this.#checkCancelled(generation)
       for (const contribution of generation.contributions) {
-        if (contribution.providerId === locked.providerId) await contribution.apply?.(ports)
+        if (contribution.providerId === locked.providerId) {
+          await contribution.apply?.(ports)
+          this.#checkCancelled(generation)
+        }
       }
     }
   }
@@ -1201,6 +1260,7 @@ export class FixedCordisAssembly {
     return Object.freeze({
       generationId: generation.id,
       providerId: locked.providerId,
+      ...(generation.prepareSignal ? { signal: generation.controller.signal } : {}),
       get: (requirement: Pick<ServiceRequirement, 'contract' | 'logicalName' | 'scope'>) => {
         const declared = requirements.get(
           `${requirement.scope}\u0000${requirement.contract}\u0000${requirement.logicalName}`,
@@ -1223,7 +1283,9 @@ export class FixedCordisAssembly {
 
   async #ready(generation: Generation): Promise<void> {
     for (const instance of generation.instances) {
+      this.#checkCancelled(generation)
       if (instance.ports) await instance.locked.provider.ready?.(instance.ports)
+      this.#checkCancelled(generation)
       instance.readied = true
     }
   }
@@ -1272,10 +1334,16 @@ export class FixedCordisAssembly {
   }
 
   async #disposeFibers(generation: Generation): Promise<void> {
-    for (const instance of generation.instances) {
+    for (const instance of [...generation.instances].reverse()) {
       const fiber = instance.fiber
       instance.fiber = undefined
-      if (fiber) await fiber.dispose()
+      if (fiber) {
+        try {
+          await fiber.dispose()
+        } catch {
+          generation.cleanupOwners.add(`fiber:${instance.locked.providerId}`)
+        }
+      }
     }
     generation.context = undefined
   }
@@ -1294,7 +1362,7 @@ export class FixedCordisAssembly {
   }
 
   #residualIds(generation: Generation): string[] {
-    const ids: string[] = []
+    const ids: string[] = [...generation.cleanupOwners]
     for (const instance of generation.instances) {
       for (const owner of instance.owners) if (owner.residual) ids.push(owner.id)
     }
@@ -1302,6 +1370,21 @@ export class FixedCordisAssembly {
       for (const owner of observer.owners) if (owner.residual) ids.push(owner.id)
     }
     return ids
+  }
+
+  #checkCancelled(generation: Generation): void {
+    if (generation.controller.signal.aborted)
+      throw new AssemblyRefusal('cancelled', 'candidate preparation cancelled')
+  }
+
+  #releaseBroker(generation: Generation): void {
+    for (const key of generation.brokerKeys) {
+      try {
+        this.#broker.release(generation.id, key)
+      } catch {
+        generation.cleanupOwners.add(`broker:${key}`)
+      }
+    }
   }
 
   #pinned(generationId: string): boolean {

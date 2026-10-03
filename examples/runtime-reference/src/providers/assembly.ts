@@ -21,6 +21,8 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 
+import { type ReferenceCandidateLifecycle, referenceCandidate } from './assembly-candidate.js'
+
 const wireMethods: Readonly<
   Record<
     string,
@@ -915,8 +917,8 @@ export function constructReferenceReleaseSet(raw: unknown): Outcome<ReleaseSet> 
     )
   }
 }
-/** This independent example plans detached fixtures; it performs no publication or migration. */
-export function createReferenceAssemblyProvider(raw: unknown) {
+/** This independent example plans and prepares detached fixtures; publication and migration stay unavailable. */
+export function createReferenceAssemblyProvider(raw: unknown, lifecycle?: ReferenceCandidateLifecycle) {
   let pinned: unknown
   let captureRefusal: Outcome<never> | null = null
   try {
@@ -928,11 +930,13 @@ export function createReferenceAssemblyProvider(raw: unknown) {
       error instanceof InvalidRelease ? error.message : undefined,
     )
   }
+  let candidate: ReturnType<typeof referenceCandidate> | undefined
+  let disposed = false
   return {
     providerId: 'agh.reference/assembly',
     contract: 'agh.assembly',
-    implemented: Object.freeze(['plan']),
-    incomplete: Object.freeze(['prepare', 'publish', 'drain', 'admission', 'cold-recovery']),
+    implemented: Object.freeze(['plan', 'prepare', 'memory-drain']),
+    incomplete: Object.freeze(['publish', 'persistent-pin-drain', 'admission', 'cold-recovery']),
     async plan(request: unknown, context: CallContext): Promise<Outcome<AssemblyGraph>> {
       if (context.signal.aborted) {
         const stopped = refusal('plan_cancelled')
@@ -956,14 +960,43 @@ export function createReferenceAssemblyProvider(raw: unknown) {
         )
       }
     },
-    async prepare(_request: unknown, _context: CallContext): Promise<Outcome<AssemblyPrepareResult>> {
-      return refusal('assembly_prepare_unimplemented')
+    async prepare(request: unknown, context: CallContext): Promise<Outcome<AssemblyPrepareResult>> {
+      if (context.signal.aborted) {
+        const stopped = refusal('prepare_cancelled')
+        if (!stopped.ok) stopped.error.code = 'cancelled'
+        return stopped
+      }
+      if (disposed) return refusal('candidate_disposed')
+      if (candidate) return candidate.prepare(request, context)
+      if (captureRefusal) return captureRefusal
+      try {
+        const snapshot = decodeSnapshot(pinned)
+        demand(
+          matches(decode('AssemblyPrepareRequest', request).graph, snapshot.assembly),
+          'prepare_input_mismatch',
+        )
+        const locked = constructReferenceReleaseSet(pinned)
+        if (!locked.ok) return locked
+        if (!lifecycle) return refusal('candidate_lifecycle_unavailable')
+        candidate ??= referenceCandidate(snapshot.assembly, locked.value, snapshot.releasePlan, lifecycle)
+        return await candidate.prepare(request, context)
+      } catch (error) {
+        return refusal(error instanceof InvalidRelease ? error.reason : 'schema_invalid')
+      }
+    },
+    async dispose(): Promise<readonly string[]> {
+      disposed = true
+      return candidate ? candidate.dispose() : []
+    },
+    inspectCandidate() {
+      return candidate?.inspect()
     },
     async publish(_request: unknown, _context: CallContext): Promise<Outcome<AssemblyPublishResult>> {
       return refusal('assembly_publish_unimplemented')
     },
-    async drain(_request: unknown, _context: CallContext): Promise<Outcome<AssemblyDrainResult>> {
-      return refusal('assembly_drain_unimplemented')
+    async drain(request: unknown, context: CallContext): Promise<Outcome<AssemblyDrainResult>> {
+      if (!candidate) return refusal('candidate_not_prepared')
+      return candidate.drain(request, context)
     },
   }
 }

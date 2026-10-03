@@ -5,6 +5,7 @@ import type {
   AssemblyPrepareResult,
   AssemblyPublishResult,
 } from '@agnes/protocol/runtime'
+import { AssemblyCandidate, type CandidateLifecycle } from '../assembly/candidate.js'
 import { readInputs } from '../assembly/inputs.js'
 import {
   attempt,
@@ -17,17 +18,19 @@ import {
 } from '../assembly/primitives.js'
 import { constructReleaseSet } from '../assembly/release-set.js'
 
-/** Offline plan provider; it is deliberately absent from the production service root. */
-export function createAssemblyProvider(input: unknown) {
+/** Detached memory candidate provider; it is deliberately absent from the production service root. */
+export function createAssemblyProvider(input: unknown, lifecycle?: CandidateLifecycle) {
   const captured = attempt(() => {
     fields(input, ['plan', 'graph', 'configuration', 'resolution', 'fixture'], '/')
     return freeze(structuredClone(input))
   })
+  let candidate: AssemblyCandidate | undefined
+  let disposed = false
   return {
     providerId: 'agh.default/assembly',
     contract: 'agh.assembly',
-    implemented: Object.freeze(['plan']),
-    incomplete: Object.freeze(['prepare', 'publish', 'drain', 'admission', 'cold-recovery']),
+    implemented: Object.freeze(['plan', 'prepare', 'memory-drain']),
+    incomplete: Object.freeze(['publish', 'persistent-pin-drain', 'admission', 'cold-recovery']),
     async plan(request: unknown, context: CallContext): Promise<Outcome<AssemblyGraph>> {
       if (context.signal.aborted)
         return { ok: false, error: { ...releaseError('plan_cancelled'), code: 'cancelled' } }
@@ -47,14 +50,39 @@ export function createAssemblyProvider(input: unknown) {
       if (!release.ok) return release
       return { ok: true, value: freeze(accepted.value.graph) }
     },
-    async prepare(_request: unknown, _context: CallContext): Promise<Outcome<AssemblyPrepareResult>> {
-      return { ok: false, error: releaseError('assembly_prepare_unimplemented') }
+    async prepare(request: unknown, context: CallContext): Promise<Outcome<AssemblyPrepareResult>> {
+      if (context.signal.aborted)
+        return { ok: false, error: { ...releaseError('prepare_cancelled'), code: 'cancelled' } }
+      if (disposed) return { ok: false, error: releaseError('candidate_disposed') }
+      if (candidate) return candidate.prepare(request, context)
+      if (!captured.ok) return captured
+      const fixed = attempt(() => {
+        const parsed = readWire('AssemblyPrepareRequest', request)
+        const inputs = readInputs(captured.value)
+        requireRelease(equal(parsed.graph, inputs.graph), 'prepare_input_mismatch', '/prepare/graph')
+        return inputs
+      })
+      if (!fixed.ok) return fixed
+      const release = constructReleaseSet(fixed.value)
+      if (!release.ok) return release
+      if (!lifecycle) return { ok: false, error: releaseError('candidate_lifecycle_unavailable') }
+      candidate ??= new AssemblyCandidate(fixed.value.graph, release.value, fixed.value.plan, lifecycle)
+      return candidate.prepare(request, context)
     },
+    async dispose(): Promise<readonly string[]> {
+      disposed = true
+      return candidate ? candidate.dispose() : []
+    },
+    inspectCandidate() {
+      return candidate?.inspect()
+    },
+
     async publish(_request: unknown, _context: CallContext): Promise<Outcome<AssemblyPublishResult>> {
       return { ok: false, error: releaseError('assembly_publish_unimplemented') }
     },
-    async drain(_request: unknown, _context: CallContext): Promise<Outcome<AssemblyDrainResult>> {
-      return { ok: false, error: releaseError('assembly_drain_unimplemented') }
+    async drain(request: unknown, context: CallContext): Promise<Outcome<AssemblyDrainResult>> {
+      if (!candidate) return { ok: false, error: releaseError('candidate_not_prepared') }
+      return candidate.drain(request, context)
     },
   }
 }

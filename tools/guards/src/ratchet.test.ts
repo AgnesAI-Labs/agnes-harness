@@ -221,7 +221,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Fixed Cordis generation assembly, one hook snapshot, and community contract binding.
   // Re-measured with this guard's countLines(): 4117, exact cap, no spare.
   // Detached release planning: measured 4133, exact, no spare.
-  'packages/plugin-runtime/src': 4133,
+  // Staged generations and prepare conformance: combined measured 4211, exact, no spare.
+  'packages/plugin-runtime/src': 4211,
   'packages/cosmokit/src': 483,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.
@@ -1461,7 +1462,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Detached release planning: measured 6849, exact, no spare.
   // Preserve case failure diagnostics and record unsupported authority directory scenarios. Exact count.
   // Shell contract cases join the contract aggregate. Measured 7741, exact, no spare.
-  'packages/extension-api/testkit': 7741,
+  // Staged candidate preparation cases: measured 7896, exact, no spare.
+  'packages/extension-api/testkit': 7896,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2667,7 +2669,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Detached release planning: measured 64517, exact, no spare.
   // Default blob and artifacts provider descriptors, the ticket feature only with a ticket key, and
   // per-service data directories. Measured 64597 (+80), exact, no spare.
-  'packages/host/src': 65056,
+  // Staged generations and prepare conformance: combined measured 65489, exact, no spare.
+  'packages/host/src': 65489,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

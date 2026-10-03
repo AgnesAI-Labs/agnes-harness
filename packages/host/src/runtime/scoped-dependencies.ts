@@ -46,6 +46,8 @@ export type HostSelectedProvider = {
   readonly permissions: readonly string[]
   readonly capabilities?: readonly string[]
   readonly requires?: readonly AssemblyRequirement[]
+  readonly contractDefinition?: AssemblyProvider['contractDefinition']
+  readonly operations?: AssemblyProvider['operations']
   readonly owners?: AssemblyProvider['owners']
   readonly create?: AssemblyProvider['create']
   readonly ready?: AssemblyProvider['ready']
@@ -64,10 +66,19 @@ export type HostProviderPublication = {
   readonly generationId: string
   readonly providers: readonly HostSelectedProvider[]
   readonly brokerKeys?: readonly string[]
+  readonly contracts?: AssemblyPlan['contracts']
+  readonly contributions?: AssemblyPlan['contributions']
+  readonly loopFeatures?: readonly string[]
 }
 
 export type HostScopedDependencies = {
   readonly dependencies: ScopedDependencies
+  prepare(publication: HostProviderPublication, signal?: AbortSignal): Promise<GenerationView>
+  activate(generationId: string): GenerationView
+  pinRun(runId: string, generationId: string): void
+  unpinRun(runId: string): void
+  forRun(runId: string): Outcome<ScopedDependencies>
+  forBinding(generationId: string, bindingId: string): Outcome<ScopedDependencies>
   publish(publication: HostProviderPublication): Promise<GenerationView>
   drain(generationId: string, deadline: number): Promise<DrainResult>
   close(generationId: string): Promise<CloseResult>
@@ -139,7 +150,14 @@ function toAssembly(provider: HostSelectedProvider): AssemblyProvider {
     requires: (provider.requires ?? []).map((requirement) => ({
       ...requirement,
       features: [...requirement.features],
+      ...(requirement.contractDefinition
+        ? { contractDefinition: structuredClone(requirement.contractDefinition) }
+        : {}),
     })),
+    ...(provider.contractDefinition !== undefined
+      ? { contractDefinition: structuredClone(provider.contractDefinition) }
+      : {}),
+    ...(provider.operations !== undefined ? { operations: structuredClone(provider.operations) } : {}),
     ...(provider.create !== undefined ? { create: provider.create } : {}),
     ...(provider.ready !== undefined ? { ready: provider.ready } : {}),
     ...(provider.drain !== undefined ? { drain: provider.drain } : {}),
@@ -211,6 +229,7 @@ function project(
   rootClosed: () => boolean,
   viewOf: (generationId: string) => GenerationView,
   grants: readonly HostPermissionGrant[],
+  pinned = false,
 ): BoundService {
   const unavailable = (method: string) =>
     failure('internal', 'method_unavailable', `${method} is not registered`)
@@ -236,11 +255,11 @@ function project(
     return { ok: true, value: true }
   }
   const live = (): Outcome<never> | undefined => {
-    if (rootClosed() || publishedId() !== generationId) {
+    if (rootClosed() || (!pinned && publishedId() !== generationId)) {
       return failure('denied', 'service_container_closed', 'container is closed')
     }
     const view = viewOf(generationId)
-    if (view.disabled || view.state !== 'ready') {
+    if ((!pinned && view.disabled) || view.state !== 'ready') {
       return failure('denied', 'closed', 'generation is not accepting work')
     }
     return undefined
@@ -250,6 +269,8 @@ function project(
     if (!parsed.ok) return parsed
     const blocked = live()
     if (blocked !== undefined) return blocked
+    if (pinned && parsed.value.bindingId !== entry.binding.bindingId)
+      return failure('denied', 'binding_mismatch', 'call does not match the pinned binding')
     return authorize(context)
   }
   return {
@@ -286,21 +307,87 @@ export function createHostScopedDependencies(
   let publishedId: string | undefined
   const root: Gate = { closed: false }
 
+  const generations = new Map<string, readonly LockedService[]>()
+  const activated = new Set<string>()
+  const runs = new Map<string, string>()
   const dependencies = createView(root, null)
-  return {
+  const host: HostScopedDependencies = {
     dependencies,
-    async publish(publication) {
+    async prepare(publication, signal) {
+      const services = publication.providers.map(lockService)
       for (const provider of publication.providers) assertOwner(provider)
+      const loops = publication.providers.filter((provider) => provider.binding.contract === 'agh.loop')
+      const loopFeatures = loops[0]?.features ?? []
+      if (loops.length > 1 && (publication.contributions?.length ?? 0) > 0)
+        throw new AssemblyRefusal('loop_selection_ambiguous', 'effective hooks require one selected Loop')
+      if (
+        publication.loopFeatures &&
+        JSON.stringify([...publication.loopFeatures].sort()) !== JSON.stringify([...loopFeatures].sort())
+      )
+        throw new AssemblyRefusal('loop_feature_mismatch', 'Loop features must match the selected provider')
       const plan: AssemblyPlan = {
         generationId: publication.generationId,
         providers: publication.providers.map(toAssembly),
+        loopFeatures: [...loopFeatures],
+        ...(publication.contracts ? { contracts: structuredClone(publication.contracts) } : {}),
+        ...(publication.contributions
+          ? {
+              contributions: publication.contributions.map((row) => ({
+                ...row,
+                ...(row.operations ? { operations: structuredClone(row.operations) } : {}),
+                ...(row.tools ? { tools: structuredClone(row.tools) } : {}),
+                ...(row.hooks ? { hooks: structuredClone(row.hooks) } : {}),
+                ...(row.requiredCapabilities ? { requiredCapabilities: [...row.requiredCapabilities] } : {}),
+              })),
+            }
+          : {}),
         ...(publication.brokerKeys !== undefined ? { brokerKeys: [...publication.brokerKeys] } : {}),
       }
-      const view = await assembly.open(plan)
-      current = publication.providers.map(lockService)
-      publishedId = publication.generationId
+      const view = await assembly.prepare(plan, signal)
+      generations.set(plan.generationId, services)
+      return view
+    },
+    activate(generationId) {
+      const services = generations.get(generationId)
+      if (!services) throw new AssemblyRefusal('unknown_generation', 'generation has no Host bindings')
+      const view = assembly.activate(generationId)
+      activated.add(generationId)
+      current = services
+      publishedId = generationId
       root.closed = false
       return view
+    },
+    async publish(publication) {
+      const generationId = publication.generationId
+      await host.prepare(publication)
+      return host.activate(generationId)
+    },
+    pinRun(runId, generationId) {
+      const previous = runs.get(runId)
+      if (previous && previous !== generationId)
+        throw new AssemblyRefusal('run_binding_conflict', 'an existing run keeps its generation')
+      if (!activated.has(generationId))
+        throw new AssemblyRefusal('unpublished', 'a staged generation cannot accept a run')
+      if (previous === generationId) return
+      assembly.pinRun(runId, generationId)
+      runs.set(runId, generationId)
+    },
+    unpinRun(runId) {
+      runs.delete(runId)
+      assembly.unpinRun(runId)
+    },
+    forRun(runId) {
+      const generationId = runs.get(runId)
+      if (!generationId) return failure('conflict', 'run_not_pinned', 'run has no in-memory binding')
+      return { ok: true, value: createView({ closed: false }, null, { generationId, runId }) }
+    },
+    forBinding(generationId, bindingId) {
+      if (
+        !activated.has(generationId) ||
+        !generations.get(generationId)?.some((row) => row.binding.bindingId === bindingId)
+      )
+        return failure('incompatible', 'binding_not_registered', 'binding is not in an activated generation')
+      return { ok: true, value: createView({ closed: false }, null, { generationId, bindingId }) }
     },
     drain(generationId, deadline) {
       return assembly.drain(generationId, deadline)
@@ -321,15 +408,25 @@ export function createHostScopedDependencies(
       return assembly.view(generationId)
     },
   }
+  return host
 
-  function createView(local: Gate, limit: RuntimeScope | null): ScopedDependencies {
+  function createView(
+    local: Gate,
+    limit: RuntimeScope | null,
+    pinned?: { generationId: string; bindingId?: string; runId?: string },
+  ): ScopedDependencies {
     const blocked = (): Outcome<never> | undefined => {
-      if (root.closed || local.closed) {
+      if (
+        (!pinned && root.closed) ||
+        local.closed ||
+        (pinned?.runId !== undefined && runs.get(pinned.runId) !== pinned.generationId)
+      ) {
         return failure('denied', 'service_container_closed', 'container is closed')
       }
-      if (publishedId === undefined) return undefined
-      const view = assembly.view(publishedId)
-      if (view.disabled || view.state !== 'ready') {
+      const id = pinned?.generationId ?? publishedId
+      if (id === undefined) return undefined
+      const view = assembly.view(id)
+      if ((!pinned && view.disabled) || view.state !== 'ready') {
         return failure('denied', 'closed', 'generation is not accepting work')
       }
       return undefined
@@ -345,7 +442,12 @@ export function createHostScopedDependencies(
             'requirement scope is outside the open scope',
           )
         }
-        const identities = current.filter((entry) => sameIdentity(entry, requirement))
+        const entries = pinned ? (generations.get(pinned.generationId) ?? []) : current
+        const identities = entries.filter(
+          (entry) =>
+            sameIdentity(entry, requirement) &&
+            (pinned?.bindingId === undefined || entry.binding.bindingId === pinned.bindingId),
+        )
         if (identities.length === 0) {
           return failure('incompatible', 'service_not_registered', 'service is not registered')
         }
@@ -356,7 +458,7 @@ export function createHostScopedDependencies(
         if (match === undefined) {
           return failure('incompatible', 'feature_missing', 'service is missing a requested feature')
         }
-        const generationId = publishedId
+        const generationId = pinned?.generationId ?? publishedId
         if (generationId === undefined) {
           return failure('incompatible', 'service_not_registered', 'service is not registered')
         }
@@ -366,9 +468,13 @@ export function createHostScopedDependencies(
             match,
             generationId,
             () => publishedId,
-            () => root.closed,
+            () =>
+              local.closed ||
+              (!pinned && root.closed) ||
+              (pinned?.runId !== undefined && runs.get(pinned.runId) !== pinned.generationId),
             (id) => assembly.view(id),
             lockedGrants,
+            pinned !== undefined,
           ),
         }
       },
@@ -391,7 +497,7 @@ export function createHostScopedDependencies(
         if (!permitted || scopeRank(scope.kind) < scopeRank(caller)) {
           return failure('denied', 'permission_absent', 'caller is not permitted for this service')
         }
-        return { ok: true, value: createView({ closed: false }, scope.kind) }
+        return { ok: true, value: createView({ closed: false }, scope.kind, pinned) }
       },
       async close() {
         local.closed = true

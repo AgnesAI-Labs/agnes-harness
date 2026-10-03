@@ -85,13 +85,45 @@ describe('container generations', () => {
       ],
     })
     await expect(
-      assembly.open({
+      assembly.prepare({
         generationId: 'next',
         brokerKeys: ['mcp:shared'],
         providers: [
           provider({
+            providerId: 'parent',
+            contract: 'agh.parent',
+            owners: [
+              {
+                id: 'parent-owner',
+                release() {
+                  released.push('parent-owner')
+                  throw new Error('owner retained')
+                },
+              },
+            ],
+          }),
+          provider({
             providerId: 'next',
             contract: 'agh.next',
+            requires: [
+              {
+                contract: 'agh.parent',
+                major: 1,
+                logicalName: 'default',
+                scope: 'runtime',
+                features: [],
+                optional: false,
+                capture: 'instance',
+              },
+            ],
+            owners: [
+              {
+                id: 'next-owner',
+                release() {
+                  released.push('next-owner')
+                },
+              },
+            ],
             ready() {
               throw new Error('interrupted')
             },
@@ -100,7 +132,15 @@ describe('container generations', () => {
       }),
     ).rejects.toThrow('interrupted')
     expect(stops).toEqual([])
-    expect(released).toEqual([])
+    expect(released).toEqual(['next-owner', 'parent-owner'])
+    expect(assembly.view('old').published).toBe(true)
+    expect(assembly.view('next')).toMatchObject({
+      state: 'residual',
+      staged: false,
+      residualOwnerIds: ['parent-owner'],
+    })
+    await assembly.close('next')
+    expect(released).toEqual(['next-owner', 'parent-owner'])
     expect(assembly.resourceRunning('mcp:shared')).toBe(true)
     expect(assembly.invoke('old-run', 'old')).toMatchObject({ generationId: 'old', packageDigest: DIGEST_A })
   })
@@ -123,7 +163,7 @@ describe('container generations', () => {
       ],
     })
     assembly.pinRun('run-old')
-    await assembly.open({
+    await assembly.prepare({
       generationId: 'next',
       providers: [
         provider({
@@ -137,6 +177,17 @@ describe('container generations', () => {
         }),
       ],
     })
+    expect(assembly.view('old').published).toBe(true)
+    expect(assembly.view('next')).toMatchObject({
+      staged: true,
+      published: false,
+      readiness: [{ providerId: 'worker', ready: true }],
+    })
+    expect(() => assembly.pinRun('staged-run', 'next')).toThrow(expect.objectContaining({ code: 'closed' }))
+    expect(() => assembly.beginInvocation('next', 'staged-invocation')).toThrow(
+      expect.objectContaining({ code: 'closed' }),
+    )
+    assembly.activate('next')
     expect(assembly.view('old').published).toBe(false)
     expect(assembly.view('old').state).toBe('ready')
     expect(assembly.invoke('run-old', 'worker')).toEqual({
