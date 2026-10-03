@@ -166,3 +166,103 @@ export function registerPackageInstallerProposalContract(
       },
     })
 }
+
+export interface PackageInstallerApplyBinding {
+  readonly providerId: string
+  readonly providerDigest: string
+  readonly command: string
+  readonly build: BuildIdentity
+  open(directory: string): Promise<{
+    subject: PackageInstallerProposalSubject
+    call: CallContext
+    approved(): Promise<Wire['ChangeProposal']>
+    controller: {
+      apply(id: string, revision: number, context: CallContext): Promise<Outcome<Wire['ChangeProposal']>>
+      dispose(): void
+    }
+    deny(): void
+    loseResponse(): void
+    close(): Promise<void>
+  }>
+  coldStatus(directory: string): Promise<Outcome<Wire['ChangeProposal']>>
+}
+
+/** Restricted persistent maintenance composition. Production approval and startup wiring are separate. */
+export function registerPackageInstallerApplyContract(
+  harness: ConformanceHarness,
+  binding: PackageInstallerApplyBinding,
+): void {
+  for (const scenario of SCENARIOS)
+    harness.registerCase({
+      contract: 'agh.package-installer',
+      providerId: binding.providerId,
+      scenario,
+      qualification: 'required',
+      async run() {
+        const directory = mkdtempSync(join(tmpdir(), 'installer-apply-contract-'))
+        const f = await binding.open(directory)
+        try {
+          const plan = await f.approved()
+          requireCase(plan.interactionRef !== null && plan.status === 'awaiting-approval')
+          requireCase(!('apply' in f.subject))
+          if (scenario === 'normal' || scenario === 'recover') {
+            if (scenario === 'recover') f.loseResponse()
+            const applied = await f.controller.apply(plan.proposalId, plan.revision, f.call)
+            if (scenario === 'normal')
+              requireCase(
+                applied.ok && applied.value.status === 'applied' && applied.value.resultRef !== null,
+              )
+            else {
+              requireCase(!applied.ok)
+              await f.close()
+              const recovered = await binding.coldStatus(directory)
+              requireCase(
+                recovered.ok && recovered.value.status === 'applied' && recovered.value.resultRef !== null,
+              )
+            }
+          }
+          if (scenario === 'deny') {
+            f.deny()
+            const refused = await f.controller.apply(plan.proposalId, plan.revision, f.call)
+            requireCase(!refused.ok && refused.error.code === 'denied')
+          }
+          if (scenario === 'cancel') {
+            const cancelled = await f.subject.cancelProposal(
+              { proposalId: plan.proposalId, expectedRevision: plan.revision, reason: 'stop' },
+              f.call,
+            )
+            requireCase(cancelled.ok)
+            const refused = await f.controller.apply(plan.proposalId, cancelled.value.revision, f.call)
+            requireCase(!refused.ok && refused.error.code === 'cancelled')
+          }
+          if (scenario === 'dispose') {
+            f.controller.dispose()
+            const refused = await f.controller.apply(plan.proposalId, plan.revision, f.call)
+            requireCase(!refused.ok && refused.error.detailCode === 'provider_disposed')
+          }
+          return {
+            id: `agh.package-installer/${binding.providerId}/maintenance/${scenario}`,
+            providerDigest: binding.providerDigest,
+            recipe: 'restricted-persistent-maintenance-apply',
+            features: ['deployment-approval-port', 'fixed-plan-apply', 'original-operation-probe'],
+            build: binding.build,
+            consumer: 'independent-maintenance-root',
+            command: binding.command,
+            status: 'passed' as const,
+            configDigest: canonicalJsonDigest(plan),
+            releaseSetDigest: plan.planDigest!,
+            attachmentDigest: canonicalJsonDigest({
+              qualification: 'provisional-injected-ports',
+              productionWiring: false,
+            }),
+            fixture: null,
+            sharedEvidenceId: null,
+            perImplementation: true,
+          }
+        } finally {
+          await f.close()
+          rmSync(directory, { recursive: true, force: true })
+        }
+      },
+    })
+}

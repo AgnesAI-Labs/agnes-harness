@@ -5,9 +5,15 @@ import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import { validateRuntime, type RuntimeWireTypes as W } from '@agnes/protocol/runtime'
+import {
+  createReferencePackageApplyController,
+  type ReferenceApplyCheckpoint,
+  type ReferenceApplyPorts,
+} from './package-apply.js'
 
 // Independently stored revision history; no imports from the default provider or its journal.
 export interface ReferenceInstallRecord {
+  applyCheckpoint?: ReferenceApplyCheckpoint
   version: 1
   input: W['ChangeProposalRequest']
   inputDigest: string
@@ -28,7 +34,7 @@ interface Observation {
   operationId: string
   planDigest: string
   state: 'unpublished' | 'published' | 'unknown'
-  heads: W['UpgradeExpectedHeads']
+  heads: W['UpgradeExpectedHeads'] | null
   checkpoint: W['UpgradeCheckpoint'] | null
   receipt: W['ReceiptPointer'] | null
 }
@@ -49,7 +55,7 @@ export interface ReferenceInstallerOptions {
     | null
 }
 
-class Refusal extends Error {
+export class Refusal extends Error {
   constructor(
     readonly category: W['RuntimeErrorCode'],
     readonly detail: string,
@@ -87,7 +93,10 @@ async function outcome<T>(run: () => Promise<T>): Promise<Outcome<T>> {
 
 function validateRow(record: ReferenceInstallRecord): ReferenceInstallRecord {
   if (
-    Object.keys(record).sort().join(',') !==
+    Object.keys(record)
+      .filter((key) => key !== 'applyCheckpoint')
+      .sort()
+      .join(',') !==
       'approvalRef,cancellation,input,inputDigest,operation,owner,proposal,repairPlanRef,version' ||
     record.version !== 1
   )
@@ -132,6 +141,36 @@ function validateRow(record: ReferenceInstallRecord): ReferenceInstallRecord {
       typeof record.cancellation.reason !== 'string')
   )
     reject('internal', 'journal_corrupt')
+  const c = record.applyCheckpoint
+  if (c) {
+    if (
+      Object.keys(c).sort().join(',') !==
+      'binding,buildEvidence,candidateRef,inputsDigest,interactionId,phase,responseId'
+    )
+      reject('internal', 'journal_corrupt')
+    parsed('Id', c.interactionId)
+    parsed('ApprovalRequest', c.binding.request)
+    parsed('DataRef', c.binding.planRef)
+    parsed('DataRef', c.binding.input)
+    if (
+      c.binding.proposalId !== p.proposalId ||
+      c.binding.planRevision > p.revision ||
+      c.binding.planDigest !== p.planDigest
+    )
+      reject('internal', 'journal_corrupt')
+    if (c.responseId !== null) parsed('Id', c.responseId)
+    if (c.inputsDigest !== null) parsed('Digest', c.inputsDigest)
+    if (
+      !['approval', 'started', 'built', 'prepared', 'publishing', 'done'].includes(c.phase) ||
+      p.interactionRef?.interactionId !== c.interactionId ||
+      !Array.isArray(c.buildEvidence)
+    )
+      reject('internal', 'journal_corrupt')
+    for (const evidence of c.buildEvidence) parsed('DataRef', evidence)
+    if (c.candidateRef !== null) parsed('DataRef', c.candidateRef)
+    if (c.phase !== 'approval' && (!record.operation || !c.responseId || !c.inputsDigest))
+      reject('internal', 'journal_corrupt')
+  } else if ('applyCheckpoint' in record) reject('internal', 'journal_corrupt')
   return structuredClone(record)
 }
 
@@ -146,10 +185,13 @@ export function openReferenceInstallJournal(path: string): ReferenceInstallJourn
   const live = () => {
     if (ended) reject('internal', 'journal_closed')
   }
+  let last: { wire: string; checked: ReferenceInstallRecord } | undefined
   const readOptional = (id: string) => {
     live()
     const row = sql.prepare('SELECT * FROM history WHERE identity=? ORDER BY revision DESC LIMIT 1').get(id)
     if (!row) return null
+    const wire = JSON.stringify(row)
+    if (last?.wire === wire) return structuredClone(last.checked)
     if (typeof row.document !== 'string') reject('internal', 'journal_corrupt')
     const data = JSON.parse(row.document) as ReferenceInstallRecord
     if (
@@ -158,7 +200,9 @@ export function openReferenceInstallJournal(path: string): ReferenceInstallJourn
       data.proposal.revision !== row.revision
     )
       reject('internal', 'journal_corrupt')
-    return validateRow(data)
+    const checked = validateRow(data)
+    last = { wire, checked }
+    return structuredClone(checked)
   }
   const write = (data: ReferenceInstallRecord) =>
     sql
@@ -246,13 +290,30 @@ export function openReferenceInstallJournal(path: string): ReferenceInstallJourn
             fingerprint(old.proposal[key]) !== fingerprint(next.proposal[key])
           )
             reject('conflict', 'immutable_fact')
+        if (old.applyCheckpoint) {
+          const a = old.applyCheckpoint,
+            b = next.applyCheckpoint,
+            stages = ['approval', 'started', 'built', 'prepared', 'publishing', 'done']
+          if (
+            !b ||
+            a.interactionId !== b.interactionId ||
+            fingerprint(a.binding) !== fingerprint(b.binding) ||
+            (a.responseId !== null && a.responseId !== b.responseId) ||
+            (a.inputsDigest !== null && a.inputsDigest !== b.inputsDigest) ||
+            stages.indexOf(b.phase) < stages.indexOf(a.phase) ||
+            fingerprint(a.buildEvidence) !== fingerprint(b.buildEvidence.slice(0, a.buildEvidence.length)) ||
+            (a.candidateRef !== null && fingerprint(a.candidateRef) !== fingerprint(b.candidateRef))
+          )
+            reject('conflict', 'immutable_fact')
+        } else if (next.applyCheckpoint && (old.proposal.status !== 'awaiting-approval' || old.operation))
+          reject('conflict', 'invalid_transition')
         const from = old.proposal.status,
           to = next.proposal.status
         const allowed =
           from === 'planning'
             ? ['awaiting-approval', 'denied', 'cancelled']
             : from === 'awaiting-approval'
-              ? ['approved', 'denied', 'cancelled']
+              ? ['awaiting-approval', 'approved', 'denied', 'cancelled']
               : from === 'approved'
                 ? ['applying', 'cancelled']
                 : ['applying', 'unknown'].includes(from)
@@ -266,6 +327,7 @@ export function openReferenceInstallJournal(path: string): ReferenceInstallJourn
     close() {
       if (!ended) {
         ended = true
+        last = undefined
         sql.close()
       }
     },
@@ -295,7 +357,17 @@ function observationMatches(record: ReferenceInstallRecord, found: Observation) 
     record.proposal.planDigest !== found.planDigest
   )
     reject('conflict', 'operation_identity_conflict')
-  parsed('UpgradeExpectedHeads', found.heads)
+  if (record.applyCheckpoint && record.proposal.plan?.kind === 'resource') {
+    if (found.heads !== null) reject('conflict', 'operation_identity_conflict')
+  } else if (
+    !(
+      found.heads === null &&
+      record.proposal.plan?.kind === 'release' &&
+      record.proposal.plan.value.sourceReleaseSetId === null &&
+      found.state !== 'published'
+    )
+  )
+    parsed('UpgradeExpectedHeads', found.heads)
   if (found.checkpoint) parsed('UpgradeCheckpoint', found.checkpoint)
   if (found.receipt) parsed('ReceiptPointer', found.receipt)
   if (!['published', 'unpublished', 'unknown'].includes(found.state))
@@ -401,7 +473,20 @@ export function createReferencePackageInstallerProvider(options: ReferenceInstal
   }
 }
 
-export interface ReferenceMaintenancePorts extends ReferenceInstallerOptions {
+export interface ReferenceMaintenancePorts extends ReferenceInstallerOptions, ReferenceApplyPorts {
+  selectDisableProposal?:
+    | ((
+        input: W['PackageInstallerDisableRequest'],
+        c: CallContext,
+      ) => Promise<Outcome<{ proposalId: string; revision: number }>>)
+    | null
+  validatePlanInput?:
+    | ((
+        input: W['ChangeProposalRequest'],
+        plan: NonNullable<W['ChangeProposal']['plan']>,
+        call: CallContext,
+      ) => Promise<Outcome<void>>)
+    | null
   resolveReleaseRoute: ((scope: W['ScopeRef'], call: CallContext) => Promise<Outcome<string>>) | null
   generateVerifiedPlan:
     | ((
@@ -443,6 +528,10 @@ export interface ReferenceMaintenancePorts extends ReferenceInstallerOptions {
 }
 
 export function createReferencePackageMaintenanceController(ports: ReferenceMaintenancePorts) {
+  let disposed = false
+  function live() {
+    if (disposed) reject('internal', 'provider_disposed')
+  }
   async function routeMatches(
     saved: ReferenceInstallRecord,
     plan: NonNullable<W['ChangeProposal']['plan']>,
@@ -456,20 +545,95 @@ export function createReferencePackageMaintenanceController(ports: ReferenceMain
     }
   }
   async function current(id: string, version: number, call: CallContext) {
+    live()
     const saved = ports.journal.read(id)
     await permission(ports, call, saved.proposal.scope, 'maintain')
     if (saved.proposal.revision !== version) reject('conflict', 'proposal_revision_conflict')
     if (saved.cancellation) reject('cancelled', 'proposal_cancelled')
     return saved
   }
+  const effects = createReferencePackageApplyController(ports)
   const unavailableEffect = (_data: unknown, call: CallContext) =>
     outcome(async () => {
+      live()
       await permission(ports, call, call.scope, 'maintain')
       return reject('incompatible', 'installer_effect_unimplemented')
     })
+  const planning = (id: string, version: number, call: CallContext, maintenanceRepair = false) =>
+    outcome(async () => {
+      const saved = await current(id, version, call)
+      if (saved.proposal.status !== 'planning') reject('conflict', 'proposal_not_planning')
+      if (!ports.generateVerifiedPlan) reject('incompatible', 'plan_generation_unavailable')
+      const result = await ports.generateVerifiedPlan(structuredClone(saved.input), call)
+      if (!result.ok) reject(result.error.code, result.error.detailCode)
+      const plan = structuredClone(result.value)
+      const change = saved.input.change
+      if (maintenanceRepair && (plan.kind !== 'release' || plan.value.operation !== 'repair'))
+        reject('conflict', 'plan_input_conflict')
+      if (plan.kind === 'release') {
+        parsed('ReleasePlan', plan.value)
+        if (
+          change.kind !== 'package' ||
+          (change.operation !== plan.value.operation &&
+            !(maintenanceRepair && change.operation === 'upgrade' && plan.value.operation === 'repair')) ||
+          (!['disable', 'repair'].includes(plan.value.operation) &&
+            !plan.value.targetReleaseSet.packages.some(
+              (row) =>
+                row.sourceRef === change.locator.sourceId &&
+                row.digest === change.locator.digest &&
+                (change.locator.kind !== 'npm' || row.version === change.locator.version),
+            ))
+        )
+          reject('conflict', 'plan_input_conflict')
+      } else {
+        parsed('ResourceChangePlan', plan.value)
+        const value = plan.value
+        const source = {
+          kind: value.kind,
+          resourceId: value.resourceId,
+          sourceRef: value.sourceRef,
+          operation: value.operation,
+          config: value.config,
+          targetScope: value.targetScope,
+        }
+        if (
+          change.kind === 'package' ||
+          fingerprint(source) !== fingerprint({ ...change, targetScope: saved.input.targetScope })
+        )
+          reject('conflict', 'plan_input_conflict')
+      }
+      const name = plan.kind === 'release' ? 'planFingerprint' : 'digest'
+      const body = { ...plan.value }
+      Reflect.deleteProperty(body, name)
+      if (fingerprint(body) !== (plan.kind === 'release' ? plan.value.planFingerprint : plan.value.digest))
+        reject('conflict', 'plan_input_conflict')
+      if (plan.kind === 'release' && ['disable', 'repair'].includes(plan.value.operation)) {
+        if (!ports.validatePlanInput) reject('denied', 'plan_source_validation_unavailable')
+        const verified = await ports.validatePlanInput(saved.input, plan, call)
+        if (!verified.ok) reject(verified.error.code, verified.error.detailCode)
+      }
+      await routeMatches(saved, plan, call)
+      await current(id, version, call)
+      return ports.journal.compareAndSwap(id, version, {
+        ...saved,
+        proposal: {
+          ...saved.proposal,
+          revision: version + 1,
+          status: 'awaiting-approval',
+          plan,
+          planDigest: plan.kind === 'release' ? plan.value.planFingerprint : plan.value.digest,
+        },
+      }).proposal
+    })
   return {
+    ...effects,
+    dispose() {
+      disposed = true
+      effects.dispose()
+    },
     proposalStatus(data: unknown, call: CallContext) {
       return outcome(async () => {
+        live()
         const request = parsed('PackageInstallerProposalStatusRequest', data)
         const saved = ports.journal.read(request.proposalId)
         await permission(ports, call, saved.proposal.scope, 'maintain')
@@ -477,57 +641,10 @@ export function createReferencePackageMaintenanceController(ports: ReferenceMain
       })
     },
     plan(id: string, version: number, call: CallContext) {
-      return outcome(async () => {
-        const saved = await current(id, version, call)
-        if (saved.proposal.status !== 'planning') reject('conflict', 'proposal_not_planning')
-        if (!ports.generateVerifiedPlan) reject('incompatible', 'plan_generation_unavailable')
-        const result = await ports.generateVerifiedPlan(structuredClone(saved.input), call)
-        if (!result.ok) reject(result.error.code, result.error.detailCode)
-        const plan = structuredClone(result.value)
-        const change = saved.input.change
-        if (plan.kind === 'release') {
-          parsed('ReleasePlan', plan.value)
-          if (
-            change.kind !== 'package' ||
-            change.operation !== plan.value.operation ||
-            !plan.value.targetReleaseSet.packages.some(
-              (row) =>
-                row.sourceRef === change.locator.sourceId &&
-                row.digest === change.locator.digest &&
-                (change.locator.kind !== 'npm' || row.version === change.locator.version),
-            )
-          )
-            reject('conflict', 'plan_input_conflict')
-        } else {
-          parsed('ResourceChangePlan', plan.value)
-          const value = plan.value
-          const source = {
-            kind: value.kind,
-            resourceId: value.resourceId,
-            sourceRef: value.sourceRef,
-            operation: value.operation,
-            config: value.config,
-            targetScope: value.targetScope,
-          }
-          if (
-            change.kind === 'package' ||
-            fingerprint(source) !== fingerprint({ ...change, targetScope: saved.input.targetScope })
-          )
-            reject('conflict', 'plan_input_conflict')
-        }
-        await routeMatches(saved, plan, call)
-        await current(id, version, call)
-        return ports.journal.compareAndSwap(id, version, {
-          ...saved,
-          proposal: {
-            ...saved.proposal,
-            revision: version + 1,
-            status: 'awaiting-approval',
-            plan,
-            planDigest: plan.kind === 'release' ? plan.value.planFingerprint : plan.value.digest,
-          },
-        }).proposal
-      })
+      return planning(id, version, call)
+    },
+    planRepair(id: string, version: number, call: CallContext) {
+      return planning(id, version, call, true)
     },
     checkApproval(id: string, version: number, approvalId: string, call: CallContext) {
       return outcome(async () => {
@@ -565,9 +682,52 @@ export function createReferencePackageMaintenanceController(ports: ReferenceMain
     },
     prepare: unavailableEffect,
     activate: unavailableEffect,
-    disable: unavailableEffect,
+    disable: ports.selectDisableProposal
+      ? (data: unknown, call: CallContext) =>
+          outcome(async () => {
+            live()
+            const input = parsed('PackageInstallerDisableRequest', data)
+            live()
+            await permission(ports, call, call.scope, 'maintain')
+            const selection = await ports.selectDisableProposal!(input, call)
+            if (!selection.ok) reject(selection.error.code, selection.error.detailCode)
+            const saved = ports.journal.read(selection.value.proposalId),
+              plan = saved.proposal.plan
+            if (
+              plan?.kind !== 'release' ||
+              plan.value.operation !== 'disable' ||
+              !plan.value.affectedContributions.includes(input.contributionId)
+            )
+              reject('conflict', 'plan_input_conflict')
+            const done = await effects.apply(selection.value.proposalId, selection.value.revision, call)
+            if (!done.ok) reject(done.error.code, done.error.detailCode)
+            return parsed('PackageInstallerDisableResult', { disabledId: input.contributionId })
+          })
+      : unavailableEffect,
     repair: unavailableEffect,
-    applyResourceChange: unavailableEffect,
+    applyResourceChange: ports.executionInputs
+      ? (data: unknown, call: CallContext) =>
+          outcome(async () => {
+            live()
+            const input = parsed('PackageInstallerApplyResourceChangeRequest', data)
+            const saved = ports.journal.read(input.proposalId),
+              plan = saved.proposal.plan
+            await permission(ports, call, saved.proposal.scope, 'maintain')
+            if (
+              plan?.kind !== 'resource' ||
+              fingerprint(plan.value) !== fingerprint(input.plan) ||
+              input.approvalRef !== saved.applyCheckpoint?.interactionId
+            )
+              reject('conflict', 'plan_input_conflict')
+            const done = await effects.apply(input.proposalId, input.expectedProposalRevision, call)
+            if (!done.ok) reject(done.error.code, done.error.detailCode)
+            if (!done.value.resultRef) reject('unknown_effect', 'operation_unknown')
+            return parsed('PackageInstallerApplyResourceChangeResult', {
+              proposal: done.value,
+              receipt: done.value.resultRef,
+            })
+          })
+      : unavailableEffect,
   }
 }
 
@@ -590,7 +750,7 @@ export function createReferenceInstallRepairPlan(
       reject('conflict', 'checkpoint_heads_conflict')
     if (
       heads.kind !== 'release' ||
-      observed.heads.kind !== 'release' ||
+      observed.heads?.kind !== 'release' ||
       heads.routeId !== observed.heads.routeId
     )
       reject('conflict', 'repair_route_conflict')

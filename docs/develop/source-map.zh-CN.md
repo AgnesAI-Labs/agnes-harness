@@ -30,3 +30,15 @@
 | 工程约束 | [guards](../../tools/guards) | [ratchet](../../tools/guards/ratchet.json) |
 
 包公开出口以各自 package.json 的 `exports` 为准。上表深链接用于读代码，应用和插件不应据此深导入其他包私有 src。Python runtime 与 Python thin client 尚不作为可用公开路线。
+
+包部署编排通过 `@agnes/package-manager/package-installer` 公开出口提供。
+业务 provider 只接受、取消和读取 proposal；独立装配的维护 controller 为固定变更生成计划并 apply。
+它需要注入部署身份、权威审批、审计、执行输入、操作保留和发布／资源 owner 端口，缺失时拒绝。
+审批由获授权 helper Run（或正常准入的管理 Run）中的新 Action 承载，冻结提案、计划修订／完整引用、
+目标范围和来源／权限差异。先完成 State 授权准备，再由 Host 创建审批，intent 沿用既有审批算法；
+apply 复核原请求、完整计划、CAS、源 heads、批准范围、期限与当前部署权限。重新规划经
+`supersedeApproval` 取消旧未决审批并关联新的不可变 proposal／Action，不复用历史批准。
+重连使用 proposal、interaction
+和 response 身份。操作持久化后，重试只探测原 owner，不重放结果未知的安装。
+可选的私有 apply checkpoint 兼容已有 version-1 journal 行；独立公开 prepare/activate/repair
+DTO 适配器在可信计划／回执适配器交付前仍明确拒绝。

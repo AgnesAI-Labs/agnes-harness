@@ -32,3 +32,17 @@ Links point to source at the same revision as this document. See [verification](
 | Engineering constraints | [guards](../../tools/guards) | [Ratchet](../../tools/guards/ratchet.json) |
 
 A package's `package.json` `exports` defines its public entry points. These source links help explain the implementation; applications and plugins should not deep-import another package's private src. Python runtime and the Python thin client are not currently usable public integration paths.
+
+Package deployment orchestration is available through `@agnes/package-manager/package-installer`.
+The business provider accepts, cancels and reads proposals; the separately composed maintenance controller
+plans and applies fixed changes. It requires injected deployment identity, authoritative approval,
+audit, execution inputs, operation retention and publication/resource-owner ports. Missing ports refuse.
+A fresh approval Action under an authorized helper Run (or an admitted management Run) freezes the
+proposal, plan revision/full reference, target scope and source/capability differences. State authorization
+preparation precedes Host approval. The existing approval intent algorithm binds the native request; apply
+rechecks that request, original plan, CAS, source heads, grant scope, expiry and current deployment permission.
+Replanning cancels the previous pending approval and creates a new immutable proposal/Action via
+`supersedeApproval`; historical approval is never reused. Reconnection uses proposal, interaction and response identities. Once an operation is
+persisted, retries only probe that original owner; they never replay an unknown installation.
+The optional private apply checkpoint preserves existing version-1 journal rows. Standalone public
+prepare/activate/repair DTO adapters still refuse until their trusted plan/receipt adapters are supplied.
