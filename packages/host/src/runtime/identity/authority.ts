@@ -86,6 +86,12 @@ const roleCurrentChecks = new WeakMap<
   IdentityAuthority,
   (context: CallContext) => IdentityRoleCurrentChecks | null
 >()
+const authorityDatabases = new WeakMap<IdentityAuthority, DatabaseSync>()
+
+/** Host-private proof that an original C14 issuer uses this exact native transaction domain. */
+export function identityAuthorityUsesDatabase(authority: IdentityAuthority, database: DatabaseSync): boolean {
+  return authorityDatabases.get(authority) === database
+}
 
 /** Keep the original role's dynamic work before the one financial issuer clock. */
 export function captureIdentityRoleCurrentChecks(
@@ -511,5 +517,6 @@ export function createIdentityAuthority(
     if (types.isProxy(pair) || !Array.isArray(pair) || pair.length !== 2) return null
     return captureNativeFence(pair, ceiling)
   })
+  authorityDatabases.set(authority, database)
   return authority
 }

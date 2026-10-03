@@ -26,6 +26,7 @@ import {
   createIdentityAuthority,
   type IdentityClaimsBinding,
   type IdentityClaimsOwner,
+  identityAuthorityUsesDatabase,
 } from '../../src/runtime/identity/authority.js'
 import { decodeIdentityData, encodeIdentityData } from '../../src/runtime/identity/data.js'
 import { createIdentityHttpSessions } from '../../src/runtime/identity/http-sessions.js'
@@ -271,6 +272,20 @@ function fixture(database = new DatabaseSync(':memory:'), clock = () => now) {
 }
 
 describe('identity durable nonce and cryptography', () => {
+  it('binds a genuine C14 authority to its exact native database', () => {
+    const selected = fixture()
+    const foreign = new DatabaseSync(':memory:')
+    try {
+      expect(identityAuthorityUsesDatabase(selected.authority, selected.database)).toBe(true)
+      expect(identityAuthorityUsesDatabase(selected.authority, foreign)).toBe(false)
+      expect(identityAuthorityUsesDatabase({ ...selected.authority }, selected.database)).toBe(false)
+    } finally {
+      selected.authority.close()
+      selected.database.close()
+      foreign.close()
+    }
+  })
+
   it('rolls both namespaces back if the second real SQLite write fails', () => {
     const db = new DatabaseSync(':memory:')
     const owner = createIdentityNonceOwner(db)
