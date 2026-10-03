@@ -27,7 +27,7 @@ function scratch(): string {
   const directory = mkdtempSync(join(tmpdir(), 'files-kill-'))
   mkdirSync(join(directory, 'work'))
   mkdirSync(join(directory, 'home'))
-  mkdirSync(join(directory, 'data'))
+  mkdirSync(join(directory, 'place'))
   saveProfile(directory)
   return directory
 }

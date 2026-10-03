@@ -129,7 +129,7 @@ export function openFiles(kind: Kind, directory: string, afterRename?: () => voi
   const profile = loadProfile(directory)
   const work = join(directory, 'work')
   const home = join(directory, 'home')
-  const data = join(directory, 'data')
+  const data = join(directory, 'place')
   const policy = policyFor(profile)
   if (kind === 'default') {
     const workspace = createWorkspaceService({
