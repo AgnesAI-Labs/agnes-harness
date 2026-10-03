@@ -675,6 +675,7 @@ export interface RuntimeWireTypes {
   RetrievalSearchResult: Schemas.RetrievalSearchResult
   RetrievalSearchRemoteRequest: Schemas.RetrievalSearchRemoteRequest
   RetrievalSearchRemoteResult: Schemas.RetrievalSearchRemoteResult
+  EmbeddingVectors: Schemas.EmbeddingVectors
   EmbeddingEncodeRequest: Schemas.EmbeddingEncodeRequest
   EmbeddingEncodeResult: Schemas.EmbeddingEncodeResult
   IdentityAuthenticateRequest: Schemas.IdentityAuthenticateRequest

@@ -105,6 +105,7 @@ export const RuntimePublic13 = Type.Module({
   "RetrievalSearchResult": Type.Ref('PageRetrievalHit'),
   "RetrievalSearchRemoteRequest": Type.Object({ "queryText": Type.String(), "targetRef": Type.Ref('ResourceRef'), "topK": Type.Ref('UInt53'), "filter": Type.Ref('RetrievalFilter'), "embeddingRoute": Type.Union([Type.Ref('ModelRouteSnapshot'), Type.Null()]) }, { additionalProperties: false }),
   "RetrievalSearchRemoteResult": Type.Object({ "hits": Type.Array(Type.Ref('RetrievalHit'), { maxItems: 10000 }), "usageRefs": Type.Array(Type.Ref('UsageFactRef'), { maxItems: 10000 }), "provenance": Type.Ref('Provenance') }, { additionalProperties: false }),
+  "EmbeddingVectors": Type.Array(Type.Array(Type.Number(), { minItems: 1, maxItems: 10000 }), { maxItems: 10000 }),
   "EmbeddingEncodeRequest": Type.Object({ "inputRefs": Type.Array(Type.Ref('DataRef'), { maxItems: 10000 }), "modelRoute": Type.Ref('ModelRouteSnapshot'), "dimensions": Type.Ref('UInt53'), "normalize": Type.Boolean() }, { additionalProperties: false }),
   "EmbeddingEncodeResult": Type.Object({ "vectorsRef": Type.Ref('DataRef'), "dimensions": Type.Ref('UInt53'), "inputDigest": Type.Ref('Digest'), "usageRefs": Type.Array(Type.Ref('UsageFactRef'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "IdentityAuthenticateRequest": Type.Object({ "credentialEnvelope": Type.Ref('DataRef'), "transportEvidence": Type.Ref('DataRef') }, { additionalProperties: false }),
@@ -392,6 +393,8 @@ export const RetrievalSearchRemoteRequest = RuntimePublic13.Import('RetrievalSea
 export type RetrievalSearchRemoteRequest = Static<typeof RetrievalSearchRemoteRequest>
 export const RetrievalSearchRemoteResult = RuntimePublic13.Import('RetrievalSearchRemoteResult')
 export type RetrievalSearchRemoteResult = Static<typeof RetrievalSearchRemoteResult>
+export const EmbeddingVectors = RuntimePublic13.Import('EmbeddingVectors')
+export type EmbeddingVectors = Static<typeof EmbeddingVectors>
 export const EmbeddingEncodeRequest = RuntimePublic13.Import('EmbeddingEncodeRequest')
 export type EmbeddingEncodeRequest = Static<typeof EmbeddingEncodeRequest>
 export const EmbeddingEncodeResult = RuntimePublic13.Import('EmbeddingEncodeResult')
