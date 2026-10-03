@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/StatusCardView",
+  "$defs": {
+    "StatusCardView": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "status": { "enum": ["ok", "warning", "error"] }
+      },
+      "required": ["title", "status"],
+      "additionalProperties": false
+    }
+  }
+}
