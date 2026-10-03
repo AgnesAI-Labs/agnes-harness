@@ -36,6 +36,7 @@ export interface AssemblyLifecyclePorts {
   drain(
     deadline: number,
   ): Promise<{ readonly state: string; readonly activeInvocationIds: readonly string[] }>
+  activate?(): void
   close(): Promise<AssemblyCandidateObservation | undefined>
 }
 interface AssemblyCandidateObservation {
@@ -252,3 +253,5 @@ export function registerAssemblyPrepareContract(
       },
     })
 }
+
+export * from './assembly-publish.js'

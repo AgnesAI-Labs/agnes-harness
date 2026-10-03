@@ -741,3 +741,16 @@ export function constructReleaseSet(value: unknown): Outcome<ReleaseSet> {
     return freeze(input.plan.targetReleaseSet)
   })
 }
+
+/** Reuse the frozen plan while rechecking trusted current heads, evidence and time. */
+export function revalidateReleasePublication(
+  input: ReleaseSetInputs,
+  observation: {
+    now: string
+    directory: ReleaseSetInputs['fixture']['directory']
+    jointDomains: unknown
+    migrations: unknown
+  },
+): Outcome<ReleaseSet> {
+  return constructReleaseSet({ ...input, fixture: { ...input.fixture, ...observation } })
+}

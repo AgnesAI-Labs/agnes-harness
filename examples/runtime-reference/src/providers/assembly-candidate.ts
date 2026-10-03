@@ -37,6 +37,7 @@ export interface ReferenceCandidateLifecycle {
   drain(
     deadline: number,
   ): Promise<{ readonly state: string; readonly activeInvocationIds: readonly string[] }>
+  activate?(): void
   close(): Promise<StagedObservation | undefined>
 }
 class CandidateRejected extends Error {

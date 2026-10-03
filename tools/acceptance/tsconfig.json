@@ -16,6 +16,7 @@
     "runtime/report.e2e.test.ts",
     "runtime/fixtures.ts",
     "runtime/fixtures/resources-cold-process.ts",
+    "runtime/fixtures/assembly-cold-process.ts",
     "runtime/build-identity.ts",
     "runtime/run-conformance.ts",
     "runtime/sources.ts",

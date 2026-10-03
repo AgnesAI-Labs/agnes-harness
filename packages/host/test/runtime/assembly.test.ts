@@ -251,12 +251,12 @@ describe('detached immutable assembly plans', () => {
   it.each(implementations)(
     'applies $name HK-04 to effective hooks and retains mixed legacy/SPI contributions',
     async ({ create }) => {
+      const hooksInput = assemblyFixture()
       for (const event of ['before_step', 'turn_stopping'] as const) {
         for (const bound of [false, true]) {
-          const input = assemblyFixture(),
-            providerId = 'acme.release/loop'
+          const providerId = 'acme.release/loop'
           const applied: string[] = []
-          const fixture = await memoryAssemblyLifecycle(input, {
+          const fixture = await memoryAssemblyLifecycle(hooksInput, {
             contributions: [
               {
                 providerId,
@@ -276,9 +276,9 @@ describe('detached immutable assembly plans', () => {
               },
             ],
           })
-          const candidate = create(input, fixture.lifecycle)
+          const candidate = create(hooksInput, fixture.lifecycle)
           try {
-            const result = await candidate.prepare({ graph: input.graph }, context())
+            const result = await candidate.prepare({ graph: hooksInput.graph }, context())
             if (event === 'before_step' && bound) {
               expect(result).toMatchObject({ ok: false, error: { detailCode: 'feature_missing' } })
               expect(applied).toEqual([])
@@ -304,10 +304,10 @@ describe('detached immutable assembly plans', () => {
           }
         }
       }
+      const communityInput = assemblyFixture()
+      communityAssemblyFixture(communityInput)
       for (const changed of ['definition', 'operation', 'loop-feature'] as const) {
-        const input = assemblyFixture()
-        communityAssemblyFixture(input)
-        const fixture = await memoryAssemblyLifecycle(input)
+        const fixture = await memoryAssemblyLifecycle(communityInput)
         const publication = {
           ...fixture.publication,
           providers: fixture.publication.providers.map((provider) =>
@@ -335,9 +335,9 @@ describe('detached immutable assembly plans', () => {
           ),
           ...(changed === 'loop-feature' ? { loopFeatures: ['loop-hook:before_step'] } : {}),
         }
-        const candidate = create(input, candidateLifecycle(fixture.root, publication))
+        const candidate = create(communityInput, candidateLifecycle(fixture.root, publication))
         try {
-          const result = await candidate.prepare({ graph: input.graph }, context())
+          const result = await candidate.prepare({ graph: communityInput.graph }, context())
           expect(result).toMatchObject({
             ok: false,
             error: {
@@ -379,7 +379,13 @@ describe('detached immutable assembly plans', () => {
 
   it('consumes the unique generated model inference capability and keeps the reference independent', () => {
     expect(simpleLoopCapabilities.modelInference).toBe(RuntimeAuthorCapabilities.modelInference)
-    const reference = ['assembly.ts', 'assembly-candidate.ts']
+    const reference = [
+      'assembly.ts',
+      'assembly-candidate.ts',
+      'assembly-journal.ts',
+      'assembly-publication.ts',
+      'assembly-admission.ts',
+    ]
       .map((name) =>
         readFileSync(
           new URL(`../../../../examples/runtime-reference/src/providers/${name}`, import.meta.url),
@@ -397,6 +403,10 @@ describe('detached immutable assembly plans', () => {
       '../../src/runtime/assembly/candidate.ts',
       '../../src/runtime/assembly/inputs.ts',
       '../../src/runtime/assembly/primitives.ts',
+      '../../src/runtime/assembly/maintenance-journal.ts',
+      '../../src/runtime/assembly/publication.ts',
+      '../../src/runtime/assembly/admission-ticket.ts',
+      '../../src/runtime/assembly/package-pins.ts',
     ]
     const defaultText = files.map((file) => readFileSync(new URL(file, import.meta.url), 'utf8')).join('\n')
     const lines = (source: string) =>
