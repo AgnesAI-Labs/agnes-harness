@@ -19,6 +19,11 @@ import {
   syncDirectorySync,
 } from '@agnes/system-node'
 import { parseSecretRef, type SecretResolver } from '../../adapters/secrets.js'
+import {
+  type ArtifactTicketDeployment,
+  type ArtifactTicketKeyPort,
+  createArtifactTicketKeyPort,
+} from '../artifact-ticket-key.js'
 
 export const SECRETS_CONTRACT = 'agh.secrets'
 export const DEFAULT_SECRETS_PROVIDER_ID = 'agh.default/secrets'
@@ -45,6 +50,7 @@ export interface SecretRenewal {
   readonly newVersionRef?: string
 }
 export interface SecretsOptions {
+  readonly artifactTickets?: ArtifactTicketDeployment
   readonly directory: string
   readonly tenantId: string
   readonly entries: readonly SecretEntry[]
@@ -76,6 +82,8 @@ export interface SecretsOptions {
   readonly trustedIngress?: (context: TrustedIngressContext, flow: SecretFlow) => boolean
 }
 export interface SecretsService {
+  /** Host-local companion; excluded from the public service descriptor and method map. */
+  readonly artifactTicketKeyPort?: ArtifactTicketKeyPort
   readonly binding: Wire.BindingRef
   readonly providerDigest: string
   readonly features: readonly string[]
@@ -140,7 +148,20 @@ export function createSecretsService(options: SecretsOptions): SecretsService {
   // Only references and closed public metadata are persisted here.
   const entries = JSON.parse(JSON.stringify(options.entries)) as SecretEntry[]
   const grants = JSON.parse(JSON.stringify(options.grants)) as SecretGrant[]
+  const ticketSecretId = options.artifactTickets?.installation.binding.secretId
   const flows = JSON.parse(JSON.stringify(options.flows ?? [])) as SecretFlow[]
+  if (options.artifactTickets) {
+    const ticket = entries.filter((entry) => entry.secretId === ticketSecretId)
+    if (
+      ticket.length !== 1 ||
+      entries.some(
+        (entry) =>
+          entry.secretId !== ticketSecretId &&
+          entry.versions.some((version) => ticket[0]?.versions.some((key) => key.ref === version.ref)),
+      )
+    )
+      throw new Error('Ticket key catalogue must be isolated')
+  }
   for (const entry of entries) {
     if (
       !entry.versions.length ||
@@ -303,6 +324,7 @@ export function createSecretsService(options: SecretsOptions): SecretsService {
     signal: AbortSignal,
   ): Promise<SecretGrant> {
     await identity(context, signal)
+    if (secretId === ticketSecretId) throw new SecretFault('denied', 'secret_ticket_only')
     const allowed = grants.find(
       (item) =>
         item.principalRef === context.principalRef &&
@@ -473,7 +495,48 @@ export function createSecretsService(options: SecretsOptions): SecretsService {
     return output
   }
 
+  let ticketPort: ReturnType<typeof createArtifactTicketKeyPort> | undefined
+  try {
+    if (options.artifactTickets)
+      ticketPort = createArtifactTicketKeyPort({
+        ...options.artifactTickets,
+        directory: join(options.directory, 'artifact-ticket-keys'),
+        tenantId: options.tenantId,
+        now,
+        current() {
+          if (ticketSecretId === undefined) throw new Error('Missing ticket installation')
+          const row = db.prepare('SELECT version, revoked FROM secrets WHERE id = ?').get(ticketSecretId)
+          if (!row) throw new Error('Missing ticket secret')
+          return { version: String(row.version), revoked: row.revoked !== 0 }
+        },
+        async identity(context, signal) {
+          try {
+            await identity(context, signal)
+            return true
+          } catch {
+            return false
+          }
+        },
+        reference: (version) =>
+          entries
+            .find((entry) => entry.secretId === ticketSecretId)
+            ?.versions.find((item) => item.version === version)?.ref,
+        resolve: (ref) => options.source.resolve(ref),
+      })
+  } catch (error) {
+    clearInterval(escrowTimer)
+    db.close()
+    throw error
+  }
   return {
+    ...(ticketPort
+      ? {
+          artifactTicketKeyPort: Object.freeze({
+            sealNonce: ticketPort.sealNonce,
+            openNonce: ticketPort.openNonce,
+          }),
+        }
+      : {}),
     binding,
     providerDigest,
     features: [
@@ -664,7 +727,7 @@ export function createSecretsService(options: SecretsOptions): SecretsService {
       if (!closing) {
         lifetime.abort()
         clearInterval(escrowTimer)
-        const drained = Promise.allSettled([...work]).then(() => {
+        const drained = Promise.allSettled([...work, ticketPort?.close()]).then(() => {
           db.close()
         })
         let timer: ReturnType<typeof setTimeout>

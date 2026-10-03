@@ -22,6 +22,7 @@
     "runtime/run-conformance.ts",
     "runtime/routing-model-conformance.ts",
     "runtime/sources.ts",
+    "runtime/platform/artifact-ticket-key-scenarios.ts",
     "runtime/platform/assembly-conformance.ts",
     "runtime/platform/resources-conformance.ts",
     "runtime/platform/mcp-conformance.ts",
