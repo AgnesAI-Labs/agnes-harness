@@ -47,7 +47,7 @@ export const ASSEMBLY_UNFINISHED = Object.freeze([
 ] as const)
 
 /** Synthetic public locks and observations, never a deployable provider or authority proof. */
-export function assemblyFixture() {
+function buildAssemblyFixture() {
   const ui = assemblyUiFixture()
   const uiManifest = fixtureRef(ui.manifest)
   const packageId = 'acme.release',
@@ -371,7 +371,22 @@ export function assemblyFixture() {
   fixtureWire('AssemblyGraph', input.graph)
   return input
 }
-export type AssemblyFixture = ReturnType<typeof assemblyFixture>
+export type AssemblyFixture = ReturnType<typeof buildAssemblyFixture>
+let seed: AssemblyFixture | undefined
+function freezeFixture(value: unknown): void {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.values(value).forEach(freezeFixture)
+    Object.freeze(value)
+  }
+}
+/** Build and validate the catalog once; every caller still owns a mutable detached copy. */
+export function assemblyFixture(): AssemblyFixture {
+  if (!seed) {
+    seed = buildAssemblyFixture()
+    freezeFixture(seed)
+  }
+  return structuredClone(seed)
+}
 /** Re-sign only synthetic content identities after a deliberate fixture mutation. */
 export function resealAssemblyFixture(input: AssemblyFixture): void {
   const release = input.plan.targetReleaseSet
