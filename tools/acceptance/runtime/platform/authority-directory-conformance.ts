@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
+import type { CallContext, Outcome, RuntimeError } from '@agnes/extension-api/runtime'
 import type {
   AuthorityCheckpoint,
   AuthorityDirectoryCompareAndSwapRequest,
@@ -91,7 +91,14 @@ function refusal(outcome: Outcome<unknown>): string {
   return outcome.ok ? 'ok' : `${outcome.error.code}/${outcome.error.detailCode}`
 }
 
+class DirectoryRefusal extends Error {
+  constructor(readonly refusal: RuntimeError) {
+    super(`${refusal.code}/${refusal.detailCode}`)
+  }
+}
+
 function must<T>(outcome: Outcome<T>, expected = 'ok'): T {
+  if (!outcome.ok && expected === 'ok') throw new DirectoryRefusal(outcome.error)
   assert.equal(refusal(outcome), expected)
   if (!outcome.ok) throw new Error(expected)
   return outcome.value
@@ -200,7 +207,7 @@ function openAt(
       recipe === 'default'
         ? createDirectoryAnchor(anchor, locator, PRINCIPAL)
         : createReferenceAnchor(anchor, locator, PRINCIPAL)
-    if (!created.ok) throw new Error(refusal(created))
+    if (!created.ok) throw new DirectoryRefusal(created.error)
   }
   if (recipe === 'default') {
     const provider = createAuthorityDirectoryProvider({
@@ -513,23 +520,50 @@ export async function bindAuthorityDirectoryContracts(
   harness: ConformanceHarness,
   command: string,
   providers: readonly string[],
+  filesystem?: 'unsupported',
 ): Promise<void> {
   assert.notEqual(command, '')
   const build = createBuild()
   for (const providerId of providers) {
     const recipe = recipeOf(providerId)
+    // Probe the implementation on the same temporary filesystem before running its scenarios.
+    let support: Promise<AuthorityRoute> | undefined
+    const run = async (
+      scenario: (recipe: Recipe) => Promise<AuthorityDirectoryScenarioEvidence>,
+    ): Promise<AuthorityDirectoryScenarioEvidence> => {
+      try {
+        support ??= withProvider(recipe, filesystem, seeded)
+        await support
+      } catch (error) {
+        if (
+          !(error instanceof DirectoryRefusal) ||
+          error.refusal.code !== 'incompatible' ||
+          error.refusal.detailCode !== 'filesystem_unsupported'
+        )
+          throw error
+        return {
+          passed: false,
+          status: 'skipped',
+          providerDigest: providerDigest(recipe),
+          configDigest: 'unavailable',
+          releaseSetDigest: 'unavailable',
+          detail: `${error.message} on ${build.platform}`,
+        }
+      }
+      return scenario(recipe)
+    }
     const binding: AuthorityDirectoryConformanceBinding = {
       command,
       build,
       providerId,
       port: {
         recipe,
-        select: () => select(recipe),
-        normal: () => normal(recipe),
-        deny: () => deny(recipe),
-        cancel: () => cancel(recipe),
-        recover: () => recover(recipe),
-        dispose: () => dispose(recipe),
+        select: () => run(select),
+        normal: () => run(normal),
+        deny: () => run(deny),
+        cancel: () => run(cancel),
+        recover: () => run(recover),
+        dispose: () => run(dispose),
       },
     }
     registerAuthorityDirectoryContract(harness, binding)
