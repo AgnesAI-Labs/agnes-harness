@@ -5,9 +5,11 @@ import { DatabaseSync } from 'node:sqlite'
 import type { Outcome } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import { validateRuntime, type RuntimeWireTypes as Wire } from '@agnes/protocol/runtime'
+import type { InstallApplyCheckpoint } from './package-apply.js'
 
 /** Private proposal record. Operation refs point to the sole external upgrade authority. */
 export interface InstallRecord {
+  readonly applyCheckpoint?: InstallApplyCheckpoint
   readonly version: 1
   readonly input: Wire['ChangeProposalRequest']
   readonly inputDigest: string
@@ -99,7 +101,10 @@ export function initialInstallRecord(input: Wire['ChangeProposalRequest'], owner
 export function validateInstallRecord(raw: InstallRecord): InstallRecord {
   if (
     !raw ||
-    Object.keys(raw).sort().join(',') !==
+    Object.keys(raw)
+      .filter((key) => key !== 'applyCheckpoint')
+      .sort()
+      .join(',') !==
       'approvalRef,cancellation,input,inputDigest,operation,owner,proposal,repairPlanRef,version' ||
     raw.version !== 1
   )
@@ -149,6 +154,36 @@ export function validateInstallRecord(raw: InstallRecord): InstallRecord {
     (proposal.plan === null || raw.approvalRef === null)
   )
     throw new InstallFault('internal', 'journal_corrupt')
+  if (raw.applyCheckpoint) {
+    const cp = raw.applyCheckpoint
+    if (
+      Object.keys(cp).sort().join(',') !==
+      'binding,buildEvidence,candidateRef,inputsDigest,interactionId,phase,responseId'
+    )
+      throw new InstallFault('internal', 'journal_corrupt')
+    installerWire('Id', cp.interactionId)
+    installerWire('ApprovalRequest', cp.binding.request)
+    installerWire('DataRef', cp.binding.planRef)
+    installerWire('DataRef', cp.binding.input)
+    if (
+      cp.binding.proposalId !== proposal.proposalId ||
+      cp.binding.planRevision > proposal.revision ||
+      cp.binding.planDigest !== proposal.planDigest
+    )
+      throw new InstallFault('internal', 'journal_corrupt')
+    if (cp.responseId !== null) installerWire('Id', cp.responseId)
+    if (cp.inputsDigest !== null) installerWire('Digest', cp.inputsDigest)
+    if (
+      !['approval', 'started', 'built', 'prepared', 'publishing', 'done'].includes(cp.phase) ||
+      proposal.interactionRef?.interactionId !== cp.interactionId ||
+      !Array.isArray(cp.buildEvidence)
+    )
+      throw new InstallFault('internal', 'journal_corrupt')
+    for (const evidence of cp.buildEvidence) installerWire('DataRef', evidence)
+    if (cp.candidateRef !== null) installerWire('DataRef', cp.candidateRef)
+    if (cp.phase !== 'approval' && (!raw.operation || !cp.inputsDigest || !cp.responseId))
+      throw new InstallFault('internal', 'journal_corrupt')
+  } else if ('applyCheckpoint' in raw) throw new InstallFault('internal', 'journal_corrupt')
   return structuredClone(raw)
 }
 
@@ -184,9 +219,27 @@ export function validateInstallTransition(previous: InstallRecord, next: Install
       installerDigest(previous.cancellation) !== installerDigest(next.cancellation))
   )
     throw new InstallFault('conflict', 'immutable_fact')
+  if (previous.applyCheckpoint) {
+    const old = previous.applyCheckpoint,
+      cp = next.applyCheckpoint
+    const phases = ['approval', 'started', 'built', 'prepared', 'publishing', 'done']
+    if (
+      !cp ||
+      cp.interactionId !== old.interactionId ||
+      installerDigest(cp.binding) !== installerDigest(old.binding) ||
+      (old.responseId !== null && old.responseId !== cp.responseId) ||
+      (old.inputsDigest !== null && old.inputsDigest !== cp.inputsDigest) ||
+      phases.indexOf(cp.phase) < phases.indexOf(old.phase) ||
+      installerDigest(cp.buildEvidence.slice(0, old.buildEvidence.length)) !==
+        installerDigest(old.buildEvidence) ||
+      (old.candidateRef !== null && installerDigest(old.candidateRef) !== installerDigest(cp.candidateRef))
+    )
+      throw new InstallFault('conflict', 'immutable_fact')
+  } else if (next.applyCheckpoint && (previous.proposal.status !== 'awaiting-approval' || previous.operation))
+    throw new InstallFault('conflict', 'invalid_transition')
   const transitions: Record<Wire['ChangeProposal']['status'], readonly Wire['ChangeProposal']['status'][]> = {
     planning: ['awaiting-approval', 'denied', 'cancelled'],
-    'awaiting-approval': ['approved', 'denied', 'cancelled'],
+    'awaiting-approval': ['awaiting-approval', 'approved', 'denied', 'cancelled'],
     approved: ['applying', 'cancelled'],
     applying: ['applying', 'unknown', 'applied'],
     unknown: ['unknown', 'applying', 'applied'],
@@ -213,8 +266,12 @@ export function openInstallJournal(file: string): InstallJournal {
   const checkOpen = () => {
     if (closed) throw new InstallFault('internal', 'journal_closed')
   }
+  // Reuse validation only for the exact bytes and metadata read from SQLite, never by revision alone.
+  let cached: { key: string; record: InstallRecord } | undefined
   const decode = (row: Record<string, unknown> | undefined): InstallRecord => {
     if (!row) throw new InstallFault('denied', 'proposal_not_found')
+    const key = JSON.stringify([row.id, row.owner, row.request_id, row.revision, row.payload, row.digest])
+    if (cached?.key === key) return structuredClone(cached.record)
     if (typeof row.payload !== 'string' || installerDigest(JSON.parse(row.payload)) !== row.digest)
       throw new InstallFault('internal', 'journal_corrupt')
     const record = validateInstallRecord(JSON.parse(row.payload) as InstallRecord)
@@ -225,7 +282,8 @@ export function openInstallJournal(file: string): InstallJournal {
       record.proposal.revision !== row.revision
     )
       throw new InstallFault('internal', 'journal_corrupt')
-    return record
+    cached = { key, record }
+    return structuredClone(record)
   }
   const transaction = <T>(action: () => T): T => {
     checkOpen()
@@ -285,6 +343,7 @@ export function openInstallJournal(file: string): InstallJournal {
     close() {
       if (!closed) {
         closed = true
+        cached = undefined
         database.close()
       }
     },

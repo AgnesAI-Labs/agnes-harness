@@ -31,7 +31,7 @@ import type { HostPermissionGrant, HostSelectedProvider } from './scoped-depende
 // SHA-256 of the bundled package runtime sources, pinned by the product source guard.
 // This bootstrap identity does not claim a ReleaseSet or a published authority route.
 export const DEFAULT_PACKAGE_RUNTIME_DIGEST =
-  'e14bae84da7037e7738f80e7eb8593bdf140f4e654df3a5f3bc4a77ebb821cd3'
+  '8a86a58e2c343cc645e2d0c949cc5232a87d522508d1d6e269608eaf3fc74bfd'
 
 /** Host-private capability; never publish it through ExtensionAPI, tools or a wire endpoint. */
 export type HostRuntimeServices = Readonly<{

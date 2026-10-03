@@ -1,12 +1,19 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { registerPackageInstallerProposalContract } from '../../../../packages/extension-api/testkit/runtime/contracts/package-installer.js'
+import {
+  registerPackageInstallerApplyContract,
+  registerPackageInstallerProposalContract,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/package-installer.js'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import {
   coldInstallerStatus,
   installerContext,
   openInstallerFixture,
 } from '../../../../packages/package-manager/test/runtime/fixtures/installer.js'
+import {
+  coldInstallerApplyStatus,
+  openInstallerApplyFixture,
+} from '../../../../packages/package-manager/test/runtime/fixtures/installer-apply.js'
 import { getConformanceBuildIdentity } from '../build-identity.js'
 
 export async function bindConformance(
@@ -27,14 +34,39 @@ export async function bindConformance(
             'packages/package-manager/src/runtime/providers/package-installer.ts',
             'packages/package-manager/src/runtime/install-journal.ts',
             'packages/package-manager/src/runtime/repair-plan.ts',
+            'packages/package-manager/src/runtime/package-apply.ts',
+            'packages/package-manager/src/runtime/deployment-approval.ts',
           ]
-        : ['examples/runtime-reference/src/providers/package-installer.ts']
+        : [
+            'examples/runtime-reference/src/providers/package-installer.ts',
+            'examples/runtime-reference/src/providers/package-apply.ts',
+            'examples/runtime-reference/src/providers/deployment-approval.ts',
+          ]
     const hash = createHash('sha256')
     for (const file of files) hash.update(readFileSync(new URL(`../../../../${file}`, import.meta.url)))
+    const providerDigest = hash.digest('hex')
+    registerPackageInstallerApplyContract(harness, {
+      providerId,
+      command: request.command,
+      providerDigest,
+      build: getConformanceBuildIdentity(),
+      async open(directory) {
+        const f = await openInstallerApplyFixture(providerId as 'default' | 'reference', directory)
+        return {
+          ...f,
+          deny: () => f.patchApproval({ status: 'expired' }),
+          loseResponse: () => {
+            f.control.losePublishResponse = true
+          },
+        }
+      },
+      coldStatus: async (directory) =>
+        coldInstallerApplyStatus(providerId as 'default' | 'reference', directory),
+    })
     registerPackageInstallerProposalContract(harness, {
       providerId,
       command: request.command,
-      providerDigest: hash.digest('hex'),
+      providerDigest,
       build: getConformanceBuildIdentity(),
       context: installerContext,
       open: (directory) => openInstallerFixture(providerId, directory),

@@ -8,6 +8,7 @@ import {
   installerFailure,
   installerWire,
 } from '../install-journal.js'
+import { createPackageApplyController, type PackageApplyPorts } from '../package-apply.js'
 import { type InstallOperationObservation, verifyInstallObservation } from '../repair-plan.js'
 
 export type InstallerAuthorization = (
@@ -41,7 +42,20 @@ export interface DeploymentApproval {
 }
 
 /** All ports are explicit. No business root, legacy PackageManager or session tool grant. */
-export interface PackageMaintenancePorts extends PackageInstallerOptions {
+export interface PackageMaintenancePorts extends PackageInstallerOptions, PackageApplyPorts {
+  readonly selectDisableProposal?:
+    | ((
+        input: Wire['PackageInstallerDisableRequest'],
+        context: CallContext,
+      ) => Promise<Outcome<{ proposalId: string; revision: number }>>)
+    | null
+  readonly validatePlanInput?:
+    | ((
+        input: Wire['ChangeProposalRequest'],
+        plan: NonNullable<Wire['ChangeProposal']['plan']>,
+        context: CallContext,
+      ) => Promise<Outcome<void>>)
+    | null
   readonly resolveReleaseRoute:
     | ((scope: Wire['ScopeRef'], context: CallContext) => Promise<Outcome<Wire['Id']>>)
     | null
@@ -209,7 +223,11 @@ export function createPackageInstallerProvider(options: PackageInstallerOptions)
   }
 }
 
-function bindPlan(record: InstallRecord, plan: NonNullable<Wire['ChangeProposal']['plan']>): string {
+function bindPlan(
+  record: InstallRecord,
+  plan: NonNullable<Wire['ChangeProposal']['plan']>,
+  maintenanceRepair = false,
+): string {
   const change = record.input.change
   if (plan.kind === 'resource') {
     installerWire('ResourceChangePlan', plan.value)
@@ -230,20 +248,27 @@ function bindPlan(record: InstallRecord, plan: NonNullable<Wire['ChangeProposal'
   installerWire('ReleasePlan', plan.value)
   if (
     change.kind !== 'package' ||
-    change.operation !== plan.value.operation ||
-    !plan.value.targetReleaseSet.packages.some(
-      (entry) =>
-        entry.digest === change.locator.digest &&
-        entry.sourceRef === change.locator.sourceId &&
-        (change.locator.kind !== 'npm' || entry.version === change.locator.version),
-    )
+    (change.operation !== plan.value.operation &&
+      !(maintenanceRepair && change.operation === 'upgrade' && plan.value.operation === 'repair')) ||
+    (!['disable', 'repair'].includes(plan.value.operation) &&
+      !plan.value.targetReleaseSet.packages.some(
+        (entry) =>
+          entry.digest === change.locator.digest &&
+          entry.sourceRef === change.locator.sourceId &&
+          (change.locator.kind !== 'npm' || entry.version === change.locator.version),
+      ))
   )
     throw new InstallFault('conflict', 'plan_input_conflict')
   return plan.value.planFingerprint
 }
 
-/** Standalone trusted maintenance facade. Effectful deployment remains explicitly unavailable. */
+/** Standalone maintenance root. Public wire M adapters remain unavailable until bound by the host. */
 export function createPackageMaintenanceController(ports: PackageMaintenancePorts) {
+  const apply = createPackageApplyController(ports)
+  let disposed = false
+  const live = () => {
+    if (disposed) throw new InstallFault('internal', 'provider_disposed')
+  }
   const target = async (
     record: InstallRecord,
     plan: NonNullable<Wire['ChangeProposal']['plan']>,
@@ -256,6 +281,7 @@ export function createPackageMaintenanceController(ports: PackageMaintenancePort
     if (route.value !== plan.value.routeId) throw new InstallFault('conflict', 'plan_target_conflict')
   }
   const load = async (id: string, revision: number, context: CallContext) => {
+    live()
     const record = ports.journal.read(id)
     await authorized(ports, context, record.proposal.scope, 'maintain')
     if (record.proposal.revision !== revision)
@@ -265,12 +291,51 @@ export function createPackageMaintenanceController(ports: PackageMaintenancePort
   }
   const unimplemented = (_request: unknown, context: CallContext) =>
     attemptAsync(async () => {
+      live()
       await authorized(ports, context, context.scope, 'maintain')
       throw new InstallFault('incompatible', 'installer_effect_unimplemented')
     })
+  const planning = (
+    proposalId: string,
+    expectedRevision: number,
+    context: CallContext,
+    maintenanceRepair = false,
+  ) =>
+    attemptAsync(async () => {
+      const record = await load(proposalId, expectedRevision, context)
+      if (record.proposal.status !== 'planning') throw new InstallFault('conflict', 'proposal_not_planning')
+      if (!ports.generateVerifiedPlan) throw new InstallFault('incompatible', 'plan_generation_unavailable')
+      const generated = await ports.generateVerifiedPlan(structuredClone(record.input), context)
+      if (!generated.ok) throw new InstallFault(generated.error.code, generated.error.detailCode)
+      const plan = structuredClone(generated.value)
+      if (maintenanceRepair && (plan.kind !== 'release' || plan.value.operation !== 'repair'))
+        throw new InstallFault('conflict', 'plan_input_conflict')
+      const planDigest = bindPlan(record, plan, maintenanceRepair)
+      const body = { ...plan.value }
+      Reflect.deleteProperty(body, plan.kind === 'release' ? 'planFingerprint' : 'digest')
+      if (installerDigest(body) !== planDigest) throw new InstallFault('conflict', 'plan_input_conflict')
+      if (plan.kind === 'release' && ['disable', 'repair'].includes(plan.value.operation)) {
+        if (!ports.validatePlanInput) throw new InstallFault('denied', 'plan_source_validation_unavailable')
+        const verified = await ports.validatePlanInput(record.input, plan, context)
+        if (!verified.ok) throw new InstallFault(verified.error.code, verified.error.detailCode)
+      }
+      await target(record, plan, context)
+      await load(proposalId, expectedRevision, context)
+      return ports.journal.compareAndSwap(
+        proposalId,
+        expectedRevision,
+        nextRecord(record, { status: 'awaiting-approval', plan, planDigest }),
+      ).proposal
+    })
   return {
+    ...apply,
+    dispose() {
+      disposed = true
+      apply.dispose()
+    },
     proposalStatus(request: unknown, context: CallContext) {
       return attemptAsync(async () => {
+        live()
         const input = installerWire('PackageInstallerProposalStatusRequest', request)
         const record = ports.journal.read(input.proposalId)
         await authorized(ports, context, record.proposal.scope, 'maintain')
@@ -278,22 +343,10 @@ export function createPackageMaintenanceController(ports: PackageMaintenancePort
       })
     },
     plan(proposalId: string, expectedRevision: number, context: CallContext) {
-      return attemptAsync(async () => {
-        const record = await load(proposalId, expectedRevision, context)
-        if (record.proposal.status !== 'planning') throw new InstallFault('conflict', 'proposal_not_planning')
-        if (!ports.generateVerifiedPlan) throw new InstallFault('incompatible', 'plan_generation_unavailable')
-        const generated = await ports.generateVerifiedPlan(structuredClone(record.input), context)
-        if (!generated.ok) throw new InstallFault(generated.error.code, generated.error.detailCode)
-        const plan = structuredClone(generated.value)
-        const planDigest = bindPlan(record, plan)
-        await target(record, plan, context)
-        await load(proposalId, expectedRevision, context)
-        return ports.journal.compareAndSwap(
-          proposalId,
-          expectedRevision,
-          nextRecord(record, { status: 'awaiting-approval', plan, planDigest }),
-        ).proposal
-      })
+      return planning(proposalId, expectedRevision, context)
+    },
+    planRepair(proposalId: string, expectedRevision: number, context: CallContext) {
+      return planning(proposalId, expectedRevision, context, true)
     },
     checkApproval(proposalId: string, expectedRevision: number, approvalRef: string, context: CallContext) {
       return attemptAsync(async () => {
@@ -331,13 +384,66 @@ export function createPackageMaintenanceController(ports: PackageMaintenancePort
     },
     prepare: unimplemented,
     activate: unimplemented,
-    disable: unimplemented,
+    disable: ports.selectDisableProposal
+      ? (request: unknown, context: CallContext) =>
+          attemptAsync(async () => {
+            live()
+            const input = installerWire('PackageInstallerDisableRequest', request)
+            live()
+            await authorized(ports, context, context.scope, 'maintain')
+            const selected = await ports.selectDisableProposal!(input, context)
+            if (!selected.ok) throw new InstallFault(selected.error.code, selected.error.detailCode)
+            const record = ports.journal.read(selected.value.proposalId)
+            if (
+              record.proposal.plan?.kind !== 'release' ||
+              record.proposal.plan.value.operation !== 'disable' ||
+              !record.proposal.plan.value.affectedContributions.includes(input.contributionId)
+            )
+              throw new InstallFault('conflict', 'plan_input_conflict')
+            const applied = await apply.apply(selected.value.proposalId, selected.value.revision, context)
+            if (!applied.ok) throw new InstallFault(applied.error.code, applied.error.detailCode)
+            return installerWire('PackageInstallerDisableResult', { disabledId: input.contributionId })
+          })
+      : unimplemented,
     repair: unimplemented,
-    applyResourceChange: unimplemented,
+    applyResourceChange: ports.executionInputs
+      ? (request: unknown, context: CallContext) =>
+          attemptAsync(async () => {
+            live()
+            const input = installerWire('PackageInstallerApplyResourceChangeRequest', request)
+            const record = ports.journal.read(input.proposalId)
+            await authorized(ports, context, record.proposal.scope, 'maintain')
+            if (
+              record.proposal.plan?.kind !== 'resource' ||
+              installerDigest(input.plan) !== installerDigest(record.proposal.plan.value) ||
+              input.approvalRef !== record.applyCheckpoint?.interactionId
+            )
+              throw new InstallFault('conflict', 'plan_input_conflict')
+            const applied = await apply.apply(input.proposalId, input.expectedProposalRevision, context)
+            if (!applied.ok) throw new InstallFault(applied.error.code, applied.error.detailCode)
+            if (!applied.value.resultRef) throw new InstallFault('unknown_effect', 'operation_unknown')
+            return installerWire('PackageInstallerApplyResourceChangeResult', {
+              proposal: applied.value,
+              receipt: applied.value.resultRef,
+            })
+          })
+      : unimplemented,
   }
 }
 
+export type {
+  DeploymentApprovalAdapterPorts,
+  DeploymentApprovalBinding,
+  DeploymentApprovalPort,
+  DeploymentApprovalTerminal,
+  DeploymentIdentity,
+} from '../deployment-approval.js'
+export {
+  createDeploymentApprovalAdapter,
+  createRefusingDeploymentApprovalPort,
+} from '../deployment-approval.js'
 export type { InstallJournal, InstallRecord } from '../install-journal.js'
 export { openInstallJournal } from '../install-journal.js'
+export type { PackageApplyInputs, PackageApplyPorts } from '../package-apply.js'
 export type { InstallOperationObservation, InstallRepairPlan } from '../repair-plan.js'
 export { createInstallRepairPlan, installRepairPlanRef } from '../repair-plan.js'
