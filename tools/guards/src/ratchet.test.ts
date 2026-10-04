@@ -276,7 +276,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // An unknown action kind grants a renderer context nothing. Measured 3434, exact, no spare (+1).
   // Actions needing a feature the client did not negotiate are neither offered nor admitted. Measured 3446,
   // exact, no spare (+12).
-  'packages/web-client/src': 3446,
+  // Default renderer factory over the built-in presentation. Measured 3457, exact, no spare (+11).
+  'packages/web-client/src': 3457,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1555,7 +1556,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The shell services double answers registry and presentation calls synchronously. Measured 13709,
   // exact, no spare (+4).
   // Events contract cases: resumable pages, idempotent publish, crash recovery. Measured 14341, exact (+632).
-  'packages/extension-api/testkit': 14341,
+  // Renderer contract cases through the client host on every target. Measured 15193, exact, no spare (+852).
+  'packages/extension-api/testkit': 15193,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
