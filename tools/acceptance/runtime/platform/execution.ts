@@ -1,5 +1,4 @@
 import { pathToFileURL } from 'node:url'
-import { limitCase, terminateActive } from '../../../../packages/host/test/runtime/sandbox-exec-scenarios.js'
 import { runConformance } from '../run-conformance.js'
 import { qualification } from './sandbox-exec-conformance.js'
 
@@ -12,26 +11,14 @@ export async function runExecutionAcceptance() {
     clock: { startedAt: stamp, finishedAt: stamp },
     reportPath: null,
   })
-  const limits = []
-  const darwin = process.platform === 'darwin' // guards-allow-platform: real platform qualification
-  if (darwin) {
-    for (const kind of ['default', 'reference'] as const) {
-      for (const field of [
-        'cpuMs',
-        'wallMs',
-        'memoryBytes',
-        'outputBytes',
-        'processes',
-        'openFiles',
-      ] as const)
-        limits.push({ kind, field, metrics: await limitCase(kind, field) })
-      for (const operation of ['cancel', 'release', 'stop', 'dispose'] as const)
-        await terminateActive(kind, operation)
-    }
-  }
   process.stdout.write(
-    JSON.stringify({ status: report.status, assertions: report.assertions.length, qualification, limits }) +
-      '\n',
+    `${JSON.stringify({
+      status: report.status,
+      assertions: report.assertions.length,
+      qualification,
+      normal: 'incomplete',
+      recover: 'incomplete',
+    })}\n`,
   )
   return report.status === 'passed' ? 0 : 1
 }

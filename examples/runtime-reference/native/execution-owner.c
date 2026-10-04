@@ -1,5 +1,6 @@
 /* Independent event-driven Darwin reference owner. Kernel fork notifications wake a linked-list tree sampler.
- * A 20ms fallback timer collects resource use for owned descendants. Caller pipe EOF is a termination instruction. */
+ * Resource samples are diagnostic only. Mandatory limits without real hard gates
+ * are refused before any business fork; caller pipe EOF is a termination instruction. */
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -132,12 +133,7 @@ static unsigned measure(void) {
   if (peak_memory < memory) peak_memory = memory;
   if (peak_count < count) peak_count = count;
   if (peak_descriptors < descriptors) peak_descriptors = descriptors;
-  if (!strcmp(ending, "completed")) {
-    if (consumed_cpu >= budget[0]) ending = "cpuMs";
-    else if (memory > budget[2]) ending = "memoryBytes";
-    else if (count > budget[4]) ending = "processes";
-    else if (descriptors >= budget[5]) ending = "openFiles";
-  }
+  /* A peak or a timer gap cannot bound use between observations. */
   return (unsigned)count;
 }
 static void harvest(void) {
@@ -152,14 +148,25 @@ static void record(pid_t number, int remaining, int final, int status) {
     number, final ? "true" : "false", ending, code, sig, consumed_cpu,
     peak_memory, peak_count, peak_descriptors, written, largest_gap, remaining, ownership_checked ? "true" : "false", rescued) < 0 && !final) ending = "owner";
 }
+static int unavailable(const char *detail) {
+  dprintf(3, "{\"refused\":\"%s\"}\n", detail); return 125;
+}
 int main(int size, char **arguments) {
-  if (size < 8) return 125;
+  const char *names[] = {"cpuMs", "wallMs", "memoryBytes", "outputBytes", "processes", "openFiles"};
+  if (size < 8) return unavailable("exec_resource_bounds");
   for (unsigned i = 0; i != 6; i++) {
     char *tail;
     errno = 0; budget[i] = strtoull(arguments[i + 1], &tail, 10);
-    if (errno || *tail || budget[i] == 0 || budget[i] > 9007199254740991ULL) return 125;
+    if (errno || *tail || budget[i] > 9007199254740991ULL)
+      return unavailable("exec_resource_bounds");
+    if (!budget[i]) {
+      char detail[64]; snprintf(detail, sizeof detail, "exec_zero_%s", names[i]);
+      return unavailable(detail);
+    }
   }
-  if (budget[5] < 32) return 125;
+  if (budget[5] < 32) return unavailable("exec_limit_openFiles");
+  /* The reference has no kernel tree memory/process limit on this backend. */
+  return unavailable("exec_limit_memoryBytes_unsupported");
   struct stat root_metadata;
   int pinned = fstat(7, &root_metadata) == 0 && S_ISDIR(root_metadata.st_mode);
   if (pinned && size < 9) return 125;

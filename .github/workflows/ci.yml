@@ -188,17 +188,20 @@ jobs:
       # three runners, but this job holds every heavy file on one; two at a time there starved each
       # other's process startup, shutdown and file-handle release, so Windows runs them one at a
       # time. The files run alone below on Windows are held out here.
-      - name: delegated Linux execution ownership
+      - name: delegated Linux controller gates and refusal
         if: runner.os == 'Linux'
         shell: bash
         run: |
           group_root="/sys/fs/cgroup/agnes-owner-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # Enable real controllers before delegating an empty domain.
+          echo '+memory +pids' | sudo tee /sys/fs/cgroup/cgroup.subtree_control >/dev/null
           sudo mkdir "$group_root"
+          echo '+memory +pids' | sudo tee "$group_root/cgroup.subtree_control" >/dev/null
+          sudo mkdir "$group_root/runner"
           sudo chown -R "$(id -u):$(id -g)" "$group_root"
-          trap 'sudo rmdir "$group_root"' EXIT
-          # Enter the delegated parent before dropping privilege so migration
-          # needs only its delegated common ancestor, never host-root write access.
-          sudo bash -c 'echo $$ > "$1/cgroup.procs"; exec setpriv --reuid="$2" --regid="$3" --init-groups env PATH="$5" AGNES_TEST_CGROUP="$1" "$4" exec vitest run packages/host/test/runtime/cgroup-owner.e2e.test.ts --maxWorkers=1' -- "$group_root" "$(id -u)" "$(id -g)" "$(command -v pnpm)" "$PATH"
+          trap 'sudo rmdir "$group_root/runner" "$group_root"' EXIT
+          # Keep the delegated domain empty: the test runner lives in a sibling subgroup.
+          sudo bash -c 'echo $$ > "$1/runner/cgroup.procs"; exec setpriv --reuid="$2" --regid="$3" --init-groups env PATH="$5" AGNES_TEST_CGROUP="$1" "$4" exec vitest run packages/host/test/runtime/cgroup-owner.e2e.test.ts --maxWorkers=1' -- "$group_root" "$(id -u)" "$(id -g)" "$(command -v pnpm)" "$PATH"
       - name: Windows native Job limits, File refusal and process ownership
         if: runner.os == 'Windows'
         run: pnpm exec vitest run packages/host/test/runtime/windows-job-owner.e2e.test.ts --maxWorkers=1

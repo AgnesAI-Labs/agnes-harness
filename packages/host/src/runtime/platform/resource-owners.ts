@@ -50,10 +50,12 @@ export function runOwnedExecution(input: {
   rootFd?: number
   cwdRoot?: string
   governor?: string
-  /** Trusted, empty delegated cgroup v2 directory; never supplied by a plugin. */
+  /** Trusted, exclusive, empty cgroup v2 delegation with protected controls; never plugin-supplied. */
   cgroupDirectoryFd?: number
   observed?: (metrics: ExecutionMetrics) => void
 }): Promise<OwnedExecutionResult> {
+  for (const [name, value] of Object.entries(input.limits))
+    if (value === 0) return Promise.reject(new Error(`exec_zero_${name}`))
   if (createPlatform().os === 'win32') return Promise.reject(new Error('exec_limit_openFiles_unsupported'))
   if (createPlatform().os === 'linux' && input.cgroupDirectoryFd === undefined)
     return Promise.reject(new Error('exec_delegation_unsupported'))
@@ -82,6 +84,8 @@ export function runOwnedExecution(input: {
   const output: Buffer[][] = [[], []]
   let collected = 0,
     line = ''
+  let businessObserved = false
+  let admissionRefusal: string | undefined
   let terminal: ExecutionMetrics | undefined
   let malformed = false
   const stop = () => {
@@ -118,7 +122,15 @@ export function runOwnedExecution(input: {
       const value = line.slice(0, end)
       line = line.slice(end + 1)
       try {
-        const metrics = JSON.parse(value) as ExecutionMetrics
+        const frame = JSON.parse(value) as ExecutionMetrics & { refused?: unknown }
+        if (typeof frame.refused === 'string' && /^exec_[a-zA-Z_]+$/u.test(frame.refused)) {
+          if (admissionRefusal || businessObserved || Object.keys(frame).length !== 1)
+            throw new Error('Invalid native refusal')
+          admissionRefusal = frame.refused
+          continue
+        }
+        if (admissionRefusal) throw new Error('Metrics after admission refusal')
+        const metrics = frame
         if (
           !Number.isSafeInteger(metrics.pid) ||
           metrics.pid <= 0 ||
@@ -147,6 +159,7 @@ export function runOwnedExecution(input: {
           (metrics.ownershipVerified && metrics.remaining !== 0 && metrics.final)
         )
           throw new Error('Malformed native metrics')
+        businessObserved = true
         if (metrics.final) terminal = metrics
         input.observed?.(metrics)
       } catch {
@@ -159,7 +172,9 @@ export function runOwnedExecution(input: {
     child.once('error', () => reject(new Error('exec_runner_unavailable')))
     child.once('close', (code) => {
       input.signal.removeEventListener('abort', stop)
-      if (
+      if (code === 125 && admissionRefusal && !malformed && !line && collected === 0 && !terminal)
+        reject(new Error(admissionRefusal))
+      else if (
         ![0, 125].includes(code ?? -1) ||
         malformed ||
         !terminal ||

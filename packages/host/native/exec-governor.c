@@ -1,7 +1,7 @@
 /* Owned POSIX command supervisor. fd 0 is the owner's liveness/cancellation pipe;
  * fd 4 is command stdin; fd 3 carries bounded metrics and the terminal record.
- * No environment or command text is logged. Sampling ceilings are checked every
- * 10 ms; RLIMIT_CPU and RLIMIT_NOFILE are installed before exec. */
+ * No environment or command text is logged. Samples are diagnostics, never
+ * hard-limit qualification. Missing mandatory hard gates refuse before fork. */
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -35,6 +35,10 @@ static int used;
 static uint64_t limits[6], peak_rss, peak_processes, peak_files, cpu, output, last_sample, max_gap;
 static const char *reason = "completed";
 static int life_read, verified, residual;
+static int refuse(const char *detail) {
+  dprintf(3, "{\"refused\":\"%s\"}\n", detail);
+  return 125;
+}
 #ifdef __APPLE__
 static uint64_t life_peer;
 static int holds_life(pid_t pid, struct proc_fdinfo *fds, int count) {
@@ -57,6 +61,26 @@ static int cg_write(const char *name, const char *value) {
   if (fd < 0) return -1;
   size_t size = strlen(value); ssize_t count = write(fd, value, size); close(fd);
   return count == (ssize_t)size ? 0 : -1;
+}
+static int cg_read(const char *name, char *value, size_t capacity) {
+  int fd = openat(5, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+  if (fd < 0) return -1;
+  ssize_t n = read(fd, value, capacity - 1); close(fd);
+  if (n <= 0 || n >= (ssize_t)capacity - 1) return -1;
+  value[n] = 0; return 0;
+}
+static int cg_matches(const char *name, const char *expected) {
+  char actual[128];
+  if (cg_read(name, actual, sizeof(actual))) return -1;
+  size_t length = strlen(actual);
+  if (length && actual[length - 1] == '\n') actual[length - 1] = 0;
+  return strcmp(actual, expected) ? -1 : 0;
+}
+/* A successful write alone is not proof: kernels may reject or normalize values. */
+static int cg_limit(const char *name, uint64_t value) {
+  char decimal[32]; snprintf(decimal, sizeof(decimal), "%llu", (unsigned long long)value);
+  if (cg_write(name, decimal)) return 1;
+  return cg_matches(name, decimal) ? 2 : 0;
 }
 static int cg_members(pid_t *pids, int capacity) {
   int fd = openat(5, "cgroup.procs", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
@@ -182,12 +206,7 @@ static int scan(pid_t root, int discover) {
   if (rss > peak_rss) peak_rss = rss;
   if ((uint64_t)alive > peak_processes) peak_processes = alive;
   if (files > peak_files) peak_files = files;
-  if (!strcmp(reason, "completed")) {
-    if (cpu >= limits[0]) reason = "cpuMs";
-    else if (rss > limits[2]) reason = "memoryBytes";
-    else if ((uint64_t)alive > limits[4]) reason = "processes";
-    else if (files >= limits[5]) reason = "openFiles";
-  }
+  /* Observed peaks and gaps provide no upper bound on unobserved resource use. */
   return alive;
 }
 static void terminate(pid_t root) {
@@ -212,19 +231,38 @@ static int emit(pid_t root, int final, int code, int sig, int remaining) {
   );
 }
 int main(int argc, char **argv) {
-  if (argc < 8) return 125;
+  const char *fields[] = {"cpuMs", "wallMs", "memoryBytes", "outputBytes", "processes", "openFiles"};
+  if (argc < 8) return refuse("exec_resource_bounds");
   for (int i = 0; i < 6; i++) { char *end; errno = 0; limits[i] = strtoull(argv[i+1], &end, 10);
-    if (errno || *end || !limits[i] || limits[i] > 9007199254740991ULL) return 125;
+    if (errno || *end || limits[i] > 9007199254740991ULL) return refuse("exec_resource_bounds");
+    if (!limits[i]) { char detail[64]; snprintf(detail, sizeof(detail), "exec_zero_%s", fields[i]); return refuse(detail); }
   }
-  if (limits[5] < 32) return 125;
+  if (limits[5] < 32) return refuse("exec_limit_openFiles");
+#ifdef __APPLE__
+  /* Darwin has no qualified tree memory/process gate; no sampled fallback. */
+  return refuse("exec_limit_memoryBytes_unsupported");
+#endif
   struct stat root_stat; int bound_directory = fstat(7, &root_stat) == 0 && S_ISDIR(root_stat.st_mode);
   if (bound_directory && argc < 9) return 125;
   signal(SIGPIPE, SIG_IGN);
 #ifndef __APPLE__
-  struct statfs fs; pid_t empty[1];
-  if (fstatfs(5, &fs) || fs.f_type != CGROUP2_SUPER_MAGIC || cg_members(empty, 1) != 0 ||
-      cg_write("cgroup.freeze", "0") || cg_write("cgroup.kill", "1") ||
-      prctl(PR_SET_CHILD_SUBREAPER, 1) != 0) return 125;
+  struct statfs fs; struct stat directory; pid_t empty[1]; char events[128];
+  if (fstat(5, &directory) || !S_ISDIR(directory.st_mode) || fstatfs(5, &fs) ||
+      fs.f_type != CGROUP2_SUPER_MAGIC || cg_matches("cgroup.type", "domain") ||
+      cg_members(empty, 1) != 0 || cg_read("cgroup.events", events, sizeof(events)) ||
+      !strstr(events, "populated 0\n")) return refuse("exec_delegation_invalid");
+  if (cg_write("cgroup.freeze", "0") || cg_write("cgroup.kill", "1"))
+    return refuse("exec_cgroup_setup_failed");
+  const char *gates[] = {"memory.max", "memory.swap.max", "pids.max", "memory.oom.group"};
+  uint64_t values[] = {limits[2], 0, limits[4], 1};
+  for (unsigned i = 0; i < sizeof(gates)/sizeof(gates[0]); i++) {
+    int result = cg_limit(gates[i], values[i]);
+    if (result) return refuse(result == 1 ? "exec_cgroup_setup_failed" : "exec_cgroup_verification_failed");
+  }
+  /* These controller gates do not supply a tree CPU-total or aggregate open-file
+   * hard limit. Membership/termination does not complete ResourceLimits. */
+  return refuse("exec_limit_cpuMs_unsupported");
+  if (prctl(PR_SET_CHILD_SUBREAPER, 1) != 0) return 125;
 #endif
   int out[2], err[2], ready[2], gate[2], life[2];
   if (pipe(out) || pipe(err) || pipe(ready) || pipe(gate) || pipe(life)) return 125;
