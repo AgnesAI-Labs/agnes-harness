@@ -1,8 +1,15 @@
 // Resolves the server-chosen client selection of a welcome against the welcome's module catalog. The
 // SDK has already checked both against the wire schema; this checks what the schema cannot express:
 // every reference names exactly one catalog contribution of the right kind that serves this client's
-// target, and no package the selection uses mixes two generations. Nothing falls back to a default.
-import type { ClientModule, ClientWelcome, Outcome, RuntimeError } from '@agnes/extension-api/client'
+// target, every selected renderer's declared descriptor describes that very contribution, and no package
+// the selection uses mixes two generations. Nothing falls back to a default.
+import type {
+  ClientModule,
+  ClientWelcome,
+  Outcome,
+  RendererDescriptor,
+  RuntimeError,
+} from '@agnes/extension-api/client'
 
 export type ClientSelection = NonNullable<ClientWelcome['clientSelection']>
 export type ClientModuleContribution = NonNullable<ClientModule['contributions']>[number]
@@ -15,6 +22,11 @@ export interface SelectedContribution {
   readonly packageDigest: string
   readonly entryPath: string
   readonly contributionId: string
+}
+
+/** A selected renderer, with the descriptor its catalog contribution declares. */
+export interface SelectedRenderer extends SelectedContribution {
+  readonly descriptor: RendererDescriptor
 }
 
 /** A selected shell or UI registry, with the export of its signed module that implements it. */
@@ -33,10 +45,10 @@ export type ResolvedClientSelection =
       readonly target: ClientTarget
       readonly shell: SelectedService | null
       readonly registry: SelectedService
-      readonly fallbackRenderer: SelectedContribution
+      readonly fallbackRenderer: SelectedRenderer
       readonly renderers: ReadonlyArray<{
         readonly renderKey: string
-        readonly renderer: SelectedContribution
+        readonly renderer: SelectedRenderer
       }>
     }
 
@@ -79,6 +91,31 @@ const selected = ({ module, contribution }: Declared): SelectedContribution => (
   entryPath: module.entryPath,
   contributionId: contribution.contributionId,
 })
+
+const sameSet = (left: readonly string[], right: readonly string[]) => {
+  const items = new Set(left)
+  return items.size === new Set(right).size && right.every((item) => items.has(item))
+}
+
+/**
+ * `found` as a selected renderer, when the descriptor it declares describes it: its own id, its package
+ * generation, the targets the contribution declares and, for a row, the render key the row selects.
+ */
+function described(found: Declared, renderKey?: string): Outcome<SelectedRenderer> {
+  const { module, contribution } = found
+  const descriptor = contribution.kind === 'renderer' ? contribution.descriptor : undefined
+  if (
+    descriptor?.id !== contribution.contributionId ||
+    descriptor.packageDigest !== module.packageDigest ||
+    !sameSet(descriptor.targets, contribution.targets) ||
+    (renderKey !== undefined && descriptor.renderKey !== renderKey)
+  )
+    return refuse(
+      'client_selection_descriptor',
+      `renderer ${contribution.contributionId} of package ${module.packageId} declares a descriptor that does not describe it`,
+    )
+  return { ok: true, value: { ...selected(found), descriptor } }
+}
 
 export function resolveClientSelection(input: {
   target: ClientTarget
@@ -128,11 +165,13 @@ export function resolveClientSelection(input: {
   }
   const registry = resolve('registry', selection.registry, 'registry')
   if (!registry.ok) return registry
-  const fallbackRenderer = resolve('fallback renderer', selection.fallbackRenderer, 'renderer')
+  const fallback = resolve('fallback renderer', selection.fallbackRenderer, 'renderer')
+  if (!fallback.ok) return fallback
+  const fallbackRenderer = described(fallback.value)
   if (!fallbackRenderer.ok) return fallbackRenderer
 
   // A row names no package, so its renderer id must name one contribution across the whole catalog.
-  const renderers: Array<{ renderKey: string; renderer: SelectedContribution }> = []
+  const renderers: Array<{ renderKey: string; renderer: SelectedRenderer }> = []
   for (const row of rows) {
     const found = one(
       declared(
@@ -146,7 +185,9 @@ export function resolveClientSelection(input: {
     if (!found.ok) return found
     const { packageId } = found.value.module
     if (mixed(packageId)) return generations(packageId)
-    renderers.push({ renderKey: row.renderKey, renderer: selected(found.value) })
+    const renderer = described(found.value, row.renderKey)
+    if (!renderer.ok) return renderer
+    renderers.push({ renderKey: row.renderKey, renderer: renderer.value })
   }
   return {
     ok: true,
@@ -155,7 +196,7 @@ export function resolveClientSelection(input: {
       target,
       shell,
       registry: service(registry.value),
-      fallbackRenderer: selected(fallbackRenderer.value),
+      fallbackRenderer: fallbackRenderer.value,
       renderers,
     },
   }

@@ -1,4 +1,4 @@
-import type { ClientModule } from '@agnes/extension-api/client'
+import type { ClientModule, RendererDescriptor } from '@agnes/extension-api/client'
 import { describe, expect, it } from 'vitest'
 import {
   type ClientModuleContribution,
@@ -35,6 +35,7 @@ const renderer = (
   renderKey: string,
   targets: ClientModule['targets'],
   packageDigit: string,
+  descriptor: Partial<RendererDescriptor> = {},
 ): ClientModuleContribution => ({
   contributionId,
   kind: 'renderer',
@@ -49,6 +50,7 @@ const renderer = (
     optionalFeatures: [],
     scope: 'view',
     entry: './renderer.js',
+    ...descriptor,
   },
 })
 
@@ -103,8 +105,21 @@ const chosen = (module: ClientModule, contributionId: string) => ({
   entryPath: module.entryPath,
   contributionId,
 })
+/** A selected renderer, with the descriptor its catalog contribution declares. */
+const drawn = (module: ClientModule, contributionId: string) => {
+  const found = module.contributions?.find((entry) => entry.contributionId === contributionId)
+  return {
+    ...chosen(module, contributionId),
+    descriptor: found?.kind === 'renderer' ? found.descriptor : undefined,
+  }
+}
 const swap = (module: ClientModule) =>
   catalog.map((entry) => (entry.moduleId === module.moduleId ? module : entry))
+/** The catalog with the code block renderer declaring `descriptor` over its own. */
+const blocks = (descriptor: Partial<RendererDescriptor>) =>
+  swap(
+    code('acme.code/blocks', ['web'], [renderer('code-block', 'acme.code/block', ['web'], '3', descriptor)]),
+  )
 
 describe('resolveClientSelection', () => {
   it('keeps the legacy path for a welcome without a selection', () => {
@@ -122,10 +137,10 @@ describe('resolveClientSelection', () => {
         target: 'web',
         shell: { ...chosen(webModule, 'workbench'), export: 'workbenchShell' },
         registry: { ...chosen(webModule, 'registry'), export: 'createRegistry' },
-        fallbackRenderer: chosen(webModule, 'fallback'),
+        fallbackRenderer: drawn(webModule, 'fallback'),
         renderers: [
-          { renderKey: 'acme.notes/card', renderer: chosen(notesModule, 'note-card') },
-          { renderKey: 'acme.code/block', renderer: chosen(codeModule, 'code-block') },
+          { renderKey: 'acme.notes/card', renderer: drawn(notesModule, 'note-card') },
+          { renderKey: 'acme.code/block', renderer: drawn(codeModule, 'code-block') },
         ],
       },
     })
@@ -155,8 +170,8 @@ describe('resolveClientSelection', () => {
         target: 'tui',
         shell: null,
         registry: { ...chosen(tuiModule, 'tui-registry'), export: 'createTuiRegistry' },
-        fallbackRenderer: chosen(tuiModule, 'tui-fallback'),
-        renderers: [{ renderKey: 'acme.notes/card', renderer: chosen(notesModule, 'note-card') }],
+        fallbackRenderer: drawn(tuiModule, 'tui-fallback'),
+        renderers: [{ renderKey: 'acme.notes/card', renderer: drawn(notesModule, 'note-card') }],
       },
     })
   })
@@ -250,6 +265,51 @@ describe('resolveClientSelection', () => {
       name: 'two generations of a renderer package',
       modules: [...catalog, generation('acme.notes', '9')('acme.notes/stale', ['web'])],
       detailCode: 'client_selection_digest',
+    },
+    {
+      name: 'a renderer contribution without a descriptor',
+      modules: swap(
+        code(
+          'acme.code/blocks',
+          ['web'],
+          [{ contributionId: 'code-block', kind: 'renderer', targets: ['web'] } as ClientModuleContribution],
+        ),
+      ),
+      detailCode: 'client_selection_descriptor',
+    },
+    {
+      name: 'a fallback renderer descriptor for another id',
+      modules: swap(
+        client(
+          'acme.client/web',
+          ['web'],
+          [
+            ...webContributions.slice(0, 2),
+            renderer('fallback', 'acme.client/fallback', ['web'], '1', { id: 'other-fallback' }),
+          ],
+        ),
+      ),
+      detailCode: 'client_selection_descriptor',
+    },
+    {
+      name: 'a renderer descriptor for another id',
+      modules: blocks({ id: 'other-block' }),
+      detailCode: 'client_selection_descriptor',
+    },
+    {
+      name: 'a renderer descriptor of another package generation',
+      modules: blocks({ packageDigest: '9'.repeat(64) }),
+      detailCode: 'client_selection_descriptor',
+    },
+    {
+      name: 'a renderer descriptor for other targets than its contribution',
+      modules: blocks({ targets: ['web', 'tui'] }),
+      detailCode: 'client_selection_descriptor',
+    },
+    {
+      name: 'a renderer descriptor for another render key than its row',
+      modules: blocks({ renderKey: 'acme.code/other' }),
+      detailCode: 'client_selection_descriptor',
     },
   ]
 

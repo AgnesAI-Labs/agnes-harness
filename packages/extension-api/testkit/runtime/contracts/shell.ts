@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import type {
   ClientEntry,
-  RendererDefinition,
+  RendererDescriptor,
   ShellProvider,
   ShellServices,
   UIRegistryFactory,
@@ -388,19 +388,16 @@ const anyRegistry: UIRegistryFactory = () => ({
     resolve: () => ({ ok: true, value: { kind: 'fallback', reason: 'nothing is presented here' } }),
   },
 })
-const fallback: RendererDefinition = {
-  descriptor: {
-    id: FALLBACK,
-    packageDigest: DIGEST,
-    renderKey: FALLBACK,
-    targets: ['web'],
-    viewSchemaRanges: [],
-    requiredFeatures: [],
-    optionalFeatures: [],
-    scope: 'view',
-    entry: './fallback.js',
-  },
-  format: () => ({ ok: false, error: refusal('denied', 'not_presented') }),
+const fallback: RendererDescriptor = {
+  id: FALLBACK,
+  packageDigest: DIGEST,
+  renderKey: FALLBACK,
+  targets: ['web'],
+  viewSchemaRanges: [],
+  requiredFeatures: [],
+  optionalFeatures: [],
+  scope: 'view',
+  entry: './fallback.js',
 }
 
 const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => Promise<Checks>>> = {
@@ -413,7 +410,7 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
     const forward = [
       catalogModule(FRAME, [
         serving('registry', 'conformance.registry', 'createRegistry'),
-        { contributionId: FALLBACK, kind: 'renderer', targets: ['web'], descriptor: fallback.descriptor },
+        { contributionId: FALLBACK, kind: 'renderer', targets: ['web'], descriptor: fallback },
       ]),
       catalogModule(DECOY, [serving('shell', PLAIN, 'plainShell')]),
       catalogModule(SHELLS, [
@@ -431,7 +428,8 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
       shells: Namespace = { workbenchShell: shell, plainShell: plain },
     ) => {
       const namespaces: Record<string, Namespace> = {
-        [FRAME]: { createRegistry: anyRegistry },
+        // The host registers the fallback from its module's fixed Web export; nothing is presented here.
+        [FRAME]: { createRegistry: anyRegistry, component: () => null },
         [SHELLS]: shells,
         [DECOY]: { plainShell: () => markedShell('decoy') },
       }
@@ -440,16 +438,14 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
         selection: selection(ref),
         async load(module) {
           const own = namespaces[module.moduleId] ?? {}
-          // The entry registers what its module declares, in declaration order: every shell becomes a
+          // The entry registers every shell its module declares, in declaration order: each becomes a
           // candidate, so in one of the two orders the shell registered last is not the selected one.
           const clientEntry: ClientEntry = async (host) => {
             for (const declared of module.contributions ?? []) {
               const outcome =
-                declared.kind === 'renderer'
-                  ? host.renderers.register(fallback)
-                  : declared.kind === 'shell'
-                    ? host.registerShell(own[declared.export] as () => ShellProvider)
-                    : OK
+                declared.kind === 'shell'
+                  ? host.registerShell(own[declared.export] as () => ShellProvider)
+                  : OK
               if (!outcome.ok) return outcome
             }
             return { ok: true, value: { dispose: async () => {} } }

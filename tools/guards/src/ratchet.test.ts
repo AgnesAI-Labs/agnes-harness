@@ -258,9 +258,19 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default UI registry over a private slot ledger. Measured 2126, exact, no spare (+171).
   // Renderer context restricted to its mounted view and the generic domain view card. Measured 2443,
   // exact, no spare (+317).
-  // Fifth main synchronization merged with the current integration tip. Measured 3475, exact, no spare.
-  // Fifth main synchronization merged with the current integration tip. Measured 3544, exact, no spare.
-  'packages/web-client/src': 3544,
+  // Default text presentation of a domain view for the tui, sdk and im targets. Measured 2647, exact,
+  // no spare (+204).
+  // Client host: server-chosen selection resolution, generation activation from verified module
+  // exports and renderer presentation through per-view restricted contexts. Measured 3372, exact,
+  // no spare (+725).
+  // Domain view presentation through the selected renderers, the selected fallback and the built-in
+  // generic view; contexts open on commit and dispose their cleanups independently. Measured 3441,
+  // exact, no spare (+69).
+  // Selected renderers registered by the client host from catalog descriptors and fixed module exports.
+  // Measured 3530, exact, no spare (+89).
+  // Fifth main synchronization merged with the current integration tip (locale catalogs). Measured 3633,
+  // exact, no spare.
+  'packages/web-client/src': 3633,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1521,7 +1531,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Usage and budget settlement for billing. Measured 12594, exact, no spare.
   // Shell selection through the client host: the selected shell, in either catalog order, and refusals.
   // Measured 13100, exact, no spare (+178).
-  'packages/extension-api/testkit': 13100,
+  // Channel contract cases: idempotent send and reconcile, authenticated callbacks, cancellation,
+  // crash recovery and disposal. Measured 13613, exact, no spare (+513).
+  'packages/extension-api/testkit': 13613,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

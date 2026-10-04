@@ -8,6 +8,7 @@ import type {
   Outcome,
   RendererContext,
   RendererDefinition,
+  RendererDescriptor,
   RendererPresentation,
   RendererRegistration,
 } from '@agnes/extension-api/client'
@@ -16,7 +17,7 @@ import { act, type ReactElement, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClientHostRuntime } from '../../src/runtime/client-host.js'
-import type { ClientTarget, SelectedContribution } from '../../src/runtime/client-selection.js'
+import type { ClientTarget, SelectedRenderer } from '../../src/runtime/client-selection.js'
 import { createUIRegistry } from '../../src/runtime/providers/ui-registry.js'
 import { createRendererPresenter } from '../../src/runtime/renderer-presentation.js'
 import { formatDomainView } from '../../src/runtime/renderers/text.js'
@@ -41,15 +42,36 @@ const CARD = 'acme.notes/card'
 const EXTRA = 'acme.notes/extra'
 const TARGETS = ['web', 'tui'] as const
 
-// The renderers each module registers: id, render key and the schema revisions of acme.notes/view@1 it
+type Declared = readonly [string, string, number, number]
+
+// The renderers each module declares: id, render key and the schema revisions of acme.notes/view@1 it
 // reads. base also serves the registry; the selection names base.fallback as its fallback and, with
-// rows, cards.card for the card render key. base.extra is registered but never selected.
-const RENDERERS: Record<string, ReadonlyArray<readonly [string, string, number, number]>> = {
+// rows, cards.card for the card render key. base.extra is registered by base's entry but never selected.
+const RENDERERS: Record<string, readonly Declared[]> = {
   base: [
     ['base.fallback', CARD, 2, 3],
     ['base.extra', EXTRA, 1, 3],
   ],
   cards: [['cards.card', CARD, 1, 1]],
+}
+
+const descriptorOf = ([id, renderKey, minRevision, maxRevision]: Declared): RendererDescriptor => ({
+  id,
+  packageDigest: DIGEST,
+  renderKey,
+  targets: [...TARGETS],
+  viewSchemaRanges: [{ typeId: 'acme.notes/view@1', minRevision, maxRevision }],
+  requiredFeatures: [],
+  optionalFeatures: [],
+  scope: 'view',
+  entry: './view.js',
+})
+
+/** The descriptor `moduleId` declares for its renderer `id`. */
+function declaredIn(moduleId: string, id: string): RendererDescriptor {
+  const found = RENDERERS[moduleId]?.find(([entry]) => entry === id)
+  if (found === undefined) throw new Error(`${moduleId} declares no renderer ${id}`)
+  return descriptorOf(found)
 }
 
 const catalogModule = (moduleId: string, revision: number): ClientModule => ({
@@ -75,31 +97,22 @@ const catalogModule = (moduleId: string, revision: number): ClientModule => ({
           },
         ]
       : []),
-    ...(RENDERERS[moduleId] ?? []).map(([id, renderKey, minRevision, maxRevision]) => ({
-      contributionId: id,
+    ...(RENDERERS[moduleId] ?? []).map((declared) => ({
+      contributionId: declared[0],
       kind: 'renderer' as const,
       targets: [...TARGETS],
-      descriptor: {
-        id,
-        packageDigest: DIGEST,
-        renderKey,
-        targets: [...TARGETS],
-        viewSchemaRanges: [{ typeId: 'acme.notes/view@1', minRevision, maxRevision }],
-        requiredFeatures: [],
-        optionalFeatures: [],
-        scope: 'view' as const,
-        entry: './view.js',
-      },
+      descriptor: descriptorOf(declared),
     })),
   ],
 })
 
-const pick = (moduleId: string, contributionId: string): SelectedContribution => ({
+const chose = (moduleId: string, contributionId: string): SelectedRenderer => ({
   moduleId,
   packageId: `acme.${moduleId}`,
   packageDigest: DIGEST,
   entryPath: `./${moduleId}.js`,
   contributionId,
+  descriptor: declaredIn(moduleId, contributionId),
 })
 
 function catalog(revision: number, target: ClientTarget, rows: boolean) {
@@ -110,9 +123,16 @@ function catalog(revision: number, target: ClientTarget, rows: boolean) {
       kind: 'selected' as const,
       target,
       shell: null,
-      registry: { ...pick('base', 'base.registry'), export: 'createRegistry' },
-      fallbackRenderer: pick('base', 'base.fallback'),
-      renderers: rows ? [{ renderKey: CARD, renderer: pick('cards', 'cards.card') }] : [],
+      registry: {
+        moduleId: 'base',
+        packageId: 'acme.base',
+        packageDigest: DIGEST,
+        entryPath: './base.js',
+        contributionId: 'base.registry',
+        export: 'createRegistry',
+      },
+      fallbackRenderer: chose('base', 'base.fallback'),
+      renderers: rows ? [{ renderKey: CARD, renderer: chose('cards', 'cards.card') }] : [],
     },
   }
 }
@@ -165,7 +185,10 @@ const capabilities = {
 
 type Seen = { view: DomainView; context: RendererContext }
 
-/** A runtime over the default registry and the real presenter; every module's entry registers its renderers. */
+/**
+ * A runtime over the default registry and the real presenter. The host registers the selected renderers
+ * from each module's fixed exports; base's entry registers base.extra, and cards has no entry at all.
+ */
 async function harness(target: ClientTarget, rows: boolean) {
   const renders: Record<string, Seen[]> = {}
   const mounts: Record<string, number> = {}
@@ -173,7 +196,8 @@ async function harness(target: ClientTarget, rows: boolean) {
   const failing = new Set<string>()
   const registrations: Record<string, RendererRegistration> = {}
 
-  const definition = (id: string, renderKey: string, minRevision: number, maxRevision: number) => {
+  /** The fixed exports of the renderer `id`: a component and a format that each show its id. */
+  const fixed = (id: string) => {
     function Plugin({ view, context }: Seen): ReactElement {
       renders[id] = [...(renders[id] ?? []), { view, context }]
       useEffect(() => {
@@ -182,17 +206,6 @@ async function harness(target: ClientTarget, rows: boolean) {
       return <p className="plugin">{`${id} ${view.viewId}@${view.revision}`}</p>
     }
     return {
-      descriptor: {
-        id,
-        packageDigest: DIGEST,
-        renderKey,
-        targets: [...TARGETS],
-        viewSchemaRanges: [{ typeId: 'acme.notes/view@1', minRevision, maxRevision }],
-        requiredFeatures: [],
-        optionalFeatures: [],
-        scope: 'view',
-        entry: './view.js',
-      },
       component: Plugin,
       format(shown: DomainView): Outcome<FormattedView> {
         if (failing.has(id)) throw new Error('broken')
@@ -207,18 +220,17 @@ async function harness(target: ClientTarget, rows: boolean) {
           },
         }
       },
-    } as unknown as RendererDefinition
-  }
-  const entry =
-    (moduleId: string): ClientEntry =>
-    async (clientHost) => {
-      for (const [id, renderKey, min, max] of RENDERERS[moduleId] ?? []) {
-        const registered = clientHost.renderers.register(definition(id, renderKey, min, max))
-        if (!registered.ok) return registered
-        registrations[id] = registered.value
-      }
-      return { ok: true, value: { dispose: async () => {} } }
     }
+  }
+  const clientEntry: ClientEntry = async (clientHost) => {
+    const registered = clientHost.renderers.register({
+      descriptor: declaredIn('base', 'base.extra'),
+      ...fixed('base.extra'),
+    } as unknown as RendererDefinition)
+    if (!registered.ok) return registered
+    registrations['base.extra'] = registered.value
+    return { ok: true, value: { dispose: async () => {} } }
+  }
 
   const window = new Map<string, DomainView>()
   const submit = vi.fn(async () => ({ ok: true as const, value: 'delegated' }))
@@ -240,8 +252,8 @@ async function harness(target: ClientTarget, rows: boolean) {
         ok: true,
         value:
           module.moduleId === 'base'
-            ? { clientEntry: entry('base'), createRegistry: createUIRegistry }
-            : { clientEntry: entry(module.moduleId) },
+            ? { clientEntry, createRegistry: createUIRegistry, ...fixed('base.fallback') }
+            : fixed('cards.card'),
       }),
     },
     context: {} as RendererContext,
@@ -314,14 +326,12 @@ describe('domain presentation through the client host', () => {
     expect(!result.ok && result.error.retryAdvice).toEqual({ kind: 'retry_read' })
   })
 
-  it('shows the generic card once the selected renderers are gone, and only for a view the window holds', async () => {
+  it('keeps presenting through the selected renderers when a module releases what it registered', async () => {
     const h = await harness('web', true)
     for (const registration of Object.values(h.registrations)) await registration.dispose()
-    expect(outcome(h.domain(view(1, 1)))).toBe('conflict/view_resync_required')
     h.hold(view(1, 1))
     await show(h.domain(view(1, 1)))
-    expect(shown()).toBe('generic')
-    expect(h.renders['cards.card']).toBeUndefined()
+    expect(shown()).toBe('cards.card note-1@1')
   })
 
   it('formats with the selected fallback, then the generic text when that fails', async () => {

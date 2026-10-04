@@ -9,6 +9,7 @@ import type {
   RendererDefinition,
   RendererDescriptor,
   RendererPresentation,
+  RendererRegistration,
   ShellProvider,
   UIRegistry,
   UIRegistryFactory,
@@ -20,16 +21,18 @@ import type {
   ClientModuleContribution,
   ClientTarget,
   SelectedContribution,
+  SelectedRenderer,
   SelectedService,
 } from '../../src/runtime/client-selection.js'
 import { createUIRegistry } from '../../src/runtime/providers/ui-registry.js'
 
 const DIGEST = 'a'.repeat(64)
-const TARGETS: RendererDescriptor['targets'] = ['web', 'tui']
+const TARGETS: RendererDescriptor['targets'] = ['web', 'tui', 'im']
 
 // What each catalog module declares, with the export of every shell and registry. `base` holds the
-// registry, the fallback renderer and the selected shell; `cards` holds the selected card renderer and a
-// shell nobody selected; `frame` holds only a shell and a registry; `spare` is never selected.
+// registry, the fallback renderer and the selected shell; `cards` holds the selected card renderer, a
+// renderer and a shell nobody selected; `frame` holds only a shell and a registry; `spare` is never
+// selected.
 const DECLARED: Record<
   string,
   ReadonlyArray<readonly [ClientModuleContribution['kind'], string, string?]>
@@ -41,6 +44,7 @@ const DECLARED: Record<
   ],
   cards: [
     ['renderer', 'cards.card'],
+    ['renderer', 'cards.other'],
     ['shell', 'cards.shell', 'cardsShell'],
   ],
   frame: [
@@ -49,6 +53,18 @@ const DECLARED: Record<
   ],
   spare: [['renderer', 'spare.card']],
 }
+
+const descriptorOf = (id: string, targets = TARGETS): RendererDescriptor => ({
+  id,
+  packageDigest: DIGEST,
+  renderKey: id,
+  targets,
+  viewSchemaRanges: [{ typeId: 'acme.card/view@1', minRevision: 1, maxRevision: 1 }],
+  requiredFeatures: [],
+  optionalFeatures: [],
+  scope: 'view',
+  entry: './card.js',
+})
 
 const catalogModule = (moduleId: string): ClientModule => ({
   moduleId,
@@ -67,7 +83,7 @@ const catalogModule = (moduleId: string): ClientModule => ({
       ({
         contributionId,
         kind,
-        export: name,
+        ...(kind === 'renderer' ? { descriptor: descriptorOf(contributionId) } : { export: name }),
         targets: kind === 'shell' ? ['web'] : TARGETS,
       }) as ClientModuleContribution,
   ),
@@ -80,6 +96,11 @@ const pick = (moduleId: string, contributionId: string): SelectedContribution =>
   packageDigest: DIGEST,
   entryPath: `./${moduleId}.js`,
   contributionId,
+})
+/** A selected renderer, with the descriptor its module declares for it. */
+const chose = (moduleId: string, contributionId: string): SelectedRenderer => ({
+  ...pick(moduleId, contributionId),
+  descriptor: descriptorOf(contributionId),
 })
 /** A selected shell or registry, naming the export its module declares for it. */
 const serve = (moduleId: string, contributionId: string): SelectedService => ({
@@ -97,31 +118,25 @@ function catalog(revision: number, target: ClientTarget = 'web') {
       target,
       shell: target === 'web' ? serve('base', 'base.shell') : null,
       registry: serve('base', 'base.registry'),
-      fallbackRenderer: pick('base', 'base.fallback'),
-      renderers: [{ renderKey: 'card', renderer: pick('cards', 'cards.card') }],
+      fallbackRenderer: chose('base', 'base.fallback'),
+      renderers: [{ renderKey: 'cards.card', renderer: chose('cards', 'cards.card') }],
     },
   }
 }
 
-// Presents on every declared target; the host never presents during these tests.
+// The fixed exports of a renderer module, for every target; the host never presents during these tests.
+const presenting = () => ({
+  component: () => null,
+  format: () => {
+    throw new Error('not presented')
+  },
+  encode: () => {
+    throw new Error('not presented')
+  },
+})
+// A definition a module registers itself.
 const renderer = (id: string, targets = TARGETS) =>
-  ({
-    descriptor: {
-      id,
-      packageDigest: DIGEST,
-      renderKey: id,
-      targets,
-      viewSchemaRanges: [{ typeId: 'acme.card/view@1', minRevision: 1, maxRevision: 1 }],
-      requiredFeatures: [],
-      optionalFeatures: [],
-      scope: 'view',
-      entry: './card.js',
-    },
-    component: () => null,
-    format: () => {
-      throw new Error('not presented')
-    },
-  }) as unknown as RendererDefinition
+  ({ descriptor: descriptorOf(id, targets), ...presenting() }) as unknown as RendererDefinition
 
 // Only the descriptor id is read before a shell is mounted.
 const shell = (id: string) => () => ({ descriptor: { id } }) as unknown as ShellProvider
@@ -149,6 +164,17 @@ const replacing = (name: string, value: unknown) => (namespace: Namespace) => ({
   ...namespace,
   [name]: value,
 })
+/** Moves the export `name` onto the namespace's prototype. */
+const inheriting = (name: string) => (namespace: Namespace) =>
+  Object.assign(Object.create({ [name]: namespace[name] }) as Namespace, without(name)(namespace))
+/** Makes the export `name` throw when read, like a binding read before its module initialized it. */
+const unreadable = (name: string) => (namespace: Namespace) =>
+  Object.defineProperty(without(name)(namespace), name, {
+    enumerable: true,
+    get() {
+      throw new ReferenceError(`${name} is not initialized`)
+    },
+  })
 
 const contribution = (log: string[], name: string): Outcome<ClientContribution> => ({
   ok: true,
@@ -160,10 +186,11 @@ const contribution = (log: string[], name: string): Outcome<ClientContribution> 
 })
 
 /**
- * A runtime over a fake loader. Each module namespace holds its `clientEntry` and a function under every
- * export it declares; `entries` replaces one module's entry and `namespaces` edits its namespace for later
- * loads. Every module's standard entry registers what it declares. The registry is the default one,
- * logging what it holds.
+ * A runtime over a fake loader. Each module namespace holds its `clientEntry`, a function under every
+ * export it declares and, when it declares a renderer, the fixed renderer exports; `entries` replaces one
+ * module's entry and `namespaces` edits its namespace for later loads. Every module's standard entry
+ * registers the shells it declares. The registry is the default one, logging what it holds and keeping
+ * every definition it took in `definitions`.
  */
 function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; disposeMs?: number } } = {}) {
   const target = options.target ?? 'web'
@@ -181,6 +208,7 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
         register(definition) {
           const registered = register(definition)
           if (!registered.ok) return registered
+          h.definitions.push(definition)
           log.push(`register ${registered.value.id}`)
           const { id, ownerToken, dispose } = registered.value
           return {
@@ -204,13 +232,9 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
       const run = (starts.get(moduleId) ?? 0) + 1
       starts.set(moduleId, run)
       for (const [kind, id] of DECLARED[moduleId] ?? []) {
-        const outcome =
-          kind === 'renderer'
-            ? host.renderers.register(renderer(id))
-            : kind === 'shell' && target === 'web'
-              ? host.registerShell(shell(id))
-              : undefined
-        if (outcome?.ok === false) return outcome
+        if (kind !== 'shell' || target !== 'web') continue
+        const outcome = host.registerShell(shell(id))
+        if (!outcome.ok) return outcome
       }
       return contribution(log, `${moduleId}#${run}`)
     }
@@ -230,8 +254,12 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
           },
         }
       const own = standard(module.moduleId)
-      const namespace: Namespace = { clientEntry: h.entries[module.moduleId]?.(own) ?? own }
-      for (const [kind, id, name] of DECLARED[module.moduleId] ?? [])
+      const declared = DECLARED[module.moduleId] ?? []
+      const namespace: Namespace = {
+        clientEntry: h.entries[module.moduleId]?.(own) ?? own,
+        ...(declared.some(([kind]) => kind === 'renderer') ? presenting() : {}),
+      }
+      for (const [kind, id, name] of declared)
         if (name !== undefined) namespace[name] = kind === 'registry' ? factory : shell(id)
       const loaded = h.namespaces[module.moduleId]?.(namespace) ?? namespace
       h.loaded[module.moduleId] = loaded
@@ -267,6 +295,7 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
     /** How often each module's standard entry ran. */
     starts,
     hosts: [] as UIRegistryHost[],
+    definitions: [] as RendererDefinition[],
     entries: {} as Record<string, (standard: ClientEntry) => ClientEntry>,
     namespaces: {} as Record<string, (standard: Namespace) => Namespace>,
     /** The namespace each module loaded last. */
@@ -312,7 +341,8 @@ describe('client host runtime', () => {
     // Both entries registered their own shells; the generation offers only the selected export.
     expect(generation.shell()).toBe(h.loaded.base?.workbenchShell)
     expect(kind(generation.registry, 'cards.card')).toBe('matched')
-    // base serves the registry, the shell and a renderer, and still loads once.
+    // base serves the registry, the shell and a renderer, and still loads once. The host registers only
+    // the selected renderers, so cards.other, declared by the same module, stays unregistered.
     expect(h.log).toEqual(['load base', 'register base.fallback', 'load cards', 'register cards.card'])
     expect(seen?.context).toBe(h.context)
     // A module presents through its generation's presentation.
@@ -333,9 +363,31 @@ describe('client host runtime', () => {
     expect(kind(now(h).registry, 'cards.card', 'tui')).toBe('matched')
   })
 
+  it('registers each selected renderer from its catalog descriptor and the fixed exports of its module', async () => {
+    const h = harness()
+    // cards then serves only renderers: it is not activated, and neither its default export nor its
+    // shell export stands in for an entry.
+    h.namespaces.cards = (namespace) => ({
+      ...without('clientEntry')(namespace),
+      default: namespace.clientEntry,
+    })
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    expect([...h.starts.keys()]).toEqual(['base'])
+    const { cards } = h.loaded
+    // A definition the host composed, never the namespace itself.
+    expect(h.definitions.find((definition) => definition.descriptor.id === 'cards.card')).toStrictEqual({
+      descriptor: descriptorOf('cards.card'),
+      component: cards?.component,
+      format: cards?.format,
+      encode: cards?.encode,
+    })
+    expect(kind(now(h).registry, 'cards.card')).toBe('matched')
+    expect(kind(now(h).registry, 'cards.other')).toBe('fallback')
+  })
+
   it.each([
     ['an undeclared renderer', 'base', renderer('base.other')],
-    ['a target its declaration lacks', 'base', renderer('base.fallback', ['web', 'im'])],
+    ['a target its declaration lacks', 'base', renderer('base.fallback', ['web', 'sdk'])],
     ["another module's renderer", 'base', renderer('cards.card')],
   ])('refuses to register %s', async (_name, moduleId, definition) => {
     const h = harness()
@@ -421,18 +473,17 @@ describe('client host runtime', () => {
     expect(kind(now(h).registry, 'cards.card')).toBe('matched')
   })
 
-  it('leases handles only for definitions a module of the live generation registered', async () => {
+  it('leases handles only for definitions registered for a module of the live generation', async () => {
     const h = harness()
-    const definitions: RendererDefinition[] = []
-    h.entries.cards = () => async (host) => {
-      const definition = renderer('cards.card')
-      definitions.push(definition)
-      const registered = host.renderers.register(definition)
-      return registered.ok ? contribution(h.log, 'cards') : registered
-    }
+    /** The card definition the host registered in each generation. */
+    const card = (index: number) =>
+      at(
+        h.definitions.filter((definition) => definition.descriptor.id === 'cards.card'),
+        index,
+      )
     expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
     const first = at(h.hosts, 0)
-    const bound = first.bindRenderer(at(definitions, 0))
+    const bound = first.bindRenderer(card(0))
     if (!bound.ok) throw new Error(bound.error.message)
     expect(bound.value.id).toBe('cards.card')
     const fallback = resolved(now(h).registry, 'base.fallback')
@@ -453,29 +504,41 @@ describe('client host runtime', () => {
     expect(lease('cards.card', 'catalog-cards-1')[0]?.disposed).toBe(1)
     expect(lease('base.fallback', 'catalog-base-1')[0]?.disposed).toBe(0)
     expect(kind(now(h).registry, 'cards.card')).toBe('matched')
-    // An equal definition that no module registered.
+    // An equal definition that was never registered.
     expect(refused(first.bindRenderer(renderer('cards.card')))).toBe('denied/renderer_unbound')
 
     expect(refused(await h.runtime.activate(catalog(2)))).toBe('ok')
     // Releasing the generation ends every lease it still held.
     expect(lease('base.fallback', 'catalog-base-1')[0]?.disposed).toBe(1)
     const second = at(h.hosts, 1)
-    expect(refused(first.bindRenderer(at(definitions, 0)))).toBe('denied/renderer_unbound')
-    expect(refused(second.bindRenderer(at(definitions, 0)))).toBe('denied/renderer_unbound')
-    const rebound = second.bindRenderer(at(definitions, 1))
+    expect(refused(first.bindRenderer(card(0)))).toBe('denied/renderer_unbound')
+    expect(refused(second.bindRenderer(card(0)))).toBe('denied/renderer_unbound')
+    const rebound = second.bindRenderer(card(1))
     if (!rebound.ok) throw new Error(rebound.error.message)
     // The next generation binds the module under that generation's token.
     expect(rebound.value.ownerToken).toBe('catalog-cards-2')
   })
 
   const late = (h: ReturnType<typeof harness>) => () => async (host: ClientHost) => {
-    host.renderers.register(renderer('cards.card'))
     await sleep(100)
-    h.log.push(`late ${refused(host.renderers.register(renderer('cards.card')))}`)
+    h.log.push(`late ${refused(host.renderers.register(renderer('cards.other')))}`)
     return contribution(h.log, 'late')
   }
+  // The candidate loaded both modules and registered the fallback, then failed on cards.
+  const unloaded = ['load base', 'register base.fallback', 'load cards', 'unregister base.fallback']
+  // The candidate registered both selected renderers, started base, then failed on the entry of cards.
+  const started = [
+    'load base',
+    'register base.fallback',
+    'load cards',
+    'register cards.card',
+    'dispose base#2',
+    'unregister cards.card',
+    'unregister base.fallback',
+  ]
   const failing: Array<{
     name: string
+    target?: ClientTarget
     arrange: (h: ReturnType<typeof harness>) => void
     select?: (next: ReturnType<typeof catalog>) => ReturnType<typeof catalog>
     expected: string
@@ -558,13 +621,54 @@ describe('client host runtime', () => {
       expected: 'incompatible/shell_undeclared',
       log: ['load base'],
     },
+    {
+      name: 'a renderer module cannot be loaded',
+      arrange: (h) => {
+        h.unloadable = 'cards'
+      },
+      expected: 'internal/client_module_load_failed',
+      log: unloaded,
+    },
+    // The fixed renderer exports for the target, each an own function of the namespace.
     ...(
       [
-        [
-          'a renderer module cannot be loaded',
-          (h) => (h.unloadable = 'cards'),
-          'internal/client_module_load_failed',
-        ],
+        ['a Web renderer module has no component', 'web', without('component'), 'client_export_missing'],
+        ['component is not a function', 'web', replacing('component', {}), 'client_export_invalid'],
+        ['component is inherited', 'web', inheriting('component'), 'client_export_missing'],
+        ['a TUI renderer module has no format', 'tui', without('format'), 'client_export_missing'],
+        ['an IM renderer module has no encode', 'im', without('encode'), 'client_export_missing'],
+      ] as const
+    ).map(([name, target, edit, detail]) => ({
+      name,
+      target,
+      arrange: (h: ReturnType<typeof harness>) => {
+        h.namespaces.cards = edit
+      },
+      expected: `incompatible/${detail}`,
+      log: unloaded,
+    })),
+    {
+      name: 'reading a renderer export throws',
+      arrange: (h) => {
+        h.namespaces.cards = unreadable('component')
+      },
+      expected: 'internal/client_activation_failed',
+      log: unloaded,
+    },
+    {
+      name: 'an entry registers a selected renderer again and ignores the refusal',
+      arrange: (h) => {
+        h.entries.cards = (standard) => async (host) => {
+          h.log.push(`again ${refused(host.renderers.register(renderer('cards.card')))}`)
+          return standard(host)
+        }
+      },
+      expected: 'conflict/renderer_conflict',
+      // Its contribution and both host registrations are released with the candidate.
+      log: [...started, 'again conflict/renderer_conflict', 'dispose cards#2'],
+    },
+    ...(
+      [
         [
           'an entry throws',
           (h) =>
@@ -593,30 +697,8 @@ describe('client host runtime', () => {
           (h) => (h.namespaces.cards = replacing('clientEntry', {})),
           'incompatible/client_entry_invalid',
         ],
-        // cards is loaded but never activated, so its selected renderer is never registered; neither its
-        // default export nor its shell export stands in for the entry.
-        [
-          'a renderer module has no clientEntry',
-          (h) =>
-            (h.namespaces.cards = (namespace) => ({
-              ...without('clientEntry')(namespace),
-              default: namespace.clientEntry,
-            })),
-          'incompatible/client_contribution_missing',
-        ],
       ] as Array<[string, (h: ReturnType<typeof harness>) => void, string]>
-    ).map(([name, arrange, expected]) => ({
-      name,
-      arrange,
-      expected,
-      log: [
-        'load base',
-        'register base.fallback',
-        'load cards',
-        'dispose base#2',
-        'unregister base.fallback',
-      ],
-    })),
+    ).map(([name, arrange, expected]) => ({ name, arrange, expected, log: started })),
     {
       name: 'an entry misses its deadline',
       arrange: (h) => {
@@ -645,30 +727,9 @@ describe('client host runtime', () => {
         }
       },
       expected: 'timeout/client_module_load_timeout',
-      log: [
-        'load base',
-        'register base.fallback',
-        'load cards',
-        'dispose base#2',
-        'unregister base.fallback',
-      ],
+      log: unloaded,
       // The entry of a late load is never started.
       quiet: true,
-    },
-    {
-      name: 'a selected renderer is not registered',
-      arrange: (h) => {
-        h.entries.cards = () => async () => contribution(h.log, 'cards (empty)')
-      },
-      expected: 'incompatible/client_contribution_missing',
-      log: [
-        'load base',
-        'register base.fallback',
-        'load cards',
-        'dispose cards (empty)',
-        'dispose base#2',
-        'unregister base.fallback',
-      ],
     },
     {
       name: 'the selection is for another target',
@@ -687,17 +748,18 @@ describe('client host runtime', () => {
   ]
 
   it.each(failing)('keeps the current generation and releases the candidate when $name', async (row) => {
-    const h = harness({ limits: { entryMs: 50 } })
-    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const target = row.target ?? 'web'
+    const h = harness({ target, limits: { entryMs: 50 } })
+    expect(refused(await h.runtime.activate(catalog(1, target)))).toBe('ok')
     h.log.length = 0
     row.arrange(h)
-    const next = catalog(2)
+    const next = catalog(2, target)
     expect(refused(await h.runtime.activate(row.select ? row.select(next) : next))).toBe(row.expected)
     expect(sorted(h.log)).toEqual(sorted(row.log))
     const generation = now(h)
     expect(generation.revision).toBe(1)
-    expect(generation.shell()?.().descriptor.id).toBe('base.shell')
-    expect(kind(generation.registry, 'cards.card')).toBe('matched')
+    expect(generation.shell()?.().descriptor.id).toBe(target === 'web' ? 'base.shell' : undefined)
+    expect(kind(generation.registry, 'cards.card', target)).toBe('matched')
     if (row.eventually) {
       const eventually = row.eventually
       await vi.waitFor(() => expect(h.log).toEqual(expect.arrayContaining(eventually)))
@@ -747,6 +809,28 @@ describe('client host runtime', () => {
       'cancelled/client_generation_released',
     )
     expect(kind(now(h).registry, 'cards.card')).toBe('matched')
+  })
+
+  it("never lets a replaced generation's disposers remove the next generation's renderers", async () => {
+    const h = harness()
+    const kept: RendererRegistration[] = []
+    h.entries.cards = (standard) => async (host) => {
+      const registered = host.renderers.register(renderer('cards.other'))
+      if (!registered.ok) return registered
+      kept.push(registered.value)
+      return standard(host)
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const old = resolved(now(h).registry, 'cards.card')
+    if (old?.kind !== 'matched') throw new Error('the card is not registered')
+    expect(refused(await h.runtime.activate(catalog(2)))).toBe('ok')
+    h.log.length = 0
+    // The first generation's module registration and lease, disposed again once the second is current.
+    await at(kept, 0).dispose()
+    await old.handle.dispose()
+    expect(h.log).toEqual([])
+    expect(kind(now(h).registry, 'cards.card')).toBe('matched')
+    expect(kind(now(h).registry, 'cards.other')).toBe('matched')
   })
 
   it('gives up on a dispose past its deadline and still releases the rest', async () => {
