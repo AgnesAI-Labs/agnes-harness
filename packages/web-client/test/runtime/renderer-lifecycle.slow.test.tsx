@@ -18,6 +18,7 @@ import type {
   Outcome,
   RendererContext,
   RendererDefinition,
+  RendererDescriptor,
   RendererHandle,
   RendererPresentation,
   UIRegistryFactory,
@@ -29,7 +30,7 @@ import { type ClientModuleLoader, createClientHostRuntime } from '../../src/runt
 import type {
   ClientModuleContribution,
   ClientTarget,
-  SelectedContribution,
+  SelectedRenderer,
 } from '../../src/runtime/client-selection.js'
 import { createUIRegistry } from '../../src/runtime/providers/ui-registry.js'
 import { createRendererPresenter } from '../../src/runtime/renderer-presentation.js'
@@ -127,35 +128,39 @@ const view: DomainView = {
 
 type Component = (props: { view: DomainView; context: RendererContext }) => ReactElement | null
 
+const descriptorOf = (id: string, renderKey = RENDER_KEY): RendererDescriptor => ({
+  id,
+  packageDigest: DIGEST,
+  renderKey,
+  targets: TARGETS,
+  viewSchemaRanges: [{ typeId: 'acme.notes/view@1', minRevision: 1, maxRevision: 1 }],
+  requiredFeatures: [],
+  optionalFeatures: [],
+  scope: 'view',
+  entry: './card.js',
+})
+
+/** The fixed exports of a renderer module for every target. */
+const fixed = (component: Component) => ({
+  component,
+  format: (shown: DomainView): Outcome<FormattedView> => ({
+    ok: true,
+    value: {
+      viewId: shown.viewId,
+      revision: shown.revision,
+      parts: [],
+      complete: true,
+      unsupportedRequiredFeatures: [],
+    },
+  }),
+  encode: () => {
+    throw new Error('not encoded')
+  },
+})
+
 /** A renderer for every target, presenting `renderKey`. */
 const definition = (id: string, component: Component, renderKey = RENDER_KEY) =>
-  ({
-    descriptor: {
-      id,
-      packageDigest: DIGEST,
-      renderKey,
-      targets: TARGETS,
-      viewSchemaRanges: [{ typeId: 'acme.notes/view@1', minRevision: 1, maxRevision: 1 }],
-      requiredFeatures: [],
-      optionalFeatures: [],
-      scope: 'view',
-      entry: './card.js',
-    },
-    component,
-    format: (shown: DomainView): Outcome<FormattedView> => ({
-      ok: true,
-      value: {
-        viewId: shown.viewId,
-        revision: shown.revision,
-        parts: [],
-        complete: true,
-        unsupportedRequiredFeatures: [],
-      },
-    }),
-    encode: () => {
-      throw new Error('not encoded')
-    },
-  }) as unknown as RendererDefinition
+  ({ descriptor: descriptorOf(id, renderKey), ...fixed(component) }) as unknown as RendererDefinition
 
 /** Subscriptions renderers hold. A Card adds one and an interval, and releases both through onDispose. */
 const feed = new Set<() => void>()
@@ -254,12 +259,19 @@ const DECLARED: Record<string, ReadonlyArray<readonly [ClientModuleContribution[
   notes: [['renderer', 'notes.card']],
 }
 
-const pick = (moduleId: string, contributionId: string): SelectedContribution => ({
+/** The fallback presents its own render key; each card presents the card's. */
+const keyOf = (contributionId: string) => (contributionId === 'base.fallback' ? contributionId : RENDER_KEY)
+
+const pick = (moduleId: string, contributionId: string) => ({
   moduleId,
   packageId: `acme.${moduleId}`,
   packageDigest: DIGEST,
   entryPath: `./${moduleId}.js`,
   contributionId,
+})
+const chose = (moduleId: string, contributionId: string): SelectedRenderer => ({
+  ...pick(moduleId, contributionId),
+  descriptor: descriptorOf(contributionId, keyOf(contributionId)),
 })
 
 const catalog = (revision: number, target: ClientTarget, card = revision % 2 ? 'cards' : 'notes') => ({
@@ -282,7 +294,9 @@ const catalog = (revision: number, target: ClientTarget, card = revision % 2 ? '
           ({
             contributionId,
             kind,
-            export: kind === 'registry' ? 'createRegistry' : undefined,
+            ...(kind === 'registry'
+              ? { export: 'createRegistry' }
+              : { descriptor: descriptorOf(contributionId, keyOf(contributionId)) }),
             targets: TARGETS,
           }) as ClientModuleContribution,
       ),
@@ -293,15 +307,16 @@ const catalog = (revision: number, target: ClientTarget, card = revision % 2 ? '
     target,
     shell: null,
     registry: { ...pick('base', 'base.registry'), export: 'createRegistry' },
-    fallbackRenderer: pick('base', 'base.fallback'),
-    renderers: [{ renderKey: RENDER_KEY, renderer: pick(card, `${card}.card`) }],
+    fallbackRenderer: chose('base', 'base.fallback'),
+    renderers: [{ renderKey: RENDER_KEY, renderer: chose(card, `${card}.card`) }],
   },
 })
 
 /**
  * A host runtime over a fake loader, the default registry and a real presenter, at the default limits.
- * `started` holds every entry contribution and renderer registration with its generation and how often
- * it was disposed; `entries` replaces one module's entry.
+ * Every module exports the fixed renderer functions over `component`, from which the host registers the
+ * selected renderers before it starts any entry. `started` holds every renderer registration and entry
+ * contribution with its generation and how often it was disposed; `entries` replaces one module's entry.
  */
 function harness(target: ClientTarget, component: Component = Card) {
   const started: { generation: number; what: string; disposed: number }[] = []
@@ -331,14 +346,7 @@ function harness(target: ClientTarget, component: Component = Card) {
   }
   const standard =
     (moduleId: string): ClientEntry =>
-    async (host) => {
-      for (const [kind, id] of DECLARED[moduleId] ?? []) {
-        if (kind !== 'renderer') continue
-        const registered = host.renderers.register(
-          definition(id, component, id === 'base.fallback' ? id : RENDER_KEY),
-        )
-        if (!registered.ok) return registered
-      }
+    async () => {
       const entry = { generation, what: `entry ${moduleId}`, disposed: 0 }
       started.push(entry)
       const dispose = async () => {
@@ -352,7 +360,11 @@ function harness(target: ClientTarget, component: Component = Card) {
       const own = standard(module.moduleId)
       return {
         ok: true,
-        value: { clientEntry: entries[module.moduleId]?.(own) ?? own, createRegistry: factory },
+        value: {
+          clientEntry: entries[module.moduleId]?.(own) ?? own,
+          createRegistry: factory,
+          ...fixed(component),
+        },
       }
     },
   }
@@ -491,8 +503,8 @@ describe('renderer lifecycle', () => {
     expect(h.started.filter((entry) => entry.disposed !== (entry.generation === 110 ? 0 : 1))).toEqual([])
     expect(h.of(110).map((entry) => entry.what)).toEqual([
       'register base.fallback',
-      'entry base',
       'register notes.card',
+      'entry base',
       'entry notes',
     ])
     const presented = handles.map((handle) => outcome(handle.present(view)))
@@ -514,7 +526,7 @@ describe('renderer lifecycle', () => {
     const gate = new Promise<void>((resolve) => {
       arrive = resolve
     })
-    // Registers its card, then hangs before returning its contribution.
+    // Starts, then hangs before returning its contribution.
     h.entries.notes = (own) => async (host) => {
       const started = await own(host)
       await gate
@@ -532,8 +544,8 @@ describe('renderer lifecycle', () => {
     // The candidate released everything it held; the contribution still on its way is not held yet.
     expect(h.of(2).map((entry) => [entry.what, entry.disposed])).toEqual([
       ['register base.fallback', 1],
-      ['entry base', 1],
       ['register notes.card', 1],
+      ['entry base', 1],
       ['entry notes', 0],
     ])
 

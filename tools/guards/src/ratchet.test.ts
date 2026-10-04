@@ -253,7 +253,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Domain view presentation through the selected renderers, the selected fallback and the built-in
   // generic view; contexts open on commit and dispose their cleanups independently. Measured 3441,
   // exact, no spare (+69).
-  'packages/web-client/src': 3441,
+  // Selected renderers registered by the client host from catalog descriptors and fixed module exports.
+  // Measured 3530, exact, no spare (+89).
+  'packages/web-client/src': 3530,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
