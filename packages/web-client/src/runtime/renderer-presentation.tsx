@@ -6,7 +6,9 @@
 // ids only and the view switches to the generic card, or to its fallback text if that throws. A text view
 // is only formatted; encoding and sending stay with the channel. Disposing a lease releases only what
 // that lease mounted. The built-in generic lease presents any view the window holds with the safe Web
-// card or the default text format, so basic information shows without any plugin bundle.
+// card or the default text format, so basic information shows without any plugin bundle. One view index
+// per presenter lets every context it opens for a view, in any lease or generation, read the status of
+// what any of them sent for that view.
 import type {
   DomainView,
   FormattedView,
@@ -23,7 +25,7 @@ import type {
 import { formatDomainView } from '@agnes/sdk/runtime'
 import { Component, type ReactNode, useLayoutEffect, useState } from 'react'
 import type { ClientTarget } from './client-selection.js'
-import { createRendererContext, type MountedRendererContext } from './renderer-context.js'
+import { createRendererContext, createViewIndex, type MountedRendererContext } from './renderer-context.js'
 import { GenericDomainView } from './renderers/generic.js'
 
 export interface AuthorizedViews {
@@ -164,6 +166,8 @@ export function createRendererPresenter(input: {
   views: AuthorizedViews
   /** Told, with ids only, that a Web renderer threw and its view switched to the generic card. */
   onFailure?: (failure: { rendererId: string; viewId: string }) => void
+  /** How long a disposed context waits for its calls in flight before its cleanups run; 5 000 ms by default. */
+  limits?: { drainMs?: number }
 }): {
   /** One lease for a definition the host bound under `ownerToken`. */
   lease(binding: { definition: RendererDefinition; ownerToken: string }): RendererLease
@@ -173,6 +177,9 @@ export function createRendererPresenter(input: {
   const { target, clientInstanceId, capabilities, services, views } = input
   // A capability set without a feature list negotiated none.
   const negotiated: readonly string[] = Array.isArray(capabilities?.features) ? capabilities.features : []
+  // What every context the presenter opens shares, its view index among it.
+  const shared = { clientInstanceId, capabilities, services, index: createViewIndex() }
+  const drainMs = input.limits?.drainMs ?? 5_000
   /** A lease presenting through `definition`; a plugin renderer must also fit the view (`checked`). */
   function bind(definition: RendererDefinition, ownerToken: string, checked: boolean): RendererLease {
     // Read once, so a definition changed after it was bound does not move what it may present.
@@ -187,7 +194,7 @@ export function createRendererPresenter(input: {
     // the wire yet, so only the view's own offers (and the services' own checks) bound a context today;
     // intersect those grants here once the selection carries them.
     const opener = (ownerToken: string) => (view: DomainView) => {
-      const mounted = createRendererContext({ clientInstanceId, ownerToken, capabilities, services, view })
+      const mounted = createRendererContext({ ...shared, ownerToken, view, drainMs })
       if (released) {
         void mounted.dispose()
         return mounted

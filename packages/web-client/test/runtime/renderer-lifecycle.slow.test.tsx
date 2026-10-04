@@ -41,6 +41,7 @@ const opened = vi.hoisted(() => [] as { cleaned: number; aborted: number; ref: W
 vi.mock('../../src/runtime/renderer-context.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/runtime/renderer-context.js')>()
   return {
+    ...actual,
     createRendererContext(input: Parameters<typeof actual.createRendererContext>[0]) {
       const mounted = actual.createRendererContext(input)
       const entry = { cleaned: 0, aborted: 0, ref: new WeakRef(mounted) }
