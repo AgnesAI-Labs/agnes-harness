@@ -37,6 +37,8 @@ const BLOB_BINDING = {
 }
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const CONTENT = new Uint8Array(MIB + MIB / 2).map((_, index) => (index * 7) % 256)
+/** Open descriptors of this process, where the platform lists them. */
+const openFiles = existsSync('/dev/fd') ? () => readdirSync('/dev/fd').length : null
 
 function scope(): ScopeRef {
   return {
@@ -471,22 +473,91 @@ describe('artifact download tickets', () => {
     expect(refused(await world.access.openDownload(request('download-3'), ctx()))).toBe('ticket_revoked')
   })
 
-  it('stops redeeming once the artifact version is revoked', async () => {
+  // Each authority behind a ticket, how it is withdrawn, and the refusal a redemption then gets.
+  it.each<[string, string, (world: Published) => unknown]>([
+    [
+      'the artifact version is revoked',
+      'revoked',
+      async (world) =>
+        ok(await world.artifacts.revoke({ artifactRef: world.ref, reason: 'withdrawn' }, ctx())),
+    ],
+    ['the download grant is revoked', 'revoked', async (world) => ok(await revokeGrant(world))],
+    ['the delegation is withdrawn', 'ticket_delegation', (world) => world.tickets.auth.withdraw()],
+    [
+      'the ticket key is revoked',
+      'ticket_revoked',
+      async ({ tickets }) =>
+        ok(
+          await tickets.broker.revoke(
+            { secretId: 'ticket-key', reason: 'stop' },
+            tickets.auth.call({}, true),
+          ),
+        ),
+    ],
+  ])(
+    'cuts an open download at its next chunk once %s and keeps a delivered one',
+    async (_, detail, withdraw) => {
+      const world = await published()
+      const request = { requestId: 'download-1', input: { ...world.ref, disposition: 'inline' as const } }
+      const ticket = ticketParts(ok(await world.access.openDownload(request, ctx())))
+      const files = openFiles?.()
+      const live = ok(await world.access.redeemDownload({ ...ticket, offset: 0 }, ctx())).stream
+      const whole = ok(await world.access.redeemDownload({ ...ticket, offset: 0 }, ctx())).stream
+      const [pull, drain] = [live, whole].map((stream) => stream.chunks[Symbol.asyncIterator]())
+      expect((await pull?.next())?.value?.byteLength).toBe(MIB)
+      expect((await drain?.next())?.value?.byteLength).toBe(MIB)
+      expect((await drain?.next())?.value?.byteLength).toBe(MIB / 2)
+      await withdraw(world)
+      // The final chunk passed its check before the withdrawal, so that download completes.
+      expect((await drain?.next())?.done).toBe(true)
+      expect(await whole.ended).toEqual({
+        ok: true,
+        value: { bytes: CONTENT.byteLength, digest: sha(CONTENT) },
+      })
+      expect((await pull?.next())?.done).toBe(true)
+      const end = await live.ended
+      expect(refused(end)).toBe(detail)
+      expect(JSON.stringify(end)).not.toContain(world.hostDataDir)
+      // Both blob file handles are closed again.
+      if (openFiles && files !== undefined) await expect.poll(openFiles).toBe(files)
+      expect(refused(await world.access.redeemDownload({ ...ticket, offset: 0 }, ctx()))).toBe(detail)
+    },
+  )
+
+  it('delivers no further chunk to a consumer that cancels while the next one is being checked', async () => {
     const world = await published()
-    const ticket = ok(
-      await world.access.openDownload(
-        { requestId: 'download-1', input: { ...world.ref, disposition: 'inline' } },
-        ctx(),
-      ),
-    )
-    const { ticketId, nonce } = ticketParts(ticket)
-    const live = ok(await world.access.redeemDownload({ ticketId, nonce, offset: 0 }, ctx()))
-    const iterator = live.stream.chunks[Symbol.asyncIterator]()
-    expect((await iterator.next()).done).toBe(false)
-    ok(await world.artifacts.revoke({ artifactRef: world.ref, reason: 'withdrawn' }, ctx()))
-    expect((await iterator.next()).done).toBe(true)
-    expect(refused(await live.stream.ended)).toBe('revoked')
-    expect(refused(await world.access.redeemDownload({ ticketId, nonce, offset: 0 }, ctx()))).toBe('revoked')
+    const { keys } = world.tickets
+    // Holds the broker while it checks a chunk once a gate is set.
+    let gate: { entered: () => void; held: Promise<void> } | undefined
+    const access = world.reopen({
+      authorize: (context) => context.authorizationRef === 'auth-ok',
+      ticketKeys: {
+        ...keys,
+        port: {
+          sealNonce: (request, call) => keys.port.sealNonce(request, call),
+          openNonce: async (request, call) => {
+            gate?.entered()
+            await gate?.held
+            return keys.port.openNonce(request, call)
+          },
+        },
+      },
+    })
+    const request = { requestId: 'download-1', input: { ...world.ref, disposition: 'inline' as const } }
+    const ticket = ticketParts(ok(await access.openDownload(request, ctx())))
+    const { stream } = ok(await access.redeemDownload({ ...ticket, offset: 0 }, ctx()))
+    const pull = stream.chunks[Symbol.asyncIterator]()
+    expect((await pull.next()).value?.byteLength).toBe(MIB)
+    let release = () => {}
+    const checking = new Promise<void>((entered) => {
+      gate = { entered, held: new Promise((resolve) => (release = resolve)) }
+    })
+    const next = pull.next()
+    await checking
+    await stream.cancel('stop')
+    release()
+    expect((await next).done).toBe(true)
+    expect(refused(await stream.ended)).toBe('cancelled')
   })
 })
 

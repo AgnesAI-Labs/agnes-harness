@@ -97,25 +97,35 @@ function noNegativeZero(...values: number[]) {
 }
 
 /** Rechecks access before every chunk; a refusal cancels the blob stream and becomes the stream's end. */
-function guarded(inner: ByteReadStream, recheck: () => void): ByteReadStream {
+function guarded(inner: ByteReadStream, recheck: () => unknown): ByteReadStream {
   let refusal: Wire.RuntimeError | undefined
+  // A consumer that cancels or closes while a check runs gets no further chunk and keeps its own end.
+  let stopped = false
   async function* chunks(): AsyncGenerator<Uint8Array> {
     for await (const chunk of inner.chunks) {
       try {
-        recheck()
+        await recheck()
       } catch (caught) {
+        if (stopped) return
         refusal = errorOf(caught)
         await inner.cancel(refusal.detailCode)
         return
       }
+      if (stopped) return
       yield chunk
     }
   }
   return {
     chunks: chunks(),
     ended: inner.ended.then((outcome) => (refusal ? { ok: false, error: refusal } : outcome)),
-    cancel: (reason) => inner.cancel(reason),
-    close: () => inner.close(),
+    cancel: (reason) => {
+      stopped = true
+      return inner.cancel(reason)
+    },
+    close: () => {
+      stopped = true
+      return inner.close()
+    },
   }
 }
 
@@ -317,10 +327,14 @@ export function createArtifactAccess(
           if (blob.pinId !== ticket.pin_id) refuse('revoked', 'artifact content changed')
           return { record, blob }
         }
-        check()
-        // The broker refuses a ticket of a revoked key before it expires, so possession alone is not enough.
-        await opened(keys, ticket, context)
-        const { record, blob } = check()
+        // The broker refuses a revoked key or a withdrawn delegation, so possession alone is not enough;
+        // the whole check runs again before every chunk.
+        const authorized = async () => {
+          check()
+          await opened(keys, ticket, context)
+          return check()
+        }
+        const { record, blob } = await authorized()
         if (offset > blob.bytes) refuse('range_not_satisfiable', 'download starts past the end')
         const stream = unwrap(await blobRead.openRead({ ref: blob, offset }, context))
         const metadata = checked('ArtifactDownloadPresentation', {
@@ -329,7 +343,7 @@ export function createArtifactAccess(
           expiresAt: iso(ticket.expires_at),
           grantRevision: ticket.grant_revision,
         })
-        return { metadata, stream: guarded(stream, check) }
+        return { metadata, stream: guarded(stream, authorized) }
       }),
   }
 }

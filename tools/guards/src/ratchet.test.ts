@@ -2827,7 +2827,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Explicit worker admission is routed through a deployment slot. Measured 78823, exact, no spare.
   // Four source-bound publication data codecs and complete retained-content validation add 1039 measured lines.
   // Publication installation and pure empty-history checks: measured 79966, exact, no spare.
-  'packages/host/src': 79966,
+  // Artifact download streams recheck the ticket broker before every chunk; measured 79978 (+12), exact.
+  'packages/host/src': 79978,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
