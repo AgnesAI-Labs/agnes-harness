@@ -13,7 +13,7 @@
   "packages/host/src/assemble": 4242,
   "packages/protocol/src": 3462,
   "packages/cli/src/tui": 38,
-  "packages/cli-tui/src": 4737,
+  "packages/cli-tui/src": 5486,
   "packages/extension-api/src": 5485,
   "packages/sdk/src": 6023,
   "packages/sdk/src/extensions.node": 21,
