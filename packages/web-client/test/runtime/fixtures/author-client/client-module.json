@@ -1,0 +1,43 @@
+{
+  "moduleId": "acme.notes/client",
+  "packageId": "acme.notes",
+  "packageDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "assetDigest": "b03e3c65b4857a7a24e3a7b1688f0445749f095f146468f2cc29213416ad82c8",
+  "entryPath": "./client.tsx",
+  "ownerToken": "acme.notes/client#1",
+  "authorApiMajor": 1,
+  "targets": ["web", "tui", "sdk"],
+  "schemas": [],
+  "requiredFeatures": [],
+  "styles": [],
+  "contributions": [
+    {
+      "contributionId": "acme.notes/shell",
+      "kind": "shell",
+      "export": "notesShell",
+      "targets": ["web"]
+    },
+    {
+      "contributionId": "acme.notes/registry",
+      "kind": "registry",
+      "export": "createRegistry",
+      "targets": ["web", "tui", "sdk"]
+    },
+    {
+      "contributionId": "acme.notes/note-card",
+      "kind": "renderer",
+      "targets": ["web", "tui", "sdk"],
+      "descriptor": {
+        "id": "acme.notes/note-card",
+        "packageDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "renderKey": "acme.notes/note",
+        "targets": ["web", "tui", "sdk"],
+        "viewSchemaRanges": [{ "typeId": "acme.notes/note@1", "minRevision": 1, "maxRevision": 1 }],
+        "requiredFeatures": [],
+        "optionalFeatures": [],
+        "scope": "view",
+        "entry": "./client.tsx"
+      }
+    }
+  ]
+}
