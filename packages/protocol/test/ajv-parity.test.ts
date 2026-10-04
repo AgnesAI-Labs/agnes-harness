@@ -358,6 +358,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionReadToolDetailResult: AgnesGen.SessionReadToolDetailResult,
   SlotFillView: AgnesGen.SlotFillView,
   UINode: AgnesGen.UINode,
+  UIPendingInput: AgnesGen.UIPendingInput,
   UsageView: AgnesGen.UsageView,
   UITurnCall: AgnesGen.UITurnCall,
   UITurnUsage: AgnesGen.UITurnUsage,
@@ -403,6 +404,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionAttachResult: AgnesGen.SessionAttachResult,
   SessionCompactParams: AgnesGen.SessionCompactParams,
   SessionSteerParams: AgnesGen.SessionSteerParams,
+  SessionSendNowParams: AgnesGen.SessionSendNowParams,
   SessionSteerResult: AgnesGen.SessionSteerResult,
   ApisListParams: AgnesGen.ApisListParams,
   ApisListResult: AgnesGen.ApisListResult,
@@ -1980,6 +1982,16 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'closed slot and ext/id/requestSeq boundaries',
   },
+  UIPendingInput: {
+    valid: { itemId: 'queued-1', preview: 'next prompt' },
+    invalid: [
+      { preview: 'next prompt' }, // missing required itemId
+      { itemId: 'queued-1' }, // missing required preview
+      { itemId: 'queued-1', preview: rep(2001) }, // boundary: maxLength:2000
+      { itemId: 'queued-1', preview: 'next prompt', extra: true }, // additionalProperties:false
+    ],
+    note: 'a queued input is projected as an id plus a bounded text preview, never its content blocks',
+  },
   UINode: {
     valid: {
       kind: 'compaction',
@@ -2313,6 +2325,19 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { ...steerOk, generation: 0 }, // boundary: one below minimum:1
     ],
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (steer-ok / steer-actor)',
+  },
+  SessionSendNowParams: {
+    valid: { sessionId: 's', itemId: 'queued-1', commandId: 'send-now-1' },
+    invalid: [
+      { sessionId: 's', commandId: 'send-now-1' }, // missing required itemId
+      { sessionId: 's', itemId: '', commandId: 'send-now-1' }, // boundary: one below minLength:1
+      { sessionId: rep(513), itemId: 'queued-1', commandId: 'send-now-1' }, // boundary: maxLength:512
+      { sessionId: 's', itemId: rep(513), commandId: 'send-now-1' }, // boundary: maxLength:512
+      { sessionId: 's', itemId: 'queued-1', commandId: rep(129) }, // boundary: maxLength:128
+      { sessionId: 's', itemId: 'queued-1', commandId: 'send-now-1', generation: 0 }, // boundary: minimum:1
+      { sessionId: 's', itemId: 'queued-1', commandId: 'send-now-1', extra: true }, // additionalProperties:false
+    ],
+    note: 'send-now rides the journal-bound submit command; the schema names one queued item to run first',
   },
   SessionSteerResult: {
     valid: steerResultOk,
