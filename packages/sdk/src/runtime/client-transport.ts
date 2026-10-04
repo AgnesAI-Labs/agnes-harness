@@ -205,6 +205,11 @@ export class RuntimeClientTransport {
     return this.session?.welcome.mode ?? (this.incompatible ? 'incompatible' : 'disconnected')
   }
 
+  /** What the server negotiated for this client in the current session, or null without one. */
+  get capabilities(): ClientWelcome['capabilities'] | null {
+    return this.session ? structuredClone(this.session.welcome.capabilities) : null
+  }
+
   get catalog(): { complete: boolean; modules: ClientModule[]; domainSchemas: SchemaRef[] } | null {
     const session = this.session
     return (

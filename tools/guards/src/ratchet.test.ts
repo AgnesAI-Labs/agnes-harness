@@ -1444,7 +1444,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the TUI live line reads merged previews. Measured 4232, exact, no spare (-6).
   // Runtime domain views, questions, approvals and artifact actions: measured 5486, exact, no spare (+749).
   // The domain consumer formats through the SDK text format by default. Measured 5487, exact, no spare (+1).
-  'packages/cli-tui/src': 5487,
+  // Runtime session: preset resolution and the SDK runtime client with its ports. Measured 5588, exact,
+  // no spare (+101).
+  'packages/cli-tui/src': 5588,
   // Initial ceilings for the remaining packages, registered all at once so that each parallel lane
   // does not have to edit these two files separately. The sdk ceiling of 2500 was newly set by
   // estimate: 404 lines today, plus roughly 360 for the three transports, plus roughly 1650 for the
@@ -1627,7 +1629,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The default domain view text format, moved from the web client and exported as `./runtime`, now
   // also removes format characters. Measured 6231, exact, no spare (+208).
   // `./runtime` becomes a barrel that also exports the runtime client. Measured 6252, exact, no spare (+21).
-  'packages/sdk/src': 6252,
+  // The runtime client exposes the capabilities its welcome negotiated. Measured 6255, exact, no spare (+3).
+  'packages/sdk/src': 6255,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
