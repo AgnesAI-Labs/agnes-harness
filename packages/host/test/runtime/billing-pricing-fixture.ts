@@ -136,7 +136,7 @@ export async function createBillingPricingFixture(directory: string, scope: W.Sc
   }
   const { createPricingProviderFactory } = await import('@agnes/ai/runtime')
   const { createReferencePricingFactory } = await import(
-    '../../../../examples/runtime-reference/src/index.js'
+    '../../../../examples/runtime-reference/src/providers/index.js'
   )
   const selectedFactory = rate === '100' ? createPricingProviderFactory : createReferencePricingFactory
   const factory = selectedFactory({ descriptor, configurationSchema: codec, owner })

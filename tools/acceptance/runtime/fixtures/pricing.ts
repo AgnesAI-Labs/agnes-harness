@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { createReferencePricingFactory } from '../../../../examples/runtime-reference/src/index.js'
+import { createReferencePricingFactory } from '../../../../examples/runtime-reference/src/providers/index.js'
 import {
   createPricingProviderFactory,
   type PricingProviderOwner,
