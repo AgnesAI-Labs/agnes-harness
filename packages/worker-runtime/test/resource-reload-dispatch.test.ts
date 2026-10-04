@@ -180,7 +180,7 @@ function fakeExtensionRows() {
 }
 
 describe('real dispatch(): resource.stale and run arrive as two separate frames', () => {
-  it('reloads on the run that follows a resource.stale in an earlier, separate dispatch() call', async () => {
+  it('prepares an idle worker before the first run after a resource.stale notification', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wrd-'))
     cleanup.push(() => rm(root, { recursive: true, force: true }))
     const urlA = await mcpFixture('toolA')
@@ -266,14 +266,7 @@ describe('real dispatch(): resource.stale and run arrive as two separate frames'
     await openSession(link, fromWorker, root)
     expect(counters.bootstrapCalls).toBe(1) // the one startup bootstrap, server A only
 
-    // Frame 1, in its own dispatch() call: the daemon's stale notification.
-    link.push(
-      encodeFrame({ kind: 'command', requestId: 's1', method: 'resource.stale', params: {} } as CommandFrame),
-    )
-    await waitForReply(fromWorker, 's1')
-    expect(counters.bootstrapCalls).toBe(1) // still just the startup bootstrap - marking stale is free
-
-    // The daemon's side of a real enable, between the two frames.
+    // The daemon commits the updated snapshot before notifying the idle worker.
     const urlB = await mcpFixture('toolB')
     await writeFile(
       snapshotPath,
@@ -284,6 +277,17 @@ describe('real dispatch(): resource.stale and run arrive as two separate frames'
         ]),
       ),
     )
+
+    // Frame 1, in its own dispatch() call: the daemon's stale notification.
+    link.push(
+      encodeFrame({ kind: 'command', requestId: 's1', method: 'resource.stale', params: {} } as CommandFrame),
+    )
+    await waitForReply(fromWorker, 's1')
+
+    await vi.waitFor(() =>
+      expect(fakeHost.extensionRows.current().some((row) => row.id.includes('agnes/mcp-b-'))).toBe(true),
+    )
+    expect(runCalls).toEqual([])
 
     // Frame 2, in its own separate dispatch() call, arriving after frame 1's dispatch() has already
     // returned: the run this whole plan exists to unblock.
@@ -757,12 +761,6 @@ describe('real dispatch(): two run frames overlap and single-flight the reload',
     await openSession(link, fromWorker, root)
     expect(counters.bootstrapCalls).toBe(1) // the one startup bootstrap, server A only
 
-    link.push(
-      encodeFrame({ kind: 'command', requestId: 's1', method: 'resource.stale', params: {} } as CommandFrame),
-    )
-    await waitForReply(fromWorker, 's1')
-    expect(counters.bootstrapCalls).toBe(1)
-
     const urlB = await mcpFixture('toolB')
     await writeFile(
       snapshotPath,
@@ -779,6 +777,7 @@ describe('real dispatch(): two run frames overlap and single-flight the reload',
     // `slot.staleMarks > slot.reloadedMarks` check before either one's reload has resolved - the
     // exact overlap window C1's investigation found production-reachable, reproduced directly here.
     const chunk = Buffer.concat([
+      encodeFrame({ kind: 'command', requestId: 's1', method: 'resource.stale', params: {} } as CommandFrame),
       encodeFrame({
         kind: 'command',
         requestId: 'r1',
@@ -890,11 +889,6 @@ describe('real dispatch(): two run frames overlap and single-flight the reload',
     await openSession(link, fromWorker, root)
     expect(counters.bootstrapCalls).toBe(1) // the one startup bootstrap, server A only
 
-    link.push(
-      encodeFrame({ kind: 'command', requestId: 's1', method: 'resource.stale', params: {} } as CommandFrame),
-    )
-    await waitForReply(fromWorker, 's1')
-
     const urlB = await mcpFixture('toolB')
     await writeFile(
       snapshotPath,
@@ -915,6 +909,7 @@ describe('real dispatch(): two run frames overlap and single-flight the reload',
     // join (observing staleMarks=2, one higher than frame 1) while frame 1's reload is still genuinely
     // in flight; no manual gate or sleep is needed for this ordering.
     const chunk = Buffer.concat([
+      encodeFrame({ kind: 'command', requestId: 's1', method: 'resource.stale', params: {} } as CommandFrame),
       encodeFrame({
         kind: 'command',
         requestId: 'r1',

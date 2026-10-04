@@ -77,6 +77,20 @@ describe('worker command dispatch against a real host+session', () => {
       { host: t.host, aborts },
     )
     expect(typeof seq).toBe('number')
+    const queued = (await session.projectUI()).pendingInputs?.[0]
+    if (!queued) throw new Error('missing queued input')
+    expect(
+      await handleCommand(
+        session,
+        {
+          kind: 'command',
+          requestId: 'send-now',
+          method: 'sendQueuedNow',
+          params: { itemId: queued.itemId, actor, admissionId: 'worker-send-now' },
+        },
+        { host: t.host, aborts },
+      ),
+    ).toEqual(expect.any(Number))
     const out = (await handleCommand(
       session,
       { kind: 'command', requestId: '2', method: 'run', params: { runId: 'r1', until: 'turn-end' } },

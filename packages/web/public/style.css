@@ -2434,6 +2434,50 @@ body.session-switching #approval {
   box-shadow: var(--shadow-elevation-soft);
   backdrop-filter: none;
 }
+.composer-queue {
+  margin: 0.25rem 0.875rem 0;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  font-size: 0.8125rem;
+}
+.composer-queue-count {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.composer-queue ol {
+  margin: 0;
+  padding-left: 1.25rem;
+  max-height: 10rem;
+  overflow-y: auto;
+}
+.composer-queue li {
+  padding: 0.25rem 0;
+}
+.composer-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.composer-queue-preview {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-queue button {
+  flex: none;
+  white-space: nowrap;
+  padding: 0.125rem 0.5rem;
+  font-size: inherit;
+}
+.composer-queue-error {
+  margin: 0.5rem 0 0;
+  color: var(--agnes-status-danger-text);
+  overflow-wrap: anywhere;
+}
 .composer-writing {
   min-height: 0;
   /* 卡片圆角 22px 而卡片本身没有水平内边距：writing 区全宽铺到卡缘时，

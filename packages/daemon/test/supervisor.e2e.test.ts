@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
@@ -638,6 +638,19 @@ describe('agnesd supervisor: real end-to-end', () => {
             expect(queuedA).toMatchObject({ result: { seq: expect.any(Number) } })
             expect(queuedB).toMatchObject({ result: { seq: expect.any(Number) } })
             expect((queuedA.result as { seq: number }).seq).not.toBe((queuedB.result as { seq: number }).seq)
+            // Accepted follow-ups now execute without a new prompt, including through a real worker.
+            await vi.waitFor(
+              async () => {
+                const projected = await c.call(51, '_agnes/v1/session.projectUI', { sessionId })
+                expect(projected.error).toBeUndefined()
+                const timeline = projected.result as { opState: unknown; turns: unknown[]; nodes: unknown[] }
+                expect(timeline.opState).toBeNull()
+                expect(timeline.turns).toHaveLength(2)
+                expect(JSON.stringify(timeline.nodes)).toContain('from client one')
+                expect(JSON.stringify(timeline.nodes)).toContain('from client two')
+              },
+              { timeout: 10_000 },
+            )
           } finally {
             c2.socket.end()
           }
@@ -887,6 +900,56 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
     protocolVersion: 1,
     clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
   }
+  it('shows the durable queue through a real worker and immediately sends a selected item once', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-queue-now-'))
+    process.env.AGNES_FAKE_WORKER_QUEUE = '1'
+    const { sup, tables } = await supervisorFor(dir).finally(() => {
+      delete process.env.AGNES_FAKE_WORKER_QUEUE
+    })
+    const sdk = createClient({
+      transport: localSdkTransport(sup.socketPath),
+      journal: memoryJournal('queue-client'),
+    })
+    try {
+      const session = await sdk.session.new({ cwd: dir })
+      const active = session.prompt('queue-A')
+      void active.catch(() => undefined)
+      await vi.waitFor(async () => expect((await session.projectUI()).opState?.phase).toBe('inference'), {
+        timeout: 10_000,
+      })
+      const cut = (await session.projectUIOpening({ surface: 'web' })).timeline.upto
+      for (const input of ['queue-B', 'queue-C', 'queue-D']) await session.followUp(input)
+      const queue = (await session.projectUI()).pendingInputs ?? []
+      expect(queue.map((item) => item.preview)).toEqual(['queue-B', 'queue-C', 'queue-D'])
+      expect(await session.projectUIPatch(cut, undefined, { surface: 'web' })).toMatchObject({
+        kind: 'patch',
+        patch: { pendingInputs: queue },
+      })
+      expect((await session.projectUIOpening({ surface: 'web' })).timeline.pendingInputs).toEqual(queue)
+      const selected = queue.find((item) => item.preview === 'queue-C')
+      if (!selected) throw new Error('missing selected input')
+      await session.sendNow(selected.itemId, { commandId: 'send-C' })
+      await expect(active).resolves.toMatchObject({ reason: 'aborted' })
+      await vi.waitFor(
+        async () => {
+          const timeline = await session.projectUI()
+          expect(timeline.opState).toBeNull()
+          expect(timeline.pendingInputs).toEqual([])
+          expect(timeline.nodes.filter((node) => node.kind === 'user').map((node) => node.content)).toEqual(
+            ['queue-A', 'queue-C', 'queue-B', 'queue-D'].map((text) => [{ type: 'text', text }]),
+          )
+        },
+        { timeout: 10_000 },
+      )
+      await session.sendNow(selected.itemId, { commandId: 'send-C' })
+      expect((await session.projectUI()).turns).toHaveLength(4)
+    } finally {
+      await sdk.close()
+      await sup.close()
+      await tables.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
   type Update = {
     method?: string
     params?: { sessionId?: string; _meta?: Record<string, { eventSequence: number }> }

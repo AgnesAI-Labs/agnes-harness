@@ -3,6 +3,7 @@ import { connect } from 'node:net'
 import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
+import type { InferenceEvent } from '@agnes/protocol'
 import { say } from './host.js'
 
 // A `WorkerPool.workerEntry` override (the same extension point `worker-pool.e2e.test.ts`'s own
@@ -54,6 +55,35 @@ void runWorker(
     buildHost: async (profile, workerPrompter) => {
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
+        ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
+          ? {
+              provider: {
+                models: () => [fakeModel({ route: 'faux', id: 'faux-1' })],
+                async *infer(request, options): AsyncIterable<InferenceEvent> {
+                  yield { type: 'sent', stamp: { ...stampFor(request), parser_version: PARSER_VERSION } }
+                  const prompt = request.messages.filter((message) => message.role === 'user').at(-1)
+                  if (
+                    request.kind !== 'summary' &&
+                    prompt?.content.some((block) => block.type === 'text' && block.text === 'queue-A')
+                  ) {
+                    await new Promise<void>((resolve) => {
+                      options.signal.addEventListener('abort', () => resolve(), { once: true })
+                      if (options.signal.aborted) resolve()
+                    })
+                    yield {
+                      type: 'error',
+                      reason: 'aborted',
+                      code: 'ABORTED',
+                      message: 'stopped',
+                      retryable: false,
+                    }
+                    return
+                  }
+                  yield* say('completed queue input')
+                },
+              },
+            }
+          : {}),
         // Pin the parser contract explicitly because this worker exercises the real Host/Core
         // contract fence; changing the testkit default must not silently change this fixture.
         // One scripted turn unless a test that prompts this worker repeatedly asks for more.

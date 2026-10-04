@@ -99,7 +99,10 @@ export async function admitWorkerCommand<T>(gate: LocalGate, execute: () => T | 
   }
 }
 
-async function reloadIfStale(o: CommandOptions, slot: WorkerResourceSlot): Promise<void> {
+async function reloadIfStale(
+  o: Pick<CommandOptions, 'host' | 'resources' | 'workerResourcesInput'>,
+  slot: WorkerResourceSlot,
+): Promise<void> {
   if (slot.staleMarks <= slot.reloadedMarks) return
   let flight = slot.reloadInFlight
   if (!flight) {
@@ -117,7 +120,10 @@ async function reloadIfStale(o: CommandOptions, slot: WorkerResourceSlot): Promi
  *  queue while incrementing `active`; a stale turn keeps it held until older turns drain and the
  *  reload completes. Consequently later turns cannot enter with either the revoked or half-published
  *  generation. */
-async function admitResourceRun(o: CommandOptions, signal: AbortSignal): Promise<(() => void) | undefined> {
+async function admitResourceRun(
+  o: Pick<CommandOptions, 'host' | 'resources' | 'workerResourcesInput'>,
+  signal: AbortSignal,
+): Promise<(() => void) | undefined> {
   const slot = o.resources
   if (!slot) return signal.aborted ? undefined : () => undefined
   if (!slot.runAdmissions)
@@ -194,6 +200,22 @@ async function admitResourceRun(o: CommandOptions, signal: AbortSignal): Promise
   }
 }
 
+/** Prepare an idle worker without making its next prompt pay for a pending resource reload. */
+export async function prepareIdleResources(
+  o: Pick<CommandOptions, 'host' | 'resources' | 'workerResourcesInput'>,
+): Promise<void> {
+  const slot = o.resources
+  if (
+    !slot ||
+    slot.staleMarks <= slot.reloadedMarks ||
+    slot.runAdmissions?.active ||
+    slot.runAdmissions?.locked
+  )
+    return
+  const release = await admitResourceRun(o, new AbortController().signal)
+  release?.()
+}
+
 /**
  * One `CommandFrame` dispatched against the worker's own open session. This is the worker-process
  * analogue of daemon's in-process `_agnes/v1/session.*` handlers (../local/methods/agnes.ts): same
@@ -266,6 +288,8 @@ export async function handleCommand(
       return { ok: true }
     case 'enqueue':
       return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never)
+    case 'sendQueuedNow':
+      return session.sendQueuedNow(String(p.itemId), p.actor as Actor, String(p.admissionId))
     case 'manualCompact':
       return session.requestCompaction({
         actor: p.actor as Actor,
@@ -515,7 +539,6 @@ export async function applyMcpRowChange(
   const release = await admitResourceRun(
     {
       host: o.host,
-      aborts: new Map(),
       ...(o.resources ? { resources: o.resources } : {}),
       ...(o.workerResourcesInput ? { workerResourcesInput: o.workerResourcesInput } : {}),
     },

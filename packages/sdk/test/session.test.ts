@@ -183,45 +183,49 @@ describe('Session', () => {
     expect(seen).toEqual(['first', 'second'])
   })
 
-  it('prompt returns stopReason plus the turnEnd reason seen in _meta, and lastSeq', async () => {
-    const f = fakeEndpoint({
-      initialize: init,
-      'session/new': () => ({ sessionId: 's1' }),
-      'session/prompt': async (_p, { push }) => {
-        push(update('s1', meta(5, 'event')))
-        push(
-          update(
-            's1',
-            meta(7, 'terminalQuiescence', {
-              turnEnd: { reason: 'parked' },
-              credits: { used: 12, source: 'estimated' },
-            }),
-          ),
-        )
-        await new Promise((r) => setTimeout(r, 5))
-        return { stopReason: 'end_turn' }
-      },
-    })
-    const c = createClient({
-      transport: { kind: 'inproc', endpoint: f.endpoint },
-      journal: memoryJournal(),
-      authProviders: providers,
-    })
-    const s = await c.session.new({ cwd: '/w' })
+  it.each([undefined, 'en', 'zh-CN'] as const)(
+    'prompt carries title language %s and returns its own turn outcome',
+    async (titleLocale) => {
+      const f = fakeEndpoint({
+        initialize: init,
+        'session/new': () => ({ sessionId: 's1' }),
+        'session/prompt': async (_p, { push }) => {
+          push(update('s1', meta(5, 'event')))
+          push(
+            update(
+              's1',
+              meta(7, 'terminalQuiescence', {
+                turnEnd: { reason: 'parked' },
+                credits: { used: 12, source: 'estimated' },
+              }),
+            ),
+          )
+          await new Promise((r) => setTimeout(r, 5))
+          return { stopReason: 'end_turn' }
+        },
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+      const s = await c.session.new({ cwd: '/w' })
 
-    const r = await s.prompt('hello')
+      const r = await s.prompt('hello', titleLocale ? { titleLocale } : {})
 
-    expect(r).toEqual({
-      stopReason: 'end_turn',
-      reason: 'parked',
-      lastSeq: 7,
-      credits: { used: 12, source: 'estimated' },
-    })
-    expect(f.calls.find((x) => x.method === 'session/prompt')?.params).toEqual({
-      sessionId: 's1',
-      prompt: [{ type: 'text', text: 'hello' }],
-    })
-  })
+      expect(r).toEqual({
+        stopReason: 'end_turn',
+        reason: 'parked',
+        lastSeq: 7,
+        credits: { used: 12, source: 'estimated' },
+      })
+      expect(f.calls.find((x) => x.method === 'session/prompt')?.params).toEqual({
+        sessionId: 's1',
+        prompt: [{ type: 'text', text: 'hello' }],
+        ...(titleLocale ? { _meta: { 'ai.agnes.harness': { titleLocale } } } : {}),
+      })
+    },
+  )
 
   it('restores a reclaimed attached session and retries the rejected prompt exactly once', async () => {
     let prompts = 0
@@ -372,20 +376,39 @@ describe('Session', () => {
     expect(attaches).toBe(4)
   })
 
-  it('derives reason from stopReason when no turnEnd meta arrived', async () => {
-    const f = fakeEndpoint({
-      initialize: init,
-      'session/new': () => ({ sessionId: 's2' }),
-      'session/prompt': () => ({ stopReason: 'cancelled' }),
-    })
-    const c = createClient({
-      transport: { kind: 'inproc', endpoint: f.endpoint },
-      journal: memoryJournal(),
-      authProviders: providers,
-    })
-    const s = await c.session.new({ cwd: '/w' })
-    expect((await s.prompt('x')).reason).toBe('aborted')
-  })
+  it.each([false, true])(
+    'derives cancellation without its own terminal notification: %s',
+    async (olderEnd) => {
+      const f = fakeEndpoint({
+        initialize: init,
+        'session/new': () => ({ sessionId: 's2' }),
+        'session/prompt': async (_p, { push }) => {
+          if (olderEnd) {
+            push(
+              update(
+                's2',
+                meta(7, 'terminalQuiescence', {
+                  turnEnd: { reason: 'completed' },
+                  credits: { used: 12, source: 'estimated' },
+                }),
+              ),
+            )
+            await new Promise((resolve) => setTimeout(resolve, 5))
+          }
+          return { stopReason: 'cancelled' }
+        },
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+      const s = await c.session.new({ cwd: '/w' })
+      const result = await s.prompt('x')
+      expect(result.reason).toBe('aborted')
+      expect(result.credits).toBeUndefined()
+    },
+  )
 
   // The turnEnd of turn one must not be reported as the outcome of turn two.
   it('does not reuse the previous turn end when the next turn reports none', async () => {
@@ -471,7 +494,7 @@ describe('Session', () => {
     await flush()
   })
 
-  it('steer / followUp / compact carry a journal commandId and return seq; cancel is a notification', async () => {
+  it('steer / followUp / compact / sendNow carry a journal commandId and return seq; cancel is a notification', async () => {
     const f = fakeEndpoint({
       initialize: init,
       'session/new': () => ({ sessionId: 's3' }),
@@ -491,6 +514,7 @@ describe('Session', () => {
     expect(await s.steer('now')).toBe(41)
     expect(await s.followUp([{ type: 'text', text: 'later' }])).toBe(42)
     expect(await s.compact('keep decisions')).toBe(43)
+    expect(await s.sendNow('queued-C')).toBe(43)
     await s.cancel()
 
     const steer = f.calls.find((x) => x.method === '_agnes/v1/submit')?.params as {
@@ -510,6 +534,38 @@ describe('Session', () => {
       payload: { sessionId: 's3', instructions: 'keep decisions' },
     })
     expect(f.calls.at(-1)).toMatchObject({ method: 'session/cancel', params: { sessionId: 's3' } })
+    expect(
+      f.calls.find(
+        (call) => call.method === '_agnes/v1/submit' && (call.params as { kind?: string }).kind === 'sendNow',
+      )?.params,
+    ).toMatchObject({
+      kind: 'sendNow',
+      commandId: 'cid:s3:4',
+      payload: { sessionId: 's3', itemId: 'queued-C' },
+    })
+  })
+
+  it('does not replay a definitive send-now refusal when attaching again', async () => {
+    const f = fakeEndpoint({
+      initialize: init,
+      'session/new': () => ({ sessionId: 's3' }),
+      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+      '_agnes/v1/submit': () => {
+        throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE' })
+      },
+    })
+    const journal = memoryJournal('cid')
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal,
+      authProviders: providers,
+    })
+    const session = await client.session.new({ cwd: '/w' })
+    await expect(session.sendNow('gone')).rejects.toMatchObject({ data: { code: 'QUEUED_INPUT_GONE' } })
+    expect(await journal.pending(session.id)).toEqual([])
+    await session.attach()
+    expect(f.calls.filter((call) => call.method === '_agnes/v1/submit')).toHaveLength(1)
+    await client.close()
   })
 
   it.each([

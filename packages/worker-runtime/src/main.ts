@@ -52,6 +52,7 @@ import {
   admitWorkerCommand,
   applyMcpRowChange,
   handleServiceCommand,
+  prepareIdleResources,
   removeWorkspaceSkill,
   scanWorkspaceSkills,
   type WorkerResourceSlot,
@@ -304,10 +305,12 @@ export async function runWorker(
   let host: WorkerHostLike | undefined
   let hostedSessions: HostedSessions | undefined
   let resourcesClosed = false
+  let idleResourcePreparation = Promise.resolve()
   const closeResources = async (): Promise<void> => {
     if (resourcesClosed) return
     resourcesClosed = true
 
+    await idleResourcePreparation
     await hostedSessions?.closeAll().catch(() => undefined)
     sharedChannel.closeAll()
 
@@ -617,6 +620,17 @@ export async function runWorker(
         const command = frame as WorkerCommandFrame
         if (command.method === 'resource.stale') {
           resourceSlot.staleMarks++
+          // Acknowledge promptly; use idle time instead of deferring startup scans to the first prompt.
+          idleResourcePreparation = idleResourcePreparation
+            .then(async () => {
+              if (resourcesClosed || !host) return
+              await prepareIdleResources({ host, resources: resourceSlot, workerResourcesInput })
+              if (resourceSlot.generation !== forwardedGeneration) {
+                forwardedGeneration = resourceSlot.generation
+                forwardMcpStatus(forwardedGeneration)
+              }
+            })
+            .catch((error) => console.error('agnes worker: idle resource preparation failed:', error))
           return { ok: true }
         }
         // Session-worker-only (design §3.2/§3.3/§3.5): rows, not a resource-only worker's manager,

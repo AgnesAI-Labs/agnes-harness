@@ -10,6 +10,7 @@ import { workerGeneration } from '@agnes/protocol'
 
 export type SessionMethod =
   | 'enqueue'
+  | 'sendQueuedNow'
   | 'run'
   | 'abort'
   | 'scan'

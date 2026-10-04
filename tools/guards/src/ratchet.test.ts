@@ -1,3 +1,14 @@
+// TITLE-LOCALE / FOLLOW-UP-RUNNER: exact reviewed totals for prompt-based title language, FIFO wake-up and run serialization.
+// Core +20, Protocol +1, SDK +14, daemon +96, Web/app +4, Host +13; no spare allocation.
+// QUEUE-VIEW-SEND-NOW: persisted queue projection, atomic priority/cancellation, replay refusal cleanup,
+// worker handoff reservation and accessible queue actions. Exact measured totals; no spare allocation.
+// Core +46, Protocol +2, SDK +20, daemon +70, Web +76/app +74, Web-units +65.
+// QUEUE-REVIEW: exact measured Core +7 for locked input claims, SDK +11 for stale replay cleanup,
+// daemon +16 for serialized receipt recovery and current ownership/generation checks; no spare allocation.
+// FIRST-SEND-REVIEW: Web/app +2 to report sidebar refresh failure separately; queue row wrapper +4.
+// Synchronize JSON limits and static ceilings to the exact reviewed totals, without spare allocation.
+// TITLE-PRIORITY: explicit priority, trusted fallback and descriptive titles replace assistant context;
+// one model call selects language before title, with format-only JSON parsing. Host +13 lines, exact.
 // FULL-FILE-ACCESS: measured session-scoped file access, external checkpoints and authoritative UI permission
 // projection/synchronization. Exact countLines() caps after review; no exclusions or spare allocation.
 // PERMISSION-RECONNECT: measured Web +48 lines for fresh permission gating and interrupted submission guards.
@@ -237,7 +248,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   'packages/web-ui/src': 6629,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 5540,
+  'packages/web-units/src': 5609,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -401,7 +412,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1825, exact (+1).
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
-  'packages/web/src/app': 2016,
+  'packages/web/src/app': 2096,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -964,7 +975,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // prefix, so the first request after a compaction lands below the threshold (+8).
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
-  'packages/core/src': 25861,
+  'packages/core/src': 25934,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1273,7 +1284,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  'packages/protocol/src': 2204,
+  'packages/protocol/src': 2207,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1462,7 +1473,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
-  'packages/sdk/src': 5130,
+  'packages/sdk/src': 5175,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1823,7 +1834,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows discovery retry adds six counted lines; measured 26501, exact.
   // A cancel that arrived before the worker run began is forwarded after it. Measured 26536 (+2), exact.
   // An approval request carries the tool's ACP kind and name. Measured 26542 (+6), exact cap.
-  'packages/daemon/src': 26558,
+  'packages/daemon/src': 26740,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2070,7 +2081,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // The live approval card's wording, preview and session-choice rule (new file). Measured 13463 (+52), exact cap.
-  'packages/web/src': 15977,
+  'packages/web/src': 16059,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2551,7 +2562,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Generation views are pruned before each candidate builds its session views (+13). Installation state stays
   // read-only under full file access: the fence guard, the roots helper and their wiring (+40).
   // Measured 38359, exact.
-  'packages/host/src': 38370,
+  'packages/host/src': 38396,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

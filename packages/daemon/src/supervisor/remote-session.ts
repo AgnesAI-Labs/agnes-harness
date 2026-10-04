@@ -23,6 +23,7 @@ export class RemoteSession {
   private manualTurnReserved = false
   /** External admission may enqueue a prompt before it can call `run()`. */
   private activityLeases = 0
+  private queuedInputReservation = 0
   private readonly latestCache = new Map<string, unknown>()
 
   constructor(
@@ -35,7 +36,12 @@ export class RemoteSession {
   ) {}
 
   get running(): boolean {
-    return this.activeRuns > 0 || this.manualTurnReserved || this.activityLeases > 0
+    return (
+      this.activeRuns > 0 ||
+      this.manualTurnReserved ||
+      this.queuedInputReservation > 0 ||
+      this.activityLeases > 0
+    )
   }
 
   /**
@@ -67,11 +73,23 @@ export class RemoteSession {
     return this.link.command('enqueue', { target, msg }) as Promise<number>
   }
 
+  async sendQueuedNow(itemId: string, actor: Actor, admissionId: string): Promise<number> {
+    const release = this.beginActivity()
+    try {
+      const seq = (await this.link.command('sendQueuedNow', { itemId, actor, admissionId })) as number
+      this.queuedInputReservation = this.runSeq + 1
+      return seq
+    } finally {
+      release()
+    }
+  }
+
   async run(o: {
     until: 'turn-end' | 'idle'
     signal: AbortSignal
   }): Promise<{ reason: string; lastSeq: number; error?: unknown }> {
-    const runId = `${this.key}#${++this.runSeq}`
+    const runNumber = ++this.runSeq
+    const runId = `${this.key}#${runNumber}`
     const onAbort = (): void => void this.link.command('abort', { runId })
     // A registry caller may still hold this proxy after its entry was removed on socket close.
     // Never create a fresh durable turn lease for a worker generation already known dead.
@@ -108,6 +126,7 @@ export class RemoteSession {
       o.signal.removeEventListener('abort', onAbort)
       this.activeRuns--
       if (completed) this.manualTurnReserved = false
+      if (completed && runNumber >= this.queuedInputReservation) this.queuedInputReservation = 0
       this.onTurnBoundary?.()
     }
   }

@@ -289,6 +289,7 @@ const clientModules = await startClientModules({
     onModelSettingsChange: selectModelSettings,
     onPermissionSelect: selectPermission,
     onSubmit: submitComposer,
+    onSendNow: handleQueuedSendNow,
     onWorkspace: handleComposerWorkspace,
   },
   traceContainer: document.getElementById('trace-panel') ?? undefined,
@@ -375,6 +376,9 @@ let offPermission: (() => void) | undefined
 let sending = false
 let awaitingPromptStart = false
 let stopping = false
+let queueAction:
+  | { sessionId: string; selection: number; itemId: string; pending: boolean; error?: string }
+  | undefined
 let sessionPending = false
 let newSessionCreating = false
 let workspacePickerReady: boolean | undefined
@@ -607,7 +611,14 @@ function renderControls(): void {
   )
   const composerView: ComposerView = {
     cancel: {
-      disabled: !connected || !busy || stopping || sessionPending,
+      disabled:
+        !connected ||
+        !busy ||
+        stopping ||
+        sessionPending ||
+        (queueAction?.sessionId === current?.id &&
+          queueAction?.selection === selection &&
+          queueAction.pending),
       hidden: !busy && !stopping,
       label: stopping ? t('composer.cancel.stopping') : t('composer.cancel.stop'),
     },
@@ -674,6 +685,27 @@ function renderControls(): void {
         permissionRefreshPending,
       pending: permissionChangePending || permissionRefreshPending,
       selected: permissionUnknown ? null : permissionMode,
+    },
+    queue: {
+      items: current && projection?.sessionId === current.id ? (projection.pendingInputs ?? []) : [],
+      disabled:
+        !available ||
+        !configured ||
+        !selectedModelAvailable() ||
+        !current ||
+        sessionPending ||
+        stopping ||
+        permissionChangePending ||
+        permissionUnknown ||
+        (queueAction?.sessionId === current?.id &&
+          queueAction.selection === selection &&
+          queueAction.pending),
+      ...(queueAction?.sessionId === current?.id && queueAction?.selection === selection
+        ? {
+            ...(queueAction.pending ? { sending: queueAction.itemId } : {}),
+            ...(queueAction.error ? { error: queueAction.error } : {}),
+          }
+        : {}),
     },
     sending,
     send: {
@@ -1152,7 +1184,9 @@ async function open(
     sessionPending = false
     clearSessionRecovery()
     render()
-    await list()
+    void list().catch((error: unknown) => {
+      if (epoch === selection) showError(error)
+    })
   } catch (error) {
     if (epoch !== selection) return
     if (!selectionReady) {
@@ -1835,6 +1869,48 @@ function handleComposerCancel(): void {
     }
   })
 }
+function handleQueuedSendNow(itemId: string): void {
+  const session = current
+  if (
+    !session ||
+    !connected ||
+    !configured ||
+    !selectedModelAvailable() ||
+    sessionPending ||
+    stopping ||
+    permissionChangePending ||
+    permissionRefreshPending ||
+    sessionYoloEnabled === undefined ||
+    (queueAction?.pending && queueAction.sessionId === session.id && queueAction.selection === selection) ||
+    !projection?.pendingInputs?.some((item) => item.itemId === itemId)
+  )
+    return
+  const action = { sessionId: session.id, selection, itemId, pending: true } as NonNullable<
+    typeof queueAction
+  >
+  queueAction = action
+  renderControls()
+  void session
+    .sendNow(itemId)
+    .then(() => {
+      if (current === session && selection === action.selection) live?.refresh()
+    })
+    .catch((error: unknown) => {
+      const failure = error as { data?: { code?: unknown } }
+      action.error =
+        failure?.data?.code === 'QUEUED_INPUT_GONE'
+          ? t('composer.queue.gone')
+          : error instanceof Error
+            ? error.message
+            : String(error)
+      if (current === session && selection === action.selection) live?.refresh()
+    })
+    .finally(() => {
+      action.pending = false
+      if (current === session && selection === action.selection) renderControls()
+    })
+}
+
 function handleComposerDraftChange(value: string): void {
   sessionStorage.setItem(composerDraftKey, value)
   composerRuntime.resize()
@@ -1921,11 +1997,16 @@ function submitComposer(): void {
       throw new Error(t('app.error.connectionChanged'))
     if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
     if (sessionYoloEnabled === undefined) throw new Error(t('app.error.permissionRequired'))
-    const result = await (busy ? session.followUp(input) : session.prompt(input))
+    const result = await (busy
+      ? session.followUp(input)
+      : session.prompt(input, {
+          titleLocale: clientModules.locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en',
+        }))
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
       titleRefresh.start(submittedId)
     pendingSessionKey = undefined
+    if (busy && current === session && selection === ownedSelection) live?.refresh()
   })()
   void work
     .catch((error: unknown) => {

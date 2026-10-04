@@ -1,11 +1,48 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import type { CommitTx } from '../src/log/storage.js'
+import { INBOX_BUDGET_EVENT } from '../src/step/inbox.js'
 import { CoreError } from '../src/types.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
 describe('Inbox segment', () => {
+  it('projects pending input at each cut, promotes the same item, and preserves the rest on refusal', async () => {
+    const { session, log } = await openSession({ provider: fakeProvider([]) })
+    const baseline = session.lastSeq
+    for (const text of ['B', 'C', 'D'])
+      await session.enqueue('next-turn', { actor, kind: 'follow_up', content: [{ type: 'text', text }] })
+    await session.enqueue('next-step', { actor, content: [{ type: 'text', text: 'steer' }] })
+    const queued = (await session.projectUI()).pendingInputs ?? []
+    expect(queued.map((item) => item.preview)).toEqual(['B', 'C', 'D'])
+    expect((await session.projectUI(baseline)).pendingInputs).toEqual([])
+    const update = await session.projectUIPatch(baseline)
+    expect(update).toMatchObject({ kind: 'patch', patch: { pendingInputs: queued } })
+    const selected = queued[1]
+    if (!selected) throw new Error('missing selected input')
+    await session.sendQueuedNow(selected.itemId, actor, 'send-C')
+    expect((await session.projectUI()).pendingInputs?.map((item) => item.itemId)).toEqual([
+      selected.itemId,
+      queued[0]?.itemId,
+      queued[2]?.itemId,
+    ])
+    const before = session.lastSeq
+    await expect(session.sendQueuedNow('missing', actor, 'missing')).rejects.toMatchObject({
+      code: 'E_RELATION',
+    })
+    expect(session.lastSeq).toBe(before)
+    await session.acceptInput()
+    expect((await log.scan({ type: 'user/message', limit: 5 }))[0]?.data).toMatchObject({
+      content: [{ type: 'text', text: 'C' }],
+      kind: 'follow_up',
+    })
+    expect((await session.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D'])
+    const replay = await import('../src/project/ui.js')
+    expect(
+      (await replay.projectUI(await log.scan({ fromSeq: 1, limit: 100 }), { sessionKey: session.key }))
+        .pendingInputs,
+    ).toEqual((await session.projectUI()).pendingInputs)
+  })
   it('start() writes session/start once; enqueue replaces the inbox register whole', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     expect((await log.scan({ fromSeq: 1, limit: 5 })).map((e) => e.type)).toEqual(['session/start'])
@@ -27,7 +64,7 @@ describe('Inbox segment', () => {
   it('acceptInput claims one next-turn item into user/message + turn/start + the program counter in one tx', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
-    expect(await session.acceptInput()).toBe(true)
+    expect(await Promise.all([session.acceptInput(), session.acceptInput()])).toEqual([true, false])
     const rows = await log.scan({ fromSeq: 1, limit: 20 })
     expect(rows.map((e) => e.type)).toEqual(['session/start', 'inbox', 'inbox', 'user/message', 'turn/start'])
     expect(log.registerRow('op.state')?.seq).toBe(5)
@@ -68,12 +105,13 @@ describe('Inbox segment', () => {
       content: [{ type: 'text', text: 'from a channel' }],
       actor: { ...actor, id: 'bot' },
       kind: 'follow_up',
+      titleLocale: 'en',
       trust: 'untrusted',
     })
     await session.acceptInput()
     const msg = (await log.scan({ type: 'user/message', limit: 5 }))[0]
     expect(msg).toMatchObject({ trust: 'untrusted', origin: 'principal', actor: { id: 'bot' } })
-    expect(msg?.data).toMatchObject({ kind: 'follow_up' })
+    expect(msg?.data).toMatchObject({ kind: 'follow_up', titleLocale: 'en' })
     const started = (await log.scan({ type: 'turn/start', limit: 5 }))[0]
     expect(started?.data).toMatchObject({ trigger: 'follow_up' })
   })
@@ -185,19 +223,45 @@ describe('Inbox segment', () => {
 })
 
 describe('the transition lock (fix round 1)', () => {
-  it('an enqueue landing beside an accept cannot shift the row triggerSeq names', async () => {
-    const { session, log } = await openSession({ provider: fakeProvider([]) })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'a' }], actor })
-    // A channel adapter enqueueing from another task while the turn is being opened. `enqueue` is
-    // a public entry point, so this is an ordinary interleaving, not a contrived one.
-    const accepted = session.acceptInput()
-    const queued = session.enqueue('next-step', { content: [{ type: 'text', text: 'b' }], actor })
-    await Promise.all([accepted, queued])
-    const trigger = session.op()?.meta.triggerSeq
-    const first = (await log.scan({ type: 'user/message', limit: 5 }))[0]
-    // The anchor the whole turn is scanned from names the user's message, not an inbox row.
-    expect(trigger).toBe(first?.seq)
-  })
+  it.each(['next-step', 'next-turn'] as const)(
+    'an enqueue landing beside an accept preserves %s input and triggerSeq',
+    async (target) => {
+      const { session, log } = await openSession({ provider: fakeProvider([]) })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'a' }], actor })
+      // A channel adapter enqueueing from another task while the turn is being opened. `enqueue` is
+      // a public entry point, so this is an ordinary interleaving, not a contrived one.
+      let release!: () => void
+      let reading!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const read = new Promise<void>((resolve) => {
+        reading = resolve
+      })
+      const scan = log.scan.bind(log)
+      vi.spyOn(log, 'scan').mockImplementation(async (query) => {
+        if (query.type === INBOX_BUDGET_EVENT) {
+          reading()
+          await held
+        }
+        return scan(query)
+      })
+      const accepted = session.acceptInput()
+      await read
+      const queued = session.enqueue(target, { content: [{ type: 'text', text: 'b' }], actor })
+      // Let the queued append attempt admission while the existing item's budget is being read.
+      await new Promise<void>((resolve) => queueMicrotask(resolve))
+      release()
+      await Promise.all([accepted, queued])
+      const trigger = session.op()?.meta.triggerSeq
+      const first = (await log.scan({ type: 'user/message', limit: 5 }))[0]
+      // The anchor the whole turn is scanned from names the user's message, not an inbox row.
+      expect(trigger).toBe(first?.seq)
+      expect(session.latest('inbox')).toMatchObject({
+        items: [{ target, content: [{ type: 'text', text: 'b' }] }],
+      })
+    },
+  )
 
   it('two concurrent enqueues both survive', async () => {
     const { session } = await openSession({ provider: fakeProvider([]) })

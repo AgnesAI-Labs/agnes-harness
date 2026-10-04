@@ -1,4 +1,4 @@
-import type { ModelSettings, UsageView } from '@agnes/protocol'
+import type { ModelSettings, UIPendingInput, UsageView } from '@agnes/protocol'
 import { ModelSettingsDialog } from '@agnes/web-ui'
 import {
   type ComponentType,
@@ -91,6 +91,7 @@ export interface ComposerView {
     thinkingLevelMap?: Record<string, string> | undefined
   }
   permission: PermissionPickerState
+  queue?: { items: readonly UIPendingInput[]; disabled: boolean; sending?: string; error?: string }
   sending: boolean
   send: { disabled: boolean; label: string; mode: 'idle' | 'busy' | 'pending'; title: string }
   stopping: boolean
@@ -115,6 +116,7 @@ export interface ComposerRegionOptions {
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   onSubmit(): void
+  onSendNow?(itemId: string): void
   onWorkspace(): void
 }
 
@@ -170,6 +172,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onModelSettingsChange,
     onPermissionSelect,
     onSubmit,
+    onSendNow,
     onWorkspace,
     slots,
   }: ComposerProps,
@@ -254,6 +257,58 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
     },
     slots?.overlay,
+    view.queue && (view.queue.items.length > 0 || view.queue.error)
+      ? createElement(
+          'section',
+          { className: 'composer-queue', 'aria-label': dependencies.translate('composer.queue.label') },
+          createElement(
+            'p',
+            { className: 'composer-queue-count', 'aria-live': 'polite' },
+            dependencies.translate('composer.queue.count', { count: view.queue.items.length }),
+          ),
+          createElement(
+            'ol',
+            null,
+            view.queue.items.map((item, index) =>
+              createElement(
+                'li',
+                { key: item.itemId, 'data-queue-item': item.itemId },
+                createElement(
+                  'div',
+                  { className: 'composer-queue-row' },
+                  createElement(
+                    'span',
+                    { className: 'composer-queue-preview', title: item.preview },
+                    item.preview || dependencies.translate('composer.queue.attachment'),
+                  ),
+                  createElement(
+                    'button',
+                    {
+                      type: 'button',
+                      disabled: view.queue?.disabled || !onSendNow,
+                      'aria-label': dependencies.translate('composer.queue.sendAccessible', {
+                        index: index + 1,
+                      }),
+                      title: dependencies.translate('composer.queue.sendTitle'),
+                      'aria-busy': view.queue?.sending === item.itemId,
+                      onClick: () => {
+                        onSendNow?.(item.itemId)
+                        prompt.current?.focus()
+                      },
+                    },
+                    dependencies.translate(
+                      view.queue?.sending === item.itemId ? 'composer.queue.sending' : 'composer.queue.send',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          view.queue.error
+            ? createElement('p', { className: 'composer-queue-error', role: 'alert' }, view.queue.error)
+            : null,
+        )
+      : null,
     createElement(
       'div',
       { className: 'composer-writing' },

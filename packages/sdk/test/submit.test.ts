@@ -1,3 +1,4 @@
+import { rpcError } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createClient } from '../src/client.js'
 import { ProtocolViolation } from '../src/errors.js'
@@ -67,6 +68,25 @@ it('retains pending on overload and replays the same command then clears it', as
   expect(calls).toHaveLength(2)
   expect(calls[1]?.params).toEqual(calls[0]?.params)
   expect(await s.journal.pending('s')).toEqual([])
+})
+it('clears a stale send-now on replay and still delivers the following pending command', async () => {
+  let replay = false
+  const s = await setup((params) => {
+    if (!replay) throw Object.assign(new Error('OVERLOADED'), { code: -32001, data: { code: 'OVERLOADED' } })
+    if ((params as { kind: string }).kind === 'sendNow')
+      throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE' })
+    return { seq: 9, replayed: false }
+  })
+  await expect(s.session.sendNow('already-started')).rejects.toMatchObject({ code: -32001 })
+  await expect(s.session.followUp('after reconnect')).rejects.toMatchObject({ code: -32001 })
+  expect(await s.journal.pending('s')).toHaveLength(2)
+  replay = true
+  await expect(s.client.resendPending('s')).resolves.toBeUndefined()
+  expect(await s.journal.pending('s')).toEqual([])
+  expect(s.f.calls.filter((entry) => entry.method === '_agnes/v1/submit').at(-1)?.params).toMatchObject({
+    kind: 'followUp',
+    payload: { content: [{ type: 'text', text: 'after reconnect' }] },
+  })
 })
 it('journals fork with one stable child key and accepts a result without a synthetic sequence', async () => {
   const journal = memoryJournal('cid')

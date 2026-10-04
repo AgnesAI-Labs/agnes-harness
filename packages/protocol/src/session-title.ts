@@ -10,6 +10,7 @@ const identity = {
   route: Type.String({ minLength: 1, maxLength: 128 }),
   model: Type.String({ minLength: 1, maxLength: 256 }),
   prompt: Type.String({ maxLength: 6000 }),
+  titleLocale: Type.Optional(Type.Union([Type.Literal('en'), Type.Literal('zh-CN')])),
   budgetCap: Type.Union([Type.Null(), Type.Number({ minimum: 0 })]),
   treeBudgetCap: Type.Union([Type.Null(), Type.Number({ exclusiveMinimum: 0 })]),
 }

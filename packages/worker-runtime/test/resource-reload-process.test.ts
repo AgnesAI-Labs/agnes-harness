@@ -212,8 +212,8 @@ async function openSession(link: Duplex, fromWorker: unknown[], cwd: string): Pr
   expect(reply.error).toBeUndefined()
 }
 
-describe('worker-runtime end-to-end: a newly enabled MCP server becomes visible on the next turn, same worker process', () => {
-  it('is visible on the next run and NOT mid-turn, without ever rebuilding the Host', async () => {
+describe('worker-runtime end-to-end: an idle worker prepares a newly enabled MCP server', () => {
+  it('prepares tools before the next run without rebuilding the Host', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wre2e-'))
     cleanup.push(() => rm(root, { recursive: true, force: true }))
     const urlA = await mcpFixture('a', 'toolA')
@@ -339,18 +339,13 @@ describe('worker-runtime end-to-end: a newly enabled MCP server becomes visible 
     )
     const staleReply = await waitForReply(fromWorker, 'stale-1')
     expect(staleReply.error).toBeUndefined()
-    // This is the assertion this task's M3 reverse mutation targets (brief Step 3): resource.stale must
-    // only mark staleness, never reload on the spot - even though the snapshot on disk already names
-    // server B by this point, the currently-running turn's view of the tool registry must be completely
-    // unaffected (G2). If commands.ts's `case 'resource.stale':` reloaded immediately instead of only
-    // bumping `o.resources.staleMarks`, server B's tool would already be registered here.
-    expect(host.kernel.tools.resolve(`${B_PREFIX}toolB`)).toBeUndefined()
+    // An idle worker prepares the changed tool registry before another prompt arrives.
+    await vi.waitFor(() => expect(host.kernel.tools.resolve(`${B_PREFIX}toolB`)).toBeDefined(), {
+      timeout: 10_000,
+    })
     expect(host.kernel.tools.resolve(`${A_PREFIX}toolA`)).toBeDefined()
-    expect(counters.bootstrapCalls).toBe(1) // marking stale is free - still no re-bootstrap
 
-    // Turn 2: the run that consumes the staleness mark. The reload happens at the top of this dispatch,
-    // strictly before session.run() is called (commands.ts's `case 'run':`), so by the time this reply
-    // arrives the Host's tool registry already reflects server A+B.
+    // Turn 2 uses the A+B tool registry already prepared while the worker was idle.
     link.push(
       encodeFrame({
         kind: 'command',
