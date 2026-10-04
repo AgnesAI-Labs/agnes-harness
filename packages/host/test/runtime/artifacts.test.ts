@@ -43,6 +43,7 @@ import {
   type SelectedBlobActions,
 } from '../../src/runtime/providers/artifacts.js'
 import { BLOB_FEATURES, type BlobService, createBlobService } from '../../src/runtime/providers/blob.js'
+import { artifactTicketKeys } from './artifact-ticket-key-fixture.js'
 
 const BLOB_BINDING = {
   bindingId: 'blob-1',
@@ -51,7 +52,6 @@ const BLOB_BINDING = {
   providerId: 'agh.blob.default',
 }
 const DESCRIPTOR = RuntimeSchemaRefs.ArtifactContentDescriptor
-const TICKET_KEY = { version: 'key-1', key: new Uint8Array(32).fill(7) }
 const text = (value: string) => new TextEncoder().encode(value)
 
 function scope(sessionId = 'session-1'): ScopeRef {
@@ -101,11 +101,20 @@ function refused(outcome: Outcome<unknown>): string {
 }
 
 const dirs: string[] = []
-const closers: (() => void)[] = []
+const closers: (() => unknown)[] = []
 afterEach(async () => {
-  for (const close of closers.splice(0)) close()
+  for (const close of closers.splice(0)) await close()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
+
+/** The ticket key option over a real default broker in its own directory, closed after the test. */
+async function ticketKeys(now?: () => number) {
+  const dir = await mkdtemp(join(tmpdir(), 'agh-ticket-keys-'))
+  dirs.push(dir)
+  const tickets = artifactTicketKeys(join(dir, 'secrets'), now)
+  closers.push(() => tickets.broker.close())
+  return tickets.keys
+}
 
 type World = { dataDir: string; blob: BlobService; artifacts: ArtifactsService; reads: { count: number } }
 /**
@@ -945,18 +954,18 @@ describe('default artifacts assembly', () => {
     // A transfer needs both the maintenance assembly and the default blob service's transfer entry.
     const maintenance = transferFixture(new Map(), 'location-1', blob.transferRead)
     const base = ['artifact-publication.v1', 'artifact-access.v1']
-    expect(artifactsFeatures({ ticketKey: TICKET_KEY })).toEqual([...base, 'artifact-ticket.v1'])
+    expect(artifactsFeatures({ ticketKeys: await ticketKeys() })).toEqual([...base, 'artifact-ticket.v1'])
     expect(artifactsFeatures({})).toEqual(base)
     expect(artifactsFeatures({ maintenance })).toEqual(base)
     expect(artifactsFeatures({ blobTransfer: blob })).toEqual(base)
     expect(artifactsFeatures({ maintenance, blobTransfer: blob })).toEqual([...base, 'authority-transfer.v1'])
   })
 
-  it('describes the service with the ticket feature only with a ticket key, and transfers only with the blob transfer entry', () => {
+  it('describes the service with the ticket feature only with a ticket key broker, and transfers only with the blob transfer entry', async () => {
     const binding = ARTIFACTS_BINDING
     const configSchema = { typeId: 'agh.test/config@1', revision: 1, digest: 'c'.repeat(64) }
     const input = { binding, packageVersion: '1.0.0', packageDigest: 'a'.repeat(64), configSchema }
-    const keyed = artifactsProviderDescriptor({ ...input, ticketKey: TICKET_KEY })
+    const keyed = artifactsProviderDescriptor({ ...input, ticketKeys: await ticketKeys() })
     const plain = artifactsProviderDescriptor(input)
     const maintenance = transferFixture(new Map(), 'location-1', {
       openRead: async () => unavailable('not_found', 'no source lends its bytes'),
@@ -1083,6 +1092,7 @@ async function artifactsConformance(providerId: string, openBlob: OpenBlob, tran
   const readable = (context: CallContext) => context.authorizationRef === reader.authorizationRef
   let clock = Date.parse('2026-10-01T00:00:00.000Z')
   let reads = 0
+  const keys = await ticketKeys(() => clock)
   const assemble = () => {
     const blob = openBlob(dataDir, readable)
     const counted: BlobReadPort = {
@@ -1104,7 +1114,7 @@ async function artifactsConformance(providerId: string, openBlob: OpenBlob, tran
         dependencies: container.dependencies,
         blobActions: blob.actions,
         authorize: readable,
-        ticketKey: { version: 'key-1', key: new Uint8Array(32).fill(7) },
+        ticketKeys: keys,
         now: () => clock,
       }),
     )

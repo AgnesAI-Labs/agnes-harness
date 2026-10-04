@@ -1,11 +1,4 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes,
-  randomUUID,
-  timingSafeEqual,
-} from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type {
   ArtifactAccessPort,
   BlobReadPort,
@@ -20,6 +13,7 @@ import {
   RuntimeClientTransportPolicy,
   RuntimeClientTransportWire,
 } from '@agnes/protocol/runtime'
+import type { ArtifactTicketKeyPort, ArtifactTicketSecretBinding } from '../artifact-ticket-key.js'
 import {
   ArtifactsRefusal,
   type ArtifactsStore,
@@ -41,9 +35,26 @@ export type ArtifactAccessOptions = Readonly<{
    * provide one yet, so without it every access is refused as blocked.
    */
   authorize?: (context: CallContext, grant: Wire.ArtifactAccessGrantValue) => boolean
-  /** Key for sealing ticket nonces. Without one, openDownload and redeemDownload are blocked. */
-  ticketKey?: Readonly<{ version: string; key: Uint8Array }>
+  /**
+   * The Host-private ticket key broker, which holds every key version, and the installation it serves.
+   * The Host supplies it only with a broker that verifies the current identity and delegation; without
+   * it, openDownload and redeemDownload are blocked.
+   */
+  ticketKeys?: Readonly<{
+    port: ArtifactTicketKeyPort
+    binding: ArtifactTicketSecretBinding
+    tenantId: Wire.Id
+    /** The selected blob authority the broker installation names. */
+    authorityId: Wire.Id
+    /**
+     * The installed artifacts owner's call for one client call, issued by the trusted Host assembly with
+     * that call's signal. This module never builds an owner identity itself.
+     */
+    delegate: (context: CallContext) => CallContext
+  }>
 }>
+
+type TicketKeys = NonNullable<ArtifactAccessOptions['ticketKeys']>
 
 type Permission = Wire.ArtifactAccessGrantValue['permissions'][number]
 
@@ -142,32 +153,26 @@ export function createArtifactAccess(
     return record.blob
   }
 
-  const sealNonce = (key: Uint8Array, aad: string, nonce: string) => {
-    const iv = randomBytes(12)
-    const cipher = createCipheriv('aes-256-gcm', key, iv).setAAD(Buffer.from(aad))
-    const data = Buffer.concat([cipher.update(nonce, 'utf8'), cipher.final()])
-    return JSON.stringify({
-      iv: iv.toString('base64url'),
-      data: data.toString('base64url'),
-      tag: cipher.getAuthTag().toString('base64url'),
-    })
-  }
+  const aadOf = (keys: TicketKeys, ticketId: Wire.Id, nonceDigest: Wire.Digest) => ({
+    ticketId,
+    tenantId: keys.tenantId,
+    authorityId: keys.authorityId,
+    nonceDigest,
+  })
 
-  const openNonce = (key: Uint8Array, aad: string, sealed: string): string => {
-    try {
-      const box = JSON.parse(sealed) as { iv: string; data: string; tag: string }
-      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(box.iv, 'base64url'))
-      decipher.setAAD(Buffer.from(aad)).setAuthTag(Buffer.from(box.tag, 'base64url'))
-      return Buffer.concat([decipher.update(Buffer.from(box.data, 'base64url')), decipher.final()]).toString(
-        'utf8',
-      )
-    } catch {
-      return refuse('integrity', 'sealed ticket nonce cannot be opened')
+  /** Opens a stored nonce through the broker, which refuses a revoked key or a withdrawn delegation. */
+  const opened = async (keys: TicketKeys, row: TicketRow, context: CallContext) => {
+    // Stored as iv, ciphertext and tag in one base64url text; the broker refuses any other layout.
+    const sealed = new Uint8Array(Buffer.from(row.sealed, 'base64url'))
+    const envelope = {
+      keyVersion: row.key_version,
+      iv: sealed.subarray(0, 12),
+      ciphertext: sealed.subarray(12, -16),
+      tag: sealed.subarray(-16),
     }
+    const aad = aadOf(keys, row.ticket_id, row.nonce_digest)
+    return unwrap(await keys.port.openNonce({ binding: keys.binding, aad, envelope }, keys.delegate(context)))
   }
-
-  const aadOf = (ticketId: Wire.Id, context: CallContext, nonceDigest: string) =>
-    jcs({ ticketId, tenant: context.scope.installationId, authority: store.authorityId, nonceDigest })
 
   const ticketOf = (
     row: Pick<TicketRow, 'ticket_id' | 'artifact_id' | 'version' | 'grant_revision' | 'expires_at'>,
@@ -215,82 +220,86 @@ export function createArtifactAccess(
       }),
 
     openDownload: (input, context) =>
-      run(context, () => {
-        const key = options.ticketKey ?? refuse('blocked', 'no ticket key is configured')
+      run(context, async () => {
+        const keys = options.ticketKeys ?? refuse('blocked', 'no ticket key broker is configured')
         const { requestId, input: target } = parse('ArtifactOpenDownloadRequest', input)
-        const { grant, record } = access(context, target.artifactId, target.version, 'download')
-        const blob = readable(record)
+        const current = () => {
+          const { grant, record } = access(context, target.artifactId, target.version, 'download')
+          return { grant, blob: readable(record) }
+        }
+        current()
         const actor = jcs({ principalRef: context.principalRef, scope: context.scope })
         const fingerprint = hex(jcs(target))
-        return store.write(() => {
-          const prior = store.db
+        const prior = () =>
+          store.db
             .prepare('SELECT * FROM tickets WHERE actor = ? AND request_id = ?')
             .get(actor, requestId) as TicketRow | undefined
-          if (prior) {
-            // The original ticket is rebuilt, never reissued or extended.
-            if (prior.fingerprint !== fingerprint)
-              refuse('idempotency_conflict', 'request id already names another download')
-            if (store.now() >= prior.expires_at) refuse('ticket_expired', 'download ticket expired')
-            if (prior.key_version !== key.version) refuse('blocked', 'ticket key version is not available')
-            const nonce = openNonce(
-              key.key,
-              aadOf(prior.ticket_id, context, prior.nonce_digest),
-              prior.sealed,
-            )
-            if (hex(nonce) !== prior.nonce_digest)
-              refuse('integrity', 'sealed ticket nonce does not match its digest')
-            return ticketOf(prior, nonce)
-          }
-          const ticketId = randomUUID()
-          const nonce = randomBytes(32).toString('base64url')
-          const nonceDigest = hex(nonce)
-          const row = {
-            ticket_id: ticketId,
-            artifact_id: target.artifactId,
-            version: target.version,
-            grant_revision: grant.revision,
-            expires_at: store.now() + RuntimeArtifactPolicy.downloadTicketTtlMs,
-          }
-          const ticket = ticketOf(row, nonce)
-          store.db
-            .prepare(
-              `INSERT INTO tickets (ticket_id, actor, principal, request_id, fingerprint, nonce_digest, sealed, key_version,
-                artifact_id, version, disposition, grant_id, grant_revision, pin_id, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            )
-            .run(
-              ticketId,
-              actor,
-              context.principalRef,
-              requestId,
-              fingerprint,
-              nonceDigest,
-              sealNonce(key.key, aadOf(ticketId, context, nonceDigest), nonce),
-              key.version,
-              target.artifactId,
-              target.version,
-              target.disposition,
-              grant.grantId,
-              grant.revision,
-              blob.pinId,
-              row.expires_at,
-            )
-          return ticket
+        // The original ticket is rebuilt, never reissued or extended, and checked again after the broker.
+        const replay = async (row: TicketRow) => {
+          if (row.fingerprint !== fingerprint)
+            refuse('idempotency_conflict', 'request id already names another download')
+          if (store.now() >= row.expires_at) refuse('ticket_expired', 'download ticket expired')
+          const nonce = await opened(keys, row, context)
+          current()
+          if (store.now() >= row.expires_at) refuse('ticket_expired', 'download ticket expired')
+          return ticketOf(row, Buffer.from(nonce).toString('base64url'))
+        }
+        const existing = prior()
+        if (existing) return replay(existing)
+        const ticketId = randomUUID()
+        const nonce = randomBytes(32)
+        const nonceDigest = hex(nonce)
+        const expiresAt = store.now() + RuntimeArtifactPolicy.downloadTicketTtlMs
+        const envelope = unwrap(
+          await keys.port.sealNonce(
+            { binding: keys.binding, aad: aadOf(keys, ticketId, nonceDigest), nonce },
+            keys.delegate(context),
+          ),
+        )
+        const { grant, blob } = current()
+        // A concurrent request with the same id may have stored its ticket first; that one is returned,
+        // and the broker collects the material sealed here when it expires.
+        const stored = store.write(() => {
+          if (!prior())
+            store.db
+              .prepare(
+                `INSERT INTO tickets (ticket_id, actor, principal, request_id, fingerprint, nonce_digest, sealed, key_version,
+                  artifact_id, version, disposition, grant_id, grant_revision, pin_id, expires_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              )
+              .run(
+                ticketId,
+                actor,
+                context.principalRef,
+                requestId,
+                fingerprint,
+                nonceDigest,
+                Buffer.concat([envelope.iv, envelope.ciphertext, envelope.tag]).toString('base64url'),
+                envelope.keyVersion,
+                target.artifactId,
+                target.version,
+                target.disposition,
+                grant.grantId,
+                grant.revision,
+                blob.pinId,
+                expiresAt,
+              )
+          return prior() as TicketRow
         })
+        return stored.ticket_id === ticketId ? ticketOf(stored, nonce.toString('base64url')) : replay(stored)
       }),
 
     redeemDownload: (request, context) =>
       run(context, async () => {
-        if (!options.ticketKey) refuse('blocked', 'no ticket key is configured')
+        const keys = options.ticketKeys ?? refuse('blocked', 'no ticket key broker is configured')
         const { ticketId, nonce, offset } = parse('ArtifactRedeemDownloadRequest', request)
         noNegativeZero(offset)
+        // The wire schema admits only the base64url text of exactly 32 nonce bytes.
+        const digest = createHash('sha256').update(Buffer.from(nonce, 'base64url')).digest()
         const ticket = store.db.prepare('SELECT * FROM tickets WHERE ticket_id = ?').get(ticketId) as
           | TicketRow
           | undefined
-        if (
-          !ticket ||
-          !timingSafeEqual(Buffer.from(hex(nonce), 'hex'), Buffer.from(ticket.nonce_digest, 'hex'))
-        )
+        if (!ticket || !timingSafeEqual(digest, Buffer.from(ticket.nonce_digest, 'hex')))
           refuse('permission_denied', 'download ticket is not valid')
         const check = () => {
           if (store.now() >= ticket.expires_at) refuse('ticket_expired', 'download ticket expired')
@@ -308,6 +317,9 @@ export function createArtifactAccess(
           if (blob.pinId !== ticket.pin_id) refuse('revoked', 'artifact content changed')
           return { record, blob }
         }
+        check()
+        // The broker refuses a ticket of a revoked key before it expires, so possession alone is not enough.
+        await opened(keys, ticket, context)
         const { record, blob } = check()
         if (offset > blob.bytes) refuse('range_not_satisfiable', 'download starts past the end')
         const stream = unwrap(await blobRead.openRead({ ref: blob, offset }, context))

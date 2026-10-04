@@ -10,6 +10,7 @@ import type {
   ArtifactTicketSecretBinding,
   TicketNonceAAD,
 } from '../../src/runtime/artifact-ticket-key.js'
+import type { ArtifactAccessOptions } from '../../src/runtime/artifacts/access.js'
 import { createSecretsService } from '../../src/runtime/providers/secrets.js'
 import { boundary, consumer, type Kind, scope } from './network-secrets-fixture.js'
 
@@ -111,6 +112,23 @@ export function ticketBroker(
   const port = broker.artifactTicketKeyPort
   if (!port) throw new Error('Missing restricted companion')
   return { broker, port, directory: join(directory, 'artifact-ticket-keys') }
+}
+
+/**
+ * The artifacts ticket key option over a real default broker: its port, the installation it serves and
+ * the Host's delegation of each client call to the installed owner.
+ */
+export function artifactTicketKeys(directory: string, now?: () => number) {
+  const auth = ticketBoundary()
+  const { broker, port } = ticketBroker('default', directory, auth, {}, now)
+  const keys: NonNullable<ArtifactAccessOptions['ticketKeys']> = {
+    port,
+    binding: ticketBinding,
+    tenantId: 'tenant',
+    authorityId: 'selected-blob',
+    delegate: (call) => auth.delegate({ signal: call.signal }),
+  }
+  return { auth, broker, keys }
 }
 
 export function scanTicketBytes(directory: string, diagnostics: readonly unknown[]) {
