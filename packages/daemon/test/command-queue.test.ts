@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CommandQueue, CommandQueueError } from '../src/local/command-queue.js'
+import { CommandQueue, CommandQueueError, withSessionQueues } from '../src/local/command-queue.js'
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void
@@ -9,6 +9,34 @@ const deferred = <T>() => {
 const signal = () => new AbortController().signal
 
 describe('CommandQueue', () => {
+  it('fences already queued mutations while internal cancellation and ordered maintenance remain available', async () => {
+    const queue = new CommandQueue()
+    let blocked = false
+    queue.setAdmissionGuard((id) => {
+      if (blocked && id === 'left') throw new Error('retired')
+    })
+    const hold = deferred<void>()
+    const first = queue.run('left', signal(), () => hold.promise)
+    let dispatched = false
+    const waiting = queue.run('left', signal(), async () => {
+      dispatched = true
+    })
+    const rejected = expect(waiting).rejects.toThrow('retired')
+    blocked = true
+    hold.resolve()
+    await first
+    await rejected
+    expect(dispatched).toBe(false)
+    expect(() => queue.run('left', signal(), async () => undefined)).toThrow('retired')
+    expect(await withSessionQueues(queue, ['right', 'left', 'left'], signal(), async () => 'closed')).toBe(
+      'closed',
+    )
+    expect(await queue.run('left', signal(), async () => 'cancelled', undefined, 'maintenance')).toBe(
+      'cancelled',
+    )
+    await queue.close()
+  })
+
   it('runs one session FIFO while another session progresses independently', async () => {
     const queue = new CommandQueue()
     const first = deferred<void>()

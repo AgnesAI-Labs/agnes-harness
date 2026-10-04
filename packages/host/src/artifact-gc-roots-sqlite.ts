@@ -22,8 +22,8 @@ function roots(
 /**
  * Five-source snapshot for Computer Use candidates. Ledger and request-media roots come from the
  * reference index (or its locked re-verification); retention roots are the screenshots active
- * sessions still need. Export and rollback are explicitly empty: exports do not detach bytes from
- * their ledger and there is no rollback artifact owner. Without a ledger database, only an empty
+ * sessions still need. Comparison archives supply durable export roots; there is no rollback
+ * artifact owner. Without a ledger database, only an empty
  * candidate set is collectable.
  */
 export async function computerUseArtifactRootSnapshot(
@@ -32,6 +32,8 @@ export async function computerUseArtifactRootSnapshot(
     roots?: IndexedRoots
     /** Screenshots active sessions still need; retention never evicts them. */
     retention?: ReadonlySet<string>
+    /** Durable comparison exports; re-read under the ledger lock before deletion. */
+    archives?: ReadonlySet<string>
   }>,
 ): Promise<ArtifactGcFiveSourceSnapshot> {
   if (!input.roots && input.candidateDigests.size !== 0)
@@ -56,7 +58,14 @@ export async function computerUseArtifactRootSnapshot(
         'request-media',
         input.roots ? roots(input.roots.requestMedia, input.candidateDigests, true) : [],
       ),
-      empty('export'),
+      {
+        source: 'export' as const,
+        snapshot: async () => ({
+          complete: true as const,
+          epoch: 'comparison-archives-v1',
+          roots: roots(input.archives ?? new Set(), input.candidateDigests),
+        }),
+      },
       {
         source: 'retention' as const,
         snapshot: async () => ({

@@ -453,7 +453,7 @@ describe('migrated approval region', () => {
       () => createElement('p', { id: 'fixture-approval-detail-content' }, '扩展审批详情'),
     )
     expect(approval.getAttribute('aria-live')).toBe('polite')
-    expect(approval.querySelector('#approval-content')).toBeTruthy()
+    expect(approval.querySelector('[data-agnes-region-unit="approval"]')).toBeTruthy()
     mount.render({
       key: 'approval-1',
       title: '需要你的确认',
@@ -517,11 +517,11 @@ describe('migrated approval region', () => {
     )
     await vi.waitFor(() => {
       expect(approval.querySelector('#replacement-approval')).toBeTruthy()
-      expect(approval.querySelector('#approval-content')).toBeNull()
+      expect(approval.querySelector('[data-agnes-region-unit="approval"]')).toBeNull()
     }, committed)
     remove()
     await vi.waitFor(() => {
-      expect(approval.querySelector('#approval-content')).toBeTruthy()
+      expect(approval.querySelector('[data-agnes-region-unit="approval"]')).toBeTruthy()
     }, committed)
     mount.render(undefined)
     await vi.waitFor(() => {

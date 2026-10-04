@@ -576,7 +576,16 @@ export function expectedFromGolden(golden: GoldenCommit[]): RecordedCommit[] {
   const out: RecordedCommit[] = []
   let cells = new Map<string, { seq: number; data: unknown }>()
   golden.forEach((commit, index) => {
-    const rows = (commit.events as Row[]).map((row) => move(row) as Row)
+    const rows = (commit.events as Row[]).map((row) => {
+      const moved = move(row) as Row
+      // Legacy starts implicitly owned the native loop. New starts persist that same owner;
+      // translate the historical format without changing the frozen reference or hiding an owner.
+      if (moved.type === 'session/start') {
+        const data = moved.data as Record<string, unknown>
+        if (data.runtime === undefined) moved.data = { ...data, runtime: { id: 'native', version: '1' } }
+      }
+      return moved
+    })
     const head = heads[index] as { first: number; last: number; marked: boolean }
     // A delegated or forked child starts with no program counter of its own.
     if (rows.some((row) => row.type === 'session/start' && (row.data as { parent?: unknown }).parent))

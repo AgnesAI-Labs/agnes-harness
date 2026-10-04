@@ -1,5 +1,7 @@
 import type { CostLedger, EventEnvelope, UISpan, UITurn, UITurnUsage } from '@agnes/protocol'
 import { clipUtf16 as clip } from './clip.js'
+import { NestedToolSources } from './nested-tool-source.js'
+import { RuntimeWorkProjection } from './runtime-work.js'
 
 export const SUBAGENT_TOOL_NAMES = new Set(['subagent_fork', 'subagent_spawn'])
 
@@ -15,6 +17,8 @@ export type TraceFoldState = {
   toolToSpan: Map<string, string>
   approvalToSpan: Map<string, string>
   toolParentEffect: Map<string, string>
+  runtimeWork: RuntimeWorkProjection
+  nestedToolSources: NestedToolSources
 }
 
 const wallMs = (startedAt: string, endedAt: string): number | undefined => {
@@ -109,7 +113,12 @@ function walk(span: UISpan, visit: (item: UISpan) => void): void {
   for (const child of span.children) walk(child, visit)
 }
 
-export function createTraceState(turn: number, event: EventEnvelope, turnId: string): TraceFoldState {
+export function createTraceState(
+  turn: number,
+  event: EventEnvelope,
+  turnId: string,
+  sessionKey?: string,
+): TraceFoldState {
   const root = makeSpan(turnId, 'turn', `Turn ${turn}`, event)
   const spans = new Map<string, UISpan>([[root.id, root]])
   return {
@@ -121,10 +130,12 @@ export function createTraceState(turn: number, event: EventEnvelope, turnId: str
     toolToSpan: new Map(),
     approvalToSpan: new Map(),
     toolParentEffect: new Map(),
+    runtimeWork: new RuntimeWorkProjection(),
+    nestedToolSources: new NestedToolSources(sessionKey),
   }
 }
 
-export function hydrateTraceState(root: UISpan, turn: number): TraceFoldState {
+export function hydrateTraceState(root: UISpan, turn: number, sessionKey?: string): TraceFoldState {
   const state: TraceFoldState = {
     root,
     turn,
@@ -134,9 +145,28 @@ export function hydrateTraceState(root: UISpan, turn: number): TraceFoldState {
     toolToSpan: new Map(),
     approvalToSpan: new Map(),
     toolParentEffect: new Map(),
+    runtimeWork: new RuntimeWorkProjection(),
+    nestedToolSources: new NestedToolSources(sessionKey),
   }
   walk(root, (span) => {
     state.spans.set(span.id, span)
+    if (span.kind === 'runtime' && span.runtime && span.category) {
+      state.runtimeWork.restore({
+        kind: 'runtime',
+        id: span.nodeIds?.[0] ?? `runtime:${span.startSeq}`,
+        seq: span.startSeq,
+        lastSeq: span.endSeq ?? span.startSeq,
+        runtime: span.runtime,
+        category: span.category,
+        status: span.status,
+        title: span.runtimeTitle ?? span.name,
+        summary: '',
+        ...(span.runtimePurpose ? { purpose: span.runtimePurpose } : {}),
+        ...(span.model ? { model: span.model } : {}),
+        ...(span.requestId ? { requestId: span.requestId } : {}),
+        ...(span.intentId ? { intentId: span.intentId } : {}),
+      })
+    }
     if (span.effectId) state.effectToSpan.set(span.effectId, span.id)
     if (span.toolUseId) state.toolToSpan.set(span.toolUseId, span.id)
     if (span.kind === 'step' && span.endSeq === undefined) state.currentStepId = span.id
@@ -151,6 +181,32 @@ export function hydrateTraceState(root: UISpan, turn: number): TraceFoldState {
 function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void {
   const data = (event.data ?? {}) as Record<string, unknown>
   switch (event.type) {
+    case 'runtime/record': {
+      const node = state.runtimeWork.apply(event)
+      if (!node) return
+      const id = `span:${node.id}`
+      let span = state.spans.get(id)
+      if (!span) {
+        span = register(
+          state,
+          makeSpan(id, 'runtime', node.title, event, {
+            runtime: node.runtime,
+            category: node.category,
+            nodeIds: [node.id],
+            ...(node.requestId ? { requestId: node.requestId } : {}),
+            ...(node.intentId ? { intentId: node.intentId } : {}),
+          }),
+        )
+        ensureStep(state, event).children.push(span)
+      }
+      span.name = clip(`${node.title} · ${node.summary}`, 256)
+      span.runtimeTitle = node.title
+      if (node.purpose) span.runtimePurpose = node.purpose
+      if (node.model) span.model = node.model
+      if (!['running', 'waiting'].includes(node.status)) closeSpan(span, event, node.status)
+      span.status = node.status
+      return
+    }
     case 'step/start': {
       const step = Number(data.step)
       const span = register(
@@ -371,6 +427,18 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
 /** Fold one ledger event into a turn's span tree. Mutates `state`. */
 export function applyTraceEvent(state: TraceFoldState, event: EventEnvelope): TraceFoldState {
   if (state.failed) return state
+  const nested = state.nestedToolSources.apply(event)
+  if (nested) {
+    const tool = state.spans.get(state.toolToSpan.get(nested.toolUseId) ?? '')
+    const parent = state.spans.get(state.toolToSpan.get(nested.parentToolUseId) ?? '')
+    if (tool && parent && !parent.children.includes(tool)) {
+      for (const span of state.spans.values()) {
+        const index = span.children.indexOf(tool)
+        if (index !== -1) span.children.splice(index, 1)
+      }
+      parent.children.push(tool)
+    }
+  }
   applyTraceEventInner(state, event)
   return state
 }

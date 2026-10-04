@@ -82,6 +82,7 @@ export async function persistedToolApproval(
     policyHash: string
     policyVersion: string
   },
+  options?: { consumedRequests?: ReadonlySet<string> },
 ): Promise<PersistedToolApproval | undefined> {
   const call = s.state.toolCalls.get(input.toolUseId)
   if (!call || call.lane !== s.lane) return undefined
@@ -95,7 +96,12 @@ export async function persistedToolApproval(
   })
   for (const [requestId, decision] of [...s.state.decisions].reverse()) {
     if (decision.lane !== s.lane || !decision.askedSeq) continue
-    if (decision.via === 'callback' && !s.state.resumedRequests.has(requestId)) continue
+    if (
+      decision.via === 'callback' &&
+      !s.state.resumedRequests.has(requestId) &&
+      !options?.consumedRequests?.has(requestId)
+    )
+      continue
     const row = (
       await s.d.log.scan({ fromSeq: decision.askedSeq, toSeq: decision.askedSeq, lane: s.lane })
     )[0]

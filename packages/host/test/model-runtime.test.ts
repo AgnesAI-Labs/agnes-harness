@@ -27,6 +27,7 @@ it('pins preparation, catalogue, counting and inference together while a new ima
   const old = make('old'),
     fresh = make('fresh')
   const runtime = modelRuntime(old)
+  const held = runtime.retain()
   const request = {} as RequestBody
   const options = { signal: new AbortController().signal, toolNames: [] }
   let resume!: () => void
@@ -42,6 +43,14 @@ it('pins preparation, catalogue, counting and inference together while a new ima
     return collect(runtime.provider.infer(request, options))
   })
   runtime.publish(fresh)
+  await held.run(() =>
+    runtime.run(async () => {
+      expect(runtime.contractForModel({ route: 'r', model: 'm' }).contract_id).toBe('old')
+      expect(await collect(runtime.provider.infer(request, options))).toEqual([
+        { type: 'text_delta', delta: 'old' },
+      ])
+    }),
+  )
   await runtime.run(async () => {
     runtime.provider.models()
     expect(runtime.contractForModel({ route: 'r', model: 'm' }).contract_id).toBe('fresh')

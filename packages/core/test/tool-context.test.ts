@@ -11,6 +11,7 @@ function setup(
   over: {
     invoke?: Parameters<typeof buildToolContext>[0]['invoke']
     parentSignal?: AbortSignal
+    children?: ChildrenFactory
   } = {},
 ) {
   const created: unknown[] = []
@@ -45,7 +46,7 @@ function setup(
       cwd: '/workspace/parent',
       runtime,
       preset: presetDefaults(),
-      children,
+      children: over.children ?? children,
       fsOps: {
         read: async () => new Uint8Array(),
         write: async () => undefined,
@@ -119,9 +120,10 @@ describe('ToolContext subagent options', () => {
         model: 'provider/model',
         input: 'question',
         parentEffectId: 'tool-1',
+        signal: context.signal,
       },
     ])
-    expect(run).toHaveBeenCalledWith('question')
+    expect(run).toHaveBeenCalledWith('question', { signal: context.signal })
     expect(close).toHaveBeenCalledOnce()
   })
 
@@ -145,6 +147,7 @@ describe('ToolContext subagent options', () => {
         isolation: 'worktree',
         input: 'task',
         parentEffectId: 'tool-1',
+        signal: context.signal,
       },
     ])
     expect(run).toHaveBeenCalledWith('task')
@@ -156,9 +159,70 @@ describe('ToolContext subagent options', () => {
 
     await context.subagent.spawn('task')
     expect(created).toEqual([
-      { parent: 'parent-1', cwd: '/workspace/parent', input: 'task', parentEffectId: 'tool-1' },
+      {
+        parent: 'parent-1',
+        cwd: '/workspace/parent',
+        input: 'task',
+        parentEffectId: 'tool-1',
+        signal: context.signal,
+      },
     ])
-    expect(Object.keys(created[0] as object).sort()).toEqual(['cwd', 'input', 'parent', 'parentEffectId'])
+    expect(Object.keys(created[0] as object).sort()).toEqual([
+      'cwd',
+      'input',
+      'parent',
+      'parentEffectId',
+      'signal',
+    ])
+  })
+
+  it.each(['handle', 'durable'] as const)(
+    'collect immediately reports %s cancellation rather than waiting for a lease timeout',
+    async (source) => {
+      const child: ChildHandle = {
+        key: 'child-1',
+        run: async () => ({ text: '', lastSeq: 1 }),
+        close: async () => undefined,
+        status: async () => ({ state: 'cancelled', lastSeq: 1 }),
+      }
+      const { context } = setup(fakeSeams(), undefined, {
+        children: {
+          create: async () => child,
+          ...(source === 'handle' ? { get: () => child } : {}),
+          inspect: async () => ({ state: 'cancelled', lastSeq: 1 }),
+        },
+      })
+      expect(await context.subagent.collect('child-1', { wait: true })).toEqual({
+        childKey: 'child-1',
+        status: 'cancelled',
+      })
+    },
+  )
+
+  it('cancels collect polling with the invoking tool without cancelling the independently owned child', async () => {
+    const controller = new AbortController()
+    const cancel = vi.fn(async () => undefined)
+    let observed = false
+    const child: ChildHandle = {
+      key: 'child-1',
+      run: async () => ({ text: '', lastSeq: 1 }),
+      close: async () => undefined,
+      status: async () => {
+        observed = true
+        return { state: 'running', lastSeq: 1 }
+      },
+      cancel,
+    }
+    const { context } = setup(fakeSeams(), undefined, {
+      parentSignal: controller.signal,
+      children: { create: async () => child, get: () => child },
+    })
+    const collecting = context.subagent.collect('child-1', { wait: true })
+    const failure = expect(collecting).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(observed).toBe(true))
+    controller.abort()
+    await failure
+    expect(cancel).not.toHaveBeenCalled()
   })
 
   it('collect wait timeout does not cancel the child', async () => {

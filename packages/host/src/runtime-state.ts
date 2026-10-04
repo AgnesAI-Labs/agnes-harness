@@ -22,6 +22,8 @@ export type RuntimeStateCoordinatorOptions<T extends object> = Readonly<{
 }>
 
 export type RuntimeStatePublishOptions<T extends object> = Readonly<{
+  /** Host-private read ancestry; requires a precommit proof that existing generation/scopes survive. */
+  retainedRead?: object
   /** Host-only invariant check. It runs after dispatch drains and must never dispatch plugin/user code. */
   precommit?: (candidate: T, base: RuntimeStateSnapshot<T>) => void | Promise<void>
 }>
@@ -81,6 +83,12 @@ export class RuntimeStateCoordinator<T extends object> {
     build: RuntimeStateCandidateBuilder<T>,
     options: RuntimeStatePublishOptions<T> = {},
   ): Promise<RuntimeStateSnapshot<T>> {
+    if (options.retainedRead && !options.precommit)
+      throw new TypeError('read-pinned publication requires a preservation proof')
+    const mutate = <TResult>(operation: () => TResult | PromiseLike<TResult>) =>
+      options.retainedRead
+        ? this.#mutation.withRetainedReadScope(options.retainedRead, () => this.#mutation.mutate(operation))
+        : this.#mutation.mutate(operation)
     for (let attempt = 1; attempt <= this.#maxRetries; attempt += 1) {
       const base = this.current()
       const candidate = await build(base)
@@ -89,7 +97,7 @@ export class RuntimeStateCoordinator<T extends object> {
       let previous: T | undefined
       let current: T | undefined
       try {
-        await this.#mutation.mutate(async () => {
+        await mutate(async () => {
           await this.#publication.withClosed(async () => {
             if (this.#epoch !== base.epoch || this.#current !== base.value) {
               stale = true
@@ -110,7 +118,7 @@ export class RuntimeStateCoordinator<T extends object> {
       } catch (error) {
         if (!committed) {
           try {
-            await this.#mutation.mutate(() => candidate.abort())
+            await mutate(() => candidate.abort())
           } catch (cleanupError) {
             throw new AggregateError(
               [error, cleanupError],
@@ -121,13 +129,17 @@ export class RuntimeStateCoordinator<T extends object> {
         throw error
       }
       if (stale) {
-        await this.#mutation.mutate(() => candidate.abort())
+        await mutate(() => candidate.abort())
         continue
       }
       if (!committed || !previous || !current) {
         throw new Error('E_RUNTIME_STATE_INVARIANT: publication completed without a state exchange')
       }
-      this.#startRetirement(previous, current)
+      if (options.retainedRead)
+        this.#mutation.withRetainedReadScope(options.retainedRead, () =>
+          this.#startRetirement(previous!, current!),
+        )
+      else this.#startRetirement(previous, current)
       return this.current()
     }
     throw new RuntimeStateStaleError(this.#maxRetries)

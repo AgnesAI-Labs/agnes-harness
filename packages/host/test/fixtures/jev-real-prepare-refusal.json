@@ -1,0 +1,44 @@
+{
+  "source": "Real Jev parent-report-idle capture, 2026-10-03; session identities, paths, prompts and reasoning removed",
+  "shell": {
+    "toolCallSeq": 36,
+    "settledSeq": 39,
+    "toolResultSeq": 40,
+    "outcome": {
+      "kind": "error",
+      "error": { "code": "APPROVAL_REJECTED", "message": "approval rejected" },
+      "effect": "not_applied",
+      "effectEvidence": { "phase": "not_sent" },
+      "snapshot": {
+        "codec": "agnes-tool-result-v1",
+        "value": {
+          "result": {
+            "isError": true,
+            "content": [{ "type": "text", "text": "approval rejected" }],
+            "details": { "code": "APPROVAL_REJECTED" }
+          },
+          "projection": { "trust": "untrusted" }
+        }
+      }
+    }
+  },
+  "sendMessage": {
+    "toolCallSeq": 67,
+    "askedSeq": 68,
+    "decidedSeq": 69,
+    "settledSeq": 70,
+    "toolResultSeq": 71,
+    "resolvedPolicy": {
+      "isReadOnly": false,
+      "isOpenWorld": true,
+      "requiresApproval": "never"
+    },
+    "outcome": {
+      "kind": "error",
+      "error": { "code": "APPROVAL_REJECTED", "message": "approval rejected" },
+      "effect": "not_applied",
+      "effectEvidence": { "phase": "not_sent" }
+    }
+  },
+  "parentReceiptKinds": ["subagent-settled"]
+}

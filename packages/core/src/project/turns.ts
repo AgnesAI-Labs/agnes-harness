@@ -1,5 +1,6 @@
 import type { CostLedger, EventEnvelope, UINode, UITurn, UITurnCall, UITurnUsage } from '@agnes/protocol'
 import { clipUtf16 } from './clip.js'
+import { runtimeWorkEvent } from './runtime-work.js'
 import { createTraceState, hydrateTraceState, type TraceFoldState, traceFold } from './trace.js'
 
 type TurnEndReason = NonNullable<UITurn['reason']>
@@ -128,6 +129,7 @@ const callFrom = (event: EventEnvelope, row: CostLedger): UITurnCall => ({
 
 /** Stable turn ownership and billing derived only from committed ledger rows. */
 export class TurnProjection {
+  constructor(private sessionKey?: string) {}
   private readonly values: UITurn[] = []
   private readonly byId = new Map<string, UITurn>()
   private readonly physicalTurns = new Map<number, string>()
@@ -137,6 +139,7 @@ export class TurnProjection {
   private readonly assistantRows = new Map<number, { id: string; model?: string }>()
   private pendingNodes: string[] = []
   private current: string | undefined
+  private readonly runtimeTurns = new Map<string, string>()
   private readonly traces = new Map<string, TraceFoldState>()
   private readonly traceFailed = new Set<string>()
   // Per turn: the running usage sum and the effect ids already counted, built from the turn's calls
@@ -151,7 +154,25 @@ export class TurnProjection {
     const changed = new Set<string>()
     let owner = this.current
     const data = event.data as Record<string, unknown> | null
+    if (
+      event.type === 'session/start' &&
+      event.origin === 'system' &&
+      event.trust === 'trusted' &&
+      typeof data?.key === 'string'
+    )
+      this.sessionKey = data.key
     switch (event.type) {
+      case 'runtime/record': {
+        const work = runtimeWorkEvent(event)
+        if (!work) break
+        const key = JSON.stringify([work.runtime.id, work.runtime.version, work.record.turn])
+        owner = this.runtimeTurns.get(key) ?? this.current
+        if (owner) {
+          this.runtimeTurns.set(key, owner)
+          changed.add(owner)
+        }
+        break
+      }
       case 'session/start': {
         if (data?.parent) {
           for (const turn of this.values) {
@@ -314,17 +335,21 @@ export class TurnProjection {
           delete turn.trace.endedAt
           delete turn.trace.durationMs
           turn.trace.status = 'running'
-          state = hydrateTraceState(turn.trace, turn.turn)
+          state = hydrateTraceState(turn.trace, turn.turn, this.sessionKey)
           this.traces.set(turnId, state)
         }
         if (!state) {
-          state = createTraceState(turn.turn, event, turn.id)
+          state = createTraceState(turn.turn, event, turn.id, this.sessionKey)
           this.traces.set(turnId, state)
           turn.trace = state.root
         } else turn.trace = state.root
         return
       }
-      const state = this.traces.get(turnId)
+      let state = this.traces.get(turnId)
+      if (!state && event.type === 'runtime/record' && turn.trace) {
+        state = hydrateTraceState(turn.trace, turn.turn, this.sessionKey)
+        this.traces.set(turnId, state)
+      }
       if (!state || state.failed) return
       traceFold.applyTraceEvent(state, event)
       if (event.type === 'turn/end') {

@@ -1,6 +1,10 @@
 import { noopHooks, ResourceRegistry, ToolRegistry } from '@agnes/core'
+import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
+import { buildPresetRows } from '../src/assemble/preset-rows.js'
+import { assembleOrdinaryPluginTree } from '../src/assemble/seams-cordis.js'
+import { mountedConfigurationSource, readMountedConfiguration } from '../src/mounted-attestation.js'
 import {
   generationRegistries,
   prepareGenerationOwnerReplacement,
@@ -8,6 +12,73 @@ import {
 } from '../src/runtime-generation-view.js'
 
 describe('published generation runtime view', () => {
+  it('binds actual mounted config to the exact runtime pointer and refuses in-place drift', async () => {
+    const presets = buildPresetRows({ standard: { name: 'standard', model: { id: 'm' } } })
+    const row = createPluginRow({
+      id: 'builtin:configured',
+      plugin: 'builtin:configured',
+      snapshotDigest: 'builtin:configured',
+      exportName: 'default',
+      entryRevision: 'v1',
+      extrasRevision: 'none',
+      mountRevision: 'v1',
+      config: { limit: 1, apiKey: 'fake-key' },
+    })
+    const plugin = Object.assign(() => undefined, {
+      Config: {
+        '~standard': {
+          version: 1 as const,
+          vendor: 'test',
+          validate: (value: unknown) => ({ value: { ...(value as object), limit: 2 } }),
+        },
+      },
+    })
+    const mounted = await assembleOrdinaryPluginTree(
+      {},
+      {
+        bootRows: [...presets.rows, row],
+        builtinClaims: [...presets.builtinClaims, { row, entry: normalizePluginExport(plugin) }],
+      },
+    )
+    try {
+      const source = mountedConfigurationSource(mounted.pluginTree, 'standard')
+      const cache = new Map()
+      const runtime = publishedSessionRuntime({ cache, hooks: noopHooks, mountedConfiguration: source })
+      const captured = readMountedConfiguration(runtime)
+      expect(captured).toMatchObject({ scope: 'active-host-rows-and-selected-preset', count: 2 })
+      expect(captured?.digest).toMatch(/^[a-f0-9]{64}$/)
+      expect(JSON.stringify(captured)).not.toContain('fake-key')
+      expect(readMountedConfiguration({ ...runtime })).toBeNull()
+      const fiber = mounted.pluginTree.tree.fiber(row.id)
+      if (!fiber) throw new Error('Missing actual mounted fiber')
+      expect(fiber.config.limit).toBe(2)
+      fiber.config = { ...fiber.config, limit: 1 }
+      const changed = source()
+      expect(changed?.digest).not.toBe(captured?.digest)
+      expect(readMountedConfiguration(runtime)).toBeNull()
+      const next = publishedSessionRuntime({ cache, hooks: noopHooks, mountedConfiguration: source })
+      expect(readMountedConfiguration(next)).toEqual(changed)
+      expect(next.tools).toBe(runtime.tools)
+      // Functions/getters cannot be silently dropped into a claimed complete JSON digest.
+      fiber.config = { callback: () => 'fake-key' }
+      expect(source()).toBeNull()
+      fiber.config = Object.defineProperty({}, 'secret', {
+        enumerable: true,
+        get: () => {
+          throw new Error('must not evaluate')
+        },
+      })
+      expect(source()).toBeNull()
+      expect(mountedConfigurationSource(mounted.pluginTree, 'missing')()).toBeNull()
+      fiber.config = { limit: 1 }
+      const selected = mounted.pluginTree.tree.fiber('preset:standard')
+      if (!selected) throw new Error('Missing selected preset fiber')
+      selected.config = { name: 'other' }
+      expect(source()).toBeNull()
+    } finally {
+      await mounted.close()
+    }
+  })
   it('does not reuse Kernel shared tables across composite revisions', () => {
     const cache = new Map()
     const kernelTools = new ToolRegistry()

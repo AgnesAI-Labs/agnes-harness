@@ -1,0 +1,427 @@
+{
+  "provenance": {
+    "kind": "real-provider-capture",
+    "source": "primary-capture.json",
+    "resultMarker": "TREE_PRIMARY_OK",
+    "redactions": [
+      "Request bodies are replaced with an explicit fixtureBodyOmitted marker; original requestHash values are preserved and cannot be recomputed from this fixture.",
+      "Model snapshots/reasoning, actor identity, event IDs, local paths, provider response IDs/headers, and non-budget events are omitted.",
+      "Settlement output is the actual captured parsed response, not a fabricated recovery result.",
+      "observedBudget contains only readonly budget_scopes/budget_reservations columns from the matching checkpointed SQLite capture."
+    ]
+  },
+  "sessionKey": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7",
+  "events": [
+    {
+      "seq": 18,
+      "type": "runtime/record",
+      "lane": "main",
+      "v": 1,
+      "data": {
+        "runtime": {
+          "id": "jevloop",
+          "version": "1"
+        },
+        "record": {
+          "version": 1,
+          "id": "record:11",
+          "turn": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:1",
+          "step": "step-1:2",
+          "attempt": "attempt:10",
+          "kind": "model.requested",
+          "call": {
+            "purpose": "decision",
+            "backend": "jev",
+            "endpoint": "https://api.typesafe.ai/v1/systemone",
+            "requestedModel": "jev-latest",
+            "codec": "systemone-json-v1",
+            "inputCursor": "16",
+            "input": {
+              "fixtureBodyOmitted": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 19,
+      "type": "x/agnes/jev-tree-admission",
+      "lane": "main",
+      "v": 1,
+      "ignorable": true,
+      "sourceEventSeqs": [18],
+      "data": {
+        "requestedId": "record:11",
+        "requestedSeq": 18,
+        "rootTaskId": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6",
+        "scopeIds": ["root:agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6"],
+        "effectId": "54cd3cda021154381cfd59fcb7ffe201c0fdb7e6b37d1a5ad4433a0a92ba36a7",
+        "requestHash": "82ddebe7a5fa519f4ec3d36c488dabb1ff3c7ec26d051832e11aaeb3fd85430b",
+        "qMicro": null,
+        "writerGeneration": 1
+      }
+    },
+    {
+      "seq": 20,
+      "type": "x/agnes/jev-tree-dispatch",
+      "lane": "main",
+      "v": 1,
+      "ignorable": true,
+      "sourceEventSeqs": [18, 19],
+      "data": {
+        "admissionSeq": 19,
+        "permitId": "p1"
+      }
+    },
+    {
+      "seq": 21,
+      "type": "runtime/record",
+      "lane": "main",
+      "v": 1,
+      "data": {
+        "runtime": {
+          "id": "jevloop",
+          "version": "1"
+        },
+        "record": {
+          "version": 1,
+          "id": "record:12",
+          "turn": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:1",
+          "step": "step-1:2",
+          "attempt": "attempt:10",
+          "kind": "model.settled",
+          "requested": "record:11",
+          "settlement": {
+            "output": {
+              "model": "jev-1.13.0",
+              "answers": {
+                "ambiguity": {
+                  "type": "noul",
+                  "noul": 0.17
+                },
+                "purpose": {
+                  "type": "choice",
+                  "choice": "RESPOND",
+                  "confidence": 0.96,
+                  "probabilities": {
+                    "RESPOND": 0.97,
+                    "ACT": 0.02,
+                    "INSPECT": 0.01,
+                    "VERIFY": 0
+                  }
+                },
+                "operation_INSPECT": {
+                  "type": "choice",
+                  "choice": "ask_user_question",
+                  "confidence": 0.61,
+                  "probabilities": {
+                    "todo": 0,
+                    "plugin_helper_create": 0,
+                    "subagent_collect": 0.12,
+                    "tool_describe": 0.01,
+                    "plugin_helper_guide": 0,
+                    "subagent_fork": 0,
+                    "read": 0.2,
+                    "skill_helper_creator": 0,
+                    "skill_helper_install": 0,
+                    "ls": 0.04,
+                    "skill_read": 0,
+                    "mcp_manage": 0,
+                    "skill_read_file": 0,
+                    "run_code": 0,
+                    "subagent_spawn": 0,
+                    "harness_propose": 0,
+                    "plugin_helper_install": 0,
+                    "ask_user_question": 0.63,
+                    "tool_search": 0,
+                    "skill_helper_create": 0,
+                    "web_fetch": 0,
+                    "skill_helper_import": 0,
+                    "subagent_cancel": 0,
+                    "find": 0,
+                    "grep": 0,
+                    "shell": 0
+                  }
+                },
+                "operation_ACT": {
+                  "type": "choice",
+                  "choice": "ask_user_question",
+                  "confidence": 0.58,
+                  "probabilities": {
+                    "tool_describe": 0.02,
+                    "plugin_helper_create": 0,
+                    "subagent_collect": 0,
+                    "todo": 0.16,
+                    "plugin_helper_guide": 0,
+                    "subagent_fork": 0,
+                    "write": 0.11,
+                    "skill_helper_install": 0,
+                    "skill_helper_creator": 0,
+                    "skill_read": 0.03,
+                    "mcp_manage": 0,
+                    "skill_read_file": 0,
+                    "run_code": 0.01,
+                    "subagent_spawn": 0,
+                    "harness_propose": 0.01,
+                    "subagent_cancel": 0,
+                    "ask_user_question": 0.6,
+                    "tool_search": 0.01,
+                    "skill_helper_create": 0,
+                    "shell": 0.04,
+                    "web_fetch": 0,
+                    "skill_helper_import": 0,
+                    "edit": 0.01,
+                    "plugin_helper_install": 0
+                  }
+                },
+                "operation_VERIFY": {
+                  "type": "choice",
+                  "choice": "subagent_collect",
+                  "confidence": 0.29,
+                  "probabilities": {
+                    "tool_describe": 0.09,
+                    "plugin_helper_create": 0,
+                    "todo": 0.02,
+                    "subagent_collect": 0.33,
+                    "plugin_helper_guide": 0,
+                    "subagent_fork": 0,
+                    "read": 0.26,
+                    "ls": 0.04,
+                    "skill_helper_creator": 0,
+                    "skill_helper_install": 0,
+                    "skill_read": 0.01,
+                    "mcp_manage": 0,
+                    "skill_read_file": 0,
+                    "run_code": 0.02,
+                    "subagent_spawn": 0,
+                    "harness_propose": 0,
+                    "subagent_cancel": 0,
+                    "ask_user_question": 0.03,
+                    "tool_search": 0,
+                    "skill_helper_create": 0,
+                    "web_fetch": 0,
+                    "skill_helper_import": 0,
+                    "shell": 0.07,
+                    "find": 0,
+                    "grep": 0.13,
+                    "plugin_helper_install": 0
+                  }
+                },
+                "binding_read": {
+                  "type": "choice",
+                  "choice": "LLM_PARAMETERS",
+                  "confidence": 0.53,
+                  "probabilities": {
+                    "LLM_PARAMETERS": 0.76,
+                    "c1": 0.24
+                  }
+                },
+                "can_end": {
+                  "type": "noul",
+                  "noul": 0.81
+                }
+              },
+              "usage": {
+                "input_tokens": 11883,
+                "output_tokens": 825
+              }
+            },
+            "observedModel": "jev-1.13.0",
+            "latencyMs": 713.3216660000035,
+            "usage": {
+              "input_tokens": 11883,
+              "output_tokens": 825
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 22,
+      "type": "x/agnes/jev-tree-ack",
+      "lane": "main",
+      "v": 1,
+      "ignorable": true,
+      "sourceEventSeqs": [19, 21],
+      "data": {
+        "admissionSeq": 19,
+        "settledSeq": 21
+      }
+    },
+    {
+      "seq": 26,
+      "type": "runtime/record",
+      "lane": "main",
+      "v": 1,
+      "data": {
+        "runtime": {
+          "id": "jevloop",
+          "version": "1"
+        },
+        "record": {
+          "version": 1,
+          "id": "record:16",
+          "turn": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:1",
+          "step": "step-1:2",
+          "attempt": "attempt:15",
+          "kind": "model.requested",
+          "call": {
+            "purpose": "answer",
+            "backend": "agnes-provider",
+            "endpoint": "deepseek",
+            "requestedModel": "deepseek-v4-flash",
+            "codec": "agnes-language-v1",
+            "inputCursor": "24",
+            "input": {
+              "fixtureBodyOmitted": true,
+              "pricing": {
+                "version": 1,
+                "basis": "catalog-estimate",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "admittedAt": 1790979281156,
+                "policy": {
+                  "currency": "USD",
+                  "unit": "per-million-tokens",
+                  "perMillion": {
+                    "inputUncached": 0.15,
+                    "cacheRead": 0.003,
+                    "cacheWrite": 0,
+                    "output": 0.6
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 28,
+      "type": "x/agnes/jev-tree-admission",
+      "lane": "main",
+      "v": 1,
+      "ignorable": true,
+      "sourceEventSeqs": [26],
+      "data": {
+        "requestedId": "record:16",
+        "requestedSeq": 26,
+        "rootTaskId": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6",
+        "scopeIds": ["root:agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6"],
+        "effectId": "5c34b0daa71b77e7600cad92b9d1c5a5544846b52cb256019c000d4353e717e2",
+        "requestHash": "f5d2d90d8824ab6d3ae2b98c774e8bcf484465cb4eaa5b6e84daa215e83b0af8",
+        "qMicro": null,
+        "writerGeneration": 1
+      }
+    },
+    {
+      "seq": 29,
+      "type": "x/agnes/jev-tree-dispatch",
+      "lane": "main",
+      "v": 1,
+      "ignorable": true,
+      "sourceEventSeqs": [26, 28],
+      "data": {
+        "admissionSeq": 28,
+        "permitId": "p2"
+      }
+    },
+    {
+      "seq": 30,
+      "type": "runtime/record",
+      "lane": "main",
+      "v": 1,
+      "data": {
+        "runtime": {
+          "id": "jevloop",
+          "version": "1"
+        },
+        "record": {
+          "version": 1,
+          "id": "record:17",
+          "turn": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:1",
+          "step": "step-1:2",
+          "attempt": "attempt:15",
+          "kind": "model.settled",
+          "requested": "record:16",
+          "settlement": {
+            "output": {
+              "kind": "answer",
+              "content": [
+                {
+                  "kind": "text",
+                  "text": "TREE_PRIMARY_OK"
+                }
+              ]
+            },
+            "latencyMs": 2028,
+            "usage": {
+              "type": "usage",
+              "tokens": {
+                "input": 1576,
+                "output": 33,
+                "cacheRead": 8192,
+                "cacheWrite": 0,
+                "reasoning": 27
+              },
+              "credits": 0.000281,
+              "creditSource": "estimated",
+              "billing": {
+                "usdMicros": 281,
+                "source": "estimated",
+                "subscription": false
+              },
+              "timing": {
+                "ttftMs": 1817,
+                "durationMs": 2028
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 35,
+      "type": "x/agnes/jev-tree-ack",
+      "lane": "main",
+      "v": 1,
+      "ignorable": true,
+      "sourceEventSeqs": [28, 30],
+      "data": {
+        "admissionSeq": 28,
+        "settledSeq": 30
+      }
+    }
+  ],
+  "observedBudget": {
+    "scope": {
+      "scope_id": "root:agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6",
+      "root_task_id": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6",
+      "cap_micro": null,
+      "settled_micro": "281",
+      "held_micro": "0"
+    },
+    "reservations": [
+      {
+        "permit_id": "p1",
+        "root_task_id": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6",
+        "scope_ids": ["root:agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6"],
+        "q_micro": null,
+        "effect_id": "54cd3cda021154381cfd59fcb7ffe201c0fdb7e6b37d1a5ad4433a0a92ba36a7",
+        "request_hash": "82ddebe7a5fa519f4ec3d36c488dabb1ff3c7ec26d051832e11aaeb3fd85430b",
+        "writer_generation": 1,
+        "status": "unknown"
+      },
+      {
+        "permit_id": "p2",
+        "root_task_id": "agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6",
+        "scope_ids": ["root:agnes:tree-primary:5d6c154b-ef6f-4d60-becd-5fb84b71f3f7:main:6"],
+        "q_micro": null,
+        "effect_id": "5c34b0daa71b77e7600cad92b9d1c5a5544846b52cb256019c000d4353e717e2",
+        "request_hash": "f5d2d90d8824ab6d3ae2b98c774e8bcf484465cb4eaa5b6e84daa215e83b0af8",
+        "writer_generation": 1,
+        "status": "settled"
+      }
+    ]
+  }
+}

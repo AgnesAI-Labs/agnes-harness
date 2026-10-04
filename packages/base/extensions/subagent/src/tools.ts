@@ -101,14 +101,21 @@ async function rollbackWorktree(
 const forkParameters = Type.Object(
   {
     question: Type.String({ minLength: 1 }),
-    model: Type.Optional(Type.String({ minLength: 1 })),
+    model: Type.Optional(
+      Type.String({
+        minLength: 1,
+        description:
+          'Omit to inherit the actual parent model. Override only with an explicitly configured model slot, model id, or route/model; do not invent an alias.',
+      }),
+    ),
   },
   { additionalProperties: false },
 )
 
 const forkDefinition: ToolDef<typeof forkParameters> = {
   name: 'subagent_fork',
-  description: 'Synchronously run a child session with a full tool loop and return its final text.',
+  description:
+    'Synchronously run a child session with a full tool loop and return its final text. Omit model to inherit the actual parent model; do not guess a model alias.',
   parameters: forkParameters,
   meta: {
     isReadOnly: false,
@@ -133,9 +140,21 @@ export const subagentForkTool = defineTool(forkDefinition)
 const spawnParameters = Type.Object(
   {
     task: Type.String({ minLength: 1 }),
-    model: Type.Optional(Type.String({ minLength: 1 })),
+    model: Type.Optional(
+      Type.String({
+        minLength: 1,
+        description:
+          'Omit to inherit the actual parent model. Override only with an explicitly configured model slot, model id, or route/model; do not invent an alias.',
+      }),
+    ),
     isolation: Type.Optional(Type.Union([Type.Literal('worktree'), Type.Literal('shared')])),
-    budget: Type.Optional(Type.Integer({ minimum: 1 })),
+    budget: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description:
+          'Omit to inherit the configured tree budget, including unlimited. Set a local credit cap only when explicitly requested; do not invent a limit.',
+      }),
+    ),
   },
   { additionalProperties: false },
 )
@@ -144,7 +163,8 @@ export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParam
   assertDeps(deps)
   const definition: ToolDef<typeof spawnParameters> = {
     name: 'subagent_spawn',
-    description: 'Start an independent child task and return a handle for subagent_collect.',
+    description:
+      'Start an independent child task and return a handle for subagent_collect. Omit model to inherit the actual parent model; do not guess a model alias. Omit budget to inherit the configured tree budget, including unlimited; set a local cap only when explicitly requested.',
     parameters: spawnParameters,
     meta: {
       isReadOnly: false,
@@ -196,7 +216,10 @@ export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParam
           isolation: requested,
           ...(requested === 'worktree' ? { start: false as const } : {}),
         }
-        const spawned = await ctx.subagent.spawn(args.task, options)
+        const task = ctx.subagent.sendMessage
+          ? `${args.task}\n\nYour direct parent session id is ${JSON.stringify(ctx.session.key)}. Before finishing, send a self-contained result with subagent_send_message({childKey: ${JSON.stringify(ctx.session.key)}, message: "<result>"}). You may send earlier findings as well. Sending a message does not end your turn, and the parent does not automatically receive your transcript or tool outputs.`
+          : args.task
+        const spawned = await ctx.subagent.spawn(task, options)
         if (requested === 'worktree') {
           const created = await deps.worktrees.create(ctx)
           if ('skipped' in created) skipped = created.skipped
@@ -220,7 +243,11 @@ export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParam
         if (worktree) details.worktree = worktree
         if (skipped) details.worktreeSkipped = skipped
         const note = skipped ? ` (worktree skipped: ${skipped}; sharing cwd)` : ''
-        return { content: [{ type: 'text', text: `spawned ${spawned.childKey}${note}` }], details }
+        return {
+          content: [{ type: 'text', text: `spawned ${spawned.childKey}${note}` }],
+          details,
+          structured: details,
+        }
       } finally {
         state.pending -= 1
         prune(runtime, sessionKey, state)
@@ -278,6 +305,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       return {
         content: [{ type: 'text', text: result.text ?? `child ${args.childKey}: ${result.status}` }],
         details,
+        structured: details,
       }
     },
   }
@@ -311,8 +339,72 @@ export function subagentCancelTool(deps: SubagentDeps): ToolDef<typeof cancelPar
       return {
         content: [{ type: 'text', text: `cancelled ${result.childKey}: ${result.status}` }],
         details: { childKey: result.childKey, status: result.status },
+        structured: { childKey: result.childKey, status: result.status },
       }
     },
   }
   return defineTool(definition)
 }
+
+const messageParameters = Type.Object(
+  {
+    childKey: Type.String({ minLength: 1 }),
+    message: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: false },
+)
+
+export const subagentSendMessageTool = defineTool({
+  name: 'subagent_send_message',
+  description:
+    'Send a new message to your direct continuable spawned child or, when you are a resident continuable child, your exact live direct parent. Active recipients receive steering at the next step; idle recipients start a new turn. Returns durable delivery confirmation, not completion. One-shot forks cannot continue or send upward.',
+  parameters: messageParameters,
+  meta: {
+    isReadOnly: false,
+    isDestructive: false,
+    isConcurrencySafe: true,
+    isOpenWorld: true,
+    replay: 'never',
+    costHint: undefined,
+    deferLoading: false,
+    requiresApproval: 'never',
+  },
+  async execute(args, ctx) {
+    if (!ctx.subagent.sendMessage) return fail('Child continuation is unavailable.')
+    const receipt = await ctx.subagent.sendMessage(args.childKey, args.message)
+    return {
+      content: [{ type: 'text', text: `message delivered to child ${receipt.childKey}` }],
+      details: { childKey: receipt.childKey, messageId: receipt.messageId, acceptedSeq: receipt.acceptedSeq },
+      structured: {
+        childKey: receipt.childKey,
+        messageId: receipt.messageId,
+        acceptedSeq: receipt.acceptedSeq,
+      },
+    }
+  },
+})
+
+export const subagentInterruptTool = defineTool({
+  name: 'subagent_interrupt',
+  description:
+    'Ask a direct continuable child to stop its current turn. Returns admission confirmation before drain; descendants keep running. Continue its conversation later with subagent_send_message. Use subagent_cancel to permanently cancel the subtree.',
+  parameters: cancelParameters,
+  meta: {
+    isReadOnly: false,
+    isDestructive: true,
+    isConcurrencySafe: true,
+    isOpenWorld: false,
+    replay: 'never',
+    costHint: undefined,
+    deferLoading: false,
+    requiresApproval: 'never',
+  },
+  async execute(args, ctx) {
+    if (!ctx.subagent.interrupt) return fail('Child interruption is unavailable.')
+    const receipt = await ctx.subagent.interrupt(args.childKey)
+    return {
+      content: [{ type: 'text', text: `interrupt admitted for child ${args.childKey}` }],
+      details: { accepted: receipt.accepted, childKey: args.childKey },
+    }
+  },
+})

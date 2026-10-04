@@ -10,6 +10,7 @@ import {
   type WorkspaceInvocationPort,
 } from '@agnes/core'
 import type { Actor, SessionStart } from '@agnes/protocol'
+import { NATIVE_RUNTIME } from '@agnes/runtime-api'
 import type { FencedFs } from './adapters/fs.js'
 import { materializeRoutes, pinPresetRoutes } from './assemble/routes.js'
 import type { Assembled } from './assemble.js'
@@ -19,6 +20,14 @@ import { HostError } from './errors.js'
 import type { HostSession } from './host.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
 import type { ResolvedProfile } from './profile/types.js'
+import {
+  createSessionRuntimeRegistry,
+  openRuntimeSession,
+  type SessionRuntimeRegistry,
+  selectSessionRuntime,
+} from './runtime/catalog.js'
+import { verifiedChildWorktree } from './runtime/child-workspaces.js'
+import { applySessionSandboxFloor } from './session-sandbox-floor.js'
 import { replaySwitchesOnOpen } from './session-switch.js'
 import type { SessionWorkspaceRuntime, SessionWorkspaceRuntimeTable } from './session-workspace-runtime.js'
 import { assertWorkspaceBinding, type WorkspaceBinding } from './workspace-authority.js'
@@ -30,6 +39,8 @@ import { assertWorkspaceBinding, type WorkspaceBinding } from './workspace-autho
 export type SessionRecovery = Awaited<ReturnType<HostSession['resume']>>
 
 export type CreateSessionOptions = {
+  /** Omission reopens the persisted owner, or selects Native for an empty session. */
+  runtime?: string
   key?: string
   preset?: string
   /** Transitional local entry. Authenticated worker opens supply `binding` and cannot override it. */
@@ -222,7 +233,34 @@ function childSandboxes(
 ): ChildWorkspaceRuntimePort {
   return Object.freeze({
     async reserve(parentKey: string, childKey: string) {
-      const child = await port.reserve(parentKey, childKey)
+      const child = await port.reserve(parentKey, childKey, async (parent) => {
+        const storage = a.adapters.storage
+        if (!('lookupByKey' in storage) || !('workspace' in storage))
+          throw new HostError('E_WORKSPACE_UNTRUSTED', 'child workspace storage is unavailable')
+        const record = await (storage as import('@agnes/core').ChildControlStore).lookupByKey(childKey)
+        if (!record) throw new HostError('E_WORKSPACE_UNTRUSTED', 'child workspace record is unavailable')
+        const workspace = record.workspaceId
+          ? await (storage as import('@agnes/core').ChildControlStore).workspace(record.workspaceId)
+          : null
+        const owner = a.kernel.get(parentKey)
+        if (!owner || owner.closingOrClosed)
+          throw new HostError('E_WORKSPACE_UNTRUSTED', 'child workspace owner is unavailable')
+        const parentTask = await (storage as import('@agnes/core').ChildControlStore).lookupByKey(parentKey)
+        const binding = await verifiedChildWorktree(parent, record, workspace, {
+          sessionKey: owner.key,
+          runtimeOwnerSessionKey: parentTask?.runtimeOwnerSessionKey ?? owner.key,
+        })
+        if (a.kernel.get(parentKey) !== owner || owner.closingOrClosed)
+          throw new HostError('E_WORKSPACE_UNTRUSTED', 'child workspace owner changed')
+        const preset = applySessionSandboxFloor(
+          resolvePreset(owner.preset.name, a.presets, a.sessionPresetLimits()),
+          a.adapters.storage,
+          owner.key,
+        )
+        return binding
+          ? { binding, create: (invocation) => a.openWorkspaceRuntime(binding, preset.doc, invocation) }
+          : undefined
+      })
       try {
         const { runtime } = child
         const sandbox = await fenceSandbox(
@@ -250,6 +288,7 @@ export async function createSession(
     children: Pick<SessionWorkspaceRuntimeTable, 'reserve'>
     invocation: WorkspaceInvocationPort
   }>,
+  sessionRuntimes: SessionRuntimeRegistry = createSessionRuntimeRegistry(),
 ): Promise<HostSession> {
   // 1 preset. The allowed-list check runs before resolvePreset, not folded into
   // checkPresetHardRequirements's own copy of it: resolvePreset raises its own E_PRESET_UNSUPPORTED
@@ -282,7 +321,11 @@ export async function createSession(
     throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
       detail: { source: name, capability: 'preset' },
     })
-  const preset = resolvePreset(name, a.presets, a.sessionPresetLimits())
+  const preset = applySessionSandboxFloor(
+    resolvePreset(name, a.presets, a.sessionPresetLimits()),
+    a.adapters.storage,
+    parentSession?.key ?? opts.key ?? opts.binding?.sessionKey,
+  )
 
   // 2 hard requirements, checked against what this deployment can actually provide.
   // checkPresetHardRequirements repeats the allowed-list check above - harmless here since `name`
@@ -372,26 +415,45 @@ export async function createSession(
 
   // 5 open: core takes the writer lease and writes session/start. `writerRunId` is required and
   // nothing upstream mints it, so it is minted here when the caller did not bring one.
-  const session = await a.kernel.session(key, {
-    actor,
-    preset: view,
-    resolvedProfileHash: profile.hash,
-    cwd,
-    writerRunId: opts.writerRunId ?? randomUUID(),
-    ...(opts.parent ? { parent: opts.parent } : {}),
-    ...(opts.lane ? { lane: opts.lane } : {}),
-    ...(opts.skipSessionStartHooks ? { skipSessionStartHooks: true } : {}),
-    ...(opts.imported ? { imported: opts.imported } : {}),
-    ...(workspace
-      ? {
-          workspaceRuntime: workspace.runtime,
-          workspaceIdentity: workspace.runtime.binding,
-          workspaceInvocation: workspace.invocation,
-          workspaceLease: workspace.lifecycle,
-          childWorkspaceRuntime: childSandboxes(a, workspace.children),
-        }
-      : {}),
-    seams: { ...opts.seams, sandbox: guardedSandbox },
+  const [existingStart] = await a.adapters.storage.scan(key, { type: 'session/start', limit: 1 })
+  const owner = selectSessionRuntime(
+    sessionRuntimes,
+    existingStart ? ((existingStart.data as SessionStart).runtime ?? NATIVE_RUNTIME) : undefined,
+    opts.runtime,
+  )
+  const writerRunId = opts.writerRunId ?? randomUUID()
+  const priorSession = a.kernel.get(key)
+  const session = await openRuntimeSession(sessionRuntimes, owner, {
+    failedSession: () => {
+      const retained = a.kernel.get(key)
+      return retained && retained !== priorSession && retained.writerRunId === writerRunId
+        ? retained
+        : undefined
+    },
+    open: (loopFactory) =>
+      a.kernel.session(key, {
+        runtime: owner,
+        ...(loopFactory ? { loopFactory } : {}),
+        actor,
+        preset: view,
+        resolvedProfileHash: profile.hash,
+        cwd,
+        writerRunId,
+        ...(opts.parent ? { parent: opts.parent } : {}),
+        ...(opts.lane ? { lane: opts.lane } : {}),
+        ...(opts.skipSessionStartHooks ? { skipSessionStartHooks: true } : {}),
+        ...(opts.imported ? { imported: opts.imported } : {}),
+        ...(workspace
+          ? {
+              workspaceRuntime: workspace.runtime,
+              workspaceIdentity: workspace.runtime.binding,
+              workspaceInvocation: workspace.invocation,
+              workspaceLease: workspace.lifecycle,
+              childWorkspaceRuntime: childSandboxes(a, workspace.children),
+            }
+          : {}),
+        seams: { ...opts.seams, sandbox: guardedSandbox },
+      }),
   })
   // 6 what comes back is the zero-privilege session, and a sound one.
   //
@@ -434,6 +496,7 @@ export async function createSession(
   const leftover = session.op()
   if (
     leftover &&
+    !session.configurationReserved &&
     (leftover.control.status === 'cancel_requested' || leftover.phase.kind === 'failure_drain')
   ) {
     await session.step()

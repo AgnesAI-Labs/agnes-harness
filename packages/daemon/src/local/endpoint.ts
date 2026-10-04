@@ -51,7 +51,7 @@ export type ConnectionState = {
   initialized: boolean
   /** Set only after this connection successfully calls the authorized client-module roster RPC. */
   clientModuleNotices: boolean
-  capabilities: { permission: boolean }
+  capabilities: { permission: boolean; questions?: boolean }
   attached: Map<string, AttachPrefs>
   // Set by authGate (local/auth.ts) once `initialize`'s credential has actually verified. Absent
   // rather than defaulted to 'local': a connection that never ran the gate (every test that talks to

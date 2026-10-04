@@ -62,6 +62,9 @@ export {
   parseSecretRef,
   type SecretResolver,
 } from './adapters/secrets.js'
+export type { SessionOwnerIdentity } from './adapters/session-owner-evidence.js'
+export type { ClosedSessionTree, SessionTreeRetirementIdentity } from './adapters/session-retirement-proof.js'
+export type { SessionTreeInspection } from './adapters/session-retirement-sqlite.js'
 export {
   createSqliteStorage,
   type SqliteStorage,
@@ -398,6 +401,13 @@ export {
   PublicationGate,
   type PublicationReadTicket,
 } from './publication-gate.js'
+export {
+  HostQuestions,
+  type QuestionProvider,
+  type QuestionProviderIdentity,
+  QuestionServiceError,
+  type QuestionServiceErrorCode,
+} from './questions.js'
 export * from './quiet-state.js'
 export {
   composeProductionRequestMedia,
@@ -410,6 +420,34 @@ export type { PluginManageBridge, PluginManageInvocation } from './resources/plu
 export { createSkillInstaller, type SkillInstallAuthority } from './resources/skill-install.js'
 export { validInstallPathPolicy } from './resources/skill-install-files.js'
 export type { SkillInstallBridge, SkillInstallInvocation } from './resources/skill-install-port.js'
+export {
+  accountComparisonLane,
+  type ComparisonAccountingInput,
+  type ComparisonAttemptProjection,
+  projectComparisonAttemptEvidence,
+} from './runtime/comparison-accounting.js'
+export type {
+  ConfigurationAdmissionPort,
+  ConfigurationAdmissionReceipt,
+} from './runtime/comparison-config-admission.js'
+export { comparisonPayloadDigest } from './runtime/comparison-config-admission.js'
+export { inspectComparisonInput } from './runtime/comparison-inspect.js'
+export type * from './runtime/comparison-journal-types.js'
+export { ComparisonJournalError } from './runtime/comparison-journal-types.js'
+export { SESSION_PREPARED_EVENT, verifyPreparedReceipt } from './runtime/comparison-prepared.js'
+export { projectComparisonPriceDetails } from './runtime/comparison-price-details.js'
+export {
+  type ComparisonRetirementPorts,
+  createComparisonRetirement,
+} from './runtime/comparison-retirement.js'
+export { createComparisonStore, type ScopedComparisonStore } from './runtime/comparison-store.js'
+export { aggregateComparisonTreeAccounting } from './runtime/comparison-tree-accounting.js'
+export {
+  ComparisonWorkspaceError,
+  createComparisonWorkspaces,
+  verifyComparisonWorkspaceReferences,
+} from './runtime/comparison-workspaces.js'
+export type { SessionIdleGatePort } from './runtime/session-idle-gates.js'
 export * from './runtime-target-publisher.js'
 export * from './runtime-target-report.js'
 export * from './sandbox-readiness-manager.js'

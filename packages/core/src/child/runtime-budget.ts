@@ -68,13 +68,15 @@ export function setTreePermit(s: SessionImpl, permit: TreePermit): void {
 export async function treeBudgetApplies(s: SessionImpl): Promise<boolean> {
   const storage = s.d.log.storage
   return (
-    hasChildControl(storage) && (!!(await storage.lookupByKey(s.key)) || s.preset.treeBudgetCredits !== null)
+    s.preset.treeBudgetCredits !== null ||
+    s.preset.treeBudgetMode === 'unlimited' ||
+    (hasChildControl(storage) && !!(await storage.lookupByKey(s.key)))
   )
 }
 
 async function reserveTreeBudgetPermit(
   s: SessionImpl,
-  projectedCredits: number,
+  projectedCredits: number | undefined,
   target: TreeBudgetTarget,
   identity: TreeReservationIdentity | undefined,
   endTurnOnBlocked: boolean,
@@ -91,18 +93,24 @@ async function reserveTreeBudgetPermit(
     }
 > {
   const storage = s.d.log.storage
-  if (!(await treeBudgetApplies(s)) || !hasChildControl(storage)) return 'unreserved'
+  if (!(await treeBudgetApplies(s))) return 'unreserved'
+  if (!hasChildControl(storage)) throw new CoreError('E_UNSUPPORTED', 'tree budget storage is unavailable')
   const rec = await storage.lookupByKey(s.key)
   const treeCredits = s.preset.treeBudgetCredits
-  if (!Number.isFinite(projectedCredits) || projectedCredits < 0) {
+  if (s.preset.treeBudgetMode === 'unlimited' && treeCredits !== null)
+    throw new CoreError('E_BUDGET', 'unlimited tree budget conflicts with a finite cap')
+  if (projectedCredits !== undefined && (!Number.isFinite(projectedCredits) || projectedCredits < 0)) {
     if (endTurnOnBlocked) await s.endTurn('budget')
     return { reason: 'budget' }
   }
   let scopeIds = rec?.ancestorScopeIds
   let rootTaskId = rec?.rootTaskId
-  if (!rec && treeCredits !== null) {
+  if (!rec && (treeCredits !== null || s.preset.treeBudgetMode === 'unlimited')) {
     rootTaskId = `${s.key}:${s.lane}:${s.state.openTurn.get(s.lane)?.startSeq ?? 0}`
-    const root = await storage.ensureRootScope(rootTaskId, capToMicrocredits(treeCredits))
+    const root = await storage.ensureRootScope(
+      rootTaskId,
+      treeCredits === null ? null : capToMicrocredits(treeCredits),
+    )
     scopeIds = [root.scopeId]
   }
   if (!rootTaskId || !scopeIds?.length) return 'unreserved'
@@ -129,7 +137,7 @@ async function reserveTreeBudgetPermit(
     Number.isFinite(recModel.cost.output)
   const upper =
     complete && recModel ? conservativeModelCredits(inputTokens, recModel.maxTokens, recModel.cost) : 0
-  const hold = Math.max(projectedCredits, upper)
+  const hold = projectedCredits === undefined ? undefined : Math.max(projectedCredits, upper)
   const requestHash =
     complete && recModel
       ? `${recModel.route}/${recModel.id}/${recModel.maxTokens}/${recModel.cost.input}/${recModel.cost.output}`
@@ -138,9 +146,10 @@ async function reserveTreeBudgetPermit(
   const boundRequestHash = identity?.requestHash ?? requestHash
   const writerGeneration = (await storage.writerGeneration?.(rootTaskId)) ?? 1
   const reserved = await storage.reserve({
+    originSessionKey: s.key,
     rootTaskId,
     scopeIds,
-    qMicro: chargeToMicrocredits(hold),
+    qMicro: hold === undefined ? null : chargeToMicrocredits(hold),
     effectId,
     requestHash: boundRequestHash,
     writerGeneration,
@@ -195,7 +204,7 @@ export async function reserveTreeBudget(
  */
 export async function reserveTreeBudgetHandle(
   s: SessionImpl,
-  projectedCredits: number,
+  projectedCredits: number | undefined,
   target: TreeBudgetTarget,
   identity: TreeReservationIdentity,
   inputTokens = 0,
@@ -225,7 +234,7 @@ export async function reserveTreeBudgetHandle(
     canonicalJson({
       auditBindingHash: identity.requestHash,
       target,
-      projectedCredits,
+      projectedCredits: projectedCredits ?? null,
       inputTokens,
       model: recModel
         ? {

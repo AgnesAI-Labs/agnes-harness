@@ -156,9 +156,11 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): PluginExtensi
             const skillInstall = input.skillInstall
             const mcpManage = input.mcpManage
             const pluginManage = input.pluginManage
+            // Dynamic rows have no manifest question declaration; keep this authority out of the row.
+            const { questions: _questions, ...rowContext } = tctx
             try {
               return await execute(args, {
-                ...tctx,
+                ...rowContext,
                 projections,
                 ...(mcpManage
                   ? {

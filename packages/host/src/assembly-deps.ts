@@ -34,6 +34,8 @@ export type AssembleDeps = HostPaths &
     netFetch?: KernelOptions['netFetch']
     /** Host-owned lookup of the currently published runtime for already-open Core sessions. */
     currentRuntime?: KernelOptions['currentRuntime']
+    childSessionOpen?: KernelOptions['childSessionOpen']
+    childSessionSupportsRuntime?: KernelOptions['childSessionSupportsRuntime']
     publicFetch?: KernelOptions['publicFetch']
     seamTimeoutMs?: number
     platform?: PlatformBackend
@@ -78,6 +80,8 @@ export type AssembleDeps = HostPaths &
     mcpManage?: import('./resources/mcp-manage-port.js').McpManageBridge
     pluginManage?: import('./resources/plugin-manage-port.js').PluginManageBridge
     skillInstall?: import('./resources/skill-install-port.js').SkillInstallBridge
+    /** Prepare an attached human answerer before an owner publishes a durable question. */
+    questionProvider?: import('./questions.js').QuestionProvider
     /**
      * Cordis contribution port for the same registry that produced `skillResources`.
      * Plugins call it during apply; consumers keep using `skillResources`.

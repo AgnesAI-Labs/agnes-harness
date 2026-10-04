@@ -63,6 +63,22 @@ describe('fs adapter', () => {
     expect(dec(await f.read('a.txt', { limit: 1 }))).toBe('l1\n')
     expect(dec(await f.read('a.txt', { offset: 9, limit: 2 }))).toBe('')
   })
+  it('preserves binary bytes in explicit bounded byte windows while retaining legacy line windows', async () => {
+    const f = fs()
+    const bytes = new Uint8Array([137, 80, 0, 255, 250, 10])
+    await f.write('image', bytes)
+    expect(await f.read('image', { unit: 'bytes', offset: 0, limit: 4 })).toEqual(bytes.subarray(0, 4))
+    expect(await f.read('image', { unit: 'bytes', offset: 3, limit: 99 })).toEqual(bytes.subarray(3))
+    expect(await f.read('image', { unit: 'bytes', offset: 99, limit: 2 })).toEqual(new Uint8Array())
+    expect(await f.read('image', { unit: 'bytes', limit: 0 })).toEqual(new Uint8Array())
+    await expect(f.read('../outside', { unit: 'bytes', limit: 4 })).rejects.toThrow('E_FS_DENIED')
+    for (const invalid of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(f.read('image', { unit: 'bytes', offset: invalid })).rejects.toThrow('safe integers')
+      await expect(f.read('image', { unit: 'bytes', limit: invalid })).rejects.toThrow('safe integers')
+    }
+    await f.write('text', new TextEncoder().encode('first\nsecond\n'))
+    expect(new TextDecoder().decode(await f.read('text', { offset: 0, limit: 1 }))).toBe('first\n')
+  })
   it('writes bytes verbatim, including bytes that are not valid text', async () => {
     const f = fs()
     const bytes = new Uint8Array([0, 1, 2, 250, 251])

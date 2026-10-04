@@ -10,4 +10,6 @@ On GitHub API rate limits, public repository imports use a pinned commit archive
 
 The four tools are skill_helper_import, skill_helper_creator, skill_helper_create and skill_helper_install. ready takes effect next turn; prepared/running are not success. Installation does not execute third-party scripts. Removing the helper does not delete already installed skills.
 
+`skill_helper_install` requires an action (`commit`, `status` or `cancel`) and the exact `proposalId` returned by import/create. Commit requests host approval; status observes the proposal; cancel requests cancellation. After running, end the turn and query status later. Installed confirms installation only; ready confirms backend availability. Report failed, interrupted, cancelled or denied requests and follow the returned nextAction without automatic retry or a shell bypass.
+
 MIT license retained in LICENSE. Runtime implementation is vendored from the locally developed Skill Helper and maintained here with Agnes.

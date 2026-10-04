@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import type { Disposer } from '../local/tail.js'
-import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
+import type { PreviewSnapshotEntry, PreviewUpdate, Registry, SessionCloseConfirmation } from '../registry.js'
 import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
 import { RemoteSession } from './remote-session.js'
 import type { WorkerPool } from './worker-pool.js'
@@ -15,6 +15,7 @@ type RemoteOpen = Readonly<{
   cwd: string
   binding: WorkspaceBindingEnvelope
   preset?: string
+  runtime?: string
   credential?: unknown
   parent?: string
   forkAt?: number
@@ -49,6 +50,12 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   private readonly entries = new Map<string, RemoteEntry>()
   // `session/load` from two clients can race on a cold key. Keep one acquisition and one entry
   // identity for that key so both callers share the same worker link and inflight state.
+  private readonly closing = new Map<string, Promise<void>>()
+  private readonly closingOwners = new Map<string, string>()
+  private readonly failedCloses = new Map<string, RemoteEntry>()
+  private readonly retryableCloses = new Set<string>()
+  private readonly confirmations = new Map<string, Promise<SessionCloseConfirmation>>()
+  private readonly openingClosures = new Map<string, SessionCloseConfirmation>()
   private readonly opening = new Map<string, { epoch: number; promise: Promise<RemoteEntry> }>()
   private readonly recovering = new Map<string, Promise<void>>()
   /** Explicit close advances this fence so an already-started recovery cannot publish later. */
@@ -95,6 +102,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   constructor(
     private readonly pool: WorkerPool,
     private readonly artifactAuthority?: ArtifactAuthorityLifecycle,
+    private readonly assertSessionAdmitted: (sessionId: string) => void = () => undefined,
   ) {}
 
   /** Wired to `WorkerPool`'s `onEvent` option: one worker event, routed to its session's listeners
@@ -236,6 +244,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    runtime?: string
     credential?: unknown
     parent?: string
     forkAt?: number
@@ -245,11 +254,33 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     assertWorkspaceBindingEnvelope(o.binding)
     const authorized: RemoteOpen = { ...o, binding: o.binding }
     const key = o.key ?? `agnes:local:default:daemon:dm:${Math.random().toString(36).slice(2)}`
+    this.assertSessionAdmitted(key)
+    const closing = this.closing.get(key)
+    if (closing) {
+      await closing
+      if (this.closing.get(key) !== closing) return this.open(o)
+      if (!(await this.confirmations.get(key))?.exited) throw new Error(`session ${key} close is unconfirmed`)
+      this.closing.delete(key)
+      this.confirmations.delete(key)
+      this.openingClosures.delete(key)
+    }
+    if (this.closingAll) throw new Error('worker registry is shutting down')
+    this.assertSessionAdmitted(key)
     const epoch = this.sessionEpochs.get(key) ?? 0
     const existing = this.entries.get(key)
-    if (existing) return existing
+    if (existing) {
+      if (o.runtime !== undefined && existing.session.runtimeIdentity.id !== o.runtime)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      return existing
+    }
     const pending = this.opening.get(key)
-    if (pending?.epoch === epoch) return pending.promise
+    if (pending?.epoch === epoch) {
+      const entry = await pending.promise
+      this.assertSessionAdmitted(key)
+      if (o.runtime !== undefined && entry.session.runtimeIdentity.id !== o.runtime)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      return entry
+    }
     const opening = this.openFresh(key, authorized, epoch)
     const record = { epoch, promise: opening }
     this.opening.set(key, record)
@@ -261,7 +292,15 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   }
 
   private async openFresh(key: string, o: RemoteOpen, sessionEpoch: number): Promise<RemoteEntry> {
-    const isCurrent = (): boolean => !this.closingAll && (this.sessionEpochs.get(key) ?? 0) === sessionEpoch
+    this.assertSessionAdmitted(key)
+    const isCurrent = (): boolean => {
+      try {
+        this.assertSessionAdmitted(key)
+      } catch {
+        return false
+      }
+      return !this.closingAll && (this.sessionEpochs.get(key) ?? 0) === sessionEpoch
+    }
     if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
     const existing = this.entries.get(key)
     if (existing) return existing
@@ -276,21 +315,32 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       cwd: o.cwd,
       binding: o.binding,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.runtime === undefined ? {} : { runtime: o.runtime }),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),
     })
     if (!isCurrent()) {
-      await link.closeSession('session closed while opening').catch(() => undefined)
+      const proof = await link.closeAndConfirm('session closed while opening')
+      this.openingClosures.set(key, proof)
       throw new Error(`session ${key} was closed while opening`)
     }
     const hello = await link.hello
     if (!isCurrent()) {
-      await link.closeSession('session closed while opening').catch(() => undefined)
+      const proof = await link.closeAndConfirm('session closed while opening')
+      this.openingClosures.set(key, proof)
       throw new Error(`session ${key} was closed while opening`)
     }
     let entry: RemoteEntry | undefined
-    const session = new RemoteSession(key, hello.writerRunId, hello.generation, link, o.cwd, () => {
-      if (entry) this.retireAtTurnBoundary(key, entry)
-    })
+    const session = new RemoteSession(
+      key,
+      hello.writerRunId,
+      hello.generation,
+      link,
+      o.cwd,
+      () => {
+        if (entry) this.retireAtTurnBoundary(key, entry)
+      },
+      hello.runtime,
+    )
     const registry = this
     let inflight: RemoteEntry['inflight'] = null
     const listeners = this.listenerSets.get(key) ?? new Set<(e: EventEnvelope) => void>()
@@ -451,12 +501,17 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     binding?: WorkspaceBindingEnvelope
     credential?: unknown
   }): Promise<RemoteEntry> {
+    this.assertSessionAdmitted(o.parent)
     const parent = this.require(o.parent)
     const parentStatus = await parent.session.status()
     const childKey = o.childKey ?? `agnes:fork:${randomUUID()}`
+    this.assertSessionAdmitted(o.parent)
+    this.assertSessionAdmitted(childKey)
     const existing = this.entries.get(childKey)
     if (existing) {
       const status = await existing.session.status()
+      this.assertSessionAdmitted(o.parent)
+      this.assertSessionAdmitted(childKey)
       if (status.parent?.key === o.parent && status.parent.boundarySeq === o.at) return existing
       throw rpcError('SEMANTIC_REJECTED', { reason: 'child key already names another session' })
     }
@@ -470,6 +525,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     if (boundary?.type !== 'turn/end' || boundary.data?.reason !== 'completed')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'fork boundary must be a completed turn/end' })
     assertWorkspaceBindingEnvelope(o.binding)
+    this.assertSessionAdmitted(o.parent)
+    this.assertSessionAdmitted(childKey)
     await parent.session.fork(o.at, childKey, o.credential, o.binding)
     try {
       return await this.open({
@@ -585,7 +642,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   }
 
   get(key: string): RemoteEntry | undefined {
-    return this.entries.get(key)
+    return this.closing.has(key) ? undefined : this.entries.get(key)
   }
 
   /**
@@ -593,11 +650,15 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
    * or an open for the key is in flight and will take the lease over.
    */
   holds(key: string, runId: string): boolean {
-    return this.opening.has(key) || this.entries.get(key)?.session.writerRunId === runId
+    return (
+      this.opening.has(key) ||
+      this.entries.get(key)?.session.writerRunId === runId ||
+      this.closingOwners.get(key) === runId
+    )
   }
 
   require(key: string): RemoteEntry {
-    const e = this.entries.get(key)
+    const e = this.get(key)
     if (!e) throw rpcError('SESSION_NOT_FOUND', { sessionId: key })
     return e
   }
@@ -609,52 +670,111 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   }
 
   keys(): string[] {
-    return [...this.entries.keys()]
+    return [...this.entries.keys()].filter((key) => !this.closing.has(key))
   }
 
   // Forgotten first, same as SessionRegistry.close() (local/sessions.ts): an await between "stop
   // trusting this key" and "actually close" is a window in which a handler could still resolve this
   // key and subscribe to a session that is on its way out.
-  async close(key: string): Promise<void> {
+  close(key: string): Promise<void> {
+    const prior = this.closing.get(key)
+    if (prior && !this.retryableCloses.has(key)) return prior
+    this.retryableCloses.delete(key)
     this.sessionEpochs.set(key, (this.sessionEpochs.get(key) ?? 0) + 1)
     this.listenerSets.delete(key)
     this.previewSets.delete(key)
-    let firstError: unknown
-    try {
-      this.artifactAuthority?.resetSession(key)
-    } catch (error) {
-      firstError = error
+    const initial = this.failedCloses.get(key) ?? this.entries.get(key)
+    if (initial) {
+      this.failedCloses.set(key, initial)
+      this.closingOwners.set(key, initial.session.closeWriterRunId)
+      initial.recover = false
+      initial.ac.abort(new Error('session closed'))
+      this.entries.delete(key)
     }
-    const closeEntry = async (entry: RemoteEntry | undefined): Promise<void> => {
-      if (!entry) return
-      entry.recover = false
-      entry.ac.abort(new Error('session closed'))
-      if (this.entries.get(key) === entry) this.entries.delete(key)
-      await entry.session.close()
-    }
-    try {
-      await closeEntry(this.entries.get(key))
-    } catch (error) {
-      firstError ??= error
-    }
-    const pending = this.opening.get(key)?.promise
-    if (pending) await pending.catch(() => undefined)
-    try {
-      await closeEntry(this.entries.get(key))
-    } catch (error) {
-      firstError ??= error
-    }
-    this.artifactQueues.delete(key)
-    this.rejectArtifactProjectionWaiters(key)
-    this.artifactProjectedThrough.delete(key)
-    this.artifactReplayBuffers.delete(key)
-    this.resourceRetirements.delete(key)
-    if (firstError !== undefined) throw firstError
+    let proof: SessionCloseConfirmation = { exited: false, reason: 'owner-unknown' }
+    const closing = (async () => {
+      let firstError: unknown
+      try {
+        this.artifactAuthority?.resetSession(key)
+      } catch (error) {
+        firstError = error
+      }
+      const closeEntry = async (entry: RemoteEntry | undefined): Promise<void> => {
+        if (!entry) return
+        entry.recover = false
+        entry.ac.abort(new Error('session closed'))
+        if (this.entries.get(key) === entry) this.entries.delete(key)
+        try {
+          await entry.session.close()
+        } finally {
+          proof = await entry.session.closeAndConfirm()
+        }
+      }
+      try {
+        await closeEntry(initial)
+      } catch (error) {
+        firstError ??= error
+      }
+      const pending = this.opening.get(key)?.promise
+      if (pending) await pending.catch(() => undefined)
+      const compensated = this.openingClosures.get(key)
+      if (compensated) proof = compensated
+      else if (!initial && !this.entries.has(key) && typeof this.pool.closeAndConfirmSession === 'function')
+        proof = await this.pool.closeAndConfirmSession(key)
+      if (proof.owner) this.closingOwners.set(key, proof.owner.writerRunId)
+      try {
+        await closeEntry(this.entries.get(key))
+      } catch (error) {
+        firstError ??= error
+      }
+      this.artifactQueues.delete(key)
+      this.rejectArtifactProjectionWaiters(key)
+      this.artifactProjectedThrough.delete(key)
+      this.artifactReplayBuffers.delete(key)
+      this.resourceRetirements.delete(key)
+      if (firstError !== undefined) throw firstError
+      if (compensated && !compensated.exited) throw new Error(`session ${key} close is unconfirmed`)
+      if (proof.exited) this.failedCloses.delete(key)
+    })().catch((error) => {
+      if (this.failedCloses.has(key)) this.retryableCloses.add(key)
+      throw error
+    })
+    this.closing.set(key, closing)
+    this.confirmations.set(
+      key,
+      closing.then(
+        () => {
+          if (proof.exited) this.closingOwners.delete(key)
+          return proof
+        },
+        () => (proof.exited ? { exited: false, reason: 'close-failed', owner: proof.owner } : proof),
+      ),
+    )
+    return closing
+  }
+
+  closeAndConfirm(
+    key: string,
+    expected?: { expectedWriterRunId: string; expectedOwnerEpoch?: number },
+  ): Promise<SessionCloseConfirmation> {
+    if (
+      expected &&
+      (this.entries.get(key)?.session.closeWriterRunId ?? this.closingOwners.get(key)) !==
+        expected.expectedWriterRunId
+    )
+      return Promise.resolve({ exited: false, reason: 'owner-unknown' })
+    void this.close(key).catch(() => undefined)
+    return this.confirmations.get(key) ?? Promise.resolve({ exited: false, reason: 'owner-unknown' })
   }
 
   async closeAll(): Promise<void> {
     this.closingAll = true
-    const keys = new Set([...this.listenerSets.keys(), ...this.entries.keys(), ...this.opening.keys()])
+    const keys = new Set([
+      ...this.listenerSets.keys(),
+      ...this.entries.keys(),
+      ...this.opening.keys(),
+      ...this.closing.keys(),
+    ])
     const closed = await Promise.allSettled([...keys].map((key) => this.close(key)))
     await Promise.allSettled(this.recovering.values())
     const failed = closed.find((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -692,6 +812,11 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const recovery = (async () => {
       let delayMs = 50
       while (entry.recover && watched() && !this.entries.has(key)) {
+        try {
+          this.assertSessionAdmitted(key)
+        } catch {
+          return
+        }
         try {
           await this.open({ key, ...open, resume: true })
           return

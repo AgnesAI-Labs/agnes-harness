@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { checkRelations } from '../src/log/relations.js'
 import { SurfaceCache } from '../src/project/surface.js'
@@ -44,6 +45,84 @@ const unnumbered = (e: Event): PreparedEvent => {
   const { seq: _seq, ...rest } = e
   return rest
 }
+
+it('admits generic presentation sources from the real answer prefix, refuses false adoption, and permits orphan closure only', () => {
+  const capture = JSON.parse(
+    readFileSync(new URL('./fixtures/jev-real-answer-preview.json', import.meta.url), 'utf8'),
+  ) as { events: Event[] }
+  const prefix = capture.events.filter((row) => row.seq <= 47)
+  const request = capture.events.find((row) => row.seq === 47)
+  const settlement = capture.events.find((row) => row.seq === 48)
+  const message = capture.events.find((row) => row.type === 'assistant/message')
+  if (!request || !settlement || !message) throw new Error('Missing real answer evidence')
+  const start: Event = {
+    ...request,
+    seq: 48 as Event['seq'],
+    type: 'assistant/output',
+    origin: 'model',
+    sourceEventSeqs: [47],
+    data: {
+      state: 'started',
+      effectId: 'portable-output',
+      chars: { text: 0, thinking: 0 },
+      estimatedTokens: 0,
+    },
+  } as Event
+  const settled: Event = { ...settlement, seq: 49 as Event['seq'] } as Event
+  const adopted: Event = { ...message, seq: 50 as Event['seq'], sourceEventSeqs: [49, 48] } as Event
+  const state = foldEvents(prefix)
+  expect(() => checkRelations([start, settled, adopted], state)).not.toThrow()
+  for (const falseStart of [
+    { ...start, sourceEventSeqs: [] },
+    { ...start, sourceEventSeqs: [46] },
+    { ...start, lane: 'foreign' },
+    { ...start, trust: 'untrusted' as const },
+  ])
+    expect(() => checkRelations([falseStart], state)).toThrow('E_RELATION')
+  const pending = foldEvents([...prefix, start, settled])
+  for (const falseAdoption of [
+    { ...adopted, lane: 'foreign' },
+    { ...adopted, sourceEventSeqs: [48] },
+    { ...adopted, origin: 'system' },
+    { ...adopted, trust: 'untrusted' as const },
+  ])
+    expect(() => checkRelations([falseAdoption], pending)).toThrow('E_RELATION')
+  const completed = foldEvents([...prefix, start, settled, adopted])
+  expect(completed.assistantOutputs.get(48)?.closed).toBe(true)
+  expect(() => checkRelations([{ ...adopted, seq: 51 as Event['seq'] }], completed)).toThrow('E_RELATION')
+  const oldTurnEnded = foldEvents([
+    ...prefix,
+    start,
+    settled,
+    { ...request, seq: 50 as Event['seq'], type: 'step/end', data: { turn: 1, step: 2 } } as Event,
+    {
+      ...request,
+      seq: 51 as Event['seq'],
+      type: 'turn/end',
+      data: { reason: 'aborted', lastAssistantSeq: null },
+    } as Event,
+  ])
+  const close: Event = {
+    ...start,
+    seq: 52 as Event['seq'],
+    sourceEventSeqs: [48],
+    data: {
+      state: 'interrupted',
+      effectId: 'portable-output',
+      chars: { text: 0, thinking: 0 },
+      estimatedTokens: 0,
+      content: [],
+    },
+  } as Event
+  expect(() => checkRelations([close], oldTurnEnded)).not.toThrow()
+  expect(() =>
+    checkRelations(
+      [{ ...close, data: { ...(close.data as object), state: 'progress' } } as Event],
+      oldTurnEnded,
+    ),
+  ).toThrow('E_RELATION')
+  expect(() => checkRelations([{ ...adopted, seq: 52 as Event['seq'] }], oldTurnEnded)).toThrow('E_RELATION')
+})
 
 describe('checkRelations', () => {
   it('accepts a well-formed turn batch', () => {

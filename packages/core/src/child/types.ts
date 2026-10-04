@@ -1,7 +1,8 @@
+import type { RuntimeIdentity } from '@agnes/protocol'
 import type { Seq, SessionKey } from '../types.js'
 
 /** Data-domain version written with child identity and budget rows. */
-export const CHILD_CONTROL_FORMAT = 4
+export const CHILD_CONTROL_FORMAT = 5
 
 export type ChildCreationPhase = 'creating' | 'deferred' | 'committed' | 'cancelled'
 
@@ -31,7 +32,12 @@ export const ACTIVE_CHILD_STATES = [
   'cancelling',
 ] as const
 
-export type ChildExecutionState = (typeof ACTIVE_CHILD_STATES)[number] | 'completed' | 'failed' | 'cancelled'
+export type ChildExecutionState =
+  | (typeof ACTIVE_CHILD_STATES)[number]
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted'
 
 export type ChildKind = 'fork' | 'spawn'
 
@@ -48,6 +54,12 @@ export type ChildTaskRecord = {
   rootTaskId: string
   runtimeOwnerSessionKey: SessionKey
   kind: ChildKind
+  /** Absent on legacy Native records; never infer another runtime from current configuration. */
+  runtime?: RuntimeIdentity
+  seedMode?: 'fresh' | 'history'
+  model?: { route: string; model: string }
+  /** Immutable requested cwd; cwd may later become the allocated worktree path. */
+  creationCwd?: string
   generationDepth: number
   generationLimit: number
   boundarySeq: Seq
@@ -69,7 +81,8 @@ export type BudgetScopeRecord = {
   rootTaskId: string
   childKey: SessionKey | null
   parentScopeId: string | null
-  capMicro: bigint
+  /** null is an explicit unlimited scope, never a numeric sentinel. */
+  capMicro: bigint | null
   settledMicro: bigint
   heldMicro: bigint
 }
@@ -78,7 +91,8 @@ export type ReservationRecord = {
   permitId: string
   rootTaskId: string
   scopeIds: string[]
-  qMicro: bigint
+  /** null preserves an unknown quotation; allowed only under unlimited scopes. */
+  qMicro: bigint | null
   effectId: string
   requestHash: string
   writerGeneration: number
@@ -114,6 +128,12 @@ export type CreateDelegatedChildInput = {
   attemptId?: string
   attemptStartedAt?: number
   kind: ChildKind
+  /** Absent on legacy Native records; never infer another runtime from current configuration. */
+  runtime?: RuntimeIdentity
+  seedMode?: 'fresh' | 'history'
+  model?: { route: string; model: string }
+  /** Immutable requested cwd; cwd may later become the allocated worktree path. */
+  creationCwd?: string
   rootTaskId: string
   runtimeOwnerSessionKey: SessionKey
   generationDepth: number
@@ -125,7 +145,7 @@ export type CreateDelegatedChildInput = {
   actorId: string
   isolation: 'worktree' | 'shared'
   workspaceId: string
-  treeCapMicro: bigint
+  treeCapMicro: bigint | null
   childCapMicro: bigint | null
   writerRunId: string
 }
@@ -165,9 +185,12 @@ export type CreateDelegatedChildResult =
     }
 
 export type ReserveRequest = {
+  /** New execution callers bind admission to the real session; absent only for legacy callers. */
+  originSessionKey?: SessionKey
   rootTaskId: string
   scopeIds: string[]
-  qMicro: bigint
+  /** null preserves an unknown quotation; allowed only under unlimited scopes. */
+  qMicro: bigint | null
   effectId: string
   requestHash: string
   writerGeneration: number
@@ -200,9 +223,12 @@ export type CostOriginBinding = {
 }
 
 export type TreeUsage = {
+  /** Known monetary subtotals; unknownHeld means these are not a complete cost total. */
   settledMicro: bigint
   heldMicro: bigint
-  capMicro: bigint
+  /** null is an explicit unlimited scope, never a numeric sentinel. */
+  capMicro: bigint | null
+  /** Includes unknown actual spend and outstanding permits with unknown quotations. */
   unknownHeld: boolean
 }
 
@@ -210,12 +236,12 @@ export function isActiveChildState(state: ChildExecutionState): boolean {
   return (ACTIVE_CHILD_STATES as readonly string[]).includes(state)
 }
 
-const TERMINAL = new Set<ChildExecutionState>(['completed', 'failed', 'cancelled'])
+const TERMINAL = new Set<ChildExecutionState>(['completed', 'failed', 'cancelled', 'interrupted'])
 
 /** First-release fence: cancelled/cancelling cannot return to execution. */
 export function canTransitionChildState(from: ChildExecutionState, to: ChildExecutionState): boolean {
   if (from === to) return true
-  if (from === 'cancelled' || from === 'failed' || from === 'completed') return false
+  if (TERMINAL.has(from)) return false
   if (from === 'cancelling') return to === 'cancelled' || to === 'failed'
   if (to === 'running') return from === 'ready' || from === 'waiting_approval' || from === 'creating'
   return true

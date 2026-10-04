@@ -159,7 +159,7 @@ describe('delegated child creation on SQLite: what is still detected', () => {
     expect(b).toBeGreaterThan(c)
     rewrite(l.file, 'parent', c + 1, (data) => ({ ...(data as object), turn: 99 }))
     await expect(
-      createChild(parent, 'spawn', { parent: parent.key, cwd: '/w', input: 'x', forkAt: b }),
+      createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x', forkAt: b }),
     ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     expect(parent.d.log.faulted).toBe(false)
     await k.close()
@@ -251,9 +251,12 @@ describe('a 20,000-row parent on SQLite', () => {
       const handle = await createChild(parent, kind, { parent: parent.key, cwd: '/w', input: 'x' })
       counting = false
       const child = k.get(handle.key) as SessionImpl
-      const b = child.d.log.parent?.boundarySeq as Seq
+      const b = child.d.log.parent?.boundarySeq ?? 0
       expect(reads.filter((r) => r.seq <= c)).toEqual([])
-      expect(reads.length).toBeLessThanOrEqual(b - c)
+      if (kind === 'spawn') {
+        expect(child.d.log.parent).toBeUndefined()
+        expect(reads).toEqual([])
+      } else expect(reads.length).toBeLessThanOrEqual(b - c)
       // The chain the child continues is the one a full verification of its prefix reaches.
       expect(await verifyLedger(storage, child.key, child.lastSeq)).toMatchObject({ lastSeq: child.lastSeq })
       await k.close()

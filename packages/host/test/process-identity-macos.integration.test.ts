@@ -53,7 +53,11 @@ describe.skipIf(skip)('macosProcessIdentity against the real compiled helper', (
   it('reports the current test process as alive with a well-formed startId', async () => {
     const result = await macosProcessIdentity(process.pid, { spawn: realSpawn })
     expect(result.state).toBe('alive')
-    if (result.state === 'alive') expect(result.startId).toMatch(/^darwin:\d+\.\d{6}:\d+:\d+\.\d{6}$/)
+    expect(await macosProcessIdentity(process.pid, { spawn: realSpawn })).toEqual(result)
+    if (result.state === 'alive')
+      expect(result.startId).toMatch(
+        /^darwin:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:\d+:\d+\.\d{6}$/,
+      )
   })
 
   it('reports a PID confirmed absent via process.kill(pid, 0) as dead (or unknown, never alive)', async () => {

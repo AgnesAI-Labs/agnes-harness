@@ -72,6 +72,16 @@ A preset's `tools.output_max_bytes` (integer, 4096 to 1048576, default 32768) se
 
 For the official Agnes China gateway, the adapter explicitly sends the built-in models' catalog allowance of 65536 as `max_tokens` when no request override is present. Official specifications list 65536 for [3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash), [2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro), and [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha). [Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) uses the Pro family allowance of 65536; its gateway capacity has not been independently verified. The [2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) and [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) docs publish a rounded 65.5K, interpreted here as 65536. Deprecated models remain registered for configuration compatibility; gateway availability still applies. Explicit request allowances take precedence. Catalog metadata alone does not set the raw OpenAI-compatible stream's request allowance. Large generated files should still be built across multiple small write/edit calls; the default is an allowance, not a guarantee that an arbitrarily large call completes.
 
+The preset's `subagent.tree_budget_credits` distinguishes three policies: omit it or write `default`
+to retain the existing 20-credit default for a newly delegated tree, use a number for a finite cap,
+or explicitly write `unlimited` to add no new tree cap. Raw `null` is invalid; the internal legacy
+nullable view retains default behavior. Inheritance preserves an omitted field, while `default` and
+`unlimited` explicitly override an inherited preset value. Neither changes finite caps already
+persisted on ancestor scopes or explicit positive-integer `subagent_spawn.budget` child caps.
+Zero is not unlimited; it cannot admit a tree-credit reservation. Credits are accounting units and
+must not be presented as dollars. `standard-no-credit-cap` explicitly disables both the request cap
+and the new tree cap; ordinary `standard` keeps its existing defaults.
+
 ## Task step limits
 
 Normal tasks have no cumulative step ceiling. The Core default and the shipped `base`, `standard`, and `claw` presets use `budget.max_steps: null`; they no longer stop after 50, 80, or 200 steps. A step is one primary model iteration and may contain multiple tool calls. Completion, cancellation, provider failures, per-request timeouts, credit checks, and loop-hygiene checks still apply. The frozen `minimal-rl` evaluation preset retains its explicit 100-step ceiling.

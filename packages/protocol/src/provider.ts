@@ -6,6 +6,27 @@ import type {
   RequestBody,
   SlotName,
 } from '../gen/ts/model.js'
+import type { JsonValue } from '../gen/ts/session-v1.js'
+
+/** Durable, credential-free inputs to the provider boundary; never permission to resend. */
+export interface ProviderRequestSnapshot {
+  readonly codec: 'agnes-provider-request-v1'
+  readonly request: RequestBody
+  readonly adapter: JsonValue
+  readonly endpoint: string
+  readonly parserVersion: string
+  readonly contract: {
+    readonly id: string | null
+    readonly prefix: string
+    readonly prefixHash: string | null
+  }
+}
+
+/** A single-use in-memory binding. Only its snapshot may be persisted. */
+export interface PreparedInference {
+  readonly snapshot: ProviderRequestSnapshot
+  infer(opts: { signal: AbortSignal; toolNames: string[]; retry?: false }): AsyncIterable<InferenceEvent>
+}
 
 // The two closed sets model.json spells as enums, restated once as runtime tuples so callers can
 // iterate them (a doctor listing every slot, an error-code mapping table) without reaching into a
@@ -48,6 +69,8 @@ export const SLOT_NAMES = [
 // `count` is optional. An implementation without it, or one answering `{ source: 'unsupported' }` for
 // the route in hand, means the caller falls back to its own estimate rather than failing the turn.
 export interface Provider {
+  /** Freeze effective provider inputs before a durable request is admitted. No model I/O. */
+  prepare?(req: RequestBody, opts: { signal: AbortSignal }): Promise<PreparedInference | undefined>
   /** retry=false disables adapter retries for this call without changing shared defaults. */
   infer(
     req: RequestBody,

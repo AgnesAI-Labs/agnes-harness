@@ -1,3 +1,7 @@
+import type { SessionCloseConfirmation } from '@agnes/worker-runtime'
+
+export type { SessionCloseConfirmation, SessionCloseOwner } from '@agnes/worker-runtime'
+
 import type { EventEnvelope, SessionPreviewParams } from '@agnes/protocol'
 import type { Disposer } from './local/tail.js'
 import type { WorkspaceBindingEnvelope } from './storage/workspaces.js'
@@ -34,6 +38,7 @@ export interface Registry<Entry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    runtime?: string
     credential?: unknown
   }): Promise<Entry>
   fork(o: {
@@ -50,6 +55,11 @@ export interface Registry<Entry> {
   subscribePreview(key: string, fn: (p: PreviewUpdate) => void, gap?: () => void): Disposer
   previewSnapshot(key: string): Promise<PreviewSnapshotEntry[]>
   keys(): string[]
+  /** A transient, exact-owner close proof, never a durable admission fence. Absence is unknown. */
+  closeAndConfirm?(
+    key: string,
+    expected?: { expectedWriterRunId: string; expectedOwnerEpoch?: number },
+  ): Promise<SessionCloseConfirmation>
   close(key: string): Promise<void>
   closeAll(): Promise<void>
 }

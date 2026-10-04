@@ -1,3 +1,4 @@
+import { subagentInterruptTool, subagentSendMessageTool } from '@agnes/base'
 import type { ExtensionManifest, ToolContext } from '@agnes/extension-api'
 import { assertCapabilityCeiling, manifestCapabilities } from '@agnes/package-manager'
 import { describe, expect, it, vi } from 'vitest'
@@ -14,6 +15,17 @@ const raw = () =>
   ({ net: { fetch: vi.fn(), fetchPublic: vi.fn(async () => ({ url: 'ok' })) } }) as unknown as ToolContext
 
 describe('independent public retrieval grant', () => {
+  it('exposes human questions only when explicitly declared and keeps the original bound closure', async () => {
+    const questions = { ask: vi.fn(async () => ({ answers: [] })) }
+    const context = { ...raw(), questions }
+    expect(capabilityToolContext(manifest(), context).questions).toBeUndefined()
+    const declared = { ...manifest(), capabilities: { ...manifest().capabilities, questions: true } }
+    const projected = capabilityToolContext(declared, context)
+    expect(projected.questions).toBe(questions)
+    await projected.questions?.ask({ questions: [{ id: 'q', question: 'Continue?' }] })
+    expect(questions.ask).toHaveBeenCalledOnce()
+    expect(capabilityToolContext(declared, raw()).questions).toBeUndefined()
+  })
   it('does not infer public access from a normal network grant', () => {
     const ctx = raw(),
       projected = capabilityToolContext(manifest(), ctx)
@@ -37,4 +49,25 @@ describe('independent public retrieval grant', () => {
     } as unknown as ToolContext)
     expect(() => projected.net.fetchPublic?.('https://example.com')).toThrow('unavailable')
   })
+})
+
+it('projects child continuation only with an explicit subagent grant and calls the real builtin through that projection', async () => {
+  const sendMessage = vi.fn(async (childKey: string) => ({ childKey, messageId: 'receipt', acceptedSeq: 12 }))
+  const interrupt = vi.fn(async () => ({ accepted: true as const }))
+  const context = { ...raw(), subagent: { sendMessage, interrupt } } as unknown as ToolContext
+  const denied = capabilityToolContext(manifest(), context)
+  expect(denied.subagent.sendMessage).toBeUndefined()
+  expect(denied.subagent.interrupt).toBeUndefined()
+  const declared = { ...manifest(), capabilities: { ...manifest().capabilities, subagent: true } }
+  const allowed = capabilityToolContext(declared, context)
+  expect(
+    await subagentSendMessageTool.execute({ childKey: 'child', message: 'new message' }, allowed),
+  ).toMatchObject({ details: { messageId: 'receipt', acceptedSeq: 12 } })
+  expect(await subagentInterruptTool.execute({ childKey: 'child' }, allowed)).toMatchObject({
+    details: { accepted: true },
+  })
+  expect(sendMessage).toHaveBeenCalledWith('child', 'new message')
+  expect(interrupt).toHaveBeenCalledWith('child')
+  expect(capabilityToolContext(declared, raw()).subagent.sendMessage).toBeUndefined()
+  expect(capabilityToolContext(declared, raw()).subagent.interrupt).toBeUndefined()
 })

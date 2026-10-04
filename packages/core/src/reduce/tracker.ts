@@ -1,4 +1,5 @@
-import type { OpState } from '@agnes/protocol'
+import type { OpState, RuntimeIdentity } from '@agnes/protocol'
+import { assertRuntimeOwner, NATIVE_RUNTIME } from '@agnes/runtime-api'
 import {
   batchTrigger,
   type ForkBase,
@@ -111,6 +112,8 @@ export function verifyRegisters(
 }
 
 export type OpenTrackedOptions = OpenLogOptions & {
+  /** Validated by the trusted opener and checked after acquiring the log writer. */
+  runtimeIdentity?: RuntimeIdentity
   /** A writer already opened by SessionLogImpl.forkInto; it is attached, never opened twice. */
   existing?: SessionLogImpl
   verify?: 'always' | 'sample' | 'never'
@@ -151,7 +154,10 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
   const surfaces = new Map([[lane, surface]])
   // The default check reads the tracker's live state and this surface, which are what the batch is
   // about to be appended to. A caller that brings its own check replaces it wholesale.
-  const relationCheck = o.relationCheck ?? makeRelationCheck(tracker, surfaces)
+  const nativeCounter =
+    !o.runtimeIdentity ||
+    (o.runtimeIdentity.id === NATIVE_RUNTIME.id && o.runtimeIdentity.version === NATIVE_RUNTIME.version)
+  const relationCheck = o.relationCheck ?? makeRelationCheck(tracker, surfaces, { nativeCounter })
   // The state and surface at the trigger of the last turn this process opened, kept so a delegated
   // child forked there can start from them instead of refolding the parent's history.
   let forkPoint: ForkBase | undefined
@@ -244,6 +250,8 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
   }
 
   async function finishOpen() {
+    if (tracker.state.session)
+      assertRuntimeOwner(tracker.state.session.runtime, o.runtimeIdentity ?? NATIVE_RUNTIME)
     const mode = o.verify ?? 'always'
     const doVerify =
       mode === 'always' || (mode === 'sample' && (o.random ?? Math.random)() < (o.sampleRate ?? 0.05))
@@ -258,7 +266,9 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
       }
     }
     // Always, whatever the sampling: a wrong program counter drives execution and nothing repairs it.
-    await verifyOpCells(log, tracker.state)
+    if (nativeCounter) await verifyOpCells(log, tracker.state)
+    else if (log.opLanes().size > 0)
+      throw new CoreError('E_RELATION', 'non-native runtime must not own native program counters')
     // Seeded after the check, so a table that was just rebuilt is the one the summary shows.
     ui.setOp(currentOp(log, lane))
     forkBaseProviders.set(log, (boundarySeq, childLane) => {

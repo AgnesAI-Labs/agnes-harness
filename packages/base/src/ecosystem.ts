@@ -1,6 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import type { ExtensionFactory } from '@agnes/extension-api'
 import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
@@ -17,11 +16,12 @@ import { RefineQueue } from '../extensions/refine/src/queue.js'
 import { createRefineHarness } from '../extensions/refine/src/seam.js'
 import { skillsExtension } from '../extensions/skills/src/runtime.js'
 import { createSubagentExtension, type SubagentLimits } from '../extensions/subagent/src/index.js'
-import { gitWorktrees, type WorktreeEntry } from '../extensions/subagent/src/worktree.js'
+import { gitWorktrees } from '../extensions/subagent/src/worktree.js'
 import toolsCoreExtension from '../extensions/tools-core/src/index.js'
 import toolsSearchExtension from '../extensions/tools-search/src/index.js'
 import toolsWebExtension from '../extensions/tools-web/src/index.js'
 import type { SeamInitContext } from './seam-init.js'
+import { sqliteWorktreePersist } from './worktree-persist.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
 declare const AGNES_CC_HOOK_MAP_TEXT: string | undefined
@@ -99,64 +99,6 @@ export function createEcosystemExtensions(init: SeamInitContext): {
     },
     subagent: () => defineSubagentExtension(init),
     skills: () => skillsExtension(init),
-  }
-}
-
-const darwin = process.platform === 'darwin' // guards-allow-platform: F_FULLFSYNC is darwin-only.
-
-function sqliteWorktreePersist(dataDir: string): {
-  load(): Map<string, WorktreeEntry>
-  save(entries: Map<string, WorktreeEntry>): void
-  bind(childKey: string, entry: WorktreeEntry): void
-} {
-  const dbPath = join(dataDir, 'sessions.db')
-  const open = (): DatabaseSync | null => {
-    if (!existsSync(dbPath)) return null
-    const db = new DatabaseSync(dbPath)
-    // A write here can checkpoint the WAL ledger; on darwin only F_FULLFSYNC makes that durable.
-    if (darwin) db.exec('PRAGMA checkpoint_fullfsync = ON')
-    return db
-  }
-  return {
-    load() {
-      const db = open()
-      const out = new Map<string, WorktreeEntry>()
-      if (!db) return out
-      try {
-        const rows = db
-          .prepare(
-            `SELECT path, root, branch, phase FROM child_workspaces WHERE isolation = 'worktree' AND path IS NOT NULL`,
-          )
-          .all() as Array<{ path: string; root: string | null; branch: string | null; phase: string }>
-        for (const row of rows) {
-          if (!row.root || !row.branch) continue
-          out.set(row.path, {
-            root: row.root,
-            path: row.path,
-            branch: row.branch,
-            stage: row.phase === 'worktree_removed' ? 'worktree-removed' : 'attached',
-          })
-        }
-      } finally {
-        db.close()
-      }
-      return out
-    },
-    save() {
-      // bind() is the durable write; save keeps the in-memory map consistent for finish.
-    },
-    bind(childKey, entry) {
-      const db = open()
-      if (!db) return
-      try {
-        db.prepare(
-          `UPDATE child_workspaces SET path = ?, phase = 'attached', root = ?, branch = ? WHERE child_key = ?`,
-        ).run(entry.path, entry.root, entry.branch, childKey)
-        db.prepare(`UPDATE child_tasks SET cwd = ? WHERE child_key = ?`).run(entry.path, childKey)
-      } finally {
-        db.close()
-      }
-    },
   }
 }
 

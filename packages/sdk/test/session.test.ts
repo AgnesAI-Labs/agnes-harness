@@ -1,4 +1,4 @@
-import { META_KEY, rpcError } from '@agnes/protocol'
+import { META_KEY, type RuntimeDescriptor, rpcError } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { localAuth } from '../src/auth.js'
 import { createClient } from '../src/client.js'
@@ -8,6 +8,14 @@ import { fakeEndpoint, flush, type Handler } from './helpers/fake-endpoint.js'
 
 const providers = { local: () => localAuth() }
 const init: Handler = fakeEndpoint({}).initialize
+const runtimeDescriptor: RuntimeDescriptor = {
+  id: 'jevloop',
+  version: '1',
+  label: 'JevLoop',
+  apiVersion: 1,
+  available: true,
+  capabilities: { prompt: true, cancel: true, resume: true, compact: false, fork: false },
+}
 
 const meta = (seq: number, phase: string, extra: Record<string, unknown> = {}) => ({
   [META_KEY]: { promptTurnId: '1', eventSequence: seq, generation: 1, lane: 'main', phase, ...extra },
@@ -32,29 +40,106 @@ describe('toContentBlocks', () => {
 })
 
 describe('Session', () => {
-  it('session.new sends cwd, empty mcpServers, preset + sessionKey in _meta', async () => {
-    let got: unknown
+  it.each([undefined, 'native', 'jevloop'])(
+    'session.new sends cwd, preset, sessionKey and runtime %s in namespaced metadata',
+    async (runtime) => {
+      let got: unknown
+      const f = fakeEndpoint({
+        initialize: init,
+        '_agnes/v1/runtime.list': () => ({ items: [{ ...runtimeDescriptor, id: runtime ?? 'native' }] }),
+        'session/new': (p) => {
+          got = p
+          return { sessionId: 'agnes:t:a:cli:dm:1' }
+        },
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+
+      const s = await c.session.new({
+        cwd: '/w',
+        preset: 'standard',
+        sessionKey: 'agnes:t:a:cli:dm:1',
+        ...(runtime === undefined ? {} : { runtime }),
+      })
+
+      expect(s.id).toBe('agnes:t:a:cli:dm:1')
+      expect(got).toEqual({
+        cwd: '/w',
+        mcpServers: [],
+        _meta: {
+          [META_KEY]: {
+            preset: 'standard',
+            sessionKey: 'agnes:t:a:cli:dm:1',
+            ...(runtime === undefined ? {} : { runtime }),
+          },
+        },
+      })
+      expect(f.calls.some((call) => call.method === '_agnes/v1/runtime.list')).toBe(runtime !== undefined)
+    },
+  )
+
+  it.each(['old-daemon', 'unknown', 'unavailable'])(
+    'refuses an explicit runtime without creating a default session: %s',
+    async (scenario) => {
+      const f = fakeEndpoint({
+        initialize: init,
+        ...(scenario === 'old-daemon'
+          ? {}
+          : {
+              '_agnes/v1/runtime.list': () => ({
+                items:
+                  scenario === 'unknown'
+                    ? []
+                    : [{ ...runtimeDescriptor, available: false, unavailableReason: 'adapter unavailable' }],
+              }),
+            }),
+        'session/new': () => ({ sessionId: 'must-not-create' }),
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+      await expect(c.session.new({ cwd: '/w', runtime: 'jevloop' })).rejects.toThrow(
+        scenario === 'old-daemon'
+          ? 'METHOD_NOT_FOUND'
+          : scenario === 'unknown'
+            ? 'runtime unavailable: jevloop'
+            : 'adapter unavailable',
+      )
+      expect(f.calls.some((call) => call.method === 'session/new')).toBe(false)
+    },
+  )
+
+  it('reads the catalog and each persisted runtime without loading or executing either session', async () => {
     const f = fakeEndpoint({
       initialize: init,
-      'session/new': (p) => {
-        got = p
-        return { sessionId: 'agnes:t:a:cli:dm:1' }
-      },
+      '_agnes/v1/runtime.list': () => ({ items: [runtimeDescriptor] }),
+      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+      '_agnes/v1/session.runtime': (params) => ({
+        runtime: {
+          id: (params as { sessionId: string }).sessionId === 'a' ? 'native' : 'jevloop',
+          version: '1',
+        },
+        phase: 'idle',
+      }),
     })
     const c = createClient({
       transport: { kind: 'inproc', endpoint: f.endpoint },
       journal: memoryJournal(),
       authProviders: providers,
     })
-
-    const s = await c.session.new({ cwd: '/w', preset: 'standard', sessionKey: 'agnes:t:a:cli:dm:1' })
-
-    expect(s.id).toBe('agnes:t:a:cli:dm:1')
-    expect(got).toEqual({
-      cwd: '/w',
-      mcpServers: [],
-      _meta: { [META_KEY]: { preset: 'standard', sessionKey: 'agnes:t:a:cli:dm:1' } },
-    })
+    expect(await c.runtime.list()).toEqual({ items: [runtimeDescriptor] })
+    const a = await c.session.attach('a')
+    const b = await c.session.attach('b')
+    expect(await a.runtime()).toEqual({ runtime: { id: 'native', version: '1' }, phase: 'idle' })
+    expect(await b.runtime()).toEqual({ runtime: { id: 'jevloop', version: '1' }, phase: 'idle' })
+    expect(
+      f.calls.some((call) => ['session/new', 'session/load', 'session/prompt'].includes(call.method)),
+    ).toBe(false)
   })
 
   it('leaves preset and sessionKey out when the caller gave neither', async () => {
@@ -413,6 +498,140 @@ describe('Session', () => {
     expect((await s.prompt('one')).reason).toBe('parked')
     expect(await s.prompt('two')).toEqual({ stopReason: 'end_turn', reason: 'completed', lastSeq: 4 })
   })
+
+  it.each(['complete', 'legacy-partial'] as const)(
+    'uses the current %s reply when a parked Jev prompt emits only a pending inbox',
+    async (metadata) => {
+      // Real children capture: turn 2 ended blocked at 78; prompt 3 wrote inbox 79,
+      // with no new turn/start/end. ACP end_turn alone must not become completed.
+      let prompts = 0
+      const f = fakeEndpoint({
+        initialize: init,
+        'session/new': () => ({ sessionId: 's1' }),
+        'session/prompt': async (_p, { push }) => {
+          if (++prompts === 1) {
+            push(
+              update(
+                's1',
+                meta(78, 'terminalQuiescence', {
+                  turnEnd: { reason: 'blocked' },
+                  credits: { used: 0.000361, source: 'estimated' },
+                }),
+              ),
+            )
+            await flush()
+            return { stopReason: 'end_turn' }
+          }
+          return {
+            stopReason: 'end_turn',
+            _meta:
+              metadata === 'complete'
+                ? meta(79, 'parked', { promptTurnId: '0', turnEnd: { reason: 'blocked' } })
+                : { [META_KEY]: { phase: 'terminalQuiescence', turnEnd: { reason: 'blocked' } } },
+          }
+        },
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+      try {
+        const s = await c.session.new({ cwd: '/w' })
+        expect(await s.prompt('two')).toMatchObject({ reason: 'blocked', lastSeq: 78 })
+        expect(await s.prompt('three')).toEqual({
+          stopReason: 'end_turn',
+          reason: 'blocked',
+          // A legacy reply has no attested result cursor; keep only the observed position.
+          lastSeq: metadata === 'complete' ? 79 : 78,
+        })
+        // A reply watermark is not a streamed event or a replacement turn/end notification.
+        expect(s.lastSeq).toBe(78)
+      } finally {
+        await c.close()
+      }
+    },
+  )
+
+  it('keeps a current prompt reply authoritative over an unrelated late turn end', async () => {
+    const f = fakeEndpoint({
+      initialize: init,
+      'session/new': () => ({ sessionId: 's1' }),
+      'session/prompt': async (_p, { push }) => {
+        push(
+          update(
+            's1',
+            meta(80, 'terminalQuiescence', {
+              turnEnd: { reason: 'completed' },
+              credits: { used: 9, source: 'estimated' },
+            }),
+          ),
+        )
+        await flush()
+        return {
+          stopReason: 'end_turn',
+          _meta: meta(79, 'parked', { promptTurnId: '0', turnEnd: { reason: 'blocked' } }),
+        }
+      },
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const s = await c.session.new({ cwd: '/w' })
+      expect(await s.prompt('pending')).toEqual({ stopReason: 'end_turn', reason: 'blocked', lastSeq: 79 })
+      expect(s.lastSeq).toBe(80)
+    } finally {
+      await c.close()
+    }
+  })
+
+  it.each([1, 2])(
+    'uses observed turn credits only from the reply generation, not notification generation %i',
+    async (generation) => {
+      const f = fakeEndpoint({
+        initialize: init,
+        'session/new': () => ({ sessionId: 's1' }),
+        'session/prompt': async (_p, { push }) => {
+          push(
+            update(
+              's1',
+              meta(8, 'terminalQuiescence', {
+                promptTurnId: '7',
+                generation,
+                turnEnd: { reason: 'completed' },
+                credits: { used: 0.25, source: 'estimated' },
+              }),
+            ),
+          )
+          await flush()
+          // A private ledger append after turn/end may advance the run's watermark.
+          return {
+            stopReason: 'end_turn',
+            _meta: meta(9, 'terminalQuiescence', { promptTurnId: '7', turnEnd: { reason: 'completed' } }),
+          }
+        },
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+      try {
+        const s = await c.session.new({ cwd: '/w' })
+        expect(await s.prompt('done')).toEqual({
+          stopReason: 'end_turn',
+          reason: 'completed',
+          lastSeq: 9,
+          ...(generation === 1 ? { credits: { used: 0.25, source: 'estimated' } } : {}),
+        })
+      } finally {
+        await c.close()
+      }
+    },
+  )
 
   it('pulling the prompt signal sends session/cancel without abandoning the request', async () => {
     let cancelled = false

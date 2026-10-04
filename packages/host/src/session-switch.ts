@@ -1,4 +1,4 @@
-import { minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
+import { type ComparisonCreateParams, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import { materializeRoutes, pinPresetRoutes } from './assemble/routes.js'
 import type { Assembled } from './assemble.js'
 import { HostError } from './errors.js'
@@ -6,6 +6,7 @@ import type { HostSession } from './host.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
 import type { ResolvedProfile } from './profile/types.js'
 import { checkPresetHardRequirements } from './session.js'
+import { applySessionSandboxFloor } from './session-sandbox-floor.js'
 
 /**
  * core's `setPreset`/`setModel` (Task 32/32a) only check structure: does the preset exist, is the
@@ -16,10 +17,52 @@ import { checkPresetHardRequirements } from './session.js'
  * handlers) must go through first: resolve and validate here, then hand the already-validated value
  * to `session.setPreset()`/`session.setModel()` - never the raw client-supplied name.
  */
-export function validatePresetSwitch(profile: ResolvedProfile, a: Assembled, name: string): ResolvedPreset {
-  const resolved = resolvePreset(name, a.presets, a.sessionPresetLimits())
+export function validatePresetSwitch(
+  profile: ResolvedProfile,
+  a: Assembled,
+  name: string,
+  sessionKey?: string,
+): ResolvedPreset {
+  const resolved = applySessionSandboxFloor(
+    resolvePreset(name, a.presets, a.sessionPresetLimits()),
+    a.adapters.storage,
+    sessionKey,
+  )
   checkPresetHardRequirements(profile, a, resolved, name)
   return resolved
+}
+
+/** Resolve comparison defaults once before allocating either lane. No session or model call is created. */
+export function resolveSessionSelection(
+  profile: ResolvedProfile,
+  a: Assembled,
+  input: { preset?: string; model?: ComparisonCreateParams['model'] },
+): { preset: string; model: NonNullable<ComparisonCreateParams['model']> } {
+  const preset = input.preset ?? profile.presets.default
+  const { view } = validatePresetSwitch(profile, a, preset)
+  const baseline = materializeRoutes(view, profile).primary
+  const target = input.model ?? baseline
+  validateModelSwitch(profile, a, { slot: 'primary', ...target })
+  const record = a.provider.models().find((item) => item.route === target.route && item.id === target.model)
+  if (!record) throw new HostError('E_MODEL_UNSUPPORTED', 'comparison model is unavailable')
+  const sameModel = target.route === baseline.route && target.model === baseline.model
+  const thinking =
+    input.model?.thinking ??
+    (sameModel ? view.model.thinking.primary : undefined) ??
+    record.defaultSettings?.thinking
+  const contextWindow =
+    input.model?.contextWindow ??
+    (sameModel ? view.model.contextWindow?.primary : undefined) ??
+    record.defaultSettings?.contextWindow ??
+    record.contextWindow
+  const model = {
+    route: target.route,
+    model: target.model,
+    ...(thinking === undefined ? {} : { thinking }),
+    contextWindow,
+  }
+  validateModelSwitch(profile, a, { slot: 'primary', ...model })
+  return { preset, model }
 }
 
 /**
@@ -112,7 +155,7 @@ export async function replaySwitchesOnOpen(
   // Names can agree while session/start has restored older model settings. A later preset always
   // supersedes that initial snapshot, even after switching away and back to the original name.
   if (lastPreset) {
-    const resolved = validatePresetSwitch(profile, a, lastPreset.to)
+    const resolved = validatePresetSwitch(profile, a, lastPreset.to, session.key)
     applyPresetInMemory(session, pinPresetRoutes(resolved.view, materializeRoutes(resolved.view, profile)))
   }
   // Latest switch per slot across the whole ledger, not a 200-row window: a busy slot must not

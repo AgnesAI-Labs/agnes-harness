@@ -303,3 +303,104 @@ describe('W3b projected message DOM', () => {
     expect(item('waiting')?.textContent).toContain('执行完成')
   })
 })
+
+it('renders runtime work as one stable disclosure with lazy evidence and a separate final answer', async () => {
+  const runtime: UINode = {
+    kind: 'runtime',
+    id: 'jev-request',
+    seq: 2,
+    lastSeq: 6,
+    runtime: { id: 'jevloop', version: '1' },
+    category: 'model',
+    status: 'running',
+    title: 'Jev 决策',
+    summary: '等待模型返回',
+    requestId: 'decision-1',
+    model: 'jev-model',
+    purpose: 'decision',
+    detail: '输入\n<script>literal</script>\n门控\n尚未采用',
+  }
+  const answer: UINode = { kind: 'assistant', id: 'answer', seq: 8, text: '唯一最终回答' }
+  const store = createConversationProjectionStore({ sessionId: 'session', nodes: [runtime, answer] })
+  await mount(store)
+  const card = item(runtime.id)?.querySelector<HTMLDetailsElement>('.runtime-process-card')
+  expect(card?.open).toBe(false)
+  expect(item(runtime.id)?.textContent).toContain('Jev 决策')
+  expect(item(runtime.id)?.textContent).not.toContain('<script>')
+  await act(async () => {
+    if (card) {
+      card.open = true
+      card.dispatchEvent(new Event('toggle'))
+    }
+  })
+  expect(item(runtime.id)?.textContent).toContain('jev-model')
+  const evidence = item(runtime.id)?.querySelector<HTMLDetailsElement>('.runtime-process-evidence')
+  await act(async () => {
+    if (evidence) {
+      evidence.open = true
+      evidence.dispatchEvent(new Event('toggle'))
+    }
+  })
+  expect(item(runtime.id)?.textContent).toContain('<script>literal</script>')
+  expect(item(runtime.id)?.querySelector('script')).toBeNull()
+  await update(store, [
+    {
+      ...runtime,
+      status: 'completed',
+      lastSeq: 7,
+      summary: 'INSPECT → read_file',
+      detail: '采用路径\nINSPECT → read_file',
+    },
+    answer,
+  ])
+  expect(item(runtime.id)?.querySelector('.runtime-process-card')).toBe(card)
+  expect(card?.open).toBe(true)
+  expect(item(runtime.id)?.querySelector('.runtime-process-state')?.textContent).toBe('已记录')
+  expect(item(runtime.id)?.textContent).toContain('INSPECT → read_file')
+  expect(item(runtime.id)?.textContent).not.toContain('唯一最终回答')
+  expect(host.querySelectorAll('.timeline-node.assistant')).toHaveLength(1)
+})
+
+it('retains verified context provenance when turn ownership is present', async () => {
+  const messages: UINode[] = [
+    {
+      kind: 'context',
+      id: 'agent-report',
+      seq: 1,
+      text: 'report body',
+      messageSource: {
+        kind: 'agent-message',
+        senderSessionId: 'fixture-child',
+        receiptSeq: 1,
+      },
+    },
+    { kind: 'context', id: 'runtime-only', seq: 2, text: 'hidden runtime context' },
+  ]
+  const store = createConversationProjectionStore({
+    sessionId: 'parent',
+    nodes: messages,
+    turns: [
+      {
+        id: 'turn-parent',
+        turn: 1,
+        startSeq: 1,
+        startedAt: '2026-10-03T00:00:00Z',
+        status: 'completed',
+        nodeIds: ['agent-report', 'runtime-only'],
+        inherited: false,
+        forkable: false,
+        usage: {
+          totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+          reasoningComplete: false,
+          billingComplete: false,
+          calls: [],
+        },
+      },
+    ],
+  })
+  await mount(store)
+  expect(item('agent-report')?.textContent).toContain('Agent 报告 · fixture-child')
+  expect(item('agent-report')?.textContent).toContain('report body')
+  expect(item('runtime-only')).toBeNull()
+  expect(item('agent-report')?.classList.contains('user')).toBe(false)
+})

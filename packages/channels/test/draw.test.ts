@@ -39,6 +39,23 @@ describe('whatToDraw', () => {
     // A hook note or per-request fact snapshot is not a message meant for a chat surface's human
     // audience -- same "no channel presence" treatment as 'user'/'compaction' above.
     expect(whatToDraw({ kind: 'context', id: 'x', seq: 4, text: '{"model":"x"}' }, context)).toBeNull()
+    expect(
+      whatToDraw(
+        {
+          kind: 'runtime',
+          id: 'r',
+          seq: 5,
+          lastSeq: 7,
+          runtime: { id: 'jevloop', version: '1' },
+          category: 'model',
+          status: 'completed',
+          title: '决策模型',
+          summary: '采用路径',
+          detail: 'private decision input',
+        },
+        context,
+      ),
+    ).toBeNull()
   })
 
   it('draws complete assistant text and only the tool summary plus inline fills', () => {

@@ -39,6 +39,27 @@ async function fixture(now = 100): Promise<{
 }
 
 describe('durable child creation attempts', () => {
+  it.each(['fresh', 'history', undefined] as const)(
+    'keeps task lineage separate from %s history ancestry',
+    async (seedMode) => {
+      const { storage, input } = await fixture()
+      expect(
+        (
+          await storage.createDelegatedChild({
+            ...input,
+            ...(seedMode === undefined ? {} : { seedMode }),
+          })
+        ).status,
+      ).toBe('created')
+      const opened = await storage.open(input.childKey, { writerRunId: 'child-reader', ttlMs: 1_000 })
+      expect(opened.parent).toEqual(
+        seedMode === 'fresh' ? undefined : { key: input.parentKey, boundarySeq: 0 },
+      )
+      expect(await storage.scan(input.childKey, { limit: 10 })).toEqual([])
+      expect(await storage.lookupByKey(input.childKey)).toMatchObject({ parentKey: input.parentKey })
+    },
+  )
+
   it('persists deferred before attach and fences a late old-attempt cancel', async () => {
     const { storage, input } = await fixture()
     const created = await storage.createDelegatedChild(input)

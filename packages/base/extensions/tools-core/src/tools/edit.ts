@@ -2,6 +2,7 @@ import { defineTool, type ToolResult } from '@agnes/extension-api'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { mutationFact } from './mutation-fact.js'
 import { isBinary } from './read.js'
 import { EditParams } from './schemas.js'
 
@@ -79,6 +80,7 @@ export const editTool = defineTool({
           },
         ],
         details: { path: args.path, bytes: enc.encode(text).byteLength },
+        structured: mutationFact('edit', ctx.cwd, args.path, text),
       }
     }),
 })

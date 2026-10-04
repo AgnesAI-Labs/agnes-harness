@@ -6,6 +6,7 @@ import {
   ResourceRegistry,
   ToolRegistry,
 } from '@agnes/core'
+import { bindMountedConfiguration, type MountedConfigurationSource } from './mounted-attestation.js'
 
 export type GenerationRegistries = Readonly<{
   tools: ToolRegistry
@@ -84,14 +85,17 @@ export function publishedSessionRuntime(
     hooks: HookPort
     seed?: GenerationRegistrySeed
     runtimePromptPreloader?: RuntimePromptPreloader
+    mountedConfiguration?: MountedConfigurationSource
   }>,
 ): CurrentSessionRuntime {
   const revision = input.runtimeRegistryRevision ?? input.compositeRevision ?? 'unspecified'
   const registries = generationRegistries(input.cache, revision, input.seed)
-  return Object.freeze({
+  const runtime = Object.freeze({
     tools: registries.tools,
     hooks: input.hooks,
     resources: registries.resources,
     ...(input.runtimePromptPreloader ? { runtimePromptPreloader: input.runtimePromptPreloader } : {}),
   })
+  if (input.mountedConfiguration) bindMountedConfiguration(runtime, input.mountedConfiguration)
+  return runtime
 }

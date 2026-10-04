@@ -8,7 +8,7 @@ import { localFsIo } from './fs-io-local.js'
 /** The consumption contract the seam packages are written against. */
 export type HostFs = {
   realpath(p: string): Promise<string>
-  read(p: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
+  read(p: string, opts?: { offset?: number; limit?: number; unit?: 'bytes' }): Promise<Uint8Array>
   write(p: string, data: Uint8Array): Promise<void>
   stat(p: string): Promise<FsStat>
   list(p: string): Promise<FsEntry[]>
@@ -190,6 +190,24 @@ export function createFs(
     },
     async read(p, opts = {}) {
       const buf = await io.readFile((await authorizeRead(p)).real)
+      // Existing consumers keep their one-based line window. Tool byte reads opt in explicitly;
+      // binary bytes must never be round-tripped through a text decoder. The owning FsIo still
+      // reads the whole file before this window is selected.
+      if (opts.unit === 'bytes') {
+        const offset = opts.offset ?? 0
+        if (
+          !Number.isSafeInteger(offset) ||
+          offset < 0 ||
+          (opts.limit !== undefined && (!Number.isSafeInteger(opts.limit) || opts.limit < 0))
+        )
+          throw new TypeError('Byte read window requires non-negative safe integers')
+        return new Uint8Array(
+          buf.subarray(
+            offset,
+            opts.limit === undefined ? undefined : Math.min(buf.length, offset + opts.limit),
+          ),
+        )
+      }
       if (opts.offset === undefined && opts.limit === undefined) return new Uint8Array(buf)
       const lines = windowDecoder.decode(buf).split(/(?<=\n)/)
       const start = Math.max((opts.offset ?? 1) - 1, 0)

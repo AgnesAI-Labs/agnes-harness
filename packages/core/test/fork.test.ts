@@ -64,6 +64,7 @@ describe('SessionLogImpl.forkInto', () => {
     ])
     expect(initial[2]?.data).toEqual({
       key: 'child',
+      runtime: { id: 'native', version: '1' },
       parent: { key: 'parent', boundarySeq: 2 },
       resolvedProfileHash: null,
       preset: 'standard',

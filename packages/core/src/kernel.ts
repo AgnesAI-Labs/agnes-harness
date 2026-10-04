@@ -1,5 +1,6 @@
 import type { HookContext, Logger, PlatformFacts } from '@agnes/extension-api'
-import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
+import type { Actor, ApprovalMode, Provider, RuntimeIdentity, SessionStart } from '@agnes/protocol'
+import { assertRuntimeOwner, NATIVE_RUNTIME, readRuntimeIdentity } from '@agnes/runtime-api'
 import { KernelChildren } from './child/factory.js'
 import { hasChildControl } from './child/store.js'
 import { isActiveChildState } from './child/types.js'
@@ -24,6 +25,7 @@ import { SlotRegistry } from './registry/slots.js'
 import { ToolRegistry } from './registry/tools.js'
 import type { ContractRef } from './request/derive.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from './runtime/current.js'
+import type { SessionLoop } from './runtime/loop.js'
 import type { PresetView } from './step/preset.js'
 import { CORE_OPS, type CoreOpName, replacementFor, validateReplacements } from './step/reentry.js'
 import {
@@ -77,6 +79,26 @@ export const CORE_DIAG_NAMES = [
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
 export type KernelOptions = {
+  childSessionSupportsRuntime?: (identity: Readonly<RuntimeIdentity>) => boolean
+  /** Trusted constructor: each descendant receives a new lease and its own runtime loop. */
+  childSessionOpen?: (
+    parent: SessionImpl,
+    request: {
+      key: SessionKey
+      options: Omit<SessionOptions, 'runtime' | 'loopFactory' | 'parent' | 'historySeed'>
+      seed:
+        | { kind: 'fresh' }
+        | { kind: 'history'; parentKey: SessionKey; boundarySeq: Seq }
+        | { kind: 'existing' }
+      signal: AbortSignal
+    },
+  ) => Promise<SessionImpl>
+  /** Host-private question service bound to the exact Core session, including non-Native loops. */
+  toolQuestions?: (
+    session: SessionImpl,
+    invocation: import('./effects/tool-context.js').ToolQuestionsInvocation,
+  ) => Promise<import('@agnes/protocol').QuestionAnswer>
+  toolQuestionsDrain?: (session: SessionImpl) => Promise<void>
   storage: StorageAdapter
   seams: SeamImplementations
   provider: Provider
@@ -91,6 +113,8 @@ export type KernelOptions = {
    * the Host admits it as its own turn; without this port it runs unadmitted.
    */
   detachedChildRun?: <T>(run: () => Promise<T>) => Promise<T>
+  /** Host admission for an exact live parent's runtime-owned child inbox wake. */
+  childParentWake?: (session: SessionImpl) => Promise<void>
   hooks?: HookPort
   /** The engine is session-owned but reads the Kernel's shared registration table. */
   hooksFactory?: (session: SessionImpl, hooks: HookEngine) => HookPort
@@ -132,6 +156,11 @@ export type KernelOptions = {
 }
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
+  /** Transient live owner supplied by child execution, never inferred from persisted lineage. */
+  runtimeOwnerSessionKey?: string
+  /** Trusted Host selection; persisted ownership is checked again under the writer lease. */
+  runtime?: RuntimeIdentity
+  loopFactory?: (session: SessionImpl) => Promise<SessionLoop>
   actor: Actor
   preset?: PresetView
   resolvedProfileHash: string | null
@@ -151,6 +180,8 @@ export type SessionOptions = {
   childWorkspaceRuntime?: ChildWorkspaceRuntimePort
   /** A same-Kernel immutable prefix used by the default child-session factory. */
   parent?: { key: SessionKey; boundarySeq: Seq }
+  /** Trusted same-runtime descendant seed; independent of the Native UI fork entry. */
+  historySeed?: { key: SessionKey; boundarySeq: Seq }
   /**
    * A new session opens without dispatching `session_start`, so nothing lands after its session/start
    * before the caller writes. For an importer filling the ledger verbatim: native rows point at each
@@ -318,6 +349,12 @@ export class Kernel {
   }
 
   async session(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
+    const owner = readRuntimeIdentity(so.runtime)
+    const native = owner.id === NATIVE_RUNTIME.id && owner.version === NATIVE_RUNTIME.version
+    if (!native && !so.loopFactory)
+      throw new CoreError('E_RELATION', 'selected runtime has no execution factory')
+    if (native && so.loopFactory)
+      throw new CoreError('E_RELATION', 'the native execution owner cannot be overridden')
     const preset = so.preset ?? this.o.preset
     const lane = so.lane ?? 'main'
     let existing = this.sessions.get(key)
@@ -335,6 +372,8 @@ export class Kernel {
     // deployment error, and it fails closed rather than resolving in the first caller's favour.
     if (existing) {
       const want = {
+        runtimeId: owner.id,
+        runtimeVersion: owner.version,
         actor: so.actor.id,
         role: so.actor.role,
         org: so.actor.org,
@@ -342,10 +381,13 @@ export class Kernel {
         cwd: so.cwd,
         preset: preset.name,
         writerRunId: so.writerRunId,
-        parentKey: so.parent?.key,
-        parentBoundary: so.parent?.boundarySeq,
+        runtimeOwnerSessionKey: so.runtimeOwnerSessionKey,
+        parentKey: (so.historySeed ?? so.parent)?.key,
+        parentBoundary: (so.historySeed ?? so.parent)?.boundarySeq,
       }
       const have = {
+        runtimeId: existing.runtimeIdentity.id,
+        runtimeVersion: existing.runtimeIdentity.version,
         actor: existing.d.actor.id,
         role: existing.d.actor.role,
         org: existing.d.actor.org,
@@ -353,6 +395,7 @@ export class Kernel {
         cwd: existing.d.cwd,
         preset: existing.preset.name,
         writerRunId: existing.writerRunId,
+        runtimeOwnerSessionKey: existing.d.runtimeOwnerSessionKey,
         parentKey: existing.d.log.parent?.key,
         parentBoundary: existing.d.log.parent?.boundarySeq,
       }
@@ -376,13 +419,21 @@ export class Kernel {
     const fsOps = so.workspaceRuntime?.fs ?? this.o.fsOps
     await assertFsEnforces(fsOps, fitted.sandbox.fsPolicy())
     let forked: Awaited<ReturnType<SessionImpl['d']['log']['forkInto']>> | undefined
-    if (so.parent) {
-      const parent = this.sessions.get(so.parent.key)
+    if (so.parent && so.historySeed) throw new CoreError('E_RELATION', 'ambiguous history seed')
+    const history = so.historySeed ?? so.parent
+    if (history) {
+      if (so.parent && !native)
+        throw new CoreError('E_RELATION', 'runtime does not support native history forks')
+      if (so.historySeed && (!so.delegation || so.runtimeOwnerSessionKey !== history.key))
+        throw new CoreError('E_RELATION', 'history seed requires a live delegated owner')
+      const parent = this.sessions.get(history.key)
       if (!parent)
-        throw new CoreError('E_DEPTH_EXCEEDED', `parent session ${so.parent.key} is not open`, {
-          parent: so.parent.key,
+        throw new CoreError('E_DEPTH_EXCEEDED', `parent session ${history.key} is not open`, {
+          parent: history.key,
         })
-      forked = await parent.d.log.forkInto(so.parent.boundarySeq, key, {
+      assertRuntimeOwner(parent.runtimeIdentity, owner)
+      forked = await parent.d.log.forkInto(history.boundarySeq, key, {
+        runtime: owner,
         actor: so.actor,
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
         preset: preset.name,
@@ -421,6 +472,7 @@ export class Kernel {
     try {
       tracked = await openTracked({
         storage: this.o.storage,
+        runtimeIdentity: owner,
         key,
         writerRunId: so.writerRunId,
         ttlMs: this.o.leaseTtlMs ?? 30_000,
@@ -439,7 +491,7 @@ export class Kernel {
     const { log, tracker, surface, ui, registersRebuilt } = tracked
     const workspaceInvocation = so.workspaceInvocation ?? so.workspaceRuntime?.invocation
     const workspaceIdentity = so.workspaceIdentity ?? so.workspaceRuntime?.identity
-    const quietGroup = so.parent ? (this.sessions.get(so.parent.key)?.d.quietGroup ?? so.parent.key) : key
+    const quietGroup = history ? (this.sessions.get(history.key)?.d.quietGroup ?? history.key) : key
     const runtime = new SeamRuntime(fitted, preset, {
       clock: this.clock,
       onFailure: (f) => logger.warn('seam failed', { ...f }),
@@ -456,7 +508,10 @@ export class Kernel {
     ) as Partial<{ [K in CoreOpName]: ReplacementOperation<K> | undefined }>
     let session!: SessionImpl
     const children = this.o.children ?? new KernelChildren(this, () => session)
+    const toolQuestions = this.o.toolQuestions
+    const toolQuestionsDrain = this.o.toolQuestionsDrain
     session = new SessionImpl({
+      loopIdentity: owner,
       log,
       tracker,
       surface,
@@ -474,6 +529,10 @@ export class Kernel {
       contract: this.o.contract,
       ...(this.o.contractForModel ? { contractForModel: this.o.contractForModel } : {}),
       children,
+      ...(children instanceof KernelChildren ? { childrenDrain: () => children.closeOwned() } : {}),
+      ...(so.runtimeOwnerSessionKey ? { runtimeOwnerSessionKey: so.runtimeOwnerSessionKey } : {}),
+      ...(toolQuestions ? { toolQuestions: (invocation) => toolQuestions(session, invocation) } : {}),
+      ...(toolQuestionsDrain ? { toolQuestionsDrain: () => toolQuestionsDrain(session) } : {}),
       ...(workspaceIdentity ? { workspaceIdentity } : {}),
       ...(workspaceInvocation ? { workspaceInvocation } : {}),
       ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
@@ -484,6 +543,7 @@ export class Kernel {
       actor: so.actor,
       resolvedProfileHash: so.resolvedProfileHash,
       ...(so.imported ? { imported: so.imported } : {}),
+      ...(so.delegation ? { delegation: so.delegation } : {}),
       cwd: so.cwd,
       netFetch: this.o.netFetch,
       ...(this.o.publicFetch ? { publicFetch: this.o.publicFetch } : {}),
@@ -526,6 +586,7 @@ export class Kernel {
       }
       const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
       await session.start()
+      if (so.loopFactory) session.attachLoop(await so.loopFactory(session))
       if (!(so.skipSessionStartHooks && reason === 'new'))
         await session.hooks.sessionStart?.({ reason, preset: session.preset.name, cwd: so.cwd })
     } catch (error) {
@@ -533,6 +594,10 @@ export class Kernel {
       try {
         await session.close()
       } catch (cleanupError) {
+        // Failed initialization is not proof of a failed drain. Retain the exact writer owner
+        // so Host shutdown/open rollback can retry, rather than orphaning its live lease.
+        this.sessions.set(key, session)
+        if (factoryPort) this.factoryHooks.add(factoryPort)
         throw new AggregateError([error, cleanupError], 'session initialization and cleanup failed')
       }
       throw error
@@ -564,6 +629,10 @@ export class Kernel {
         failures.push(err)
       })
     }
+    // A runtime that did not drain still owns a live writer. Keep storage and the exact
+    // session reachable for a close retry; disposing storage would revoke its lease underneath it.
+    if ([...this.sessions.values()].some((session) => !session.d.log.isClosed))
+      throw failures[0] ?? new CoreError('E_CLOSED', 'kernel still has undrained sessions')
     this.sessions.clear()
     try {
       await this.o.storage.close()

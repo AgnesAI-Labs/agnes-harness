@@ -1,0 +1,22 @@
+{
+  "name": "@agnes/runtime-jev",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./model": "./src/model.ts",
+    "./language": "./src/language.ts",
+    "./semantics": "./src/semantics.ts",
+    "./decision-context": "./src/decision-context.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/jev-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*"
+  },
+  "license": "MIT"
+}

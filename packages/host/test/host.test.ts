@@ -63,6 +63,59 @@ describe('createHost', () => {
     await Promise.all([first, second])
     expect(audit.events.filter((e) => e.kind === 'host.closed')).toHaveLength(1)
   })
+  it.each([false, true])(
+    'retries a failed runtime drain without revoking its writer (timeout: %s)',
+    async (timeout) => {
+      const dataDir = tmp()
+      const { host, audit } = await createTestHost({ dataDir, closeTimeoutMs: 20, disableSessionTitle: true })
+      const session = await host.createSession({ cwd: dataDir })
+      const drain = session.d.childrenDrain
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let failed = true
+      session.d.childrenDrain = async () => {
+        if (failed) {
+          if (timeout) await gate
+          throw new Error('child runtime still owns its writer')
+        }
+        await drain?.()
+      }
+      try {
+        const first = host.close()
+        expect(host.close()).toBe(first)
+        if (timeout) {
+          await first
+          expect(host.close()).toBe(first)
+          expect(session.d.log.isClosed).toBe(false)
+          release()
+          await vi.waitFor(() =>
+            expect(audit.events.some((event) => event.kind === 'session.close_failed')).toBe(true),
+          )
+        } else await expect(first).rejects.toThrow('undrained session writers')
+        expect(session.d.log.isClosed).toBe(false)
+        expect(host.kernel.get(session.key)).toBe(session)
+        await expect(session.d.log.storage.renew(session.key, session.writerRunId)).resolves.toBeUndefined()
+        await expect(
+          session.d.log.storage.open(session.key, { writerRunId: 'other-owner', ttlMs: 1_000 }),
+        ).rejects.toMatchObject({ code: 'E_WRITER_LEASE' })
+        expect(audit.events.some((event) => event.kind === 'host.closed')).toBe(false)
+        await expect(host.createSession({ cwd: dataDir })).rejects.toThrow(/E_HOST_CLOSED/)
+        failed = false
+        const retry = host.close()
+        expect(retry).not.toBe(first)
+        expect(host.close()).toBe(retry)
+        await retry
+        expect(session.d.log.isClosed).toBe(true)
+        expect(audit.events.filter((event) => event.kind === 'host.closed')).toHaveLength(1)
+      } finally {
+        failed = false
+        release()
+        await host.close()
+      }
+    },
+  )
   it('keeps the workspace invocation alive through a real shutdown hook, then revokes it', async () => {
     const dataDir = tmp()
     let entered!: () => void

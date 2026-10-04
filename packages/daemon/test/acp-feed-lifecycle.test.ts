@@ -1,5 +1,5 @@
 import { createExtensionActivationBarrier } from '@agnes/host'
-import type { EventEnvelope } from '@agnes/protocol'
+import { type EventEnvelope, getHarnessMeta } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { AttachedFeed } from '../src/local/attached.js'
 import { CommandQueue } from '../src/local/command-queue.js'
@@ -29,7 +29,7 @@ function workerLink(hold: Hold) {
       profileHash: 'sha256-profile',
     }),
     onExit: (fn: () => void) => void exits.push(fn),
-    command: vi.fn(async (method: string) => {
+    command: vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'run') {
         await hold.gate
         return { reason: 'completed', lastSeq: hold.lastSeq }
@@ -52,8 +52,8 @@ function workerLink(hold: Hold) {
 async function connection() {
   const links: Array<ReturnType<typeof workerLink>> = []
   // Held requests wait inside the turn (prompt) or before the open (load) until released.
-  const hold: Hold = { gate: Promise.resolve(), lastSeq: 0 }
-  const held = (lastSeq = 0) => {
+  const hold: Hold = { gate: Promise.resolve(), lastSeq: 1 }
+  const held = (lastSeq = 1) => {
     let release!: () => void
     hold.gate = new Promise<void>((resolve) => {
       release = resolve
@@ -123,6 +123,76 @@ const updates = (pushed: { mock: { calls: Array<[{ method: string }]> } }) =>
   pushed.mock.calls.filter(([n]) => n.method === 'session/update').length
 
 describe('ACP feeds on the supervisor path hold one subscription per connection and session', () => {
+  it('returns the current blocked result when a parked prompt writes only its pending inbox', async () => {
+    const t = await connection()
+    const c = t.connect()
+    expect(await c.call('session/load', load)).not.toHaveProperty('error')
+    const link = t.links[0]
+    if (!link) throw new Error('Expected loaded worker')
+    const original = link.command.getMockImplementation()
+    // Actual children capture coordinates, without importing private prompt bodies.
+    await t.inner.deliver(KEY, {
+      seq: 78,
+      type: 'turn/end',
+      lane: 'main',
+      data: { reason: 'blocked' },
+    } as unknown as EventEnvelope)
+    link.command.mockImplementation(async (method) => {
+      if (method === 'enqueue') {
+        await t.inner.deliver(KEY, {
+          seq: 79,
+          type: 'inbox',
+          lane: 'main',
+          data: {
+            items: [{ itemId: 'prompt-three', target: 'next-turn', kind: 'prompt', content: prompt.prompt }],
+          },
+        } as unknown as EventEnvelope)
+        return 79
+      }
+      if (method === 'run') return { reason: 'blocked', lastSeq: 79 }
+      return original?.(method)
+    })
+    const before = updates(c.pushed)
+    const response = (await c.call('session/prompt', prompt)) as {
+      result: { _meta?: Record<string, unknown> }
+    }
+    expect(getHarnessMeta(response.result)).toEqual({
+      promptTurnId: '0',
+      eventSequence: 79,
+      generation: t.inner.require(KEY).generation,
+      lane: 'main',
+      phase: 'parked',
+      turnEnd: { reason: 'blocked' },
+    })
+    expect(updates(c.pushed)).toBe(before)
+    expect(link.command).toHaveBeenCalledWith('scan', {
+      type: 'turn/start',
+      lane: 'main',
+      fromSeq: 79,
+      toSeq: 79,
+      order: 'desc',
+      limit: 1,
+    })
+    await c.ep.close()
+  })
+
+  it('refuses a stale run watermark after the current prompt was enqueued', async () => {
+    const t = await connection()
+    const c = t.connect()
+    const link = t.links[0]
+    if (!link) throw new Error('Expected worker')
+    const original = link.command.getMockImplementation()
+    link.command.mockImplementation(async (method) => {
+      if (method === 'enqueue') return 79
+      if (method === 'run') return { reason: 'completed', lastSeq: 78 }
+      return original?.(method)
+    })
+    expect(await c.call('session/prompt', prompt)).toMatchObject({
+      error: { data: { code: 'STALE_RUN_WATERMARK' } },
+    })
+    await c.ep.close()
+  })
+
   it('reuses the subscription across repeated load and prompt, so each event is pushed once', async () => {
     const t = await connection()
     const c = t.connect()

@@ -1,4 +1,21 @@
-import { array, enumeration, object, optional, string } from './src/schema.mjs'
+import { array, enumeration, object, optional, string, union } from './src/schema.mjs'
+
+const definition = object({
+  serverId: string(128),
+  displayName: string(256),
+  transport: union(
+    object({ kind: enumeration('stdio'), executable: string(), args: array(string(), 256) }),
+    object({ kind: enumeration('http', 'sse'), url: string() }),
+  ),
+  secretBinding: object({ kind: enumeration('none') }),
+})
+definition.description = 'Credential-free server definition for prepare; credentials use AGH secure settings.'
+const proposalId = {
+  ...string(80),
+  description: 'Exact proposalId returned by prepare; required for commit, status and cancel.',
+}
+// Retain historical optional fields accepted by the Host, while requiring the selected action's input.
+const optionalFields = { definition: optional(definition), proposalId: optional(proposalId) }
 
 export const mcpHelper = {
   inject: ['extension'],
@@ -6,25 +23,22 @@ export const mcpHelper = {
     ctx.extension().registerTool({
       name: 'mcp_manage',
       description:
-        'Connect MCP servers to this Agnes Harness (AGH), visible in Settings → MCP. Use prepare with a definition, then commit its proposalId for native user confirmation. Default target is AGH, not another client. Dependencies/add-ons alone are not registration. End this turn after submission; tools become available on later turns. Use list/status to verify actual results. Credentials belong in AGH secure settings, never chat.',
-      parameters: object({
-        action: enumeration('prepare', 'commit', 'status', 'cancel', 'list'),
-        definition: optional(
-          object({
-            serverId: string(128),
-            displayName: string(256),
-            transport: {
-              [Symbol.for('TypeBox.Kind')]: 'Union',
-              anyOf: [
-                object({ kind: enumeration('stdio'), executable: string(), args: array(string(), 256) }),
-                object({ kind: enumeration('http', 'sse'), url: string() }),
-              ],
-            },
-            secretBinding: object({ kind: enumeration('none') }),
-          }),
+        'Manage MCP servers in this AGH, visible in Settings → MCP. prepare requires a credential-free definition and returns prepared plus proposalId; it does not connect. commit requires that proposalId and requests native user confirmation to register, trust and enable the exact definition. status requires proposalId and reports actual connection state; cancel requires proposalId and requests cancellation; list needs only action and returns server items. registered/submitted are pending: end this turn, then query status on a later turn. ready establishes backend connection; use the actual turn tool catalog to check callable tools. changed/blocked/disabled require Settings review; failed/cancelled or denial require reporting and stopping, not automatic retry or bypass. Default target is AGH, not another client; dependencies/add-ons alone are not registration. Credentials belong in secure settings, never chat.',
+      parameters: {
+        // Providers require an object root. Keep Union's TypeBox tag so native validation also
+        // enforces the action-specific branches rather than treating anyOf as an ignored annotation.
+        ...object({
+          ...optionalFields,
+          action: enumeration('prepare', 'commit', 'status', 'cancel', 'list'),
+        }),
+        ...union(
+          object({ ...optionalFields, action: enumeration('prepare'), definition }),
+          ...['commit', 'status', 'cancel'].map((action) =>
+            object({ ...optionalFields, action: enumeration(action), proposalId }),
+          ),
+          object({ ...optionalFields, action: enumeration('list') }),
         ),
-        proposalId: optional(string(80)),
-      }),
+      },
       meta: {
         isReadOnly: false,
         isDestructive: false,

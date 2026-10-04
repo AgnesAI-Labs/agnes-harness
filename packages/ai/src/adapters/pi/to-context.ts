@@ -30,20 +30,40 @@ function contentOf(blocks: RequestMessage extends { content: infer C } ? C : nev
 /** The tool a result answers is named by the call that asked for it, not by the result itself. */
 function findToolName(req: RequestBody, toolUseId: string): string {
   for (const m of req.messages)
-    if (m.role === 'assistant')
+    if (m.role === 'assistant' || m.role === 'host_action')
       for (const tc of m.toolCalls ?? []) if (tc.toolUseId === toolUseId) return tc.name
   return 'unknown'
 }
 
-function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): Message {
+function toMessage(
+  m: RequestMessage,
+  req: RequestBody,
+  dropThinking: boolean,
+  reasoningField?: 'reasoning_content',
+): Message {
   switch (m.role) {
+    case 'system':
+      return { role: 'system', content: structuredClone(m.content), timestamp: 0 }
     case 'user':
       return { role: 'user', content: contentOf(m.content), timestamp: 0 } satisfies UserMessage
+    case 'host_action':
+      return toMessage(
+        { role: 'assistant', content: [], toolCalls: m.toolCalls },
+        req,
+        dropThinking,
+        reasoningField,
+      )
     case 'assistant': {
       const content: AssistantMessage['content'] = m.content
         .filter((c) => !dropThinking || c.type !== 'thinking')
         .map((c) =>
-          c.type === 'thinking' ? { type: 'thinking', thinking: c.text } : { type: 'text', text: c.text },
+          c.type === 'thinking'
+            ? {
+                type: 'thinking',
+                thinking: c.text,
+                ...(reasoningField ? { thinkingSignature: reasoningField } : {}),
+              }
+            : { type: 'text', text: c.text },
         )
       for (const tc of m.toolCalls ?? [])
         content.push({
@@ -91,8 +111,54 @@ function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): 
  */
 export function toContext(
   req: RequestBody,
-  opts: { dropThinking?: boolean } = {},
+  opts: {
+    dropThinking?: boolean
+    api?: string
+    supportsMidConvoSystemMessages?: boolean
+    reasoningField?: 'reasoning_content'
+  } = {},
 ): { context: Context; tools: Tool[] } {
+  if (
+    req.messages.some((message) => message.role === 'system') &&
+    (opts.api !== 'openai-completions' || opts.supportsMidConvoSystemMessages !== true)
+  )
+    throw new Error('Ordered system history requires an explicitly supported OpenAI Completions model')
+  // Only the explicitly verified wire path can lower Host-authored actions to tool-call pairs.
+  // Keep the RequestBody unchanged, including authorship, for hashing and committed snapshots.
+  const hostIds = new Set(
+    req.messages.flatMap((message) =>
+      message.role === 'host_action' ? message.toolCalls.map((call) => call.toolUseId) : [],
+    ),
+  )
+  const used = new Set<string>()
+  for (const [index, message] of req.messages.entries()) {
+    if (message.role === 'tool_result' && hostIds.has(message.toolUseId)) {
+      const call = req.messages[index - 1]
+      if (call?.role !== 'host_action' || call.toolCalls[0]?.toolUseId !== message.toolUseId)
+        throw new Error('Host action result must immediately follow its matching call')
+    }
+    if (message.role !== 'assistant' && message.role !== 'host_action') continue
+    for (const call of message.toolCalls ?? []) {
+      if (used.has(call.toolUseId) && hostIds.has(call.toolUseId))
+        throw new Error('Host action tool-call identity is duplicated')
+      used.add(call.toolUseId)
+    }
+    if (message.role !== 'host_action') continue
+    if (opts.api !== 'openai-completions') throw new Error('Host action history is unsupported for this API')
+    const call = message.toolCalls[0]
+    const result = req.messages[index + 1]
+    if (
+      message.content.length !== 0 ||
+      message.toolCalls.length !== 1 ||
+      !call ||
+      !call.args ||
+      typeof call.args !== 'object' ||
+      Array.isArray(call.args) ||
+      result?.role !== 'tool_result' ||
+      result.toolUseId !== call.toolUseId
+    )
+      throw new Error('Host action requires exactly one adjacent matching tool result')
+  }
   const tools: Tool[] = req.tools.map((t) => ({
     name: t.name,
     description: t.description,
@@ -103,7 +169,7 @@ export function toContext(
   return {
     context: {
       systemPrompt: req.system,
-      messages: req.messages.map((m) => toMessage(m, req, opts.dropThinking === true)),
+      messages: req.messages.map((m) => toMessage(m, req, opts.dropThinking === true, opts.reasoningField)),
       tools,
     },
     tools,

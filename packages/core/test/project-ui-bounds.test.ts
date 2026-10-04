@@ -108,3 +108,54 @@ it('bounds extension-supplied context section and contribution conflict names', 
   expect(timeline.nodes.map((node) => node.kind)).toEqual(['user', 'context-sections', 'contribute-conflict'])
   expectPublishable(timeline)
 })
+
+it('bounds runtime stage details without losing outcome or resolution behind large arguments', async () => {
+  const event = builder()
+  const runtime = { id: 'jevloop', version: '1' }
+  const work = (record: Record<string, unknown>) =>
+    event('runtime/record', { runtime, record: { version: 1, turn: 'run', ...record } } as Event['data'])
+  const events = [
+    event('turn/start', { turn: 1, trigger: 'prompt' }),
+    work({
+      id: 'intended',
+      kind: 'action.intended',
+      intent: { id: 'action', tool: 'write', arguments: { text: EMOJI.repeat(10000) } },
+    }),
+    work({
+      id: 'settled',
+      kind: 'action.settled',
+      intentId: 'action',
+      effect: 'unknown',
+      outcome: { kind: 'error' },
+    }),
+    work({
+      id: 'resolved',
+      kind: 'action.resolved',
+      intentId: 'action',
+      resolution: 'confirmed_not_applied',
+      evidence: ['verified absent', EMOJI.repeat(10000)],
+    }),
+    work({ id: 'model', kind: 'model.requested', call: { purpose: 'decision', input: EMOJI.repeat(10000) } }),
+    work({
+      id: 'model-error',
+      kind: 'model.settled',
+      requested: 'model',
+      settlement: { error: { code: 'DECISION_TIMEOUT', message: 'Jev 决策请求超时。', retryable: true } },
+    }),
+  ]
+  const result = await projectUI(events, { sessionKey: 'bounds' })
+  const node = result.nodes[0]
+  expect(node?.kind).toBe('runtime')
+  if (node?.kind !== 'runtime') throw new Error('runtime node missing')
+  expect(node.detail).toContain('[截断]')
+  expect(node.detail).toContain('执行证据')
+  expect(node.detail).toContain('unknown')
+  expect(node.detail).toContain('confirmed_not_applied')
+  expect(node.status).toBe('cancelled')
+  expect(node.detail?.length).toBeLessThanOrEqual(8192)
+  expect(result.nodes[1]).toMatchObject({
+    status: 'failed',
+    detail: expect.stringContaining('Jev 决策请求超时。'),
+  })
+  expectPublishable(result)
+})

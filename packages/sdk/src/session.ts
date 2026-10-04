@@ -12,6 +12,7 @@ import {
   type EventEnvelope,
   getHarnessMeta,
   type HarnessMeta,
+  META_KEY,
   type SessionAttachParams,
   type SessionAttachResult,
   type SessionBudgetResult,
@@ -21,6 +22,9 @@ import {
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
   type SessionReadToolDetailResult,
+  type SessionRuntimeControlParams,
+  type SessionRuntimeControlResult,
+  type SessionRuntimeState,
   type SlotName,
   type ThinkingLevel,
   type ToolCall,
@@ -35,11 +39,9 @@ import {
   type UIOpeningResult,
   type UIProjectionUpdate,
   type UITimeline,
-  validateAgainst,
   validateEvent,
   validateMethod,
 } from '@agnes/protocol'
-import { ToolCall as ToolCallSchema, ToolResult as ToolResultSchema } from '@agnes/protocol/gen/session-v1'
 import type { Client } from './client.js'
 import { JsonRpcError, ProtocolViolation, TransportClosed } from './errors.js'
 // A handle on one conversation. It owns two things the client cannot own for it:
@@ -47,6 +49,7 @@ import { JsonRpcError, ProtocolViolation, TransportClosed } from './errors.js'
 // assembly of a turn's outcome out of two independent arrivals - the prompt response
 // and the terminal notification that precedes it.
 import { type CompactOutcome, submitCommand, submitCompactAware } from './submit.js'
+import { readToolDetailPages } from './tool-detail.js'
 
 export type TurnResult = {
   stopReason: AcpStopReason
@@ -112,7 +115,13 @@ export function toContentBlocks(input: ContentBlock[] | string): ContentBlock[] 
   return typeof input === 'string' ? [{ type: 'text', text: input }] : input
 }
 
-type TurnEndRecord = { reason: TurnEndReason; seq: number; credits?: TurnResult['credits'] }
+type TurnEndRecord = {
+  reason: TurnEndReason
+  seq: number
+  promptTurnId: string
+  generation: number
+  credits?: TurnResult['credits']
+}
 
 // The other direction from REASON_FROM_STOP: a turn end observed after the fact (either
 // from `lastTurnEnd` or from a terminalQuiescence/parked notification reached while
@@ -126,6 +135,20 @@ function resultFromTurnEnd(end: TurnEndRecord): TurnResult {
     reason: end.reason,
     lastSeq: end.seq,
     ...(end.credits ? { credits: end.credits } : {}),
+  }
+}
+
+/** Older daemons emitted only phase/turnEnd in the response; read that response's reason too. */
+function promptReplyReason(reply: { _meta?: Record<string, unknown> }): TurnEndReason | undefined {
+  const raw = reply._meta?.[META_KEY] as { turnEnd?: { reason?: unknown } } | undefined
+  const reason = raw?.turnEnd?.reason
+  if (typeof reason !== 'string' || reason === 'error') return undefined
+  try {
+    // The codec owns the canonical enum. Unknown metadata retains the legacy ACP fallback.
+    const stop = toAcpStopReason(reason as Exclude<TurnEndReason, 'error'>)
+    return typeof stop === 'string' ? (reason as TurnEndReason) : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -310,6 +333,8 @@ export class Session {
         this.lastTurnEnd = {
           reason: meta.turnEnd.reason,
           seq: meta.eventSequence,
+          promptTurnId: meta.promptTurnId,
+          generation: meta.generation,
           ...(meta.credits ? { credits: meta.credits } : {}),
         }
     }
@@ -492,6 +517,17 @@ export class Session {
     return this.client.call<SessionBudgetResult>('_agnes/v1/session.budget', { sessionId: this.id })
   }
 
+  /** Reads the durable execution owner without reopening or resuming this session. */
+  runtime(): Promise<SessionRuntimeState> {
+    return this.client.call('_agnes/v1/session.runtime', { sessionId: this.id })
+  }
+  /** Ask the existing runtime owner to record an explicit maintenance decision; never runs a turn. */
+  controlRuntime(
+    input: Omit<SessionRuntimeControlParams, 'sessionId'>,
+  ): Promise<SessionRuntimeControlResult> {
+    return this.client.call('_agnes/v1/session.runtimeControl', { ...input, sessionId: this.id })
+  }
+
   setPreset(preset: string): Promise<EffectiveFromResult> {
     return this.client.call<EffectiveFromResult>('_agnes/v1/session.setPreset', {
       sessionId: this.id,
@@ -570,70 +606,22 @@ export class Session {
     resultSeq?: number,
     opts: { signal?: AbortSignal } = {},
   ): Promise<ToolDetail> {
-    let complete: Uint8Array | undefined
-    let offset = 0
-    let totalBytes: number | undefined
-    for (;;) {
-      opts.signal?.throwIfAborted()
-      const page = await this.client.call<SessionReadToolDetailResult>('_agnes/v1/session.readToolDetail', {
-        sessionId: this.id,
-        callSeq,
-        ...(resultSeq === undefined ? {} : { resultSeq }),
-        offset,
-      })
-      opts.signal?.throwIfAborted()
-      if (
-        page.sessionId !== this.id ||
-        page.callSeq !== callSeq ||
-        page.resultSeq !== resultSeq ||
-        page.offset !== offset ||
-        (totalBytes !== undefined && page.totalBytes !== totalBytes)
-      )
-        throw new ProtocolViolation('invalid tool detail response: coordinates mismatch')
-      if (!Number.isSafeInteger(page.totalBytes) || page.totalBytes > 64 * 1024 * 1024)
-        throw new ProtocolViolation('invalid tool detail response: total byte limit')
-      totalBytes = page.totalBytes
-      complete ??= new Uint8Array(totalBytes)
-      let binary: string
-      try {
-        binary = atob(page.data)
-      } catch {
-        throw new ProtocolViolation('invalid tool detail response: base64')
-      }
-      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
-      if (
-        bytes.byteLength > 256 * 1024 ||
-        offset + bytes.byteLength > totalBytes ||
-        page.nextOffset !== (offset + bytes.byteLength < totalBytes ? offset + bytes.byteLength : null) ||
-        (page.nextOffset !== null && bytes.byteLength === 0)
-      )
-        throw new ProtocolViolation('invalid tool detail response: page bounds')
-      complete.set(bytes, offset)
-      if (page.nextOffset === null) break
-      offset = page.nextOffset
-    }
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(complete))
-    } catch {
-      throw new ProtocolViolation('invalid tool detail response: JSON')
-    }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
-      throw new ProtocolViolation('invalid tool detail response: shape')
-    const detail = parsed as Record<string, unknown>
-    const keys = Object.keys(detail).sort().join(',')
-    if (keys !== (resultSeq === undefined ? 'call' : 'call,result'))
-      throw new ProtocolViolation('invalid tool detail response: fields')
-    if (
-      !validateAgainst(ToolCallSchema, detail.call).ok ||
-      (resultSeq !== undefined && !validateAgainst(ToolResultSchema, detail.result).ok)
+    return readToolDetailPages(
+      callSeq,
+      resultSeq,
+      async (offset) => {
+        const page = await this.client.call<SessionReadToolDetailResult>('_agnes/v1/session.readToolDetail', {
+          sessionId: this.id,
+          callSeq,
+          ...(resultSeq === undefined ? {} : { resultSeq }),
+          offset,
+        })
+        if (page.sessionId !== this.id)
+          throw new ProtocolViolation('invalid tool detail response: coordinates mismatch')
+        return page
+      },
+      opts,
     )
-      throw new ProtocolViolation('invalid tool detail response: event data')
-    const call = detail.call as ToolCall
-    const result = detail.result as ToolResult | undefined
-    if (result && result.toolUseId !== call.toolUseId)
-      throw new ProtocolViolation('invalid tool detail response: tool identity')
-    return { call, ...(result ? { result } : {}) }
   }
 
   async prompt(input: ContentBlock[] | string, opts: { signal?: AbortSignal } = {}): Promise<TurnResult> {
@@ -662,17 +650,32 @@ export class Session {
   ): Promise<TurnResult> {
     try {
       // No deadline: a turn is bounded by the transport's liveness, not by a stopwatch.
-      const r = await this.client.call<{ stopReason: AcpStopReason }>(
+      const r = await this.client.call<{ stopReason: AcpStopReason; _meta?: Record<string, unknown> }>(
         'session/prompt',
         { sessionId: this.id, prompt: toContentBlocks(input) },
         { timeoutMs: null },
       )
       const end = this.lastTurnEnd !== before ? this.lastTurnEnd : null
+      const replyMeta = getHarnessMeta(r)
+      const replyReason = promptReplyReason(r)
+      if (replyReason && toAcpStopReason(replyReason as Exclude<TurnEndReason, 'error'>) !== r.stopReason)
+        throw new ProtocolViolation('prompt response reason does not match stopReason')
+      const matchingEnd = replyReason
+        ? end?.reason === replyReason &&
+          (!replyMeta ||
+            (replyMeta.promptTurnId !== '0' &&
+              end.promptTurnId === replyMeta.promptTurnId &&
+              end.generation === replyMeta.generation &&
+              end.seq <= replyMeta.eventSequence))
+          ? end
+          : null
+        : end
+      const credits = replyMeta?.credits ?? matchingEnd?.credits
       return {
         stopReason: r.stopReason,
-        reason: end?.reason ?? REASON_FROM_STOP[r.stopReason],
-        lastSeq: end?.seq ?? this.seq,
-        ...(end?.credits ? { credits: end.credits } : {}),
+        reason: replyReason ?? end?.reason ?? REASON_FROM_STOP[r.stopReason],
+        lastSeq: replyMeta?.eventSequence ?? matchingEnd?.seq ?? this.seq,
+        ...(credits ? { credits } : {}),
       }
     } catch (e) {
       // daemon rejected before enqueue/run: the durable ledger still exists, only its idle worker
@@ -713,6 +716,8 @@ export class Session {
           resultFromTurnEnd({
             reason: meta.turnEnd?.reason ?? 'completed',
             seq: meta.eventSequence,
+            promptTurnId: meta.promptTurnId,
+            generation: meta.generation,
             ...(meta.credits ? { credits: meta.credits } : {}),
           }),
         )

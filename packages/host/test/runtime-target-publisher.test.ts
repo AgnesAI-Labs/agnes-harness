@@ -34,6 +34,44 @@ function deferred<T = void>() {
 }
 
 describe('RuntimeTargetPublisher', () => {
+  it('appends and closes only its own child scope under retained read ancestry without replacing the pinned generation', async () => {
+    const mutation = new RuntimeMutationGate()
+    const publisher = new RuntimeTargetPublisher<{ revision: string }, string>({
+      catalogue: new RuntimePluginCatalogue([]),
+      publication: new PublicationGate(),
+      mutation,
+      load: async () => undefined,
+      trust: () => undefined,
+      resourceFactory: { create: (input) => ({ revision: input.target.compositeRevision }) },
+    })
+    await publisher.apply(target('8'.repeat(64)))
+    const build = async () => ({ desired: { preset: 'one' }, overlay: 'one', close: () => undefined })
+    await publisher.setSessionScope('parent', { preset: 'one' }, build)
+    const base = publisher.current().value
+    const reader = await mutation.enterRead()
+    let changed = false
+    const changing = mutation.mutate(() => {
+      changed = true
+    })
+    await reader.run(async () => {
+      await expect(publisher.setSessionScope('parent', { preset: 'other' }, build)).rejects.toThrow(
+        'cannot replace',
+      )
+      await expect(publisher.closeSessionScope('parent')).rejects.toThrow('unrelated')
+      await publisher.setSessionScope('child', { preset: 'one' }, build)
+      expect(publisher.current().value.current).toBe(base.current)
+      expect(publisher.current().value.sessionScopes.get('parent')).toBe(base.sessionScopes.get('parent'))
+      expect(changed).toBe(false)
+      await publisher.closeSessionScope('child')
+      expect(publisher.current().value.sessionScopes.has('child')).toBe(false)
+      expect(publisher.current().value.current).toBe(base.current)
+    })
+    reader.release()
+    await changing
+    expect(changed).toBe(true)
+    await publisher.close()
+  })
+
   it('reports which services a waiting row is missing', async () => {
     const waiting = createPluginRow({
       id: 'host:waits',

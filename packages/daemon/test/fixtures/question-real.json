@@ -1,0 +1,778 @@
+{
+  "source": "Live DeepSeek v4 Flash Native and Jev browser question smoke, 2026-10-03",
+  "comparisonId": "0a8d017c-8c90-470c-a5c2-2d472835ea97",
+  "lanes": [
+    {
+      "runtime": "native",
+      "call": {
+        "seq": 21,
+        "ts": "2026-10-02T21:12:45.606Z",
+        "id": "01M3Z7CQS6XW09QBDJRWE4YZY1",
+        "type": "tool/call",
+        "lane": "main",
+        "v": 1,
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "origin": "model",
+        "trust": "trusted",
+        "data": {
+          "toolUseId": "t0-2f9e1ae77cee47293860fbdc482d2752",
+          "name": "ask_user_question",
+          "args": {
+            "questions": [
+              {
+                "id": "color",
+                "header": "Color",
+                "question": "请选择验收颜色",
+                "options": [
+                  {
+                    "label": "Blue",
+                    "description": ""
+                  },
+                  {
+                    "label": "Green",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          "ordinal": 0,
+          "resolvedPolicy": {
+            "isReadOnly": false,
+            "isDestructive": false,
+            "isConcurrencySafe": false,
+            "isOpenWorld": true,
+            "replay": "never",
+            "requiresApproval": "never",
+            "approvalScopes": [],
+            "policyVersion": "static-v1"
+          },
+          "policyHash": "38334de4b1dafbeca8aed6128c26fdd8786bdbf0f74a4a91d457ae1c477263c5",
+          "definitionFingerprint": "242a9389a8ec32322979aa790962251e1ca327c0fe868415ec71c5bb0c8cb4ff",
+          "executionDomain": "workspace"
+        }
+      },
+      "requested": {
+        "seq": 25,
+        "ts": "2026-10-02T21:12:45.643Z",
+        "id": "01M3Z7CQTB8HX33GJXGNKEBHDD",
+        "type": "question/requested",
+        "lane": "main",
+        "v": 1,
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "origin": "system",
+        "trust": "trusted",
+        "data": {
+          "writerRunId": "52a09c42-3723-4778-9b56-d172e91e2ab6",
+          "generation": 1,
+          "toolUseId": "t0-2f9e1ae77cee47293860fbdc482d2752",
+          "turn": 1,
+          "callSeq": 21,
+          "interactionId": "6acb592c-19a1-4da2-8e4e-6f952c0a6da5",
+          "request": {
+            "questions": [
+              {
+                "id": "color",
+                "question": "请选择验收颜色",
+                "header": "Color",
+                "options": [
+                  {
+                    "label": "Blue",
+                    "description": ""
+                  },
+                  {
+                    "label": "Green",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          "policy": {
+            "allowSkip": false
+          }
+        },
+        "sourceEventSeqs": [21]
+      },
+      "settled": {
+        "seq": 26,
+        "ts": "2026-10-02T21:16:36.728Z",
+        "id": "01M3Z7KSFR74WHXAV2V02Q4EAT",
+        "type": "question/settled",
+        "lane": "main",
+        "v": 1,
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "origin": "system",
+        "trust": "trusted",
+        "data": {
+          "interactionId": "6acb592c-19a1-4da2-8e4e-6f952c0a6da5",
+          "requestedSeq": 25,
+          "callSeq": 21,
+          "toolUseId": "t0-2f9e1ae77cee47293860fbdc482d2752",
+          "status": "answered",
+          "answer": {
+            "answers": [
+              {
+                "id": "color",
+                "selected": ["Blue"]
+              }
+            ]
+          }
+        },
+        "sourceEventSeqs": [21, 25]
+      },
+      "result": {
+        "seq": 27,
+        "ts": "2026-10-02T21:16:36.732Z",
+        "id": "01M3Z7KSFWCBGKWHMCC16BG1H5",
+        "type": "tool/result",
+        "lane": "main",
+        "v": 1,
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "origin": "tool:ask_user_question",
+        "trust": "untrusted",
+        "data": {
+          "toolUseId": "t0-2f9e1ae77cee47293860fbdc482d2752",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"answers\":[{\"id\":\"color\",\"selected\":[\"Blue\"]}]}"
+            }
+          ],
+          "isError": false,
+          "enforcement": {
+            "level": "partial",
+            "scope": ["file"]
+          },
+          "authz": {
+            "decisionId": "n/a"
+          }
+        },
+        "sourceEventSeqs": [21]
+      },
+      "finalText": "Blue"
+    },
+    {
+      "runtime": "jevloop",
+      "call": {
+        "seq": 31,
+        "ts": "2026-10-02T21:12:45.933Z",
+        "id": "01M3Z7CR3DECRC9G863G4F8VZN",
+        "type": "tool/call",
+        "lane": "main",
+        "v": 1,
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "origin": "system",
+        "trust": "trusted",
+        "data": {
+          "toolUseId": "intent:19",
+          "name": "ask_user_question",
+          "args": {
+            "questions": [
+              {
+                "id": "color",
+                "header": "Color",
+                "question": "请选择验收颜色",
+                "options": [
+                  {
+                    "label": "Blue"
+                  },
+                  {
+                    "label": "Green"
+                  }
+                ]
+              }
+            ]
+          },
+          "depth": 0,
+          "ordinal": 0,
+          "resolvedPolicy": {
+            "isReadOnly": false,
+            "isDestructive": false,
+            "isConcurrencySafe": false,
+            "isOpenWorld": true,
+            "replay": "never",
+            "requiresApproval": "never",
+            "approvalScopes": [],
+            "policyVersion": "static-v1"
+          },
+          "policyHash": "38334de4b1dafbeca8aed6128c26fdd8786bdbf0f74a4a91d457ae1c477263c5",
+          "definitionFingerprint": "242a9389a8ec32322979aa790962251e1ca327c0fe868415ec71c5bb0c8cb4ff",
+          "executionDomain": "workspace"
+        },
+        "sourceEventSeqs": [30]
+      },
+      "requested": {
+        "seq": 33,
+        "ts": "2026-10-02T21:12:45.967Z",
+        "id": "01M3Z7CR4FJM712JCYCXTMTA98",
+        "type": "question/requested",
+        "lane": "main",
+        "v": 1,
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "origin": "system",
+        "trust": "trusted",
+        "data": {
+          "writerRunId": "7063cf68-31d9-490c-b042-a52f5e20dce0",
+          "generation": 1,
+          "toolUseId": "intent:19",
+          "turn": 1,
+          "callSeq": 31,
+          "interactionId": "4188ab94-3b51-4f66-9c7f-729acfcd9358",
+          "request": {
+            "questions": [
+              {
+                "id": "color",
+                "question": "请选择验收颜色",
+                "header": "Color",
+                "options": [
+                  {
+                    "label": "Blue"
+                  },
+                  {
+                    "label": "Green"
+                  }
+                ]
+              }
+            ]
+          },
+          "policy": {
+            "allowSkip": false
+          }
+        },
+        "sourceEventSeqs": [31]
+      },
+      "settled": {
+        "seq": 34,
+        "ts": "2026-10-02T21:16:36.838Z",
+        "id": "01M3Z7KSK6NEEA1PAR9V3XC0N7",
+        "type": "question/settled",
+        "lane": "main",
+        "v": 1,
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "origin": "system",
+        "trust": "trusted",
+        "data": {
+          "interactionId": "4188ab94-3b51-4f66-9c7f-729acfcd9358",
+          "requestedSeq": 33,
+          "callSeq": 31,
+          "toolUseId": "intent:19",
+          "status": "answered",
+          "answer": {
+            "answers": [
+              {
+                "id": "color",
+                "selected": ["Green"]
+              }
+            ]
+          }
+        },
+        "sourceEventSeqs": [31, 33]
+      },
+      "result": {
+        "seq": 37,
+        "ts": "2026-10-02T21:16:36.845Z",
+        "id": "01M3Z7KSKDYKB7X5F3B08GRMNK",
+        "type": "tool/result",
+        "lane": "main",
+        "v": 1,
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "origin": "system",
+        "trust": "untrusted",
+        "data": {
+          "toolUseId": "intent:19",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"answers\":[{\"id\":\"color\",\"selected\":[\"Green\"]}]}"
+            }
+          ],
+          "isError": false,
+          "enforcement": {
+            "level": "partial",
+            "scope": ["file"]
+          },
+          "authz": {
+            "decisionId": "n/a"
+          }
+        },
+        "sourceEventSeqs": [31]
+      },
+      "finalText": "Green"
+    }
+  ],
+  "sanitization": "Synthetic prompts and options retained; actor ids replaced with smoke-user. No credentials, file paths, or model reasoning included.",
+  "cancelledAndResumed": {
+    "questionCount": 1,
+    "events": [
+      {
+        "seq": 32,
+        "ts": "2026-10-02T21:33:51.255Z",
+        "id": "01M3Z8KBRQE9GZNK4ZPY9WYAQN",
+        "type": "question/requested",
+        "origin": "system",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "writerRunId": "ae6fdb1c-a2a0-424d-bf04-902a46904aeb",
+          "generation": 1,
+          "toolUseId": "intent:19",
+          "turn": 1,
+          "callSeq": 30,
+          "interactionId": "2fa1f909-1216-467d-93c3-6802f0df687e",
+          "request": {
+            "questions": [
+              {
+                "id": "confirm",
+                "question": "是否继续取消验收？",
+                "options": [
+                  {
+                    "label": "Continue"
+                  },
+                  {
+                    "label": "Stop"
+                  }
+                ]
+              }
+            ]
+          },
+          "policy": {
+            "allowSkip": true
+          }
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "sourceEventSeqs": [30]
+      },
+      {
+        "seq": 33,
+        "ts": "2026-10-02T21:34:32.397Z",
+        "id": "01M3Z8MKYDQ0YSN50G8NHKX4JQ",
+        "type": "question/settled",
+        "origin": "system",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "interactionId": "2fa1f909-1216-467d-93c3-6802f0df687e",
+          "requestedSeq": 32,
+          "callSeq": 30,
+          "toolUseId": "intent:19",
+          "status": "cancelled"
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "sourceEventSeqs": [30, 32]
+      },
+      {
+        "seq": 35,
+        "ts": "2026-10-02T21:34:32.399Z",
+        "id": "01M3Z8MKYFJ3NKG5FV8WE2YB7Z",
+        "type": "runtime/record",
+        "origin": "system",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "runtime": {
+            "id": "jevloop",
+            "version": "1"
+          },
+          "record": {
+            "version": 1,
+            "id": "record:22",
+            "turn": "agnes:jev-question-fixed:04c3d70d-c933-4a71-b9ce-89d53d5492f6:main:1",
+            "step": "step-1:2",
+            "kind": "action.settled",
+            "intentId": "intent:19",
+            "outcome": {
+              "kind": "cancelled",
+              "content": [
+                {
+                  "kind": "text",
+                  "text": "The user cancelled the question; no answer was adopted."
+                }
+              ],
+              "error": {
+                "code": "ASK_CANCELLED",
+                "message": "The user cancelled the question; no answer was adopted."
+              },
+              "snapshot": {
+                "codec": "agnes-tool-result-v1",
+                "value": {
+                  "result": {
+                    "isError": true,
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "The user cancelled the question; no answer was adopted."
+                      }
+                    ],
+                    "details": {
+                      "code": "ASK_CANCELLED"
+                    }
+                  },
+                  "projection": {
+                    "data": {
+                      "toolUseId": "intent:19",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "The user cancelled the question; no answer was adopted."
+                        }
+                      ],
+                      "isError": true,
+                      "code": "ASK_CANCELLED",
+                      "enforcement": {
+                        "level": "partial",
+                        "scope": ["file"]
+                      },
+                      "authz": {
+                        "decisionId": "n/a"
+                      }
+                    },
+                    "trust": "untrusted"
+                  }
+                }
+              },
+              "directive": {
+                "conclude": false,
+                "additions": []
+              },
+              "effect": "not_applied",
+              "effectEvidence": {
+                "phase": "may_have_sent",
+                "timedOut": false,
+                "cancelled": false,
+                "questionCancellation": {
+                  "writerRunId": "ae6fdb1c-a2a0-424d-bf04-902a46904aeb",
+                  "lane": "main",
+                  "toolUseId": "intent:19",
+                  "turn": 1,
+                  "interactionId": "2fa1f909-1216-467d-93c3-6802f0df687e",
+                  "callSeq": 30,
+                  "requestedSeq": 32,
+                  "settledSeq": 33
+                }
+              }
+            },
+            "effect": "not_applied",
+            "observations": [
+              {
+                "kind": "tool.result",
+                "source": "ask_user_question",
+                "data": {
+                  "kind": "cancelled",
+                  "value": null,
+                  "error": {
+                    "code": "ASK_CANCELLED",
+                    "message": "The user cancelled the question; no answer was adopted."
+                  },
+                  "meta": null
+                }
+              }
+            ]
+          }
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        }
+      },
+      {
+        "seq": 36,
+        "ts": "2026-10-02T21:34:32.400Z",
+        "id": "01M3Z8MKYGFGV0RKWJS9B7XSW8",
+        "type": "tool/result",
+        "origin": "system",
+        "trust": "untrusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "toolUseId": "intent:19",
+          "content": [
+            {
+              "type": "text",
+              "text": "The user cancelled the question; no answer was adopted."
+            }
+          ],
+          "isError": true,
+          "code": "ASK_CANCELLED",
+          "enforcement": {
+            "level": "partial",
+            "scope": ["file"]
+          },
+          "authz": {
+            "decisionId": "n/a"
+          }
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "sourceEventSeqs": [30]
+      },
+      {
+        "seq": 52,
+        "ts": "2026-10-02T21:34:35.614Z",
+        "id": "01M3Z8MQ2YKX0FZ5FXWWTAG0VY",
+        "type": "assistant/message",
+        "origin": "model",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "content": [
+            {
+              "type": "text",
+              "text": "已确认取消：问题“是否继续取消验收？”未获得回答，交互已取消，不继续执行任何操作。如需后续帮助，请随时告诉我。"
+            }
+          ],
+          "stopReason": "end_turn"
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "sourceEventSeqs": [51, 50]
+      },
+      {
+        "seq": 57,
+        "ts": "2026-10-02T21:34:35.631Z",
+        "id": "01M3Z8MQ3F6MHZ3TPK2NXPK3A2",
+        "type": "runtime/record",
+        "origin": "system",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "runtime": {
+            "id": "jevloop",
+            "version": "1"
+          },
+          "record": {
+            "version": 1,
+            "id": "record:36",
+            "turn": "agnes:jev-question-fixed:04c3d70d-c933-4a71-b9ce-89d53d5492f6:main:1",
+            "kind": "run.stopped",
+            "reason": "completed",
+            "detail": "Answer or concluding tool settled",
+            "unresolved": []
+          }
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        }
+      },
+      {
+        "seq": 58,
+        "ts": "2026-10-02T21:34:35.636Z",
+        "id": "01M3Z8MQ3M57GVP6M28VBSMR6J",
+        "type": "turn/end",
+        "origin": "system",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "reason": "completed",
+          "lastAssistantSeq": 52
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        }
+      },
+      {
+        "seq": 84,
+        "ts": "2026-10-02T21:35:56.136Z",
+        "id": "01M3Z8Q5Q852ARERZ0FSQSGQ43",
+        "type": "assistant/message",
+        "origin": "model",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "content": [
+            {
+              "type": "text",
+              "text": "RESTORED"
+            }
+          ],
+          "stopReason": "end_turn"
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "sourceEventSeqs": [83, 82]
+      },
+      {
+        "seq": 89,
+        "ts": "2026-10-02T21:35:56.152Z",
+        "id": "01M3Z8Q5QRZPDYT9NVSPTCX100",
+        "type": "runtime/record",
+        "origin": "system",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "runtime": {
+            "id": "jevloop",
+            "version": "1"
+          },
+          "record": {
+            "version": 1,
+            "id": "record:52",
+            "turn": "agnes:jev-question-fixed:04c3d70d-c933-4a71-b9ce-89d53d5492f6:main:2",
+            "kind": "run.stopped",
+            "reason": "completed",
+            "detail": "Answer or concluding tool settled",
+            "unresolved": []
+          }
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        }
+      },
+      {
+        "seq": 90,
+        "ts": "2026-10-02T21:35:56.158Z",
+        "id": "01M3Z8Q5QYEZW9X3YMZE42AF0P",
+        "type": "turn/end",
+        "origin": "system",
+        "trust": "trusted",
+        "v": 1,
+        "lane": "main",
+        "data": {
+          "reason": "completed",
+          "lastAssistantSeq": 84
+        },
+        "actor": {
+          "id": "smoke-user",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        }
+      }
+    ]
+  }
+}

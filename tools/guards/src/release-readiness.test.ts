@@ -24,6 +24,9 @@ const HOLDABLE = new Set(['license.root-file', 'license.manifests', 'packages.pr
 const INTERNAL_CODENAMES = ['B-plan', 'fadeaway', 'OpenClaw', 'agnes-harness-a', 'agnes-harness-b']
 const APACHE_LICENSE_SHA256 = 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'
 const LICENSE_EXCEPTIONS: Readonly<Record<string, string>> = Object.freeze({
+  '@agnes/jev-runtime': 'MIT',
+  '@agnes/jev-trace': 'MIT',
+  '@agnes/runtime-jev': 'MIT',
   '@agnes/cordis': 'MIT',
   '@agnes/cosmokit': 'MIT',
   '@agnes/base': 'Apache-2.0 AND MIT',

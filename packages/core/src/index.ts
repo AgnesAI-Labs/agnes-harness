@@ -6,7 +6,7 @@ export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 export { capToMicrocredits, chargeToMicrocredits, conservativeModelCredits } from './child/credits.js'
 export type { ChildControlStore } from './child/store.js'
-export { hasChildControl, recoverCreatingChildAttempts } from './child/store.js'
+export { hasChildControl, hasDurableReservations, recoverCreatingChildAttempts } from './child/store.js'
 export type {
   BeginChildAttemptInput,
   CancelCreatingChildInput,
@@ -25,6 +25,8 @@ export type {
   TreeUsage,
 } from './child/types.js'
 export { canTransitionChildState, isTerminalChildState } from './child/types.js'
+export { EffectRuntime } from './effects/effect.js'
+export { ExecutePermitRegistry } from './effects/execute-permits.js'
 export {
   assertFsEnforces,
   assertNotDenied,
@@ -38,6 +40,12 @@ export {
   isDenial,
   validateFsPolicy,
 } from './effects/fs-guard.js'
+export {
+  type HumanWaitScope,
+  humanWaitParent,
+  managedHumanWaitSignal,
+  withManagedHumanWait,
+} from './effects/managed-human-wait.js'
 export { platformFacts, platformView } from './effects/platform-facts.js'
 export { type RemoteTransport, RemoteTransportClosed } from './effects/remote-transport.js'
 export { argvHash } from './effects/runtime.js'
@@ -47,12 +55,19 @@ export { argvHash } from './effects/runtime.js'
 export type { BatchCall } from './effects/scheduler.js'
 export { scheduleBatch } from './effects/scheduler.js'
 export * from './effects/seams.js'
+export {
+  authorizeToolCall,
+  type ToolApprovalCall,
+  type ToolApprovalContext,
+  type ToolApprovalOutcome,
+} from './effects/tool-approval.js'
 export type {
   ChildHandle,
   ChildrenFactory,
   ChildStatus,
   FsOps,
   ToolContextDeps,
+  ToolQuestionsInvocation,
 } from './effects/tool-context.js'
 export { buildToolContext } from './effects/tool-context.js'
 export type {
@@ -60,6 +75,14 @@ export type {
   HostToolDispatchInput,
   HostToolDispatchPort,
 } from './effects/tool-dispatch.js'
+export {
+  dispatchPermittedTool,
+  dispatchToolAttempt,
+  type PermittedToolDispatch,
+  type ToolAttemptObservation,
+  type ToolExecutionContext,
+} from './effects/tool-execution.js'
+export { toLedgerContent } from './effects/tool-result.js'
 export type { SeamFailure } from './effects/wrap.js'
 export { SeamRuntime, withTimeout } from './effects/wrap.js'
 export { HookBlockedError } from './hooks/block.js'
@@ -181,7 +204,13 @@ export { ToolRegistry } from './registry/tools.js'
 export type { Conflict, Contribution, Merged, PromptSection } from './request/contribute.js'
 export { harnessSections, mergeContributions } from './request/contribute.js'
 export type { ContractRef, DeriveInput, DeriveOutput, RequestHeaderData } from './request/derive.js'
-export { deriveRequest, headerEquals, sanitize, wrapUntrusted } from './request/derive.js'
+export {
+  deriveRequest,
+  headerEquals,
+  renderRuntimeContext,
+  sanitize,
+  wrapUntrusted,
+} from './request/derive.js'
 export type { EnvelopeCache } from './request/envelope-cache.js'
 export { createEnvelopeCache } from './request/envelope-cache.js'
 export { canonicalJson, sha256Hex, utf8 } from './request/hash.js'
@@ -190,6 +219,8 @@ export { canonicalJson, sha256Hex, utf8 } from './request/hash.js'
 // brand exists to withhold, which is the ability to present a request that was never derived.
 export type { LedgerRequest } from './request/mint.js'
 export { isLedgerRequest } from './request/mint.js'
+export { beginModelCall, type ModelCallAttribution, type ModelCallHandle } from './request/model-call.js'
+export { captureModelPriceQuote } from './request/model-pricing.js'
 export { toProviderRequest } from './request/to-provider.js'
 export type { BeforeRequestPatch, ContextResult } from './request/transforms.js'
 export {
@@ -203,14 +234,22 @@ export type {
   RuntimePromptPreload,
   RuntimePromptPreloader,
 } from './runtime/current.js'
+export { NATIVE_RUNTIME, type SessionLoop } from './runtime/loop.js'
 export type { SessionOverlayPort } from './runtime/overlay.js'
 export { approvalDeadlineMs } from './step/approval-callback.js'
+export { type PersistedToolApproval, persistedToolApproval } from './step/approval-grants.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './step/compaction.js'
 export { CompactionRunner, runCompaction } from './step/compaction.js'
+export {
+  configurationAdmissionHeld,
+  reserveSessionConfiguration,
+  type SessionConfigurationAdmission,
+} from './step/configuration-admission.js'
 export { budgetPreflight, checkpointRoutine, contextTokens, contextWindowFor, stopGate } from './step/gate.js'
 export type { EnqueueMsg } from './step/inbox.js'
-export { claimFrom, inboxEvent } from './step/inbox.js'
+export { budgetOverrideEvent, claimFrom, inboxEvent, TURN_BUDGET_EVENT } from './step/inbox.js'
 export { estimateTokens } from './step/inference.js'
+export { runInputToCompletion } from './step/input-completion.js'
 export type {
   CheckpointPhase,
   OpStateMeta,
@@ -254,8 +293,10 @@ export type {
   TurnOutcome,
 } from './step/session.js'
 export { noCompaction, noopHooks, SessionImpl } from './step/session.js'
+export { acquireSessionIdleGate } from './step/session-idle-gate.js'
 export type { ExecOpts, PlannedCall } from './step/tools.js'
 export { approveAndExecute, runToolsPhase } from './step/tools.js'
+export { toolVerifyInput } from './step/verify-input.js'
 export * from './types.js'
 export type {
   ApprovalWorkspaceContext,

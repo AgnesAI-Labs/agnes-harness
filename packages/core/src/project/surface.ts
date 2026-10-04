@@ -19,11 +19,27 @@ export type SurfaceSnapshot = {
   byId: ReadonlyMap<Seq, Event>
 }
 
-/** The only three event types the model sees, and therefore the only ones the surface carries. */
+/** Completed messages; interrupted output has a separate durable content boundary below. */
 const KIND: Record<string, SurfaceNode['kind']> = {
   'user/message': 'user',
   'assistant/message': 'assistant',
   'tool/result': 'tool_result',
+}
+
+function visibleKind(event: Event): SurfaceNode['kind'] | undefined {
+  if (event.type !== 'assistant/output') return KIND[event.type]
+  const data = event.data as { state?: string; content?: { type: string; text?: string }[] }
+  // Live previews and empty, unadopted runtime answers never become model history. Native
+  // cancellation persists the actual partial content, which must survive the next request.
+  return data.state === 'interrupted' &&
+    data.content?.some(
+      (block) =>
+        (block.type === 'text' || block.type === 'thinking') &&
+        typeof block.text === 'string' &&
+        block.text.length > 0,
+    )
+    ? 'assistant'
+    : undefined
 }
 
 /**
@@ -32,7 +48,7 @@ const KIND: Record<string, SurfaceNode['kind']> = {
  * generation counter should count — an event whose range no longer resolves changes nothing.
  */
 function applyEvent(nodes: SurfaceNode[], e: Event, pins: Set<Seq>): { changed: boolean; replaced: boolean } {
-  const kind = KIND[e.type]
+  const kind = visibleKind(e)
   if (!kind) return { changed: false, replaced: false }
   if (typeof e.surfaceOp === 'object' && e.surfaceOp.op === 'replace') {
     const { start, end } = e.surfaceOp
@@ -171,7 +187,7 @@ export class SurfaceCache {
     for (const e of events) {
       if (e.seq > this.#upto) this.#upto = e.seq
       if ((e.lane ?? 'main') !== this.#lane) continue
-      if (KIND[e.type]) this.#byId.set(e.seq, e)
+      if (visibleKind(e)) this.#byId.set(e.seq, e)
       const applied = applyEvent(this.#nodes, e, this.#pins)
       if (applied.changed) this.#view = undefined
       if (applied.replaced) this.replaceGeneration++

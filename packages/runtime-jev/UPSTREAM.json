@@ -1,0 +1,35 @@
+{
+  "upstream": "https://github.com/deepseek-ai/deepseek-harness",
+  "revision": "90398671c30cb16b5dbee3ecb69fac254b3ad718",
+  "sourceState": "Working-tree bytes including uncommitted changes.",
+  "license": "MIT",
+  "files": [
+    {
+      "source": "packages/jev/agent-jev/src/language-response.ts",
+      "sha256": "703bb3f6f0f9cf8cb7763e1e0e8c6e7577aa78e19bc149d6a92207b987cdc88c",
+      "destination": "src/language-response.ts"
+    },
+    {
+      "source": "packages/jev/agent-jev/src/language-projection.ts",
+      "sha256": "19e8c6fc6a49853d84a743f23930b0bc1b95e562da48c31ffbd68438354a1543",
+      "destination": "src/language-projection.ts"
+    },
+    {
+      "source": "packages/jev/agent-jev/tests/language-response.spec.ts",
+      "sha256": "fe003d4f8d011065192e56f42361fd1bd114b5a6eec0bd171b126d0df815494b",
+      "destination": "tests/language-response.test.ts"
+    },
+    {
+      "source": "LICENSE",
+      "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+      "destination": "LICENSE"
+    }
+  ],
+  "adaptations": [
+    "Language decoder uses a local strict JSON snapshot helper.",
+    "Language history recognizes Agnes provider snapshots and projects Agnes RequestMessage values.",
+    "New request adapters use Agnes Provider and a separate Jev transport.",
+    "Reject non-finite decoded arguments with a recorded format error.",
+    "Native language wrapper freezes Host-resolved per-call pricing metadata before durable admission; portable Jev runtime unchanged."
+  ]
+}

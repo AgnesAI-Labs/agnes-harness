@@ -4,7 +4,8 @@
   "apiRange": "^1.0",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["read", "write", "edit", "shell", "todo"] },
+    "tools": { "prefix": "", "names": ["read", "write", "edit", "shell", "todo", "ask_user_question"] },
+    "questions": true,
     "hooks": [],
     "slots": [],
     "events": true,

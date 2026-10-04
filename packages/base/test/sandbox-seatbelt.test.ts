@@ -57,7 +57,8 @@ seatbelt(
     const confine = (cmd: string, ...args: string[]) =>
       seatbeltDenyNetworkArgv(['/bin/sh', '-c', cmd, 'probe', ...args], {
         allowPaths: [allowed],
-        denyPaths: [denied],
+        denyPaths: [root, denied],
+        denyExceptions: [{ path: root, except: [allowed] }],
       })
     try {
       expect(await run(confine('printf ok > "$1"; cat "$1"', join(allowed, 'ok')))).toEqual({

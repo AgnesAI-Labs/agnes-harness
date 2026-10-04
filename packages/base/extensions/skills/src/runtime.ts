@@ -409,6 +409,7 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
           structured: {
             name: args.name,
             resourceId: skill.resourceId,
+            pageKey,
             offset,
             totalBytes: page.totalBytes,
             ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),

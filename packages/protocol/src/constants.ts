@@ -1,6 +1,8 @@
 export const EVENT_TYPES = [
   // Lifecycle
   'session/start',
+  'runtime/record',
+  'runtime/cancel',
   'turn/start',
   'turn/end',
   'step/start',
@@ -35,11 +37,13 @@ export const EVENT_TYPES = [
   'participant',
   'harness/refine',
   'subagent/cost',
+  'question/requested',
+  'question/settled',
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 
 export const EXT_EVENT_PATTERN =
-  /^x\/(?:(?:core|agnes)\/[a-z0-9-]+|host\/session-title|[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+)$/
+  /^x\/(?:(?:core|agnes)\/[a-z0-9-]+|host\/(?:session-(?:title|prepared)|comparison-round-prepared|jev-nested)|[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+)$/
 export const EXT_EVENT_PATTERN_SOURCE = EXT_EVENT_PATTERN.source // the same string written into the schema
 
 export function isEventType(s: string): boolean {

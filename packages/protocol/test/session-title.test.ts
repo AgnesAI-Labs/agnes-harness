@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 import {
   type EventEnvelope,
@@ -31,6 +32,9 @@ const event: EventEnvelope = {
     treeBudgetCap: null,
   },
 }
+const prepared = JSON.parse(
+  readFileSync(new URL('./fixtures/comparison-prepared-real.json', import.meta.url), 'utf8'),
+) as { events: EventEnvelope[] }
 it('allows persisted title events through both envelope and live notification validation', () => {
   expect(validateEvent(event)).toMatchObject({ ok: true })
   expect(
@@ -49,6 +53,46 @@ it('allows persisted title events through both envelope and live notification va
     }),
   ).toMatchObject({ ok: true })
   expect(validateEvent({ ...event, type: 'x/host/other' })).toMatchObject({ ok: false })
+  for (const source of prepared.events) {
+    for (const type of [
+      'x/host/session-prepared',
+      'x/host/comparison-round-prepared',
+      'x/host/jev-nested',
+      'x/core/child-descriptor',
+      'x/core/child-delivery',
+    ]) {
+      const sample = { ...source, type }
+      expect(validateEvent(sample)).toMatchObject({ ok: true })
+      expect(
+        validateMethod('_agnes/v1/session.event', 'params', {
+          sessionId: 'native-archive',
+          event: sample,
+          _meta: {
+            [META_KEY]: {
+              promptTurnId: '1',
+              eventSequence: sample.seq,
+              generation: 1,
+              lane: 'main',
+              phase: 'event',
+            },
+          },
+        }),
+      ).toMatchObject({ ok: true })
+      expect(
+        validateMethod('_agnes/v1/comparison.events', 'result', {
+          id: 'pair',
+          side: 'left',
+          atSeq: 80,
+          sessionId: 'native-archive',
+          throughSeq: 4,
+          afterSeq: 3,
+          events: [sample],
+          nextAfterSeq: 4,
+          complete: true,
+        }),
+      ).toMatchObject({ ok: true })
+    }
+  }
 })
 
 it('accepts only closed Host-owned title metadata', () => {

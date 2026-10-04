@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type {
   SessionPreviewParams,
   UINode,
@@ -404,4 +405,161 @@ describe('a pending approval before the loaded window', () => {
     expect(await findApproval(empty, () => parked(false))).toBe(false)
     expect(empty.loadEarlier).not.toHaveBeenCalled()
   })
+})
+
+function capturedGenerationLane(side: 'left' | 'right') {
+  const capture = JSON.parse(
+    readFileSync('packages/web/test/fixtures/comparison-real-journal-views.json', 'utf8'),
+  ) as {
+    projections: Record<'left' | 'right', Record<string, Omit<UITimeline, 'generation'>>>
+  }
+  const cuts = Object.values(capture.projections[side])
+  const before = cuts.find((value) =>
+    side === 'left'
+      ? value.nodes.some((node) => node.kind === 'assistant' && node.streaming)
+      : value.nodes.some((node) => node.kind === 'runtime' && node.status === 'running'),
+  )
+  const final = cuts.at(-1)
+  if (!before || !final) throw new Error('Missing real captured runtime prefix')
+  const opening = (value: Omit<UITimeline, 'generation'>, generation: number): UIOpeningResult => ({
+    timeline: { ...structuredClone(value), generation },
+    history: { hasEarlier: false, startIndex: 0, totalNodes: value.nodes.length },
+  })
+  const initial = opening(before, 1)
+  const recovered = opening(final, 2)
+  const previews: Array<(p: SessionPreviewParams) => void> = []
+  const session = {
+    id: before.sessionId,
+    events: vi.fn(() => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<LedgerEvent>>(() => undefined),
+        return: async () => ({ done: true as const, value: undefined }),
+      }),
+    })),
+    onPreview: vi.fn((fn: (p: SessionPreviewParams) => void) => {
+      previews.push(fn)
+      return () => undefined
+    }),
+    projectUIOpening: vi.fn(async () => initial),
+    projectUIHistory: vi.fn(),
+    projectUIPatch: vi.fn<() => Promise<UIProjectionUpdate>>(),
+  }
+  const updates: UITimeline[] = []
+  const observed = {
+    timeline: (value: UITimeline) => {
+      updates.push(value)
+    },
+    stream: (value: UITimeline) => {
+      updates.push(value)
+    },
+    event: vi.fn(),
+    error: vi.fn(),
+  }
+  return { session, initial, recovered, previews, updates, observed }
+}
+
+function generationConnection() {
+  const listeners = new Map<string, Set<(payload: unknown) => void>>()
+  return {
+    connectionState: 'connected' as const,
+    on(event: string, listener: (payload: unknown) => void) {
+      const set = listeners.get(event) ?? new Set()
+      set.add(listener)
+      listeners.set(event, set)
+      return () => {
+        set.delete(listener)
+      }
+    },
+    changed(sessionId: string) {
+      for (const listener of listeners.get('generationChanged') ?? []) listener({ sessionId, generation: 2 })
+    },
+  }
+}
+
+it.each(['left', 'right'] as const)(
+  'fences late %s lane reads across generations using the real comparison capture',
+  async (side) => {
+    vi.useFakeTimers()
+    const lane = capturedGenerationLane(side)
+    lane.session.events.mockImplementationOnce(() => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<LedgerEvent>>(() => undefined),
+        return: async () => {
+          throw new Error('Late retired-observer cleanup failure')
+        },
+      }),
+    }))
+    const other = capturedGenerationLane(side === 'left' ? 'right' : 'left')
+    const connection = generationConnection()
+    const live = createLiveProjection(lane.session, connection as never, lane.observed)
+    const otherLive = createLiveProjection(other.session, connection as never, other.observed)
+    await Promise.all([live.start(), otherLive.start()])
+    const otherBefore = other.updates.at(-1)
+    const streaming = lane.initial.timeline.nodes.find((node) => node.kind === 'assistant' && node.streaming)
+    const preview: SessionPreviewParams = {
+      sessionId: lane.session.id,
+      lane: 'main',
+      effectId: streaming?.kind === 'assistant' ? (streaming.effectId ?? '') : 'old-effect',
+      stream: 'text',
+      offset: 0,
+      delta: 'UNCOMMITTED OLD GENERATION',
+    }
+    lane.previews[0]?.(preview)
+    if (streaming) expect(JSON.stringify(lane.updates.at(-1))).toContain(preview.delta)
+    let releasePatch: (value: UIProjectionUpdate) => void = () => undefined
+    lane.session.projectUIPatch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releasePatch = resolve
+        }),
+    )
+    live.refresh()
+    await vi.advanceTimersByTimeAsync(60)
+    let releaseOpening: (value: UIOpeningResult) => void = () => undefined
+    lane.session.projectUIOpening.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseOpening = resolve
+        }),
+    )
+    connection.changed(lane.session.id)
+    expect(lane.updates.at(-1)).toEqual(lane.initial.timeline)
+    expect(live.hasEarlier()).toBe(false)
+    expect(other.updates.at(-1)).toBe(otherBefore)
+    releaseOpening(lane.recovered)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(lane.updates.at(-1)).toEqual(lane.recovered.timeline)
+    const count = lane.updates.length
+    releasePatch({ kind: 'replace', timeline: lane.initial.timeline })
+    lane.previews[0]?.(preview)
+    await vi.advanceTimersByTimeAsync(60)
+    expect(lane.updates).toHaveLength(count)
+    expect(other.updates.at(-1)).toBe(otherBefore)
+    expect(lane.observed.error).not.toHaveBeenCalled()
+    await Promise.all([live.stop(), otherLive.stop()])
+  },
+)
+
+it('replaces a pending Jev opening immediately and fences its late result after disposal', async () => {
+  const lane = capturedGenerationLane('right')
+  const connection = generationConnection()
+  let releaseOld: (value: UIOpeningResult) => void = () => undefined
+  lane.session.projectUIOpening.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        releaseOld = resolve
+      }),
+  )
+  lane.session.projectUIOpening.mockResolvedValueOnce(lane.recovered)
+  const live = createLiveProjection(lane.session, connection as never, lane.observed)
+  const started = live.start()
+  connection.changed(lane.session.id)
+  await started
+  expect(lane.updates).toEqual([lane.recovered.timeline])
+  await live.stop()
+  releaseOld(lane.initial)
+  connection.changed(lane.session.id)
+  await Promise.resolve()
+  expect(lane.updates).toEqual([lane.recovered.timeline])
+  expect(lane.observed.error).not.toHaveBeenCalled()
 })

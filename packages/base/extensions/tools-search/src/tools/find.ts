@@ -1,5 +1,6 @@
 import { defineTool, type ToolResult } from '@agnes/extension-api'
-import { guardedResult } from '../../../tools-core/src/guards/output.js'
+import { guardOutput, refBlock } from '../../../tools-core/src/guards/output.js'
+import { HOST_TOOL_FACT_CODEC, hostPathFact } from '../../../tools-core/src/tools/facts.js'
 import { FindParams } from '../../../tools-core/src/tools/schemas.js'
 import { globToRegExp, newWalkReport, SEARCH_META, searchPathError, walk, walkNotes } from './walk.js'
 
@@ -20,6 +21,7 @@ export const findTool = defineTool({
     const re = globToRegExp(args.pattern)
     const report = newWalkReport()
     const out: string[] = []
+    const paths: string[] = []
     let atLimit = false
     for await (const f of walk(ctx, root, report, { maxEntries: MAX_ENTRIES })) {
       if (f.kind !== 'file' || !re.test(f.rel)) continue
@@ -28,9 +30,41 @@ export const findTool = defineTool({
         break
       }
       out.push(f.rel)
+      paths.push(hostPathFact(f.abs, ctx.cwd).path)
     }
     const notes = walkNotes(report, MAX_ENTRIES)
     if (atLimit) notes.push(`[limit ${limit} reached; there may be more]`)
-    return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
+    const guarded = await guardOutput(
+      ctx,
+      [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'),
+    )
+    const skippedDirectories = [...report.skipped].sort()
+    const complete =
+      !atLimit &&
+      !report.truncated &&
+      !guarded.truncated &&
+      skippedDirectories.length === 0 &&
+      report.denied === 0 &&
+      report.unreadable === 0
+    const block = { type: 'text' as const, text: guarded.text }
+    return {
+      content: guarded.ref ? [block, refBlock(guarded.ref)] : [block],
+      structured: {
+        codec: HOST_TOOL_FACT_CODEC,
+        tool: 'find',
+        root: hostPathFact(root, ctx.cwd),
+        query: { pattern: args.pattern, limit },
+        paths,
+        coverage: {
+          complete,
+          resultLimitReached: atLimit,
+          walkLimitReached: report.truncated,
+          outputTruncated: guarded.truncated,
+          skippedDirectories,
+          deniedPaths: report.denied,
+          unreadablePaths: report.unreadable,
+        },
+      },
+    }
   },
 })

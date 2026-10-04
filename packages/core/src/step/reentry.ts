@@ -4,6 +4,7 @@ import { type NestedToolLease, NestedToolSchedulingError } from '../effects/sche
 import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
+import { assertConfigurationMutable } from './configuration-admission.js'
 import { withPhase } from './op-state.js'
 import type { PresetView } from './preset.js'
 import type {
@@ -41,6 +42,7 @@ export async function invokeTool(
     signal?: AbortSignal
     depth: number
     parentEffectId?: string
+    humanWaitParent?: import('../effects/managed-human-wait.js').HumanWaitScope
     nestedLease?: NestedToolLease
     onPark?: (event: EventInput) => void
   },
@@ -124,6 +126,7 @@ export async function invokeTool(
             depth: o.depth,
             nestedLease,
             ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
+            ...(o.humanWaitParent ? { humanWaitParent: o.humanWaitParent } : {}),
             ...(o.signal ? { signal: o.signal } : {}),
           },
         ),
@@ -376,6 +379,7 @@ export function replacementEffects(s: SessionImpl, name: string, effects: EventI
  */
 export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> {
   return s.locked(async () => {
+    assertConfigurationMutable(s)
     if (s.d.sessionOverlay) await s.d.sessionOverlay.apply(s.key, { preset: view.name })
     const r = await s.d.log.append([
       s.ev('x/core/preset-switch', { from: s.preset.name, to: view.name }, { ignorable: true }),
@@ -403,6 +407,7 @@ export async function setModel(
   },
 ): Promise<Seq> {
   return s.locked(async () => {
+    assertConfigurationMutable(s)
     const modelUnknown = (message: string, x?: Record<string, unknown>) =>
       new CoreError('E_MODEL_UNKNOWN', message, { slot: sel.slot, route: sel.route, model: sel.model, ...x })
     const known = s.d.provider.models().find((m) => m.route === sel.route && m.id === sel.model)

@@ -59,6 +59,9 @@ export type LedgerState = {
   lastTurn: ReadonlyMap<string, number>
   lastStep: ReadonlyMap<string, number>
   pendingEffects: ReadonlyMap<string, Omit<EffectNode, 'children'>>
+  /** Presentation ownership is independent of external/business effects and reconstructs from ledger rows. */
+  assistantOutputs: ChunkedMap<number, { effectId: string; lane: string; turn: number; closed: boolean }>
+  lastRuntimeRecord: ReadonlyMap<string, { seq: Seq; turn: number | undefined }>
   pendingApprovals: ReadonlyMap<string, ApprovalAsked & { seq: Seq; lane: string }>
   decisions: ChunkedMap<string, ApprovalDecided & { seq: Seq; lane: string; askedSeq?: Seq }>
   resumedRequests: ReadonlySet<string>
@@ -89,6 +92,8 @@ export function initialState(): LedgerState {
     lastTurn: new Map(),
     lastStep: new Map(),
     pendingEffects: new Map(),
+    assistantOutputs: ChunkedMap.empty(),
+    lastRuntimeRecord: new Map(),
     pendingApprovals: new Map(),
     decisions: ChunkedMap.empty(),
     resumedRequests: new Set(),

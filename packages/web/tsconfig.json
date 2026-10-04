@@ -21,6 +21,8 @@
     { "path": "../resource-control-web" },
     { "path": "../web-admin-frame" },
     { "path": "../web-server" },
-    { "path": "../web-ui" }
+    { "path": "../web-ui" },
+    { "path": "../jev-trace" },
+    { "path": "../jev-runtime" }
   ]
 }

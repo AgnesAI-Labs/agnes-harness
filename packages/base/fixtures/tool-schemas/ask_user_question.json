@@ -1,0 +1,53 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "questions": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "header": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label"
+              ]
+            }
+          },
+          "multi_select": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "question"
+        ]
+      }
+    }
+  },
+  "required": [
+    "questions"
+  ]
+}

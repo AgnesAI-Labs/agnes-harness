@@ -1,16 +1,26 @@
 import { expect, it } from 'vitest'
 import { macosProcessIdentity, macosProcessIdentityBinary } from '../src/adapters/process-identity-macos.js'
 
+const BOOT = '01234567-89ab-cdef-0123-456789abcdef'
+const OTHER_BOOT = '11234567-89ab-cdef-0123-456789abcdef'
+
 const spawnOf = (stdout: string, code: number) => async () => ({ stdout, code })
 
-it('binds boot time and process start time into a startId that changes across PID reuse', async () => {
-  expect(await macosProcessIdentity(42, { spawn: spawnOf('alive 1000.000001 2000.000002\n', 0) })).toEqual({
-    state: 'alive',
-    startId: 'darwin:1000.000001:42:2000.000002',
-  })
-  expect(
-    await macosProcessIdentity(42, { spawn: spawnOf('alive 1000.000001 2000.000002\n', 0) }),
-  ).not.toEqual(await macosProcessIdentity(42, { spawn: spawnOf('alive 1000.000001 2000.000003\n', 0) }))
+it('binds a stable boot-session UUID, PID, and process start time', async () => {
+  const identity = await macosProcessIdentity(42, { spawn: spawnOf(`alive ${BOOT} 2000.000002\n`, 0) })
+  expect(identity).toEqual({ state: 'alive', startId: `darwin:${BOOT}:42:2000.000002` })
+  expect(await macosProcessIdentity(42, { spawn: spawnOf(`alive ${BOOT} 2000.000002\n`, 0) })).toEqual(
+    identity,
+  )
+  for (const [pid, boot, start] of [
+    [42, OTHER_BOOT, '2000.000002'],
+    [43, BOOT, '2000.000002'],
+    [42, BOOT, '2000.000003'],
+  ] as const) {
+    const changed = await macosProcessIdentity(pid, { spawn: spawnOf(`alive ${boot} ${start}\n`, 0) })
+    expect(changed.state).toBe('alive')
+    expect(changed).not.toEqual(identity)
+  }
 })
 
 it('reports the helper-observed exit code 1 as dead', async () => {
@@ -38,6 +48,16 @@ it.each([0, -1, 1.5, Number.NaN, 2_147_483_648])(
 )
 
 it.each([
+  ['old floating boot timestamp', 'alive 1000.000001 2000.000002\n', 0],
+  ['nil boot UUID', 'alive 00000000-0000-0000-0000-000000000000 2000.000002\n', 0],
+  ['nonhex boot UUID', 'alive g1234567-89ab-cdef-0123-456789abcdef 2000.000002\n', 0],
+  ['short boot UUID', 'alive 01234567-89ab-cdef-0123-456789abcde 2000.000002\n', 0],
+  ['noncanonical boot UUID', `alive ${BOOT.toUpperCase()} 2000.000002\n`, 0],
+  ['missing microsecond precision', `alive ${BOOT} 2000.2\n`, 0],
+  ['extra output line', `alive ${BOOT} 2000.000002\ndead\n`, 0],
+  ['extra blank line', `alive ${BOOT} 2000.000002\n\n`, 0],
+  ['leading whitespace', ` alive ${BOOT} 2000.000002\n`, 0],
+  ['trailing token after valid identity', `alive ${BOOT} 2000.000002 extra\n`, 0],
   ['alive but malformed body', 'alive not-a-number\n', 0],
   ['alive with a missing field', 'alive 1000.000001\n', 0],
   ['code 0 but empty stdout', '', 0],

@@ -64,6 +64,14 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 使用 Agnes 中国官方网关时，若请求未覆盖额度，adapter 会明确将内置模型的目录额度 65536 作为 `max_tokens` 发送。[3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash)、[2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro)和 [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha) 的官方规格为 65536；[Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) 按 Pro 同系额度配置为 65536，尚未单独验证网关容量；[2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) 和 [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) 的官方说明使用约数 65.5K，此处按 65536 配置。已废弃模型保留注册以兼容现有配置，其可用性取决于网关。请求中明确设置的额度仍优先。仅修改目录元数据不会设置底层 OpenAI 兼容流请求的额度。大文件仍应通过多次小型 write/edit 调用分段构建；默认额度不能保证任意大的单次调用都能完成。
 
+Preset 的 `subagent.tree_budget_credits` 区分三种策略：省略或填写 `default`，保留新委派任务树
+默认 20 credits 的既有行为；数值设置有限额度；显式 `unlimited` 不添加新的任务树额度。
+原始配置中的 `null` 非法，内部旧的 nullable view 仍保留默认行为。继承时省略字段会保留上级值，
+`default` 和 `unlimited` 则显式覆盖上级 preset 的值，但都不会改变祖先 scope 已持久化的有限额度
+或正整数 `subagent_spawn.budget` 子任务额度。零不是无限，不能准入任务树额度预留。Credits 是
+计量单位，不能展示为美元。`standard-no-credit-cap` 显式关闭单请求上限和新任务树上限；普通
+`standard` 保留原有默认行为。
+
 ## 任务步数限制
 
 普通任务默认不设累计执行步数上限。Core 默认值及内置 `base`、`standard`、`claw` preset 均使用 `budget.max_steps: null`，不会再因为达到 50、80 或 200 步而截停。一“步”是主模型的一轮执行，可包含多个工具调用。任务完成、用户取消、模型请求失败、单次请求超时、费用预算和循环检查仍然生效。冻结的 `minimal-rl` 评测 preset 保留其明确配置的 100 步上限。

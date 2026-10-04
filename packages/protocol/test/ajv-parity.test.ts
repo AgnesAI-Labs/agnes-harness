@@ -71,6 +71,7 @@ import {
   type MethodName,
   type MethodSpec,
   validateAgainst,
+  validateEvent,
   validateMethod,
   validateRequestMedia,
 } from '../src/index.js'
@@ -80,6 +81,9 @@ type FixtureRow = { id: string; payload: unknown }
 type Sample = { valid: unknown; invalid: unknown[]; note: string }
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
+const preparedSource = JSON.parse(
+  readFileSync(`${pkgRoot}test/fixtures/comparison-prepared-real.json`, 'utf8'),
+) as { events: unknown[] }
 
 /** Build an n-character string, used to construct "one step over the line" length negatives. */
 const rep = (n: number) => 'a'.repeat(n)
@@ -222,11 +226,25 @@ function ajvDef(fileId: string, name: string): (x: unknown) => boolean {
 // to a schema without registering it here (or the reverse) goes red.
 
 const SESSION_DEFS: Record<string, TSchema> = {
+  QuestionOption: SessionGen.QuestionOption,
+  QuestionIntent: SessionGen.QuestionIntent,
+  Question: SessionGen.Question,
+  QuestionRequest: SessionGen.QuestionRequest,
+  QuestionAnswerItem: SessionGen.QuestionAnswerItem,
+  QuestionAnswer: SessionGen.QuestionAnswer,
+  QuestionAnswerPolicy: SessionGen.QuestionAnswerPolicy,
+  QuestionRequestedData: SessionGen.QuestionRequestedData,
+  QuestionInteraction: SessionGen.QuestionInteraction,
+  QuestionSettledData: SessionGen.QuestionSettledData,
+  QuestionResolution: SessionGen.QuestionResolution,
   JsonValue: SessionGen.JsonValue,
   Actor: SessionGen.Actor,
   ContentBlock: SessionGen.ContentBlock,
   SurfaceOp: SessionGen.SurfaceOp,
   EventEnvelope: SessionGen.EventEnvelope,
+  RuntimeRecord: SessionGen.RuntimeRecord,
+  RuntimeCancel: SessionGen.RuntimeCancel,
+  RuntimeIdentity: SessionGen.RuntimeIdentity,
   SessionStart: SessionGen.SessionStart,
   SessionModelSelection: SessionGen.SessionModelSelection,
   SubagentCost: SessionGen.SubagentCost,
@@ -277,6 +295,13 @@ const SESSION_DEFS: Record<string, TSchema> = {
 }
 
 const AGNES_DEFS: Record<string, TSchema> = {
+  QuestionInteraction: AgnesGen.QuestionInteraction,
+  QuestionAnswer: AgnesGen.QuestionAnswer,
+  QuestionResolution: AgnesGen.QuestionResolution,
+  QuestionPendingParams: AgnesGen.QuestionPendingParams,
+  QuestionPendingResult: AgnesGen.QuestionPendingResult,
+  QuestionAnswerParams: AgnesGen.QuestionAnswerParams,
+  QuestionCancelParams: AgnesGen.QuestionCancelParams,
   PackageActivationTrust: AgnesGen.PackageActivationTrust,
   PackageActivationRequest: AgnesGen.PackageActivationRequest,
   PackageRollbackTarget: AgnesGen.PackageRollbackTarget,
@@ -348,6 +373,67 @@ const AGNES_DEFS: Record<string, TSchema> = {
   DirectoryEntry: AgnesGen.DirectoryEntry,
   JobSpec: AgnesGen.JobSpec,
   JobStatus: AgnesGen.JobStatus,
+  ComparisonLane: AgnesGen.ComparisonLane,
+  ComparisonAcceptance: AgnesGen.ComparisonAcceptance,
+  ComparisonRound: AgnesGen.ComparisonRound,
+  ComparisonRunTiming: AgnesGen.ComparisonRunTiming,
+  ComparisonResultSummary: AgnesGen.ComparisonResultSummary,
+  ComparisonSnapshot: AgnesGen.ComparisonSnapshot,
+  ComparisonCreateParams: AgnesGen.ComparisonCreateParams,
+  ComparisonListParams: AgnesGen.ComparisonListParams,
+  ComparisonListItem: AgnesGen.ComparisonListItem,
+  ComparisonListResult: AgnesGen.ComparisonListResult,
+  ComparisonIdParams: AgnesGen.ComparisonIdParams,
+  ComparisonSubmitParams: AgnesGen.ComparisonSubmitParams,
+  ComparisonCancelParams: AgnesGen.ComparisonCancelParams,
+  ComparisonRetirementParams: AgnesGen.ComparisonRetirementParams,
+  ComparisonPreparationReleasedResult: AgnesGen.ComparisonPreparationReleasedResult,
+  ComparisonReleaseResult: AgnesGen.ComparisonReleaseResult,
+  ComparisonRemovedResult: AgnesGen.ComparisonRemovedResult,
+  ComparisonPruneParams: AgnesGen.ComparisonPruneParams,
+  ComparisonPruneResult: AgnesGen.ComparisonPruneResult,
+  ComparisonJournalCuts: AgnesGen.ComparisonJournalCuts,
+  ComparisonTreeMemberCut: AgnesGen.ComparisonTreeMemberCut,
+  ComparisonTreeCut: AgnesGen.ComparisonTreeCut,
+  ComparisonTreeCuts: AgnesGen.ComparisonTreeCuts,
+  ComparisonJournalBinding: AgnesGen.ComparisonJournalBinding,
+  ComparisonJournalFact: AgnesGen.ComparisonJournalFact,
+  ComparisonJournalEntry: AgnesGen.ComparisonJournalEntry,
+  ComparisonJournalParams: AgnesGen.ComparisonJournalParams,
+  ComparisonJournalResult: AgnesGen.ComparisonJournalResult,
+  ComparisonAccountingTotal: AgnesGen.ComparisonAccountingTotal,
+  ComparisonAccountingOutcomes: AgnesGen.ComparisonAccountingOutcomes,
+  ComparisonAccountingPurpose: AgnesGen.ComparisonAccountingPurpose,
+  ComparisonAccountingPurposes: AgnesGen.ComparisonAccountingPurposes,
+  ComparisonAccountingBillingSource: AgnesGen.ComparisonAccountingBillingSource,
+  ComparisonAccountingBilling: AgnesGen.ComparisonAccountingBilling,
+  ComparisonAccountingBucketCosts: AgnesGen.ComparisonAccountingBucketCosts,
+  ComparisonAccountingCosts: AgnesGen.ComparisonAccountingCosts,
+  ComparisonAccountingFamily: AgnesGen.ComparisonAccountingFamily,
+  ComparisonAccountingLane: AgnesGen.ComparisonAccountingLane,
+  CoreUITimeline: AgnesGen.CoreUITimeline,
+  ComparisonEventsParams: AgnesGen.ComparisonEventsParams,
+  ComparisonEventsResult: AgnesGen.ComparisonEventsResult,
+  ComparisonProjectUIParams: AgnesGen.ComparisonProjectUIParams,
+  ComparisonProjectUIResult: AgnesGen.ComparisonProjectUIResult,
+  ComparisonReadToolDetailParams: AgnesGen.ComparisonReadToolDetailParams,
+  ComparisonReadToolDetailResult: AgnesGen.ComparisonReadToolDetailResult,
+  ComparisonMetricsParams: AgnesGen.ComparisonMetricsParams,
+  ComparisonMetricsResult: AgnesGen.ComparisonMetricsResult,
+  ComparisonPreparedReceipt: AgnesGen.ComparisonPreparedReceipt,
+  ComparisonPreparedConfiguration: AgnesGen.ComparisonPreparedConfiguration,
+  ComparisonPreparedModel: AgnesGen.ComparisonPreparedModel,
+  ComparisonPriceDetail: AgnesGen.ComparisonPriceDetail,
+  ComparisonPriceDetailsParams: AgnesGen.ComparisonPriceDetailsParams,
+  ComparisonPriceDetailsResult: AgnesGen.ComparisonPriceDetailsResult,
+
+  RuntimeIdentity: AgnesGen.RuntimeIdentity,
+  RuntimeCapabilities: AgnesGen.RuntimeCapabilities,
+  RuntimeDescriptor: AgnesGen.RuntimeDescriptor,
+  RuntimeListResult: AgnesGen.RuntimeListResult,
+  SessionRuntimeState: AgnesGen.SessionRuntimeState,
+  SessionRuntimeControlParams: AgnesGen.SessionRuntimeControlParams,
+  SessionRuntimeControlResult: AgnesGen.SessionRuntimeControlResult,
   SessionBudgetResult: AgnesGen.SessionBudgetResult,
   SessionProjectUIParams: AgnesGen.SessionProjectUIParams,
   SessionProjectUIPatchParams: AgnesGen.SessionProjectUIPatchParams,
@@ -481,6 +567,13 @@ const MODEL_DEFS: Record<string, TSchema> = {
   RequestBody: ModelGen.RequestBody,
   ModelCost: ModelGen.ModelCost,
   ModelRecord: ModelGen.ModelRecord,
+  ModelPriceRates: ModelGen.ModelPriceRates,
+  ModelPriceSource: ModelGen.ModelPriceSource,
+  ModelPriceWindow: ModelGen.ModelPriceWindow,
+  ModelPriceOffPeak: ModelGen.ModelPriceOffPeak,
+  ModelPricePolicy: ModelGen.ModelPricePolicy,
+  ModelPriceQuote: ModelGen.ModelPriceQuote,
+
   ContractStamp: ModelGen.ContractStamp,
   TokenCounts: ModelGen.TokenCounts,
   Timing: ModelGen.Timing,
@@ -840,7 +933,151 @@ const harnessRefineOk: Json = {
   baseline: [{ key: 'skill/x', version: 2 }],
   outcome: 'applied',
 }
+const runtimeIdentity = { id: 'jevloop', version: '1' }
+const runtimeCapabilities = { prompt: true, cancel: true, resume: true, compact: false, fork: false }
+const runtimeDescriptor = {
+  ...runtimeIdentity,
+  label: 'JevLoop',
+  apiVersion: 1,
+  available: true,
+  capabilities: runtimeCapabilities,
+}
+
+const questionOption = { label: '继续', description: '保留原始文字', extra: 'open extension field' }
+const questionIntent = { kind: 'plan-review', approve: '继续', callId: 'call-1' }
+const question = {
+  id: '问题👩🏽‍💻',
+  question: '继续执行？',
+  detail: '计划正文',
+  options: [questionOption],
+  intent: questionIntent,
+}
+const questionRequest = { questions: [question], extra: 'open request field' }
+const questionAnswerItem = { id: question.id, selected: ['继续'], custom: '  原始回答\n下一行  ' }
+const questionAnswer = { answers: [questionAnswerItem] }
+const questionPolicy = { allowSkip: false }
+const questionRequested = {
+  interactionId: 'interaction-1',
+  writerRunId: 'writer-1',
+  generation: 1,
+  toolUseId: 'call-1',
+  turn: 1,
+  callSeq: 2,
+  request: questionRequest,
+  policy: questionPolicy,
+}
+const questionInteraction = { ...questionRequested, sessionId: 's', requestedSeq: 3 }
+const questionSettled = {
+  interactionId: 'interaction-1',
+  requestedSeq: 3,
+  callSeq: 2,
+  toolUseId: 'call-1',
+  status: 'answered',
+  answer: questionAnswer,
+}
+const questionResolution = {
+  sessionId: 's',
+  interactionId: 'interaction-1',
+  status: 'answered',
+  settledSeq: 4,
+}
+
 const SESSION_SAMPLES: Record<string, Sample> = {
+  QuestionOption: {
+    valid: questionOption,
+    invalid: [{ description: 'missing label' }, { label: 1 }],
+    note: 'open option fields retain exact labels',
+  },
+  QuestionIntent: {
+    valid: questionIntent,
+    invalid: [{ kind: 'plan-review' }, { ...questionIntent, kind: 'approval' }],
+    note: 'plan review is distinct from execution authorization',
+  },
+  Question: {
+    valid: question,
+    invalid: [{ id: question.id }, { ...question, options: [{ label: 1 }] }],
+    note: 'structured question and nested option references',
+  },
+  QuestionRequest: {
+    valid: questionRequest,
+    invalid: [{ questions: 'question' }, { questions: [{ question: 'missing id' }] }],
+    note: 'open request with canonical questions array',
+  },
+  QuestionAnswerItem: {
+    valid: questionAnswerItem,
+    invalid: [
+      { id: question.id, selected: '继续' },
+      { ...questionAnswerItem, approved: true },
+    ],
+    note: 'closed answer item retains custom whitespace',
+  },
+  QuestionAnswer: {
+    valid: questionAnswer,
+    invalid: [{ answers: [{ id: question.id }] }, { ...questionAnswer, verdict: 'allowed-once' }],
+    note: 'answer fields cannot carry permission decisions',
+  },
+  QuestionAnswerPolicy: {
+    valid: questionPolicy,
+    invalid: [{}, { allowSkip: 'yes' }],
+    note: 'Host answer policy is an explicit boolean',
+  },
+  QuestionRequestedData: {
+    valid: questionRequested,
+    invalid: [
+      { ...questionRequested, generation: 0 },
+      { ...questionRequested, writerRunId: '' },
+      { ...questionRequested, callSeq: 0 },
+    ],
+    note: 'durable request binds exact writer and source call',
+  },
+  QuestionInteraction: {
+    valid: questionInteraction,
+    invalid: [
+      { ...questionInteraction, requestedSeq: 0 },
+      { ...questionInteraction, sessionId: '' },
+    ],
+    note: 'readable interaction includes its source session and request sequence',
+  },
+  QuestionSettledData: {
+    valid: questionSettled,
+    invalid: [
+      { ...questionSettled, status: 'pending' },
+      { ...questionSettled, answer: undefined },
+      { ...questionSettled, status: 'cancelled' },
+    ],
+    note: 'answered requires answer while cancelled and aborted forbid it',
+  },
+  QuestionResolution: {
+    valid: questionResolution,
+    invalid: [
+      { ...questionResolution, settledSeq: 0 },
+      { ...questionResolution, status: 'pending' },
+    ],
+    note: 'only durable terminal resolutions are returned',
+  },
+  RuntimeRecord: {
+    valid: { runtime: runtimeIdentity, record: { kind: 'example', version: 1 } },
+    invalid: [{ record: {} }, { runtime: runtimeIdentity }],
+    note: 'the adapter owns inner validation but the ledger always names its execution owner',
+  },
+  RuntimeCancel: {
+    valid: { runtime: runtimeIdentity, turnId: 't1', by: (envOk as { actor: unknown }).actor },
+    invalid: [
+      { runtime: runtimeIdentity, turnId: 't1' },
+      { runtime: runtimeIdentity, turnId: '', by: (envOk as { actor: unknown }).actor },
+    ],
+    note: 'cancellation persists actor and turn identity before interruption',
+  },
+  RuntimeIdentity: {
+    valid: runtimeIdentity,
+    invalid: [
+      { id: 'jevloop' },
+      { id: 'Invalid Id', version: '1' },
+      { id: 'native', version: '' },
+      { ...runtimeIdentity, generation: 1 },
+    ],
+    note: 'durable owner requires an explicit version; process generation is not persisted as identity',
+  },
   EventEnvelope: {
     valid: envOk,
     invalid: [
@@ -876,7 +1113,7 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     note: 'a session snapshot includes settings and validates their window and thinking level',
   },
   SessionStart: {
-    valid: sessionStartOk,
+    valid: { ...sessionStartOk, runtime: runtimeIdentity },
     invalid: [
       dataOf('i1-session-start-missing-agnesversion'),
       { ...sessionStartOk, key: rep(513) }, // boundary: maxLength:512
@@ -1001,10 +1238,12 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     note: 'valid and the first invalid reuse the .data of fixtures/events/i1-types.jsonl; the rest are boundary negatives',
   },
   UserMessage: {
-    valid: userMessageOk,
+    valid: { ...userMessageOk, itemId: 'fixture-inbox-item' },
     invalid: [
       dataOf('i1-user-message-empty-content'), // boundary: one below minItems:1 (empty array)
       { ...userMessageOk, kind: 'nope' }, // enum
+      { ...userMessageOk, itemId: '' },
+      { ...userMessageOk, itemId: rep(129) },
       { content: [{ type: 'text', text: rep(1048577) }] }, // boundary: ContentBlock.text maxLength:1048576
     ],
     note: 'valid and the first invalid reuse the .data of fixtures/events/i1-types.jsonl; the rest are boundary negatives',
@@ -1657,7 +1896,782 @@ const harnessMetaOk: Json = {
   phase: 'event',
 }
 
+const comparisonLane = {
+  side: 'left',
+  sessionId: 'l',
+  runtime: runtimeIdentity,
+  workspaceLabel: 'Left workspace',
+  phase: 'idle',
+  lastSeq: 0,
+}
+const comparisonAcceptance = { side: 'left', sessionId: 'l', status: 'accepted', seq: 1 }
+const comparisonRound = {
+  inputId: 'input-1',
+  acceptances: [comparisonAcceptance, { side: 'right', sessionId: 'r', status: 'unknown' }],
+  settledSides: [],
+  terminalCauses: [],
+}
+const comparisonSnapshot = {
+  id: 'c',
+  revision: 0,
+  phase: 'ready',
+  baselineId: 'b',
+  baselineDigest: rep64,
+  policyHash: rep64,
+  lanes: [comparisonLane, { ...comparisonLane, side: 'right', sessionId: 'r' }],
+  rounds: [comparisonRound],
+}
+
+const comparisonCuts = { left: 4, right: 0 }
+const comparisonBinding = { sessionId: 'l', runtime: runtimeIdentity }
+const comparisonFact = {
+  kind: 'coordinator',
+  revision: 1,
+  creation: 'ready',
+  lanes: { left: { ...comparisonBinding, phase: 'running' } },
+  roundCount: 1,
+  latestRound: {
+    inputId: 'input-1',
+    runs: { left: 'running', right: 'unknown' },
+    terminalCauses: { left: 'unknown', right: 'unknown' },
+    acceptances: { left: 'accepted', right: 'unknown' },
+    acceptedSeqs: { left: 4 },
+  },
+  cancellation: {},
+  cleanup: { exited: [], released: false },
+}
+const comparisonEntry = { seq: 1, cuts: comparisonCuts, fact: comparisonFact }
+const comparisonJournal = {
+  id: 'c',
+  entries: [comparisonEntry],
+  afterSeq: 0,
+  throughSeq: 1,
+  nextAfterSeq: 1,
+  complete: true,
+}
+const accountingTotal = { state: 'unknown', value: null, knownSubtotal: null, missing: 1 }
+const accountingOutcomes = { completed: 0, failed: 0, cancelled: 0, unknown: 1, pending: 0 }
+const accountingPurpose = { attempts: 1, outcomes: accountingOutcomes }
+const accountingBillingSource = {
+  attempts: 0,
+  usdMicros: accountingTotal,
+  subscriptionAttempts: 0,
+  nonSubscriptionAttempts: 0,
+}
+const accountingBilling = {
+  gateway: accountingBillingSource,
+  estimated: accountingBillingSource,
+  missingAttempts: 1,
+}
+const accountingFamily = {
+  attempts: 1,
+  tokens: {
+    inputUncached: accountingTotal,
+    cacheRead: accountingTotal,
+    cacheWrite: accountingTotal,
+    output: accountingTotal,
+    reasoning: accountingTotal,
+    inputTotal: accountingTotal,
+    total: accountingTotal,
+  },
+  costs: { USD: accountingTotal, EUR: accountingTotal },
+  unpricedAttempts: 1,
+  outcomes: accountingOutcomes,
+  byPurpose: { unknown: accountingPurpose },
+  reportedBilling: accountingBilling,
+}
+const accountingLane = {
+  afterSeq: 0,
+  throughSeq: 4,
+  state: 'unknown',
+  jev: accountingFamily,
+  llm: accountingFamily,
+  issues: [],
+}
+const preparedModel = { slot: 'primary', route: 'r', model: 'm', thinking: 'max', contextWindow: 8192 }
+const preparedConfiguration = {
+  runtime: runtimeIdentity,
+  effective: {
+    mounted: { scope: 'active-host-rows-and-selected-preset', digest: rep64, count: 2 },
+    preset: { name: 'standard', definitionDigest: rep64, scope: 'resolved-preset-view' },
+    models: [preparedModel],
+    tools: { count: 1, digest: rep64, scope: 'registered-tool-definitions' },
+    permission: {
+      approvalMode: 'manual',
+      yolo: false,
+      enforcement: { level: 'full', scope: ['file', 'process'] },
+      policyDigest: rep64,
+      digest: rep64,
+    },
+  },
+  runtimeConfig: null,
+  fingerprints: { tools: rep64, model: rep64, preset: rep64, permission: rep64, mounted: rep64 },
+}
+const preparedReceipt = {
+  sessionId: 'l',
+  sourceSeq: 4,
+  sourceDigest: rep64,
+  configuration: preparedConfiguration,
+}
+const comparisonMetrics = {
+  id: 'c',
+  atSeq: 1,
+  cuts: comparisonCuts,
+  lanes: [{ side: 'left', ...comparisonBinding, accounting: accountingLane }],
+}
+
+const priceDetail = {
+  attemptId: 'call',
+  family: 'llm',
+  purpose: 'answer',
+  route: 'r',
+  model: 'm',
+  observedModel: null,
+  originSeq: 1,
+  settledSeq: null,
+  outcome: 'pending',
+  quote: {
+    version: 1,
+    basis: 'configured',
+    route: 'r',
+    model: 'm',
+    admittedAt: 0,
+    policy: {
+      currency: 'USD',
+      unit: 'per-million-tokens',
+      perMillion: { inputUncached: 1, cacheRead: 0, output: 2 },
+    },
+  },
+  multiplier: null,
+  tokens: accountingLane.llm.tokens,
+  bucketCosts: {
+    inputUncached: accountingLane.llm.tokens.inputUncached,
+    cacheRead: accountingLane.llm.tokens.cacheRead,
+    cacheWrite: accountingLane.llm.tokens.cacheWrite,
+    output: accountingLane.llm.tokens.output,
+  },
+  estimate: accountingLane.llm.tokens.output,
+  reportedBilling: null,
+  issues: ['missing_quote'],
+}
+const priceDetails = {
+  id: 'c',
+  side: 'left',
+  atSeq: 1,
+  sessionId: 's',
+  runtime: { id: 'native', version: '1' },
+  throughSeq: 1,
+  afterSeq: 0,
+  entries: [priceDetail],
+  nextAfterSeq: 1,
+  complete: true,
+  evidenceComplete: false,
+  issues: ['incomplete_reader'],
+}
+
 const AGNES_SAMPLES: Record<string, Sample> = {
+  QuestionInteraction: SESSION_SAMPLES.QuestionInteraction as Sample,
+  QuestionAnswer: SESSION_SAMPLES.QuestionAnswer as Sample,
+  QuestionResolution: SESSION_SAMPLES.QuestionResolution as Sample,
+  QuestionPendingParams: {
+    valid: { sessionId: 's' },
+    invalid: [{ sessionId: '' }, { sessionId: 's', generation: 1 }],
+    note: 'read-only pending lookup by session identity',
+  },
+  QuestionPendingResult: {
+    valid: { sessionId: 's', interactions: [questionInteraction] },
+    invalid: [
+      { sessionId: 's', interactions: [{ ...questionInteraction, requestedSeq: 0 }] },
+      { interactions: [] },
+    ],
+    note: 'pending lookup carries exact writer and durable request bindings',
+  },
+  QuestionAnswerParams: {
+    valid: { sessionId: 's', interactionId: 'interaction-1', answer: questionAnswer },
+    invalid: [
+      { sessionId: 's', interactionId: '', answer: questionAnswer },
+      {
+        sessionId: 's',
+        interactionId: 'interaction-1',
+        answer: { ...questionAnswer, verdict: 'allowed-once' },
+      },
+    ],
+    note: 'answers are structured data rather than permission grants',
+  },
+  QuestionCancelParams: {
+    valid: { sessionId: 's', interactionId: 'interaction-1' },
+    invalid: [
+      { sessionId: 's', interactionId: '' },
+      { sessionId: 's', interactionId: 'interaction-1', answer: questionAnswer },
+    ],
+    note: 'cancellation is bound to one interaction',
+  },
+  CoreUITimeline: {
+    valid: { sessionId: 's', upto: 0, opState: null, nodes: [], turns: [] },
+    invalid: [{ sessionId: 's', upto: 0, opState: null, nodes: [], turns: [], generation: 1 }],
+    note: 'fixed comparison source coordinates and no writer generation',
+  },
+  ComparisonEventsParams: {
+    valid: { id: 'c', side: 'left', atSeq: 1, afterSeq: 0 },
+    invalid: [
+      { id: 'c', side: 'left', atSeq: 1, afterSeq: 0, sessionId: 'forbidden' },
+      { id: 'c', side: 'left', atSeq: 1, afterSeq: 0, throughSeq: 100 },
+    ],
+    note: 'fixed comparison source coordinates and no writer generation',
+  },
+  ComparisonEventsResult: {
+    valid: {
+      id: 'c',
+      side: 'left',
+      atSeq: 1,
+      sessionId: 's',
+      throughSeq: 4,
+      afterSeq: 3,
+      events: [preparedSource.events[0]],
+      nextAfterSeq: 4,
+      complete: true,
+    },
+    invalid: [
+      {
+        ...{
+          id: 'c',
+          side: 'left',
+          atSeq: 1,
+          sessionId: 's',
+          throughSeq: 0,
+          afterSeq: 0,
+          events: [],
+          nextAfterSeq: 0,
+          complete: true,
+        },
+        sessionIdOverride: 'forbidden',
+      },
+    ],
+    note: 'fixed comparison source coordinates and no writer generation',
+  },
+  ComparisonProjectUIParams: {
+    valid: { id: 'c', side: 'left', atSeq: 1, surface: 'web' },
+    invalid: [{ ...{ id: 'c', side: 'left', atSeq: 1, surface: 'web' }, sessionIdOverride: 'forbidden' }],
+    note: 'fixed comparison source coordinates and no writer generation',
+  },
+  ComparisonProjectUIResult: {
+    valid: {
+      id: 'c',
+      side: 'left',
+      atSeq: 1,
+      sessionId: 's',
+      throughSeq: 0,
+      timeline: { sessionId: 's', upto: 0, opState: null, nodes: [], turns: [] },
+    },
+    invalid: [
+      {
+        ...{
+          id: 'c',
+          side: 'left',
+          atSeq: 1,
+          sessionId: 's',
+          throughSeq: 0,
+          timeline: { sessionId: 's', upto: 0, opState: null, nodes: [], turns: [] },
+        },
+        sessionIdOverride: 'forbidden',
+      },
+    ],
+    note: 'fixed comparison source coordinates and no writer generation',
+  },
+  ComparisonReadToolDetailParams: {
+    valid: { id: 'c', side: 'left', atSeq: 1, callSeq: 1 },
+    invalid: [{ ...{ id: 'c', side: 'left', atSeq: 1, callSeq: 1 }, sessionIdOverride: 'forbidden' }],
+    note: 'fixed comparison source coordinates and no writer generation',
+  },
+  ComparisonReadToolDetailResult: {
+    valid: {
+      id: 'c',
+      side: 'left',
+      atSeq: 1,
+      sessionId: 's',
+      throughSeq: 0,
+      ok: false,
+      reason: 'call-not-found',
+    },
+    invalid: [
+      {
+        ...{
+          id: 'c',
+          side: 'left',
+          atSeq: 1,
+          sessionId: 's',
+          throughSeq: 0,
+          ok: false,
+          reason: 'call-not-found',
+        },
+        sessionIdOverride: 'forbidden',
+      },
+    ],
+    note: 'fixed comparison source coordinates and no writer generation',
+  },
+
+  ComparisonJournalCuts: {
+    valid: comparisonCuts,
+    invalid: [{ left: -1, right: 0 }, { left: 0 }, { left: 0, right: 9007199254740992 }],
+    note: 'cumulative per-lane safe committed cursors',
+  },
+  ComparisonTreeMemberCut: {
+    valid: {
+      sessionId: 'child',
+      parentSessionId: 'root',
+      runtime: { id: 'native', version: '1' },
+      inheritedThroughSeq: 2,
+      throughSeq: 5,
+    },
+    invalid: [
+      ...[
+        { sessionId: '' },
+        { sessionId: 's'.repeat(513) },
+        { parentSessionId: '' },
+        { parentSessionId: 's'.repeat(513) },
+        { runtime: {} },
+        { inheritedThroughSeq: -1 },
+        { inheritedThroughSeq: 9007199254740992 },
+        { throughSeq: -1 },
+        { throughSeq: 9007199254740992 },
+        { generation: 1 },
+      ].map((change) => ({
+        sessionId: 'root',
+        parentSessionId: null,
+        runtime: { id: 'native', version: '1' },
+        inheritedThroughSeq: 0,
+        throughSeq: 5,
+        ...change,
+      })),
+    ],
+    note: 'fixed member identity and independent safe inherited and committed cursors',
+  },
+  ComparisonTreeCut: {
+    valid: { complete: false, issues: ['tree_member_unstarted'], members: [] },
+    invalid: [
+      { complete: true, issues: [], members: [], extra: true },
+      { complete: 'true', issues: [], members: [] },
+      { complete: false, issues: [''], members: [] },
+      { complete: false, issues: ['x'.repeat(129)], members: [] },
+      { complete: false, issues: Array(129).fill('missing'), members: [] },
+      {
+        complete: true,
+        issues: [],
+        members: Array(513).fill({
+          sessionId: 'root',
+          parentSessionId: null,
+          runtime: { id: 'native', version: '1' },
+          inheritedThroughSeq: 0,
+          throughSeq: 0,
+        }),
+      },
+    ],
+    note: 'bounded membership and explicit incomplete coverage without silent truncation',
+  },
+  ComparisonTreeCuts: {
+    valid: { left: { complete: true, issues: [], members: [] } },
+    invalid: [
+      { other: { complete: true, issues: [], members: [] } },
+      { right: { complete: true, members: [] } },
+    ],
+    note: 'only known lane snapshots are present',
+  },
+  ComparisonJournalBinding: {
+    valid: comparisonBinding,
+    invalid: [
+      { ...comparisonBinding, sessionId: '' },
+      { ...comparisonBinding, runtime: {} },
+    ],
+    note: 'durable session and runtime binding',
+  },
+  ComparisonJournalFact: {
+    valid: comparisonFact,
+    invalid: [
+      { ...comparisonFact, kind: 'other' },
+      { kind: 'lane', side: 'left', sessionId: 'l', localSeq: 1, digest: 'invalid' },
+      { kind: 'checkpoint', reason: 'legacy', coverage: 'ordered' },
+      { ...comparisonFact, latestRound: { ...comparisonFact.latestRound, acceptedSeqs: { left: -1 } } },
+    ],
+    note: 'closed typed coordinator, lane and checkpoint facts preserve unknown terminal evidence',
+  },
+  ComparisonJournalEntry: {
+    valid: comparisonEntry,
+    invalid: [
+      { ...comparisonEntry, seq: -1 },
+      { ...comparisonEntry, cuts: {} },
+    ],
+    note: 'global publication sequence differs from lane cuts',
+  },
+  ComparisonJournalParams: {
+    valid: { id: 'c', afterSeq: 0, throughSeq: 1, limit: 1000, maxBytes: 4194304 },
+    invalid: [
+      { id: '' },
+      { id: 'c', afterSeq: -1 },
+      { id: 'c', throughSeq: 9007199254740992 },
+      { id: 'c', limit: 0 },
+      { id: 'c', limit: 1001 },
+      { id: 'c', maxBytes: 1 },
+      { id: 'c', maxBytes: 4194305 },
+    ],
+    note: 'bounded inclusive upper prefix and exclusive page cursor',
+  },
+  ComparisonJournalResult: {
+    valid: comparisonJournal,
+    invalid: [
+      { ...comparisonJournal, nextAfterSeq: -1 },
+      { ...comparisonJournal, entries: Array(1001).fill(comparisonEntry) },
+    ],
+    note: 'page reports its fixed publication prefix',
+  },
+  ComparisonAccountingTotal: {
+    valid: accountingTotal,
+    invalid: [
+      { ...accountingTotal, state: 'known' },
+      { ...accountingTotal, value: -1 },
+      { ...accountingTotal, missing: -1 },
+    ],
+    note: 'missing observations stay null with explicit conservative state',
+  },
+  ComparisonAccountingOutcomes: {
+    valid: accountingOutcomes,
+    invalid: [
+      { ...accountingOutcomes, completed: -1 },
+      { ...accountingOutcomes, pending: '0' },
+    ],
+    note: 'provider-call outcomes do not invent legacy success or hidden wire retries',
+  },
+  ComparisonAccountingPurpose: {
+    valid: accountingPurpose,
+    invalid: [{ ...accountingPurpose, attempts: -1 }, { attempts: 1 }],
+    note: 'purpose breakdown preserves the same outcome counters',
+  },
+  ComparisonAccountingPurposes: {
+    valid: { answer: accountingPurpose },
+    invalid: [{ answer: 0 }, { title: { attempts: -1, outcomes: accountingOutcomes } }],
+    note: 'dynamic purpose groups retain the typed observed outcome counters',
+  },
+  ComparisonAccountingBillingSource: {
+    valid: accountingBillingSource,
+    invalid: [
+      { ...accountingBillingSource, usdMicros: 0 },
+      { ...accountingBillingSource, subscriptionAttempts: -1 },
+    ],
+    note: 'reported USD micros retain nullable coverage and subscription metadata',
+  },
+  ComparisonAccountingBilling: {
+    valid: accountingBilling,
+    invalid: [
+      { ...accountingBilling, missingAttempts: -1 },
+      { ...accountingBilling, credits: 1 },
+    ],
+    note: 'reported gateway and estimated billing are separate from token quote costs',
+  },
+  ComparisonAccountingBucketCosts: {
+    valid: { USD: { inputTotal: accountingTotal, output: accountingTotal } },
+    invalid: [{ USD: 0 }, { USD: { output: 0 } }, { USD: { reasoning: accountingTotal } }],
+    note: 'per-currency bucket amounts exclude independently billed reasoning',
+  },
+  ComparisonAccountingCosts: {
+    valid: { USD: accountingTotal, CNY: accountingTotal },
+    invalid: [{ USD: 0 }, { USD: { ...accountingTotal, missing: -1 } }],
+    note: 'independently denominated family totals retain coverage',
+  },
+  ComparisonAccountingFamily: {
+    valid: accountingFamily,
+    invalid: [
+      { ...accountingFamily, attempts: -1 },
+      { ...accountingFamily, costs: { USD: 0 } },
+      { ...accountingFamily, tokens: {} },
+      { ...accountingFamily, byPurpose: { answer: { attempts: -1, outcomes: accountingOutcomes } } },
+      { ...accountingFamily, reportedBilling: { gateway: 0 } },
+    ],
+    note: 'disjoint token buckets and dynamic currency totals',
+  },
+  ComparisonAccountingLane: {
+    valid: accountingLane,
+    invalid: [
+      { ...accountingLane, afterSeq: -1 },
+      { ...accountingLane, state: 'known' },
+      { ...accountingLane, directBilling: 0 },
+    ],
+    note: 'backend baseline and committed lane prefix own accounting window',
+  },
+  ComparisonPriceDetail: {
+    valid: priceDetail,
+    invalid: [
+      { ...priceDetail, prompt: 'private' },
+      { ...priceDetail, family: 'other' },
+      { ...priceDetail, quote: { version: 1 } },
+    ],
+    note: 'sanitized provider-call detail, missing historical quote stays null',
+  },
+  ComparisonPriceDetailsParams: {
+    valid: { id: 'c', side: 'left', atSeq: 1, afterSeq: 0, limit: 1, maxBytes: 4096 },
+    invalid: [
+      { id: 'c', side: 'left', atSeq: -1 },
+      { id: 'c', side: 'left', atSeq: 1, limit: 101 },
+    ],
+    note: 'fixed journal cut; request origin pagination is not a billing window',
+  },
+  ComparisonPriceDetailsResult: {
+    valid: priceDetails,
+    invalid: [
+      { ...priceDetails, evidenceComplete: undefined },
+      { ...priceDetails, entries: [{ ...priceDetail, reasoningText: 'private' }] },
+    ],
+    note: 'page completion and ledger evidence coverage are independent',
+  },
+  ComparisonPreparedModel: {
+    valid: preparedModel,
+    invalid: [
+      { ...preparedModel, contextWindow: 0 },
+      { ...preparedModel, model: undefined },
+    ],
+    note: 'actual final selection and effective settings; missing values remain explicit null',
+  },
+  ComparisonPreparedConfiguration: {
+    valid: preparedConfiguration,
+    invalid: [
+      { ...preparedConfiguration, profile: { apiKey: 'private' } },
+      {
+        ...preparedConfiguration,
+        effective: {
+          ...preparedConfiguration.effective,
+          mounted: { scope: 'resolved-preset-view', digest: rep64, count: 1 },
+        },
+      },
+      {
+        ...preparedConfiguration,
+        effective: {
+          ...preparedConfiguration.effective,
+          mounted: { scope: 'active-host-rows-and-selected-preset', digest: rep64, count: 0 },
+        },
+      },
+      {
+        ...preparedConfiguration,
+        effective: {
+          ...preparedConfiguration.effective,
+          permission: { ...preparedConfiguration.effective.permission, rawPolicy: '/private/path' },
+        },
+      },
+    ],
+    note: 'safe actual state; resolved preset and publication-bound mounted scopes remain distinct',
+  },
+  ComparisonPreparedReceipt: {
+    valid: preparedReceipt,
+    invalid: [
+      { ...preparedReceipt, sourceSeq: 0 },
+      { ...preparedReceipt, sourceDigest: 'invalid' },
+      { ...preparedReceipt, requested: { prompt: 'private' } },
+    ],
+    note: 'frozen source coordinates; publication and source proof are additionally checked by Host',
+  },
+  ComparisonMetricsParams: {
+    valid: { id: 'c', atSeq: 1 },
+    invalid: [{ id: 'c' }, { id: 'c', atSeq: -1 }, { id: 'c', atSeq: 1, afterSeq: 0 }],
+    note: 'client cannot supply an arbitrary accounting baseline',
+  },
+  ComparisonMetricsResult: {
+    valid: { ...comparisonMetrics, lanes: [{ ...comparisonMetrics.lanes[0], prepared: preparedReceipt }] },
+    invalid: [
+      { ...comparisonMetrics, atSeq: -1 },
+      { ...comparisonMetrics, lanes: [{ ...comparisonMetrics.lanes[0], side: 'third' }] },
+    ],
+    note: 'published cuts select independently bound lane accounting',
+  },
+
+  ComparisonLane: {
+    valid: comparisonLane,
+    invalid: [
+      { ...comparisonLane, side: 'third' },
+      { ...comparisonLane, lastSeq: -1 },
+    ],
+    note: 'lane identity and sequence remain independent',
+  },
+  ComparisonAcceptance: {
+    valid: comparisonAcceptance,
+    invalid: [
+      { ...comparisonAcceptance, status: 'unknown' },
+      { ...comparisonAcceptance, status: 'rejected' },
+    ],
+    note: 'unknown outcomes cannot claim an accepted sequence or definitive rejection',
+  },
+  ComparisonRound: {
+    valid: comparisonRound,
+    invalid: [
+      { ...comparisonRound, acceptances: [] },
+      { ...comparisonRound, settledSides: ['left', 'left'] },
+      { ...comparisonRound, terminalCauses: [{ side: 'left', cause: 'success-guessed' }] },
+    ],
+    note: 'each input records both acceptance outcomes independently of settlement',
+  },
+  ComparisonRunTiming: {
+    note: 'timing remains partial until terminal evidence is confirmed',
+    valid: { startedAt: '2026-10-03T00:00:00Z', finishedAt: null, elapsedMs: null, terminalConfirmed: false },
+    invalid: [
+      { startedAt: '2026-10-03T00:00:00Z', finishedAt: null, elapsedMs: -1, terminalConfirmed: false },
+    ],
+  },
+  ComparisonResultSummary: {
+    note: 'fixed-prefix result summary preserves unknown terminal state',
+    valid: { coordinatorSeq: 0, roundCount: 0, inputId: null, lanes: [] },
+    invalid: [{ coordinatorSeq: 0, roundCount: 0, inputId: null }],
+  },
+  ComparisonSnapshot: {
+    valid: comparisonSnapshot,
+    invalid: [
+      { ...comparisonSnapshot, lanes: [comparisonLane] },
+      { ...comparisonSnapshot, metrics: { state: 'known' } },
+    ],
+    note: 'two lanes share baseline provenance; unknown usage is never represented as a known zero',
+  },
+  ComparisonCreateParams: {
+    valid: { requestId: 'request-1', cwd: '/w', left: { runtime: 'native' }, right: { runtime: 'jevloop' } },
+    invalid: [
+      { cwd: '/w' },
+      {
+        requestId: 'r',
+        cwd: '/w',
+        left: { runtime: 'native' },
+        right: { runtime: 'jevloop' },
+        isolation: 'shared',
+      },
+    ],
+    note: 'creation is idempotent and does not allow a shared writable workspace',
+  },
+  ComparisonListParams: {
+    valid: { limit: 25 },
+    invalid: [{ limit: 0 }, { limit: 101 }, { cursor: '' }, { principal: 'other' }],
+    note: 'bounded saved metadata listing; principal always comes from the authenticated connection',
+  },
+  ComparisonListItem: {
+    valid: {
+      id: 'saved',
+      revision: 0,
+      phase: 'preparing',
+      createdAt: null,
+      updatedAt: null,
+      roundCount: 0,
+      inspectable: false,
+      lanes: [],
+    },
+    invalid: [{ id: 'saved' }, { id: 'saved', phase: 'running', createPayload: 'private' }],
+    note: 'failed and partial creations are listable without fabricating complete lane snapshots or legacy times',
+  },
+  ComparisonListResult: {
+    valid: { items: [], nextCursor: null },
+    invalid: [{ items: [] }, { items: [], nextCursor: '' }],
+    note: 'opaque continuation fixes membership while summaries reflect the current committed record',
+  },
+  ComparisonIdParams: {
+    valid: { id: 'c' },
+    invalid: [{ id: '' }, { id: 'c', side: 'left' }],
+    note: 'read-only comparison lookup',
+  },
+  ComparisonSubmitParams: {
+    valid: { id: 'c', inputId: 'i', content: [{ type: 'text', text: 'hello' }] },
+    invalid: [
+      { id: 'c', content: [] },
+      { id: 'c', inputId: 'i', content: [] },
+    ],
+    note: 'shared input identity belongs to backend coordination',
+  },
+  ComparisonRetirementParams: {
+    note: 'retirement requires the observed revision',
+    valid: { id: 'pair', expectedRevision: 2 },
+    invalid: [{ id: 'pair' }, { id: 'pair', expectedRevision: -1 }],
+  },
+  ComparisonPreparationReleasedResult: {
+    note: 'failed preparation release does not invent prepared lanes or a baseline',
+    valid: { id: 'pair', revision: 3, storageState: 'released', kind: 'failed-preparation' },
+    invalid: [
+      { id: 'pair', revision: 3, storageState: 'released' },
+      { id: 'pair', revision: 3, storageState: 'removed', kind: 'failed-preparation' },
+    ],
+  },
+  ComparisonReleaseResult: {
+    note: 'release preserves full snapshots and explicitly discriminates failed preparation receipts',
+    valid: { id: 'pair', revision: 3, storageState: 'released', kind: 'failed-preparation' },
+    invalid: [{ id: 'pair', revision: 3, storageState: 'released' }],
+  },
+  ComparisonRemovedResult: {
+    note: 'removed is an explicit durable terminal state',
+    valid: { id: 'pair', revision: 3, storageState: 'removed' },
+    invalid: [{ id: 'pair', revision: 3, storageState: 'released' }],
+  },
+  ComparisonPruneParams: {
+    note: 'batch cleanup is an explicit bounded selection',
+    valid: { operation: 'release', items: [{ id: 'pair', expectedRevision: 2 }] },
+    invalid: [{ operation: 'release', items: [] }],
+  },
+  ComparisonPruneResult: {
+    note: 'each selected record has an independent outcome',
+    valid: {
+      items: [
+        { id: 'pair', ok: true, revision: 3, storageState: 'released' },
+        { id: 'other', ok: false, error: { code: 'COMPARISON_BUSY', message: 'Still running' } },
+      ],
+    },
+    invalid: [{ items: [{ id: 'pair', ok: true, revision: 3, storageState: 'full' }] }],
+  },
+  ComparisonCancelParams: {
+    valid: { id: 'c', side: 'left' },
+    invalid: [{ id: 'c', side: 'third' }],
+    note: 'omitted side cancels both; a side only targets its own lane',
+  },
+  RuntimeIdentity: SESSION_SAMPLES.RuntimeIdentity as Sample,
+  RuntimeCapabilities: {
+    valid: runtimeCapabilities,
+    invalid: [
+      { prompt: true },
+      { ...runtimeCapabilities, fork: 'yes' },
+      { ...runtimeCapabilities, switch: true },
+    ],
+    note: 'runtime lifecycle operations advertise explicit support; there is no hot switch capability',
+  },
+  RuntimeDescriptor: {
+    valid: runtimeDescriptor,
+    invalid: [
+      { ...runtimeDescriptor, apiVersion: 2 },
+      { ...runtimeDescriptor, capabilities: {} },
+      { ...runtimeDescriptor, available: 'yes' },
+    ],
+    note: 'catalog entries identify the runtime version and API contract without granting authority',
+  },
+  RuntimeListResult: {
+    valid: { items: [runtimeDescriptor] },
+    invalid: [{}, { items: [{ id: 'native' }] }],
+    note: 'runtime catalog is a bounded collection of complete descriptors',
+  },
+  SessionRuntimeControlParams: {
+    valid: { sessionId: 's', expectedRuntime: runtimeIdentity, operation: 'jev.resolveUnknown', payload: {} },
+    invalid: [
+      { sessionId: 's', operation: 'jev.resolveUnknown', payload: {} },
+      { sessionId: 's', expectedRuntime: runtimeIdentity, operation: '', payload: {} },
+    ],
+    note: 'runtime control requires an exact owner and a runtime-owned JSON payload',
+  },
+  SessionRuntimeControlResult: {
+    valid: {
+      runtime: runtimeIdentity,
+      result: { intentId: 'i', resolution: 'accepted_uncertainty' },
+      effectiveFromSeq: 1,
+    },
+    invalid: [
+      { result: {}, effectiveFromSeq: 1 },
+      { runtime: runtimeIdentity, result: {}, effectiveFromSeq: -1 },
+    ],
+    note: 'successful control returns the owner and committed sequence',
+  },
+  SessionRuntimeState: {
+    valid: { runtime: runtimeIdentity, phase: 'parked', revision: 3 },
+    invalid: [
+      { phase: 'idle' },
+      { runtime: runtimeIdentity, phase: 'arbitrary' },
+      { runtime: runtimeIdentity, phase: 'idle', revision: -1 },
+    ],
+    note: 'read-only lifecycle state includes the persisted owner independently of native OpState',
+  },
   ConfigOAuthInput: {
     note: 'OAuth input',
     valid: { action: 'poll', operationId: 'a' },
@@ -1993,6 +3007,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { kind: 'compaction', id: 'c', seq: 5, range: [1] },
       { kind: 'compaction', id: 'c', seq: 5, range: [1, 2, 3] },
       { kind: 'cost', id: 'c', seq: 1, source: 'unknown' },
+      {
+        kind: 'context',
+        id: 'c',
+        seq: 1,
+        text: 'report',
+        messageSource: { kind: 'user', senderSessionId: 'child', receiptSeq: 1 },
+      },
+      {
+        kind: 'context',
+        id: 'c',
+        seq: 1,
+        text: 'report',
+        messageSource: { kind: 'agent-message', senderSessionId: 'child', receiptSeq: 0 },
+      },
     ],
     note: 'historical compaction lacks token measurements; range cardinality and source are enforced',
   },
@@ -2411,11 +3439,13 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'same as Auth: appears only on the `_meta` side channel, so every sample is hand-written',
   },
   NewSessionMeta: {
-    valid: {},
+    valid: { runtime: 'jevloop' },
     invalid: [
       { preset: 123 }, // wrong type
       { preset: rep(129) }, // boundary: maxLength:128
       { sessionKey: rep(513) }, // boundary: maxLength:512
+      { runtime: '' },
+      { runtime: 'JevLoop' },
     ],
     note: 'same as Auth: appears only on the `_meta` side channel, so every sample is hand-written',
   },
@@ -3094,7 +4124,60 @@ const contractManifestOk: Json = {
   sha256: { prefix: rep64, tools: rep64, syntax: rep64 },
 }
 
+const pricePolicySample = { currency: 'CNY', unit: 'per-million-tokens', perMillion: { output: 0 } }
+const priceSamples: Record<string, Sample> = {
+  ModelPriceRates: {
+    valid: { inputUncached: 1, output: null },
+    invalid: [{ output: -1 }, { credits: 1 }],
+    note: 'Partial estimate rates retain unknown buckets.',
+  },
+  ModelPriceSource: {
+    valid: { url: 'https://example.test', checkedAt: '2026-10-01' },
+    invalid: [{ url: 'https://example.test' }],
+    note: 'Semantic source validation is separate.',
+  },
+  ModelPriceWindow: {
+    valid: { startMinute: 540, endMinute: 720 },
+    invalid: [{ startMinute: -1, endMinute: 720 }],
+    note: 'Calendar minute boundaries.',
+  },
+  ModelPriceOffPeak: {
+    valid: {
+      multiplier: 0.5,
+      utcOffsetMinutes: 480,
+      peakWeekdays: [1],
+      peakWindows: [{ startMinute: 540, endMinute: 720 }],
+      excludedDates: [],
+    },
+    invalid: [{ multiplier: -1 }],
+    note: 'Fixed-offset weekly calendar.',
+  },
+  ModelPricePolicy: {
+    valid: pricePolicySample,
+    invalid: [
+      { ...pricePolicySample, currency: 'credits' },
+      { ...pricePolicySample, unit: 'usd' },
+    ],
+    note: 'Explicit independent currency and deliberate zero.',
+  },
+  ModelPriceQuote: {
+    valid: {
+      version: 1,
+      basis: 'configured',
+      route: 'gw',
+      model: 'm',
+      admittedAt: 0,
+      policy: pricePolicySample,
+    },
+    invalid: [
+      { version: 1 },
+      { version: 1, basis: 'current', route: 'gw', model: 'm', admittedAt: 0, policy: pricePolicySample },
+    ],
+    note: 'Frozen exact request quote, no current-price substitution.',
+  },
+}
 const MODEL_SAMPLES: Record<string, Sample> = {
+  ...priceSamples,
   ContractManifest: {
     valid: contractManifestOk,
     invalid: [
@@ -3166,19 +4249,36 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the name pattern is the same one session-v1 puts on ToolCall.name',
   },
   RequestMessage: {
-    valid: { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    valid: {
+      role: 'host_action',
+      content: [],
+      toolCalls: [{ toolUseId: 'host-call', name: 'read', args: {}, ordinal: 0 }],
+    },
     invalid: [
-      { role: 'system', content: [] }, // no branch of the discriminated union has this role
+      { role: 'developer', content: [] }, // no branch of the discriminated union has this role
+      { role: 'system', content: [{ type: 'thinking', text: 'not instruction text' }] },
       { role: 'user' }, // missing required content
+      { role: 'host_action', content: [], toolCalls: [] }, // exactly one recorded Host action
+      {
+        role: 'host_action',
+        content: [{ type: 'text', text: 'invented reasoning' }],
+        toolCalls: [{ toolUseId: 'h', name: 'read', args: {}, ordinal: 0 }],
+      },
       // an assistant message carries only text/thinking blocks, never the full ContentBlock union
       { role: 'assistant', content: [{ type: 'image', data: 'x', mimeType: 'image/png' }] },
       { role: 'tool_result', toolUseId: 't1', content: [] }, // missing required isError
       { role: 'tool_result', toolUseId: rep(129), content: [], isError: false }, // boundary: maxLength:128
     ],
-    note: 'hand-written; the three branches are discriminated by role',
+    note: 'hand-written; five branches preserve ordered system instructions and Host action authorship',
   },
   RequestBody: {
-    valid: modelRequestBody,
+    valid: {
+      ...modelRequestBody,
+      messages: [
+        { role: 'system', content: [{ type: 'text', text: 'Ordered instruction' }] },
+        ...modelRequestBody.messages,
+      ],
+    },
     invalid: [
       { ...modelRequestBody, seams: {} }, // additionalProperties:false
       { ...modelRequestBody, kind: 'nope' }, // enum
@@ -3204,7 +4304,7 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the four price components are all required so a partial price table cannot be half-filled',
   },
   ModelRecord: {
-    valid: modelRecordOk,
+    valid: { ...modelRecordOk, pricePolicy: pricePolicySample },
     invalid: [
       { ...modelRecordOk, contract_id: undefined }, // missing required contract_id
       { ...modelRecordOk, id: rep(257) }, // boundary: maxLength:256
@@ -4342,6 +5442,30 @@ const PRESET_SAMPLES: Record<string, Sample> = {
   HookEvent: HOOKS_SAMPLES.HookEvent as Sample,
 }
 
+describe('preset tree-credit policy parity', () => {
+  it.each([
+    [undefined, true],
+    [0, true],
+    [20.5, true],
+    ['default', true],
+    ['unlimited', true],
+    [null, false],
+    [-1, false],
+    ['capped', false],
+    ['UNLIMITED', false],
+    [{ mode: 'unlimited' }, false],
+  ])('keeps AJV and generated validators aligned for %j', (value, expected) => {
+    const payload = { name: 'custom', subagent: value === undefined ? {} : { tree_budget_credits: value } }
+    assertParity(
+      { schema: PresetGen.PresetDoc, check: ajvDef(PRESET_ID, 'PresetDoc') },
+      PRESET_ID,
+      'PresetDoc',
+      payload,
+      expected,
+    )
+  })
+})
+
 const task20Fixtures = loadJsonl(`${pkgRoot}fixtures/configs/task20.jsonl`) as Array<
   FixtureRow & { kind: string; name: string }
 >
@@ -4537,22 +5661,27 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
   RouteDecl: MODEL_SAMPLES.RouteDecl as Sample,
   ModelRecord: MODEL_SAMPLES.ModelRecord as Sample,
   ModelCost: MODEL_SAMPLES.ModelCost as Sample,
+  ...priceSamples,
   DecodeRule: MODEL_SAMPLES.DecodeRule as Sample,
   SlotName: MODEL_SAMPLES.SlotName as Sample,
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
 }
 const EXTENSION_SAMPLES: Record<string, Sample> = {
-  Capabilities: helperSample('Capabilities', [
-    { events: ['x'] },
-    { tools: { prefix: 'BAD' } },
-    { hooks: ['invalid'] },
-    { slots: ['invalid'] },
-    { resources: ['exec'] },
-    { network: { hosts: ['https://x'] } },
-    { artifacts: 'yes' },
-    { subagent: 'yes' },
-    { extra: true },
-  ]),
+  Capabilities: {
+    ...helperSample('Capabilities', [
+      { events: ['x'] },
+      { tools: { prefix: 'BAD' } },
+      { hooks: ['invalid'] },
+      { slots: ['invalid'] },
+      { resources: ['exec'] },
+      { network: { hosts: ['https://x'] } },
+      { artifacts: 'yes' },
+      { subagent: 'yes' },
+      { questions: 'yes' },
+      { extra: true },
+    ]),
+    valid: { ...(task20Helpers.Capabilities as Json), questions: true },
+  },
   SkinTokenValue: {
     valid: '#fdfeff',
     invalid: ['', 'url(http://x)', '#fff;color:red', '#fff}', 'a'.repeat(257), '@import x'],
@@ -4645,6 +5774,13 @@ const ProfileDefs: Record<string, TSchema> = {
   JsonValue: ProfileGen.JsonValue,
   ModelCost: ProfileGen.ModelCost,
   ModelRecord: ProfileGen.ModelRecord,
+  ModelPriceRates: ProfileGen.ModelPriceRates,
+  ModelPriceSource: ProfileGen.ModelPriceSource,
+  ModelPriceWindow: ProfileGen.ModelPriceWindow,
+  ModelPriceOffPeak: ProfileGen.ModelPriceOffPeak,
+  ModelPricePolicy: ProfileGen.ModelPricePolicy,
+  ModelPriceQuote: ProfileGen.ModelPriceQuote,
+
   SlotName: ProfileGen.SlotName,
 }
 const LockfileDefs: Record<string, TSchema> = {
@@ -5555,6 +6691,105 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/questions.pending': {
+    fileId: AGNES_ID,
+    params: 'QuestionPendingParams',
+    result: 'QuestionPendingResult',
+  },
+  '_agnes/v1/questions.answer': {
+    fileId: AGNES_ID,
+    params: 'QuestionAnswerParams',
+    result: 'QuestionResolution',
+  },
+  '_agnes/v1/questions.cancel': {
+    fileId: AGNES_ID,
+    params: 'QuestionCancelParams',
+    result: 'QuestionResolution',
+  },
+  '_agnes/v1/comparison.events': {
+    fileId: AGNES_ID,
+    params: 'ComparisonEventsParams',
+    result: 'ComparisonEventsResult',
+  },
+  '_agnes/v1/comparison.projectUI': {
+    fileId: AGNES_ID,
+    params: 'ComparisonProjectUIParams',
+    result: 'ComparisonProjectUIResult',
+  },
+  '_agnes/v1/comparison.readToolDetail': {
+    fileId: AGNES_ID,
+    params: 'ComparisonReadToolDetailParams',
+    result: 'ComparisonReadToolDetailResult',
+  },
+
+  '_agnes/v1/comparison.list': {
+    fileId: AGNES_ID,
+    params: 'ComparisonListParams',
+    result: 'ComparisonListResult',
+  },
+  '_agnes/v1/comparison.journal': {
+    fileId: AGNES_ID,
+    params: 'ComparisonJournalParams',
+    result: 'ComparisonJournalResult',
+  },
+  '_agnes/v1/comparison.priceDetails': {
+    fileId: AGNES_ID,
+    params: 'ComparisonPriceDetailsParams',
+    result: 'ComparisonPriceDetailsResult',
+  },
+  '_agnes/v1/comparison.metrics': {
+    fileId: AGNES_ID,
+    params: 'ComparisonMetricsParams',
+    result: 'ComparisonMetricsResult',
+  },
+  '_agnes/v1/comparison.create': {
+    fileId: AGNES_ID,
+    params: 'ComparisonCreateParams',
+    result: 'ComparisonSnapshot',
+  },
+  '_agnes/v1/comparison.get': {
+    fileId: AGNES_ID,
+    params: 'ComparisonIdParams',
+    result: 'ComparisonSnapshot',
+  },
+  '_agnes/v1/comparison.reconcile': {
+    fileId: AGNES_ID,
+    params: 'ComparisonIdParams',
+    result: 'ComparisonSnapshot',
+  },
+  '_agnes/v1/comparison.submit': {
+    fileId: AGNES_ID,
+    params: 'ComparisonSubmitParams',
+    result: 'ComparisonRound',
+  },
+  '_agnes/v1/comparison.cancel': {
+    fileId: AGNES_ID,
+    params: 'ComparisonCancelParams',
+    result: 'ComparisonSnapshot',
+  },
+  '_agnes/v1/comparison.release': {
+    fileId: AGNES_ID,
+    params: 'ComparisonRetirementParams',
+    result: 'ComparisonReleaseResult',
+  },
+  '_agnes/v1/comparison.remove': {
+    fileId: AGNES_ID,
+    params: 'ComparisonRetirementParams',
+    result: 'ComparisonRemovedResult',
+  },
+  '_agnes/v1/comparison.prune': {
+    fileId: AGNES_ID,
+    params: 'ComparisonPruneParams',
+    result: 'ComparisonPruneResult',
+  },
+
+  '_agnes/v1/runtime.list': { fileId: AGNES_ID, params: 'Empty', result: 'RuntimeListResult' },
+  '_agnes/v1/session.runtime': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'SessionRuntimeState' },
+  '_agnes/v1/session.runtimeControl': {
+    fileId: AGNES_ID,
+    params: 'SessionRuntimeControlParams',
+    result: 'SessionRuntimeControlResult',
+  },
   '_agnes/v1/resources.list': {
     fileId: 'https://agnes.ai/schema/resource-control.json',
     params: 'ResourceListParams',
@@ -6004,6 +7239,29 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/questions.pending': AGNES_SAMPLES.QuestionPendingParams as Sample,
+  '_agnes/v1/questions.answer': AGNES_SAMPLES.QuestionAnswerParams as Sample,
+  '_agnes/v1/questions.cancel': AGNES_SAMPLES.QuestionCancelParams as Sample,
+  '_agnes/v1/comparison.events': AGNES_SAMPLES.ComparisonEventsParams as Sample,
+  '_agnes/v1/comparison.projectUI': AGNES_SAMPLES.ComparisonProjectUIParams as Sample,
+  '_agnes/v1/comparison.readToolDetail': AGNES_SAMPLES.ComparisonReadToolDetailParams as Sample,
+
+  '_agnes/v1/comparison.list': AGNES_SAMPLES.ComparisonListParams as Sample,
+  '_agnes/v1/comparison.create': AGNES_SAMPLES.ComparisonCreateParams as Sample,
+  '_agnes/v1/comparison.get': AGNES_SAMPLES.ComparisonIdParams as Sample,
+  '_agnes/v1/comparison.reconcile': AGNES_SAMPLES.ComparisonIdParams as Sample,
+  '_agnes/v1/comparison.submit': AGNES_SAMPLES.ComparisonSubmitParams as Sample,
+  '_agnes/v1/comparison.cancel': AGNES_SAMPLES.ComparisonCancelParams as Sample,
+  '_agnes/v1/comparison.release': AGNES_SAMPLES.ComparisonRetirementParams as Sample,
+  '_agnes/v1/comparison.remove': AGNES_SAMPLES.ComparisonRetirementParams as Sample,
+  '_agnes/v1/comparison.prune': AGNES_SAMPLES.ComparisonPruneParams as Sample,
+  '_agnes/v1/comparison.journal': AGNES_SAMPLES.ComparisonJournalParams as Sample,
+  '_agnes/v1/comparison.metrics': AGNES_SAMPLES.ComparisonMetricsParams as Sample,
+  '_agnes/v1/comparison.priceDetails': AGNES_SAMPLES.ComparisonPriceDetailsParams as Sample,
+
+  '_agnes/v1/runtime.list': AGNES_SAMPLES.Empty as Sample,
+  '_agnes/v1/session.runtime': AGNES_SAMPLES.SessionIdParams as Sample,
+  '_agnes/v1/session.runtimeControl': AGNES_SAMPLES.SessionRuntimeControlParams as Sample,
   '_agnes/v1/resources.list': ResourceControlSamples.ResourceListParams,
   '_agnes/v1/resources.get': ResourceControlSamples.ResourceGetParams,
   '_agnes/v1/resources.desired.set': ResourceControlSamples.ResourceDesiredSetParams,
@@ -6158,6 +7416,29 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/questions.pending': AGNES_SAMPLES.QuestionPendingResult as Sample,
+  '_agnes/v1/questions.answer': AGNES_SAMPLES.QuestionResolution as Sample,
+  '_agnes/v1/questions.cancel': AGNES_SAMPLES.QuestionResolution as Sample,
+  '_agnes/v1/comparison.events': AGNES_SAMPLES.ComparisonEventsResult as Sample,
+  '_agnes/v1/comparison.projectUI': AGNES_SAMPLES.ComparisonProjectUIResult as Sample,
+  '_agnes/v1/comparison.readToolDetail': AGNES_SAMPLES.ComparisonReadToolDetailResult as Sample,
+
+  '_agnes/v1/comparison.list': AGNES_SAMPLES.ComparisonListResult as Sample,
+  '_agnes/v1/comparison.create': AGNES_SAMPLES.ComparisonSnapshot as Sample,
+  '_agnes/v1/comparison.get': AGNES_SAMPLES.ComparisonSnapshot as Sample,
+  '_agnes/v1/comparison.reconcile': AGNES_SAMPLES.ComparisonSnapshot as Sample,
+  '_agnes/v1/comparison.submit': AGNES_SAMPLES.ComparisonRound as Sample,
+  '_agnes/v1/comparison.cancel': AGNES_SAMPLES.ComparisonSnapshot as Sample,
+  '_agnes/v1/comparison.release': AGNES_SAMPLES.ComparisonReleaseResult as Sample,
+  '_agnes/v1/comparison.remove': AGNES_SAMPLES.ComparisonRemovedResult as Sample,
+  '_agnes/v1/comparison.prune': AGNES_SAMPLES.ComparisonPruneResult as Sample,
+  '_agnes/v1/comparison.journal': AGNES_SAMPLES.ComparisonJournalResult as Sample,
+  '_agnes/v1/comparison.metrics': AGNES_SAMPLES.ComparisonMetricsResult as Sample,
+  '_agnes/v1/comparison.priceDetails': AGNES_SAMPLES.ComparisonPriceDetailsResult as Sample,
+
+  '_agnes/v1/runtime.list': AGNES_SAMPLES.RuntimeListResult as Sample,
+  '_agnes/v1/session.runtime': AGNES_SAMPLES.SessionRuntimeState as Sample,
+  '_agnes/v1/session.runtimeControl': AGNES_SAMPLES.SessionRuntimeControlResult as Sample,
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.archive': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectResult as Sample,
@@ -6314,6 +7595,32 @@ describe('request media structural schema versus semantic validator boundary', (
       expect(validateRequestMedia(value).ok).toBe(false)
     }
   })
+})
+
+describe('question event stage-two AJV parity', () => {
+  for (const [type, def] of [
+    ['question/requested', 'QuestionRequestedData'],
+    ['question/settled', 'QuestionSettledData'],
+  ] as const) {
+    it(`${type} validates the durable data shape through the public event boundary`, () => {
+      const sample = SESSION_SAMPLES[def]
+      if (!sample) throw new Error(`Missing ${def} sample`)
+      const check = ajvDef(SESSION_ID, def)
+      const event = (data: unknown) => ({
+        ...(envOk as Json),
+        origin: 'system',
+        trust: 'trusted',
+        type,
+        data,
+      })
+      expect(validateEvent(event(sample.valid)).ok).toBe(true)
+      expect(check(sample.valid)).toBe(true)
+      for (const bad of sample.invalid) {
+        expect(validateEvent(event(bad)).ok).toBe(false)
+        expect(check(bad)).toBe(false)
+      }
+    })
+  }
 })
 
 describe('METHODS table: validateMethod ↔ ajv parity per method (params + result)', () => {

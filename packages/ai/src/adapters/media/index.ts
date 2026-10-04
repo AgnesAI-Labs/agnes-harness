@@ -92,6 +92,16 @@ export class MediaAdapter extends WireAdapter {
       }
       return
     }
+    if (req.messages.some((message) => message.role === 'host_action' || message.role === 'system')) {
+      yield {
+        type: 'error',
+        reason: 'error',
+        code: 'FORMAT',
+        message: 'Ordered system or Host action history is unsupported for media generation',
+        retryable: false,
+      }
+      return
+    }
     const prompt = lastUserText(req)
     const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 

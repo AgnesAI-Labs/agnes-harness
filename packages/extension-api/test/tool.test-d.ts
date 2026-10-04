@@ -177,6 +177,7 @@ describe('tool types', () => {
   })
   it('pins the exact key set: nine seam windows plus kernel facilities, nothing else (spec §6.1)', () => {
     expectTypeOf<keyof ToolContext>().toEqualTypeOf<
+      | 'questions'
       | 'skillInstall'
       | 'mcpManage'
       | 'pluginManage'

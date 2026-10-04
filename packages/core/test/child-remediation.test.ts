@@ -132,6 +132,7 @@ describe('independent-review remediations R1–R9', () => {
     }
     if (usageTree) {
       expect(usageTree.heldMicro >= 0n).toBe(true)
+      if (usageTree.capMicro === null) throw new Error('Expected finite tree cap')
       expect(usageTree.settledMicro <= usageTree.capMicro).toBe(true)
     }
     expect(retryThenOk.calls).toBeLessThanOrEqual(1)
@@ -329,7 +330,7 @@ describe('independent-review V1–V7', () => {
     await k.close()
   })
 
-  it('V2/v1: instance exit marks failed and resume from a new kernel is refused', async () => {
+  it('V2/v1: explicit owner close cancels and resume from a new kernel is refused', async () => {
     const provider = Object.assign(fakeProvider([textTurn('recovered')]), { models: () => [catalogue()] })
     const storage = new MemoryStorage()
     const k = kernel({ storage, provider }, provider)
@@ -343,11 +344,11 @@ describe('independent-review V1–V7', () => {
       'spawn child',
     )
     await k.close()
-    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('failed')
+    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('cancelled')
     const k2 = kernel({ storage, provider }, provider)
     const parent2 = await k2.session('parent', sessionOpts)
     await expect(parent2.d.children.resume?.(child.key)).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
-    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('failed')
+    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('cancelled')
     await k2.close()
   })
 
@@ -385,10 +386,12 @@ describe('independent-review V1–V7', () => {
     const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'child' })
     const childSession = required(k.get(child.key), 'child session')
     const grand = await childSession.d.children.create({ parent: child.key, cwd: '/w', input: 'grand' })
+    const grandSession = required(k.get(grand.key), 'grandchild session')
     void grand.run('grand').catch(() => undefined)
     await expect.poll(() => entered, { timeout: 5_000 }).toBe(true)
     await parent.d.children.cancel?.(child.key)
-    expect(k.get(grand.key)?.ac.signal.aborted).toBe(true)
+    expect(grandSession.ac.signal.aborted).toBe(true)
+    expect(k.get(grand.key)).toBeUndefined()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect((await requireChildControl(storage).lookupByKey(grand.key))?.state).toBe('cancelled')
     await k.close()
@@ -557,7 +560,7 @@ describe('independent-review V1–V7', () => {
     const kB = kernel({ storage })
     const parentB = await kB.session('parent', { ...sessionOpts, writerRunId: 'rB' })
     await expect(parentB.d.children.resume?.(child.key)).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
-    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('ready')
+    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('cancelled')
     await kB.close()
     await kA.close()
   })
@@ -634,10 +637,10 @@ describe('independent-review V1–V7', () => {
     expect(parent.d.children.get?.(child.key)).toBeUndefined()
     await storage.open(child.key, { writerRunId: 'after-cancel', ttlMs: 1000 })
     await storage.release(child.key, 'after-cancel')
-    expect(await parent.d.children.inspect?.(child.key)).toMatchObject({ state: 'error' })
+    expect(await parent.d.children.inspect?.(child.key)).toMatchObject({ state: 'cancelled' })
     await parent.d.children.cancel?.(child.key)
     expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('cancelled')
-    expect(await parent.d.children.inspect?.(child.key)).toMatchObject({ state: 'error' })
+    expect(await parent.d.children.inspect?.(child.key)).toMatchObject({ state: 'cancelled' })
     await k.close()
   })
 

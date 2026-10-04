@@ -263,6 +263,70 @@ export class PiAdapter extends WireAdapter {
     return this.manual.get(route)?.models ?? []
   }
 
+  override async prepare(route: string, req: RequestBody, opts: { signal: AbortSignal }) {
+    opts.signal.throwIfAborted()
+    // Subclasses with different serialization must supply their own preparation contract.
+    if (this.constructor !== PiAdapter)
+      throw new Error('Custom Pi adapters must implement durable preparation')
+    const current = this.manual.get(route)
+    const model = current?.models.find((value) => value.id === req.model)
+    if (!current || !model) throw new Error('Prepared model is unavailable')
+    const decl = structuredClone(current)
+    const record = structuredClone(model)
+    let auth: ModelAuth | undefined
+    if (this.resolveCredential) {
+      try {
+        const resolved = await this.resolveCredential(route, opts.signal)
+        auth = structuredClone(typeof resolved === 'string' ? { apiKey: resolved } : resolved)
+      } catch {
+        throw new Error('Prepared model authentication is unavailable')
+      }
+    }
+    opts.signal.throwIfAborted()
+    const endpoint = auth?.baseUrl ?? decl.baseUrl
+    for (const address of [decl.baseUrl, endpoint]) {
+      const url = new URL(address)
+      if (
+        !['http:', 'https:'].includes(url.protocol) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash
+      )
+        throw new Error('Prepared model endpoint must not contain credentials, query or fragment')
+    }
+    // Environment-resolved protocols cannot claim a frozen destination with this codec.
+    if (AMBIENT_CREDENTIAL_APIS.has(decl.api) || decl.api === 'azure-openai-responses')
+      throw new Error('Selected API does not support durable endpoint preparation')
+    const boundAuth = auth
+    const bound = new PiAdapter({
+      id: this.id,
+      ...(this.providerId ? { providerId: this.providerId } : {}),
+      manualRoutes: [{ ...decl, models: [record] }],
+      streamImpl: this.streamImpl,
+      ...(boundAuth ? { resolveCredential: async () => structuredClone(boundAuth) } : {}),
+      maxRetries: 0,
+      sleep: this.sleep,
+    })
+    bound.bindCredential(route, this.credentialFor(route))
+    // Headers may contain credentials; they remain on the bound adapter, never in the ledger.
+    const { headers: _headers, ...publicModel } = record
+    return {
+      adapter: bound,
+      endpoint,
+      snapshot: JSON.parse(
+        JSON.stringify({
+          codec: 'agnes-pi-request-v1',
+          adapterId: this.id,
+          ...(this.providerId ? { providerId: this.providerId } : {}),
+          route: { route, api: decl.api, baseUrl: decl.baseUrl, ...(decl.keyless ? { keyless: true } : {}) },
+          model: { ...publicModel, baseUrl: endpoint },
+          options: { cacheRetention: 'short', maxRetries: 0, retry: false },
+        }),
+      ) as import('@agnes/protocol').JsonValue,
+    }
+  }
+
   override async probe(route: string, signal: AbortSignal) {
     const started = performance.now()
     const ac = new AbortController()
@@ -394,8 +458,40 @@ export class PiAdapter extends WireAdapter {
     }
     const requestHeaders = this.requestHeaders(route, req)
     const dropThinking = record.thinkingReplay === 'drop'
-    const { context } = toContext(req, { dropThinking })
+    let projected: ReturnType<typeof toContext>
+    try {
+      projected = toContext(req, {
+        dropThinking,
+        // Plain DeepSeek reasoning is replayed under its declared native field. Other APIs
+        // may require opaque signatures which the portable message does not invent.
+        ...(decl.api === 'openai-completions' &&
+        record.compat !== null &&
+        typeof record.compat === 'object' &&
+        !Array.isArray(record.compat) &&
+        record.compat.thinkingFormat === 'deepseek'
+          ? { reasoningField: 'reasoning_content' as const }
+          : {}),
+        api: decl.api,
+        supportsMidConvoSystemMessages:
+          record.compat !== null &&
+          typeof record.compat === 'object' &&
+          !Array.isArray(record.compat) &&
+          record.compat.supportsMidConvoSystemMessages === true,
+      })
+    } catch (error) {
+      yield {
+        type: 'error',
+        reason: 'error',
+        code: 'FORMAT',
+        message: error instanceof Error ? error.message : 'Unsupported request history',
+        retryable: false,
+      }
+      return
+    }
+    const { context } = projected
     const transforms: Array<{ event: string; ext: string }> = []
+    if (req.messages.some((m) => m.role === 'host_action'))
+      transforms.push({ event: 'host_action', ext: 'pi' })
     if (
       dropThinking &&
       req.messages.some((m) => m.role === 'assistant' && m.content.some((c) => c.type === 'thinking'))

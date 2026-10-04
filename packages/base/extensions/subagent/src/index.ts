@@ -5,6 +5,8 @@ import {
   subagentCancelTool,
   subagentCollectTool,
   subagentForkTool,
+  subagentInterruptTool,
+  subagentSendMessageTool,
   subagentSpawnTool,
 } from './tools.js'
 
@@ -22,6 +24,8 @@ export function createSubagentExtension(deps: SubagentDeps) {
       agnes.registerTool(subagentSpawnTool(deps)),
       agnes.registerTool(subagentCollectTool(deps)),
       agnes.registerTool(subagentCancelTool(deps)),
+      agnes.registerTool(subagentSendMessageTool),
+      agnes.registerTool(subagentInterruptTool),
     ]
     return () => {
       for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()

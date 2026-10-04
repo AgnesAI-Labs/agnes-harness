@@ -1,4 +1,4 @@
-import type { ModelSettings, UsageView } from '@agnes/protocol'
+import type { ModelSettings, RuntimeDescriptor, UsageView } from '@agnes/protocol'
 import { ModelSettingsDialog } from '@agnes/web-ui'
 import {
   type ComponentType,
@@ -29,7 +29,12 @@ export type ModelPicker = {
   render(state: ModelPickerState): void
 }
 export type PermissionMode = 'view' | 'workspace' | 'full'
-export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
+export type PermissionPickerState = {
+  disabled: boolean
+  pending: boolean
+  selected: PermissionMode | null
+  options?: readonly { id: PermissionMode; label: string; description: string }[]
+}
 export type PermissionPicker = {
   destroy(): void
   render(state: PermissionPickerState): void
@@ -72,13 +77,23 @@ export interface ComposerView {
   input: { disabled: boolean; placeholder: string }
   loading: boolean
   model: ModelPickerState
+  runtime?: {
+    selected: string
+    label: string
+    fixed: boolean
+    disabled: boolean
+    options: readonly (
+      | RuntimeDescriptor
+      | Pick<RuntimeDescriptor, 'id' | 'label' | 'available' | 'unavailableReason'>
+    )[]
+  }
   modelSettings?: {
     key: string
     settings: ModelSettings
     contextWindow: number
     thinkingLevelMap?: Record<string, string> | undefined
   }
-  permission: PermissionPickerState
+  permission: PermissionPickerState & { hidden?: boolean }
   sending: boolean
   send: { disabled: boolean; label: string; mode: 'idle' | 'busy' | 'pending'; title: string }
   stopping: boolean
@@ -101,6 +116,7 @@ export interface ComposerRegionOptions {
   onError(error: unknown): void
   onModelSelect(option: ModelPickerOption): Promise<boolean>
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
+  onRuntimeSelect?(runtime: string): void
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   onSubmit(): void
   onWorkspace(): void
@@ -156,6 +172,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onError,
     onModelSelect,
     onModelSettingsChange,
+    onRuntimeSelect,
     onPermissionSelect,
     onSubmit,
     onWorkspace,
@@ -278,6 +295,42 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       'div',
       { className: 'composer-controls' },
       slots?.left,
+      view.runtime
+        ? view.runtime.fixed
+          ? createElement(
+              'span',
+              {
+                className: 'composer-runtime',
+                'data-runtime-id': view.runtime.selected,
+                title: '此会话的运行循环已固定',
+              },
+              view.runtime.label,
+            )
+          : createElement(
+              'select',
+              {
+                className: 'composer-runtime',
+                'aria-label': '选择新会话运行循环',
+                disabled: view.runtime.disabled,
+                value: view.runtime.selected,
+                onChange: (event: FormEvent<HTMLSelectElement>) =>
+                  onRuntimeSelect?.(event.currentTarget.value),
+              },
+              ...view.runtime.options.map((runtime) =>
+                createElement(
+                  'option',
+                  {
+                    key: runtime.id,
+                    value: runtime.id,
+                    disabled: !runtime.available,
+                  },
+                  runtime.available
+                    ? runtime.label
+                    : `${runtime.label} · ${runtime.unavailableReason ?? '暂不可用'}`,
+                ),
+              ),
+            )
+        : undefined,
       createElement(
         'button',
         {
@@ -326,6 +379,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           'aria-label': '选择本会话权限',
           title: '工作区内修改',
           disabled: view.permission.disabled,
+          hidden: view.permission.hidden,
         },
         createElement(
           'svg',

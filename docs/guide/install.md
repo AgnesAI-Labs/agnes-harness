@@ -49,6 +49,26 @@ If `pnpm` is unavailable, substitute `corepack pnpm` in the following commands. 
 
 Output is written to `packages/cli/dist/local/`, including `agnes.mjs`, daemon, worker, Web, and platform resources. Move the entire directory when relocating a build. `@agnes/web build` builds only the Web package and cannot replace the full local distribution.
 
+### Quick development restart (macOS / Linux)
+
+After installing dependencies and preparing the toolchain above, run from the repository root:
+
+```sh
+make dev
+```
+
+The default port is `4189`. This builds the complete backend and Web into a new directory before stopping the old daemon and Web and starting the new runtime. A failed build leaves the old service running. It reuses the verified AGH listener's home, profile, dataDir, workspace and Node, then this checkout's saved selection; without either, defaults are `AGH_HOME` (otherwise `~/.agh`), `local-dev`, and this repository. Session and comparison data are retained. Restarting interrupts active tasks.
+
+```sh
+make dev ARGS='--check'                 # Read-only inspection of the selected instance
+make dev ARGS='--port 4190 --home /tmp/agh-dev --cwd /path/to/project'
+make dev ARGS='--node /path/to/node --env-file /private/path/dev.env'
+```
+
+`make dev-web` is an alias. This requires `make`, `lsof`, and `ps`; on Windows use `start-local-windows.ps1`. New processes inherit the launching shell's environment; `--env-file` can supply configuration. The selected home's `dev.env` is also loaded automatically, with existing environment variables taking precedence. On first use, `make dev ARGS='--save-env'` saves only this shell's `AGNES_JEV_*` and `TYPESAFE_API_KEY` variables there (`0600`, no overwrites). Automatic loading rejects other fields, symlinks, and files readable by other users. Keep this home outside the repository and never commit credentials. The launcher does not read or copy secrets from old processes. `Ctrl+C` stops this invocation's Web and corresponding backend. Re-run after source changes; this command does not watch and rebuild automatically.
+
+Unrelated port owners, scope conflicts, unverifiable identities, and concurrent launch transitions are refused. The shared lock is `dataDir/daemon/dev-launch.lock`; inspect its owner before removing a lock left by an abnormal termination. Builds remain in `packages/cli/dist/dev-*/runtime`, and non-secret instance selections in the git-ignored `.agnes-tmp/dev/`. Old runtime directories are not automatically deleted.
+
 On Linux, install bubblewrap through your system package manager, for example `apt install bubblewrap` on Debian/Ubuntu. If user namespaces are disabled, the default sandbox refuses command tools; see [troubleshooting](troubleshooting.md).
 
 <a id="windows-构建"></a>
@@ -120,5 +140,9 @@ node (Join-Path $aghBuildOutput 'agnes.mjs') --help
 The POSIX build flow has versioned runtime evidence. The PowerShell example has only had its arguments and path construction reviewed. See [verification](../maintainers/verification.md) for environments and results.
 
 After tasks finish in the old instance, run `daemon stop` through the old distribution, stop its Web service, and then launch the new distribution. Build locks, failed staging directories, and owner records are recovery evidence; deleting them is not a fix for build or daemon errors. Automatic installation, updates, and startup registration are not promised.
+
+On macOS, process identity now combines the stable boot-session UUID, PID and process start time.
+The older boot timestamp could drift during clock corrections. Stop old instances before upgrading;
+do not replace only the native helper inside a running distribution, because the identity formats differ.
 
 Implementation: [toolchain](../../package.json), [local build](../../packages/cli/tools/build-local.ts), [Windows headers](../../.github/scripts/prepare-windows-native.ps1).

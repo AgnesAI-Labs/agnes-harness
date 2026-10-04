@@ -21,6 +21,7 @@ type Tables =
   | 'lastTurn'
   | 'lastStep'
   | 'pendingEffects'
+  | 'lastRuntimeRecord'
   | 'pendingApprovals'
   | 'taint'
 type Registers = LedgerState['registers']
@@ -178,6 +179,8 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         reset('openStep')
         reset('lastStep')
         reset('pendingEffects')
+        reset('lastRuntimeRecord')
+        s.assistantOutputs = ChunkedMap.empty()
         reset('pendingApprovals')
         reset('resumedRequests')
         reset('taint')
@@ -250,7 +253,25 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       table('pendingEffects').set(pending.effectId, { ...pending, receiptSeq: e.seq })
       break
     }
+    case 'runtime/record': {
+      table('lastRuntimeRecord').set(lane, { seq: e.seq, turn: s.openTurn.get(lane)?.turn })
+      break
+    }
     case 'assistant/output': {
+      const sources = e.sourceEventSeqs ?? []
+      const source = sources[0]
+      if (d?.state === 'started' && sources.length === 1 && typeof d.effectId === 'string') {
+        s.assistantOutputs = s.assistantOutputs.set(e.seq, {
+          effectId: d.effectId,
+          lane,
+          turn: s.openTurn.get(lane)?.turn ?? 0,
+          closed: false,
+        })
+      } else if (d?.state === 'interrupted' && source !== undefined) {
+        const output = s.assistantOutputs.get(source)
+        if (output && output.lane === lane && output.effectId === d.effectId)
+          s.assistantOutputs = s.assistantOutputs.set(source, { ...output, closed: true })
+      }
       const effectId = typeof d?.effectId === 'string' ? d.effectId : undefined
       const pending = effectId === undefined ? undefined : s.pendingEffects.get(effectId)
       if (pending?.kind !== 'inference' || pending.lane !== lane) break
@@ -265,6 +286,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       break
     }
     case 'assistant/message': {
+      for (const source of e.sourceEventSeqs ?? []) {
+        const output = s.assistantOutputs.get(source)
+        if (output && !output.closed && output.lane === lane && output.turn === s.openTurn.get(lane)?.turn)
+          s.assistantOutputs = s.assistantOutputs.set(source, { ...output, closed: true })
+      }
       const pending = [...s.pendingEffects.values()].find(
         (effect) =>
           effect.kind === 'inference' && effect.lane === lane && effect.firstOutputSeq === undefined,

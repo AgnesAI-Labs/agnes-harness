@@ -119,8 +119,9 @@ type Scenario = { parent: ParentState; kind: 'fork' | 'spawn'; beforeHead?: bool
 
 /**
  * A parent with a compacted tool-heavy turn, a plain turn, and an accepted turn to delegate from;
- * optionally closed and reopened first. The child is made on the live parent,
- * by the live-parent path or (with the parent's fork point withheld) by a cold open.
+ * optionally closed and reopened first. Explicit Native history forks exercise the live-parent
+ * path and (with the parent's fork point withheld) its equivalent cold open. Default delegated
+ * forks use the completed-turn cut, separately covered by the Host child-entry contract.
  */
 async function delegate(sc: Scenario, path: Path) {
   const storage = new MemoryStorage({ clock: () => CLOCK })
@@ -157,16 +158,20 @@ async function delegate(sc: Scenario, path: Path) {
       parent: parent.key,
       cwd: '/w',
       input: 'first child',
-      ...(sc.beforeHead ? { forkAt: parent.lastSeq - 1 } : {}),
+      ...(sc.beforeHead ? { forkAt: parent.lastSeq - 1 } : sc.kind === 'fork' ? { forkAt: c } : {}),
     })
   const handle = await createChild(parent, sc.kind, {
     parent: parent.key,
     cwd: '/w',
     input: 'child task',
-    ...(sc.beforeHead ? { forkAt: parent.lastSeq - 1 } : {}),
+    ...(sc.beforeHead ? { forkAt: parent.lastSeq - 1 } : sc.kind === 'fork' ? { forkAt: c } : {}),
   })
   const child = k.get(handle.key) as SessionImpl
-  const b = child.d.log.parent?.boundarySeq as Seq
+  const b = child.d.log.parent?.boundarySeq ?? 0
+  if (sc.kind === 'spawn') {
+    expect(child.d.log.parent).toBeUndefined()
+    expect(child.surface().filter((node) => node.event.type === 'assistant/message')).toEqual([])
+  }
   const own = await storage.scanIntegrity(child.key, { fromSeq: b + 1, toSeq: child.lastSeq, limit: 500 })
   const view = {
     b,
@@ -222,14 +227,15 @@ describe('a delegated child made on its live parent equals the same child made b
       // Only the withheld fork point sends a delegated child down the cold path, and that is logged.
       expect(fast.warnings).toEqual([])
       expect(cold.warnings).toEqual(
-        Array.from({ length: sc.twice ? 2 : 1 }, () => ({
+        Array.from({ length: sc.kind === 'spawn' ? 0 : sc.twice ? 2 : 1 }, () => ({
           message: 'delegated child opened cold',
           detail: { path: 'cold-open', reason: 'no-tracker' },
         })),
       )
       expect(fast.view.b).toBe(cold.view.b)
       if (sc.kind === 'fork') expect(fast.view.b).toBe(fast.view.c)
-      if (sc.beforeHead) expect(fast.view.c).toBeLessThan(fast.view.b)
+      if (sc.kind === 'spawn') expect(fast.view.b).toBe(0)
+      if (sc.kind === 'fork' && sc.beforeHead) expect(fast.view.c).toBeLessThan(fast.view.b)
       // Same bytes and digests for every child row, so the chain state at the boundary was the same.
       expect(fast.view.ledger).toBe(cold.view.ledger)
       expect(fast.verified).toEqual(cold.verified)

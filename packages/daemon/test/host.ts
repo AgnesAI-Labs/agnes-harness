@@ -79,7 +79,7 @@ export async function testWorkspaceCatalogAt(
 }
 
 export async function openTestHost(
-  o: Pick<TestHostOptions, 'allowed' | 'approval' | 'presets' | 'provider' | 'script' | 'seams'> = {},
+  o: Pick<TestHostOptions, 'allowed' | 'approval' | 'presets' | 'provider' | 'script' | 'seams' | 'jev'> = {},
 ): Promise<{
   host: Host
   dataDir: string
@@ -97,6 +97,7 @@ export async function openTestHost(
     ...(o.presets ? { presets: o.presets } : {}),
     ...(o.allowed ? { allowed: o.allowed } : {}),
     ...(o.seams ? { seams: o.seams } : {}),
+    ...(o.jev ? { jev: o.jev } : {}),
   })
   const workspaces = await testWorkspaceCatalog(dataDir)
   return {

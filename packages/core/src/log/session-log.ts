@@ -1,4 +1,5 @@
-import { type ThinkingLevel, validateOpState } from '@agnes/protocol'
+import { type RuntimeIdentity, type ThinkingLevel, validateOpState } from '@agnes/protocol'
+import { NATIVE_RUNTIME } from '@agnes/runtime-api'
 import {
   type Clock,
   CoreError,
@@ -116,7 +117,9 @@ export class SessionLogImpl {
     if (this.faultedValue) return
     this.faultedValue = true
     this.faultCause =
-      cause instanceof CoreError ? cause : new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen')
+      cause instanceof CoreError
+        ? cause
+        : new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen', { cause })
     const listeners = [...this.faultListeners]
     this.faultListeners.clear()
     for (const fn of listeners) {
@@ -149,6 +152,7 @@ export class SessionLogImpl {
     integrityState: IntegrityState,
     createdOnOpen: boolean,
     parent?: { key: SessionKey; boundarySeq: Seq },
+    readonly ownerEpoch?: number,
   ) {
     this.lastSeqValue = lastSeq
     this.registersCache.replaceAll(rows)
@@ -180,6 +184,7 @@ export class SessionLogImpl {
         integrityState,
         opened.created === true,
         opened.parent,
+        opened.ownerEpoch,
       )
     } catch (error) {
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
@@ -217,6 +222,7 @@ export class SessionLogImpl {
         own.state,
         opened.created === true,
         opened.parent,
+        opened.ownerEpoch,
       )
       seededLogs.set(log, { ...seed, own: own.rows.map((row) => row.event), tail: [] })
       return log
@@ -340,7 +346,8 @@ export class SessionLogImpl {
   }
 
   private sealCheck(): void {
-    if (this.faultedValue) throw new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen')
+    if (this.faultedValue)
+      throw new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen', { cause: this.faultCause })
   }
 
   private guard(): void {
@@ -508,6 +515,7 @@ export class SessionLogImpl {
     boundarySeq: Seq,
     childKey: SessionKey,
     opener: {
+      runtime?: RuntimeIdentity
       actor: Event['actor']
       agnesVersion: string
       preset: string | null
@@ -611,6 +619,7 @@ export class SessionLogImpl {
           trust: 'trusted',
           data: {
             key: childKey,
+            runtime: { ...(opener.runtime ?? NATIVE_RUNTIME) },
             parent: { key: this.o.key, boundarySeq },
             resolvedProfileHash: opener.resolvedProfileHash,
             preset: opener.preset,

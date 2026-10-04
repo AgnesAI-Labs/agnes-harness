@@ -2,7 +2,8 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
-import type { LedgerEvent } from '@agnes/sdk/browser'
+import type { Client, LedgerEvent } from '@agnes/sdk/browser'
+import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sdk = vi.hoisted(() => ({
@@ -12,6 +13,22 @@ const sdk = vi.hoisted(() => ({
 const configurationCallback = vi.hoisted(() => ({
   saved: undefined as ((snapshot: ConfigSnapshot) => Promise<void>) | undefined,
 }))
+const comparisonDraft = vi.hoisted(() => vi.fn(async (_requestId: string, _text: string) => {}))
+const comparisonSubmit = vi.hoisted(() => vi.fn(async (_id: string, _text: string) => {}))
+vi.mock('../src/comparison-workspace.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/comparison-workspace.js')>()
+  return {
+    ...actual,
+    createComparisonWorkspace: (...args: Parameters<typeof actual.createComparisonWorkspace>) => ({
+      ...actual.createComparisonWorkspace(...args),
+      async startDraft(id: string, text: string) {
+        await args[2]?.select?.(id)
+        await comparisonDraft(id, text)
+      },
+      submitDraft: comparisonSubmit,
+    }),
+  }
+})
 const traceBridge = vi.hoisted(() => ({
   options: undefined as unknown,
   transcriptOptions: undefined as unknown,
@@ -68,6 +85,46 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
   createClient: (...args: unknown[]) => {
     const client = sdk.createClient(...args)
     if (client && !('connectionState' in client)) client.connectionState = 'connected'
+    if (client && !('runtime' in client))
+      client.runtime = {
+        list: vi.fn(async () => ({
+          items: [
+            {
+              id: 'native',
+              version: '1',
+              label: 'Native',
+              apiVersion: 1,
+              available: true,
+              capabilities: { prompt: true, cancel: true, resume: true, compact: true, fork: true },
+            },
+          ],
+        })),
+      }
+    if (client) {
+      const unavailable = () =>
+        vi.fn(async () => {
+          throw new Error('No comparison selected in this app fixture')
+        })
+      client.comparison = {
+        list: vi.fn(async () => ({ items: [], nextCursor: null })),
+        create: unavailable(),
+        get: unavailable(),
+        journal: unavailable(),
+        metrics: unavailable(),
+        priceDetails: unavailable(),
+        reconcile: unavailable(),
+        submit: unavailable(),
+        cancel: unavailable(),
+        release: unavailable(),
+        remove: unavailable(),
+        prune: unavailable(),
+        events: unavailable(),
+        projectUI: unavailable(),
+        readToolDetail: unavailable(),
+        toolDetail: unavailable(),
+        ...client.comparison,
+      } satisfies Client['comparison']
+    }
     if (vi.isMockFunction(client?.on) && !client.on.getMockImplementation())
       client.on.mockImplementation(() => () => undefined)
     return client
@@ -91,6 +148,7 @@ type Deferred<T> = {
 
 type SessionDouble = {
   id: string
+  runtime: ReturnType<typeof vi.fn>
   cancel: ReturnType<typeof vi.fn>
   detach: ReturnType<typeof vi.fn>
   events: ReturnType<typeof vi.fn>
@@ -187,6 +245,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
       throw new Error('no history in this double')
     }),
     id,
+    runtime: vi.fn(async () => ({ runtime: { id: 'native', version: '1' }, phase: 'idle' })),
     cancel: vi.fn(async () => undefined),
     detach: vi.fn(async () => undefined),
     events: vi.fn(() => ({
@@ -505,7 +564,7 @@ describe('web session selection', () => {
       initialize: vi.fn(async () => undefined),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
-      apis: vi.fn(async () => ({ profile: { models: [] } })),
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
       config: {
         get: vi.fn(async () => ({ configured: true })),
         providers: vi.fn(async () => ({ providers: [] })),
@@ -539,17 +598,45 @@ describe('web session selection', () => {
     await trace.readToolDetail('old', 3, 7)
     expect(old.readToolDetail).toHaveBeenCalledWith(3, 7, undefined)
 
-    document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
+    // Retire a comparison navigation while its old session is still detaching. Its late
+    // completion must not replace the newer popstate destination or hijack the composer.
+    const detached = deferred<void>()
+    old.detach.mockImplementationOnce(() => detached.promise)
+    sessionStorage.setItem('agnes-web-comparison', JSON.stringify({ id: 'late-comparison' }))
+    document.getElementById('open-comparison')?.click()
+    await vi.waitFor(() => expect(old.detach).toHaveBeenCalledTimes(1))
+    history.replaceState(null, '', '/?session=next')
+    window.dispatchEvent(new PopStateEvent('popstate'))
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'next' }))
+    detached.resolve()
+    await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('页面选择已改变'))
+    expect(new URL(location.href).searchParams.get('session')).toBe('next')
+    expect(new URL(location.href).searchParams.has('comparison')).toBe(false)
+    expect((document.querySelector('.comparison-workspace') as HTMLDialogElement | null)?.open).not.toBe(true)
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+    submit('continue the newly selected session')
+    await vi.waitFor(() => expect(next.prompt).toHaveBeenCalledWith('continue the newly selected session'))
+    expect(old.prompt).not.toHaveBeenCalled()
+    expect(comparisonSubmit).not.toHaveBeenCalled()
+    expect(comparisonDraft).not.toHaveBeenCalled()
     await expect(trace.readToolDetail('old', 3, 7)).rejects.toThrow('会话已切换')
     await trace.readToolDetail('next', 9)
     expect(next.readToolDetail).toHaveBeenCalledWith(9, undefined, undefined)
     expect(old.readToolDetail).toHaveBeenCalledTimes(1)
 
+    await vi.waitFor(() => expect((document.getElementById('new') as HTMLButtonElement).disabled).toBe(false))
     document.getElementById('new')?.click()
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toBeUndefined())
     await expect(trace.readToolDetail('next', 9)).rejects.toThrow('没有当前会话')
     expect(next.readToolDetail).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLSelectElement>('.composer-runtime')?.disabled).toBe(false),
+    )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
   }, 15_000)
 
   it.each(['none', 'model', 'permission'] as const)(
@@ -956,7 +1043,10 @@ describe('web session selection', () => {
       if (kind === 'missing-profile') {
         const pendingLoad = deferred<{ session: SessionDouble; offPermission: ReturnType<typeof vi.fn> }>()
         binding.loadWebSession.mockImplementationOnce(() => pendingLoad.promise)
-        const event = (name: string) => client.on.mock.calls.find(([key]: [string]) => key === name)?.[1]()
+        const event = (name: string) => {
+          client.connectionState = name === 'reconnected' ? 'connected' : 'reconnecting'
+          for (const [key, listener] of client.on.mock.calls) if (key === name) listener()
+        }
         event('reconnecting')
         expect((document.getElementById('new') as HTMLButtonElement).disabled).toBe(true)
         for (const control of recoveryButtons) {
@@ -1006,7 +1096,40 @@ describe('web session selection', () => {
     const fresh = session('fresh', () => newProjection.promise)
     let includeFresh = false
 
+    const capture = JSON.parse(
+      await readFile(resolve(packageRoot, '../core/test/fixtures/jev-real-trace.json'), 'utf8'),
+    ) as { events: LedgerEvent[] }
+    const head = capture.events.at(-1)?.seq ?? 0
+    const prefix = capture.events.slice(0, 70)
+    old.runtime.mockResolvedValue({ runtime: { id: 'jevloop', version: '1' }, phase: 'idle' })
+    old.projectUIOpening.mockResolvedValue({
+      timeline: { ...idleTimeline('old'), upto: head },
+      history: { hasEarlier: false, startIndex: 0, totalNodes: 0 },
+    })
+    const lateHistory = deferred<{ events: LedgerEvent[]; lastSeq: number; nextAfterSeq: null }>()
+    const diagnostics = vi
+      .fn()
+      .mockResolvedValueOnce({ events: prefix, lastSeq: prefix.at(-1)?.seq ?? 0, nextAfterSeq: null })
+      .mockImplementationOnce(() => lateHistory.promise)
+
     sdk.createClient.mockReturnValue({
+      call: vi.fn((method: string) => {
+        if (method === '_agnes/v1/diagnostics.events') return diagnostics()
+        return Promise.reject(new Error('RPC outside this session fixture'))
+      }),
+      comparison: { priceDetails: vi.fn() },
+      runtime: {
+        list: vi.fn(async () => ({
+          items: ['native', 'jevloop'].map((id) => ({
+            id,
+            version: '1',
+            label: id === 'native' ? 'Native' : 'Jev',
+            apiVersion: 1,
+            available: true,
+            capabilities: { prompt: true, cancel: true, resume: true, compact: true, fork: true },
+          })),
+        })),
+      },
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
       approval: { decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
@@ -1056,8 +1179,19 @@ describe('web session selection', () => {
     const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
     const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
     const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
+    const records = document.getElementById('runtime-records') as HTMLElement
+    const draftRuntime = document.getElementById('new-session-runtime') as HTMLSelectElement
 
     await vi.waitFor(() => expect(prompt.disabled).toBe(false))
+    await vi.waitFor(() =>
+      expect(records.querySelectorAll('.runtime-record-rows > li').length).toBeGreaterThan(0),
+    )
+    await vi.waitFor(() => expect(diagnostics).toHaveBeenCalledTimes(2))
+    const replay = records.querySelector<HTMLInputElement>('[aria-label="Jev 账本回放位置"]')
+    if (!replay) throw new Error('missing Jev replay control')
+    replay.value = '2'
+    replay.dispatchEvent(new Event('input'))
+    expect(replay.disabled).toBe(false)
     expect(document.getElementById('notice')?.textContent).toContain('无法读取工作区列表')
     expect(send.disabled).toBe(true)
     expect(send.dataset.mode).toBe('idle')
@@ -1093,10 +1227,24 @@ describe('web session selection', () => {
     newButton.click()
     expect(newSession.open).toBe(true)
     expect(create).not.toHaveBeenCalled()
+    expect(records.hidden).toBe(true)
+    expect(records.querySelectorAll('.runtime-record-rows > li')).toHaveLength(0)
+    expect(replay.disabled).toBe(true)
+    expect(replay.max).toBe('0')
+    expect(records.querySelector<HTMLSelectElement>('[aria-label="Jev 轮次与步骤"]')?.options).toHaveLength(0)
+    lateHistory.resolve({ events: capture.events.slice(prefix.length), lastSeq: head, nextAfterSeq: null })
     await vi.waitFor(() =>
       expect(document.getElementById('notice')?.textContent).toContain('detach cleanup failed'),
     )
     expect(prompt.disabled).toBe(false)
+    expect(draftRuntime.value).toBe('native')
+    draftRuntime.value = 'jevloop'
+    draftRuntime.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(records.querySelectorAll('.runtime-record-rows > li')).toHaveLength(0)
+    expect(replay.disabled).toBe(true)
+    expect(records.textContent).not.toContain(`账本 #0–${head}`)
+    draftRuntime.value = 'native'
+    draftRuntime.dispatchEvent(new Event('change', { bubbles: true }))
     newSessionCwd.value = '/cancelled-directory'
     newSessionCancel.click()
     expect(newSession.open).toBe(false)
@@ -1114,12 +1262,59 @@ describe('web session selection', () => {
     expect(send.disabled).toBe(true)
     expect(model.disabled).toBe(true)
     expect(old.prompt).not.toHaveBeenCalled()
-    expect(create).toHaveBeenCalledWith({ cwd: '/workspace/agnes', sessionKey: expect.any(String) })
+    expect(create).toHaveBeenCalledWith({
+      cwd: '/workspace/agnes',
+      sessionKey: expect.any(String),
+      runtime: 'native',
+    })
 
     firstCreation.resolve(fresh)
     includeFresh = true
     newProjection.resolve(idleTimeline('fresh'))
     await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('must not cross sessions'))
+    await vi.waitFor(() => expect(newButton.disabled).toBe(false))
+    newButton.click()
+    await vi.waitFor(() => expect(draftRuntime.disabled).toBe(false))
+    draftRuntime.value = 'comparison'
+    draftRuntime.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(document.querySelector<HTMLSelectElement>('.composer-runtime')?.value).toBe('comparison')
+    expect(document.getElementById('composer-permission')?.hidden).toBe(false)
+    document.getElementById('composer-permission')?.click()
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="listbox"]')?.textContent).toContain('自动审批（保持隔离）'),
+    )
+    expect(document.querySelector('[role="listbox"]')?.textContent).not.toContain('工作区内外文件读写')
+    ;[...document.querySelectorAll('[role="option"]')]
+      .find((row) => row.querySelector('.permission-picker-label')?.textContent === '自动审批（保持隔离）')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await vi.waitFor(() =>
+      expect(document.getElementById('composer-permission')?.textContent).toContain('自动审批（保持隔离）'),
+    )
+    draftRuntime.value = 'native'
+    draftRuntime.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(document.getElementById('composer-permission')?.textContent).toContain('工作区内修改')
+    draftRuntime.value = 'comparison'
+    draftRuntime.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(document.getElementById('composer-permission')?.textContent).toContain('自动审批（保持隔离）')
+    newSessionCancel.click()
+    comparisonDraft.mockRejectedValueOnce(new Error('create reply lost'))
+    submit('compare this new task')
+    await vi.waitFor(() => expect(prompt.value).toBe('compare this new task'))
+    const requestId = comparisonDraft.mock.calls.at(-1)?.[0]
+    expect(requestId).toBeTruthy()
+    submit('compare this new task')
+    await vi.waitFor(() =>
+      expect(comparisonSubmit).toHaveBeenLastCalledWith(requestId, 'compare this new task'),
+    )
+    expect(new URL(location.href).searchParams.get('comparison')).toBe(requestId)
+    await vi.waitFor(() => expect(prompt.disabled).toBe(false))
+    submit('continue the same pair')
+    await vi.waitFor(() =>
+      expect(comparisonSubmit).toHaveBeenLastCalledWith(requestId, 'continue the same pair'),
+    )
+    expect(comparisonDraft).toHaveBeenCalledTimes(1)
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(fresh.prompt).toHaveBeenCalledTimes(1)
   })
 
   it('opens directory confirmation before creation and explains an unavailable path', async () => {
@@ -1784,8 +1979,9 @@ describe('incremental opening', () => {
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
     await import('../src/app.js')
-    const emit = (event: string, payload: unknown) =>
-      on.mock.calls.find(([name]) => name === event)?.[1](payload)
+    const emit = (event: string, payload: unknown) => {
+      for (const [name, listener] of on.mock.calls) if (name === event) listener(payload)
+    }
     return { old, list, emit }
   }
 

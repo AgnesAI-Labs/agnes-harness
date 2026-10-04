@@ -1,7 +1,8 @@
 import type { JsonRpcMessage, JsonRpcRequest, RpcEndpoint } from '@agnes/sdk'
 import { createClient, localAuth, memoryJournal } from '@agnes/sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { bindWebSession, loadWebSession } from '../src/session-binding.js'
+import { SessionPaneController } from '../src/session-pane.js'
 
 type Handler = (request: JsonRpcRequest, push: (message: JsonRpcMessage) => void) => unknown
 
@@ -76,6 +77,73 @@ const initialize = () => ({
 })
 
 describe('Web session permission binding', () => {
+  it('disposing one comparison pane preserves the other pane and its pending approval', async () => {
+    const f = endpointFor({
+      initialize,
+      'session/load': () => ({}),
+      '_agnes/v1/session.detach': () => ({}),
+      '_agnes/v1/session.runtime': (message) => ({
+        runtime: {
+          id: (message.params as { sessionId: string }).sessionId === 'left' ? 'native' : 'jevloop',
+          version: '1',
+        },
+        phase: 'waiting',
+      }),
+    })
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      auth: { kind: 'local' },
+      authProviders: { local: () => localAuth() },
+      journal: memoryJournal(),
+    })
+    const left = new SessionPaneController(client, 'left')
+    const right = new SessionPaneController(client, 'right')
+    let allowRight: (() => void) | undefined
+    const leftSeen = vi.fn()
+    try {
+      await left.open(async () => {
+        leftSeen()
+        return new Promise(() => {})
+      })
+      await right.open(
+        () =>
+          new Promise((resolve) => {
+            allowRight = () => resolve({ verdict: 'allowed-once' })
+          }),
+      )
+      for (const side of ['left', 'right'])
+        f.push({
+          jsonrpc: '2.0',
+          id: `approve-${side}`,
+          method: 'session/request_permission',
+          params: { ...request, sessionId: side },
+        })
+      await vi.waitFor(() => {
+        expect(leftSeen).toHaveBeenCalled()
+        expect(allowRight).toBeDefined()
+      })
+      await left.dispose()
+      await vi.waitFor(() =>
+        expect(
+          f.calls.find((message) => !('method' in message) && message.id === 'approve-left'),
+        ).toMatchObject({ result: { outcome: { outcome: 'cancelled' } } }),
+      )
+      expect(f.calls.some((message) => !('method' in message) && message.id === 'approve-right')).toBe(false)
+      expect(right.identity).toEqual({ id: 'jevloop', version: '1' })
+      allowRight?.()
+      await vi.waitFor(() =>
+        expect(
+          f.calls.find((message) => !('method' in message) && message.id === 'approve-right'),
+        ).toMatchObject({ result: { outcome: { outcome: 'selected', optionId: 'allow' } } }),
+      )
+      expect(f.calls.some((message) => 'method' in message && message.method === 'session/cancel')).toBe(
+        false,
+      )
+    } finally {
+      await right.dispose()
+      await client.close()
+    }
+  })
   it('keeps a pre-load pending request alive through the load handoff', async () => {
     let loadReturned = false
     let resolvePermission: ((outcome: { optionId: string }) => void) | undefined

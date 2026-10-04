@@ -1,9 +1,18 @@
+import type { ToolContext } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
+import { ExecutePermitRegistry } from '../src/effects/execute-permits.js'
+import {
+  type HumanWaitScope,
+  humanWaitParent,
+  withManagedHumanWait,
+} from '../src/effects/managed-human-wait.js'
 import {
   dispatchTool,
+  type HostDispatchObservation,
   type HostToolDispatchInput,
   type HostToolDispatchPort,
 } from '../src/effects/tool-dispatch.js'
+import { dispatchPermittedTool, dispatchToolAttempt } from '../src/effects/tool-execution.js'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { presetDefaults } from '../src/step/preset.js'
@@ -13,7 +22,416 @@ import { actor, noTimers, openSession, testFsOps } from './helpers/open-session.
 
 const result = { content: [{ type: 'text' as const, text: 'ok' }] }
 
+const deferred = <T = void>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes
+    reject = no
+  })
+  return { promise, resolve, reject }
+}
+
+const flush = async () => {
+  for (let index = 0; index < 12; index++) await Promise.resolve()
+}
+const managedAttempts = () => {
+  let now = 0
+  let sequence = 0
+  const pending = new Map<number, { at: number; fire(): void }>()
+  const timers = {
+    setTimeout(fire: () => void, ms: number) {
+      const id = ++sequence
+      pending.set(id, { at: now + ms, fire })
+      return id
+    },
+    clearTimeout(handle: unknown) {
+      pending.delete(handle as number)
+    },
+  }
+  const advance = async (ms: number) => {
+    const through = now + ms
+    while (true) {
+      const next = [...pending].filter(([, item]) => item.at <= through).sort((a, b) => a[1].at - b[1].at)[0]
+      if (!next) break
+      now = next[1].at
+      pending.delete(next[0])
+      next[1].fire()
+      await flush()
+    }
+    now = through
+    await flush()
+  }
+  const start = (
+    execute: (context: ToolContext) => Promise<HostDispatchObservation>,
+    options: { timeoutMs?: number; label?: string; parent?: HumanWaitScope; signal?: AbortSignal } = {},
+  ) => {
+    const context = {} as ToolContext
+    const controller = new AbortController()
+    let invocation!: Promise<HostDispatchObservation>
+    let settled = false
+    const observed = dispatchToolAttempt({
+      name: options.label ?? 'ordinary-tool',
+      executionDomain: 'host-computer-use',
+      timeoutMs: options.timeoutMs ?? 100,
+      signal: options.signal ?? controller.signal,
+      ...(options.parent ? { humanWaitParent: options.parent } : {}),
+      timers,
+      monotonicClock: () => now,
+      createContext: () => context,
+      dispatch: execute,
+      track: (work) => {
+        invocation = work
+      },
+    })
+    void observed.then(() => {
+      settled = true
+    })
+    return { context, controller, observed, invocation, settled: () => settled }
+  }
+  return { start, advance, pending }
+}
+
+describe('managed human wait during tool dispatch', () => {
+  it('excludes only actual human wait and resumes the remaining ordinary budget', async () => {
+    const h = managedAttempts()
+    const preparing = deferred()
+    const answer = deferred<string>()
+    const work = deferred()
+    const attempt = h.start(async (context) => {
+      await preparing.promise
+      expect(await withManagedHumanWait(context, () => answer.promise)).toBe('answer')
+      await work.promise
+      return { phase: 'responded', result }
+    })
+    await h.advance(30)
+    preparing.resolve()
+    await flush()
+    await h.advance(10_000)
+    expect(attempt.settled()).toBe(false)
+    answer.resolve('answer')
+    await flush()
+    await h.advance(69)
+    expect(attempt.settled()).toBe(false)
+    await h.advance(1)
+    expect(await attempt.observed).toMatchObject({
+      timedOut: true,
+      cancelled: false,
+      observation: { phase: 'may_have_sent' },
+    })
+    let drained = false
+    void attempt.invocation.then(() => {
+      drained = true
+    })
+    expect(drained).toBe(false)
+    work.resolve()
+    await attempt.invocation
+    await flush()
+    expect(drained).toBe(true)
+  })
+
+  it('resumes only after the final overlapping wait without resetting previously consumed time', async () => {
+    const h = managedAttempts()
+    const preparing = deferred()
+    const first = deferred()
+    const second = deferred()
+    const finished = deferred()
+    const attempt = h.start(async (context) => {
+      await preparing.promise
+      await Promise.all([
+        withManagedHumanWait(context, () => first.promise),
+        withManagedHumanWait(context, () => second.promise),
+      ])
+      await finished.promise
+      return { phase: 'responded', result }
+    })
+    await h.advance(25)
+    preparing.resolve()
+    await flush()
+    await h.advance(1000)
+    first.resolve()
+    await flush()
+    await h.advance(1000)
+    expect(attempt.settled()).toBe(false)
+    second.resolve()
+    await flush()
+    await h.advance(74)
+    expect(attempt.settled()).toBe(false)
+    await h.advance(1)
+    expect((await attempt.observed).timedOut).toBe(true)
+    finished.resolve()
+    await attempt.invocation
+  })
+
+  it.each(['reject', 'throw'] as const)(
+    'restores the remaining timer when the trusted answerer %s fails',
+    async (kind) => {
+      const h = managedAttempts()
+      const begin = deferred()
+      const answer = deferred()
+      const finished = deferred()
+      const attempt = h.start(async (context) => {
+        await begin.promise
+        await expect(
+          withManagedHumanWait(context, () => {
+            if (kind === 'throw') throw new Error('answerer unavailable')
+            return answer.promise
+          }),
+        ).rejects.toThrow('answerer unavailable')
+        await finished.promise
+        return { phase: 'responded', result }
+      })
+      await h.advance(40)
+      begin.resolve()
+      await flush()
+      if (kind === 'reject') {
+        await h.advance(1000)
+        answer.reject(new Error('answerer unavailable'))
+        await flush()
+      }
+      await h.advance(59)
+      expect(attempt.settled()).toBe(false)
+      await h.advance(1)
+      expect((await attempt.observed).timedOut).toBe(true)
+      finished.resolve()
+      await attempt.invocation
+    },
+  )
+
+  it.each(['resolve', 'reject'] as const)(
+    'cancels an unanswered request immediately and consumes its late %s',
+    async (kind) => {
+      const h = managedAttempts()
+      const answer = deferred()
+      let questionSignal!: AbortSignal
+      const attempt = h.start(async (context) => {
+        await withManagedHumanWait(context, (signal) => {
+          questionSignal = signal
+          return answer.promise
+        })
+        return { phase: 'responded', result }
+      })
+      await h.advance(1000)
+      attempt.controller.abort()
+      const observed = await attempt.observed
+      expect(observed).toMatchObject({ timedOut: false, cancelled: true })
+      expect(questionSignal.aborted).toBe(true)
+      expect(h.pending.size).toBe(0)
+      if (kind === 'resolve') answer.resolve()
+      else answer.reject(new Error('late answer failure'))
+      await flush()
+      expect(await attempt.observed).toBe(observed)
+      await expect(withManagedHumanWait(attempt.context, async () => undefined)).rejects.toThrow('aborted:')
+    },
+  )
+
+  it('pauses nested ancestors while an independent sibling still times out', async () => {
+    const h = managedAttempts()
+    const begin = deferred()
+    const answer = deferred()
+    const childDone = deferred()
+    const parentDone = deferred()
+    let child!: ReturnType<typeof h.start>
+    const parent = h.start(
+      async (context) => {
+        await begin.promise
+        const parentScope = humanWaitParent(context)
+        if (!parentScope) throw new Error('Expected managed parent scope')
+        child = h.start(
+          async (nested) => {
+            await withManagedHumanWait(nested, () => answer.promise)
+            await childDone.promise
+            return { phase: 'responded', result }
+          },
+          { parent: parentScope, timeoutMs: 40, label: 'child' },
+        )
+        await child.observed
+        await parentDone.promise
+        return { phase: 'responded', result }
+      },
+      { label: 'parent' },
+    )
+    const siblingDone = deferred()
+    const sibling = h.start(async () => {
+      await siblingDone.promise
+      return { phase: 'responded', result }
+    })
+    await h.advance(30)
+    begin.resolve()
+    await flush()
+    await h.advance(1000)
+    expect((await sibling.observed).timedOut).toBe(true)
+    expect(parent.settled()).toBe(false)
+    expect(child.settled()).toBe(false)
+    answer.resolve()
+    await flush()
+    await h.advance(39)
+    expect(child.settled()).toBe(false)
+    childDone.resolve()
+    await child.observed
+    await h.advance(30)
+    expect(parent.settled()).toBe(false)
+    await h.advance(1)
+    expect((await parent.observed).timedOut).toBe(true)
+    parentDone.resolve()
+    siblingDone.resolve()
+    await Promise.all([parent.invocation, sibling.invocation])
+  })
+
+  it('ignores a retired timeout callback while waiting but still enforces the resumed deadline', async () => {
+    const h = managedAttempts()
+    const begin = deferred()
+    const answer = deferred()
+    const done = deferred()
+    const attempt = h.start(async (context) => {
+      await begin.promise
+      await withManagedHumanWait(context, () => answer.promise)
+      await done.promise
+      return { phase: 'responded', result }
+    })
+    const stale = [...h.pending.values()][0]?.fire
+    if (!stale) throw new Error('Expected ordinary execution deadline')
+    await h.advance(10)
+    begin.resolve()
+    await flush()
+    stale()
+    await h.advance(1000)
+    expect(attempt.settled()).toBe(false)
+    answer.resolve()
+    await flush()
+    stale()
+    await h.advance(89)
+    expect(attempt.settled()).toBe(false)
+    await h.advance(1)
+    expect((await attempt.observed).timedOut).toBe(true)
+    done.resolve()
+    await attempt.invocation
+  })
+
+  it('does not exempt a tool named Question and rejects unbound wait capabilities', async () => {
+    const h = managedAttempts()
+    const done = deferred()
+    const attempt = h.start(
+      async () => {
+        await done.promise
+        return { phase: 'responded', result }
+      },
+      { label: 'Question' },
+    )
+    await expect(withManagedHumanWait({} as ToolContext, async () => undefined)).rejects.toThrow(
+      'managed tool attempt',
+    )
+    await h.advance(100)
+    expect((await attempt.observed).timedOut).toBe(true)
+    done.resolve()
+    await attempt.invocation
+  })
+
+  it.each(['answer', 'abort'] as const)(
+    'settles only once when %s wins the answer/cancellation race',
+    async (winner) => {
+      const h = managedAttempts()
+      const answer = deferred()
+      const attempt = h.start(async (context) => {
+        await withManagedHumanWait(context, () => answer.promise)
+        return { phase: 'responded', result }
+      })
+      answer.resolve()
+      if (winner === 'abort') attempt.controller.abort()
+      await flush()
+      const observed = await attempt.observed
+      if (winner === 'answer') {
+        expect(observed).toMatchObject({
+          timedOut: false,
+          cancelled: false,
+          observation: { phase: 'responded' },
+        })
+        attempt.controller.abort()
+      } else expect(observed).toMatchObject({ timedOut: false, cancelled: true })
+      await h.advance(1000)
+      expect(await attempt.observed).toBe(observed)
+      expect(h.pending.size).toBe(0)
+    },
+  )
+
+  it('propagates ancestor cancellation through a nested human wait without waiting for an answer', async () => {
+    const h = managedAttempts()
+    const answer = deferred()
+    let questionSignal!: AbortSignal
+    let child!: ReturnType<typeof h.start>
+    const parent = h.start(async (context) => {
+      const parentScope = humanWaitParent(context)
+      if (!parentScope) throw new Error('Expected managed parent scope')
+      child = h.start(
+        async (nested) => {
+          await withManagedHumanWait(nested, (signal) => {
+            questionSignal = signal
+            return answer.promise
+          })
+          return { phase: 'responded', result }
+        },
+        { parent: parentScope },
+      )
+      await child.observed
+      return { phase: 'responded', result }
+    })
+    await h.advance(1000)
+    parent.controller.abort()
+    expect(await parent.observed).toMatchObject({ cancelled: true, timedOut: false })
+    expect(questionSignal.aborted).toBe(true)
+    await child.observed
+    await parent.invocation
+    expect(h.pending.size).toBe(0)
+    answer.reject(new Error('late nested answer'))
+    await flush()
+  })
+})
+
 describe('tool dispatch attestation', () => {
+  it('consumes the same durable attempt only once without a Native session', async () => {
+    const invoke = vi.fn(async () => result)
+    const input = {
+      name: 'write',
+      args: {},
+      context: {} as never,
+      executionDomain: 'workspace' as const,
+      effectId: 'effect-1',
+      startSeq: 1,
+      attempt: 1 as const,
+      owner: {},
+      permits: new ExecutePermitRegistry(),
+      invoke,
+    }
+    expect(await dispatchPermittedTool(input)).toEqual({ phase: 'responded', result })
+    expect(() => dispatchPermittedTool(input)).toThrow('strict order')
+    expect(invoke).toHaveBeenCalledOnce()
+  })
+
+  it('returns a single transport observation without retrying or bypassing workspace admission', async () => {
+    const dispatch = vi.fn(async () => ({ phase: 'not_sent' as const, error: 'not accepted' }))
+    const input = {
+      name: 'write',
+      executionDomain: 'host-computer-use' as const,
+      timeoutMs: 1000,
+      signal: new AbortController().signal,
+      createContext: () => ({}) as never,
+      dispatch,
+    }
+    expect(await dispatchToolAttempt(input)).toMatchObject({ observation: { phase: 'not_sent' } })
+    expect(dispatch).toHaveBeenCalledOnce()
+    const denied = await dispatchToolAttempt({
+      ...input,
+      executionDomain: 'workspace',
+      workspaceInvocation: {
+        run: async () => {
+          throw new Error('workspace closed')
+        },
+      },
+    })
+    expect(denied.observation).toMatchObject({ phase: 'may_have_sent', error: new Error('workspace closed') })
+    expect(dispatch).toHaveBeenCalledOnce()
+  })
+
   it('bypasses the Host port for workspace tools', async () => {
     const hostPort: HostToolDispatchPort = { dispatch: vi.fn() }
     const invoke = vi.fn(async () => result)

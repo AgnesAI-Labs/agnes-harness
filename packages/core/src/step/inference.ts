@@ -44,6 +44,7 @@ import {
   remintRequestWithMaxTokens,
 } from '../request/derive.js'
 import { canonicalJson, sha256Hex } from '../request/hash.js'
+import { beginModelCall, type ModelCallHandle } from '../request/model-call.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { CoreError, type Event, type EventInput, type Seq } from '../types.js'
 import {
@@ -52,6 +53,7 @@ import {
   type ProviderCountAttempt,
   quoteBudget,
 } from './calibrate.js'
+import { finishAborted } from './control.js'
 import { contextBudgetError } from './gate.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
 import { type OpStateObj, type ToolCallState, withPhase } from './op-state.js'
@@ -463,6 +465,9 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   }
   const step = op.step + 1
   const gate = await s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 })
+  // The hook may observe cancellation as a refused invocation. That is not a new
+  // policy block, and no model request may start after the durable cancel edge.
+  if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested') return finishAborted(s)
   if (gate.block) {
     await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: gate.reason ?? '' } })
     return { phase: 'terminal', reason: 'blocked' }
@@ -847,6 +852,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   let firstChunkFlushed = false
   let outputStarted = false
   let outputCut = false
+  let modelCall: ModelCallHandle | undefined
   // Set once the settling rows are admitted; after that the settlement itself carries the text.
   let settleAdmitted = false
   let outputAt = 0
@@ -891,6 +897,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     // drains what it admitted, so recording the text here, in the abort callback, is what keeps it.
     const cut = cutRow()
     if (cut.length > 0) void s.d.log.append(cut).catch(() => undefined)
+    void modelCall?.settle('cancelled').catch(() => undefined)
     streamAbort.abort(s.ac.signal.reason)
     wakeStream?.(s.ac.signal.reason ?? new Error('inference aborted'))
   }
@@ -1024,11 +1031,20 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   }))
   try {
     const inferOptions = { signal: streamAbort.signal, toolNames: merged.tools }
+    const infer = async () => {
+      modelCall = await beginModelCall(s, {
+        purpose: 'inference',
+        parentEffectId: effect.effectId,
+        route: target.route,
+        model: target.model,
+        sourceTurn: op.meta.turn,
+        sourceStep: step,
+      })
+      return s.d.provider.infer(wire, inferOptions)
+    }
     const stream = s.d.segments?.Inference
-      ? await runCoreReplacement(s, 'Inference', ctx, { request: wire, options: inferOptions }, async () =>
-          s.d.provider.infer(wire, inferOptions),
-        )
-      : s.d.provider.infer(wire, inferOptions)
+      ? await runCoreReplacement(s, 'Inference', ctx, { request: wire, options: inferOptions }, infer)
+      : await infer()
     if (!stream || typeof stream[Symbol.asyncIterator] !== 'function')
       throw new Error('Inference replacement returned a non-async stream')
     const iterator = stream[Symbol.asyncIterator]()
@@ -1041,6 +1057,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           break
         }
         const ev = next.value
+        modelCall?.observe(ev)
         if (ev.type === 'sent') {
           if (sentWritten) {
             error = {
@@ -1133,6 +1150,15 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   // The listener stays until the settling rows are admitted: a close that lands after the stream
   // has ended but before the settlement is written would otherwise take the whole text with it.
   try {
+    await modelCall?.settle(
+      s.ac.signal.aborted || error?.reason === 'aborted'
+        ? 'cancelled'
+        : error
+          ? 'failed'
+          : done
+            ? 'completed'
+            : 'unknown',
+    )
     cancelFlushTimer()
     try {
       await flush()
@@ -1416,6 +1442,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     await record(false)
     return { phase: planned.length ? 'tools' : truncated ? 'failure_drain' : 'checkpoint' }
   } finally {
+    cancelFlushTimer()
+    untrackPreview()
     s.ac.signal.removeEventListener('abort', onSessionAbort)
   }
 }

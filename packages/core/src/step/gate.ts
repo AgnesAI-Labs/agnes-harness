@@ -463,7 +463,7 @@ export async function checkpointRoutine(s: SessionImpl): Promise<StepOutcome> {
           inboxEvent(s.lane, s.d.actor, rest),
           s.ev(
             'user/message',
-            { content: item.content, kind: item.kind ?? 'steer' },
+            { itemId: item.itemId, content: item.content, kind: item.kind ?? 'steer' },
             { origin: 'principal', trust: item.trust ?? 'trusted', actor: item.actor },
           ),
         ],

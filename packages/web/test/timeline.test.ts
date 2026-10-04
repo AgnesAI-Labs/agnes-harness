@@ -1086,3 +1086,89 @@ describe('an attempt whose streamed text was lost', () => {
     expect(transcript.textContent).not.toContain('输出中断')
   })
 })
+
+it('keeps aggregated runtime decisions in the turn process and preserves disclosure updates', () => {
+  const { transcript, timeline } = renderer()
+  const runtime: UINode = {
+    kind: 'runtime',
+    id: 'jev-model',
+    seq: 2,
+    lastSeq: 5,
+    runtime: { id: 'jevloop', version: '1' },
+    category: 'model',
+    status: 'running',
+    title: 'Jev 决策',
+    summary: '等待模型返回',
+    requestId: 'request-1',
+    model: 'jev-model',
+    purpose: 'decision',
+    detail: '输入\n<script>literal</script>',
+  }
+  const answer: UINode = { kind: 'assistant', id: 'answer', seq: 8, text: '唯一最终回答' }
+  const turn: UITurn = {
+    id: 'turn:1',
+    turn: 1,
+    startSeq: 1,
+    startedAt: '2026-10-02T00:00:00.000Z',
+    status: 'running',
+    nodeIds: [runtime.id, answer.id],
+    finalAssistantId: answer.id,
+    inherited: false,
+    forkable: false,
+    usage: {
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: false,
+      billingComplete: false,
+      calls: [],
+    },
+  }
+  timeline.render([runtime, answer], [turn])
+  const card = transcript.querySelector<HTMLDetailsElement>('.runtime-process-card') as HTMLDetailsElement
+  expect(card.closest('.turn-process')).not.toBeNull()
+  expect(card.open).toBe(false)
+  expect(card.textContent).not.toContain('<script>')
+  expect(transcript.querySelector('.turn-status')?.textContent).toContain('Jev 决策')
+  card.open = true
+  timeline.render(
+    [{ ...runtime, status: 'completed', summary: 'INSPECT → read_file', lastSeq: 7 }, answer],
+    [{ ...turn, status: 'completed', endSeq: 9 }],
+  )
+  expect(transcript.querySelector('.runtime-process-card')).toBe(card)
+  expect(card.open).toBe(true)
+  expect(card.textContent).toContain('INSPECT → read_file')
+  expect(transcript.querySelector('.turn-final')?.textContent).toContain('唯一最终回答')
+  expect(card.textContent).not.toContain('唯一最终回答')
+  timeline.reset()
+})
+
+it('renders verified Agent reports and settlement notices through the shared context renderer', async () => {
+  const { transcript, timeline } = renderer()
+  timeline.render([
+    { kind: 'context', id: 'hidden', seq: 1, text: 'private runtime context' },
+    {
+      kind: 'context',
+      id: 'agent',
+      seq: 2,
+      text: 'Agent fixture-child sent a message: <img src=x onerror=alert(1)>',
+      messageSource: { kind: 'agent-message', senderSessionId: 'fixture-child', receiptSeq: 1 },
+    },
+    {
+      kind: 'context',
+      id: 'settled',
+      seq: 3,
+      text: 'Background subagent fixture-child finished.',
+      messageSource: {
+        kind: 'subagent-settled',
+        senderSessionId: 'fixture-child',
+        receiptSeq: 2,
+        outcome: 'completed',
+      },
+    },
+  ])
+  await vi.waitFor(() => expect(transcript.textContent).toContain('Agent 报告 · fixture-child'))
+  expect(transcript.textContent).toContain('子任务结束通知 · fixture-child · 已完成')
+  expect(transcript.querySelector('[data-node-id="hidden"]')).toBeNull()
+  expect(transcript.querySelector('[data-node-id="agent"]')?.classList.contains('user')).toBe(false)
+  expect(transcript.querySelector('[data-node-id="agent"] img')).toBeNull()
+  timeline.reset()
+})

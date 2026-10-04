@@ -28,6 +28,16 @@ describe('RuntimeMutationGate', () => {
     })
     await Promise.resolve()
     expect(readEntered).toBe(false)
+    expect(gate.tryEnterRead()).toBeUndefined()
+    // An already admitted execution keeps its publication image across nested reads,
+    // even after a competing publisher has queued. A new reader cannot borrow it.
+    await admitted.run(async () => {
+      const nested = await gate.enterRead()
+      nested.release()
+      const immediate = gate.tryEnterRead()
+      expect(immediate).toBeDefined()
+      immediate?.release()
+    })
 
     admitted.release()
     await mutationStarted.promise
@@ -65,6 +75,32 @@ describe('RuntimeMutationGate', () => {
     ).rejects.toThrow('read failed')
 
     await expect(gate.mutate(() => 'after-failure')).resolves.toBe('after-failure')
+  })
+
+  it('rejects copied read-scope identities and expires descendant mutation authority with its reader', async () => {
+    const gate = new RuntimeMutationGate()
+    const lease = await gate.enterRead()
+    let late!: () => Promise<string>
+    await lease.run(async () => {
+      const identity = gate.retainedReadIdentity()
+      if (!identity) throw new Error('Missing read ancestry')
+      expect(() => gate.withRetainedReadScope({}, () => undefined)).toThrow('no longer live')
+      const hold = deferred<void>()
+      const entered = deferred<void>()
+      const task = gate.withRetainedReadScope(identity, async () => {
+        entered.resolve()
+        await hold.promise
+        expect(gate.currentMutationTicket()).toBeUndefined()
+        return gate.mutate(() => 'after-reader')
+      })
+      await entered.promise
+      late = () => {
+        hold.resolve()
+        return task
+      }
+    })
+    lease.release()
+    await expect(late()).resolves.toBe('after-reader')
   })
 
   it('cancels a queued read without leaking a waiter', async () => {

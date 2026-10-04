@@ -65,7 +65,8 @@ export function addMicro(a: bigint, b: bigint): bigint {
   return sum
 }
 
-export function fitsCap(settled: bigint, held: bigint, q: bigint, cap: bigint): boolean {
-  if (q < 0n || settled < 0n || held < 0n || cap <= 0n) return false
-  return settled + held + q <= cap
+export function fitsCap(settled: bigint, held: bigint, q: bigint | null, cap: bigint | null): boolean {
+  if ((q !== null && q < 0n) || settled < 0n || held < 0n) return false
+  if (cap === null) return true
+  return cap > 0n && q !== null && settled + held + q <= cap
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { type Host, type HostSession, loadSessionTitle, type WorkspaceBinding } from '@agnes/host'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
-import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
+import type { PreviewSnapshotEntry, PreviewUpdate, Registry, SessionCloseConfirmation } from '../registry.js'
 import type { JsonRpcId } from '../rpc.js'
 import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
 import type { SessionLister, SessionMetaRow } from './ports.js'
@@ -11,7 +11,7 @@ export type SessionEntry = {
   key: string
   session: HostSession
   generation: number
-  inflight: { promptId: JsonRpcId; abort: AbortController } | null
+  inflight: { promptId: JsonRpcId; abort: AbortController; settled?: Promise<void> } | null
   tail: Disposer
   listeners: Set<(e: EventEnvelope) => void>
   backlog: EventEnvelope[]
@@ -47,6 +47,12 @@ function sameBinding(a: WorkspaceBinding | undefined, b: WorkspaceBinding | unde
 
 export class SessionRegistry implements Registry<SessionEntry> {
   private readonly entries = new Map<string, SessionEntry>()
+  private readonly closing = new Map<string, Promise<void>>()
+  /** Failed owners stay reachable only to close/retry, never to mutation/read handles. */
+  private readonly sealed = new Map<string, SessionEntry>()
+  private readonly retryableClose = new Set<string>()
+  private readonly confirmations = new Map<string, Promise<SessionCloseConfirmation>>()
+  private closingAll = false
   private readonly bindings = new Map<string, WorkspaceBinding>()
   private readonly previewSets = new Map<string, Set<(p: PreviewUpdate) => void>>()
   private readonly opening = new Map<
@@ -62,6 +68,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     private readonly host: Host,
     private readonly o: {
       clock: () => number
+      assertSessionAdmitted?: (sessionId: string) => void
       pollMs?: number
       observe?: (sessionKey: string, event: EventEnvelope, cwd: string) => void
     },
@@ -77,21 +84,37 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    runtime?: string
     credential?: unknown
   }): Promise<SessionEntry> {
+    if (this.closingAll) throw new Error('session registry is closing')
     const accepted = this.acceptBinding(o.binding, o.key)
     const request = {
-      ...(o.key ? { key: o.key } : {}),
+      key: o.key ?? `agnes:local:default:daemon:dm:${randomUUID()}`,
       cwd: o.cwd,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.runtime === undefined ? {} : { runtime: o.runtime }),
       ...(o.credential === undefined ? {} : { credential: o.credential }),
       ...(accepted ? { key: accepted.sessionKey, binding: accepted } : {}),
     }
+    this.o.assertSessionAdmitted?.(request.key)
     if (request.key) {
+      const closing = this.closing.get(request.key)
+      if (closing) {
+        await closing
+        if (this.closing.get(request.key) !== closing) return this.open(o)
+        if (!(await this.confirmations.get(request.key))?.exited)
+          throw new Error(`session ${request.key} close is unconfirmed`)
+        this.closing.delete(request.key)
+        this.confirmations.delete(request.key)
+      }
+      if (this.closingAll) throw new Error('session registry is closing')
+      this.o.assertSessionAdmitted?.(request.key)
       const existing = this.entries.get(request.key)
       if (existing) {
         if (
           existing.session.d.cwd !== request.cwd ||
+          (request.runtime !== undefined && existing.session.runtimeIdentity.id !== request.runtime) ||
           (request.preset !== undefined && existing.session.preset.name !== request.preset) ||
           !sameBinding(this.bindings.get(request.key), request.binding)
         )
@@ -106,7 +129,11 @@ export class SessionRegistry implements Registry<SessionEntry> {
           !sameBinding(pending.binding, request.binding)
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: request.key })
-        return pending.promise
+        const entry = await pending.promise
+        this.o.assertSessionAdmitted?.(request.key)
+        if (request.runtime !== undefined && entry.session.runtimeIdentity.id !== request.runtime)
+          throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: request.key })
+        return entry
       }
       const promise = this.openFresh(request)
       this.opening.set(request.key, {
@@ -129,10 +156,27 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBinding
     preset?: string
+    runtime?: string
     credential?: unknown
   }): Promise<SessionEntry> {
+    if (o.key) this.o.assertSessionAdmitted?.(o.key)
     const session = await this.host.createSession(o)
-    return this.track(session, o.cwd, o.binding)
+    const entry = this.track(session, o.cwd, o.binding)
+    await this.checkOpenedAdmission(entry)
+    if (this.closingAll || this.closing.has(session.key))
+      throw new Error(`session ${session.key} was closed while opening`)
+    return entry
+  }
+
+  private async checkOpenedAdmission(entry: SessionEntry): Promise<void> {
+    try {
+      this.o.assertSessionAdmitted?.(entry.session.key)
+    } catch (error) {
+      // Start the same sealed close path, but do not await it here: close itself waits for this
+      // opener to settle. Its confirmation retains both the exact owner and any drain failure.
+      void this.close(entry.key).catch(() => undefined)
+      throw error
+    }
   }
 
   async fork(o: {
@@ -142,6 +186,43 @@ export class SessionRegistry implements Registry<SessionEntry> {
     binding?: WorkspaceBindingEnvelope
     credential?: unknown
   }): Promise<SessionEntry> {
+    this.o.assertSessionAdmitted?.(o.parent)
+    const key = o.childKey ?? o.binding?.sessionKey ?? `agnes:fork:${randomUUID()}`
+    this.o.assertSessionAdmitted?.(key)
+    const closing = this.closing.get(key)
+    if (closing) {
+      await closing
+      if (this.closing.get(key) !== closing) return this.fork(o)
+      if (!(await this.confirmations.get(key))?.exited) throw new Error(`session ${key} close is unconfirmed`)
+      this.closing.delete(key)
+      this.confirmations.delete(key)
+    }
+    if (this.closingAll) throw new Error('session registry is closing')
+    if (this.opening.has(key)) throw new Error(`session ${key} is opening`)
+    const promise = this.forkFresh({ ...o, childKey: key })
+    const record = {
+      cwd: this.require(o.parent).session.d.cwd,
+      preset: null,
+      binding: this.acceptBinding(o.binding, key),
+      promise,
+    }
+    this.opening.set(key, record)
+    try {
+      return await promise
+    } finally {
+      if (this.opening.get(key) === record) this.opening.delete(key)
+    }
+  }
+
+  private async forkFresh(o: {
+    parent: string
+    at: number
+    childKey: string
+    binding?: WorkspaceBindingEnvelope
+    credential?: unknown
+  }): Promise<SessionEntry> {
+    this.o.assertSessionAdmitted?.(o.parent)
+    this.o.assertSessionAdmitted?.(o.childKey)
     const parent = this.require(o.parent)
     const childKey = o.childKey ?? o.binding?.sessionKey ?? `agnes:fork:${randomUUID()}`
     const binding = this.acceptBinding(o.binding, childKey)
@@ -163,6 +244,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
     const end = boundary?.data as { reason?: unknown } | undefined
     if (boundary?.type !== 'turn/end' || end?.reason !== 'completed')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'fork boundary must be a completed turn/end' })
+    this.o.assertSessionAdmitted?.(o.parent)
+    this.o.assertSessionAdmitted?.(childKey)
     const session = await this.host.createSession({
       key: childKey,
       cwd: parent.session.d.cwd,
@@ -170,7 +253,11 @@ export class SessionRegistry implements Registry<SessionEntry> {
       parent: { key: o.parent, boundarySeq: o.at },
       ...(o.credential === undefined ? {} : { credential: o.credential }),
     })
-    return this.track(session, parent.session.d.cwd, binding)
+    const entry = this.track(session, parent.session.d.cwd, binding)
+    await this.checkOpenedAdmission(entry)
+    if (this.closingAll || this.closing.has(childKey))
+      throw new Error(`session ${childKey} was closed while opening`)
+    return entry
   }
 
   private acceptBinding(
@@ -257,11 +344,11 @@ export class SessionRegistry implements Registry<SessionEntry> {
   }
 
   get(key: string): SessionEntry | undefined {
-    return this.entries.get(key)
+    return this.closing.has(key) ? undefined : this.entries.get(key)
   }
 
   require(key: string): SessionEntry {
-    const e = this.entries.get(key)
+    const e = this.get(key)
     if (!e) throw rpcError('SESSION_NOT_FOUND', { sessionId: key })
     return e
   }
@@ -291,28 +378,92 @@ export class SessionRegistry implements Registry<SessionEntry> {
   }
 
   keys(): string[] {
-    return [...this.entries.keys()]
+    return [...this.entries.keys()].filter((key) => !this.closing.has(key))
   }
 
-  async close(key: string): Promise<void> {
-    const e = this.entries.get(key)
-    if (!e) return
-    // Forgotten first: an await between "stop the tail" and "forget the key" is a window in which a
-    // handler can still resolve this key and subscribe to a session that is closing.
+  close(key: string): Promise<void> {
+    const prior = this.closing.get(key)
+    if (prior && !this.retryableClose.has(key)) return prior
+    this.retryableClose.delete(key)
+    const initial = this.sealed.get(key) ?? this.entries.get(key)
     this.entries.delete(key)
-    this.bindings.delete(key)
-    this.previewSets.delete(key)
-    // A transport close must stop the turn before Host waits for the session's workspace
-    // invocation to drain. Otherwise a parked approval callback can keep endpoint shutdown open
-    // forever even though its client has already disconnected.
-    e.inflight?.abort.abort()
-    e.ac.abort()
-    e.tail()
-    await e.session.close()
+    let owner: Extract<SessionCloseConfirmation, { exited: true }>['owner'] | undefined
+    const closing = (async () => {
+      const closeEntry = async (e: SessionEntry | undefined): Promise<void> => {
+        if (!e) return
+        owner = {
+          sessionKey: key,
+          writerRunId: e.session.writerRunId,
+          generation: e.generation,
+          workerGeneration: null,
+        }
+        this.sealed.set(key, e)
+        this.entries.delete(key)
+        this.bindings.delete(key)
+        this.previewSets.delete(key)
+        e.inflight?.abort.abort()
+        e.ac.abort()
+        e.tail()
+        await e.session.close()
+        await e.inflight?.settled?.catch(() => undefined)
+        if (!e.session.d.log.isClosed) throw new Error(`session ${key} writer drain is unconfirmed`)
+        if (this.sealed.get(key) === e) this.sealed.delete(key)
+      }
+      let failure: unknown
+      try {
+        await closeEntry(initial)
+      } catch (error) {
+        failure = error
+      }
+      await this.opening.get(key)?.promise.catch(() => undefined)
+      try {
+        await closeEntry(this.entries.get(key))
+      } catch (error) {
+        failure ??= error
+      }
+      if (failure !== undefined) throw failure
+    })().catch((error) => {
+      if (this.sealed.has(key)) this.retryableClose.add(key)
+      throw error
+    })
+    this.closing.set(key, closing)
+    this.confirmations.set(
+      key,
+      closing.then(
+        () => (owner ? { exited: true, owner } : { exited: false, reason: 'owner-unknown' }),
+        () => ({ exited: false, reason: 'close-failed', ...(owner ? { owner } : {}) }),
+      ),
+    )
+    return closing
+  }
+
+  closeAndConfirm(
+    key: string,
+    expected?: { expectedWriterRunId: string; expectedOwnerEpoch?: number },
+  ): Promise<SessionCloseConfirmation> {
+    const owner = (this.sealed.get(key) ?? this.entries.get(key))?.session
+    if (
+      expected &&
+      (owner?.writerRunId !== expected.expectedWriterRunId ||
+        (expected.expectedOwnerEpoch !== undefined &&
+          owner?.d.log.ownerEpoch !== expected.expectedOwnerEpoch))
+    )
+      return Promise.resolve({ exited: false, reason: 'owner-unknown' })
+    void this.close(key).catch(() => undefined)
+    return this.confirmations.get(key) ?? Promise.resolve({ exited: false, reason: 'owner-unknown' })
   }
 
   async closeAll(): Promise<void> {
-    for (const k of this.keys()) await this.close(k)
+    this.closingAll = true
+    const keys = new Set([
+      ...this.entries.keys(),
+      ...this.opening.keys(),
+      ...this.closing.keys(),
+      ...this.sealed.keys(),
+    ])
+    const results = await Promise.allSettled([...keys].map((key) => this.close(key)))
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (failed) throw failed.reason
   }
 }
 
@@ -354,6 +505,7 @@ export class RegistryLister implements SessionLister {
         const e = this.reg.get(k) as SessionEntry
         return {
           sessionId: k,
+          runtime: e.session.runtimeIdentity,
           createdAt: '',
           lastSeq: e.session.lastSeq,
           generation: e.generation,

@@ -48,7 +48,12 @@
   ],
   "@agnes/resource-control-cli": ["@agnes/daemon", "@agnes/protocol", "@agnes/sdk"],
   "@agnes/extension-api": ["@agnes/protocol"],
-  "@agnes/core": ["@agnes/protocol", "@agnes/protocol-validation", "@agnes/extension-api"],
+  "@agnes/core": [
+    "@agnes/protocol",
+    "@agnes/protocol-validation",
+    "@agnes/extension-api",
+    "@agnes/runtime-api"
+  ],
   "@agnes/ai": ["@agnes/protocol", "@agnes/core"],
   "@agnes/base": [
     "@agnes/protocol",
@@ -74,7 +79,12 @@
     "@agnes/plugin-runtime",
     "@agnes/resource-control-runtime",
     "@agnes/sandbox-remote",
-    "@agnes/system-node"
+    "@agnes/system-node",
+    "@agnes/jev-runtime",
+    "@agnes/jev-trace",
+    "@agnes/runtime-api",
+    "@agnes/runtime-jev",
+    "@agnes/runtime-comparison"
   ],
   "@agnes/sdk": [
     "@agnes/protocol",
@@ -84,6 +94,7 @@
   ],
   "@agnes/daemon": [
     "@agnes/protocol",
+    "@agnes/core",
     "@agnes/host",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
@@ -93,7 +104,8 @@
     "@agnes/resource-control-runtime",
     "@agnes/worker-runtime",
     "@agnes/error-sanitization",
-    "@agnes/system-node"
+    "@agnes/system-node",
+    "@agnes/runtime-comparison"
   ],
   "@agnes/cli": [
     "@agnes/system-node",
@@ -123,7 +135,9 @@
     "@agnes/web-client",
     "@agnes/web-server",
     "@agnes/web-ui",
-    "@agnes/web-units"
+    "@agnes/web-units",
+    "@agnes/jev-trace",
+    "@agnes/jev-runtime"
   ],
   "@agnes/guards": [],
   "@agnes/sandbox-remote": ["@agnes/core"],
@@ -135,5 +149,10 @@
     "@agnes/plugin-runtime",
     "@agnes/system-node"
   ],
-  "@agnes/system-node": []
+  "@agnes/system-node": [],
+  "@agnes/jev-runtime": [],
+  "@agnes/jev-trace": ["@agnes/jev-runtime"],
+  "@agnes/runtime-api": [],
+  "@agnes/runtime-jev": ["@agnes/jev-runtime", "@agnes/protocol"],
+  "@agnes/runtime-comparison": ["@agnes/protocol"]
 }

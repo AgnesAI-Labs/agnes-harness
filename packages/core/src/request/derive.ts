@@ -646,6 +646,11 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
  */
 const RUNTIME_CONTEXT_PREFIX = '[runtime context]\n'
 
+/** Render request-scoped facts with the same framing and per-value sanitization in every runtime. */
+export function renderRuntimeContext(context: Record<string, unknown>): string {
+  return sanitize(`${RUNTIME_CONTEXT_PREFIX}${canonicalJson(sanitizeJson(context))}`)
+}
+
 /** The user line placed between a summary and an assistant message that directly follows it. */
 const SUMMARY_BRIDGE_TEXT =
   '[harness] Earlier context was compacted into the summary above; the current turn continues.'
@@ -817,7 +822,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // the blob's structure is intact by construction rather than by the values happening not to
   // collide. The outer `sanitize` stays as a backstop over the assembled text; on a value-scrubbed
   // blob it is a no-op, which is what makes the whole message a fixed point for the body walk.
-  const runtimeContextText = sanitize(`${RUNTIME_CONTEXT_PREFIX}${canonicalJson(sanitizeJson(rc))}`)
+  const runtimeContextText = renderRuntimeContext(rc)
   // An empty runtime context is never "changed": there is nothing to send, and nothing a later
   // derivation could compare against. Tested first so a `summary` derivation -- whose runtime
   // context is always empty and whose surface is only the sub-range being summarized -- never

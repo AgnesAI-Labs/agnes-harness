@@ -37,9 +37,16 @@ export interface ChildControlStore {
    */
   cancelCreatingChild(input: CancelCreatingChildInput): Promise<CancelledChildFact>
   casState(childKey: SessionKey, expectedRevision: number, next: ChildTaskRecord['state']): Promise<boolean>
+  /** Explicit new-turn admission, after trusted continuable-descriptor and owner validation. */
+  beginContinuation(input: {
+    childKey: SessionKey
+    expectedRevision: number
+  }): Promise<ChildTaskRecord | null>
+  /** Permanent cancellation of an ended continuable conversation; no budget state is released. */
+  cancelContinuation(input: { childKey: SessionKey; expectedRevision: number }): Promise<boolean>
   nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number>
   existsSession(key: SessionKey): Promise<boolean>
-  ensureRootScope(rootTaskId: string, capMicro: bigint): Promise<BudgetScopeRecord>
+  ensureRootScope(rootTaskId: string, capMicro: bigint | null): Promise<BudgetScopeRecord>
   scopeForChild(childKey: SessionKey): Promise<BudgetScopeRecord | null>
   reserve(req: ReserveRequest): Promise<ReserveResult>
   settleOrigin(req: SettleRequest): Promise<void>

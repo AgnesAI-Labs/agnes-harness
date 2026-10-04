@@ -30,7 +30,9 @@ describe('rendered conversation region', () => {
     expect(conversation?.querySelector('[data-slot="ui:transcript"] #transcript-content')).toBeTruthy()
     expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy()
     expect(conversation?.querySelector('#new-content')).toBeInstanceOf(HTMLButtonElement)
-    expect(document.querySelector('[data-slot="ui:approval"] #approval-content')).toBeTruthy()
+    expect(
+      document.querySelector('[data-slot="ui:approval"] [data-agnes-region-unit="approval"]'),
+    ).toBeTruthy()
     expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
   })
 
@@ -51,7 +53,9 @@ describe('rendered conversation region', () => {
       expect(conversation?.querySelector('#transcript')).toBeNull()
       expect(conversation?.querySelector('#empty-state')).toBeNull()
     }, committed)
-    expect(document.querySelector('[data-slot="ui:approval"] #approval-content')).toBeTruthy()
+    expect(
+      document.querySelector('[data-slot="ui:approval"] [data-agnes-region-unit="approval"]'),
+    ).toBeTruthy()
     expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
 
     remove()

@@ -1,10 +1,12 @@
 import type { InferenceEvent, RequestBody, RouteTable } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import { sha256Hex } from '../src/hash.js'
 import type { ContractStore, Registry } from '../src/index.js'
 import {
   buildRegistry,
   createProvider,
   NullContractStore,
+  PiAdapter,
   runInference,
   toolSchemaHash,
 } from '../src/index.js'
@@ -62,6 +64,102 @@ function mk(
 const run = () => ({ signal: new AbortController().signal, toolNames: [] })
 
 describe('createProvider', () => {
+  it('freezes effective provider inputs before invocation and reconstructs the same wire from its snapshot', async () => {
+    let prefix = new TextEncoder().encode('PREFIX_A')
+    const compat = {
+      supportsDeveloperRole: false,
+      thinkingFormat: 'deepseek',
+      requiresReasoningContentOnAssistantMessages: true,
+    }
+    const model = fakeModel({
+      id: 'flash',
+      route: 'gw',
+      reasoning: true,
+      compat,
+      contract_id: 'c1',
+      headers: { 'x-private': 'header-secret' },
+    })
+    const decl = { ...gwRoute, models: [model] }
+    const adapter = new PiAdapter({ manualRoutes: [decl], maxRetries: 0 })
+    const provider = createProvider({
+      adapters: [adapter],
+      routes: table,
+      secrets: () => 'api-secret',
+      clock: () => 0,
+      contract: {
+        prefixHash: () => sha256Hex(prefix),
+        prefixBytes: () => prefix,
+        tools: () => [],
+        syntax: () => ({ toolCallFormats: ['native'] }),
+      },
+    })
+    const captured: { url: string; body: string; authorization: string | null }[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      captured.push({
+        url: request.url,
+        body: await request.text(),
+        authorization: request.headers.get('authorization'),
+      })
+      throw new Error('local serialization only')
+    }
+    try {
+      if (!provider.prepare) throw new Error('Expected preparation support')
+      const prepared = await provider.prepare(
+        body({
+          contractId: 'c1',
+          messages: [
+            {
+              role: 'assistant',
+              content: [
+                { type: 'thinking', text: 'recorded reasoning' },
+                { type: 'text', text: 'previous answer' },
+              ],
+            },
+            { role: 'user', content: [{ type: 'text', text: 'continue' }] },
+          ],
+        }),
+        { signal: run().signal },
+      )
+      if (!prepared) throw new Error('Expected prepared provider')
+      expect(captured).toEqual([])
+      const snapshot = JSON.parse(JSON.stringify(prepared.snapshot))
+      expect(JSON.stringify(snapshot)).not.toContain('api-secret')
+      expect(JSON.stringify(snapshot)).not.toContain('header-secret')
+      prefix = new TextEncoder().encode('PREFIX_B')
+      compat.supportsDeveloperRole = true
+      decl.baseUrl = 'https://changed.invalid/v1'
+      adapter.bindCredential('gw', 'rotated-secret')
+      await collect(prepared.infer(run()))
+      expect(captured[0]?.url).toBe('https://gw.invalid/chat/completions')
+      expect(captured[0]?.authorization).toBe('Bearer api-secret')
+      if (!captured[0]) throw new Error('Expected serialized request')
+      expect(JSON.parse(captured[0].body).messages[0]).toEqual({ role: 'system', content: 'PREFIX_A\nsys' })
+      expect(JSON.parse(captured[0].body).messages[1]).toMatchObject({
+        role: 'assistant',
+        reasoning_content: 'recorded reasoning',
+        content: 'previous answer',
+      })
+      expect(() => prepared.infer(run())).toThrow('already invoked')
+      // No current catalogue or contract store participates in historical reconstruction.
+      const restored = new PiAdapter({
+        manualRoutes: [{ ...snapshot.adapter.route, models: [snapshot.adapter.model] }],
+        maxRetries: 0,
+      })
+      restored.bindCredential('gw', 'audit-placeholder')
+      for await (const _event of restored.stream('gw', snapshot.request, {
+        ...run(),
+        sessionKey: snapshot.request.sessionKey,
+        timeoutMs: { firstToken: 1000, total: 2000 },
+      })) {
+      }
+      expect(captured[1]?.body).toBe(captured[0]?.body)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('emits sent first with a stamp, then adapter events, and ends with done', async () => {
     const { provider, adapter } = mk()
     const events = await collect(provider.infer(body(), run()))

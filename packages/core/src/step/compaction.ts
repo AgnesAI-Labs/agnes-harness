@@ -1,13 +1,18 @@
 import type { HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import type { Billing, InferenceEvent, ThinkingLevel } from '@agnes/protocol'
-import { settleTreeSpend } from '../child/runtime-budget.js'
+import {
+  releaseTreeReservationHandle,
+  reserveTreeBudgetHandle,
+  settleTreeSpendHandle,
+} from '../child/runtime-budget.js'
 import { HookBlockedError } from '../hooks/block.js'
 import type { SurfaceNode } from '../project/surface.js'
 import { pairClosed, validateReplace } from '../project/surface.js'
 import type { CostLedger, TokenCounts } from '../reduce/shapes.js'
 import { deriveRequest, sanitize, wrapUntrusted } from '../request/derive.js'
-import { canonicalJson } from '../request/hash.js'
+import { canonicalJson, sha256Hex } from '../request/hash.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
+import { beginModelCall } from '../request/model-call.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { applyBeforeRequestPatches } from '../request/transforms.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
@@ -20,7 +25,6 @@ import {
   contextTokens,
   contextWindowFor,
   lastCacheHint,
-  reserveTreeBudget,
 } from './gate.js'
 import {
   assembleRequestPrefix,
@@ -363,17 +367,32 @@ async function summarize(
   calls: readonly ToolCallForSummary[],
   target: { route: string; model: string },
   prefix: Prefix,
+  parentEffectId: string,
   // Only the length-cutoff retry overrides the configured thinking level.
   thinkingOverride?: ThinkingLevel,
 ): Promise<SummaryResult> {
+  if (s.turn?.ledgerFailed) throw new CoreError('E_STORAGE_FAULT', 'summary usage ledger unavailable')
+  const op = s.op()
+  if (!op) throw new CoreError('E_RELATION', 'summary dispatch lacks an owning operation')
   const { wire } = summaryRequest(s, plan, segment, calls, target, prefix, thinkingOverride)
   const inputTokens = summaryInputTokens(wire)
   const projected = await s.d.runtime.ledgerProjected({
     tokensEstimate: inputTokens + plan.maxTokens,
     model: target.model,
   })
-  const tree = await reserveTreeBudget(s, projected.credits, target, inputTokens + plan.maxTokens)
-  if (tree !== 'ok')
+  const callId = s.d.ids.effectId()
+  const tree = await reserveTreeBudgetHandle(
+    s,
+    projected.credits,
+    target,
+    {
+      effectId: callId,
+      requestHash: sha256Hex(canonicalJson(wire)),
+    },
+    inputTokens + plan.maxTokens,
+  )
+  if (tree.status === 'blocked' || tree.status === 'terminal') {
+    if (s.turn) await s.endTurn(tree.status === 'blocked' ? tree.reason : 'budget')
     return {
       text: '',
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -381,6 +400,7 @@ async function summarize(
       failed: true,
       failure: 'budget',
     }
+  }
   let text = ''
   let usage: Extract<InferenceEvent, { type: 'usage' }> | undefined
   let failure: SummaryFailure | undefined
@@ -389,11 +409,30 @@ async function summarize(
     failure ??= kind
     cause ??= why
   }
+  let modelCall: Awaited<ReturnType<typeof beginModelCall>>
+  try {
+    modelCall = await beginModelCall(s, {
+      id: callId,
+      purpose: 'compaction',
+      parentEffectId,
+      route: target.route,
+      model: target.model,
+      sourceTurn: op.meta.turn,
+      sourceStep: op.step,
+    })
+  } catch (error) {
+    if (tree.status === 'reserved') await releaseTreeReservationHandle(s, tree.handle)
+    throw error
+  }
+  let terminal = false
+  let providerCancelled = false
   try {
     for await (const event of s.d.provider.infer(wire, {
       signal: s.ac.signal,
       toolNames: segment.wide ? prefix.tools.map((tool) => tool.name) : [],
     })) {
+      modelCall.observe(event)
+      if (event.type === 'done' || event.type === 'error') terminal = true
       if (event.type === 'text_delta') text += event.delta
       else if (event.type === 'usage') usage = event
       // A reasoning model can spend the whole budget before (or while) writing: an empty summary
@@ -403,6 +442,7 @@ async function summarize(
       else if (event.type === 'toolcall_end') fail('permanent', 'summary called a tool')
       else if (event.type === 'deviation') fail('permanent', 'summary deviated from the contract')
       else if (event.type === 'error') {
+        providerCancelled = event.reason === 'aborted'
         // Only a closed-shape code travels on: it ends up in a ledger row and an assistant message.
         const code = /^[A-Z0-9_]{1,32}$/.test(event.code) ? event.code : 'UNKNOWN'
         fail(classify(event.code, event.retryable), `summary provider error ${code}`)
@@ -417,13 +457,50 @@ async function summarize(
   }
   if (s.ac.signal.aborted) failure = 'cancelled'
   else if (text.length === 0) fail('permanent', 'summary was empty')
+  await modelCall.settle(
+    failure === 'cancelled' || providerCancelled
+      ? 'cancelled'
+      : failure
+        ? 'failed'
+        : terminal
+          ? 'completed'
+          : 'unknown',
+  )
   const tokens = usage?.tokens ?? {
     input: 0,
     output: estimateTokens(text),
     cacheRead: 0,
     cacheWrite: 0,
   }
-  await settleTreeSpend(s, usage?.credits, (s.lastSeq + 1) as Seq)
+  const spend: CostLedger = {
+    purpose: 'compaction',
+    effectId: modelCall.id,
+    tokens,
+    ...(usage?.credits === undefined ? {} : { credits: usage.credits }),
+    creditSource: usage?.creditSource ?? 'estimated',
+    model: target.model,
+    ...(usage?.billing ? { billing: usage.billing } : {}),
+    ...(usage?.timing ? { timing: usage.timing } : {}),
+    ...(usage?.response ? { response: usage.response } : {}),
+    ...(failure !== undefined || !terminal ? { interrupted: true } : {}),
+  }
+  const { firstSeq: costSeq } = await s.locked(() => s.append([s.ev('cost/ledger', spend)]))
+  const recorded = await s.d.runtime.ledgerRecord({
+    ...spend,
+    sessionKey: s.key,
+    lane: s.lane,
+    turn: op.meta.turn,
+    step: op.step,
+  })
+  if (!recorded && s.turn) s.turn.ledgerFailed = true
+  if (tree.status === 'reserved')
+    await settleTreeSpendHandle(
+      s,
+      tree.handle,
+      usage?.credits,
+      costSeq as Seq,
+      usage?.credits === undefined ? 'unknown' : usage.creditSource,
+    )
   return {
     text,
     tokens,
@@ -441,8 +518,7 @@ async function summarize(
 // retried — it would just repeat the same outcome.
 const LOW_OR_BELOW_THINKING: ReadonlySet<ThinkingLevel> = new Set(['off', 'minimal', 'low'])
 
-/** Combines two real inference attempts' cost into one record — both consumed real budget, so
- * neither is dropped even though only the second attempt's text/outcome is kept. */
+/** Combines internal retry results; each attempt already persisted its own cost and reservation origin. */
 function mergeSummaryResults(first: SummaryResult, retry: SummaryResult): SummaryResult {
   const attempts = [first, retry]
   const tokens = attempts.reduce((sum, r) => addTokens(sum, r.tokens), zeroTokens())
@@ -482,12 +558,13 @@ async function summarizeWithRetry(
   calls: readonly ToolCallForSummary[],
   target: { route: string; model: string },
   prefix: Prefix,
+  parentEffectId: string,
 ): Promise<SummaryResult> {
-  const first = await summarize(s, plan, segment, calls, target, prefix)
+  const first = await summarize(s, plan, segment, calls, target, prefix, parentEffectId)
   if (first.cause !== 'summary stopped at the max_tokens cap') return first
   const configured = s.preset.model.thinking.compaction
   if (configured !== undefined && LOW_OR_BELOW_THINKING.has(configured)) return first
-  const retry = await summarize(s, plan, segment, calls, target, prefix, 'low')
+  const retry = await summarize(s, plan, segment, calls, target, prefix, parentEffectId, 'low')
   return mergeSummaryResults(first, retry)
 }
 
@@ -518,8 +595,8 @@ type Attempt = {
   tokensBefore: number
 }
 
-/** The model call a compaction made: its effect, still to be settled, and what it cost. */
-type SummaryCall = { effect: ReturnType<SessionImpl['effects']['start']>; spend: CostLedger }
+/** The parent compaction effect; each provider call has already recorded its own cost. */
+type SummaryCall = { effect: ReturnType<SessionImpl['effects']['start']> }
 
 // Consecutive transient threshold failures before the elided compaction replaces another retry.
 const MAX_TRANSIENT_FAILURES = 2
@@ -632,7 +709,6 @@ async function settleFailed(
   const current = s.op() as OpStateObj
   await s.transition(
     [
-      s.ev('cost/ledger', call.spend),
       call.effect.settle(outcome),
       s.ev(
         'x/core/compaction-failed',
@@ -646,8 +722,8 @@ async function settleFailed(
 }
 
 /**
- * Replaces the span with the elided record in place of a model summary: the failed call's spend and
- * error settlement, when there was a call, land in the same transaction. When even the elided record
+ * Replaces the span with the elided record in place of a model summary. Each call's spend is
+ * already durable; the parent error settlement and replacement land in the same transaction. When even the elided record
  * is not smaller than the span, the failure it stood in for is recorded as before.
  */
 async function elide(
@@ -668,7 +744,7 @@ async function elide(
   }
   const id = call ? { effectId: call.effect.effectId } : {}
   const events: EventInput[] = [
-    ...(call ? [s.ev('cost/ledger', call.spend), call.effect.settle('error')] : []),
+    ...(call ? [call.effect.settle('error')] : []),
     beginEvent(s, a, id, { mode: 'elided', cause }),
     replaceEvent(s, a, text, 'system'),
     s.ev('x/core/compaction-end', id, { ignorable: true }),
@@ -929,44 +1005,11 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
 
   const selected = plan
   const results = await Promise.all(
-    segments.map((segment) => summarizeWithRetry(s, selected, segment, calls, target, prefix)),
+    segments.map((segment) =>
+      summarizeWithRetry(s, selected, segment, calls, target, prefix, effect.effectId),
+    ),
   )
-  const tokens = results.reduce((sum, result) => addTokens(sum, result.tokens), zeroTokens())
-  const credits = results.reduce<number | undefined>(
-    (sum, result) => (result.credits === undefined ? sum : (sum ?? 0) + result.credits),
-    undefined,
-  )
-  const creditSource = results.every((result) => result.creditSource === 'gateway') ? 'gateway' : 'estimated'
-  const billings = results.flatMap((result) => (result.billing ? [result.billing] : []))
-  const billing =
-    billings.length === 0
-      ? undefined
-      : {
-          usdMicros: billings.reduce((sum, value) => sum + value.usdMicros, 0),
-          source: billings.every((value) => value.source === 'gateway')
-            ? ('gateway' as const)
-            : ('estimated' as const),
-          subscription: billings.every((value) => value.subscription),
-        }
-  const spend: CostLedger = {
-    purpose: 'compaction',
-    effectId: effect.effectId,
-    tokens,
-    ...(credits === undefined ? {} : { credits }),
-    creditSource,
-    model: target.model,
-    ...(billing ? { billing } : {}),
-    ...(s.ac.signal.aborted ? { interrupted: true } : {}),
-  }
-  const record = await s.d.runtime.ledgerRecord({
-    ...spend,
-    sessionKey: s.key,
-    lane: s.lane,
-    turn: op.meta.turn,
-    step: op.step,
-  })
-  if (!record && s.turn) s.turn.ledgerFailed = true
-  const call = { effect, spend }
+  const call = { effect }
 
   const failure = FAILURE_ORDER.find((kind) => results.some((result) => result.failure === kind))
   if (failure) {
@@ -1001,7 +1044,6 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const events: EventInput[] = [
     beginEvent(s, attempt, { effectId: effect.effectId }),
     replaceEvent(s, attempt, summary, 'model'),
-    s.ev('cost/ledger', spend),
     effect.settle('ok'),
     s.ev('x/core/compaction-end', { effectId: effect.effectId }, { ignorable: true }),
   ]

@@ -1,0 +1,165 @@
+{
+  "upstream": "https://github.com/deepseek-ai/deepseek-harness",
+  "revision": "90398671c30cb16b5dbee3ecb69fac254b3ad718",
+  "sourceState": "Working-tree bytes, including uncommitted and untracked files; revision alone does not identify this source.",
+  "license": "MIT",
+  "files": [
+    {
+      "source": "packages/jev/jev-runtime/src/accepted-answers.ts",
+      "sha256": "e0467baa2a1760eedff7f947615a87509c40905fb27d057769373e4c72d83199",
+      "destination": "src/accepted-answers.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/candidate-evidence.ts",
+      "sha256": "bea08abf57bb54728fefa6e1da5729d1500b88c84be43a4baf62ac74058d4138",
+      "destination": "src/candidate-evidence.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/candidate-facts.ts",
+      "sha256": "0c6fbaa257b6a8a8d9680e1f4b363ee3d18231e1e0c76686a0feda457732d60c",
+      "destination": "src/candidate-facts.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/candidate-identity.ts",
+      "sha256": "1d72022116053632221ec620ade573c21ce7f1d4e4be14e174e9bbbc06151b16",
+      "destination": "src/candidate-identity.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/decision-context.ts",
+      "sha256": "5de6b2975712e3b8b143ff02d112bae23622c1d3536fa06291646bd895d77c98",
+      "destination": "src/decision-context.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/decision-evidence.ts",
+      "sha256": "c851783699cc8d4f38dd997889d1c6ff4b8c8d9fb7a4d6d889e1bd088db366c3",
+      "destination": "src/decision-evidence.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/decision-gates.ts",
+      "sha256": "326318e621570d4029a5658458fe821815c2aff4b290bc4176b13b29fe8de637",
+      "destination": "src/decision-gates.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/decision-tools.ts",
+      "sha256": "5a9acf715bd5d93c76af1ae4726b1df2f5719988143fbb936680d2cc6f148b7f",
+      "destination": "src/decision-tools.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/decision.ts",
+      "sha256": "23e415aee2455b801fd2a74df5d1802ef66db25f1a67e729f8188d54ffecb67f",
+      "destination": "src/decision.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/index.ts",
+      "sha256": "d617b5ce8afc6ec7a91dd25d8aa6968365e6fc736a7ff493751e8cc28a7cda15",
+      "destination": "src/index.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/ledger.ts",
+      "sha256": "9cfb1fd602690b5082966bff477d7b43784f849ee083815d2c5a18175420b3c3",
+      "destination": "src/ledger.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/parameter-mode.ts",
+      "sha256": "ad4fc14cf63b698267071d1ca2b929359abbf3c802ce285a40799d288c3256f1",
+      "destination": "src/parameter-mode.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/progress.ts",
+      "sha256": "56ccc2729e2ff2ea9d4d61cbbe959669ee0991d7e54ec3c798cb1e43c33a295a",
+      "destination": "src/progress.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/response-review.ts",
+      "sha256": "a9722de03fde491bbc96c5386b19202e52db146ce96753214ae9ac1f842f2fc9",
+      "destination": "src/response-review.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/runtime.ts",
+      "sha256": "b4c882c780851fb6baad8372a95ec15f56e8e6c0847d014bc006a8f3035a7fcc",
+      "destination": "src/runtime.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/src/types.ts",
+      "sha256": "765b678c02bd1406d547bcb8f631603e7108588dbd3ab00597748503e7e0b6a2",
+      "destination": "src/types.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/accepted-answers.spec.ts",
+      "sha256": "94bb4884ca17cf1b645b3fe6c2cfb8728265cc2eb7e6538080d313d1b4c76c54",
+      "destination": "tests/accepted-answers.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/candidate-facts.spec.ts",
+      "sha256": "c8661f89f0349e1a7da2903aa588f7a81928dc0a7aacb7d42058718bbb168114",
+      "destination": "tests/candidate-facts.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/decision-context.spec.ts",
+      "sha256": "ee199b25bea68233b0da7c6a0ef73e2b845574779a38d78ea0224062b9eaac8a",
+      "destination": "tests/decision-context.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/decision-evidence.spec.ts",
+      "sha256": "be05fd7341cd477661446f37ae5ff938db07c5c6ca7eab484cbc556ec51ac297",
+      "destination": "tests/decision-evidence.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/decision-format.expected.json",
+      "sha256": "1a397cedf7a21f69d39469165b933e5af1b2b6a90ff7ef57aa7ac340484c8c99",
+      "destination": "tests/decision-format.expected.json"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/decision-format.spec.ts",
+      "sha256": "a11ebec9a1efb5b4a15dfef9fb66b61ceffa65d16fd4b34d893f503ac086b766",
+      "destination": "tests/decision-format.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/decision-gates.spec.ts",
+      "sha256": "f6dcf77dbeef07b9ae17c83d78a673143fcf676f56644467926ba847cd3c9a51",
+      "destination": "tests/decision-gates.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/decision.spec.ts",
+      "sha256": "abe47c6e1453e523c5422038c382a9ad468ab9ea8aea6c7e031da1df232f7cb9",
+      "destination": "tests/decision.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/ledger.spec.ts",
+      "sha256": "8ab572aa31b6a9a8f2dd1ad4bc4af836237b23ad69d905150744b9d548366aa7",
+      "destination": "tests/ledger.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/parameter-mode.spec.ts",
+      "sha256": "fe4c7948bb5f65dbe16f8ca70d4e0b132a7213917309dc352e3b34f3feef8835",
+      "destination": "tests/parameter-mode.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/progress.spec.ts",
+      "sha256": "e4f4ed2dd3b87989d2cb525fd1b6ac30f04d33ebc946aded6103163103103586",
+      "destination": "tests/progress.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/response-review.spec.ts",
+      "sha256": "0ccd635b27b1fe6fa96311c0a1c044923cd3667b11e5d26a4b05252f898bf81d",
+      "destination": "tests/response-review.test.ts"
+    },
+    {
+      "source": "packages/jev/jev-runtime/tests/runtime.spec.ts",
+      "sha256": "e2797f7c5834c4c66b140850caa0922f77eb6ad86d35b28e39818826e9bb6cc6",
+      "destination": "tests/runtime.test.ts"
+    },
+    {
+      "source": "LICENSE",
+      "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+      "destination": "LICENSE"
+    }
+  ],
+  "adaptations": [
+    "Rename package imports to @agnes/jev-runtime.",
+    "Use .js ESM specifiers and .test.ts test names for Agnes.",
+    "Replace dsh-brand dependency with package-local compile-time string brands.",
+    "Read skill catalog retrieval operation from the recorded resource instead of hard-coding a host tool name.",
+    "Unicode evidence test uses a UTF-8 round trip instead of ES2024 String.isWellFormed, retaining the Unicode scalar assertion under the Agnes ES2023 target."
+  ]
+}

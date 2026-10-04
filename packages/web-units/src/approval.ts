@@ -3,6 +3,7 @@ import {
   type ForwardedRef,
   forwardRef,
   type ReactNode,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -38,6 +39,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
   { initialView, detail }: ApprovalProps,
   ref: ForwardedRef<ApprovalHandle>,
 ) {
+  const contentId = useId()
   const [view, setView] = useState<ApprovalView | undefined>(initialView)
   const content = useRef<HTMLDivElement>(null)
   const focusedAction = useRef<string | undefined>(undefined)
@@ -72,7 +74,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
     'div',
     {
       ref: content,
-      id: 'approval-content',
+      id: `approval-content-${contentId}`,
       style: { display: 'contents' },
       'data-agnes-region-owner': 'builtin',
       'data-agnes-region-unit': 'approval',

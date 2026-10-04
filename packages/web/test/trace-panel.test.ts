@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 
-import type { UINode, UISpan, UITurn } from '@agnes/protocol'
+import type { UINode, UISpan, UITimeline, UITurn } from '@agnes/protocol'
 import { traceRowBuilder } from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createComparisonTrace } from '../src/comparison-trace.js'
 import {
   TRACE_PANEL_STORAGE_KEY,
   Trace,
@@ -100,15 +101,15 @@ const nodes: UINode[] = [
 ]
 
 // The panel only computes while open, so tests that read its content open it first.
-function mount(open = true, readToolDetail?: TracePanelOptions['readToolDetail']) {
-  if (open) sessionStorage.setItem(TRACE_PANEL_STORAGE_KEY, 'open')
+function mount(open = true, readToolDetail?: TracePanelOptions['readToolDetail'], embedded = false) {
+  if (open && !embedded) sessionStorage.setItem(TRACE_PANEL_STORAGE_KEY, 'open')
   const root = document.createElement('aside')
   const toggle = document.createElement('button')
   const chat = document.createElement('button')
   const conversation = document.createElement('div')
-  toggle.id = 'view-trace'
+  toggle.id = embedded ? `view-trace-${roots.length}` : 'view-trace'
   toggle.textContent = '轨迹'
-  chat.id = 'view-chat'
+  chat.id = embedded ? `view-chat-${roots.length}` : 'view-chat'
   chat.textContent = '对话'
   document.body.append(root, toggle, chat, conversation)
   const projectUI = vi.fn()
@@ -123,7 +124,7 @@ function mount(open = true, readToolDetail?: TracePanelOptions['readToolDetail']
           toggle,
           chatToggle: chat,
           conversation,
-          store: sessionStorage,
+          ...(embedded ? { scope: 'embedded' as const } : { store: sessionStorage }),
           ...(readToolDetail ? { readToolDetail } : {}),
         },
       }),
@@ -131,6 +132,7 @@ function mount(open = true, readToolDetail?: TracePanelOptions['readToolDetail']
   })
   roots.push(reactRoot)
   if (!handle.current) throw new Error('trace component did not expose its handle')
+  if (embedded && open) handle.current.setOpen(true)
   return { root, toggle, chat, conversation, panel: handle.current, projectUI }
 }
 
@@ -158,6 +160,63 @@ describe('trace panel', () => {
     expect(modelBars.length).toBeGreaterThan(0)
     expect(toolBars.length).toBeGreaterThan(0)
     expect(modelBars.some((bar) => Number.parseFloat(bar.style.width) > 8)).toBe(true)
+  })
+
+  it('locates runtime model, action and stop observations without counting them as extra calls', () => {
+    const { root, panel } = mount()
+    const observations: Extract<UINode, { kind: 'runtime' }>[] = ['model', 'action', 'stop'].map(
+      (category, index) => ({
+        kind: 'runtime',
+        id: `runtime:${category}`,
+        seq: 6 + index,
+        lastSeq: 9 + index,
+        runtime: { id: 'jevloop', version: '1' },
+        category: category as 'model' | 'action' | 'stop',
+        status: category === 'action' ? 'unknown' : 'completed',
+        title: `Jev ${category}`,
+        summary: `观察 ${category}`,
+        detail: `证据 ${category}`,
+      }),
+    )
+    const trace: UISpan = {
+      ...sampleTrace,
+      children: [
+        ...sampleTrace.children,
+        ...observations.map((node) => ({
+          id: `span:${node.id}`,
+          kind: 'runtime' as const,
+          name: node.kind === 'runtime' ? node.title : '',
+          status: node.kind === 'runtime' ? node.status : ('unknown' as const),
+          startSeq: node.seq,
+          startedAt: '2026-09-17T00:00:00.060Z',
+          nodeIds: [node.id],
+          children: [],
+        })),
+      ],
+    }
+    panel.render(
+      [...nodes, ...observations],
+      [
+        turn(
+          trace,
+          [...nodes, ...observations].map((node) => node.id),
+        ),
+      ],
+    )
+    const bars = [...root.querySelectorAll<HTMLButtonElement>('.trace-gantt-bar.lane-runtime')]
+    expect(bars).toHaveLength(3)
+    expect(root.textContent).toContain('调用 2')
+    bars.forEach((bar, index) => {
+      bar.click()
+      expect(root.querySelector('.trace-row[aria-current="true"]')?.getAttribute('data-trace-row-id')).toBe(
+        observations[index]?.id,
+      )
+      expect(root.querySelector('.trace-inspector')?.textContent).toContain(
+        `观察 ${['model', 'action', 'stop'][index]}`,
+      )
+    })
+    expect(bars[1]?.title).toContain('结果未知')
+    expect(bars[1]?.title).toContain('时长未知')
   })
 
   it('shows empty state and does not throw when there are no nodes', () => {
@@ -1003,4 +1062,166 @@ describe('trace panel', () => {
     expect(list.scrollTop).toBe(0)
     expect(root.querySelector('[data-trace-row-id="older0"]')).not.toBeNull()
   })
+})
+
+it('isolates embedded trace selection, search, IDs and visibility from the page and the peer', async () => {
+  const page = mount()
+  const left = mount(true, undefined, true)
+  const right = mount(true, undefined, true)
+  left.panel.render(nodes, [], { sessionId: 'left', hasEarlier: false })
+  right.panel.render(nodes, [], { sessionId: 'right', hasEarlier: false })
+  const ids = [...document.querySelectorAll<HTMLElement>('[id]')].map((node) => node.id)
+  expect(new Set(ids).size).toBe(ids.length)
+  for (const { root } of [left, right]) {
+    const label = root.querySelector<HTMLLabelElement>('.trace-gantt-controls label')
+    expect(label?.control).toBe(root.querySelector('select'))
+  }
+  left.root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
+  await vi.waitFor(() => expect(left.root.querySelector('.trace-inspector[hidden]')).toBeNull())
+  expect(right.root.querySelector('.trace-inspector[hidden]')).not.toBeNull()
+  const search = left.root.querySelector<HTMLInputElement>('.trace-search')
+  if (!search) throw new Error('Missing trace search')
+  search.value = 'bash'
+  search.dispatchEvent(new Event('input', { bubbles: true }))
+  await vi.waitFor(() => expect(left.root.querySelectorAll('.trace-row')).toHaveLength(1))
+  expect(right.root.querySelector<HTMLInputElement>('.trace-search')?.value).toBe('')
+  expect(right.root.querySelectorAll('.trace-row').length).toBeGreaterThan(1)
+  left.panel.setOpen(false)
+  expect(document.body.classList.contains('trace-open')).toBe(true)
+  expect(page.root.hidden).toBe(false)
+  expect(right.root.hidden).toBe(false)
+  page.panel.setOpen(false)
+  left.panel.setOpen(true)
+  expect(document.body.classList.contains('trace-open')).toBe(false)
+  expect(sessionStorage.getItem(TRACE_PANEL_STORAGE_KEY)).toBe('closed')
+  roots.pop()?.unmount()
+  expect(left.root.hidden).toBe(false)
+  expect(document.body.classList.contains('trace-open')).toBe(false)
+})
+
+it('pins comparison tool detail reads to committed nodes and retires replies from a future cut', async () => {
+  const root = document.createElement('section')
+  const toggle = document.createElement('button')
+  const chatToggle = document.createElement('button')
+  const conversation = document.createElement('div')
+  document.body.append(root, toggle, chatToggle, conversation)
+  const tool = nodes.find((node) => node.kind === 'tool')
+  if (tool?.kind !== 'tool') throw new Error('Missing tool fixture')
+  type Detail = Awaited<ReturnType<NonNullable<TracePanelOptions['readToolDetail']>>>
+  let finish!: (value: Detail) => void
+  const future = new Promise<Parameters<typeof finish>[0]>((resolve) => {
+    finish = resolve
+  })
+  let finishLater!: (value: Detail) => void
+  const later = new Promise<Detail>((resolve) => {
+    finishLater = resolve
+  })
+  let resultReads = 0
+  const call = { toolUseId: tool.toolUseId, name: 'bash', args: { command: 'captured input' }, ordinal: 0 }
+  const readToolDetail = vi.fn(async (_session: string, _call: number, result?: number) =>
+    result === 5 ? (++resultReads === 1 ? future : later) : { call },
+  )
+  const trace = createComparisonTrace(root, {
+    sessionId: 'left',
+    toggle,
+    chatToggle,
+    conversation,
+    readToolDetail,
+  })
+  try {
+    const full: UITimeline = {
+      sessionId: 'left',
+      generation: 1,
+      upto: 5,
+      opState: null,
+      turns: [],
+      nodes: [{ ...tool, seq: 4, resultSeq: 5 }],
+    }
+    expect(() => trace.render({ ...full, sessionId: 'right' }, 5)).toThrow('会话或账本位置')
+    expect(() => trace.render(full, 4)).toThrow('会话或账本位置')
+    trace.render(full, 5)
+    toggle.click()
+    root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
+    const input = [...root.querySelectorAll<HTMLButtonElement>('.trace-tab')].find(
+      (node) => node.textContent === '完整输入',
+    )
+    input?.click()
+    await vi.waitFor(() => expect(readToolDetail).toHaveBeenCalledWith('left', 4, 5, expect.any(AbortSignal)))
+    // Rendering the same immutable coordinates must not rebind or restart detail reads.
+    trace.render({ ...full, nodes: [...full.nodes] }, 5)
+    await Promise.resolve()
+    expect(readToolDetail).toHaveBeenCalledTimes(1)
+    const detail: Detail = {
+      call,
+      result: {
+        toolUseId: tool.toolUseId,
+        content: [{ type: 'text', text: 'future output must not leak' }],
+        isError: false,
+        enforcement: { level: 'full', scope: [] },
+        authz: { decisionId: 'fixture-decision' },
+      },
+    }
+    finish(detail)
+    await vi.waitFor(() => expect(root.textContent).toContain('captured input'))
+    // A different cut retaining the same tool needs a new request; no writer generation is invented.
+    trace.render({ ...full, upto: 6 }, 6)
+    await vi.waitFor(() => expect(readToolDetail).toHaveBeenCalledTimes(2))
+    const {
+      resultSeq: _resultSeq,
+      resultPreview: _resultPreview,
+      ...beforeTool
+    } = full.nodes[0] as Extract<UINode, { kind: 'tool' }>
+    trace.render({ ...full, upto: 4, nodes: [{ ...beforeTool, status: 'running' }] }, 4)
+    await vi.waitFor(() =>
+      expect(readToolDetail).toHaveBeenCalledWith('left', 4, undefined, expect.any(AbortSignal)),
+    )
+    finishLater(detail)
+    await later
+    await Promise.resolve()
+    const output = [...root.querySelectorAll<HTMLButtonElement>('.trace-tab')].find(
+      (node) => node.textContent === '完整输出',
+    )
+    output?.click()
+    await vi.waitFor(() => expect(root.textContent).toContain('工具结果尚未记录'))
+    expect(root.textContent).not.toContain('future output must not leak')
+    trace.render({ ...full, upto: 0, nodes: [] }, 0)
+    expect(root.querySelector('.trace-inspector[hidden]')).not.toBeNull()
+  } finally {
+    trace.dispose()
+  }
+})
+
+it('labels verified parent reports as context with sender and settlement outcome in trace', () => {
+  const { root, panel } = mount()
+  panel.render(
+    [
+      {
+        kind: 'context',
+        id: 'report',
+        seq: 1,
+        text: 'actual report',
+        messageSource: {
+          kind: 'agent-message',
+          senderSessionId: 'fixture-child',
+          receiptSeq: 1,
+        },
+      },
+      {
+        kind: 'context',
+        id: 'notice',
+        seq: 2,
+        text: 'actual closing notice',
+        messageSource: {
+          kind: 'subagent-settled',
+          senderSessionId: 'fixture-child',
+          receiptSeq: 2,
+          outcome: 'failed',
+        },
+      },
+    ],
+    [turn(sampleTrace, ['report', 'notice'])],
+  )
+  expect(root.textContent).toContain('Agent 报告 · fixture-child')
+  expect(root.textContent).toContain('子任务结束通知 · fixture-child · 失败')
+  expect(root.querySelectorAll('.trace-badge.kind-用户')).toHaveLength(0)
 })

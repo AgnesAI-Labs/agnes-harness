@@ -1,5 +1,6 @@
 import { posix } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { assertComparisonIsolation } from '../src/runtime/comparison-isolation.js'
 import {
   compileWorkspacePolicy,
   normalizeSandboxStaticConfig,
@@ -20,6 +21,43 @@ const compile = (root = '/work', preset: Record<string, unknown> = {}) =>
   })
 
 describe('Host workspace policy compiler', () => {
+  it('admits comparison writes only inside its lane and disjoint Host scratch after full confinement', async () => {
+    const isolation = {
+      sourceRoot: '/source',
+      storageRoot: '/data/comparisons',
+      workspaceRoots: ['/data/comparisons/pair/left', '/data/comparisons/pair/right'],
+      externalPaths: ['/python/bin/python'],
+    }
+    const full = { level: 'full' as const, scope: ['file' as const, 'process' as const] }
+    const { policy } = await compile('/data/comparisons/pair/left')
+    expect(() => assertComparisonIsolation(policy, full, false, isolation)).not.toThrow()
+    const plan = await compile('/data/comparisons/pair/left')
+    expect(plan.backendOptions.denyExceptions).toContainEqual({
+      path: '/data',
+      except: ['/data/comparisons/pair/left', '/data/tmp'],
+    })
+    const hard = await compile('/work', { sandbox: { extra_paths: ['/home/user/.ssh/nested'] } })
+    expect(hard.backendOptions.denyExceptions?.some((entry) => entry.path === '/home/user/.ssh')).toBe(false)
+    for (const enforcement of [undefined, { ...full, level: 'partial' as const }, { ...full, scope: [] }])
+      expect(() => assertComparisonIsolation(policy, enforcement, false, isolation)).toThrow(
+        'full filesystem confinement',
+      )
+    expect(() => assertComparisonIsolation(policy, full, true, isolation)).toThrow(
+      'full filesystem confinement',
+    )
+    for (const path of ['/source', '/data/comparisons/pair/right', '/shared', '/python']) {
+      const wider = await compile('/data/comparisons/pair/left', { sandbox: { extra_paths: [path] } })
+      expect(() => assertComparisonIsolation(wider.policy, full, false, isolation)).toThrow('writable roots')
+    }
+    for (const change of [
+      { sourceRoot: '/data/tmp/source' },
+      { storageRoot: '/data/tmp' },
+      { externalPaths: ['/data/tmp/python'] },
+    ])
+      expect(() => assertComparisonIsolation(policy, full, false, { ...isolation, ...change })).toThrow(
+        'writable roots',
+      )
+  })
   it('normalizes the closed static config and hashes the normalized value stably', () => {
     const a = normalizeSandboxStaticConfig({
       sandbox: { required: true, level: 'L1', deny_paths: ['secret'], extra_paths: ['vendor'] },

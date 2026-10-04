@@ -8,9 +8,11 @@ import { fakeSeamInit } from '@agnes/base/testkit'
 import { contextTokens, type LedgerSeam } from '@agnes/core'
 import {
   type InferenceEvent,
+  MODEL_CALL_EVENT,
   type ModelRecord,
   type Provider,
   type RequestBody,
+  readModelCall,
   readSessionTitle,
   SESSION_TITLE_EVENT,
 } from '@agnes/protocol'
@@ -197,6 +199,13 @@ it('generates with the captured model, persists once, and bills the first turn w
   const request = f.calls.find((call) => call.sessionKey.startsWith('title:')) as RequestBody
   expect(request.tools).toEqual([])
   expect(request.model).toBe('m1')
+  const titleCalls = (await f.session.scan({ type: MODEL_CALL_EVENT, toSeq: f.session.lastSeq }))
+    .map(readModelCall)
+    .filter((call) => call?.purpose === 'title')
+  expect(titleCalls).toMatchObject([
+    { stage: 'started', sourceTurn: 1, sourceStep: 0, route: 'gw', model: 'm1' },
+    { stage: 'settled', outcome: 'completed', usage: usage(true), observedModel: null },
+  ])
   expect(request.sampling?.maxTokens).toBeLessThanOrEqual(1024)
   for (const [index, call] of f.calls.entries()) {
     if (call.kind === 'summary') expect(f.callOptions[index]).toHaveProperty('retry', false)
@@ -333,6 +342,11 @@ it('closes a hanging title adapter, records unknown usage, and ignores late outp
   const costs = await reopened.session.scan({ type: 'cost/ledger', toSeq: reopened.session.lastSeq })
   expect(costs.at(-1)?.data).toMatchObject({ purpose: 'title', interrupted: true })
   expect((costs.at(-1)?.data as { credits?: number } | undefined)?.credits).toBeUndefined()
+  expect(
+    (await reopened.session.scan({ type: MODEL_CALL_EVENT, toSeq: reopened.session.lastSeq }))
+      .map(readModelCall)
+      .filter((call) => call?.purpose === 'title'),
+  ).toMatchObject([{ stage: 'started' }, { stage: 'settled', outcome: 'cancelled', usage: null }])
   expect(reopened.calls).toHaveLength(0)
 }, 30_000)
 

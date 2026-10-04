@@ -7,6 +7,7 @@ import type { LaunchResources } from './resources.js'
 export type LocalBackend = SharedLocalBackend
 
 export type EnsureLocalBackendOptions = {
+  signal?: AbortSignal
   env?: NodeJS.ProcessEnv
   cwd?: string
   home?: string
@@ -25,6 +26,7 @@ export type EnsureLocalBackendOptions = {
  */
 export function ensureLocalBackend(options: EnsureLocalBackendOptions): Promise<LocalBackend> {
   return ensureSharedLocalBackend({
+    ...(options.signal ? { signal: options.signal } : {}),
     ...(options.env ? { env: options.env } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
     ...(options.home ? { home: options.home } : {}),

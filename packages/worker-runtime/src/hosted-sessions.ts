@@ -1,13 +1,16 @@
 import type { Host, HostSession, WorkspaceBinding } from '@agnes/host'
-import type { WorkerGeneration } from '@agnes/protocol'
+import { type RuntimeIdentity, rpcError, type WorkerGeneration } from '@agnes/protocol'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
 import {
   type EventFrame,
   type PreviewFrame,
   parseWorkspaceBinding,
+  type SessionCloseConfirmation,
+  type SessionCloseOwner,
   type SessionCommandFrame,
   type SessionOpenFrame,
   type SessionOpenResult,
+  sameSessionCloseOwner,
 } from './frames.js'
 import type { SharedSessionChannel } from './shared-session-channel.js'
 import { type TailHandle, tailSession } from './tail.js'
@@ -19,11 +22,14 @@ type HostedSession = {
   following?: TailHandle
   /** Entries still working on this session, including those that woke it. */
   inflight: number
+  readonly drains: Set<Promise<void>>
   lastActivityAt: number
 }
 
 /** What a hibernated session keeps: enough to reopen it, and nothing that grants authority. */
 type HibernatedStub = {
+  owner: SessionCloseOwner
+  runtime: RuntimeIdentity
   binding: WorkspaceBinding
   parent?: { key: string; boundarySeq: number }
   preset: string
@@ -72,6 +78,10 @@ export class HostedSessions {
   private readonly sessions = new Map<string, HostedSession>()
   private readonly opening = new Map<string, Promise<HostedSession>>()
   private readonly closing = new Map<string, Promise<void>>()
+  private readonly failedCloses = new Map<string, HostedSession>()
+  private readonly retryableCloses = new Set<string>()
+  private readonly transfers = new Map<string, { previous: SessionCloseOwner; owner: SessionCloseOwner }>()
+  private readonly confirmations = new Map<string, Promise<SessionCloseConfirmation>>()
   private readonly stubs = new Map<string, HibernatedStub>()
   private readonly hibernating = new Map<string, Promise<void>>()
   private readonly waking = new Map<string, Promise<HostedSession>>()
@@ -102,7 +112,7 @@ export class HostedSessions {
   }
 
   keys(): string[] {
-    return [...this.sessions.keys()]
+    return [...this.sessions.keys()].filter((key) => !this.closing.has(key))
   }
 
   async open(frame: SessionOpenFrame): Promise<SessionOpenResult> {
@@ -119,22 +129,35 @@ export class HostedSessions {
     )
       throw new Error('invalid fork parent')
     const closing = this.closing.get(frame.sessionKey)
-    if (closing) await closing
+    if (closing) {
+      await closing
+      if (this.closing.get(frame.sessionKey) !== closing) return this.open(frame)
+      const proof = await this.confirmations.get(frame.sessionKey)
+      if (!proof?.exited) throw new Error(`session ${frame.sessionKey} close is unconfirmed`)
+      this.closing.delete(frame.sessionKey)
+      this.confirmations.delete(frame.sessionKey)
+      this.transfers.delete(frame.sessionKey)
+    }
     if (this.closingAll) throw new Error('shared worker is closing')
     if (this.dormant(frame.sessionKey)) {
+      const owner = this.stubs.get(frame.sessionKey)?.runtime
+      if (frame.params.runtime !== undefined && frame.params.runtime !== owner?.id)
+        throw new Error('session.open runtime does not match the persisted owner')
       const woken = await this.acquire(frame.sessionKey)
-      this.assertAuthority(woken.session, binding, parent)
+      this.assertAuthority(woken.session, binding, parent, frame.params.runtime)
       return this.describe(woken.session)
     }
     const existing = this.sessions.get(frame.sessionKey)
     if (existing) {
-      this.assertAuthority(existing.session, binding, parent)
+      this.assertAuthority(existing.session, binding, parent, frame.params.runtime)
       return this.describe(existing.session)
     }
     const pending = this.opening.get(frame.sessionKey)
     if (pending) {
       const hosted = await pending
-      this.assertAuthority(hosted.session, binding, parent)
+      if (this.closing.has(frame.sessionKey) || this.closingAll)
+        throw new Error(`session ${frame.sessionKey} was closed while opening`)
+      this.assertAuthority(hosted.session, binding, parent, frame.params.runtime)
       return this.describe(hosted.session)
     }
     const opening = this.options.channel.run(frame.sessionKey, async () => {
@@ -142,6 +165,7 @@ export class HostedSessions {
         key: frame.sessionKey,
         binding,
         ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+        ...(frame.params.runtime === undefined ? {} : { runtime: frame.params.runtime }),
         ...(parent ? { parent } : {}),
       })
       const hosted = this.adopt(frame.sessionKey, session)
@@ -149,7 +173,10 @@ export class HostedSessions {
     })
     this.opening.set(frame.sessionKey, opening)
     try {
-      return this.describe((await opening).session)
+      const hosted = await opening
+      if (this.closing.has(frame.sessionKey) || this.closingAll)
+        throw new Error(`session ${frame.sessionKey} was closed while opening`)
+      return this.describe(hosted.session)
     } finally {
       if (this.opening.get(frame.sessionKey) === opening) this.opening.delete(frame.sessionKey)
     }
@@ -157,6 +184,7 @@ export class HostedSessions {
 
   private describe(session: HostSession): SessionOpenResult {
     return {
+      runtime: session.runtimeIdentity,
       sessionKey: session.key,
       writerRunId: session.writerRunId,
       generation: 1,
@@ -207,6 +235,19 @@ export class HostedSessions {
     // A stub answers these itself: a listing or a stray cancel must not wake a session.
     if (stub && frame.method === 'ping')
       return { ok: true, lastSeq: await stub.head(), preset: stub.preset, parent: stub.parent ?? null }
+    if (stub && frame.method === 'runtimeState') return { runtime: stub.runtime, phase: 'closed' }
+    if (stub && frame.method === 'controlRuntime')
+      throw rpcError('SEMANTIC_REJECTED', { code: 'RUNTIME_CLOSED' })
+    if (stub && frame.method === 'prepareSessionConfiguration')
+      throw rpcError('SEMANTIC_REJECTED', { code: 'RUNTIME_CLOSED' })
+    if (stub && frame.method === 'questionsPending') return []
+    if (
+      stub &&
+      (frame.method === 'answerQuestion' ||
+        frame.method === 'cancelQuestion' ||
+        frame.method === 'resolveQuestionActor')
+    )
+      throw rpcError('SEMANTIC_REJECTED', { code: 'QUESTION_NOT_LIVE' })
     if (stub && frame.method === 'abort') return {}
     if (stub && frame.method === 'previewSnapshot') return []
     return this.enter(frame.sessionKey, frame.method, (hosted) =>
@@ -230,6 +271,8 @@ export class HostedSessions {
    * hibernated. A key this worker does not know is passed through, so the command reports it.
    */
   withSession<T>(sessionKey: string, method: string, fn: () => T | Promise<T>): Promise<T> {
+    if (this.closing.has(sessionKey) || this.closingAll)
+      return Promise.reject(new Error(`session ${sessionKey} is not open (closing)`))
     if (!this.sessions.has(sessionKey) && !this.dormant(sessionKey)) return Promise.resolve().then(fn)
     return this.enter(sessionKey, method, fn)
   }
@@ -240,10 +283,16 @@ export class HostedSessions {
     method: string,
     fn: (hosted: HostedSession) => T | Promise<T>,
   ): Promise<T> {
+    if (this.closing.has(sessionKey) || this.closingAll)
+      return Promise.reject(new Error(`session ${sessionKey} is not open (closing)`))
     const open = this.sessions.get(sessionKey)
     // An open session is entered in the same tick, so commands keep their arrival order.
     if (open) return this.inside(open, method, fn)
-    return this.acquire(sessionKey).then((hosted) => this.inside(hosted, method, fn))
+    return this.acquire(sessionKey).then((hosted) => {
+      if (this.closing.has(sessionKey) || this.closingAll || this.sessions.get(sessionKey) !== hosted)
+        throw new Error(`session ${sessionKey} is not open (closing)`)
+      return this.inside(hosted, method, fn)
+    })
   }
 
   private async inside<T>(
@@ -253,11 +302,18 @@ export class HostedSessions {
   ): Promise<T> {
     const active = ACTIVE_METHODS.has(method) || (method === 'abort' && hosted.aborts.size > 0)
     hosted.inflight++
+    let finish!: () => void
+    const drained = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    hosted.drains.add(drained)
     if (active) hosted.lastActivityAt = this.clock()
     try {
       return await fn(hosted)
     } finally {
       hosted.inflight--
+      hosted.drains.delete(drained)
+      finish()
       if (active) hosted.lastActivityAt = this.clock()
     }
   }
@@ -276,13 +332,16 @@ export class HostedSessions {
 
   private quiet(key: string, hosted: HostedSession): boolean {
     const { session } = hosted
+    if (session.configurationReserved || session.idleGateReserved) return false
     if (hosted.inflight > 0 || hosted.aborts.size > 0 || this.options.channel.hasPending(key)) return false
     if (session.turn !== null || session.op() !== null || session.d.log.faulted) return false
     if (((session.latest('inbox') as { items?: unknown[] } | undefined)?.items?.length ?? 0) > 0) return false
     if (session.state.pendingApprovals.size > 0) return false
-    // A child still open keeps its parent open; children hibernate first.
+    // Fresh descendants have runtime ownership without ledger ancestry. Either kind keeps its
+    // parent open until the child closes, so hibernation cannot cancel detached work.
     for (const other of this.options.host.kernel.sessions.values())
-      if (other !== session && other.d.log.parent?.key === key) return false
+      if (other !== session && (other.d.log.parent?.key === key || other.d.runtimeOwnerSessionKey === key))
+        return false
     return true
   }
 
@@ -296,6 +355,8 @@ export class HostedSessions {
     const ledger = session.d.log.storage
     const lastSeq = session.lastSeq
     this.stubs.set(key, {
+      owner: this.owner(session),
+      runtime: session.runtimeIdentity,
       binding: session.d.workspaceIdentity as WorkspaceBinding,
       ...(session.d.log.parent ? { parent: session.d.log.parent } : {}),
       preset: session.preset.name,
@@ -314,15 +375,20 @@ export class HostedSessions {
       try {
         await session.close()
       } catch (error) {
-        this.log(
+        this.stubs.delete(key)
+        const failed = Promise.reject<void>(error)
+        void failed.catch(() => undefined)
+        this.failedCloses.set(key, hosted)
+        this.retryableCloses.add(key)
+        this.closing.set(key, failed)
+        this.confirmations.set(
           key,
-          'warn',
-          `session hibernation close failed: ${error instanceof Error ? error.message : String(error)}`,
+          Promise.resolve({ exited: false, reason: 'close-failed', owner: this.owner(session) }),
         )
-      } finally {
-        this.options.host.kernel.sessions.delete(key)
-        this.options.channel.closeSession(key)
+        throw error
       }
+      this.options.host.kernel.sessions.delete(key)
+      this.options.channel.closeSession(key)
       this.log(key, 'info', `session hibernated in ${this.clock() - started} ms`)
     })().finally(() => this.hibernating.delete(key))
     this.hibernating.set(key, done)
@@ -336,6 +402,7 @@ export class HostedSessions {
   /** The open session for `key`, waking it from its stub if it hibernated. */
   private async acquire(key: string): Promise<HostedSession> {
     for (;;) {
+      if (this.closing.has(key) || this.closingAll) throw new Error(`session ${key} is not open (closing)`)
       const hibernating = this.hibernating.get(key)
       if (hibernating) {
         await hibernating
@@ -363,6 +430,13 @@ export class HostedSessions {
       })
       this.stubs.delete(key)
       const hosted = this.adopt(key, session)
+      this.transfers.set(key, { previous: stub.owner, owner: this.owner(session) })
+      this.options.send({
+        kind: 'session.owner',
+        sessionKey: key,
+        previous: stub.owner,
+        owner: this.owner(session),
+      })
       if (stub.tailFrom !== undefined) this.follow(key, hosted, stub.tailFrom)
       return hosted
     })
@@ -381,7 +455,13 @@ export class HostedSessions {
   }
 
   private adopt(key: string, session: HostSession): HostedSession {
-    const hosted: HostedSession = { session, aborts: new Map(), inflight: 0, lastActivityAt: this.clock() }
+    const hosted: HostedSession = {
+      session,
+      aborts: new Map(),
+      inflight: 0,
+      drains: new Set(),
+      lastActivityAt: this.clock(),
+    }
     this.sessions.set(key, hosted)
     return hosted
   }
@@ -405,6 +485,18 @@ export class HostedSessions {
       input.childKey === parentSession.key
     )
       throw new Error('invalid fork command')
+    const closing = this.closing.get(input.childKey)
+    if (closing) {
+      await closing
+      if (this.closing.get(input.childKey) !== closing)
+        throw new Error(`session ${input.childKey} close changed while opening`)
+      if (!(await this.confirmations.get(input.childKey))?.exited)
+        throw new Error(`session ${input.childKey} close is unconfirmed`)
+      this.closing.delete(input.childKey)
+      this.confirmations.delete(input.childKey)
+      this.transfers.delete(input.childKey)
+    }
+    if (this.closingAll) throw new Error('shared worker is closing')
     const envelope = parseWorkspaceBinding(input.binding, input.childKey)
     const binding = this.options.host.acceptWorkspaceBinding(envelope, input.childKey)
     const parent = { key: parentSession.key, boundarySeq: input.at }
@@ -421,6 +513,8 @@ export class HostedSessions {
     const pending = this.opening.get(input.childKey)
     if (pending) {
       const hosted = await pending
+      if (this.closing.has(input.childKey) || this.closingAll)
+        throw new Error(`session ${input.childKey} was closed while opening`)
       this.assertAuthority(hosted.session, binding, parent)
       return { sessionId: hosted.session.key, parent: hosted.session.d.log.parent }
     }
@@ -437,6 +531,8 @@ export class HostedSessions {
     this.opening.set(input.childKey, opening)
     try {
       const hosted = await opening
+      if (this.closing.has(input.childKey) || this.closingAll)
+        throw new Error(`session ${input.childKey} was closed while opening`)
       return { sessionId: hosted.session.key, parent: hosted.session.d.log.parent }
     } finally {
       if (this.opening.get(input.childKey) === opening) this.opening.delete(input.childKey)
@@ -447,7 +543,10 @@ export class HostedSessions {
     session: HostSession,
     binding: WorkspaceBinding,
     parent: { key: string; boundarySeq: number } | undefined,
+    runtime?: string,
   ): void {
+    if (runtime !== undefined && runtime !== session.runtimeIdentity.id)
+      throw new Error('session.open runtime does not match the persisted owner')
     const actualBinding = session.d.workspaceIdentity as WorkspaceBinding | undefined
     const actualParent = session.d.log.parent
     if (
@@ -462,35 +561,90 @@ export class HostedSessions {
       throw new Error('session.open authority does not match the hosted session')
   }
 
+  private owner(session: HostSession): SessionCloseOwner {
+    return {
+      sessionKey: session.key,
+      writerRunId: session.writerRunId,
+      generation: 1,
+      workerGeneration: this.options.workerGeneration,
+    }
+  }
+
   close(sessionKey: string): Promise<void> {
     const active = this.closing.get(sessionKey)
-    if (active) return active
+    if (active && !this.retryableCloses.has(sessionKey)) return active
+    this.retryableCloses.delete(sessionKey)
+    const initial = this.failedCloses.get(sessionKey) ?? this.sessions.get(sessionKey)
+    if (initial) this.sessions.delete(sessionKey)
+    let owner: SessionCloseOwner | undefined
     const closing = (async () => {
-      await this.opening.get(sessionKey)?.catch(() => undefined)
+      const opening = this.opening.get(sessionKey)
+      const opened = opening ? await opening.catch(() => undefined) : undefined
       while (this.hibernating.has(sessionKey) || this.waking.has(sessionKey)) {
         await this.hibernating.get(sessionKey)
         await this.waking.get(sessionKey)?.catch(() => undefined)
       }
+      const stub = this.stubs.get(sessionKey)
+      const hosted = initial ?? opened ?? this.sessions.get(sessionKey)
       this.stubs.delete(sessionKey)
-      const hosted = this.sessions.get(sessionKey)
-      if (!hosted) return
+      if (!hosted) {
+        owner = stub?.owner
+        return
+      }
+      owner = this.owner(hosted.session)
+      this.failedCloses.set(sessionKey, hosted)
       this.sessions.delete(sessionKey)
       hosted.tail?.abort()
       for (const abort of hosted.aborts.values()) abort.abort()
       this.options.channel.closeSession(sessionKey)
-      try {
-        await hosted.session.close()
-      } finally {
-        // HostSession.close() can fail after the session has already been removed from this owner's
-        // map. Always release the kernel registration as well, otherwise no owner remains that can
-        // clean the stale key and a later session.open for the same key fails with E_LANE_BUSY.
+      await hosted.session.close()
+      await Promise.all(hosted.drains)
+      this.failedCloses.delete(sessionKey)
+      if (this.options.host.kernel.sessions.get(sessionKey) === hosted.session)
         this.options.host.kernel.sessions.delete(sessionKey)
-      }
-    })().finally(() => {
-      if (this.closing.get(sessionKey) === closing) this.closing.delete(sessionKey)
+    })().catch((error) => {
+      if (this.failedCloses.has(sessionKey)) this.retryableCloses.add(sessionKey)
+      throw error
     })
     this.closing.set(sessionKey, closing)
+    this.confirmations.set(
+      sessionKey,
+      closing.then(
+        () => (owner ? { exited: true, owner } : { exited: false, reason: 'owner-unknown' }),
+        () => ({ exited: false, reason: 'close-failed', ...(owner ? { owner } : {}) }),
+      ),
+    )
     return closing
+  }
+
+  async closeAndConfirm(sessionKey: string, expected?: SessionCloseOwner): Promise<SessionCloseConfirmation> {
+    // Validate against the owner created by a pending open/wake before attempting its close.
+    if (expected) {
+      await this.opening.get(sessionKey)?.catch(() => undefined)
+      await this.waking.get(sessionKey)?.catch(() => undefined)
+      await this.hibernating.get(sessionKey)?.catch(() => undefined)
+    }
+    const current = this.failedCloses.get(sessionKey) ?? this.sessions.get(sessionKey)
+    const actual = current ? this.owner(current.session) : this.stubs.get(sessionKey)?.owner
+    const transfer = this.transfers.get(sessionKey)
+    const continued =
+      expected &&
+      transfer &&
+      sameSessionCloseOwner(expected, transfer.previous) &&
+      (!actual || sameSessionCloseOwner(actual, transfer.owner))
+    if (expected && actual && !sameSessionCloseOwner(expected, actual) && !continued)
+      return { exited: false, reason: 'generation-mismatch', owner: expected }
+    // A legacy close still closes its session, but cannot establish an exact-owner receipt.
+    await this.close(sessionKey).catch(() => undefined)
+    const proof = await this.confirmations.get(sessionKey)
+    if (!expected) return { exited: false, reason: 'owner-unknown' }
+    if (
+      !proof?.owner ||
+      (!sameSessionCloseOwner(expected, proof.owner) &&
+        !(continued && transfer && sameSessionCloseOwner(transfer.owner, proof.owner)))
+    )
+      return { exited: false, reason: 'generation-mismatch', owner: expected }
+    return proof
   }
 
   async closeAll(): Promise<void> {
@@ -499,12 +653,14 @@ export class HostedSessions {
     await Promise.allSettled(this.opening.values())
     await Promise.allSettled([...this.hibernating.values(), ...this.waking.values()])
     this.stubs.clear()
-    await Promise.allSettled(this.keys().map((key) => this.close(key)))
+    await Promise.allSettled(
+      [...new Set([...this.keys(), ...this.failedCloses.keys()])].map((key) => this.close(key)),
+    )
     await Promise.allSettled(this.closing.values())
   }
 
   private require(sessionKey: string): HostedSession {
-    const hosted = this.sessions.get(sessionKey)
+    const hosted = this.closing.has(sessionKey) ? undefined : this.sessions.get(sessionKey)
     if (!hosted) throw new Error(`session ${sessionKey} is not open`)
     return hosted
   }

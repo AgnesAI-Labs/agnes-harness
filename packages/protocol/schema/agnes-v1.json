@@ -3,6 +3,580 @@
   "$id": "https://agnes.ai/schema/agnes-v1.json",
   "title": "_agnes/v1",
   "$defs": {
+    "ComparisonRetirementParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "expectedRevision"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonPreparationReleasedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "storageState", "kind"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "storageState": {
+          "const": "released"
+        },
+        "kind": {
+          "const": "failed-preparation"
+        }
+      }
+    },
+    "ComparisonReleaseResult": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ComparisonSnapshot"
+        },
+        {
+          "$ref": "#/$defs/ComparisonPreparationReleasedResult"
+        }
+      ]
+    },
+    "ComparisonRemovedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "storageState"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "storageState": {
+          "const": "removed"
+        }
+      }
+    },
+    "ComparisonPruneParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "operation"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/ComparisonRetirementParams"
+          }
+        },
+        "operation": {
+          "enum": ["release", "remove"]
+        }
+      }
+    },
+    "ComparisonPruneResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "ok", "revision", "storageState"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "ok": {
+                    "const": true
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "storageState": {
+                    "enum": ["released", "removed"]
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "ok", "error"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "ok": {
+                    "const": false
+                  },
+                  "error": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["code", "message"],
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 512
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "ComparisonPreparedReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "sourceSeq", "sourceDigest", "configuration"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sourceSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "sourceDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "configuration": {
+          "$ref": "#/$defs/ComparisonPreparedConfiguration"
+        }
+      },
+      "description": "Bound to a trusted ignorable x/host/session-prepared or x/host/comparison-round-prepared source event. It is not reconstructed from current profiles. Historical visibility requires its recorded coordinator publication and a lane cut covering sourceSeq."
+    },
+    "ComparisonPreparedConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "effective", "runtimeConfig", "fingerprints"],
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "effective": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["preset", "models", "tools", "permission"],
+          "properties": {
+            "mounted": {
+              "description": "Optional publication-bound digest of actual active Host row configurations and the selected preset row. Only digest/count are exposed; null or legacy omission is unknown, not configuration equality. This is separate from the resolved Core preset view.",
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["scope", "digest", "count"],
+                  "properties": {
+                    "scope": {
+                      "const": "active-host-rows-and-selected-preset"
+                    },
+                    "digest": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100000
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "preset": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "definitionDigest", "scope"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "definitionDigest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "scope": {
+                  "const": "resolved-preset-view"
+                }
+              }
+            },
+            "models": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/ComparisonPreparedModel"
+              }
+            },
+            "tools": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["count", "digest", "scope"],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100000
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "scope": {
+                  "const": "registered-tool-definitions"
+                }
+              }
+            },
+            "permission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["approvalMode", "yolo", "enforcement", "policyDigest", "digest"],
+              "properties": {
+                "approvalMode": {
+                  "anyOf": [
+                    {
+                      "enum": ["manual", "smart", "off"]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "yolo": {
+                  "type": "boolean"
+                },
+                "enforcement": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["level", "scope"],
+                      "properties": {
+                        "level": {
+                          "enum": ["full", "partial", "none"]
+                        },
+                        "scope": {
+                          "type": "array",
+                          "maxItems": 3,
+                          "uniqueItems": true,
+                          "items": {
+                            "enum": ["file", "network", "process"]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "policyDigest": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "digest": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "runtimeConfig": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["decision", "config"],
+              "properties": {
+                "decision": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["backend", "endpoint", "model"],
+                  "properties": {
+                    "backend": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "endpoint": {
+                      "pattern": "^https?://[^/?#@]+(?:/[^?#]*)?$",
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    }
+                  }
+                },
+                "config": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "maxSteps",
+                    "maxModelAttempts",
+                    "maxNoProgress",
+                    "maxRepeatedFailures",
+                    "maxCandidates",
+                    "maxHistory",
+                    "maxQuestionBytes",
+                    "maxOutputBytes",
+                    "escalateBelow",
+                    "equivalentSupportThreshold",
+                    "bindingBelow",
+                    "mutationEscalateBelow",
+                    "ambiguityGate",
+                    "responseReviewMode",
+                    "answerProgressFloor",
+                    "maxResponseReviewAttempts"
+                  ],
+                  "properties": {
+                    "maxSteps": {
+                      "type": "number"
+                    },
+                    "maxModelAttempts": {
+                      "type": "number"
+                    },
+                    "maxNoProgress": {
+                      "type": "number"
+                    },
+                    "maxRepeatedFailures": {
+                      "type": "number"
+                    },
+                    "maxCandidates": {
+                      "type": "number"
+                    },
+                    "maxHistory": {
+                      "type": "number"
+                    },
+                    "maxQuestionBytes": {
+                      "type": "number"
+                    },
+                    "maxOutputBytes": {
+                      "type": "number"
+                    },
+                    "escalateBelow": {
+                      "type": "number"
+                    },
+                    "equivalentSupportThreshold": {
+                      "type": "number"
+                    },
+                    "bindingBelow": {
+                      "type": "number"
+                    },
+                    "mutationEscalateBelow": {
+                      "type": "number"
+                    },
+                    "ambiguityGate": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "responseReviewMode": {
+                      "enum": ["diagnostic", "review"]
+                    },
+                    "answerProgressFloor": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "maxResponseReviewAttempts": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fingerprints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tools", "model", "preset", "permission"],
+          "properties": {
+            "mounted": {
+              "description": "Publication-bound mounted configuration digest; null or omission remains unknown and must not be filled from current profiles.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tools": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "model": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "preset": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "permission": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "description": "Frozen actual session configuration. Preset scope attests resolved Core knobs, not the mounted plugin generation. Runtime-specific configuration excludes credentials. Permission fingerprints normalize only the isolated workspace root."
+    },
+    "ComparisonPreparedModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "route", "model", "thinking", "contextWindow"],
+      "properties": {
+        "slot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "model.json#/$defs/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Frozen preset output limit for this slot, not the model/provider effective cap. Absent on older receipts; null means no explicit slot limit."
+        },
+        "contextWindow": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "ExtensionCallParams": {
       "$ref": "extension-service.json#/$defs/ExtensionCallParams"
     },
@@ -117,6 +691,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "runtime": {
+          "description": "Requested runtime id. Omission selects native; an explicit unsupported id must be rejected, never substituted.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
         "preset": {
           "type": "string",
           "maxLength": 128
@@ -124,6 +703,1613 @@
         "sessionKey": {
           "type": "string",
           "maxLength": 512
+        }
+      }
+    },
+    "ComparisonLane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["side", "sessionId", "runtime", "workspaceLabel", "phase", "lastSeq"],
+      "properties": {
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "workspaceLabel": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "phase": {
+          "enum": ["idle", "running", "waiting", "parked", "recovering", "closed", "failed"]
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonAcceptance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["side", "sessionId", "status", "seq"],
+          "properties": {
+            "side": {
+              "enum": ["left", "right"]
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "status": {
+              "const": "accepted"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["side", "sessionId", "status", "error"],
+          "properties": {
+            "side": {
+              "enum": ["left", "right"]
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "status": {
+              "const": "rejected"
+            },
+            "error": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["side", "sessionId", "status"],
+          "properties": {
+            "side": {
+              "enum": ["left", "right"]
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "status": {
+              "const": "unknown"
+            },
+            "error": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ComparisonRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputId", "acceptances", "settledSides", "terminalCauses"],
+      "properties": {
+        "permissionMode": { "enum": ["view", "workspace", "full"] },
+        "prepared": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "left": { "$ref": "#/$defs/ComparisonPreparedReceipt" },
+            "right": { "$ref": "#/$defs/ComparisonPreparedReceipt" }
+          }
+        },
+        "inputId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "acceptances": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/ComparisonAcceptance"
+          }
+        },
+        "terminalCauses": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["side", "cause"],
+            "properties": {
+              "side": {
+                "enum": ["left", "right"]
+              },
+              "cause": {
+                "enum": ["finished", "cancelled", "failed", "unknown"]
+              }
+            }
+          }
+        },
+        "settledSides": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["left", "right"]
+          }
+        }
+      }
+    },
+    "ComparisonSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "phase",
+        "baselineId",
+        "baselineDigest",
+        "policyHash",
+        "lanes",
+        "rounds"
+      ],
+      "properties": {
+        "permissionMode": { "enum": ["view", "workspace", "full"] },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "phase": {
+          "enum": ["preparing", "ready", "running", "partial", "completed", "cancelled", "failed"]
+        },
+        "baselineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "baselineDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "policyHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "lanes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/ComparisonLane"
+          }
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ComparisonRound"
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": {
+              "enum": ["unknown", "partial"]
+            }
+          }
+        },
+        "prepared": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/ComparisonPreparedReceipt"
+            },
+            "right": {
+              "$ref": "#/$defs/ComparisonPreparedReceipt"
+            }
+          }
+        },
+        "storageState": {
+          "enum": ["full", "releasing", "released", "removing", "removed"],
+          "description": "Durable resource retirement state; omission is a legacy full record."
+        },
+        "inputCancellations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["inputId", "states"],
+            "properties": {
+              "inputId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "states": {
+                "type": "array",
+                "maxItems": 2,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["side", "status"],
+                  "properties": {
+                    "side": {
+                      "enum": ["left", "right"]
+                    },
+                    "status": {
+                      "enum": ["requested", "acknowledged", "unknown"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ComparisonCreateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "cwd", "left", "right"],
+      "properties": {
+        "permissionMode": { "enum": ["view", "workspace", "full"] },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "left": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runtime"],
+          "properties": {
+            "runtime": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            }
+          }
+        },
+        "right": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runtime"],
+          "properties": {
+            "runtime": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            }
+          }
+        },
+        "preset": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["route", "model"],
+          "properties": {
+            "route": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "thinking": {
+              "$ref": "model.json#/$defs/ThinkingLevel"
+            },
+            "contextWindow": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "isolation": {
+          "enum": ["snapshot", "worktree"]
+        }
+      }
+    },
+    "ComparisonListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "ComparisonListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "phase", "createdAt", "updatedAt", "roundCount", "inspectable", "lanes"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "phase": {
+          "enum": ["preparing", "ready", "running", "partial", "completed", "cancelled", "failed"]
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "roundCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inspectable": {
+          "type": "boolean"
+        },
+        "lanes": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["side", "runtime"],
+            "properties": {
+              "side": {
+                "enum": ["left", "right"]
+              },
+              "runtime": {
+                "$ref": "#/$defs/RuntimeIdentity"
+              }
+            }
+          }
+        },
+        "storageState": {
+          "enum": ["full", "releasing", "released", "removing", "removed"],
+          "description": "Durable resource retirement state; omission is a legacy full record."
+        }
+      }
+    },
+    "ComparisonListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "nextCursor"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/ComparisonListItem"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ComparisonJournalCuts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right"],
+      "properties": {
+        "left": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "right": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonJournalBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "runtime"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        }
+      }
+    },
+    "ComparisonJournalFact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "revision",
+            "creation",
+            "lanes",
+            "roundCount",
+            "latestRound",
+            "cancellation",
+            "cleanup"
+          ],
+          "properties": {
+            "kind": {
+              "const": "coordinator"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "creation": {
+              "enum": ["preparing", "ready", "failed"]
+            },
+            "lanes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [],
+              "properties": {
+                "left": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sessionId", "runtime", "phase"],
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "runtime": {
+                      "$ref": "#/$defs/RuntimeIdentity"
+                    },
+                    "phase": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "right": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sessionId", "runtime", "phase"],
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "runtime": {
+                      "$ref": "#/$defs/RuntimeIdentity"
+                    },
+                    "phase": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "roundCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "latestRound": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["inputId", "runs", "terminalCauses", "acceptances", "acceptedSeqs"],
+                  "properties": {
+                    "permissionMode": { "enum": ["view", "workspace", "full"] },
+                    "prepared": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "left": { "$ref": "#/$defs/ComparisonPreparedReceipt" },
+                        "right": { "$ref": "#/$defs/ComparisonPreparedReceipt" }
+                      }
+                    },
+                    "inputId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "runs": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["left", "right"],
+                      "properties": {
+                        "left": {
+                          "type": "string"
+                        },
+                        "right": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "terminalCauses": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["left", "right"],
+                      "properties": {
+                        "left": {
+                          "enum": ["finished", "cancelled", "failed", "unknown"]
+                        },
+                        "right": {
+                          "enum": ["finished", "cancelled", "failed", "unknown"]
+                        }
+                      }
+                    },
+                    "acceptances": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["left", "right"],
+                      "properties": {
+                        "left": {
+                          "type": "string"
+                        },
+                        "right": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "acceptedSeqs": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [],
+                      "properties": {
+                        "left": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "right": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    },
+                    "timings": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [],
+                      "properties": {
+                        "left": {
+                          "$ref": "#/$defs/ComparisonRunTiming"
+                        },
+                        "right": {
+                          "$ref": "#/$defs/ComparisonRunTiming"
+                        }
+                      }
+                    },
+                    "terminalSeqs": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [],
+                      "properties": {
+                        "left": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "right": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "cancellation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [],
+              "properties": {
+                "left": {
+                  "enum": ["requested", "acknowledged", "unknown"]
+                },
+                "right": {
+                  "enum": ["requested", "acknowledged", "unknown"]
+                }
+              }
+            },
+            "cleanup": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["exited", "released"],
+              "properties": {
+                "exited": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": ["left", "right"]
+                  }
+                },
+                "released": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "prepared": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [],
+              "properties": {
+                "left": {
+                  "$ref": "#/$defs/ComparisonPreparedReceipt"
+                },
+                "right": {
+                  "$ref": "#/$defs/ComparisonPreparedReceipt"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "side", "sessionId", "localSeq", "digest"],
+          "properties": {
+            "kind": {
+              "const": "lane"
+            },
+            "side": {
+              "enum": ["left", "right"]
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "localSeq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reason", "coverage"],
+          "properties": {
+            "kind": {
+              "const": "checkpoint"
+            },
+            "reason": {
+              "enum": ["baseline", "recovery", "legacy"]
+            },
+            "coverage": {
+              "enum": ["unknown-interleaving", "per-lane-only"]
+            }
+          }
+        }
+      ]
+    },
+    "ComparisonJournalEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "cuts", "fact"],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cuts": {
+          "$ref": "#/$defs/ComparisonJournalCuts"
+        },
+        "fact": {
+          "$ref": "#/$defs/ComparisonJournalFact"
+        },
+        "treeCuts": {
+          "$ref": "#/$defs/ComparisonTreeCuts"
+        }
+      }
+    },
+    "ComparisonJournalParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "throughSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4194304
+        }
+      }
+    },
+    "ComparisonJournalResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "entries", "afterSeq", "throughSeq", "nextAfterSeq", "complete"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/ComparisonJournalEntry"
+          }
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "throughSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "nextAfterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ComparisonAccountingTotal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value", "knownSubtotal", "missing"],
+      "properties": {
+        "state": {
+          "enum": ["complete", "partial", "unknown"]
+        },
+        "value": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "knownSubtotal": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "missing": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonAccountingOutcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Observed provider-call outcomes within the selected prefix; pending has no settlement. Legacy missing outcomes remain unknown. No completeness claim about hidden provider wire retries.",
+      "required": ["completed", "failed", "cancelled", "unknown", "pending"],
+      "properties": {
+        "completed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cancelled": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonAccountingPurpose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempts", "outcomes"],
+      "properties": {
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "outcomes": {
+          "$ref": "#/$defs/ComparisonAccountingOutcomes"
+        }
+      }
+    },
+    "ComparisonAccountingPurposes": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ComparisonAccountingPurpose"
+      }
+    },
+    "ComparisonAccountingBillingSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Persisted billing from one source. usdMicros preserves reported USD units and coverage; subscription is reported metadata, not a discount or a zero-charge assumption.",
+      "required": ["attempts", "usdMicros", "subscriptionAttempts", "nonSubscriptionAttempts"],
+      "properties": {
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "usdMicros": {
+          "$ref": "#/$defs/ComparisonAccountingTotal"
+        },
+        "subscriptionAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "nonSubscriptionAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonAccountingBilling": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Reported gateway amounts and reported estimates stay separate from historical token-price costs. Missing billing is unknown; credits are not converted to money.",
+      "required": ["gateway", "estimated", "missingAttempts"],
+      "properties": {
+        "gateway": {
+          "$ref": "#/$defs/ComparisonAccountingBillingSource"
+        },
+        "estimated": {
+          "$ref": "#/$defs/ComparisonAccountingBillingSource"
+        },
+        "missingAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonAccountingFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempts", "tokens", "costs", "unpricedAttempts"],
+      "properties": {
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputUncached", "cacheRead", "cacheWrite", "output", "reasoning"],
+          "properties": {
+            "inputUncached": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "cacheRead": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "cacheWrite": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "output": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "reasoning": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "inputTotal": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "total": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            }
+          }
+        },
+        "costs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ComparisonAccountingTotal"
+          }
+        },
+        "bucketCosts": {
+          "$ref": "#/$defs/ComparisonAccountingBucketCosts"
+        },
+        "priceMultipliers": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "uniqueItems": true,
+          "description": "Distinct actually evidenced pricing multipliers. Missing rates or intervals never imply a multiplier of one."
+        },
+        "unpricedAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "currentPriceAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Requests estimated using current exact-route configuration because no historical quote was saved; records are not modified."
+        },
+        "outcomes": {
+          "$ref": "#/$defs/ComparisonAccountingOutcomes"
+        },
+        "byPurpose": {
+          "$ref": "#/$defs/ComparisonAccountingPurposes"
+        },
+        "reportedBilling": {
+          "$ref": "#/$defs/ComparisonAccountingBilling"
+        }
+      },
+      "description": "Aggregated observed provider-calls. Added outcome, purpose and billing fields and inputTotal/total counters are optional for legacy responses; absence is unknown, never zero. Current-price estimates are explicitly counted separately from persisted quotes; source records are never backfilled."
+    },
+    "ComparisonAccountingLane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["afterSeq", "throughSeq", "state", "jev", "llm", "issues"],
+      "properties": {
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "throughSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "enum": ["complete", "partial", "unknown"]
+        },
+        "jev": {
+          "$ref": "#/$defs/ComparisonAccountingFamily"
+        },
+        "llm": {
+          "$ref": "#/$defs/ComparisonAccountingFamily"
+        },
+        "totalCosts": {
+          "$ref": "#/$defs/ComparisonAccountingCosts"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ComparisonMetricsParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "atSeq"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonRunTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startedAt", "finishedAt", "elapsedMs", "terminalConfirmed"],
+      "properties": {
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elapsedMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminalConfirmed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ComparisonResultSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinatorSeq", "roundCount", "inputId", "lanes"],
+      "properties": {
+        "coordinatorSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "roundCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inputId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lanes": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "side",
+              "phase",
+              "run",
+              "terminalCause",
+              "acceptance",
+              "elapsedMs",
+              "latestAnswer",
+              "complete",
+              "issues"
+            ],
+            "properties": {
+              "side": {
+                "enum": ["left", "right"]
+              },
+              "phase": {
+                "type": "string"
+              },
+              "run": {
+                "type": "string"
+              },
+              "terminalCause": {
+                "enum": ["finished", "cancelled", "failed", "unknown"]
+              },
+              "acceptance": {
+                "type": "string"
+              },
+              "elapsedMs": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "latestAnswer": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["seq", "text", "truncated"],
+                    "properties": {
+                      "seq": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "complete": {
+                "type": "boolean"
+              },
+              "issues": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ComparisonMetricsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "atSeq", "cuts", "lanes"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cuts": {
+          "$ref": "#/$defs/ComparisonJournalCuts"
+        },
+        "lanes": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["side", "sessionId", "runtime", "accounting"],
+            "properties": {
+              "side": {
+                "enum": ["left", "right"]
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "runtime": {
+                "$ref": "#/$defs/RuntimeIdentity"
+              },
+              "accounting": {
+                "$ref": "#/$defs/ComparisonAccountingLane"
+              },
+              "prepared": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ComparisonPreparedReceipt"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "treeComplete": {
+                "type": "boolean"
+              },
+              "members": {
+                "type": "array",
+                "maxItems": 512,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sessionId",
+                    "parentSessionId",
+                    "runtime",
+                    "inheritedThroughSeq",
+                    "throughSeq",
+                    "accounting",
+                    "complete",
+                    "issues"
+                  ],
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "parentSessionId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "runtime": {
+                      "$ref": "#/$defs/RuntimeIdentity"
+                    },
+                    "inheritedThroughSeq": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "throughSeq": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "accounting": {
+                      "$ref": "#/$defs/ComparisonAccountingLane"
+                    },
+                    "complete": {
+                      "type": "boolean"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "maxItems": 128,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": {
+          "$ref": "#/$defs/ComparisonResultSummary"
+        }
+      }
+    },
+    "ComparisonIdParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "ComparisonSubmitParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "inputId", "content"],
+      "properties": {
+        "permissionMode": { "enum": ["view", "workspace", "full"] },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "inputId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          }
+        }
+      }
+    },
+    "ComparisonCancelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "inputId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "RuntimeIdentity": {
+      "$ref": "session-v1.json#/$defs/RuntimeIdentity"
+    },
+    "RuntimeCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt", "cancel", "resume", "compact", "fork"],
+      "properties": {
+        "prompt": {
+          "type": "boolean"
+        },
+        "cancel": {
+          "type": "boolean"
+        },
+        "resume": {
+          "type": "boolean"
+        },
+        "compact": {
+          "type": "boolean"
+        },
+        "fork": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RuntimeDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "label", "apiVersion", "available", "capabilities"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "apiVersion": {
+          "const": 1,
+          "type": "integer"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "unavailableReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "capabilities": {
+          "$ref": "#/$defs/RuntimeCapabilities"
+        }
+      }
+    },
+    "RuntimeListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/RuntimeDescriptor"
+          }
+        }
+      }
+    },
+    "SessionRuntimeControlParams": {
+      "description": "Control the already opened session's exact execution owner; never opens, resumes, or executes work.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "expectedRuntime", "operation", "payload"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedRuntime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "operation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "payload": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      }
+    },
+    "SessionRuntimeControlResult": {
+      "description": "A successful runtime-owned control operation and its committed session sequence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "result", "effectiveFromSeq"],
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "result": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "effectiveFromSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "SessionRuntimeState": {
+      "description": "Read-only runtime identity and lifecycle. Reading this state must not create, resume or execute a session.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "phase"],
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "phase": {
+          "enum": ["idle", "running", "waiting", "parked", "recovering", "closed", "failed"]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       }
     },
@@ -326,8 +2512,13 @@
                       "type": "string"
                     }
                   },
-                  "contextWindow": { "type": "integer", "minimum": 1 },
-                  "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" }
+                  "contextWindow": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "defaultSettings": {
+                    "$ref": "model.json#/$defs/ModelSettings"
+                  }
                 }
               }
             },
@@ -448,8 +2639,13 @@
           "additionalProperties": false,
           "required": ["state", "endSeq"],
           "properties": {
-            "state": { "const": "completed" },
-            "endSeq": { "type": "integer", "minimum": 1 }
+            "state": {
+              "const": "completed"
+            },
+            "endSeq": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         {
@@ -457,8 +2653,13 @@
           "additionalProperties": false,
           "required": ["state", "endSeq"],
           "properties": {
-            "state": { "const": "failed" },
-            "endSeq": { "type": "integer", "minimum": 1 }
+            "state": {
+              "const": "failed"
+            },
+            "endSeq": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         {
@@ -466,7 +2667,9 @@
           "additionalProperties": false,
           "required": ["state"],
           "properties": {
-            "state": { "const": "unknown" }
+            "state": {
+              "const": "unknown"
+            }
           }
         }
       ]
@@ -498,10 +2701,26 @@
       "additionalProperties": false,
       "required": ["sessionId", "toolId", "scope", "policyVersion"],
       "properties": {
-        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 }
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "toolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
       }
     },
     "ApprovalGrantRecord": {
@@ -518,15 +2737,48 @@
         "createdAt"
       ],
       "properties": {
-        "grantId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "profileHash": { "type": "string", "pattern": "^sha256-[a-f0-9]{64}$" },
-        "actorId": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "actorOrg": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "revokedAt": { "type": "string", "format": "date-time" }
+        "grantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profileHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "actorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "actorOrg": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "toolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revokedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "ApprovalGrantRevokeParams": {
@@ -534,11 +2786,31 @@
       "additionalProperties": false,
       "required": ["sessionId", "toolId", "scope", "policyVersion", "grantId"],
       "properties": {
-        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "grantId": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "toolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "grantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
       }
     },
     "ApprovalGrantListResult": {
@@ -548,7 +2820,9 @@
       "properties": {
         "grants": {
           "type": "array",
-          "items": { "$ref": "#/$defs/ApprovalGrantRecord" }
+          "items": {
+            "$ref": "#/$defs/ApprovalGrantRecord"
+          }
         }
       }
     },
@@ -562,8 +2836,12 @@
       "additionalProperties": false,
       "required": ["activationReady", "recoveryReady", "blockers"],
       "properties": {
-        "activationReady": { "type": "boolean" },
-        "recoveryReady": { "type": "boolean" },
+        "activationReady": {
+          "type": "boolean"
+        },
+        "recoveryReady": {
+          "type": "boolean"
+        },
         "blockers": {
           "type": "array",
           "maxItems": 6,
@@ -588,15 +2866,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "runtime", "blockers"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "blocked" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "blocked"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "blocked" },
-                "reason": { "enum": ["p0-evidence-incomplete", "runtime-unavailable"] }
+                "state": {
+                  "const": "blocked"
+                },
+                "reason": {
+                  "enum": ["p0-evidence-incomplete", "runtime-unavailable"]
+                }
               }
             },
             "runtime": {
@@ -604,8 +2890,12 @@
               "additionalProperties": false,
               "required": ["state", "startAttempted"],
               "properties": {
-                "state": { "const": "not-started" },
-                "startAttempted": { "const": false }
+                "state": {
+                  "const": "not-started"
+                },
+                "startAttempted": {
+                  "const": false
+                }
               }
             },
             "blockers": {
@@ -625,7 +2915,9 @@
                 ]
               }
             },
-            "lockedPackageMutations": { "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus" }
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
           }
         },
         {
@@ -633,14 +2925,20 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "runtime", "blockers", "driver"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "ready" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "ready"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
+                "state": {
+                  "const": "ready"
+                },
                 "reason": {
                   "enum": ["windows-verified-driver", "macos-verified-driver", "linux-verified-driver"]
                 }
@@ -651,23 +2949,45 @@
               "additionalProperties": false,
               "required": ["state", "startAttempted", "activeSessions"],
               "properties": {
-                "state": { "enum": ["idle", "running"] },
-                "startAttempted": { "type": "boolean" },
-                "activeSessions": { "type": "integer", "minimum": 0 }
+                "state": {
+                  "enum": ["idle", "running"]
+                },
+                "startAttempted": {
+                  "type": "boolean"
+                },
+                "activeSessions": {
+                  "type": "integer",
+                  "minimum": 0
+                }
               }
             },
-            "blockers": { "type": "array", "maxItems": 0 },
+            "blockers": {
+              "type": "array",
+              "maxItems": 0
+            },
             "driver": {
               "type": "object",
               "additionalProperties": false,
               "required": ["platform", "version", "publisher"],
               "properties": {
-                "platform": { "enum": ["win32", "darwin", "linux"] },
-                "version": { "type": "string", "minLength": 1, "maxLength": 64 },
-                "publisher": { "type": "string", "minLength": 1, "maxLength": 256 }
+                "platform": {
+                  "enum": ["win32", "darwin", "linux"]
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "publisher": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
               }
             },
-            "lockedPackageMutations": { "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus" }
+            "lockedPackageMutations": {
+              "$ref": "#/$defs/ComputerUseLockedPackageMutationStatus"
+            }
           }
         }
       ]
@@ -679,15 +2999,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "probe"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "unavailable" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "unavailable"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "blocked" },
-                "reason": { "const": "p0-evidence-incomplete" }
+                "state": {
+                  "const": "blocked"
+                },
+                "reason": {
+                  "const": "p0-evidence-incomplete"
+                }
               }
             },
             "probe": {
@@ -695,8 +3023,12 @@
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "not-run" },
-                "reason": { "const": "production-driver-admission-disabled" }
+                "state": {
+                  "const": "not-run"
+                },
+                "reason": {
+                  "const": "production-driver-admission-disabled"
+                }
               }
             }
           }
@@ -706,15 +3038,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "probe"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "not-required" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "not-required"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
-                "reason": { "const": "linux-verified-driver" }
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "linux-verified-driver"
+                }
               }
             },
             "probe": {
@@ -722,8 +3062,12 @@
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "passed" },
-                "reason": { "const": "linux-no-os-grant-required" }
+                "state": {
+                  "const": "passed"
+                },
+                "reason": {
+                  "const": "linux-no-os-grant-required"
+                }
               }
             }
           }
@@ -733,15 +3077,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "probe"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "not-required" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "not-required"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
-                "reason": { "const": "windows-verified-driver" }
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "windows-verified-driver"
+                }
               }
             },
             "probe": {
@@ -749,8 +3101,12 @@
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "passed" },
-                "reason": { "const": "windows-no-os-grant-required" }
+                "state": {
+                  "const": "passed"
+                },
+                "reason": {
+                  "const": "windows-no-os-grant-required"
+                }
               }
             }
           }
@@ -760,15 +3116,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "probe"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "granted" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "granted"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
-                "reason": { "const": "macos-verified-driver" }
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "macos-verified-driver"
+                }
               }
             },
             "probe": {
@@ -776,10 +3140,18 @@
               "additionalProperties": false,
               "required": ["state", "reason", "accessibility", "screenRecording"],
               "properties": {
-                "state": { "const": "passed" },
-                "reason": { "const": "macos-tcc-permissions-granted" },
-                "accessibility": { "const": true },
-                "screenRecording": { "const": true }
+                "state": {
+                  "const": "passed"
+                },
+                "reason": {
+                  "const": "macos-tcc-permissions-granted"
+                },
+                "accessibility": {
+                  "const": true
+                },
+                "screenRecording": {
+                  "const": true
+                }
               }
             }
           }
@@ -789,15 +3161,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "probe"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "required" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "required"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
-                "reason": { "const": "macos-verified-driver" }
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "macos-verified-driver"
+                }
               }
             },
             "probe": {
@@ -805,10 +3185,18 @@
               "additionalProperties": false,
               "required": ["state", "reason", "accessibility", "screenRecording"],
               "properties": {
-                "state": { "const": "passed" },
-                "reason": { "const": "macos-tcc-permissions-missing" },
-                "accessibility": { "const": false },
-                "screenRecording": { "type": "boolean" }
+                "state": {
+                  "const": "passed"
+                },
+                "reason": {
+                  "const": "macos-tcc-permissions-missing"
+                },
+                "accessibility": {
+                  "const": false
+                },
+                "screenRecording": {
+                  "type": "boolean"
+                }
               }
             }
           }
@@ -818,15 +3206,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "probe"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "required" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "required"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
-                "reason": { "const": "macos-verified-driver" }
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "macos-verified-driver"
+                }
               }
             },
             "probe": {
@@ -834,10 +3230,18 @@
               "additionalProperties": false,
               "required": ["state", "reason", "accessibility", "screenRecording"],
               "properties": {
-                "state": { "const": "passed" },
-                "reason": { "const": "macos-tcc-permissions-missing" },
-                "accessibility": { "const": true },
-                "screenRecording": { "const": false }
+                "state": {
+                  "const": "passed"
+                },
+                "reason": {
+                  "const": "macos-tcc-permissions-missing"
+                },
+                "accessibility": {
+                  "const": true
+                },
+                "screenRecording": {
+                  "const": false
+                }
               }
             }
           }
@@ -847,15 +3251,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "probe"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "unknown" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "unknown"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
-                "reason": { "const": "macos-verified-driver" }
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "macos-verified-driver"
+                }
               }
             },
             "probe": {
@@ -863,8 +3275,12 @@
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "failed" },
-                "reason": { "const": "macos-tcc-probe-failed" }
+                "state": {
+                  "const": "failed"
+                },
+                "reason": {
+                  "const": "macos-tcc-probe-failed"
+                }
               }
             }
           }
@@ -880,14 +3296,20 @@
           "minItems": 1,
           "maxItems": 32,
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          }
         },
         "skip": {
           "type": "array",
           "minItems": 1,
           "maxItems": 32,
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          }
         }
       }
     },
@@ -940,15 +3362,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "checks"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "ready" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "ready"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
-                "reason": { "const": "linux-verified-driver" }
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "linux-verified-driver"
+                }
               }
             },
             "checks": {
@@ -956,8 +3386,12 @@
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "passed" },
-                "reason": { "const": "linux-driver-health-and-identity-verified" }
+                "state": {
+                  "const": "passed"
+                },
+                "reason": {
+                  "const": "linux-driver-health-and-identity-verified"
+                }
               }
             },
             "lockedPackageMutations": {
@@ -1012,15 +3446,23 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status", "admission", "checks"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "failed" },
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "failed"
+            },
             "admission": {
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "ready" },
-                "reason": { "const": "linux-verified-driver" }
+                "state": {
+                  "const": "ready"
+                },
+                "reason": {
+                  "const": "linux-verified-driver"
+                }
               }
             },
             "checks": {
@@ -1028,8 +3470,12 @@
               "additionalProperties": false,
               "required": ["state", "reason"],
               "properties": {
-                "state": { "const": "failed" },
-                "reason": { "const": "linux-driver-health-or-identity-failed" }
+                "state": {
+                  "const": "failed"
+                },
+                "reason": {
+                  "const": "linux-driver-health-or-identity-failed"
+                }
               }
             },
             "lockedPackageMutations": {
@@ -1212,14 +3658,19 @@
       "additionalProperties": false,
       "required": ["kind"],
       "properties": {
-        "kind": { "enum": ["install", "update", "restart"] }
+        "kind": {
+          "enum": ["install", "update", "restart"]
+        }
       }
     },
     "ComputerUseOperationStatusParams": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" }
+        "operationId": {
+          "type": "string",
+          "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+        }
       }
     },
     "ComputerUseOperationIdParams": {
@@ -1227,7 +3678,10 @@
       "additionalProperties": false,
       "required": ["operationId"],
       "properties": {
-        "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" }
+        "operationId": {
+          "type": "string",
+          "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+        }
       }
     },
     "ComputerUseOperationResult": {
@@ -1237,8 +3691,12 @@
           "additionalProperties": false,
           "required": ["schemaVersion", "status"],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "not-found" }
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "not-found"
+            }
           }
         },
         {
@@ -1255,14 +3713,33 @@
             "updatedAtMs"
           ],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "found" },
-            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
-            "kind": { "enum": ["install", "update", "restart"] },
-            "state": { "const": "queued" },
-            "phase": { "const": "queued" },
-            "startedAtMs": { "type": "integer", "minimum": 0 },
-            "updatedAtMs": { "type": "integer", "minimum": 0 }
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "found"
+            },
+            "operationId": {
+              "type": "string",
+              "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+            },
+            "kind": {
+              "enum": ["install", "update", "restart"]
+            },
+            "state": {
+              "const": "queued"
+            },
+            "phase": {
+              "const": "queued"
+            },
+            "startedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "updatedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
         {
@@ -1279,14 +3756,33 @@
             "updatedAtMs"
           ],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "found" },
-            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
-            "kind": { "enum": ["install", "update"] },
-            "state": { "enum": ["running", "cancelling"] },
-            "phase": { "enum": ["installing", "restarting"] },
-            "startedAtMs": { "type": "integer", "minimum": 0 },
-            "updatedAtMs": { "type": "integer", "minimum": 0 }
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "found"
+            },
+            "operationId": {
+              "type": "string",
+              "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+            },
+            "kind": {
+              "enum": ["install", "update"]
+            },
+            "state": {
+              "enum": ["running", "cancelling"]
+            },
+            "phase": {
+              "enum": ["installing", "restarting"]
+            },
+            "startedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "updatedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
         {
@@ -1303,14 +3799,33 @@
             "updatedAtMs"
           ],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "found" },
-            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
-            "kind": { "const": "restart" },
-            "state": { "enum": ["running", "cancelling"] },
-            "phase": { "const": "restarting" },
-            "startedAtMs": { "type": "integer", "minimum": 0 },
-            "updatedAtMs": { "type": "integer", "minimum": 0 }
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "found"
+            },
+            "operationId": {
+              "type": "string",
+              "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+            },
+            "kind": {
+              "const": "restart"
+            },
+            "state": {
+              "enum": ["running", "cancelling"]
+            },
+            "phase": {
+              "const": "restarting"
+            },
+            "startedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "updatedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
         {
@@ -1328,15 +3843,36 @@
             "outcome"
           ],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "found" },
-            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
-            "kind": { "enum": ["install", "update"] },
-            "state": { "const": "succeeded" },
-            "phase": { "const": "complete" },
-            "startedAtMs": { "type": "integer", "minimum": 0 },
-            "updatedAtMs": { "type": "integer", "minimum": 0 },
-            "outcome": { "enum": ["installed", "already-current", "repaired", "lkg-restored"] }
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "found"
+            },
+            "operationId": {
+              "type": "string",
+              "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+            },
+            "kind": {
+              "enum": ["install", "update"]
+            },
+            "state": {
+              "const": "succeeded"
+            },
+            "phase": {
+              "const": "complete"
+            },
+            "startedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "updatedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outcome": {
+              "enum": ["installed", "already-current", "repaired", "lkg-restored"]
+            }
           }
         },
         {
@@ -1354,15 +3890,36 @@
             "outcome"
           ],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "found" },
-            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
-            "kind": { "const": "restart" },
-            "state": { "const": "succeeded" },
-            "phase": { "const": "complete" },
-            "startedAtMs": { "type": "integer", "minimum": 0 },
-            "updatedAtMs": { "type": "integer", "minimum": 0 },
-            "outcome": { "const": "restarted" }
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "found"
+            },
+            "operationId": {
+              "type": "string",
+              "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+            },
+            "kind": {
+              "const": "restart"
+            },
+            "state": {
+              "const": "succeeded"
+            },
+            "phase": {
+              "const": "complete"
+            },
+            "startedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "updatedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outcome": {
+              "const": "restarted"
+            }
           }
         },
         {
@@ -1380,15 +3937,36 @@
             "failure"
           ],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "found" },
-            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
-            "kind": { "enum": ["install", "update", "restart"] },
-            "state": { "const": "failed" },
-            "phase": { "const": "complete" },
-            "startedAtMs": { "type": "integer", "minimum": 0 },
-            "updatedAtMs": { "type": "integer", "minimum": 0 },
-            "failure": { "const": "operation-failed" }
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "found"
+            },
+            "operationId": {
+              "type": "string",
+              "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+            },
+            "kind": {
+              "enum": ["install", "update", "restart"]
+            },
+            "state": {
+              "const": "failed"
+            },
+            "phase": {
+              "const": "complete"
+            },
+            "startedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "updatedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "failure": {
+              "const": "operation-failed"
+            }
           }
         },
         {
@@ -1405,14 +3983,33 @@
             "updatedAtMs"
           ],
           "properties": {
-            "schemaVersion": { "const": 1 },
-            "status": { "const": "found" },
-            "operationId": { "type": "string", "pattern": "^cu-[a-zA-Z0-9-]{1,128}$" },
-            "kind": { "enum": ["install", "update", "restart"] },
-            "state": { "const": "cancelled" },
-            "phase": { "const": "complete" },
-            "startedAtMs": { "type": "integer", "minimum": 0 },
-            "updatedAtMs": { "type": "integer", "minimum": 0 }
+            "schemaVersion": {
+              "const": 1
+            },
+            "status": {
+              "const": "found"
+            },
+            "operationId": {
+              "type": "string",
+              "pattern": "^cu-[a-zA-Z0-9-]{1,128}$"
+            },
+            "kind": {
+              "enum": ["install", "update", "restart"]
+            },
+            "state": {
+              "const": "cancelled"
+            },
+            "phase": {
+              "const": "complete"
+            },
+            "startedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "updatedAtMs": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         }
       ]
@@ -1538,7 +4135,9 @@
           "additionalProperties": false,
           "required": ["kind", "detail", "at"],
           "properties": {
-            "kind": { "const": "packages_changed" },
+            "kind": {
+              "const": "packages_changed"
+            },
             "detail": {
               "type": "object",
               "additionalProperties": false,
@@ -1550,7 +4149,11 @@
                   "maxLength": 64,
                   "pattern": "^[a-z][a-z0-9.-]{0,63}$"
                 },
-                "revision": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "revision": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
                 "reason": {
                   "enum": ["inventory", "activation", "trust", "resources", "rebuilt"]
                 },
@@ -1562,7 +4165,9 @@
                 }
               }
             },
-            "at": { "type": "string" }
+            "at": {
+              "type": "string"
+            }
           }
         },
         {
@@ -1570,7 +4175,9 @@
           "additionalProperties": false,
           "required": ["kind", "detail", "at"],
           "properties": {
-            "kind": { "const": "tree_changed" },
+            "kind": {
+              "const": "tree_changed"
+            },
             "detail": {
               "type": "object",
               "additionalProperties": false,
@@ -1595,14 +4202,25 @@
                   "additionalProperties": false,
                   "required": ["treeHash", "resourceRevision", "compositeRevision"],
                   "properties": {
-                    "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-                    "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-                    "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                    "treeHash": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "resourceRevision": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "compositeRevision": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
                   }
                 }
               }
             },
-            "at": { "type": "string" }
+            "at": {
+              "type": "string"
+            }
           }
         },
         {
@@ -1621,9 +4239,16 @@
                 "shutting_down"
               ]
             },
-            "sessionId": { "type": "string", "maxLength": 512 },
-            "detail": { "$ref": "#/$defs/JsonValue" },
-            "at": { "type": "string" }
+            "sessionId": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "detail": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "at": {
+              "type": "string"
+            }
           }
         }
       ]
@@ -1787,11 +4412,30 @@
       "additionalProperties": false,
       "required": ["sessionId", "callSeq"],
       "properties": {
-        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "callSeq": { "type": "integer", "minimum": 1 },
-        "resultSeq": { "type": "integer", "minimum": 1 },
-        "offset": { "type": "integer", "minimum": 0, "default": 0 },
-        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 262144, "default": 262144 }
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "callSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resultSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144,
+          "default": 262144
+        }
       }
     },
     "SessionReadToolDetailResult": {
@@ -1800,11 +4444,27 @@
       "additionalProperties": false,
       "required": ["sessionId", "callSeq", "offset", "totalBytes", "data", "nextOffset"],
       "properties": {
-        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "callSeq": { "type": "integer", "minimum": 1 },
-        "resultSeq": { "type": "integer", "minimum": 1 },
-        "offset": { "type": "integer", "minimum": 0 },
-        "totalBytes": { "type": "integer", "minimum": 0 },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "callSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resultSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
         "data": {
           "description": "Canonical standard base64 for at most 262144 response bytes.",
           "type": "string",
@@ -1812,7 +4472,15 @@
           "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
         },
         "nextOffset": {
-          "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -1839,6 +4507,62 @@
     },
     "UINode": {
       "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "lastSeq", "runtime", "category", "status", "title", "summary"],
+          "properties": {
+            "kind": {
+              "const": "runtime"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "lastSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "runtime": {
+              "$ref": "#/$defs/RuntimeIdentity"
+            },
+            "category": {
+              "enum": ["model", "decision", "action", "stop"]
+            },
+            "status": {
+              "enum": ["running", "waiting", "completed", "failed", "cancelled", "unknown"]
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "requestId": {
+              "type": "string"
+            },
+            "intentId": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "purpose": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        },
         {
           "type": "object",
           "additionalProperties": false,
@@ -2242,6 +4966,29 @@
             },
             "text": {
               "type": "string"
+            },
+            "messageSource": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "senderSessionId", "receiptSeq"],
+              "description": "Backend-verified parent-message receipt linked to the consumed inbox item. Describes provenance, never upgrades content trust.",
+              "properties": {
+                "kind": {
+                  "enum": ["agent-message", "subagent-settled"]
+                },
+                "senderSessionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "receiptSeq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "outcome": {
+                  "enum": ["completed", "failed", "cancelled"]
+                }
+              }
             }
           }
         }
@@ -2331,7 +5078,9 @@
           "additionalProperties": false,
           "required": ["route", "id", "thinking"],
           "properties": {
-            "settings": { "$ref": "model.json#/$defs/ModelSettings" },
+            "settings": {
+              "$ref": "model.json#/$defs/ModelSettings"
+            },
             "route": {
               "type": "string",
               "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
@@ -2535,19 +5284,63 @@
       "additionalProperties": false,
       "required": ["id", "kind", "name", "status", "startSeq", "startedAt", "children"],
       "properties": {
+        "runtimeTitle": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "runtimePurpose": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "runtime": {
+          "description": "Immutable session execution owner. Legacy sessions without this field use native version 1.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        },
+        "category": {
+          "enum": ["model", "decision", "action", "stop"]
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "intentId": {
+          "type": "string"
+        },
         "id": {
           "type": "string",
           "maxLength": 128
         },
         "kind": {
-          "enum": ["turn", "step", "generation", "tool", "subagent", "compaction", "approval", "other"]
+          "enum": [
+            "turn",
+            "step",
+            "generation",
+            "tool",
+            "subagent",
+            "compaction",
+            "approval",
+            "other",
+            "runtime"
+          ]
         },
         "name": {
           "type": "string",
           "maxLength": 256
         },
         "status": {
-          "enum": ["running", "waiting", "completed", "failed", "cancelled"]
+          "enum": ["running", "waiting", "completed", "failed", "cancelled", "unknown"]
         },
         "startSeq": {
           "type": "integer",
@@ -3353,13 +6146,19 @@
       "additionalProperties": false,
       "required": ["collectedAt", "agh", "runtime", "logs"],
       "properties": {
-        "collectedAt": { "type": "string", "format": "date-time" },
+        "collectedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
         "agh": {
           "type": "object",
           "additionalProperties": false,
           "required": ["version"],
           "properties": {
-            "version": { "type": "string", "maxLength": 128 }
+            "version": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         },
         "runtime": {
@@ -3367,12 +6166,30 @@
           "additionalProperties": false,
           "required": ["platform", "arch", "osRelease", "node", "pid", "uptimeMs"],
           "properties": {
-            "platform": { "type": "string", "maxLength": 64 },
-            "arch": { "type": "string", "maxLength": 64 },
-            "osRelease": { "type": "string", "maxLength": 256 },
-            "node": { "type": "string", "maxLength": 64 },
-            "pid": { "type": "integer", "minimum": 0 },
-            "uptimeMs": { "type": "integer", "minimum": 0 }
+            "platform": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "arch": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "osRelease": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "node": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "pid": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "uptimeMs": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
         "logs": {
@@ -3383,11 +6200,22 @@
             "additionalProperties": false,
             "required": ["name", "size", "text", "truncated", "missing"],
             "properties": {
-              "name": { "enum": ["daemon.jsonl", "host.jsonl"] },
-              "size": { "type": "integer", "minimum": 0 },
-              "text": { "type": "string" },
-              "truncated": { "type": "boolean" },
-              "missing": { "type": "boolean" }
+              "name": {
+                "enum": ["daemon.jsonl", "host.jsonl"]
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "text": {
+                "type": "string"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "missing": {
+                "type": "boolean"
+              }
             }
           }
         }
@@ -3398,10 +6226,25 @@
       "additionalProperties": false,
       "required": ["sessionId", "afterSeq", "limit", "maxBytes"],
       "properties": {
-        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "afterSeq": { "type": "integer", "minimum": 0 },
-        "limit": { "type": "integer", "minimum": 1, "maximum": 500 },
-        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 2097152 }
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        }
       }
     },
     "DiagnosticsEventsResult": {
@@ -3412,11 +6255,24 @@
         "events": {
           "type": "array",
           "maxItems": 500,
-          "items": { "$ref": "session-v1.json#/$defs/EventEnvelope" }
+          "items": {
+            "$ref": "session-v1.json#/$defs/EventEnvelope"
+          }
         },
-        "lastSeq": { "type": "integer", "minimum": 0 },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
         "nextAfterSeq": {
-          "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -3425,6 +6281,9 @@
       "additionalProperties": false,
       "required": ["sessionId", "createdAt", "lastSeq", "generation", "preset"],
       "properties": {
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
         "sessionId": {
           "type": "string"
         },
@@ -3449,8 +6308,13 @@
           "type": "string",
           "maxLength": 256
         },
-        "archived": { "type": "boolean" },
-        "titleSource": { "const": "user", "type": "string" },
+        "archived": {
+          "type": "boolean"
+        },
+        "titleSource": {
+          "const": "user",
+          "type": "string"
+        },
         "cwd": {
           "type": "string"
         }
@@ -3537,7 +6401,14 @@
           "type": "string"
         },
         "thinking": {
-          "anyOf": [{ "$ref": "model.json#/$defs/ThinkingLevel" }, { "type": "null" }]
+          "anyOf": [
+            {
+              "$ref": "model.json#/$defs/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "contextWindow": {
           "type": ["integer", "null"],
@@ -3551,8 +6422,12 @@
       "additionalProperties": false,
       "required": ["sessionId", "enabled"],
       "properties": {
-        "sessionId": { "type": "string" },
-        "enabled": { "type": "boolean" }
+        "sessionId": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
       }
     },
     "EffectiveFromResult": {
@@ -3714,7 +6589,9 @@
       "additionalProperties": false,
       "required": ["action"],
       "properties": {
-        "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
+        "defaultSettings": {
+          "$ref": "model.json#/$defs/ModelSettings"
+        },
         "action": {
           "enum": ["start", "poll", "answer", "test", "commit", "cancel"]
         },
@@ -3846,19 +6723,25 @@
       "additionalProperties": false,
       "required": ["id", "label", "api", "baseUrl"],
       "properties": {
-        "authType": { "enum": ["api-key", "oauth"] },
+        "authType": {
+          "enum": ["api-key", "oauth"]
+        },
         "authMethods": {
           "type": "array",
           "minItems": 1,
           "maxItems": 2,
           "uniqueItems": true,
-          "items": { "enum": ["api-key", "oauth"] }
+          "items": {
+            "enum": ["api-key", "oauth"]
+          }
         },
         "loginMethods": {
           "type": "array",
           "maxItems": 2,
           "uniqueItems": true,
-          "items": { "enum": ["browser", "device_code"] }
+          "items": {
+            "enum": ["browser", "device_code"]
+          }
         },
         "id": {
           "type": "string",
@@ -3887,10 +6770,22 @@
       "additionalProperties": false,
       "required": ["id", "name"],
       "properties": {
-        "reasoning": { "type": "boolean" },
-        "thinkingLevelMap": { "type": "object", "additionalProperties": { "type": "string" } },
-        "contextWindow": { "type": "integer", "minimum": 1 },
-        "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
+        "reasoning": {
+          "type": "boolean"
+        },
+        "thinkingLevelMap": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "contextWindow": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaultSettings": {
+          "$ref": "model.json#/$defs/ModelSettings"
+        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -4015,7 +6910,11 @@
           "minLength": 1,
           "maxLength": 65536
         },
-        "model": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
         "accountId": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
@@ -4028,7 +6927,9 @@
       "additionalProperties": false,
       "required": ["providerId", "model"],
       "properties": {
-        "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
+        "defaultSettings": {
+          "$ref": "model.json#/$defs/ModelSettings"
+        },
         "providerId": {
           "type": "string",
           "minLength": 1,
@@ -4315,9 +7216,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 400 },
-            "code": { "const": "invalid_request" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 400
+            },
+            "code": {
+              "const": "invalid_request"
+            }
           }
         },
         {
@@ -4325,9 +7232,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 401 },
-            "code": { "const": "authentication_required" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 401
+            },
+            "code": {
+              "const": "authentication_required"
+            }
           }
         },
         {
@@ -4335,9 +7248,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 403 },
-            "code": { "const": "artifact_forbidden" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 403
+            },
+            "code": {
+              "const": "artifact_forbidden"
+            }
           }
         },
         {
@@ -4345,9 +7264,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 404 },
-            "code": { "const": "artifact_not_found" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 404
+            },
+            "code": {
+              "const": "artifact_not_found"
+            }
           }
         },
         {
@@ -4355,9 +7280,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 409 },
-            "code": { "const": "artifact_identity_mismatch" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 409
+            },
+            "code": {
+              "const": "artifact_identity_mismatch"
+            }
           }
         },
         {
@@ -4365,9 +7296,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 410 },
-            "code": { "const": "artifact_reclaimed" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 410
+            },
+            "code": {
+              "const": "artifact_reclaimed"
+            }
           }
         },
         {
@@ -4375,9 +7312,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 413 },
-            "code": { "const": "artifact_too_large" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 413
+            },
+            "code": {
+              "const": "artifact_too_large"
+            }
           }
         },
         {
@@ -4385,9 +7328,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 416 },
-            "code": { "const": "range_not_satisfiable" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 416
+            },
+            "code": {
+              "const": "range_not_satisfiable"
+            }
           }
         },
         {
@@ -4395,9 +7344,15 @@
           "additionalProperties": false,
           "required": ["ok", "status", "code"],
           "properties": {
-            "ok": { "const": false },
-            "status": { "const": 500 },
-            "code": { "const": "artifact_unavailable" }
+            "ok": {
+              "const": false
+            },
+            "status": {
+              "const": 500
+            },
+            "code": {
+              "const": "artifact_unavailable"
+            }
           }
         },
         {
@@ -4405,10 +7360,18 @@
           "additionalProperties": false,
           "required": ["ok", "status", "artifact", "acceptRanges", "contentLength", "etag", "base64"],
           "properties": {
-            "ok": { "const": true },
-            "status": { "const": 200 },
-            "artifact": { "$ref": "#/$defs/ArtifactRef" },
-            "acceptRanges": { "const": "bytes" },
+            "ok": {
+              "const": true
+            },
+            "status": {
+              "const": 200
+            },
+            "artifact": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "acceptRanges": {
+              "const": "bytes"
+            },
             "contentLength": {
               "type": "integer",
               "minimum": 0,
@@ -4440,10 +7403,18 @@
             "base64"
           ],
           "properties": {
-            "ok": { "const": true },
-            "status": { "const": 206 },
-            "artifact": { "$ref": "#/$defs/ArtifactRef" },
-            "acceptRanges": { "const": "bytes" },
+            "ok": {
+              "const": true
+            },
+            "status": {
+              "const": 206
+            },
+            "artifact": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "acceptRanges": {
+              "const": "bytes"
+            },
             "contentLength": {
               "type": "integer",
               "minimum": 0,
@@ -4486,6 +7457,869 @@
           "minimum": 0
         }
       }
+    },
+    "CoreUITimeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "upto", "opState", "nodes", "turns"],
+      "properties": {
+        "yolo": {
+          "description": "Current session full-access mode, independent of the projected history cut. Omitted by older servers.",
+          "type": "boolean"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "upto": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "opState": {
+          "$ref": "#/$defs/UIOperationState"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UINode"
+          }
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UITurn"
+          }
+        },
+        "budget": {
+          "$ref": "#/$defs/BudgetState"
+        },
+        "usage": {
+          "$ref": "#/$defs/UsageView"
+        }
+      },
+      "description": "Pure durable ledger projection. No loaded session or writer generation; live-only settings are absent."
+    },
+    "ComparisonEventsParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "side", "atSeq", "afterSeq"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        },
+        "memberSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Optional archived member of this released lane tree, bounded by its recorded tree cut at the selected journal cursor. Without a recorded member cut, only the final global journal head authorizes its complete archive; equal root lane cuts do not authorize earlier child history."
+        }
+      }
+    },
+    "ComparisonEventsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "side",
+        "atSeq",
+        "sessionId",
+        "throughSeq",
+        "afterSeq",
+        "events",
+        "nextAfterSeq",
+        "complete"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "throughSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventEnvelope"
+          }
+        },
+        "nextAfterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ComparisonProjectUIParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "side", "atSeq", "surface"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "surface": {
+          "const": "web"
+        },
+        "memberSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Optional archived member of this released lane tree, bounded by its recorded tree cut at the selected journal cursor. Without a recorded member cut, only the final global journal head authorizes its complete archive; equal root lane cuts do not authorize earlier child history."
+        }
+      }
+    },
+    "ComparisonProjectUIResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "side", "atSeq", "sessionId", "throughSeq", "timeline"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "throughSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "timeline": {
+          "$ref": "#/$defs/CoreUITimeline"
+        }
+      }
+    },
+    "ComparisonReadToolDetailParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "side", "atSeq", "callSeq"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "callSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "resultSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144
+        },
+        "memberSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Optional archived member of this released lane tree, bounded by its recorded tree cut at the selected journal cursor. Without a recorded member cut, only the final global journal head authorizes its complete archive; equal root lane cuts do not authorize earlier child history."
+        }
+      }
+    },
+    "ComparisonReadToolDetailResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "side", "atSeq", "sessionId", "throughSeq", "ok", "page"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "side": {
+              "enum": ["left", "right"]
+            },
+            "atSeq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "throughSeq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "ok": {
+              "const": true
+            },
+            "page": {
+              "description": "A bounded base64 chunk of the UTF-8 JSON object {call: ToolCall, result?: ToolResult}. The daemon authenticates session access before reading ledger events.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["callSeq", "offset", "totalBytes", "data", "nextOffset"],
+              "properties": {
+                "callSeq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "resultSeq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "totalBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "data": {
+                  "description": "Canonical standard base64 for at most 262144 response bytes.",
+                  "type": "string",
+                  "maxLength": 349528,
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+                },
+                "nextOffset": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "side", "atSeq", "sessionId", "throughSeq", "ok", "reason"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "side": {
+              "enum": ["left", "right"]
+            },
+            "atSeq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "throughSeq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "ok": {
+              "const": false
+            },
+            "reason": {
+              "enum": [
+                "call-not-found",
+                "result-not-found",
+                "tool-use-id-mismatch",
+                "offset-out-of-range",
+                "detail-too-large"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "QuestionInteraction": {
+      "$ref": "session-v1.json#/$defs/QuestionInteraction"
+    },
+    "QuestionAnswer": {
+      "$ref": "session-v1.json#/$defs/QuestionAnswer"
+    },
+    "QuestionResolution": {
+      "$ref": "session-v1.json#/$defs/QuestionResolution"
+    },
+    "QuestionPendingParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "QuestionPendingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "interactions"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interactions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QuestionInteraction"
+          }
+        }
+      }
+    },
+    "QuestionAnswerParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "interactionId", "answer"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interactionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "answer": {
+          "$ref": "#/$defs/QuestionAnswer"
+        }
+      }
+    },
+    "QuestionCancelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "interactionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interactionId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ComparisonPriceDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attemptId",
+        "family",
+        "purpose",
+        "route",
+        "model",
+        "observedModel",
+        "originSeq",
+        "settledSeq",
+        "outcome",
+        "quote",
+        "multiplier",
+        "tokens",
+        "bucketCosts",
+        "estimate",
+        "reportedBilling",
+        "issues"
+      ],
+      "properties": {
+        "attemptId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "family": {
+          "enum": ["jev", "llm"]
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedModel": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "settledSeq": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "enum": ["pending", "completed", "failed", "cancelled", "unknown"]
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "$ref": "model.json#/$defs/ModelPriceQuote"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priceBasis": {
+          "enum": ["recorded", "current"],
+          "description": "Absent on legacy responses. Current is a read-only configured estimate, never evidence of a saved historical quote."
+        },
+        "multiplier": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputUncached", "cacheRead", "cacheWrite", "output", "reasoning"],
+          "properties": {
+            "inputUncached": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "cacheRead": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "cacheWrite": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "output": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "reasoning": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "inputTotal": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "total": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            }
+          }
+        },
+        "bucketCosts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputUncached", "cacheRead", "cacheWrite", "output"],
+          "properties": {
+            "inputUncached": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "cacheRead": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "cacheWrite": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "inputTotal": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            },
+            "output": {
+              "$ref": "#/$defs/ComparisonAccountingTotal"
+            }
+          }
+        },
+        "estimate": {
+          "$ref": "#/$defs/ComparisonAccountingTotal"
+        },
+        "reportedBilling": {
+          "anyOf": [
+            {
+              "$ref": "session-v1.json#/$defs/Billing"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issues": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "description": "One canonical observed provider-call at a fixed journal cut, not hidden wire retries. Frozen quote estimates are independent of reported billing. No request, output or reasoning content; null is unknown. Reasoning tokens are a subset of output and are never charged twice."
+    },
+    "ComparisonPriceDetailsParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "side", "atSeq"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 1048576
+        },
+        "memberSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "description": "Read-only history. afterSeq pages request originSeq, not an accounting boundary. Reuse the same atSeq for all pages; no current-price backfill."
+    },
+    "ComparisonPriceDetailsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "side",
+        "atSeq",
+        "sessionId",
+        "runtime",
+        "throughSeq",
+        "afterSeq",
+        "entries",
+        "nextAfterSeq",
+        "complete",
+        "evidenceComplete",
+        "issues"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "side": {
+          "enum": ["left", "right"]
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "throughSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/ComparisonPriceDetail"
+          }
+        },
+        "nextAfterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "evidenceComplete": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "description": "complete means the detail page exhausted observed attempts; evidenceComplete separately reports source-prefix integrity. Missing pages or scan limits never prove full coverage."
+    },
+    "ComparisonTreeMemberCut": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "parentSessionId", "runtime", "inheritedThroughSeq", "throughSeq"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "parentSessionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "inheritedThroughSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "throughSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ComparisonTreeCut": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "issues", "members"],
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/ComparisonTreeMemberCut"
+          }
+        }
+      }
+    },
+    "ComparisonTreeCuts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "$ref": "#/$defs/ComparisonTreeCut"
+        },
+        "right": {
+          "$ref": "#/$defs/ComparisonTreeCut"
+        }
+      }
+    },
+    "ComparisonAccountingBucketCosts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inputUncached": {
+            "$ref": "#/$defs/ComparisonAccountingTotal"
+          },
+          "cacheRead": {
+            "$ref": "#/$defs/ComparisonAccountingTotal"
+          },
+          "cacheWrite": {
+            "$ref": "#/$defs/ComparisonAccountingTotal"
+          },
+          "inputTotal": {
+            "$ref": "#/$defs/ComparisonAccountingTotal"
+          },
+          "output": {
+            "$ref": "#/$defs/ComparisonAccountingTotal"
+          }
+        }
+      },
+      "description": "Per-currency amounts at this same prefix. Total-input and disjoint input buckets are alternative billing bases, never additive. Missing legacy fields are unknown."
+    },
+    "ComparisonAccountingCosts": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ComparisonAccountingTotal"
+      },
+      "description": "Combined LLM and Jev estimates by currency at the exact same prefix. No currency conversion or missing-family zero fill. Absent on legacy responses."
     }
   }
 }

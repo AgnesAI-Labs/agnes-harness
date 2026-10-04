@@ -252,3 +252,53 @@ describe('indexed trace rows', () => {
     expect(counter.reads).toBeLessThanOrEqual(2 * (N + sumNodeIds + S) + unowned * T)
   })
 })
+
+it('indexes runtime observations with their own unknown status and correlation evidence', () => {
+  const runtime: UINode = {
+    kind: 'runtime',
+    id: 'jev-action',
+    seq: 7,
+    lastSeq: 12,
+    runtime: { id: 'jevloop', version: '1' },
+    category: 'action',
+    status: 'unknown',
+    title: 'Jev 动作 · read_file',
+    summary: '已结算 · 效果未知',
+    intentId: 'intent-1',
+    requestId: 'request-1',
+    model: 'jev-model',
+    detail: '意图 intent-1\n效果 unknown',
+  }
+  const turn = {
+    id: 'turn:1',
+    turn: 1,
+    nodeIds: [runtime.id],
+    startSeq: 1,
+    endSeq: 20,
+    trace: {
+      id: 'trace',
+      kind: 'runtime',
+      name: runtime.title,
+      status: 'unknown',
+      startSeq: 7,
+      startedAt: '2026-10-02T00:00:00.000Z',
+      nodeIds: [runtime.id],
+      children: [],
+    },
+  } as unknown as UITurn
+  const row = buildTraceRows([runtime], [turn])[0]
+  expect(row).toMatchObject({
+    id: runtime.id,
+    turn: 1,
+    badge: '运行循环',
+    status: '结果未知',
+    runtime: 'jevloop@1',
+    intentId: 'intent-1',
+    requestId: 'request-1',
+    lastSeq: 12,
+    model: 'jev-model',
+    raw: runtime.detail,
+  })
+  expect(row?.preview).toContain('效果未知')
+  expect(row?.source).toContain('action')
+})

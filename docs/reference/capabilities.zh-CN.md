@@ -10,6 +10,7 @@
 
 | 能力 ID | 功能 | 状态 | 阻塞项 / 当前边界 | 后续方向 | 源码依据 |
 |---|---|---|---|---|---|
+| `runtime.comparison.worktree` | Runtime 对比隔离 | partial | 可用独立文件快照；Git worktree 隔离会明确拒绝。 | 后续接入独立授权的 worktree 后端 | `packages/runtime-comparison/src/create.ts` |
 | `runtime.python.execution` | Python 代码运行时 | stub | 已有实验验证阈值，但尚无 Python 内核、原始 I/O 桥接、快照或恢复后端。 | 需要通过验证的运行时后端 | `packages/runtime-python/src/index.ts` |
 | `code.runtime.lifecycle` | Code-mode 运行时生命周期 | stub | 扩展接口已存在，但尚未接入运行时生命周期。 | 在 `runtime.python.execution` 之后接入 | `packages/code/src/extensions/code-mode/index.ts` |
 | `ai.models.catalogue-probe` | 提供方模型目录探测 | partial | 常见 OpenAI/Anthropic 连通性探测可用；特定协议的模型目录与部分认证变体会被拒绝。 | 按提供方补充实现 | `packages/ai/src/adapters/pi/probe-models.ts`<br>`packages/ai/src/adapters/pi/probe.ts` |

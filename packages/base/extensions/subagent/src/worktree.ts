@@ -24,6 +24,8 @@ export type WorktreeManager = {
 }
 
 export type WorktreeEntry = {
+  childKey?: string
+  workspaceId?: string
   root: string
   path: string
   branch: string
@@ -43,6 +45,8 @@ export type GitWorktreeDeps = {
     load(): Map<string, WorktreeEntry>
     save(entries: Map<string, WorktreeEntry>): void
     bind?(childKey: string, entry: WorktreeEntry): void
+    /** Called only after Git confirms both worktree and branch removal. */
+    removed?(entry: WorktreeEntry): void
   }
   /** True when another live child still uses this cwd. */
   inUse?: (path: string) => boolean
@@ -187,40 +191,67 @@ export function gitWorktrees(deps: GitWorktreeDeps): WorktreeManager {
       await deps.events.append('worktree-bound', { childKey, path, root: entry.root, branch: entry.branch })
     },
 
-    async finish(ctx, _childKey, path): Promise<WorktreeFinishResult> {
+    async finish(ctx, childKey, path): Promise<WorktreeFinishResult> {
       if (deps.persist) {
         for (const [key, value] of deps.persist.load()) entries.set(key, value)
       }
       const entry = entries.get(path)
       if (!entry) return { action: 'kept-inspection-failed' }
+      if (entry.childKey !== undefined && entry.childKey !== childKey)
+        return { action: 'kept-inspection-failed' }
       if (deps.inUse?.(path)) return { action: 'kept-in-use' }
       const timeoutMs = boundedTimeout(ctx)
 
       if (entry.stage === 'attached') {
-        let status: Awaited<ReturnType<ToolContext['exec']>>
+        let status: Awaited<ReturnType<ToolContext['exec']>> | undefined
         try {
           status = await ctx.exec(
             ['git', '-C', entry.path, 'status', '--porcelain=v1', '--untracked-files=all'],
             { cwd: entry.root, timeoutMs },
           )
         } catch {
-          return { action: 'kept-inspection-failed' }
+          /* A missing path may be a previously successful cleanup without its receipt. */
         }
-        if (status.code !== 0 || status.truncated) return { action: 'kept-inspection-failed' }
-        if (status.stdout.length !== 0) return { action: 'kept-dirty' }
-
-        // Deliberately no --force: if the tree becomes dirty after inspection, Git must refuse
-        // instead of deleting the raced-in work.
-        let removed: Awaited<ReturnType<ToolContext['exec']>>
-        try {
-          removed = await ctx.exec(['git', 'worktree', 'remove', entry.path], {
-            cwd: entry.root,
-            timeoutMs,
-          })
-        } catch {
-          return { action: 'cleanup-failed', stage: 'worktree-remove' }
+        if (status?.truncated) return { action: 'kept-inspection-failed' }
+        if (status?.code === 0) {
+          if (status.stdout.length !== 0) return { action: 'kept-dirty' }
+          // No --force: Git must refuse changes made after inspection.
+          try {
+            const removed = await ctx.exec(['git', 'worktree', 'remove', entry.path], {
+              cwd: entry.root,
+              timeoutMs,
+            })
+            if (removed.code !== 0) return { action: 'cleanup-failed', stage: 'worktree-remove' }
+          } catch {
+            return { action: 'cleanup-failed', stage: 'worktree-remove' }
+          }
+        } else {
+          // Neither a missing directory nor a missing registration alone proves cleanup.
+          try {
+            await ctx.fs.stat(entry.path)
+            return { action: 'kept-inspection-failed' }
+          } catch (error) {
+            if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT')
+              return { action: 'kept-inspection-failed' }
+          }
+          try {
+            const listed = await ctx.exec(['git', 'worktree', 'list', '--porcelain', '-z'], {
+              cwd: entry.root,
+              timeoutMs,
+            })
+            if (
+              listed.code !== 0 ||
+              listed.truncated ||
+              !listed.stdout.endsWith('\0\0') ||
+              listed.stdout.length > 1_048_576 ||
+              !listed.stdout.split('\0').some((field) => field.startsWith('worktree ')) ||
+              listed.stdout.split('\0').includes(`worktree ${entry.path}`)
+            )
+              return { action: 'kept-inspection-failed' }
+          } catch {
+            return { action: 'kept-inspection-failed' }
+          }
         }
-        if (removed.code !== 0) return { action: 'cleanup-failed', stage: 'worktree-remove' }
         entry.stage = 'worktree-removed'
         save()
       }
@@ -239,9 +270,24 @@ export function gitWorktrees(deps: GitWorktreeDeps): WorktreeManager {
       if (branch.code !== 0) {
         if (/not fully merged|not merged/i.test(`${branch.stdout}\n${branch.stderr}`))
           return { action: 'kept-unmerged' }
-        return { action: 'cleanup-failed', stage: 'branch-delete' }
+        // A crash can occur after Git deletes the branch but before the durable phase advances.
+        // Only Git's exact absent-ref result permits that retry to complete.
+        try {
+          const present = await ctx.exec(
+            ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${entry.branch}`],
+            {
+              cwd: entry.root,
+              timeoutMs,
+            },
+          )
+          if (present.code !== 1 || present.truncated || present.stdout || present.stderr)
+            return { action: 'cleanup-failed', stage: 'branch-delete' }
+        } catch {
+          return { action: 'cleanup-failed', stage: 'branch-delete' }
+        }
       }
 
+      deps.persist?.removed?.(entry)
       entries.delete(path)
       save()
       return { action: 'removed' }

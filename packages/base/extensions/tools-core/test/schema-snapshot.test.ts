@@ -25,7 +25,9 @@ describe('tool schema snapshots', () => {
   it('covers every registered tool and nothing else', () => {
     // A snapshot file for a tool that no longer exists would keep passing on its own, and a tool
     // with no snapshot file would simply not be checked.
-    expect(TOOLS_CORE.map((t) => t.name).sort()).toEqual(['read', 'write', 'edit', 'shell', 'todo'].sort())
+    expect(TOOLS_CORE.map((t) => t.name).sort()).toEqual(
+      ['read', 'write', 'edit', 'shell', 'todo', 'ask_user_question'].sort(),
+    )
   })
 
   it('has a stable combined hash that names no platform', () => {

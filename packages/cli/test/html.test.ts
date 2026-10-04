@@ -26,6 +26,18 @@ describe('export --html', () => {
         },
         { id: 'a', kind: 'assistant', seq: 2, text: '**bold** <script>alert(1)</script>' },
         {
+          id: 'runtime-request',
+          kind: 'runtime',
+          seq: 2,
+          lastSeq: 3,
+          runtime: { id: 'jevloop', version: '1' },
+          category: 'model',
+          status: 'completed',
+          title: 'Jev 决策',
+          summary: 'INSPECT → read',
+          detail: '<script>runtime</script>',
+        },
+        {
           id: 't',
           kind: 'tool',
           seq: 3,
@@ -59,6 +71,9 @@ describe('export --html', () => {
     expect(html).toContain('<details')
     expect(html).toContain('shell · completed')
     expect(html).toContain('Approval · rejected')
+    expect(html).toContain('Jev 决策 · completed')
+    expect(html).toContain('INSPECT → read')
+    expect(html).toContain('&lt;script&gt;runtime&lt;/script&gt;')
     expect(html).toContain('redacted')
     expect(html).toContain('<title>s1&lt;title&gt;</title>')
   })

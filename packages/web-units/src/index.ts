@@ -52,6 +52,7 @@ export type {
 } from './diagnostics-types.js'
 export { escapeBundleJson, renderDiagnosticsViewer } from './diagnostics-viewer.js'
 export { buildZip, type ZipEntry } from './diagnostics-zip.js'
+export { Question, type QuestionProps } from './question.js'
 export type {
   SettingsDshSlotName,
   SettingsPane,

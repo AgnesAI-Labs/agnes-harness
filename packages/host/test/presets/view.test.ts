@@ -55,6 +55,7 @@ describe('toPresetView', () => {
       maxFanOut: 4,
       budgetInherit: 'aggregate',
       treeBudgetCredits: null,
+      treeBudgetMode: 'default',
       isolation: 'shared',
       ext: { eventsPerTurn: 200 },
     })

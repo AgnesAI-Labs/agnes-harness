@@ -117,7 +117,11 @@ async function reloadIfStale(o: CommandOptions, slot: WorkerResourceSlot): Promi
  *  queue while incrementing `active`; a stale turn keeps it held until older turns drain and the
  *  reload completes. Consequently later turns cannot enter with either the revoked or half-published
  *  generation. */
-async function admitResourceRun(o: CommandOptions, signal: AbortSignal): Promise<(() => void) | undefined> {
+async function admitResourceRun(
+  o: CommandOptions,
+  signal: AbortSignal,
+  noWait = false,
+): Promise<(() => void) | undefined> {
   const slot = o.resources
   if (!slot) return signal.aborted ? undefined : () => undefined
   if (!slot.runAdmissions)
@@ -132,6 +136,8 @@ async function admitResourceRun(o: CommandOptions, signal: AbortSignal): Promise
   // admission batch even if a newer stale mark arrives while the reload is in flight; the newer mark
   // remains owed by the first run arriving after this batch.
   const joinedBarrier = admissions.reloadBarrier
+  if (noWait && admissions.locked)
+    throw Object.assign(new Error('resource admission busy'), { reason: 'resource-admission-busy' })
   if (admissions.locked)
     await new Promise<void>((resolve) => {
       admissions.waiters.push(resolve)
@@ -153,6 +159,10 @@ async function admitResourceRun(o: CommandOptions, signal: AbortSignal): Promise
       admissions.reloadBarrier = ownedBarrier
     }
     if (ownedBarrier && admissions.active > 0 && !signal.aborted) {
+      if (noWait)
+        throw Object.assign(new Error('resource admission requires older work to drain'), {
+          reason: 'resource-admission-draining',
+        })
       await new Promise<void>((resolve) => {
         const finish = (): void => {
           admissions.idleWaiters.delete(finish)
@@ -169,7 +179,10 @@ async function admitResourceRun(o: CommandOptions, signal: AbortSignal): Promise
       await reloadIfStale(o, slot)
       attemptedReload = true
     }
-    if (slot.recoveryRequired) throw new Error('resource generation recovery required')
+    if (slot.recoveryRequired)
+      throw Object.assign(new Error('resource generation recovery required'), {
+        reason: 'resource-recovery-required',
+      })
     if (signal.aborted) return undefined
     admissions.active++
   } finally {
@@ -264,6 +277,119 @@ export async function handleCommand(
     case 'resource.stale':
       if (o.resources) o.resources.staleMarks++
       return { ok: true }
+    case 'questionsPending':
+      return o.host.questions.pending(session.key)
+    case 'answerQuestion':
+      return o.host.questions.answer(session.key, String(p.interactionId), p.answer, p.actor as Actor)
+    case 'cancelQuestion':
+      return o.host.questions.cancel(session.key, String(p.interactionId), p.actor as Actor)
+    case 'runtimeState':
+      return session.runtimeState()
+    case 'prepareSessionConfiguration': {
+      // Freeze the same resource generation that admission will use. In particular, the
+      // first worker snapshot may precede the daemon's initial Skills trust publication.
+      const release = await admitResourceRun(o, new AbortController().signal)
+      if (!release) throw new Error('resource preparation unavailable')
+      try {
+        if (o.resources && o.resources.staleMarks > o.resources.reloadedMarks)
+          throw Object.assign(new Error('Resource publication is pending'), {
+            reason: 'runtime-publication-pending',
+          })
+        return await o.host.prepareSessionConfiguration(session.key)
+      } finally {
+        release()
+      }
+    }
+    case 'configurationAdmission': {
+      const token = String(p.token ?? '')
+      switch (p.action) {
+        case 'probe':
+          return session.tryLocked(async () => ({
+            sessionId: session.key,
+            writerRunId: session.writerRunId,
+            held: session.configurationReserved,
+          }))
+        case 'acquire': {
+          if ((p.input as { sessionId?: string } | undefined)?.sessionId !== session.key)
+            throw new TypeError('configuration admission session differs')
+          const release = await admitResourceRun(o, new AbortController().signal, true)
+          if (!release) throw new Error('resource admission unavailable')
+          try {
+            return await o.host.configurationAdmissions.acquire(
+              p.input as Parameters<Host['configurationAdmissions']['acquire']>[0],
+              release,
+            )
+          } catch (error) {
+            release()
+            throw error
+          }
+        }
+        case 'check':
+          return o.host.configurationAdmissions.check(session.key, token, p.seal === true)
+        case 'enqueue':
+          return o.host.configurationAdmissions.enqueue(
+            session.key,
+            token,
+            p.message as Parameters<Host['configurationAdmissions']['enqueue']>[2],
+          )
+        case 'release':
+          return o.host.configurationAdmissions.release(session.key, token)
+        case 'cancel':
+          return o.host.configurationAdmissions.cancel(
+            session.key,
+            typeof p.inputId === 'string' ? p.inputId : undefined,
+            p.actor as Actor,
+            p.onlyMatching === true,
+          )
+        case 'run': {
+          const runId = String(p.runId)
+          if (o.aborts.has(runId)) throw new Error('admission run is active')
+          const abort = new AbortController()
+          o.aborts.set(runId, abort)
+          try {
+            return await o.host.configurationAdmissions.run(session.key, token, {
+              until: 'turn-end',
+              signal: abort.signal,
+            })
+          } finally {
+            if (o.aborts.get(runId) === abort) o.aborts.delete(runId)
+          }
+        }
+        default:
+          throw new TypeError('unknown configuration admission command')
+      }
+    }
+    case 'sessionIdleGate': {
+      const token = String(p.token ?? '')
+      if (p.action === 'cancelAcquire') return o.host.sessionIdleGates.cancelAcquire(String(p.acquisitionId))
+      if (p.action === 'acquire') {
+        const input = p.input as Parameters<Host['sessionIdleGates']['acquire']>[0]
+        if (
+          !input.members.some(
+            (member) => member.sessionKey === session.key && member.writerRunId === session.writerRunId,
+          )
+        )
+          throw new TypeError('Idle gate root acquisition differs')
+        const release = await admitResourceRun(o, new AbortController().signal, true)
+        if (!release) throw new Error('Resource admission unavailable')
+        try {
+          return await o.host.sessionIdleGates.acquire(input, release)
+        } catch (error) {
+          release()
+          throw error
+        }
+      }
+      if (p.action === 'check') return o.host.sessionIdleGates.check(token)
+      if (p.action === 'release') return o.host.sessionIdleGates.release(token)
+      throw new TypeError('Unknown idle gate command')
+    }
+    case 'controlRuntime': {
+      const input = p as Parameters<HostSession['controlRuntime']>[0]
+      return o.host.configurationAdmissions.control?.(session.key, input) ?? session.controlRuntime(input)
+    }
+    case 'cancelQueuedInput':
+      if (typeof p.commandId !== 'string' || !p.commandId) throw new TypeError('commandId is required')
+      return session.cancelQueuedInput(p.commandId)
     case 'enqueue':
       return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never)
     case 'manualCompact':
@@ -287,6 +413,8 @@ export async function handleCommand(
         if (o.aborts.get(runId) === ac) o.aborts.delete(runId)
       }
     }
+    case 'abortSession':
+      return session.abort(p.by as Actor)
     case 'abort':
       o.aborts.get(String(p.runId))?.abort()
       return {}
@@ -367,6 +495,7 @@ export async function handleCommand(
       const args = p as { ticket: string; verdict: ApprovalVerdict; decidedBy: Actor }
       return session.resumeApproval(args.ticket, args.verdict, args.decidedBy)
     }
+    case 'resolveQuestionActor':
     case 'resolveActor': {
       const args = p as { credential: unknown; surface: 'session' | 'approval' }
       return o.host.resolveActor(args.credential, args.surface)
@@ -629,6 +758,12 @@ export async function handleServiceCommand(
     case 'abortService':
       aborts.get(String(p.callId))?.abort()
       return {}
+    case 'runtime.catalog':
+      if (!host) throw new Error('Runtime catalog is unavailable')
+      return { items: host.runtimeCatalog() }
+    case 'runtime.resolveSelection':
+      if (!host) throw new Error('Runtime selection is unavailable')
+      return host.resolveSessionSelection(p as Parameters<Host['resolveSessionSelection']>[0])
     case 'computerUse.status':
       if (!host?.computerUse) throw new Error('Computer Use runtime is unavailable')
       return host.computerUse.status()

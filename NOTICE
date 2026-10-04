@@ -11,6 +11,13 @@ following material retains its original notices and license terms:
   packages/host/src/adapters/public-fetch:
   Copyright (c) 2026 DeepSeek. MIT License. See the local
   DEEPSEEK-LICENSE.txt files and source-file notices.
+- Portable Jev runtime and trace projection in packages/jev-runtime and
+  packages/jev-trace, plus the native language projection and decoder in
+  packages/runtime-jev: Copyright (c) 2026 DeepSeek. MIT License. Package-local
+  LICENSE and UPSTREAM.json files record retained terms and exact source hashes.
+- Calendar selection in packages/runtime-comparison/src/pricing.ts:
+  Copyright (c) 2026 DeepSeek. MIT License. See DEEPSEEK-LICENSE.txt and
+  UPSTREAM.json in that package for retained terms and source provenance.
 - Computer Use adaptation in packages/base/extensions/computer-use:
   Copyright (c) 2025 Nous Research. MIT License. See the local NOTICE for
   provenance, changes, and the full license text.

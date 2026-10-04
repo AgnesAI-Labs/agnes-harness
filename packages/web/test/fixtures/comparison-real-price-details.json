@@ -1,0 +1,1194 @@
+{
+  "provenance": {
+    "source": "packages/core/test/fixtures/comparison-real-pricing.json",
+    "kind": "read-only Host projection of sanitized real provider capture; not a live priceDetails RPC",
+    "omitted": "request/output/reasoning bodies, private actor and filesystem paths"
+  },
+  "reports": [
+    {
+      "sessionId": "agnes:comparison-pricing-fixture:left",
+      "runtime": {
+        "id": "native",
+        "version": "1"
+      },
+      "throughSeq": 77,
+      "entries": [
+        {
+          "attemptId": "provider-call:[\"main\",\"e-0e0a3f81ba44142becdda6eaa27863c1\"]",
+          "family": "llm",
+          "purpose": "inference",
+          "route": "deepseek",
+          "model": "deepseek-v4-flash",
+          "observedModel": null,
+          "originSeq": 16,
+          "settledSeq": 21,
+          "outcome": "completed",
+          "quote": {
+            "version": 1,
+            "basis": "catalog-estimate",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "admittedAt": 1790966651772,
+            "policy": {
+              "currency": "USD",
+              "unit": "per-million-tokens",
+              "perMillion": {
+                "inputUncached": 0.15,
+                "cacheRead": 0.003,
+                "cacheWrite": 0,
+                "output": 0.6
+              }
+            }
+          },
+          "multiplier": 1,
+          "tokens": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 929,
+              "knownSubtotal": 929,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 8192,
+              "knownSubtotal": 8192,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 1379,
+              "knownSubtotal": 1379,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "complete",
+              "value": 993,
+              "knownSubtotal": 993,
+              "missing": 0
+            },
+            "inputTotal": {
+              "state": "complete",
+              "value": 9121,
+              "knownSubtotal": 9121,
+              "missing": 0
+            },
+            "total": {
+              "state": "complete",
+              "value": 10500,
+              "knownSubtotal": 10500,
+              "missing": 0
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 0.00013935,
+              "knownSubtotal": 0.00013935,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0.000024576,
+              "knownSubtotal": 0.000024576,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 0.0008273999999999999,
+              "knownSubtotal": 0.0008273999999999999,
+              "missing": 0
+            }
+          },
+          "estimate": {
+            "state": "complete",
+            "value": 0.0009913259999999998,
+            "knownSubtotal": 0.0009913259999999998,
+            "missing": 0
+          },
+          "reportedBilling": {
+            "usdMicros": 991,
+            "source": "estimated",
+            "subscription": false
+          },
+          "issues": []
+        },
+        {
+          "attemptId": "provider-call:[\"main\",\"e-ff9713b98ac4c75bfa98d5f319b94caa\"]",
+          "family": "llm",
+          "purpose": "title",
+          "route": "deepseek",
+          "model": "deepseek-v4-flash",
+          "observedModel": null,
+          "originSeq": 29,
+          "settledSeq": 30,
+          "outcome": "completed",
+          "quote": {
+            "version": 1,
+            "basis": "catalog-estimate",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "admittedAt": 1790966671478,
+            "policy": {
+              "currency": "USD",
+              "unit": "per-million-tokens",
+              "perMillion": {
+                "inputUncached": 0.15,
+                "cacheRead": 0.003,
+                "cacheWrite": 0,
+                "output": 0.6
+              }
+            }
+          },
+          "multiplier": 1,
+          "tokens": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 970,
+              "knownSubtotal": 970,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 227,
+              "knownSubtotal": 227,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "complete",
+              "value": 219,
+              "knownSubtotal": 219,
+              "missing": 0
+            },
+            "inputTotal": {
+              "state": "complete",
+              "value": 970,
+              "knownSubtotal": 970,
+              "missing": 0
+            },
+            "total": {
+              "state": "complete",
+              "value": 1197,
+              "knownSubtotal": 1197,
+              "missing": 0
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 0.0001455,
+              "knownSubtotal": 0.0001455,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 0.00013619999999999998,
+              "knownSubtotal": 0.00013619999999999998,
+              "missing": 0
+            }
+          },
+          "estimate": {
+            "state": "complete",
+            "value": 0.00028169999999999996,
+            "knownSubtotal": 0.00028169999999999996,
+            "missing": 0
+          },
+          "reportedBilling": {
+            "usdMicros": 282,
+            "source": "estimated",
+            "subscription": false
+          },
+          "issues": []
+        },
+        {
+          "attemptId": "provider-call:[\"main\",\"e-9e048ae9fcfcd2ebfebb9f9010212e54\"]",
+          "family": "llm",
+          "purpose": "inference",
+          "route": "deepseek",
+          "model": "deepseek-v4-flash",
+          "observedModel": null,
+          "originSeq": 43,
+          "settledSeq": 50,
+          "outcome": "completed",
+          "quote": {
+            "version": 1,
+            "basis": "catalog-estimate",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "admittedAt": 1790966681363,
+            "policy": {
+              "currency": "USD",
+              "unit": "per-million-tokens",
+              "perMillion": {
+                "inputUncached": 0.15,
+                "cacheRead": 0.003,
+                "cacheWrite": 0,
+                "output": 0.6
+              }
+            }
+          },
+          "multiplier": 1,
+          "tokens": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 1336,
+              "knownSubtotal": 1336,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 8192,
+              "knownSubtotal": 8192,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 2125,
+              "knownSubtotal": 2125,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "complete",
+              "value": 1929,
+              "knownSubtotal": 1929,
+              "missing": 0
+            },
+            "inputTotal": {
+              "state": "complete",
+              "value": 9528,
+              "knownSubtotal": 9528,
+              "missing": 0
+            },
+            "total": {
+              "state": "complete",
+              "value": 11653,
+              "knownSubtotal": 11653,
+              "missing": 0
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 0.0002004,
+              "knownSubtotal": 0.0002004,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0.000024576,
+              "knownSubtotal": 0.000024576,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 0.001275,
+              "knownSubtotal": 0.001275,
+              "missing": 0
+            }
+          },
+          "estimate": {
+            "state": "complete",
+            "value": 0.001499976,
+            "knownSubtotal": 0.001499976,
+            "missing": 0
+          },
+          "reportedBilling": {
+            "usdMicros": 1500,
+            "source": "estimated",
+            "subscription": false
+          },
+          "issues": []
+        },
+        {
+          "attemptId": "provider-call:[\"main\",\"e-ed849d151b2f441a4f8b78407b869d8c\"]",
+          "family": "llm",
+          "purpose": "inference",
+          "route": "deepseek",
+          "model": "deepseek-v4-flash",
+          "observedModel": null,
+          "originSeq": 67,
+          "settledSeq": 71,
+          "outcome": "completed",
+          "quote": {
+            "version": 1,
+            "basis": "catalog-estimate",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "admittedAt": 1790966779538,
+            "policy": {
+              "currency": "USD",
+              "unit": "per-million-tokens",
+              "perMillion": {
+                "inputUncached": 0.15,
+                "cacheRead": 0.003,
+                "cacheWrite": 0,
+                "output": 0.6
+              }
+            }
+          },
+          "multiplier": 1,
+          "tokens": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 1565,
+              "knownSubtotal": 1565,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 8192,
+              "knownSubtotal": 8192,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 437,
+              "knownSubtotal": 437,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "complete",
+              "value": 31,
+              "knownSubtotal": 31,
+              "missing": 0
+            },
+            "inputTotal": {
+              "state": "complete",
+              "value": 9757,
+              "knownSubtotal": 9757,
+              "missing": 0
+            },
+            "total": {
+              "state": "complete",
+              "value": 10194,
+              "knownSubtotal": 10194,
+              "missing": 0
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 0.00023475,
+              "knownSubtotal": 0.00023475,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0.000024576,
+              "knownSubtotal": 0.000024576,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 0.0002622,
+              "knownSubtotal": 0.0002622,
+              "missing": 0
+            }
+          },
+          "estimate": {
+            "state": "complete",
+            "value": 0.000521526,
+            "knownSubtotal": 0.000521526,
+            "missing": 0
+          },
+          "reportedBilling": {
+            "usdMicros": 522,
+            "source": "estimated",
+            "subscription": false
+          },
+          "issues": []
+        }
+      ],
+      "evidenceComplete": true,
+      "issues": []
+    },
+    {
+      "sessionId": "agnes:comparison-pricing-fixture:right",
+      "runtime": {
+        "id": "jevloop",
+        "version": "1"
+      },
+      "throughSeq": 95,
+      "entries": [
+        {
+          "attemptId": "[\"main\",\"attempt:10\"]",
+          "family": "jev",
+          "purpose": "decision",
+          "route": null,
+          "model": "jev-latest",
+          "observedModel": "jev-1.13.0",
+          "originSeq": 19,
+          "settledSeq": 20,
+          "outcome": "completed",
+          "quote": null,
+          "multiplier": null,
+          "tokens": {
+            "inputUncached": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheRead": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheWrite": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "output": {
+              "state": "complete",
+              "value": 768,
+              "knownSubtotal": 768,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "inputTotal": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "total": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheRead": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheWrite": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "output": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            }
+          },
+          "estimate": {
+            "state": "unknown",
+            "value": null,
+            "knownSubtotal": null,
+            "missing": 1
+          },
+          "reportedBilling": null,
+          "issues": ["missing_quote", "missing_usage", "missing_rate"]
+        },
+        {
+          "attemptId": "[\"main\",\"attempt:16\"]",
+          "family": "llm",
+          "purpose": "arbitration",
+          "route": "deepseek",
+          "model": "deepseek-v4-flash",
+          "observedModel": null,
+          "originSeq": 25,
+          "settledSeq": 26,
+          "outcome": "completed",
+          "quote": {
+            "version": 1,
+            "basis": "catalog-estimate",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "admittedAt": 1790966652499,
+            "policy": {
+              "currency": "USD",
+              "unit": "per-million-tokens",
+              "perMillion": {
+                "inputUncached": 0.15,
+                "cacheRead": 0.003,
+                "cacheWrite": 0,
+                "output": 0.6
+              }
+            }
+          },
+          "multiplier": 1,
+          "tokens": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 1474,
+              "knownSubtotal": 1474,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 8192,
+              "knownSubtotal": 8192,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 521,
+              "knownSubtotal": 521,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "complete",
+              "value": 68,
+              "knownSubtotal": 68,
+              "missing": 0
+            },
+            "inputTotal": {
+              "state": "complete",
+              "value": 9666,
+              "knownSubtotal": 9666,
+              "missing": 0
+            },
+            "total": {
+              "state": "complete",
+              "value": 10187,
+              "knownSubtotal": 10187,
+              "missing": 0
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 0.0002211,
+              "knownSubtotal": 0.0002211,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0.000024576,
+              "knownSubtotal": 0.000024576,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 0.00031259999999999995,
+              "knownSubtotal": 0.00031259999999999995,
+              "missing": 0
+            }
+          },
+          "estimate": {
+            "state": "complete",
+            "value": 0.0005582759999999999,
+            "knownSubtotal": 0.0005582759999999999,
+            "missing": 0
+          },
+          "reportedBilling": {
+            "usdMicros": 558,
+            "source": "estimated",
+            "subscription": false
+          },
+          "issues": []
+        },
+        {
+          "attemptId": "provider-call:[\"main\",\"e-e2d8766e6a7b1838380d99d0ade020d2\"]",
+          "family": "llm",
+          "purpose": "title",
+          "route": "deepseek",
+          "model": "deepseek-v4-flash",
+          "observedModel": null,
+          "originSeq": 36,
+          "settledSeq": 37,
+          "outcome": "completed",
+          "quote": {
+            "version": 1,
+            "basis": "catalog-estimate",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "admittedAt": 1790966661219,
+            "policy": {
+              "currency": "USD",
+              "unit": "per-million-tokens",
+              "perMillion": {
+                "inputUncached": 0.15,
+                "cacheRead": 0.003,
+                "cacheWrite": 0,
+                "output": 0.6
+              }
+            }
+          },
+          "multiplier": 1,
+          "tokens": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 1037,
+              "knownSubtotal": 1037,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 873,
+              "knownSubtotal": 873,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "complete",
+              "value": 863,
+              "knownSubtotal": 863,
+              "missing": 0
+            },
+            "inputTotal": {
+              "state": "complete",
+              "value": 1037,
+              "knownSubtotal": 1037,
+              "missing": 0
+            },
+            "total": {
+              "state": "complete",
+              "value": 1910,
+              "knownSubtotal": 1910,
+              "missing": 0
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 0.00015554999999999999,
+              "knownSubtotal": 0.00015554999999999999,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 0.0005237999999999999,
+              "knownSubtotal": 0.0005237999999999999,
+              "missing": 0
+            }
+          },
+          "estimate": {
+            "state": "complete",
+            "value": 0.0006793499999999999,
+            "knownSubtotal": 0.0006793499999999999,
+            "missing": 0
+          },
+          "reportedBilling": {
+            "usdMicros": 679,
+            "source": "estimated",
+            "subscription": false
+          },
+          "issues": []
+        },
+        {
+          "attemptId": "[\"main\",\"attempt:28\"]",
+          "family": "jev",
+          "purpose": "decision",
+          "route": null,
+          "model": "jev-latest",
+          "observedModel": "jev-1.13.0",
+          "originSeq": 52,
+          "settledSeq": 53,
+          "outcome": "completed",
+          "quote": null,
+          "multiplier": null,
+          "tokens": {
+            "inputUncached": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheRead": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheWrite": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "output": {
+              "state": "complete",
+              "value": 767,
+              "knownSubtotal": 767,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "inputTotal": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "total": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheRead": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheWrite": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "output": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            }
+          },
+          "estimate": {
+            "state": "unknown",
+            "value": null,
+            "knownSubtotal": null,
+            "missing": 1
+          },
+          "reportedBilling": null,
+          "issues": ["missing_quote", "missing_usage", "missing_rate"]
+        },
+        {
+          "attemptId": "[\"main\",\"attempt:34\"]",
+          "family": "llm",
+          "purpose": "arbitration",
+          "route": "deepseek",
+          "model": "deepseek-v4-flash",
+          "observedModel": null,
+          "originSeq": 58,
+          "settledSeq": 59,
+          "outcome": "completed",
+          "quote": {
+            "version": 1,
+            "basis": "catalog-estimate",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "admittedAt": 1790966682085,
+            "policy": {
+              "currency": "USD",
+              "unit": "per-million-tokens",
+              "perMillion": {
+                "inputUncached": 0.15,
+                "cacheRead": 0.003,
+                "cacheWrite": 0,
+                "output": 0.6
+              }
+            }
+          },
+          "multiplier": 1,
+          "tokens": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 704,
+              "knownSubtotal": 704,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 9472,
+              "knownSubtotal": 9472,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 2383,
+              "knownSubtotal": 2383,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "complete",
+              "value": 1929,
+              "knownSubtotal": 1929,
+              "missing": 0
+            },
+            "inputTotal": {
+              "state": "complete",
+              "value": 10176,
+              "knownSubtotal": 10176,
+              "missing": 0
+            },
+            "total": {
+              "state": "complete",
+              "value": 12559,
+              "knownSubtotal": 12559,
+              "missing": 0
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 0.00010559999999999999,
+              "knownSubtotal": 0.00010559999999999999,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0.000028416,
+              "knownSubtotal": 0.000028416,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 0.0014298,
+              "knownSubtotal": 0.0014298,
+              "missing": 0
+            }
+          },
+          "estimate": {
+            "state": "complete",
+            "value": 0.001563816,
+            "knownSubtotal": 0.001563816,
+            "missing": 0
+          },
+          "reportedBilling": {
+            "usdMicros": 1564,
+            "source": "estimated",
+            "subscription": false
+          },
+          "issues": []
+        },
+        {
+          "attemptId": "[\"main\",\"attempt:46\"]",
+          "family": "jev",
+          "purpose": "decision",
+          "route": null,
+          "model": "jev-latest",
+          "observedModel": "jev-1.13.0",
+          "originSeq": 80,
+          "settledSeq": 81,
+          "outcome": "completed",
+          "quote": null,
+          "multiplier": null,
+          "tokens": {
+            "inputUncached": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheRead": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheWrite": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "output": {
+              "state": "complete",
+              "value": 769,
+              "knownSubtotal": 769,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "inputTotal": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "total": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheRead": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "cacheWrite": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            },
+            "output": {
+              "state": "unknown",
+              "value": null,
+              "knownSubtotal": null,
+              "missing": 1
+            }
+          },
+          "estimate": {
+            "state": "unknown",
+            "value": null,
+            "knownSubtotal": null,
+            "missing": 1
+          },
+          "reportedBilling": null,
+          "issues": ["missing_quote", "missing_usage", "missing_rate"]
+        },
+        {
+          "attemptId": "[\"main\",\"attempt:52\"]",
+          "family": "llm",
+          "purpose": "arbitration",
+          "route": "deepseek",
+          "model": "deepseek-v4-flash",
+          "observedModel": null,
+          "originSeq": 86,
+          "settledSeq": 87,
+          "outcome": "completed",
+          "quote": {
+            "version": 1,
+            "basis": "catalog-estimate",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "admittedAt": 1790966780552,
+            "policy": {
+              "currency": "USD",
+              "unit": "per-million-tokens",
+              "perMillion": {
+                "inputUncached": 0.15,
+                "cacheRead": 0.003,
+                "cacheWrite": 0,
+                "output": 0.6
+              }
+            }
+          },
+          "multiplier": 1,
+          "tokens": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 2508,
+              "knownSubtotal": 2508,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 8192,
+              "knownSubtotal": 8192,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 524,
+              "knownSubtotal": 524,
+              "missing": 0
+            },
+            "reasoning": {
+              "state": "complete",
+              "value": 36,
+              "knownSubtotal": 36,
+              "missing": 0
+            },
+            "inputTotal": {
+              "state": "complete",
+              "value": 10700,
+              "knownSubtotal": 10700,
+              "missing": 0
+            },
+            "total": {
+              "state": "complete",
+              "value": 11224,
+              "knownSubtotal": 11224,
+              "missing": 0
+            }
+          },
+          "bucketCosts": {
+            "inputUncached": {
+              "state": "complete",
+              "value": 0.0003762,
+              "knownSubtotal": 0.0003762,
+              "missing": 0
+            },
+            "cacheRead": {
+              "state": "complete",
+              "value": 0.000024576,
+              "knownSubtotal": 0.000024576,
+              "missing": 0
+            },
+            "cacheWrite": {
+              "state": "complete",
+              "value": 0,
+              "knownSubtotal": 0,
+              "missing": 0
+            },
+            "output": {
+              "state": "complete",
+              "value": 0.0003144,
+              "knownSubtotal": 0.0003144,
+              "missing": 0
+            }
+          },
+          "estimate": {
+            "state": "complete",
+            "value": 0.000715176,
+            "knownSubtotal": 0.000715176,
+            "missing": 0
+          },
+          "reportedBilling": {
+            "usdMicros": 715,
+            "source": "estimated",
+            "subscription": false
+          },
+          "issues": []
+        }
+      ],
+      "evidenceComplete": true,
+      "issues": []
+    }
+  ]
+}

@@ -25,13 +25,24 @@ import type { PresetDoc } from './presets/types.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
+import { createSessionRuntimeRegistry, jevFromEnvironment } from './runtime/catalog.js'
+import { createChildSessionOpener } from './runtime/child-sessions.js'
+import {
+  type ConfigurationAdmissionPort,
+  createConfigurationAdmissions,
+} from './runtime/comparison-config-admission.js'
+import { bindPreparedSandbox, prepareSessionConfiguration } from './runtime/comparison-prepared.js'
+import type { JevLoopOptions } from './runtime/jev-loop.js'
+import { createSessionIdleGates, type SessionIdleGatePort } from './runtime/session-idle-gates.js'
+import { sessionOwnerCloseFinalizer } from './runtime/session-owner-close.js'
 import {
   type CreateSessionOptions,
   checkPresetHardRequirements,
   createSession as openSession,
   sessionKey,
 } from './session.js'
-import { validateModelSwitch, validatePresetSwitch } from './session-switch.js'
+import { applySessionSandboxFloor } from './session-sandbox-floor.js'
+import { resolveSessionSelection, validateModelSwitch, validatePresetSwitch } from './session-switch.js'
 import { createTitleQueue, startSessionTitle } from './session-title.js'
 import { type SessionWorkspaceRuntime, SessionWorkspaceRuntimeTable } from './session-workspace-runtime.js'
 import {
@@ -46,6 +57,8 @@ import {
 // return type instead of pinning a name means a rename over there is not a break over here.
 export type HostSession = Awaited<ReturnType<Kernel['session']>>
 export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
+  /** Trusted static runtime assembly; credentials stay in the decision transport closure. */
+  jev?: JevLoopOptions
   audit?: AuditSink
   loader?: PackageLoader
   closeTimeoutMs?: number
@@ -62,6 +75,9 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
 }
 
 export interface Host {
+  readonly sessionIdleGates: SessionIdleGatePort
+  readonly configurationAdmissions: ConfigurationAdmissionPort
+  readonly questions: Assembled['questions']
   /** Privileged coordination port. It is not reachable from ExtensionAPI or any wire request. */
   readonly activationBarrier: ExtensionActivationBarrier
   /** Authenticated management port. It is not registered as a model tool or extension service. */
@@ -97,7 +113,20 @@ export interface Host {
     envelope: AuthenticatedWorkspaceBindingEnvelope,
     expectedSessionKey: string,
   ): WorkspaceBinding
+  runtimeCatalog(): import('@agnes/protocol').RuntimeDescriptor[]
+  resolveSessionSelection(input: {
+    preset?: string
+    model?: import('@agnes/protocol').ComparisonCreateParams['model']
+  }): Promise<{
+    preset: string
+    model: NonNullable<import('@agnes/protocol').ComparisonCreateParams['model']>
+  }>
   createSession(opts: CreateSessionOptions): Promise<HostSession>
+  /** Freeze the loaded owner's actual configuration; never opens or wakes a session. */
+  prepareSessionConfiguration(
+    sessionKey: string,
+    isolation?: import('./runtime/comparison-isolation.js').ComparisonIsolation,
+  ): Promise<import('@agnes/protocol').ComparisonPreparedReceipt>
   /** Host-managed preset switch. Worker/RPC callers must not mutate Core sessions directly. */
   setSessionPreset(sessionKey: string, name: string): Promise<number>
   extensions(): ExtensionStatus[]
@@ -146,13 +175,27 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
   // Built only once the loader is known good: createFileAudit's constructor eagerly mkdir's, so
   // building it before this check left a real audit/ directory on disk behind a createHost() call
   // that was always going to refuse - a rejected assembly is supposed to have no side effects.
+  const jev = opts.jev ?? jevFromEnvironment(opts.env ?? process.env)
+  const sessionRuntimes = createSessionRuntimeRegistry(jev)
+  let a!: Assembled
+  let closed = false
+  const pendingSessionOpens = new Set<Promise<void>>()
+  const childSessions = createChildSessionOpener({
+    registry: sessionRuntimes,
+    assembled: () => a,
+    profile: () => profile,
+    isClosed: () => closed,
+    openings: pendingSessionOpens,
+  })
   const audit = opts.audit ?? createFileAudit(join(opts.dataDir, 'audit', 'host.jsonl'))
   audit.write({ kind: 'profile.resolved', detail: { hash: profile.hash, chain: profile.chain } })
   const workspaceRuntimes = new SessionWorkspaceRuntimeTable((key) => a.kernel.get(key)?.yolo === true)
-  const a = await assemble(profile, {
+  a = await assemble(profile, {
     ...opts,
     loader,
     audit,
+    childSessionOpen: childSessions.open,
+    childSessionSupportsRuntime: childSessions.supportsRuntime,
     workspaceInvocationFor: (sessionKey) => workspaceRuntimes.invocation(sessionKey),
     workspacePolicyDigestFor: (sessionKey) => {
       const runtime = workspaceRuntimes.peek(sessionKey)
@@ -166,11 +209,10 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
     ? undefined
     : new CliWorkspaceAuthority(await a.adapters.fs.canonicalize(opts.workspaceRoot))
   const scheduleTitle = createTitleQueue()
-  const pendingSessionOpens = new Set<Promise<void>>()
   let modelApplication = Promise.resolve()
-  let closed = false
   let closePromise: Promise<void> | undefined
   return {
+    questions: a.questions,
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
     callService: (params, credential, signal, effectAdmission) => {
@@ -241,6 +283,16 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
       return operation
     },
     kernel: a.kernel,
+    sessionIdleGates: createSessionIdleGates(
+      (key) => a.kernel.get(key),
+      a.adapters.storage,
+      () => a.retainSessionConfiguration(),
+    ),
+    configurationAdmissions: createConfigurationAdmissions(
+      (key) => a.kernel.get(key),
+      a.activationBarrier,
+      () => a.retainSessionConfiguration(),
+    ),
     get provider() {
       return a.provider
     },
@@ -266,6 +318,14 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
     resolveActor: (credential, surface) => a.seams.principals.resolve(credential, surface),
     acceptWorkspaceBinding: (envelope, expectedSessionKey) =>
       workspaceBindings.accept(envelope, expectedSessionKey),
+    runtimeCatalog: () => sessionRuntimes.list().map((item) => structuredClone(item)),
+    resolveSessionSelection: async (input) => resolveSessionSelection(profile, a, input),
+    async prepareSessionConfiguration(key, isolation) {
+      const session = a.kernel.get(key)
+      if (!session || !sessions.has(session))
+        throw new HostError('E_WORKSPACE_CLOSED', 'Session configuration owner is unavailable')
+      return prepareSessionConfiguration(session, isolation)
+    },
     async createSession(o) {
       // A lifecycle condition gets a lifecycle code. The old one raised E_SEAM_IMMUTABLE - the code
       // for "a seam implementation may not be swapped" - and the test only grepped /closed/, so the
@@ -357,10 +417,14 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
           const openWorkspaceRuntime = opts.openWorkspaceRuntime ?? a.openWorkspaceRuntime
           const binding = o.binding as WorkspaceBinding
           const inheritedPreset = o.parent ? a.kernel.get(o.parent.key)?.preset.name : undefined
-          const runtimePreset = resolvePreset(
-            inheritedPreset ?? o.preset ?? profile.presets.default,
-            a.presets,
-            a.sessionPresetLimits(),
+          const runtimePreset = applySessionSandboxFloor(
+            resolvePreset(
+              inheritedPreset ?? o.preset ?? profile.presets.default,
+              a.presets,
+              a.sessionPresetLimits(),
+            ),
+            a.adapters.storage,
+            o.parent?.key ?? o.key ?? binding.sessionKey,
           ).doc
           const runtime = await workspaceRuntimes.open(binding, (invocation) =>
             openWorkspaceRuntime(binding, runtimePreset, invocation),
@@ -387,7 +451,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
         }
         let s: HostSession
         try {
-          s = await openSession(profile, a, o, audit, workspace)
+          s = await openSession(profile, a, o, audit, workspace, sessionRuntimes)
           try {
             await computerUse?.setSessionYolo({ key: s.key, lane: s.lane }, s.yolo)
           } catch (error) {
@@ -410,13 +474,14 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
           // the existing workspace entry, so only an open that left no live session is rolled back.
           if (o.binding && !a.kernel.get(o.binding.sessionKey))
             await workspaceRuntimes.close(o.binding.sessionKey).catch(() => undefined)
-          await pendingChildWorkspace?.close().catch(() => undefined)
+          if (!o.key || !a.kernel.get(o.key)) await pendingChildWorkspace?.close().catch(() => undefined)
           throw error
         }
         const run = s.run.bind(s)
-        ;(s as HostSession & { run: HostSession['run'] }).run = (options) => {
+        bindPreparedSandbox(s, workspace?.runtime.seam, workspace?.runtime.policy)
+        ;(s as HostSession & { run: HostSession['run'] }).run = (options, admission) => {
           const invocation = a.activationBarrier.admit('turn')
-          return invocation.run(() => run(options)) as ReturnType<HostSession['run']>
+          return invocation.run(() => run(options, admission)) as ReturnType<HostSession['run']>
         }
         // Register before the initial expiry pass so a startup storage error is still covered by the
         // Host's cleanup path. The session is removed again after its lease has been released below.
@@ -443,6 +508,9 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
           throw error
         }
         const close = s.close.bind(s)
+        const finalize = sessionOwnerCloseFinalizer(s, a.adapters.storage, () =>
+          a.unbindRuntimeSession(s.key),
+        )
         let title: Awaited<ReturnType<typeof startSessionTitle>> | undefined
         if (!opts.disableSessionTitle) {
           try {
@@ -456,16 +524,16 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
           }
         }
         ;(s as HostSession & { close: () => Promise<void> }).close = async () => {
+          let backgroundDrained = false
           try {
             await title?.close()
             await expiry.close()
+            backgroundDrained = true
           } finally {
-            try {
-              await a.unbindRuntimeSession(s.key)
-              await close()
-            } finally {
-              sessions.delete(s)
-            }
+            await close()
+            if (backgroundDrained) await finalize()
+            else await a.unbindRuntimeSession(s.key) // Cleanup is not positive owner-close evidence.
+            sessions.delete(s)
           }
         }
         try {
@@ -493,7 +561,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
         throw new HostError('E_DEP_MISSING', `session ${sessionKey} is not open`, {
           detail: { sessionKey, reason: 'session-not-open' },
         })
-      const resolved = validatePresetSwitch(profile, a, name)
+      const resolved = validatePresetSwitch(profile, a, name, sessionKey)
       return session.setPreset(resolved.view)
     },
     extensions: () => a.extensionStatus(),
@@ -533,6 +601,9 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
         timeoutMs,
         audit,
         pendingOpenings: [...pendingSessionOpens, modelApplication],
+        onBackgroundFailure: () => {
+          closePromise = undefined
+        },
         beforeRollback: async () => {
           workspaceRuntimes.beginClose()
           await workspaceRuntimes.finishCloseAll()
@@ -541,6 +612,9 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
             await recoverCreatingChildAttempts(a.adapters.storage, { staleBefore: now, now })
           }
         },
+      }).catch((error: unknown) => {
+        closePromise = undefined
+        throw error
       })
       return closePromise
     },

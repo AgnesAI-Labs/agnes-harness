@@ -1,5 +1,6 @@
 import type { Assembled } from './assemble.js'
 import type { AuditSink } from './audit.js'
+import { hasPendingOwnerClose } from './runtime/session-owner-close.js'
 
 /**
  * The teardown a half-finished assembly owes, and the one a finished host owes at shutdown. Every
@@ -61,7 +62,7 @@ async function deadline(work: Promise<void> | void, ms: number): Promise<void> {
   }
 }
 
-type Closeable = { close(): Promise<void> }
+type Closeable = { close(): Promise<void>; d?: { log: { readonly isClosed: boolean } } }
 
 /**
  * The close order lives in one place: the rollback stack the assembly built. Everything brought up
@@ -86,6 +87,8 @@ export async function closeHost(
     audit: AuditSink
     pendingOpenings?: readonly Promise<void>[]
     beforeRollback?: () => Promise<void>
+    /** A timed-out caller may retry after its background drain has actually failed. */
+    onBackgroundFailure?: () => void
   },
 ): Promise<void> {
   // Seal reconciliation synchronously with Host admission. Its drain runs alongside session close,
@@ -96,13 +99,17 @@ export async function closeHost(
   })
   const sessionDrain = (async (): Promise<void> => {
     await Promise.allSettled(opts.pendingOpenings ?? [])
+    // Failed initialization can retain a writer in Kernel before Host publishes the session.
+    const owned = new Set<Closeable>([...sessions, ...(a.kernel?.sessions.values() ?? [])])
+    const failures: unknown[] = []
     // Start every close before awaiting any one of them. A stuck session must not prevent its
     // siblings from receiving their own abort/close signal and releasing their workspace leases.
     await Promise.all(
-      [...sessions].map(async (s) => {
+      [...owned].map(async (s) => {
         try {
           await s.close()
         } catch (e) {
+          failures.push(e)
           opts.audit.write({
             kind: 'session.close_failed',
             detail: { message: e instanceof Error ? e.message : String(e) },
@@ -110,14 +117,24 @@ export async function closeHost(
         }
       }),
     )
+    if (
+      [...owned, ...(a.kernel?.sessions.values() ?? [])].some(
+        (s) => s.d?.log.isClosed === false || hasPendingOwnerClose(s),
+      )
+    )
+      throw new AggregateError(failures, 'Host still has undrained session writers')
   })()
   const drain = Promise.all([sessionDrain, reconciliationDrain]).then(() => undefined)
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<'timeout'>((res) => {
     timer = setTimeout(() => res('timeout'), opts.timeoutMs)
   })
-  const forced = (await Promise.race([drain.then(() => 'drained' as const), deadline])) === 'timeout'
-  clearTimeout(timer)
+  let forced: boolean
+  try {
+    forced = (await Promise.race([drain.then(() => 'drained' as const), deadline])) === 'timeout'
+  } finally {
+    clearTimeout(timer)
+  }
   const finish = async (): Promise<void> => {
     const failed: string[] = []
     let error: string | undefined
@@ -144,5 +161,5 @@ export async function closeHost(
   // A timeout bounds close() for the caller; it is not permission to tear the workspace and lower
   // layers out from under a still-running session. Finish in the background after the drain proves
   // the kernel/session layer is quiescent.
-  void drain.then(finish, finish).catch(() => undefined)
+  void drain.then(finish).catch(() => opts.onBackgroundFailure?.())
 }

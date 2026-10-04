@@ -1,0 +1,66 @@
+{
+  "source": "Real Jev child cancellation, sanitized settled outcome only; provider reasoning, session identities and paths omitted.",
+  "seq": 41,
+  "outcome": {
+    "kind": "error",
+    "content": [
+      {
+        "kind": "text",
+        "text": "Error: aborted: subagent_fork"
+      }
+    ],
+    "error": {
+      "code": "TOOL_OUTCOME_UNKNOWN",
+      "message": "Error: aborted: subagent_fork"
+    },
+    "snapshot": {
+      "codec": "agnes-tool-result-v1",
+      "value": {
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Error: aborted: subagent_fork"
+            }
+          ],
+          "details": {
+            "code": "TOOL_OUTCOME_UNKNOWN"
+          }
+        },
+        "projection": {
+          "data": {
+            "toolUseId": "intent:19",
+            "content": [
+              {
+                "type": "text",
+                "text": "Error: aborted: subagent_fork"
+              }
+            ],
+            "isError": true,
+            "code": "TOOL_OUTCOME_UNKNOWN",
+            "enforcement": {
+              "level": "partial",
+              "scope": ["file"]
+            },
+            "authz": {
+              "decisionId": "n/a"
+            }
+          },
+          "trust": "untrusted"
+        }
+      }
+    },
+    "directive": {
+      "conclude": false,
+      "additions": []
+    },
+    "effect": "unknown",
+    "effectEvidence": {
+      "phase": "may_have_sent",
+      "timedOut": false,
+      "cancelled": true
+    }
+  },
+  "effect": "unknown"
+}

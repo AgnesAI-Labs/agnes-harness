@@ -22,6 +22,20 @@ describe('preset document contract', () => {
   it.each([0, 1, 2])('accepts verifier tier %i', (default_tier) => {
     expect(validatePreset({ name: 'custom', verifier: { default_tier } }).ok).toBe(true)
   })
+  it.each([
+    [0, true],
+    [20.5, true],
+    ['default', true],
+    ['unlimited', true],
+    [null, false],
+    [-1, false],
+    ['capped', false],
+    ['UNLIMITED', false],
+    [{ mode: 'unlimited' }, false],
+  ])('validates the single tree-credit policy field %j', (tree_budget_credits, expected) => {
+    const document = { name: 'custom', subagent: { tree_budget_credits } }
+    expect(validatePreset(document).ok).toBe(expected)
+  })
   it('config dispatch rejects unknown names and a wrong expectation really fails', () => {
     expect(() =>
       runFixtureLine({

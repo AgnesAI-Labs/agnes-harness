@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { UISpan } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import { UITurn as UITurnSchema } from '@agnes/protocol/gen/agnes-v1'
@@ -41,6 +42,48 @@ afterEach(() => {
 })
 
 describe('projectUI trace fold', () => {
+  it('renders actual Host nested calls under their root in conversation and trace, with causal evidence', async () => {
+    const capture = JSON.parse(
+      readFileSync('packages/host/test/fixtures/jev-nested-host-read-write-read.json', 'utf8'),
+    ) as { events: Event[] }
+    const journal = capture.events.filter((row) => row.type === 'x/host/jev-nested')
+    const first = journal[0]
+    if (!first) throw new Error('Missing actual nested journal')
+    const binding = (first.data as { binding: { sessionKey: string; rootIntentId: string } }).binding
+    const timeline = await projectUI(capture.events, { sessionKey: binding.sessionKey })
+    const tools = timeline.nodes.filter((node) => node.kind === 'tool')
+    const root = tools.find((node) => node.toolUseId === binding.rootIntentId)
+    if (!root) throw new Error('Missing actual root tool')
+    const nested = tools.filter((node) => node !== root)
+    expect(nested.map((node) => node.name)).toEqual(['read', 'write', 'read'])
+    expect(nested.map((node) => node.depth)).toEqual([1, 1, 1])
+    expect(root.children).toEqual(nested.map((node) => node.id))
+    const trace = timeline.turns[0]?.trace
+    if (!trace) throw new Error('Missing actual turn trace')
+    const rootSpan = byKind(trace, 'tool').find((span) => span.toolUseId === root.toolUseId)
+    if (!rootSpan) throw new Error('Missing root tool span')
+    expect(rootSpan.children.map((span) => span.toolUseId)).toEqual(nested.map((node) => node.toolUseId))
+    expect(byKind(trace, 'tool')).toHaveLength(4)
+    for (const corrupt of ['untrusted', 'source', 'parent'] as const) {
+      const rows = structuredClone(capture.events)
+      for (const row of rows.filter((entry) => entry.type === 'x/host/jev-nested')) {
+        if (corrupt === 'untrusted') row.trust = 'untrusted'
+        if (corrupt === 'source') row.sourceEventSeqs = []
+        if (corrupt === 'parent')
+          (row.data as { binding: { parentToolUseId: string } }).binding.parentToolUseId = 'unrelated'
+      }
+      const invalid = await projectUI(rows, { sessionKey: binding.sessionKey })
+      expect(
+        invalid.nodes.filter((node) => node.kind === 'tool').every((node) => node.depth === undefined),
+      ).toBe(true)
+      const invalidTrace = invalid.turns[0]?.trace
+      if (!invalidTrace) throw new Error('Malformed presentation evidence must retain the tool trace')
+      expect(
+        byKind(invalidTrace, 'tool').find((span) => span.toolUseId === root.toolUseId)?.children,
+      ).toEqual([])
+    }
+  })
+
   it('nests step, generation and tool with ledger durations and no root token totals', async () => {
     const events = [
       event('user/message', { content: [{ type: 'text', text: 'check' }] }),
@@ -332,4 +375,51 @@ it('does not copy usage token totals onto the turn-root span', async () => {
   const root = turn?.trace as UISpan & { tokens?: unknown }
   expect(root.tokens).toBeUndefined()
   expect(Object.keys(root)).not.toContain('tokens')
+})
+
+it('rehydrates runtime request metadata without duplicating titles before late settlement and routing', async () => {
+  seq = 0
+  const runtime = { id: 'jevloop', version: '1' }
+  const work = (record: Record<string, unknown>) =>
+    event('runtime/record', {
+      runtime,
+      record: { version: 1, turn: 'run', ...record },
+    } as Event['data'])
+  const rows = [
+    event('turn/start', { turn: 1, trigger: 'prompt' }),
+    work({
+      id: 'request',
+      kind: 'model.requested',
+      call: { purpose: 'decision', requestedModel: 'model-a', input: {} },
+    }),
+    event('turn/end', { reason: 'blocked', lastAssistantSeq: null }),
+    work({
+      id: 'settled',
+      kind: 'model.settled',
+      requested: 'request',
+      settlement: { output: { scores: {} } },
+    }),
+    work({
+      id: 'selected',
+      kind: 'decision.selected',
+      requested: 'request',
+      phase: 'INSPECT',
+      operation: 'read',
+    }),
+  ]
+  const view = await projectUI(rows, { sessionKey: 'runtime-hydrate' })
+  const spans = view.turns[0]?.trace?.children[0]?.children ?? []
+  expect(spans).toHaveLength(1)
+  expect(spans[0]).toMatchObject({
+    kind: 'runtime',
+    runtime,
+    model: 'model-a',
+    runtimeTitle: '决策模型',
+    runtimePurpose: 'decision',
+    name: '决策模型 · 采用路径：INSPECT → read',
+    status: 'completed',
+    nodeIds: ['runtime:2'],
+  })
+  const checked = validateAgainst(UITurnSchema, view.turns[0])
+  expect(checked.ok ? [] : checked.errors).toEqual([])
 })

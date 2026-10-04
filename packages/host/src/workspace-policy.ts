@@ -27,6 +27,7 @@ export type WorkspacePolicyPlan = Readonly<{
     cwd: string
     allowPaths: readonly string[]
     denyPaths: readonly string[]
+    denyExceptions?: readonly { path: string; except: readonly string[] }[]
     networkAllow: readonly string[]
   }>
 }>
@@ -242,6 +243,31 @@ export async function compileWorkspacePolicy(
       cwd: workspaceRoot,
       allowPaths: Object.freeze(rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path)),
       denyPaths: Object.freeze(rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path)),
+      denyExceptions: Object.freeze(
+        rules
+          .filter(
+            (rule) =>
+              rule.effect === 'deny' &&
+              !rule.hard &&
+              !rules.some(
+                (other) =>
+                  other.effect === 'deny' && other.hard && samePath(other.path, rule.path, input.semantics),
+              ),
+          )
+          .flatMap((rule) => {
+            const except = rules
+              .filter(
+                (candidate) =>
+                  candidate.effect === 'allow' &&
+                  !samePath(rule.path, candidate.path, input.semantics) &&
+                  pathIdentity(candidate.path, input.semantics).startsWith(
+                    `${pathIdentity(rule.path, input.semantics)}${api.sep}`,
+                  ),
+              )
+              .map((candidate) => candidate.path)
+            return except.length ? [Object.freeze({ path: rule.path, except: Object.freeze(except) })] : []
+          }),
+      ),
       networkAllow,
     }),
   })

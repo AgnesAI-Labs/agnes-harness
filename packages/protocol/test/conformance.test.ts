@@ -29,7 +29,7 @@ const WORKER_RUNTIME_TARGET = `${fixtures}worker/runtime-target.jsonl`
 const COUNTS = {
   envelope: 6,
   i1Types: 23,
-  i2Types: 39,
+  i2Types: 43,
   requestMedia: 12,
   methods: 65,
   tooldef: 3,
@@ -43,7 +43,7 @@ const COUNTS = {
   sequences: 4,
   workerRuntimeTarget: 8,
 } as const
-const ALL_FIXTURE_COUNT = 1395
+const ALL_FIXTURE_COUNT = 1399
 
 describe('conformance fixtures', () => {
   it('all checked-in fixtures across the complete fixture tree pass', () => {

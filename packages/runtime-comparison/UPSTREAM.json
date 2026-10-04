@@ -1,0 +1,16 @@
+{
+  "upstream": "https://github.com/deepseek-ai/deepseek-harness",
+  "revision": "90398671c30cb16b5dbee3ecb69fac254b3ad718",
+  "sourceState": "Working-tree source bytes; revision alone does not identify the adapted source.",
+  "license": "MIT",
+  "files": [
+    {
+      "source": "packages/jev/jev-comparison/src/pricing.ts",
+      "sha256": "8480d36c7a85d1a82b92dd617ebf8045d7aa6a2b48115e10b6b738edf735529a",
+      "destination": "src/pricing.ts"
+    }
+  ],
+  "modifications": [
+    "Adapt calendar selection to the Agnes frozen ModelPricePolicy contract; shared protocol semantic validation; exact route/model and observed-model binding."
+  ]
+}

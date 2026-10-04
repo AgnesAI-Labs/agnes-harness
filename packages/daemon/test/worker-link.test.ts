@@ -18,7 +18,10 @@ class FakeSocket extends EventEmitter {
     return this
   }
 
-  reply(requestId: string, value: { result?: unknown; error?: { code: string; message: string } }): void {
+  reply(
+    requestId: string,
+    value: { sessionKey?: string; result?: unknown; error?: { code: string; message: string } },
+  ): void {
     this.emit('data', encodeFrame({ kind: 'reply', requestId, ...value }))
   }
 }
@@ -118,6 +121,156 @@ describe('WorkerLink command settlement', () => {
     release?.()
     await expect(command).resolves.toEqual({ ok: true })
   })
+
+  it.each(['confirmed', 'mismatch', 'legacy', 'failure', 'disconnected'] as const)(
+    'keeps exact-owner close confirmation sticky: %s',
+    async (mode) => {
+      const { link, socket } = setup()
+      socket.emit(
+        'data',
+        encodeFrame({
+          kind: 'hello',
+          token: 't',
+          workerKey: '@shared',
+          workerGeneration: 7,
+          profileHash: 'h',
+          workerKind: 'session',
+        }),
+      )
+      await link.hello
+      const retired = vi.fn()
+      const channel = link.session(
+        'a',
+        {
+          binding: {
+            version: 1,
+            sessionKey: 'a',
+            workspaceId: 'a'.repeat(64),
+            revision: 1,
+            canonicalRoot: '/workspace',
+          },
+        },
+        retired,
+      )
+      socket.reply('s1', {
+        sessionKey: 'a',
+        result: { sessionKey: 'a', writerRunId: 'writer:a', generation: 2, lastSeq: 0 },
+      })
+      await channel.hello
+      const owner = { sessionKey: 'a', writerRunId: 'writer:a', generation: 2, workerGeneration: 7 }
+      const first = channel.closeSession()
+      const failure = first.catch(() => undefined)
+      expect(channel.closeSession()).toBe(first)
+      if (mode === 'disconnected') socket.emit('close')
+      else if (mode === 'failure')
+        socket.reply('s2', { sessionKey: 'a', error: { code: 'CLOSE_FAILED', message: 'drain failed' } })
+      else
+        socket.reply('s2', {
+          sessionKey: 'a',
+          result:
+            mode === 'legacy'
+              ? {}
+              : { exited: true, owner: mode === 'mismatch' ? { ...owner, generation: 3 } : owner },
+        })
+      await failure
+      const proof = await channel.closeAndConfirm()
+      expect(proof).toEqual(
+        mode === 'confirmed'
+          ? { exited: true, owner }
+          : {
+              exited: false,
+              owner,
+              reason:
+                mode === 'mismatch'
+                  ? 'generation-mismatch'
+                  : mode === 'legacy'
+                    ? 'owner-unknown'
+                    : mode === 'failure'
+                      ? 'close-failed'
+                      : 'transport-lost',
+            },
+      )
+      expect(await channel.closeAndConfirm()).toEqual(proof)
+      expect(retired).toHaveBeenCalledTimes(mode === 'confirmed' ? 1 : 0)
+      expect(channel.alive).toBe(false)
+      const writes = socket.writes.length
+      const retry = channel.closeSession().catch(() => undefined)
+      if (mode === 'failure') {
+        expect(socket.writes).toHaveLength(writes + 1)
+        socket.reply('s3', { sessionKey: 'a', result: { exited: true, owner } })
+        await retry
+        expect(await channel.closeAndConfirm()).toEqual({ exited: true, owner })
+        expect(proof).toEqual({ exited: false, owner, reason: 'close-failed' })
+        expect(retired).toHaveBeenCalledOnce()
+      } else {
+        await retry
+        expect(socket.writes).toHaveLength(writes)
+      }
+    },
+  )
+
+  it.each([false, true])(
+    'refreshes only the same-epoch wake owner, including in-flight close=%s',
+    async (closingFirst) => {
+      const { link, socket } = setup()
+      socket.emit(
+        'data',
+        encodeFrame({
+          kind: 'hello',
+          token: 't',
+          workerKey: '@shared',
+          workerGeneration: 4,
+          profileHash: 'h',
+          workerKind: 'session',
+        }),
+      )
+      await link.hello
+      const binding = {
+        version: 1 as const,
+        sessionKey: 'a',
+        workspaceId: 'a'.repeat(64),
+        revision: 1,
+        canonicalRoot: '/workspace',
+      }
+      const channel = link.session('a', { binding })
+      socket.reply('s1', {
+        sessionKey: 'a',
+        result: { sessionKey: 'a', writerRunId: 'initial', generation: 1, lastSeq: 0 },
+      })
+      await channel.hello
+      const previous = { sessionKey: 'a', writerRunId: 'initial', generation: 1, workerGeneration: 4 }
+      const owner = { ...previous, writerRunId: 'woken' }
+      expect(channel.executionOwner()).toEqual(previous)
+      const before = closingFirst ? channel.closeAndConfirm() : undefined
+      socket.emit('data', encodeFrame({ kind: 'session.owner', sessionKey: 'a', previous, owner }))
+      // Replies are ordered after preceding owner frames on this session's queue.
+      await vi.waitFor(() => expect(channel.executionOwner()).toEqual(closingFirst ? undefined : owner))
+      expect(channel.retirementOwner()).toEqual(owner)
+      const proof = before ?? channel.closeAndConfirm()
+      socket.reply('s2', { sessionKey: 'a', result: { exited: true, owner } })
+      await expect(proof).resolves.toEqual({ exited: true, owner })
+      const replacement = link.session('a', { binding })
+      socket.reply('s3', {
+        sessionKey: 'a',
+        result: { sessionKey: 'a', writerRunId: 'replacement', generation: 1, lastSeq: 0 },
+      })
+      await replacement.hello
+      socket.emit(
+        'data',
+        encodeFrame({
+          kind: 'session.owner',
+          sessionKey: 'a',
+          previous,
+          owner: { ...owner, writerRunId: 'stale' },
+        }),
+      )
+      const replacedOwner = { ...owner, writerRunId: 'replacement' }
+      const replacementProof = replacement.closeAndConfirm()
+      socket.reply('s4', { sessionKey: 'a', result: { exited: true, owner: replacedOwner } })
+      await expect(replacementProof).resolves.toEqual({ exited: true, owner: replacedOwner })
+      await expect(channel.closeAndConfirm()).resolves.toEqual({ exited: true, owner })
+    },
+  )
 
   it('prevents a closed session channel from commanding a replacement with the same key', async () => {
     const { link, socket } = setup()

@@ -128,6 +128,7 @@ export type RuntimeTargetPublisherOptions<Resources, Overlay = unknown> = Readon
  * a published tree/generation; RuntimeStateCoordinator performs the one synchronous exchange.
  */
 export class RuntimeTargetPublisher<Resources, Overlay = unknown> {
+  readonly #readScopes = new Map<string, { identity: object; scope: RuntimeSessionScope<Overlay> }>()
   readonly #catalogue: RuntimePluginCatalogue
   readonly #resourceFactory: RuntimeTargetResourceFactory<Resources>
   readonly #load: (source: Readonly<RuntimePluginSnapshot>) => Promise<PackageModule | undefined>
@@ -463,42 +464,108 @@ export class RuntimeTargetPublisher<Resources, Overlay = unknown> {
     build: (current: PublishedRuntimeTarget<Resources>) => Promise<RuntimeSessionScope<Overlay>>,
   ): Promise<RuntimeStateSnapshot<RuntimeTargetPublisherState<Resources, Overlay>>> {
     if (!sessionKey) throw new TypeError('sessionKey is required')
+    const identity = this.#mutation?.retainedReadIdentity()
+    const pinned = this.current().value.current
     const run = () =>
-      this.#states.publish(async (base) => {
-        const current = base.value.current
-        if (!current) throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: no published runtime target')
-        const overlayDesired = sessionOverlayDesired(desired)
-        const scope = await build(current)
-        return stageCandidateRuntime({
-          build(builder) {
-            builder.onAbort('runtime-session-scope', () => scope.close())
-            const sessionScopes = new Map(base.value.sessionScopes)
-            sessionScopes.set(sessionKey, Object.freeze({ ...scope, desired: overlayDesired }))
-            return Object.freeze({ current, sessionScopes })
-          },
-        })
-      })
-    return this.#mutation ? this.#mutation.mutate(() => run()) : run()
+      this.#states.publish(
+        async (base) => {
+          const current = base.value.current
+          if (!current) throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: no published runtime target')
+          if (identity && (current !== pinned || base.value.sessionScopes.has(sessionKey)))
+            throw new Error('E_LANE_BUSY: a pinned execution cannot replace an existing session scope')
+          const overlayDesired = sessionOverlayDesired(desired)
+          const scope = await build(current)
+          return stageCandidateRuntime({
+            build(builder) {
+              builder.onAbort('runtime-session-scope', () => scope.close())
+              const sessionScopes = new Map(base.value.sessionScopes)
+              sessionScopes.set(sessionKey, Object.freeze({ ...scope, desired: overlayDesired }))
+              return Object.freeze({ current, sessionScopes })
+            },
+          })
+        },
+        identity
+          ? {
+              retainedRead: identity,
+              precommit: (next, base) => {
+                if (
+                  next.current !== pinned ||
+                  base.value.current !== pinned ||
+                  base.value.sessionScopes.has(sessionKey) ||
+                  next.sessionScopes.size !== base.value.sessionScopes.size + 1 ||
+                  !next.sessionScopes.has(sessionKey) ||
+                  [...base.value.sessionScopes].some(([key, scope]) => next.sessionScopes.get(key) !== scope)
+                )
+                  throw new Error('E_RUNTIME_STATE_INVARIANT: pinned generation or existing scopes changed')
+              },
+            }
+          : {},
+      )
+    if (identity && this.#mutation) {
+      const published = await run()
+      const scope = published.value.sessionScopes.get(sessionKey)
+      if (!scope) throw new Error('E_RUNTIME_STATE_INVARIANT: appended scope is missing')
+      this.#readScopes.set(sessionKey, { identity, scope })
+      return published
+    }
+    return this.#mutation
+      ? this.#mutation.mutate(() => run(), undefined, !this.current().value.sessionScopes.has(sessionKey))
+      : run()
   }
 
   async closeSessionScope(
     sessionKey: string,
   ): Promise<RuntimeStateSnapshot<RuntimeTargetPublisherState<Resources, Overlay>>> {
+    // A failed open may have no published scope. Cleanup must not wait behind the pin that refused it.
+    if (!this.current().value.sessionScopes.has(sessionKey)) return this.current()
+    const identity = this.#mutation?.retainedReadIdentity()
+    const owned = this.#readScopes.get(sessionKey)
+    const pinned = this.current().value.current
+    if (
+      identity &&
+      (owned?.identity !== identity || this.current().value.sessionScopes.get(sessionKey) !== owned.scope)
+    )
+      throw new Error('E_LANE_BUSY: a pinned execution cannot close an unrelated session scope')
     const run = () =>
-      this.#states.publish((base) => {
-        if (!base.value.sessionScopes.has(sessionKey))
-          return stageCandidateRuntime({ build: () => base.value })
-        const sessionScopes = new Map(base.value.sessionScopes)
-        sessionScopes.delete(sessionKey)
-        return stageCandidateRuntime({
-          build: () =>
-            Object.freeze({
-              ...(base.value.current ? { current: base.value.current } : {}),
-              sessionScopes,
-            }),
-        })
-      })
-    return this.#mutation ? this.#mutation.mutate(() => run()) : run()
+      this.#states.publish(
+        (base) => {
+          if (!base.value.sessionScopes.has(sessionKey))
+            return stageCandidateRuntime({ build: () => base.value })
+          const sessionScopes = new Map(base.value.sessionScopes)
+          sessionScopes.delete(sessionKey)
+          return stageCandidateRuntime({
+            build: () =>
+              Object.freeze({
+                ...(base.value.current ? { current: base.value.current } : {}),
+                sessionScopes,
+              }),
+          })
+        },
+        identity
+          ? {
+              retainedRead: identity,
+              precommit: (next, base) => {
+                if (
+                  base.value.current !== pinned ||
+                  next.current !== pinned ||
+                  base.value.sessionScopes.get(sessionKey) !== owned?.scope ||
+                  next.sessionScopes.has(sessionKey) ||
+                  next.sessionScopes.size !== base.value.sessionScopes.size - 1 ||
+                  [...next.sessionScopes].some(([key, scope]) => base.value.sessionScopes.get(key) !== scope)
+                )
+                  throw new Error('E_RUNTIME_STATE_INVARIANT: pinned generation or unrelated scopes changed')
+              },
+            }
+          : {},
+      )
+    if (identity && this.#mutation) {
+      const published = await run()
+      this.#readScopes.delete(sessionKey)
+      return published
+    }
+    const published = await (this.#mutation ? this.#mutation.mutate(() => run()) : run())
+    this.#readScopes.delete(sessionKey)
+    return published
   }
 
   async close(): Promise<void> {

@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { CoreError } from '@agnes/core'
 
 export type RuntimeReadLease = Readonly<{
   release(): void
+  run<T>(callback: () => T): T
 }>
 
 /** Opaque capability passed to Host-owned callbacks which are allowed to re-enter a mutation. */
@@ -33,6 +35,9 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
  */
 export class RuntimeMutationGate {
   readonly #context = new AsyncLocalStorage<RuntimeMutationTicket>()
+  readonly #readContext = new AsyncLocalStorage<object>()
+  readonly #readTickets = new WeakSet<object>()
+  readonly #readMutationAncestors = new WeakMap<object, object>()
   readonly #tickets = new WeakSet<object>()
   #activeReaders = 0
   #admissionOpen = true
@@ -41,9 +46,30 @@ export class RuntimeMutationGate {
   #drainWaiters: Array<() => void> = []
   #writerTail: Promise<void> = Promise.resolve()
 
+  /** Compound admission must not queue a second reader behind a writer blocked by its first. */
+  tryEnterRead(): RuntimeReadLease | undefined {
+    if (this.#liveMutationContext() || this.#liveReadContext()) return this.#noopLease()
+    return this.#admissionOpen && this.#pendingMutations === 0 ? this.#issueLease() : undefined
+  }
+
+  /** Host-private ancestry for adding/removing scopes without changing the pinned generation. */
+  retainedReadIdentity(): object | undefined {
+    const ticket = this.#readContext.getStore()
+    return ticket && this.#readTickets.has(ticket) ? ticket : undefined
+  }
+
+  withRetainedReadScope<T>(identity: object, callback: () => T): T {
+    if (this.retainedReadIdentity() !== identity)
+      throw new TypeError('runtime read ancestry is no longer live')
+    const ticket = Object.freeze({}) as RuntimeMutationTicket
+    this.#tickets.add(ticket)
+    this.#readMutationAncestors.set(ticket, identity)
+    return this.#context.run(ticket, callback)
+  }
+
   enterRead(signal?: AbortSignal): Promise<RuntimeReadLease> {
     throwIfAborted(signal)
-    if (this.#context.getStore()) return Promise.resolve(this.#noopLease())
+    if (this.#liveMutationContext() || this.#liveReadContext()) return Promise.resolve(this.#noopLease())
     if (this.#admissionOpen && this.#pendingMutations === 0) return Promise.resolve(this.#issueLease())
 
     return new Promise<RuntimeReadLease>((resolve, reject) => {
@@ -86,8 +112,9 @@ export class RuntimeMutationGate {
   mutate<T>(
     callback: (ticket: RuntimeMutationTicket) => T | PromiseLike<T>,
     signal?: AbortSignal,
+    noWait = false,
   ): Promise<T> {
-    const current = this.#context.getStore()
+    const current = this.#liveMutationContext()
     if (current) {
       try {
         throwIfAborted(signal)
@@ -102,6 +129,13 @@ export class RuntimeMutationGate {
       return Promise.reject(error)
     }
 
+    if (noWait && this.#activeReaders > 0)
+      return Promise.reject(
+        new CoreError('E_LANE_BUSY', 'Runtime publication is pinned by admitted work', {
+          reason: 'runtime-publication-pending',
+        }),
+      )
+
     this.#pendingMutations += 1
     this.#admissionOpen = false
     const precedingWriter = this.#writerTail
@@ -114,7 +148,7 @@ export class RuntimeMutationGate {
   }
 
   currentMutationTicket(): RuntimeMutationTicket | undefined {
-    return this.#context.getStore()
+    return this.#liveMutationContext()
   }
 
   withMutationTicket<T>(ticket: RuntimeMutationTicket, callback: () => T | PromiseLike<T>): Promise<T> {
@@ -128,7 +162,18 @@ export class RuntimeMutationGate {
   }
 
   #isTicket(ticket: RuntimeMutationTicket): boolean {
-    return typeof ticket === 'object' && ticket !== null && this.#tickets.has(ticket)
+    const ancestor = this.#readMutationAncestors.get(ticket)
+    return (
+      typeof ticket === 'object' &&
+      ticket !== null &&
+      this.#tickets.has(ticket) &&
+      (!ancestor || this.#readTickets.has(ancestor))
+    )
+  }
+
+  #liveMutationContext(): RuntimeMutationTicket | undefined {
+    const ticket = this.#context.getStore()
+    return ticket && this.#isTicket(ticket) ? ticket : undefined
   }
 
   async #runMutation<T>(
@@ -193,10 +238,17 @@ export class RuntimeMutationGate {
   #issueLease(): RuntimeReadLease {
     this.#activeReaders += 1
     let released = false
+    const ticket = Object.freeze({})
+    this.#readTickets.add(ticket)
     return Object.freeze({
+      run: <T>(callback: () => T): T => {
+        if (released) throw new TypeError('runtime read lease is released')
+        return this.#readContext.run(ticket, callback)
+      },
       release: () => {
         if (released) return
         released = true
+        this.#readTickets.delete(ticket)
         this.#activeReaders -= 1
         if (this.#activeReaders !== 0) return
         const waiters = this.#drainWaiters.splice(0)
@@ -206,7 +258,11 @@ export class RuntimeMutationGate {
   }
 
   #noopLease(): RuntimeReadLease {
-    return Object.freeze({ release: () => undefined })
+    return Object.freeze({ release: () => undefined, run: <T>(callback: () => T): T => callback() })
+  }
+  #liveReadContext(): boolean {
+    const ticket = this.#readContext.getStore()
+    return ticket !== undefined && this.#readTickets.has(ticket)
   }
 
   #whenDrained(): Promise<void> {

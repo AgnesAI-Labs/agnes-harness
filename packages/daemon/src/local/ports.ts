@@ -1,3 +1,4 @@
+import type { RuntimeIdentity } from '@agnes/protocol'
 export type CompactOutcome =
   | { state: 'completed'; endSeq: number }
   | { state: 'failed'; endSeq: number }
@@ -54,6 +55,7 @@ export interface JobsPort {
 }
 
 export type SessionMetaRow = {
+  runtime?: RuntimeIdentity
   sessionId: string
   parent?: string
   createdAt: string

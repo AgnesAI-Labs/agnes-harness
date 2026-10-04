@@ -18,9 +18,14 @@ import {
   type StorageAdapter,
   scanTruncated,
 } from '@agnes/core'
+import type { ComparisonTreeCut } from '@agnes/protocol'
 import { assertSessionTreeTableName } from '../session-tree-schema.js'
 import { sqliteChildControl } from './child-control-sqlite.js'
+import { comparisonAdmissionReader } from './comparison-admission-reader.js'
+import { comparisonTreeSnapshot } from './comparison-tree-snapshot.js'
 import { DDL } from './ddl.js'
+import { type SessionOwnerEvidenceStore, sqliteSessionOwnerEvidence } from './session-owner-evidence.js'
+import { type SessionRetirementStore, sqliteSessionRetirement } from './session-retirement-sqlite.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
 
@@ -66,8 +71,15 @@ export type CrashReclaimStore = {
     now: number,
   ): { opState: { seq: number; data: unknown } | undefined; seq: number } | null
 }
-export interface SqliteStorage extends StorageAdapter, ChildControlStore {
+export interface SqliteStorage
+  extends StorageAdapter,
+    ChildControlStore,
+    SessionRetirementStore,
+    SessionOwnerEvidenceStore {
   readonly file: string
+  /** Private backend classification from durable comparison reservations and actual ancestry. */
+  comparisonSandboxRequired(sessionKey: string): boolean
+  captureComparisonTree(rootSessionKey: string): Promise<ComparisonTreeCut>
   /**
    * A package's own tables, on its own connection. A separate file is not by itself an isolation
    * story: SQL reaching a handle could name a second file with ATTACH and read the ledger or
@@ -246,6 +258,8 @@ export function createSqliteStorage(opts: {
   file: string
   clock?: () => number
   tablesDir?: string
+  /** Override only for deployments whose private comparison index has a different location. */
+  comparisonAdmissionFile?: string
 }): SqliteStorage {
   const db = new DatabaseSync(opts.file)
   try {
@@ -381,6 +395,9 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   // Renew on write: a held lease is extended; a lapsed or missing one is taken back only while no
   // other writer has the row and nothing was written since `claim.expectedLastSeq`.
   function holdLease(key: SessionKey, runId: string, claim: LeaseClaim | undefined): void {
+    const owner = owners.readSessionOwnerEvidence(key)
+    if (owner && (owner.closed || owner.owner.writerRunId !== runId))
+      throw new CoreError('E_WRITER_LEASE', 'Writer acquisition is no longer active')
     const l = q.lease.get(key) as { run_id: string; until: number; ttl_ms: number } | undefined
     if (l?.run_id === runId && l.until >= clock()) {
       if (claim) q.renew.run(clock() + l.ttl_ms, key, runId)
@@ -450,99 +467,141 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     return rows
   }
 
-  const childControl = sqliteChildControl(db, tx, clock)
+  const owners = sqliteSessionOwnerEvidence(db, tx, lastSeq)
+  const readComparisonAdmission = comparisonAdmissionReader(
+    opts.comparisonAdmissionFile ?? join(dirname(opts.file), 'comparisons', 'index.sqlite'),
+  )
+  const retirement = sqliteSessionRetirement(
+    db,
+    tx,
+    lastSeq,
+    scanIntegrityRows,
+    owners.readSessionOwnerEvidence,
+    readComparisonAdmission,
+  )
+  const childControl = sqliteChildControl(db, tx, clock, retirement)
 
   return {
     file: opts.file,
+    readSessionOwnerEvidence: owners.readSessionOwnerEvidence,
+    recordSessionOwnerClosed: owners.recordSessionOwnerClosed,
     ...childControl,
+    captureComparisonTree: async (key) => tx(() => comparisonTreeSnapshot(db, key)),
+    inspectSessionTree: retirement.inspectSessionTree,
+    confirmSealedSessionTreeClosed: retirement.confirmSealedSessionTreeClosed,
+    purgeSealedSessionTree: retirement.purgeSealedSessionTree,
+    checkSealedSessionTreePurge: retirement.checkSealedSessionTreePurge,
+    sealSessionTree: retirement.sealSessionTree,
+    sealIdleSessionTrees: retirement.sealIdleSessionTrees,
+    comparisonSandboxRequired: retirement.comparisonSandboxRequired,
+    assertSessionAdmittedTree: retirement.assertSessionAdmittedTree,
+    assertSessionAdmitted: retirement.assertSessionAdmittedTree,
     async clearWriterLease(key) {
       tx(() => {
         db.prepare('DELETE FROM writer_claims WHERE session_key = ?').run(key)
       })
     },
     async open(key, claim): Promise<OpenResult> {
-      return tx(() => {
-        const l = q.lease.get(key) as { run_id: string; until: number } | undefined
-        if (l && l.run_id !== claim.writerRunId && l.until >= clock())
-          throw new CoreError('E_WRITER_LEASE', 'session held by another writer', { holder: l.run_id })
-        const created =
-          Number(q.insertSession.run(key, null, null, new Date(clock()).toISOString()).changes) === 1
-        q.upsertLease.run(key, claim.writerRunId, clock() + claim.ttlMs, claim.ttlMs)
-        const parent = parentOf(key)
-        return {
-          lastSeq: lastSeq(key),
-          formatVersion: 1,
-          ...(created ? { created: true } : {}),
-          ...(parent ? { parent } : {}),
-        }
-      })
+      db.exec('PRAGMA synchronous=FULL; PRAGMA fullfsync=ON')
+      try {
+        return tx(() => {
+          retirement.assertSessionAdmittedTree(key)
+          const l = q.lease.get(key) as { run_id: string; until: number } | undefined
+          if (l && l.run_id !== claim.writerRunId && l.until >= clock())
+            throw new CoreError('E_WRITER_LEASE', 'session held by another writer', { holder: l.run_id })
+          const created =
+            Number(q.insertSession.run(key, null, null, new Date(clock()).toISOString()).changes) === 1
+          q.upsertLease.run(key, claim.writerRunId, clock() + claim.ttlMs, claim.ttlMs)
+          const parent = parentOf(key)
+          return {
+            lastSeq: lastSeq(key),
+            ownerEpoch: owners.acquired(key, claim.writerRunId),
+            formatVersion: 1,
+            ...(created ? { created: true } : {}),
+            ...(parent ? { parent } : {}),
+          }
+        })
+      } finally {
+        db.exec('PRAGMA synchronous=NORMAL')
+      }
     },
     async commit(key, c: CommitTx) {
       if (c.opState && c.events.length === 0)
         throw new CoreError('E_STORAGE_FAULT', 'an op write needs at least one row in its batch')
-      return tx(() => {
-        holdLease(key, c.expectedWriterRunId, c.claim)
-        if (c.expectedRegisterSeq) {
-          const cur =
-            (
-              q.registerSeq.get(key, c.expectedRegisterSeq.register, keyBytes(c.expectedRegisterSeq.key)) as
-                | { seq: number }
-                | undefined
-            )?.seq ?? null
-          if (cur !== c.expectedRegisterSeq.seq)
-            throw new CoreError('E_CAS', 'register seq mismatch', {
-              register: c.expectedRegisterSeq.register,
-              key: c.expectedRegisterSeq.key,
-              expected: c.expectedRegisterSeq.seq,
-              actual: cur,
-            })
-        }
-        let seq = lastSeq(key)
-        const seqs: number[] = []
-        const expectedSeqs = c.events.map((_, index) => seq + index + 1)
-        if (
-          c.integrity &&
-          (c.integrity.length !== c.events.length ||
-            c.integrity.some((entry, index) => entry.seq !== expectedSeqs[index]))
-        )
-          throw new CoreError('E_STORAGE_FAULT', 'integrity metadata does not match assigned sequences')
-        for (const [index, e] of c.events.entries()) {
-          seq++
-          const integrity = c.integrity?.[index]
-          q.insertEvent.run(
-            key,
-            seq,
-            e.ts,
-            e.id,
-            e.type,
-            keyBytes(e.lane ?? 'main'),
-            e.v ?? 1,
-            JSON.stringify(e.actor),
-            e.origin,
-            e.trust,
-            e.register ?? null,
-            e.ignorable ? 1 : null,
-            e.surfaceOp ? JSON.stringify(e.surfaceOp) : null,
-            e.sourceEventSeqs ? JSON.stringify(e.sourceEventSeqs) : null,
-            JSON.stringify(e.data),
-            integrity?.mode ?? null,
-            integrity?.previousDigest ?? null,
-            integrity?.digest ?? null,
-          )
-          if (e.register) {
-            const rk = registerKey({ ...e, seq })
-            if (isTombstone(e.register, e.data)) q.deleteRegister.run(key, e.register, keyBytes(rk))
-            else q.upsertRegister.run(key, e.register, keyBytes(rk), seq, JSON.stringify(e.data))
+      const durableRuntime = c.events.some(
+        (event) => event.type === 'runtime/record' || event.type === 'runtime/cancel',
+      )
+      if (durableRuntime) db.exec('PRAGMA synchronous = FULL; PRAGMA fullfsync = ON')
+      try {
+        return tx(() => {
+          if (c.events.some((event) => event.type === 'turn/start' || event.type === 'session/start'))
+            retirement.assertSessionAdmittedTree(key)
+          retirement.assertIdleCommit(key, c)
+          holdLease(key, c.expectedWriterRunId, c.claim)
+          if (c.expectedRegisterSeq) {
+            const cur =
+              (
+                q.registerSeq.get(key, c.expectedRegisterSeq.register, keyBytes(c.expectedRegisterSeq.key)) as
+                  | { seq: number }
+                  | undefined
+              )?.seq ?? null
+            if (cur !== c.expectedRegisterSeq.seq)
+              throw new CoreError('E_CAS', 'register seq mismatch', {
+                register: c.expectedRegisterSeq.register,
+                key: c.expectedRegisterSeq.key,
+                expected: c.expectedRegisterSeq.seq,
+                actual: cur,
+              })
           }
-          seqs.push(seq)
-        }
-        if (c.opState) {
-          const lane = keyBytes(c.opState.lane)
-          if (c.opState.data === null) q.deleteRegister.run(key, 'op.state', lane)
-          else q.upsertRegister.run(key, 'op.state', lane, seq, JSON.stringify(c.opState.data))
-        }
-        return { firstSeq: seqs[0] as number, seqs, ...(c.opState ? { opState: { seq } } : {}) }
-      })
+          let seq = lastSeq(key)
+          const seqs: number[] = []
+          const expectedSeqs = c.events.map((_, index) => seq + index + 1)
+          if (
+            c.integrity &&
+            (c.integrity.length !== c.events.length ||
+              c.integrity.some((entry, index) => entry.seq !== expectedSeqs[index]))
+          )
+            throw new CoreError('E_STORAGE_FAULT', 'integrity metadata does not match assigned sequences')
+          for (const [index, e] of c.events.entries()) {
+            seq++
+            const integrity = c.integrity?.[index]
+            q.insertEvent.run(
+              key,
+              seq,
+              e.ts,
+              e.id,
+              e.type,
+              keyBytes(e.lane ?? 'main'),
+              e.v ?? 1,
+              JSON.stringify(e.actor),
+              e.origin,
+              e.trust,
+              e.register ?? null,
+              e.ignorable ? 1 : null,
+              e.surfaceOp ? JSON.stringify(e.surfaceOp) : null,
+              e.sourceEventSeqs ? JSON.stringify(e.sourceEventSeqs) : null,
+              JSON.stringify(e.data),
+              integrity?.mode ?? null,
+              integrity?.previousDigest ?? null,
+              integrity?.digest ?? null,
+            )
+            if (e.register) {
+              const rk = registerKey({ ...e, seq })
+              if (isTombstone(e.register, e.data)) q.deleteRegister.run(key, e.register, keyBytes(rk))
+              else q.upsertRegister.run(key, e.register, keyBytes(rk), seq, JSON.stringify(e.data))
+            }
+            seqs.push(seq)
+          }
+          if (c.opState) {
+            const lane = keyBytes(c.opState.lane)
+            if (c.opState.data === null) q.deleteRegister.run(key, 'op.state', lane)
+            else q.upsertRegister.run(key, 'op.state', lane, seq, JSON.stringify(c.opState.data))
+          }
+          return { firstSeq: seqs[0] as number, seqs, ...(c.opState ? { opState: { seq } } : {}) }
+        })
+      } finally {
+        if (durableRuntime) db.exec('PRAGMA synchronous = NORMAL; PRAGMA fullfsync = OFF')
+      }
     },
     // The old body computed `clock() + Math.max(l.until - clock(), 1)`, which is `l.until` — renew
     // never moved the deadline. The ttl the writer opened with is stored on the claim so a renewal
@@ -596,6 +655,8 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     },
     async createChild(parentKey, boundarySeq, childKey) {
       tx(() => {
+        retirement.assertSessionAdmittedTree(parentKey)
+        retirement.assertSessionAdmittedTree(childKey)
         if (!q.session.get(parentKey) || boundarySeq > lastSeq(parentKey))
           throw new CoreError('E_STORAGE_FAULT', 'boundary beyond parent', { boundarySeq })
         const existing = q.session.get(childKey) as

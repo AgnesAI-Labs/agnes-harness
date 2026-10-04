@@ -63,6 +63,45 @@ describe('generateModule', () => {
     expect(ok).toBe(true)
     expect(Value.Check(mod.EventEnvelope, { seq: 1 })).toBe(false)
   })
+  it('resolves same-name Question aliases to the session definitions instead of self recursion', async () => {
+    const agnes = await import('../gen/ts/agnes-v1.js')
+    const session = await import('../gen/ts/session-v1.js')
+    const answer = { answers: [{ id: 'q', selected: ['继续'], custom: '  原文👩🏽‍💻  ' }] }
+    const interaction = {
+      sessionId: 's',
+      interactionId: 'q1',
+      writerRunId: 'w',
+      generation: 1,
+      toolUseId: 't',
+      turn: 1,
+      callSeq: 2,
+      requestedSeq: 3,
+      policy: { allowSkip: false },
+      request: { questions: [{ id: 'q', question: '继续？', options: [{ label: '继续' }] }] },
+    }
+    const resolution = { sessionId: 's', interactionId: 'q1', status: 'answered', settledSeq: 4 }
+    const cases = [
+      [
+        agnes.QuestionInteraction,
+        session.QuestionInteraction,
+        interaction,
+        { ...interaction, generation: 0 },
+      ],
+      [agnes.QuestionAnswer, session.QuestionAnswer, answer, { answers: [{ id: 'q', selected: '继续' }] }],
+      [
+        agnes.QuestionResolution,
+        session.QuestionResolution,
+        resolution,
+        { ...resolution, status: 'pending' },
+      ],
+    ] as const
+    for (const [alias, original, valid, invalid] of cases) {
+      expect(Value.Check(alias, valid)).toBe(true)
+      expect(Value.Check(original, valid)).toBe(true)
+      expect(Value.Check(alias, invalid)).toBe(false)
+      expect(Value.Check(original, invalid)).toBe(false)
+    }
+  })
   it('checked-in gen/ts/session-v1.ts equals a fresh generation', () => {
     const schema = sessionSchema()
     const fresh = generateModule(schema, 'SessionV1')

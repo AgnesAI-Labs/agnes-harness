@@ -13,6 +13,7 @@ import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
 import { getSlotCardContext, mountSlotCard } from './client-modules/timeline-slot.js'
 import { isConversationNode } from './conversation-visibility.js'
 import { createMarkdownRenderer } from './markdown.js'
+import { createRuntimeNodeCard } from './runtime-node-card.js'
 import { toolIcon } from './tool-icon.js'
 import { createTurnProjector } from './turns.js'
 import { createCostDetails } from './usage.js'
@@ -106,6 +107,8 @@ const sampledPart = (value: string | undefined): string =>
 
 function fingerprint(node: UINode): string {
   switch (node.kind) {
+    case 'runtime':
+      return `runtime:${node.id}:${JSON.stringify(node)}`
     case 'user': {
       const body = textContent(node)
       return `${node.kind}:${node.id}:${sampledPart(body)}`
@@ -131,6 +134,8 @@ function fingerprint(node: UINode): string {
       return `${node.kind}:${node.id}:${JSON.stringify(node)}`
     case 'artifact':
       return `${node.kind}:${node.id}:${node.name}`
+    case 'context':
+      return `${node.kind}:${node.id}:${node.text}:${JSON.stringify(node.messageSource)}`
     case 'slot':
       return `${node.kind}:${node.id}:${node.fill.extId}`
   }
@@ -195,6 +200,44 @@ function compactionSummary(node: Extract<UINode, { kind: 'compaction' }>): strin
 
 function createEntry(node: UINode): Entry {
   const element = article(node)
+
+  if (node.kind === 'runtime') {
+    const card = createRuntimeNodeCard(element, node)
+    return {
+      kind: node.kind,
+      element,
+      fingerprint: fingerprint(node),
+      update(next) {
+        if (next.kind === 'runtime') card.update(next)
+      },
+    }
+  }
+
+  if (node.kind === 'context' && node.messageSource) {
+    const details = document.createElement('details')
+    details.className = 'runtime-process'
+    details.open = node.messageSource.kind === 'agent-message'
+    const summary = document.createElement('summary')
+    details.append(summary)
+    element.append(details)
+    const body = text(details, 'node-body', node.text)
+    const update = (next: UINode) => {
+      if (next.kind !== 'context' || !next.messageSource) return
+      const source = next.messageSource
+      const outcome =
+        source.outcome === 'completed'
+          ? '已完成'
+          : source.outcome === 'failed'
+            ? '失败'
+            : source.outcome === 'cancelled'
+              ? '已取消'
+              : undefined
+      summary.textContent = `${source.kind === 'agent-message' ? 'Agent 报告' : '子任务结束通知'} · ${source.senderSessionId}${outcome ? ` · ${outcome}` : ''}`
+      updateText(body, next.text)
+    }
+    update(node)
+    return { kind: node.kind, element, fingerprint: fingerprint(node), update }
+  }
 
   if (node.kind === 'user') {
     const title = heading(element, 'node-label', '你')

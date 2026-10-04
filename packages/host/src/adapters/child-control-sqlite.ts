@@ -18,13 +18,13 @@ import {
   type TreeUsage,
 } from '@agnes/core'
 
-const CHILD_CONTROL_FORMAT = 4
+const CHILD_CONTROL_FORMAT = 5
 const ACTIVE = new Set(['creating', 'ready', 'running', 'waiting_approval', 'recovery_pending', 'cancelling'])
 type ReservationRecord = {
   permitId: string
   rootTaskId: string
   scopeIds: string[]
-  qMicro: bigint
+  qMicro: bigint | null
   effectId: string
   requestHash: string
   writerGeneration: number
@@ -78,8 +78,9 @@ function addMicro(a: bigint, b: bigint): bigint {
   return sum
 }
 
-function fitsCap(settled: bigint, held: bigint, q: bigint, cap: bigint): boolean {
-  return q >= 0n && settled + held + q <= cap
+function fitsCap(settled: bigint, held: bigint, q: bigint | null, cap: bigint | null): boolean {
+  if ((q !== null && q < 0n) || settled < 0n || held < 0n) return false
+  return cap === null || (cap > 0n && q !== null && settled + held + q <= cap)
 }
 
 import type { DatabaseSync } from 'node:sqlite'
@@ -92,6 +93,8 @@ type WorkspaceRow = {
   isolation: PlannedWorkspace['isolation']
   path: string
   phase: PlannedWorkspace['phase']
+  root?: string | null
+  branch?: string | null
 }
 
 function parseWorkspace(row: WorkspaceRow | undefined): PlannedWorkspace | null {
@@ -102,6 +105,8 @@ function parseWorkspace(row: WorkspaceRow | undefined): PlannedWorkspace | null 
     isolation: row.isolation,
     path: row.path,
     phase: row.phase,
+    ...(row.root ? { root: row.root } : {}),
+    ...(row.branch ? { branch: row.branch } : {}),
   }
 }
 
@@ -128,6 +133,14 @@ function parseTask(row: Record<string, unknown>): ChildTaskRecord {
     rootTaskId: String(row.root_task_id),
     runtimeOwnerSessionKey: String(row.runtime_owner),
     kind: row.kind as ChildTaskRecord['kind'],
+    ...(row.runtime_identity
+      ? { runtime: JSON.parse(String(row.runtime_identity)) as NonNullable<ChildTaskRecord['runtime']> }
+      : {}),
+    ...(row.seed_mode ? { seedMode: row.seed_mode as NonNullable<ChildTaskRecord['seedMode']> } : {}),
+    ...(row.model_target
+      ? { model: JSON.parse(String(row.model_target)) as NonNullable<ChildTaskRecord['model']> }
+      : {}),
+    ...(row.creation_cwd ? { creationCwd: String(row.creation_cwd) } : {}),
     generationDepth: Number(row.generation_depth),
     generationLimit: Number(row.generation_limit),
     boundarySeq: Number(row.boundary_seq ?? 0),
@@ -158,8 +171,13 @@ export function sqliteChildControl(
   db: Db,
   tx: <T>(fn: () => T) => T,
   clock: () => number = Date.now,
+  retirement?: {
+    assertSessionAdmittedTree(sessionKey: string): void
+    assertReservationAdmitted(rootTaskId: string, originSessionKey?: string): void
+    recordReservationOrigin(rootTaskId: string, originSessionKey?: string): void
+  },
 ): ChildControlStore {
-  // Keep the v3 reservation migration while advancing the store to v4 creation attempts. Older
+  // Keep reservation identities while advancing to v5 explicit unlimited/unknown values. Older
   // databases could contain duplicate reservation identities because reserve always allocated.
   // Preserve those rows and their accounting, but quarantine every duplicate after the first; a
   // held duplicate becomes unknown so recovery cannot mistake an orphaned hold for replayable work.
@@ -172,6 +190,30 @@ export function sqliteChildControl(
         'E_FORMAT',
         `child control format ${version.version} is newer than runtime ${CHILD_CONTROL_FORMAT}`,
       )
+    // SQLite cannot remove NOT NULL in place. Rebuild only these two tables, preserving every
+    // finite value and identity. The version stamp and unique index are committed in this transaction.
+    const columns = (table: string) =>
+      db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string; notnull: number }>
+    const childColumns = new Set(columns('child_tasks').map((column) => column.name))
+    for (const name of ['runtime_identity', 'seed_mode', 'model_target', 'creation_cwd'])
+      if (!childColumns.has(name)) db.exec(`ALTER TABLE child_tasks ADD COLUMN ${name} TEXT`)
+    if (columns('budget_scopes').some((column) => column.name === 'cap_micro' && column.notnull)) {
+      db.exec(`CREATE TABLE budget_scopes_v5 (
+        scope_id TEXT PRIMARY KEY, root_task_id TEXT NOT NULL, child_key TEXT, parent_scope_id TEXT,
+        cap_micro TEXT, settled_micro TEXT NOT NULL, held_micro TEXT NOT NULL);
+        INSERT INTO budget_scopes_v5 SELECT * FROM budget_scopes;
+        DROP TABLE budget_scopes;
+        ALTER TABLE budget_scopes_v5 RENAME TO budget_scopes`)
+    }
+    if (columns('budget_reservations').some((column) => column.name === 'q_micro' && column.notnull)) {
+      db.exec(`CREATE TABLE budget_reservations_v5 (
+        permit_id TEXT PRIMARY KEY, root_task_id TEXT NOT NULL, scope_ids TEXT NOT NULL,
+        q_micro TEXT, effect_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+        writer_generation INTEGER NOT NULL, status TEXT NOT NULL);
+        INSERT INTO budget_reservations_v5 SELECT * FROM budget_reservations;
+        DROP TABLE budget_reservations;
+        ALTER TABLE budget_reservations_v5 RENAME TO budget_reservations`)
+    }
     db.exec(`WITH ranked AS (
       SELECT rowid, ROW_NUMBER() OVER (PARTITION BY root_task_id, effect_id ORDER BY rowid) AS ordinal
       FROM budget_reservations
@@ -201,8 +243,8 @@ export function sqliteChildControl(
       `INSERT INTO child_tasks (child_key, creation_id, parent_key, root_task_id, runtime_owner, kind,
         generation_depth, generation_limit, input_hash, input_text, cwd, actor_id, budget_scope_id, ancestor_scope_ids,
         workspace_id, isolation, state, state_revision, control_format, attempt_id, creation_phase,
-        creation_revision, attempt_started_at, deferred_fact, cancelled_fact)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        creation_revision, attempt_started_at, deferred_fact, cancelled_fact, runtime_identity, seed_mode, model_target, creation_cwd)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     beginAttempt: db.prepare(
       `UPDATE child_tasks
@@ -266,7 +308,7 @@ export function sqliteChildControl(
     upsertOrdinal: db.prepare(
       'INSERT INTO child_ordinals (parent_key, effect_id, n) VALUES (?, ?, 1) ON CONFLICT(parent_key, effect_id) DO UPDATE SET n = n + 1',
     ),
-    resByRoot: db.prepare('SELECT status FROM budget_reservations WHERE root_task_id = ?'),
+    resByRoot: db.prepare('SELECT status, q_micro FROM budget_reservations WHERE root_task_id = ?'),
     writerGen: db.prepare('SELECT generation FROM child_writer_gens WHERE root_task_id = ?'),
     bumpWriter: db.prepare(
       `INSERT INTO child_writer_gens (root_task_id, generation) VALUES (?, 2)
@@ -304,7 +346,7 @@ export function sqliteChildControl(
           root_task_id: string
           child_key: string | null
           parent_scope_id: string | null
-          cap_micro: string
+          cap_micro: string | null
           settled_micro: string
           held_micro: string
         }
@@ -315,7 +357,7 @@ export function sqliteChildControl(
       rootTaskId: row.root_task_id,
       childKey: row.child_key,
       parentScopeId: row.parent_scope_id,
-      capMicro: BigInt(row.cap_micro),
+      capMicro: row.cap_micro === null ? null : BigInt(row.cap_micro),
       settledMicro: BigInt(row.settled_micro),
       heldMicro: BigInt(row.held_micro),
     }
@@ -326,7 +368,7 @@ export function sqliteChildControl(
       permitId: String(row.permit_id),
       rootTaskId: String(row.root_task_id),
       scopeIds: JSON.parse(String(row.scope_ids)) as string[],
-      qMicro: BigInt(String(row.q_micro)),
+      qMicro: row.q_micro === null ? null : BigInt(String(row.q_micro)),
       effectId: String(row.effect_id),
       requestHash: String(row.request_hash),
       writerGeneration: Number(row.writer_generation),
@@ -359,6 +401,7 @@ export function sqliteChildControl(
     },
     async beginChildAttempt(input: BeginChildAttemptInput) {
       return tx(() => {
+        retirement?.assertSessionAdmittedTree(input.childKey)
         const prior = q.task.get(input.childKey) as Record<string, unknown> | undefined
         if (!prior || String(prior.creation_id) !== input.creationId) return null
         if (
@@ -411,6 +454,7 @@ export function sqliteChildControl(
     },
     async commitCreatingChild(input: ChildCreationCasInput) {
       return tx(() => {
+        retirement?.assertSessionAdmittedTree(input.childKey)
         const prior = q.task.get(input.childKey) as Record<string, unknown> | undefined
         if (
           prior &&
@@ -458,10 +502,41 @@ export function sqliteChildControl(
     },
     async casState(childKey, expectedRevision, next) {
       return tx(() => {
+        if (['creating', 'ready', 'running', 'waiting_approval', 'recovery_pending'].includes(next))
+          retirement?.assertSessionAdmittedTree(childKey)
         const row = q.task.get(childKey) as Record<string, unknown> | undefined
         if (!row || Number(row.state_revision) !== expectedRevision) return false
         if (!canTransitionChildState(String(row.state) as ChildTaskRecord['state'], next)) return false
         return q.cas.run(next, childKey, expectedRevision).changes === 1
+      })
+    },
+    async beginContinuation({ childKey, expectedRevision }) {
+      return tx(() => {
+        assertWritable()
+        retirement?.assertSessionAdmittedTree(childKey)
+        const row = q.task.get(childKey) as Record<string, unknown> | undefined
+        if (
+          row?.creation_phase !== 'committed' ||
+          Number(row.state_revision) !== expectedRevision ||
+          !['completed', 'failed', 'interrupted'].includes(String(row.state))
+        )
+          return null
+        if (q.cas.run('ready', childKey, expectedRevision).changes !== 1) return null
+        return parseTask(q.task.get(childKey) as Record<string, unknown>)
+      })
+    },
+    async cancelContinuation({ childKey, expectedRevision }) {
+      return tx(() => {
+        assertWritable()
+        // Closing/cancellation remains possible for a sealed subtree; it cannot admit new work.
+        const row = q.task.get(childKey) as Record<string, unknown> | undefined
+        if (
+          row?.creation_phase !== 'committed' ||
+          Number(row.state_revision) !== expectedRevision ||
+          !['completed', 'failed', 'interrupted'].includes(String(row.state))
+        )
+          return false
+        return q.cas.run('cancelled', childKey, expectedRevision).changes === 1
       })
     },
     async nextOrdinal(parentKey, effectId) {
@@ -477,8 +552,22 @@ export function sqliteChildControl(
       return tx(() => {
         assertWritable()
         const existing = scopeOf(`root:${rootTaskId}`)
-        if (existing) return existing
-        q.insertScope.run(`root:${rootTaskId}`, rootTaskId, null, null, capMicro.toString(), '0', '0')
+        if (existing) {
+          if (capMicro !== null && (existing.capMicro === null || capMicro < existing.capMicro))
+            throw new CoreError('E_BUDGET', 'existing root budget cannot satisfy a tighter requested cap')
+          return existing
+        }
+        if (capMicro !== null && capMicro <= 0n)
+          throw new CoreError('E_BUDGET', 'root tree budget cap must be positive')
+        q.insertScope.run(
+          `root:${rootTaskId}`,
+          rootTaskId,
+          null,
+          null,
+          capMicro?.toString() ?? null,
+          '0',
+          '0',
+        )
         mark()
         const created = scopeOf(`root:${rootTaskId}`)
         if (!created) throw new CoreError('E_STORAGE_FAULT', 'failed to persist root budget scope')
@@ -492,10 +581,23 @@ export function sqliteChildControl(
     async createDelegatedChild(input: CreateDelegatedChildInput): Promise<CreateDelegatedChildResult> {
       return tx(() => {
         assertWritable()
+        retirement?.assertSessionAdmittedTree(input.parentKey)
+        retirement?.assertSessionAdmittedTree(input.childKey)
         const existingRow = q.byCreation.get(input.creationId) as Record<string, unknown> | undefined
         if (existingRow) {
           const record = parseTask(existingRow)
-          return { status: record.inputHash === input.inputHash ? 'existing' : 'conflict', record }
+          const same =
+            record.inputHash === input.inputHash &&
+            record.kind === input.kind &&
+            record.boundarySeq === input.boundarySeq &&
+            record.isolation === input.isolation &&
+            (record.creationCwd ?? record.cwd) === (input.creationCwd ?? input.cwd) &&
+            record.runtime?.id === input.runtime?.id &&
+            record.runtime?.version === input.runtime?.version &&
+            record.seedMode === input.seedMode &&
+            record.model?.route === input.model?.route &&
+            record.model?.model === input.model?.model
+          return { status: same ? 'existing' : 'conflict', record }
         }
         const parentActive = (q.byParent.all(input.parentKey) as Array<Record<string, unknown>>)
           .map(parseTask)
@@ -522,6 +624,7 @@ export function sqliteChildControl(
           if (!scope) return { status: 'refused', reason: 'budget', message: `unknown ancestor scope ${id}` }
           if (
             input.childCapMicro !== null &&
+            scope.capMicro !== null &&
             input.childCapMicro > scope.capMicro - scope.settledMicro - scope.heldMicro
           )
             return {
@@ -534,7 +637,12 @@ export function sqliteChildControl(
           throw new CoreError('E_STORAGE_FAULT', 'parent session missing', { parent: input.parentKey })
         if (q.session.get(input.childKey))
           throw new CoreError('E_STORAGE_FAULT', 'child key exists', { childKey: input.childKey })
-        q.insertChildSession.run(input.childKey, input.parentKey, input.boundarySeq, new Date().toISOString())
+        q.insertChildSession.run(
+          input.childKey,
+          input.seedMode === 'fresh' ? null : input.parentKey,
+          input.seedMode === 'fresh' ? 0 : input.boundarySeq,
+          new Date().toISOString(),
+        )
         let budgetScopeId = parentTask?.budgetScopeId ?? root.scopeId
         if (input.childCapMicro !== null) {
           budgetScopeId = `child:${input.childKey}`
@@ -575,6 +683,10 @@ export function sqliteChildControl(
           input.attemptStartedAt ?? clock(),
           null,
           null,
+          input.runtime ? JSON.stringify(input.runtime) : null,
+          input.seedMode ?? null,
+          input.model ? JSON.stringify(input.model) : null,
+          input.creationCwd ?? input.cwd,
         )
         q.insertWs.run(input.workspaceId, input.childKey, input.isolation, input.cwd, 'planned')
         mark()
@@ -583,6 +695,7 @@ export function sqliteChildControl(
     },
     async bumpWriterGeneration(key) {
       return tx(() => {
+        assertWritable()
         q.bumpWriter.run(key)
         return (q.writerGen.get(key) as { generation: number }).generation
       })
@@ -621,7 +734,9 @@ export function sqliteChildControl(
     async reserve(req: ReserveRequest): Promise<ReserveResult> {
       return tx(() => {
         assertWritable()
-        if (req.qMicro < 0n) return { ok: false, reason: 'invalid', message: 'reservation is negative' }
+        retirement?.assertReservationAdmitted(req.rootTaskId, req.originSessionKey)
+        if (req.qMicro !== null && req.qMicro < 0n)
+          return { ok: false, reason: 'invalid', message: 'reservation is negative' }
         const currentGen =
           (q.writerGen.get(req.rootTaskId) as { generation: number } | undefined)?.generation ?? 1
         if (req.writerGeneration !== currentGen)
@@ -644,33 +759,49 @@ export function sqliteChildControl(
               reason: 'invalid',
               message: 'reservation effect identity conflicts with its durable binding',
             }
+          retirement?.recordReservationOrigin(req.rootTaskId, req.originSessionKey)
           return { ok: true, permitId: prior.permitId, status: prior.status, existing: true }
         }
+        if (
+          !req.scopeIds.includes(`root:${req.rootTaskId}`) ||
+          new Set(req.scopeIds).size !== req.scopeIds.length
+        )
+          return {
+            ok: false,
+            reason: 'invalid',
+            message: 'reservation must include its root scope exactly once',
+          }
         const scopes: Array<NonNullable<ReturnType<typeof scopeOf>>> = []
         for (const id of req.scopeIds) {
           const scope = scopeOf(id)
           if (!scope) return { ok: false, reason: 'invalid', message: 'unknown budget scope' }
+          if (scope.rootTaskId !== req.rootTaskId)
+            return { ok: false, reason: 'invalid', message: 'budget scope belongs to another tree' }
           scopes.push(scope)
         }
         for (const scope of scopes) {
+          if (req.qMicro === null && scope.capMicro !== null)
+            return { ok: false, reason: 'unknown_bound', message: 'finite scope requires a known quotation' }
           if (!fitsCap(scope.settledMicro, scope.heldMicro, req.qMicro, scope.capMicro))
             return { ok: false, reason: 'cap', message: `reservation exceeds cap on ${scope.scopeId}` }
         }
-        for (const scope of scopes) {
-          q.updateScope.run(
-            scope.settledMicro.toString(),
-            addMicro(scope.heldMicro, req.qMicro).toString(),
-            scope.scopeId,
-          )
-        }
+        if (req.qMicro !== null)
+          for (const scope of scopes) {
+            q.updateScope.run(
+              scope.settledMicro.toString(),
+              addMicro(scope.heldMicro, req.qMicro).toString(),
+              scope.scopeId,
+            )
+          }
         const last = q.maxPermit.get() as { permit_id: string } | undefined
         const n = last?.permit_id ? Number(last.permit_id.slice(1)) : 0
         const permitId = `p${Number.isFinite(n) ? n + 1 : Date.now()}`
+        retirement?.recordReservationOrigin(req.rootTaskId, req.originSessionKey)
         q.insertRes.run(
           permitId,
           req.rootTaskId,
           JSON.stringify(req.scopeIds),
-          req.qMicro.toString(),
+          req.qMicro?.toString() ?? null,
           req.effectId,
           req.requestHash,
           req.writerGeneration,
@@ -681,6 +812,7 @@ export function sqliteChildControl(
     },
     async takeoverReservation(permitId, expectedWriterGeneration) {
       return tx(() => {
+        assertWritable()
         const reservation = reservationOf(q.res.get(permitId) as Record<string, unknown> | undefined)
         if (reservation?.status !== 'held')
           throw new CoreError('E_BUDGET', 'only a held reservation can be taken over', { permitId })
@@ -703,8 +835,11 @@ export function sqliteChildControl(
       })
     },
     async settleOrigin(req: SettleRequest): Promise<void> {
+      if (req.actualMicro !== null && req.actualMicro < 0n)
+        throw new CoreError('E_BUDGET', 'negative actual cost')
       let overrun = false
       tx(() => {
+        assertWritable()
         const reservation = reservationOf(q.res.get(req.permitId) as Record<string, unknown> | undefined)
         if (!reservation) throw new CoreError('E_BUDGET', 'unknown reservation', { permitId: req.permitId })
         const currentGen =
@@ -744,7 +879,8 @@ export function sqliteChildControl(
           return
         }
         const qMicro = reservation.qMicro
-        if (req.actualMicro > qMicro) {
+        const finiteScope = reservation.scopeIds.some((id) => scopeOf(id)?.capMicro !== null)
+        if (finiteScope && qMicro !== null && req.actualMicro > qMicro) {
           for (const id of reservation.scopeIds) {
             const scope = scopeOf(id)
             if (!scope) continue
@@ -759,11 +895,11 @@ export function sqliteChildControl(
         for (const id of reservation.scopeIds) {
           const scope = scopeOf(id)
           if (!scope) continue
-          if (scope.heldMicro < qMicro)
+          if (qMicro !== null && scope.heldMicro < qMicro)
             throw new CoreError('E_BUDGET', 'held balance would go negative', { scopeId: id })
           q.updateScope.run(
             addMicro(scope.settledMicro, req.actualMicro).toString(),
-            (scope.heldMicro - qMicro).toString(),
+            (qMicro === null ? scope.heldMicro : scope.heldMicro - qMicro).toString(),
             id,
           )
         }
@@ -775,6 +911,7 @@ export function sqliteChildControl(
     },
     async releaseReservation(request) {
       tx(() => {
+        assertWritable()
         const permitId = typeof request === 'string' ? request : request.permitId
         const reservation = reservationOf(q.res.get(permitId) as Record<string, unknown> | undefined)
         if (typeof request !== 'string' && reservation) {
@@ -791,7 +928,11 @@ export function sqliteChildControl(
         for (const id of reservation.scopeIds) {
           const scope = scopeOf(id)
           if (scope)
-            q.updateScope.run(scope.settledMicro.toString(), (scope.heldMicro - qMicro).toString(), id)
+            q.updateScope.run(
+              scope.settledMicro.toString(),
+              (qMicro === null ? scope.heldMicro : scope.heldMicro - qMicro).toString(),
+              id,
+            )
         }
         q.updateRes.run('released', permitId)
       })
@@ -799,9 +940,9 @@ export function sqliteChildControl(
     async projectTree(rootTaskId): Promise<TreeUsage | null> {
       const root = scopeOf(`root:${rootTaskId}`)
       if (!root) return null
-      const unknownHeld = (q.resByRoot.all(rootTaskId) as Array<{ status: string }>).some(
-        (r) => r.status === 'unknown',
-      )
+      const unknownHeld = (
+        q.resByRoot.all(rootTaskId) as Array<{ status: string; q_micro: string | null }>
+      ).some((r) => r.status === 'unknown' || (r.status === 'held' && r.q_micro === null))
       return {
         settledMicro: root.settledMicro,
         heldMicro: root.heldMicro,

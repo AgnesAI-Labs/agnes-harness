@@ -53,6 +53,19 @@ const nodes = [
     sections: [{ id: 'core:untrusted-envelope', order: 0, source: 'core', tokens: 378 }],
   },
   { kind: 'contribute-conflict', id: 'y', seq: 9, key: 'tools:sdk', ops: ['code-mode', 'skills'] },
+  {
+    kind: 'runtime',
+    id: 'runtime:10',
+    seq: 10,
+    lastSeq: 12,
+    runtime: { id: 'jevloop', version: '1' },
+    category: 'action',
+    status: 'unknown',
+    title: '动作核验',
+    summary: 'effect: unknown',
+    intentId: 'intent',
+    detail: '执行证据',
+  },
 ]
 
 describe('UI projection leaf contract', () => {
@@ -84,6 +97,9 @@ describe('UI projection leaf contract', () => {
     expect(Value.Check(UINode, { ...nodes[2], argsPreview: 'x'.repeat(2049) })).toBe(false)
     expect(Value.Check(UINode, { ...nodes[2], resultPreview: 'x'.repeat(4097) })).toBe(false)
     expect(Value.Check(UINode, { ...nodes[3], risk: 'safe' })).toBe(false)
+    expect(Value.Check(UINode, { ...nodes[10], detail: 'x'.repeat(8193) })).toBe(false)
+    expect(Value.Check(UINode, { ...nodes[10], runtime: { id: 'jevloop' } })).toBe(false)
+    expect(Value.Check(UINode, { ...nodes[10], status: 'silently-retried' })).toBe(false)
     expect(Value.Check(UITimeline, { sessionId: 's', upto: 0, opState: null, nodes: [] })).toBe(false)
   })
   it('accepts the default request and validates budget plus parked status', () => {

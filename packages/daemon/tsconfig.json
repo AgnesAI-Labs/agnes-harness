@@ -7,7 +7,12 @@
   "include": ["**/*.ts"],
   "exclude": ["dist", "node_modules"],
   "references": [
-    { "path": "../system-node" },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../system-node"
+    },
     {
       "path": "../../tsconfig.config.json"
     },
@@ -20,12 +25,29 @@
     {
       "path": "../sdk"
     },
-    { "path": "../resource-control-store" },
-    { "path": "../resource-control-daemon" },
-    { "path": "../resource-control-runtime" },
-    { "path": "../resource-control-worker" },
-    { "path": "../worker-runtime" },
-    { "path": "../base" },
-    { "path": "../code" }
+    {
+      "path": "../resource-control-store"
+    },
+    {
+      "path": "../resource-control-daemon"
+    },
+    {
+      "path": "../resource-control-runtime"
+    },
+    {
+      "path": "../resource-control-worker"
+    },
+    {
+      "path": "../worker-runtime"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../code"
+    },
+    {
+      "path": "../runtime-comparison"
+    }
   ]
 }

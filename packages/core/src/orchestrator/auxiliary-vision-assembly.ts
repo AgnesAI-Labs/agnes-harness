@@ -14,6 +14,7 @@ import {
 } from '@agnes/protocol/gen/model'
 import { withTimeout } from '../effects/wrap.js'
 import { canonicalJson, sha256Hex } from '../request/hash.js'
+import { beginModelCall } from '../request/model-call.js'
 import type { SessionImpl } from '../step/session.js'
 import {
   type AuxiliaryVisionImageLimits,
@@ -332,98 +333,121 @@ function failure(
 }
 
 /** Strict adapter for Core's fitted Provider. It never retries and never returns provider error text. */
-function providerDriver(provider: Provider, parserVersion: string): AuxiliaryVisionDriver {
+function providerDriver(
+  session: SessionImpl,
+  parentEffectId: string,
+  parserVersion: string,
+): AuxiliaryVisionDriver {
   return Object.freeze({
     async dispatch(input) {
       const startedAt = performance.now()
-      const stream = provider.infer(input.request, {
-        signal: input.signal,
-        toolNames: [],
-        retry: false,
+      const op = session.op()
+      const sourceTurn = op?.meta.turn ?? session.state.openTurn.get(session.lane)?.turn
+      if (sourceTurn === undefined) throw new TypeError('auxiliary provider has no source turn')
+      const modelCall = await beginModelCall(session, {
+        purpose: 'media',
+        parentEffectId,
+        route: input.request.route,
+        model: input.request.model,
+        sourceTurn,
+        sourceStep: op?.step ?? 0,
       })
-      if (!stream || typeof stream[Symbol.asyncIterator] !== 'function')
-        throw new TypeError('auxiliary provider returned no stream')
-      const iterator = stream[Symbol.asyncIterator]()
-      let sent = false
-      let done = false
-      let streamEnded = false
-      let firstOutput = false
-      let usage: Extract<InferenceEvent, { type: 'usage' }> | undefined
-      let text = ''
+      let outcome: 'completed' | 'failed' | 'cancelled' | 'unknown' = 'unknown'
       try {
-        for (;;) {
-          const elapsed = performance.now() - startedAt
-          if (elapsed >= input.timeoutMs.total || (!firstOutput && elapsed >= input.timeoutMs.firstToken))
-            throw new Error('auxiliary provider deadline exceeded')
-          const waitingForFirst = !firstOutput
-          const totalRemaining = input.timeoutMs.total - elapsed
-          const firstRemaining = input.timeoutMs.firstToken - elapsed
-          const next = await withTimeout(
-            Promise.resolve(iterator.next()),
-            Math.min(totalRemaining, firstOutput ? totalRemaining : firstRemaining),
-            'auxiliary provider stream',
-            input.signal,
-          )
-          const completedElapsed = performance.now() - startedAt
-          if (
-            completedElapsed >= input.timeoutMs.total ||
-            (waitingForFirst && completedElapsed >= input.timeoutMs.firstToken)
-          )
-            throw new Error('auxiliary provider deadline exceeded')
-          if (next.done) {
-            streamEnded = true
-            break
+        const stream = session.d.provider.infer(input.request, {
+          signal: input.signal,
+          toolNames: [],
+          retry: false,
+        })
+        if (!stream || typeof stream[Symbol.asyncIterator] !== 'function')
+          throw new TypeError('auxiliary provider returned no stream')
+        const iterator = stream[Symbol.asyncIterator]()
+        let sent = false
+        let done = false
+        let streamEnded = false
+        let firstOutput = false
+        let usage: Extract<InferenceEvent, { type: 'usage' }> | undefined
+        let text = ''
+        try {
+          for (;;) {
+            const elapsed = performance.now() - startedAt
+            if (elapsed >= input.timeoutMs.total || (!firstOutput && elapsed >= input.timeoutMs.firstToken))
+              throw new Error('auxiliary provider deadline exceeded')
+            const waitingForFirst = !firstOutput
+            const totalRemaining = input.timeoutMs.total - elapsed
+            const firstRemaining = input.timeoutMs.firstToken - elapsed
+            const next = await withTimeout(
+              Promise.resolve(iterator.next()),
+              Math.min(totalRemaining, firstOutput ? totalRemaining : firstRemaining),
+              'auxiliary provider stream',
+              input.signal,
+            )
+            const completedElapsed = performance.now() - startedAt
+            if (
+              completedElapsed >= input.timeoutMs.total ||
+              (waitingForFirst && completedElapsed >= input.timeoutMs.firstToken)
+            )
+              throw new Error('auxiliary provider deadline exceeded')
+            if (next.done) {
+              streamEnded = true
+              break
+            }
+            const checked = validateAgainst<InferenceEvent>(InferenceEventSchema, next.value)
+            if (!checked.ok) throw new TypeError('auxiliary provider event is invalid')
+            const event = checked.value
+            modelCall.observe(event)
+            if (done) throw new TypeError('auxiliary provider output followed done')
+            if (event.type === 'sent') {
+              if (sent || !stampMatches(event, input.request, parserVersion))
+                throw new TypeError('auxiliary provider stamp is invalid')
+              sent = true
+            } else if (event.type === 'error') {
+              outcome = event.reason === 'aborted' ? 'cancelled' : 'failed'
+              return failure(event.reason === 'aborted' ? 'aborted' : 'failed', sent, usage)
+            } else if (!sent) {
+              throw new TypeError('auxiliary provider emitted output before sent')
+            } else if (event.type === 'text_delta') {
+              if (text.length + event.delta.length > MAX_VISION_TEXT)
+                throw new TypeError('auxiliary provider text is invalid')
+              text += event.delta
+              if (event.delta) firstOutput = true
+            } else if (event.type === 'thinking_delta') {
+              if (event.delta) firstOutput = true
+            } else if (event.type === 'usage') {
+              if (usage) throw new TypeError('auxiliary provider usage is ambiguous')
+              usage = event
+            } else if (event.type === 'done') {
+              if (event.reason === 'toolUse') throw new TypeError('auxiliary provider terminal is invalid')
+              done = true
+              break
+            } else {
+              throw new TypeError('auxiliary provider emitted a forbidden event')
+            }
           }
-          const checked = validateAgainst<InferenceEvent>(InferenceEventSchema, next.value)
-          if (!checked.ok) throw new TypeError('auxiliary provider event is invalid')
-          const event = checked.value
-          if (done) throw new TypeError('auxiliary provider output followed done')
-          if (event.type === 'sent') {
-            if (sent || !stampMatches(event, input.request, parserVersion))
-              throw new TypeError('auxiliary provider stamp is invalid')
-            sent = true
-          } else if (event.type === 'error') {
-            return failure(event.reason === 'aborted' ? 'aborted' : 'failed', sent, usage)
-          } else if (!sent) {
-            throw new TypeError('auxiliary provider emitted output before sent')
-          } else if (event.type === 'text_delta') {
-            if (text.length + event.delta.length > MAX_VISION_TEXT)
-              throw new TypeError('auxiliary provider text is invalid')
-            text += event.delta
-            if (event.delta) firstOutput = true
-          } else if (event.type === 'thinking_delta') {
-            if (event.delta) firstOutput = true
-          } else if (event.type === 'usage') {
-            if (usage) throw new TypeError('auxiliary provider usage is ambiguous')
-            usage = event
-          } else if (event.type === 'done') {
-            if (event.reason === 'toolUse') throw new TypeError('auxiliary provider terminal is invalid')
-            done = true
-            break
-          } else {
-            throw new TypeError('auxiliary provider emitted a forbidden event')
+        } finally {
+          if (!streamEnded) {
+            try {
+              void Promise.resolve(iterator.return?.(undefined)).catch(() => undefined)
+            } catch {
+              // Cleanup failure cannot replace the unknown provider outcome being durably settled.
+            }
           }
         }
+        if (!sent || !done || !text || !usage || usage.credits === undefined)
+          throw new TypeError('auxiliary provider stream is incomplete')
+        outcome = 'completed'
+        return Object.freeze({
+          status: 'completed' as const,
+          text,
+          usage: Object.freeze({
+            tokens: Object.freeze({ ...usage.tokens }),
+            credits: usage.credits,
+            creditSource: usage.creditSource,
+          }),
+        })
       } finally {
-        if (!streamEnded) {
-          try {
-            void Promise.resolve(iterator.return?.(undefined)).catch(() => undefined)
-          } catch {
-            // Cleanup failure cannot replace the unknown provider outcome being durably settled.
-          }
-        }
+        await modelCall.settle(input.signal.aborted ? 'cancelled' : outcome)
       }
-      if (!sent || !done || !text || !usage || usage.credits === undefined)
-        throw new TypeError('auxiliary provider stream is incomplete')
-      return Object.freeze({
-        status: 'completed' as const,
-        text,
-        usage: Object.freeze({
-          tokens: Object.freeze({ ...usage.tokens }),
-          credits: usage.credits,
-          creditSource: usage.creditSource,
-        }),
-      })
     },
   })
 }
@@ -477,6 +501,6 @@ export async function runAuxiliaryVisionAssembly(
     authority,
     signal: input.signal,
     effects: createAuxiliaryVisionEffectPort(input.session),
-    driver: providerDriver(input.session.d.provider, resolved.parserVersion),
+    driver: providerDriver(input.session, input.effectId, resolved.parserVersion),
   })
 }

@@ -1,4 +1,4 @@
-import type { InferenceEvent, Provider } from '@agnes/protocol'
+import { type InferenceEvent, MODEL_CALL_EVENT, type Provider, readModelCall } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { presetDefaults } from '../src/step/preset.js'
@@ -263,6 +263,9 @@ describe('the ledger keeps counts, not streamed text', () => {
     }>
     expect(started?.data.state).toBe('started')
     await second.session.resume()
+    const modelCalls = (await second.log.scan({ type: MODEL_CALL_EVENT, limit: 10 })).map(readModelCall)
+    // A killed process supplied no receipt. Its admitted call remains unknown, never zeroed.
+    expect(modelCalls).toMatchObject([{ stage: 'started', purpose: 'inference' }])
     const [cost] = await second.log.scan({ type: 'cost/ledger', limit: 5 })
     expect(cost?.data).toMatchObject({ interrupted: true, tokens: { output: started?.data.estimatedTokens } })
     const node = (await second.session.projectUI()).nodes.find((n) => n.kind === 'assistant')
@@ -281,6 +284,10 @@ describe('the ledger keeps counts, not streamed text', () => {
     await inference
     const second = await openSession({ provider: fakeProvider([textTurn('ok')]), storage, key: 'k' })
     await second.session.resume()
+    expect((await second.log.scan({ type: MODEL_CALL_EVENT, limit: 10 })).map(readModelCall)).toMatchObject([
+      { stage: 'started', purpose: 'inference' },
+      { stage: 'settled', outcome: 'cancelled', usage: null },
+    ])
     const [cost] = await second.log.scan({ type: 'cost/ledger', limit: 5 })
     expect(cost?.data).toMatchObject({ interrupted: true, tokens: { output: 4 } })
     const node = (await second.session.projectUI()).nodes.find((n) => n.kind === 'assistant')
@@ -304,9 +311,9 @@ describe('the ledger keeps counts, not streamed text', () => {
       timers: immediateTimers,
     })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-      'completed',
-    )
+    const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(outcome.error).toBeUndefined()
+    expect(outcome.reason).toBe('completed')
     const rows = await outputRows(log as never)
     expect(rows.filter((r) => r.data.state === 'interrupted')).toHaveLength(1)
     expect(interruptedText(rows)).toBe('first try')

@@ -44,6 +44,8 @@ function nodeText(node: UINode): string {
         : node.text
     case 'tool':
       return `${node.name}: ${node.status}\n${node.summary}`
+    case 'runtime':
+      return `${node.title}: ${node.status}\n${node.summary}`
     case 'approval':
       return `approval ${node.state}: ${node.summary}`
     case 'cost':

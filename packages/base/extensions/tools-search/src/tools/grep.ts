@@ -1,5 +1,6 @@
 import { defineTool, type ToolResult } from '@agnes/extension-api'
-import { guardedResult } from '../../../tools-core/src/guards/output.js'
+import { guardOutput, refBlock } from '../../../tools-core/src/guards/output.js'
+import { HOST_TOOL_FACT_CODEC, hostPathFact } from '../../../tools-core/src/tools/facts.js'
 import { isBinary, loadSpilledLines, MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { GrepParams } from '../../../tools-core/src/tools/schemas.js'
 import {
@@ -45,12 +46,19 @@ export const grepTool = defineTool({
     const glob = args.glob ? globToRegExp(args.glob) : undefined
     const report = newWalkReport()
     const out: string[] = []
+    const matchFacts: { path: string; lineNumber: number }[] = []
     let matches = 0
     let atLimit = false
+    let binaryFiles = 0
     const context = args.context ?? 0
     // Matches one file's lines, as `label` and a 1-based line number. Shared by a file in the tree
     // and a stored output, so both are reported the same way and stop at the same limit.
-    const searchLines = (label: string, lines: string[], numberOf = (i: number): number => i + 1): void => {
+    const searchLines = (
+      label: string,
+      factPath: string,
+      lines: string[],
+      numberOf = (i: number): number => i + 1,
+    ): void => {
       for (let i = 0; i < lines.length; i++) {
         if (!re.test(lines[i] as string)) continue
         if (matches >= limit) {
@@ -58,9 +66,11 @@ export const grepTool = defineTool({
           return
         }
         matches++
+        const lineNumber = numberOf(i)
+        matchFacts.push({ path: factPath, lineNumber })
         for (let j = Math.max(0, i - context); j < i; j++)
           out.push(`${label}-${numberOf(j)}-${clip(lines[j] as string)}`)
-        out.push(`${label}:${numberOf(i)}:${clip(lines[i] as string)}`)
+        out.push(`${label}:${lineNumber}:${clip(lines[i] as string)}`)
         for (let j = i + 1; j <= Math.min(lines.length - 1, i + context); j++)
           out.push(`${label}-${numberOf(j)}-${clip(lines[j] as string)}`)
       }
@@ -72,13 +82,42 @@ export const grepTool = defineTool({
       if (!spilled.ok) return toolError(spilled.message)
       searchLines(
         `artifact://${args.path.slice('artifact://'.length, 'artifact://'.length + 12)}`,
+        args.path,
         spilled.logical,
         (i) => (spilled.starts[i] as number) + 1,
       )
       // Past the byte ceiling only the start was searched, which "no matches" must not hide.
-      const notes = [...(spilled.notes ? [spilled.notes.trimEnd()] : [])]
+      const sourceTruncated = spilled.notes !== ''
+      const notes = [...(sourceTruncated ? [spilled.notes.trimEnd()] : [])]
       if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
-      return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
+      const guarded = await guardOutput(
+        ctx,
+        [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'),
+      )
+      const block = { type: 'text' as const, text: guarded.text }
+      return {
+        content: guarded.ref ? [block, refBlock(guarded.ref)] : [block],
+        structured: {
+          codec: HOST_TOOL_FACT_CODEC,
+          tool: 'grep',
+          root: { kind: 'artifact', path: args.path },
+          query: {
+            pattern: args.pattern,
+            limit,
+            context,
+            ...(args.glob === undefined ? {} : { glob: args.glob }),
+            ...(args.ignoreCase === undefined ? {} : { ignoreCase: args.ignoreCase }),
+            ...(args.literal === undefined ? {} : { literal: args.literal }),
+          },
+          matches: matchFacts,
+          coverage: {
+            complete: !sourceTruncated && !atLimit && !guarded.truncated,
+            matchLimitReached: atLimit,
+            sourceTruncated,
+            outputTruncated: guarded.truncated,
+          },
+        },
+      }
     }
     const denied = searchPathError(ctx, 'grep', root)
     if (denied) return denied
@@ -102,11 +141,56 @@ export const grepTool = defineTool({
         report.unreadable++
         continue
       }
-      if (isBinary(bytes)) continue
-      searchLines(f.rel, dec.decode(bytes).split('\n'))
+      if (isBinary(bytes)) {
+        binaryFiles++
+        continue
+      }
+      searchLines(f.rel, hostPathFact(f.abs, ctx.cwd).path, dec.decode(bytes).split('\n'))
     }
     const notes = walkNotes(report, MAX_ENTRIES)
     if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
-    return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
+    const guarded = await guardOutput(
+      ctx,
+      [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'),
+    )
+    const skippedDirectories = [...report.skipped].sort()
+    const complete =
+      !atLimit &&
+      !report.truncated &&
+      !guarded.truncated &&
+      skippedDirectories.length === 0 &&
+      report.denied === 0 &&
+      report.unreadable === 0 &&
+      report.oversize === 0 &&
+      binaryFiles === 0
+    const block = { type: 'text' as const, text: guarded.text }
+    return {
+      content: guarded.ref ? [block, refBlock(guarded.ref)] : [block],
+      structured: {
+        codec: HOST_TOOL_FACT_CODEC,
+        tool: 'grep',
+        root: { kind: 'directory', ...hostPathFact(root, ctx.cwd) },
+        query: {
+          pattern: args.pattern,
+          limit,
+          context,
+          ...(args.glob === undefined ? {} : { glob: args.glob }),
+          ...(args.ignoreCase === undefined ? {} : { ignoreCase: args.ignoreCase }),
+          ...(args.literal === undefined ? {} : { literal: args.literal }),
+        },
+        matches: matchFacts,
+        coverage: {
+          complete,
+          matchLimitReached: atLimit,
+          walkLimitReached: report.truncated,
+          outputTruncated: guarded.truncated,
+          skippedDirectories,
+          deniedPaths: report.denied,
+          unreadablePaths: report.unreadable,
+          oversizeFiles: report.oversize,
+          binaryFiles,
+        },
+      },
+    }
   },
 })

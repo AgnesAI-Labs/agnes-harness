@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createProvider, type WireEvent } from '@agnes/ai'
 import { FakeAdapter, ScriptedProvider } from '@agnes/ai/testkit'
+import { canonicalJson, reserveSessionConfiguration, sha256Hex } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryPackageLoader, type PackageModule } from '../src/assemble/packages.js'
 import type { ProviderBuildOptions } from '../src/assemble/provider.js'
 import type { AssembleDeps, Assembled } from '../src/assemble.js'
@@ -14,6 +15,9 @@ import { createMemoryAudit } from '../src/audit.js'
 import type { PresetDoc } from '../src/presets/types.js'
 import { resolveProfile } from '../src/profile/resolve.js'
 import type { ResolvedProfile } from '../src/profile/types.js'
+import { comparisonPayloadDigest } from '../src/runtime/comparison-config-admission.js'
+import { verifyPreparedReceipt } from '../src/runtime/comparison-prepared.js'
+import { createComparisonStore } from '../src/runtime/comparison-store.js'
 import { validateModelSwitch, validatePresetSwitch } from '../src/session-switch.js'
 import { attachTestSeamPlugins } from '../testkit/cordis-seams.js'
 import { createTestHost, type TestHost, type TestHostOptions } from '../testkit/index.js'
@@ -297,6 +301,549 @@ function twoRouteHostOptions(
     provider,
   }
 }
+
+describe('prepared configuration source receipt', () => {
+  it('does not inherit a parent admission through immutable fork prefixes, including a second-generation fork', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: TWO_ROUTES.flatMap((route) => route.models ?? []),
+      scripts: [],
+    })
+    const { host } = await createTestHost(twoRouteHostOptions(dataDir, provider))
+    unwinds.push(() => host.close())
+    const parent = await host.createSession({ key: 'admission-fork-parent', cwd: dataDir })
+    const prepared = await host.prepareSessionConfiguration(parent.key)
+    const receipt = await host.configurationAdmissions.acquire({
+      sessionId: parent.key,
+      inputId: 'parent-only',
+      payloadDigest: comparisonPayloadDigest([]),
+      prepared,
+    })
+    // Exercise the generic Core history-fork seam without scheduling a new Host publication.
+    const child = await host.kernel.session('admission-fork-child', {
+      writerRunId: 'fork-child-writer',
+      actor: parent.d.actor,
+      resolvedProfileHash: parent.d.resolvedProfileHash,
+      cwd: dataDir,
+      parent: { key: parent.key, boundarySeq: parent.lastSeq },
+    })
+    const grandchild = await host.kernel.session('admission-fork-grandchild', {
+      writerRunId: 'fork-grandchild-writer',
+      actor: child.d.actor,
+      resolvedProfileHash: child.d.resolvedProfileHash,
+      cwd: dataDir,
+      parent: { key: child.key, boundarySeq: child.lastSeq },
+    })
+    expect(child.configurationReserved).toBe(false)
+    expect(grandchild.configurationReserved).toBe(false)
+    expect(parent.configurationReserved).toBe(true)
+    await expect(host.configurationAdmissions.check(child.key, receipt.token)).rejects.toMatchObject({
+      code: 'E_RELATION',
+    })
+    await host.configurationAdmissions.release(parent.key, receipt.token)
+  })
+
+  it('persists an exact input fence before a delayed acquisition, survives reopen, and does not inherit it through forks', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: TWO_ROUTES.flatMap((route) => route.models ?? []),
+      scripts: [],
+    })
+    const options = twoRouteHostOptions(dataDir, provider)
+    const first = await createTestHost(options)
+    unwinds.push(() => first.host.close())
+    const session = await first.host.createSession({ key: 'cancel-acquire-race', cwd: dataDir })
+    const prepared = await first.host.prepareSessionConfiguration(session.key)
+    let enter!: () => void
+    let proceed!: () => void
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const held = new Promise<void>((resolve) => {
+      proceed = resolve
+    })
+    const scan = session.scan.bind(session)
+    const spy = vi.spyOn(session, 'scan').mockImplementation(async (query) => {
+      if (query?.fromSeq === prepared.sourceSeq && query?.toSeq === prepared.sourceSeq) {
+        enter()
+        await held
+      }
+      return scan(query)
+    })
+    const acquiring = first.host.configurationAdmissions.acquire({
+      sessionId: session.key,
+      inputId: 'cancelled-command',
+      payloadDigest: comparisonPayloadDigest([]),
+      prepared,
+    })
+    const failed = expect(acquiring).rejects.toMatchObject({ code: 'E_RELATION' })
+    await entered
+    try {
+      expect(
+        await first.host.configurationAdmissions.cancel(
+          session.key,
+          'cancelled-command',
+          session.d.actor,
+          true,
+        ),
+      ).toEqual({ inputId: 'cancelled-command' })
+    } finally {
+      proceed()
+    }
+    await failed
+    spy.mockRestore()
+    expect(session.configurationReserved).toBe(false)
+    expect(await session.scan({ type: 'turn/start', limit: 10 })).toEqual([])
+    await expect(
+      session.enqueue('next-turn', {
+        actor: session.d.actor,
+        commandId: 'cancelled-command',
+        content: [{ type: 'text', text: 'fork-local command' }],
+      }),
+    ).rejects.toMatchObject({ code: 'E_RELATION' })
+    const child = await first.host.kernel.session('cancel-fork-child', {
+      writerRunId: 'cancel-fork-writer',
+      actor: session.d.actor,
+      resolvedProfileHash: session.d.resolvedProfileHash,
+      cwd: dataDir,
+      parent: { key: session.key, boundarySeq: session.lastSeq },
+    })
+    await child.enqueue('next-turn', {
+      actor: child.d.actor,
+      commandId: 'cancelled-command',
+      content: [{ type: 'text', text: 'fork-local command' }],
+    })
+    expect(child.latest('inbox')).toMatchObject({ items: [{ commandId: 'cancelled-command' }] })
+    await first.host.close()
+    const second = await createTestHost(options)
+    unwinds.push(() => second.host.close())
+    const cold = await second.host.createSession({ key: session.key, cwd: dataDir })
+    const refreshed = await second.host.prepareSessionConfiguration(cold.key)
+    await expect(
+      second.host.configurationAdmissions.acquire({
+        sessionId: cold.key,
+        inputId: 'cancelled-command',
+        payloadDigest: comparisonPayloadDigest([]),
+        prepared: refreshed,
+      }),
+    ).rejects.toMatchObject({ code: 'E_RELATION' })
+    const fresh = await second.host.configurationAdmissions.acquire({
+      sessionId: cold.key,
+      inputId: 'different-command',
+      payloadDigest: comparisonPayloadDigest([]),
+      prepared: refreshed,
+    })
+    await second.host.configurationAdmissions.release(cold.key, fresh.token)
+    expect(await cold.scan({ type: 'x/core/input-cancelled', limit: 10 })).toMatchObject([
+      {
+        origin: 'system',
+        trust: 'trusted',
+        ignorable: true,
+        data: { version: 1, sessionId: cold.key, commandId: 'cancelled-command' },
+      },
+    ])
+  })
+
+  it('cold-cancels an already claimed Native admission without dispatching inference or borrowing ordinary step', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: TWO_ROUTES.flatMap((route) => route.models ?? []),
+      scripts: [],
+    })
+    const options = twoRouteHostOptions(dataDir, provider)
+    const first = await createTestHost(options)
+    const session = await first.host.createSession({ key: 'admission-claimed', cwd: dataDir })
+    const prepared = await first.host.prepareSessionConfiguration(session.key)
+    const content = [{ type: 'text' as const, text: 'Claim before interruption' }]
+    const held = await reserveSessionConfiguration(
+      session,
+      { id: 'test-process-local', commandId: 'claimed', payloadDigest: comparisonPayloadDigest(content) },
+      () => prepared.configuration,
+      () => undefined,
+    )
+    await held.lease.enqueue({ commandId: 'claimed', content, actor: session.d.actor })
+    await expect(session.acceptInput()).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+    await session.step(held.lease)
+    await session.abort(session.d.actor)
+    expect(await session.scan({ type: 'request/sent', limit: 10 })).toEqual([])
+    await first.host.close()
+    const second = await createTestHost(options)
+    unwinds.push(() => second.host.close())
+    const cold = await second.host.createSession({ key: session.key, cwd: dataDir })
+    expect(cold.configurationReserved).toBe(true)
+    expect(cold.op()).not.toBeNull()
+    await second.host.configurationAdmissions.cancel(cold.key, 'claimed', cold.d.actor)
+    expect(cold.configurationReserved).toBe(false)
+    expect(cold.op()).toBeNull()
+    expect(await cold.scan({ type: 'request/sent', limit: 10 })).toEqual([])
+    expect((await cold.scan({ type: 'turn/end', limit: 10 })).at(-1)?.data).toMatchObject({
+      reason: 'interrupted',
+    })
+  })
+
+  it('fences execution before the admission append completes and refuses a queued preset writer without deadlock', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: TWO_ROUTES.flatMap((route) => route.models ?? []),
+      scripts: [],
+    })
+    const { host } = await createTestHost(twoRouteHostOptions(dataDir, provider))
+    unwinds.push(() => host.close())
+    const left = await host.createSession({ key: 'admission-pending-left', cwd: dataDir })
+    const right = await host.createSession({ key: 'admission-pending-right', cwd: dataDir })
+    const a = await host.prepareSessionConfiguration(left.key)
+    const b = await host.prepareSessionConfiguration(right.key)
+    let allowAppend!: () => void
+    let appendEntered!: () => void
+    const hold = new Promise<void>((resolve) => {
+      allowAppend = resolve
+    })
+    const entered = new Promise<void>((resolve) => {
+      appendEntered = resolve
+    })
+    const append = left.d.log.append.bind(left.d.log)
+    vi.spyOn(left.d.log, 'append').mockImplementationOnce(async (...args) => {
+      appendEntered()
+      await hold
+      return append(...args)
+    })
+    const input = {
+      inputId: 'pending',
+      payloadDigest: comparisonPayloadDigest([]),
+      permissionMode: 'full' as const,
+    }
+    const acquiring = host.configurationAdmissions.acquire({ ...input, sessionId: left.key, prepared: a })
+    await entered
+    expect(left.d.approvalMode).toBe('off')
+    expect(left.yolo).toBe(false)
+    await expect(left.run({ until: 'turn-end', signal: new AbortController().signal })).rejects.toMatchObject(
+      { code: 'E_LANE_BUSY' },
+    )
+    expect(await left.scan({ type: 'turn/start', limit: 10 })).toEqual([])
+    allowAppend()
+    const receipt = await acquiring
+    const presetWriter = right.setPreset(right.preset)
+    await Promise.resolve()
+    await expect(
+      host.configurationAdmissions.acquire({ ...input, sessionId: right.key, prepared: b }),
+    ).rejects.toMatchObject({
+      code: 'E_LANE_BUSY',
+      detail: { reason: 'runtime-publication-pending' },
+    })
+    await host.configurationAdmissions.release(left.key, receipt.token)
+    await presetWriter
+    expect(left.configurationReserved).toBe(false)
+    expect(right.configurationReserved).toBe(false)
+    expect(left.d.approvalMode ?? null).toBe(a.configuration.effective.permission.approvalMode)
+  })
+
+  it.each([
+    ['native', undefined],
+    ['jevloop', undefined],
+    ['native', 'full'],
+    ['jevloop', 'full'],
+  ] as const)(
+    'holds exact %s configuration (%s) across enqueue and cold recovery until explicit cancellation',
+    async (runtime, permissionMode) => {
+      const dataDir = scratch()
+      const provider = new ScriptedProvider({
+        models: TWO_ROUTES.flatMap((route) => route.models ?? []),
+        scripts: [],
+      })
+      const options = {
+        ...twoRouteHostOptions(dataDir, provider),
+        jev: {
+          decision: {
+            backend: 'jev' as const,
+            endpoint: 'https://jev.invalid/v1',
+            model: 'jev-test',
+            transport: {
+              invoke: async (): Promise<never> => {
+                throw new Error('Admission must not invoke a provider')
+              },
+            },
+          },
+        },
+      }
+      const first = await createTestHost(options)
+      const session = await first.host.createSession({ key: `admission-${runtime}`, cwd: dataDir, runtime })
+      const prepared = await first.host.prepareSessionConfiguration(session.key)
+      const originalApprovalMode = session.d.approvalMode
+      const content = [{ type: 'text' as const, text: 'Reserved input' }]
+      const receipt = await first.host.configurationAdmissions.acquire({
+        sessionId: session.key,
+        inputId: 'reserved',
+        payloadDigest: comparisonPayloadDigest(content),
+        prepared,
+        ...(permissionMode === undefined ? {} : { permissionMode }),
+      })
+      expect(session.configurationReserved).toBe(true)
+      expect(session.d.approvalMode).toBe(permissionMode === 'full' ? 'off' : originalApprovalMode)
+      expect(session.yolo).toBe(false)
+      expect(verifyPreparedReceipt(receipt.prepared, await session.scan({ limit: 100 }))).toBe(true)
+      expect(
+        JSON.stringify(await session.scan({ type: 'x/core/configuration-admission', limit: 100 })),
+      ).not.toContain(receipt.token)
+      await expect(session.setModel({ slot: 'primary', route: 'alt', model: 'm2' })).rejects.toMatchObject({
+        code: 'E_LANE_BUSY',
+      })
+      await expect(session.setYolo(true, session.d.actor)).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+      await expect(session.step()).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+      await expect(
+        session.run({ until: 'turn-end', signal: new AbortController().signal }),
+      ).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+      await expect(
+        first.host.configurationAdmissions.enqueue(session.key, receipt.token, {
+          actor: session.d.actor,
+          commandId: 'wrong',
+          content,
+        }),
+      ).rejects.toMatchObject({ code: 'E_RELATION' })
+      await first.host.configurationAdmissions.enqueue(session.key, receipt.token, {
+        actor: session.d.actor,
+        commandId: 'reserved',
+        content,
+      })
+      await expect(
+        first.host.configurationAdmissions.release(session.key, receipt.token),
+      ).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+      await first.host.close()
+      const reopened = await createTestHost(options)
+      unwinds.push(() => reopened.host.close())
+      const cold = await reopened.host.createSession({ key: session.key, cwd: dataDir })
+      expect(cold.d.approvalMode).toBe(originalApprovalMode)
+      expect(cold.yolo).toBe(false)
+      expect(await cold.scan({ type: 'x/core/configuration-admission', limit: 100 })).toMatchObject([
+        { data: { status: 'held' } },
+      ])
+      expect(cold.configurationReserved).toBe(true)
+      expect((await cold.resume()).phase).toBe('configuration-admission-held')
+      expect(await cold.scan({ type: 'user/message', limit: 100 })).toEqual([])
+      await expect(
+        reopened.host.configurationAdmissions.check(cold.key, receipt.token),
+      ).rejects.toMatchObject({ code: 'E_RELATION' })
+      await expect(
+        cold.run({ until: 'turn-end', signal: new AbortController().signal }),
+      ).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+      expect(await reopened.host.configurationAdmissions.cancel(cold.key, undefined, cold.d.actor)).toEqual({
+        inputId: 'reserved',
+      })
+      expect(cold.configurationReserved).toBe(false)
+      expect(await reopened.host.prepareSessionConfiguration(cold.key)).toEqual(prepared)
+      expect(cold.latest('inbox')).toMatchObject({ items: [] })
+      expect(await cold.scan({ type: 'user/message', limit: 100 })).toEqual([])
+      await cold.setModel({ slot: 'primary', route: 'alt', model: 'm2' })
+    },
+  )
+
+  it.each(['capture', 'before-held', 'after-held'] as const)(
+    'restores admission-scoped approval after %s failure while preserving any durable fence',
+    async (failure) => {
+      const dataDir = scratch()
+      const provider = new ScriptedProvider({
+        models: TWO_ROUTES.flatMap((route) => route.models ?? []),
+        scripts: [],
+      })
+      const { host } = await createTestHost(twoRouteHostOptions(dataDir, provider))
+      unwinds.push(() => host.close())
+      const session = await host.createSession({ key: `approval-failure-${failure}`, cwd: dataDir })
+      const prepared = await host.prepareSessionConfiguration(session.key)
+      const originalApprovalMode = session.d.approvalMode
+      const currentTools = session.currentTools.bind(session)
+      const toolsSpy = vi.spyOn(session, 'currentTools').mockImplementation(() => {
+        if (failure === 'capture' && session.d.approvalMode === 'off') throw new Error('capture failure')
+        return currentTools()
+      })
+      const append = session.d.log.append.bind(session.d.log)
+      const appendSpy = vi.spyOn(session.d.log, 'append').mockImplementation(async (...args) => {
+        if (
+          failure !== 'capture' &&
+          args[0].some((event) => event.type === 'x/core/configuration-admission')
+        ) {
+          if (failure === 'after-held') await append(...args)
+          throw new Error('held append failure')
+        }
+        return append(...args)
+      })
+      const input = {
+        sessionId: session.key,
+        inputId: 'failed',
+        prepared,
+        permissionMode: 'full' as const,
+        payloadDigest: comparisonPayloadDigest([]),
+      }
+      await expect(host.configurationAdmissions.acquire(input)).rejects.toThrow()
+      toolsSpy.mockRestore()
+      appendSpy.mockRestore()
+      expect(session.d.approvalMode).toBe(originalApprovalMode)
+      expect(session.yolo).toBe(false)
+      expect(session.configurationReserved).toBe(failure === 'after-held')
+      expect(host.activationBarrier.snapshot().active).toEqual({ turn: 0, tool: 0, service: 0 })
+      if (failure === 'after-held') {
+        await expect(
+          session.run({ until: 'turn-end', signal: new AbortController().signal }),
+        ).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+        await host.configurationAdmissions.cancel(session.key, input.inputId, session.d.actor)
+      }
+      expect(session.configurationReserved).toBe(false)
+      const next = await host.configurationAdmissions.acquire({ ...input, inputId: 'fresh' })
+      expect(session.d.approvalMode).toBe('off')
+      await host.configurationAdmissions.release(session.key, next.token)
+      expect(session.d.approvalMode).toBe(originalApprovalMode)
+      expect(session.configurationReserved).toBe(false)
+      expect(await host.prepareSessionConfiguration(session.key)).toEqual(prepared)
+      expect(await session.scan({ type: 'turn/start', limit: 10 })).toEqual([])
+    },
+  )
+
+  it('freezes actual final model settings and refuses later drift rather than rewriting history', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: TWO_ROUTES.flatMap((route) => route.models ?? []),
+      scripts: [],
+    })
+    const jev = {
+      decision: {
+        backend: 'jev' as const,
+        endpoint: 'https://jev.invalid/v1',
+        model: 'jev-test',
+        transport: {
+          invoke: async (): Promise<never> => {
+            throw new Error('preparation must not invoke a provider')
+          },
+        },
+      },
+    }
+    const { host } = await createTestHost({ ...twoRouteHostOptions(dataDir, provider), jev })
+    unwinds.push(() => host.close())
+    const session = await host.createSession({ key: 'prepared-model', cwd: dataDir })
+    await session.setPreset({ ...session.preset, model: { ...session.preset.model, maxTokens: 512 } })
+    await session.setModel({ slot: 'primary', route: 'alt', model: 'm2', contextWindow: 4096 })
+    const prepared = await host.prepareSessionConfiguration(session.key)
+    expect(prepared.configuration.effective.mounted).toMatchObject({
+      scope: 'active-host-rows-and-selected-preset',
+      digest: prepared.configuration.fingerprints.mounted,
+    })
+    expect(prepared.configuration.fingerprints.mounted).toMatch(/^[a-f0-9]{64}$/)
+    const peerRoot = scratch()
+    const peer = await createTestHost({ ...twoRouteHostOptions(peerRoot, provider), jev })
+    unwinds.push(() => peer.host.close())
+    const jevSession = await peer.host.createSession({
+      key: 'prepared-jev-peer',
+      cwd: peerRoot,
+      runtime: 'jevloop',
+    })
+    await jevSession.setPreset({
+      ...jevSession.preset,
+      model: { ...jevSession.preset.model, maxTokens: 512 },
+    })
+    await jevSession.setModel({ slot: 'primary', route: 'alt', model: 'm2', contextWindow: 4096 })
+    const peerPrepared = await peer.host.prepareSessionConfiguration(jevSession.key)
+    expect(peerPrepared.configuration.runtime.id).toBe('jevloop')
+    expect(peerPrepared.configuration.effective.mounted).toEqual(prepared.configuration.effective.mounted)
+    expect(peerPrepared.configuration.fingerprints.mounted).toBe(prepared.configuration.fingerprints.mounted)
+    expect(prepared.configuration.effective.models.find((model) => model.slot === 'primary')).toEqual({
+      slot: 'primary',
+      route: 'alt',
+      model: 'm2',
+      thinking: null,
+      contextWindow: 4096,
+      maxTokens: 512,
+    })
+    expect(prepared.configuration.fingerprints.model).toBe(
+      sha256Hex(
+        canonicalJson(prepared.configuration.effective.models.map(({ maxTokens: _cap, ...model }) => model)),
+      ),
+    )
+    const source = await session.d.log.scan({ fromSeq: prepared.sourceSeq, toSeq: prepared.sourceSeq })
+    expect(source).toHaveLength(1)
+    expect(source[0]).toMatchObject({
+      type: 'x/host/session-prepared',
+      origin: 'system',
+      trust: 'trusted',
+      ignorable: true,
+      data: { sessionId: session.key, configuration: prepared.configuration },
+    })
+    const prefix = await session.d.log.scan({ fromSeq: 1, toSeq: prepared.sourceSeq })
+    expect(verifyPreparedReceipt(prepared, prefix)).toBe(true)
+    expect(verifyPreparedReceipt(prepared, prefix.slice(0, -1))).toBe(false)
+    const corrupt = structuredClone(prefix)
+    const changed = corrupt.find((event) => event.seq === prepared.sourceSeq)
+    if (!changed) throw new Error('Missing preparation source')
+    changed.data = null
+    expect(verifyPreparedReceipt(prepared, corrupt)).toBe(false)
+    changed.data = source[0]?.data ?? null
+    changed.origin = 'principal'
+    expect(verifyPreparedReceipt(prepared, corrupt)).toBe(false)
+    expect(await host.prepareSessionConfiguration(session.key)).toEqual(prepared)
+    const legacySession = await host.createSession({ key: 'prepared-legacy', cwd: dataDir })
+    await legacySession.setPreset({
+      ...legacySession.preset,
+      model: { ...legacySession.preset.model, maxTokens: 512 },
+    })
+    await legacySession.setModel({ slot: 'primary', route: 'alt', model: 'm2', contextWindow: 4096 })
+    const legacyConfiguration = structuredClone(prepared.configuration)
+    delete legacyConfiguration.effective.mounted
+    delete legacyConfiguration.fingerprints.mounted
+    for (const model of legacyConfiguration.effective.models) delete model.maxTokens
+    await legacySession.d.log.append([
+      legacySession.ev(
+        'x/host/session-prepared',
+        {
+          version: 1,
+          sessionId: legacySession.key,
+          configuration: legacyConfiguration,
+        },
+        { ignorable: true },
+      ),
+    ])
+    const legacy = await host.prepareSessionConfiguration(legacySession.key)
+    expect(legacy.configuration).toEqual(legacyConfiguration)
+    expect(Object.hasOwn(legacy.configuration.effective, 'mounted')).toBe(false)
+    expect(legacy.configuration.effective.models.every((model) => !Object.hasOwn(model, 'maxTokens'))).toBe(
+      true,
+    )
+    await legacySession.setPreset({
+      ...legacySession.preset,
+      model: { ...legacySession.preset.model, maxTokens: 256 },
+    })
+    await expect(host.prepareSessionConfiguration(legacySession.key)).rejects.toMatchObject({
+      code: 'E_RELATION',
+    })
+    expect(await legacySession.d.log.scan({ type: 'x/host/session-prepared', limit: 2 })).toHaveLength(1)
+    expect(JSON.stringify(prepared)).not.toContain(dataDir)
+    await session.setModel({ slot: 'primary', route: 'gw', model: 'm1' })
+    await expect(host.prepareSessionConfiguration(session.key)).rejects.toMatchObject({ code: 'E_RELATION' })
+    expect(await session.d.log.scan({ type: 'x/host/session-prepared', limit: 2 })).toEqual(source)
+  })
+  it('refuses a generation publication racing the locked capture before publishing a receipt', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: TWO_ROUTES.flatMap((route) => route.models ?? []),
+      scripts: [],
+    })
+    const { host } = await createTestHost(twoRouteHostOptions(dataDir, provider))
+    unwinds.push(() => host.close())
+    const session = await host.createSession({ key: 'prepared-generation', cwd: dataDir })
+    const original = session.d.currentRuntime
+    const priorView = original?.current(session.key)
+    if (!original || !priorView) throw new Error('Expected actual published runtime')
+    const scan = session.d.log.scan.bind(session.d.log)
+    vi.spyOn(session.d.log, 'scan').mockImplementationOnce(async (query) => {
+      const rows = await scan(query)
+      session.d.currentRuntime = { current: () => ({ ...priorView }) }
+      return rows
+    })
+    try {
+      await expect(host.prepareSessionConfiguration(session.key)).rejects.toMatchObject({
+        code: 'E_RELATION',
+      })
+      expect(await scan({ type: 'x/host/session-prepared', limit: 2 })).toEqual([])
+    } finally {
+      session.d.currentRuntime = original
+    }
+  })
+})
 
 describe('replaySwitchesOnOpen', () => {
   it('snapshots defaults for new sessions and preserves them when the configured defaults change', async () => {
@@ -802,3 +1349,290 @@ describe('Host.validatePresetSwitch / Host.validateModelSwitch', () => {
     }
   })
 })
+
+describe('Host.resolveSessionSelection', () => {
+  it('freezes the materialized primary and configured default preset without opening a session or inferring', async () => {
+    const dataDir = scratch()
+    const main: ModelRecord = {
+      ...modelRecord('gw', 'main-model'),
+      slot: 'primary',
+      reasoning: true,
+      thinkingLevelMap: { low: 'low', high: 'high' },
+      defaultSettings: { thinking: 'high', contextWindow: 4096 },
+    }
+    const alternate: ModelRecord = {
+      ...modelRecord('alt', 'alternate-model'),
+      reasoning: true,
+      thinkingLevelMap: { low: 'low', high: 'high' },
+      defaultSettings: { thinking: 'high', contextWindow: 6144 },
+    }
+    const plain = modelRecord('alt', 'plain-model')
+    const models = [
+      plain,
+      { ...modelRecord('gw', 'first-but-not-primary'), slot: 'fast' as const },
+      main,
+      alternate,
+    ]
+    const provider = new ScriptedProvider({ models, scripts: [] })
+    const infer = vi.spyOn(provider, 'infer')
+    const { host } = await createTestHost({
+      dataDir,
+      provider,
+      disableSessionTitle: true,
+      presets: {
+        focused: {
+          name: 'focused',
+          extends: 'base',
+          model: { route: { primary: 'default' }, thinking: { primary: 'low' } },
+        },
+      },
+      profileInputs: {
+        user: {
+          name: 'local-dev',
+          presets: { default: 'focused', allowed: ['standard', 'focused'] },
+          provider: {
+            package: '@agnes/ai',
+            adapters: ['@agnes/ai'],
+            routes: [
+              {
+                route: 'gw',
+                api: 'openai-completions',
+                baseUrl: 'https://example.invalid/v1',
+                models: models.filter((model) => model.route === 'gw'),
+              },
+              {
+                route: 'alt',
+                api: 'openai-completions',
+                baseUrl: 'https://example.invalid/v1',
+                models: [alternate, plain],
+              },
+            ],
+          },
+        },
+      },
+    })
+    unwinds.push(() => host.close())
+    const open = vi.spyOn(host.kernel, 'session')
+    expect(host.kernel.sessions.size).toBe(0)
+    await expect(host.resolveSessionSelection({})).resolves.toEqual({
+      preset: 'focused',
+      model: { route: 'gw', model: 'main-model', thinking: 'low', contextWindow: 4096 },
+    })
+    await expect(host.resolveSessionSelection({ preset: 'standard' })).resolves.toEqual({
+      preset: 'standard',
+      model: { route: 'gw', model: 'main-model', thinking: 'high', contextWindow: 4096 },
+    })
+    await expect(
+      host.resolveSessionSelection({
+        model: { route: 'gw', model: 'main-model', thinking: 'high', contextWindow: 6144 },
+      }),
+    ).resolves.toEqual({
+      preset: 'focused',
+      model: { route: 'gw', model: 'main-model', thinking: 'high', contextWindow: 6144 },
+    })
+    await expect(
+      host.resolveSessionSelection({
+        model: { route: 'alt', model: 'plain-model' },
+      }),
+    ).resolves.toEqual({
+      preset: 'focused',
+      model: { route: 'alt', model: 'plain-model', contextWindow: 8192 },
+    })
+    // Selecting a different model uses its defaults, not the default preset's primary settings.
+    await expect(
+      host.resolveSessionSelection({ model: { route: 'alt', model: 'alternate-model' } }),
+    ).resolves.toEqual({
+      preset: 'focused',
+      model: { route: 'alt', model: 'alternate-model', thinking: 'high', contextWindow: 6144 },
+    })
+    expect(open).not.toHaveBeenCalled()
+    expect(infer).not.toHaveBeenCalled()
+    expect(host.kernel.sessions.size).toBe(0)
+  })
+
+  it('refuses unknown selections and invalid settings before session or provider effects', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: [modelRecord('gw', 'm1'), modelRecord('alt', 'm2')],
+      scripts: [],
+    })
+    const infer = vi.spyOn(provider, 'infer')
+    const { host } = await createTestHost(twoRouteHostOptions(dataDir, provider))
+    unwinds.push(() => host.close())
+    const open = vi.spyOn(host.kernel, 'session')
+    for (const model of [
+      { route: 'gw', model: 'unknown' },
+      { route: 'unknown', model: 'm1' },
+      { route: 'gw', model: 'm1', thinking: 'high' as const },
+      { route: 'gw', model: 'm1', contextWindow: 8193 },
+    ])
+      await expect(host.resolveSessionSelection({ model })).rejects.toMatchObject({
+        code: 'E_MODEL_UNSUPPORTED',
+      })
+    await expect(host.resolveSessionSelection({ preset: 'unknown' })).rejects.toMatchObject({
+      code: 'E_PRESET_UNSUPPORTED',
+    })
+    expect(open).not.toHaveBeenCalled()
+    expect(infer).not.toHaveBeenCalled()
+    expect(host.kernel.sessions.size).toBe(0)
+  })
+})
+
+it('retains the comparison-only sandbox floor across preset switches, a history fork, and a new Host', async () => {
+  const dataDir = scratch()
+  const requested = {
+    name: 'standard',
+    extends: 'base',
+    disclosure: 'standard',
+    sandbox: { level: 'L0', required: false, on_unavailable: 'allow' },
+  }
+  const probeInputs: Array<{ level: string; required: boolean; onUnavailable: string }> = []
+  const options: TestHostOptions = {
+    dataDir,
+    disableSessionTitle: true,
+    platformCaps: { 'sandbox.l1': 'full' },
+    presets: {
+      standard: requested,
+      permissive: { ...requested, name: 'permissive', budget: { max_steps: 9 } },
+    },
+    profileInputs: {
+      user: { name: 'test', presets: { default: 'standard', allowed: ['standard', 'permissive'] } },
+    },
+    packages: {
+      '@agnes/base': {
+        sandboxWorkspaceProbe: async (input) => {
+          probeInputs.push({
+            level: input.level,
+            required: input.required,
+            onUnavailable: input.onUnavailable,
+          })
+          return {
+            name: 'bwrap',
+            execBackend: 'l1',
+            enforcement: { level: 'full', scope: ['file', 'network', 'process'] },
+            degraded: false,
+            confine: ({ argv }) => argv,
+          }
+        },
+      },
+    },
+  }
+  const store = createComparisonStore(join(dataDir, 'comparisons', 'index.sqlite'), {
+    sessionKeys: () => ({ left: 'reserved-owner', right: 'reserved-peer' }),
+  })
+  await store.scoped('owner').compareAndSwap('pair', null, {
+    id: 'pair',
+    revision: 0,
+    createPayload: '{}',
+    creation: 'preparing',
+    lanes: {},
+    rounds: [],
+    cancellation: {},
+    cleanup: { exited: [], released: false },
+  })
+  const first = await createTestHost(options)
+  unwinds.push(() => first.host.close())
+  try {
+    const ordinary = await first.host.createSession({ key: 'agnes:comparison:spoof:left', cwd: dataDir })
+    expect(ordinary.preset.sandbox.onUnavailable).toBe('allow')
+    const protectedOwner = await first.host.createSession({ key: 'reserved-owner', cwd: dataDir })
+    expect(protectedOwner.preset.name).toBe('standard')
+    expect(protectedOwner.preset.sandbox.onUnavailable).toBe('deny')
+    expect(probeInputs).toContainEqual({ level: 'L0', required: false, onUnavailable: 'allow' })
+    expect(probeInputs).toContainEqual({ level: 'L1', required: true, onUnavailable: 'deny' })
+    expect(first.host.presets.standard?.sandbox).toEqual(requested.sandbox)
+    await first.host.setSessionPreset(protectedOwner.key, 'permissive')
+    expect(protectedOwner.preset.sandbox.onUnavailable).toBe('deny')
+    expect(protectedOwner.preset.budget.maxSteps).toBe(9)
+    const fork = await first.host.createSession({
+      key: 'ordinary-fork-name',
+      parent: { key: protectedOwner.key, boundarySeq: protectedOwner.lastSeq },
+    })
+    expect(fork.preset.sandbox.onUnavailable).toBe('deny')
+    await first.host.close()
+    const second = await createTestHost(options)
+    unwinds.push(() => second.host.close())
+    const recovered = await second.host.createSession({ key: 'reserved-owner', cwd: dataDir })
+    expect(recovered.preset).toMatchObject({
+      name: 'permissive',
+      budget: { maxSteps: 9 },
+      sandbox: { onUnavailable: 'deny' },
+    })
+    const recoveredFork = await second.host.createSession({ key: 'ordinary-fork-name', cwd: dataDir })
+    expect(recoveredFork.preset.sandbox.onUnavailable).toBe('deny')
+    expect(
+      (await second.host.createSession({ key: ordinary.key, cwd: dataDir })).preset.sandbox.onUnavailable,
+    ).toBe('allow')
+  } finally {
+    store.close()
+  }
+})
+
+it.each(['unsupported platform', 'probe failure'])(
+  'refuses comparison sandbox admission on %s while preserving an ordinary L0 session',
+  async (mode) => {
+    const dataDir = scratch()
+    const options: TestHostOptions = {
+      dataDir,
+      disableSessionTitle: true,
+      presets: {
+        standard: {
+          name: 'standard',
+          extends: 'base',
+          disclosure: 'standard',
+          sandbox: { level: 'L0', required: false, on_unavailable: 'allow' },
+        },
+      },
+      platformCaps: { 'sandbox.l1': mode === 'unsupported platform' ? 'unavailable' : 'full' },
+      packages: {
+        '@agnes/base': {
+          sandboxWorkspaceProbe: async (input) => {
+            if (input.level === 'L1' && mode === 'probe failure')
+              throw Object.assign(new Error('test probe unavailable'), { code: 'E_SANDBOX_UNAVAILABLE' })
+            return input.level === 'L1'
+              ? {
+                  name: 'bwrap',
+                  execBackend: 'l1',
+                  enforcement: { level: 'full', scope: ['file', 'network', 'process'] },
+                  degraded: false,
+                  confine: ({ argv }) => argv,
+                }
+              : {
+                  name: 'none',
+                  execBackend: 'none',
+                  enforcement: { level: 'none', scope: [] },
+                  degraded: false,
+                  confine: ({ argv }) => argv,
+                }
+          },
+        },
+      },
+    }
+    const store = createComparisonStore(join(dataDir, 'comparisons', 'index.sqlite'), {
+      sessionKeys: () => ({ left: 'reserved-owner', right: 'reserved-peer' }),
+    })
+    try {
+      await store.scoped('owner').compareAndSwap('pair', null, {
+        id: 'pair',
+        revision: 0,
+        createPayload: '{}',
+        creation: 'preparing',
+        lanes: {},
+        rounds: [],
+        cancellation: {},
+        cleanup: { exited: [], released: false },
+      })
+      const { host } = await createTestHost(options)
+      unwinds.push(() => host.close())
+      expect((await host.createSession({ key: 'ordinary', cwd: dataDir })).preset.sandbox.onUnavailable).toBe(
+        'allow',
+      )
+      await expect(host.createSession({ key: 'reserved-owner', cwd: dataDir })).rejects.toMatchObject({
+        code: mode === 'unsupported platform' ? 'E_PRESET_UNSUPPORTED' : 'E_SANDBOX_WORKSPACE',
+      })
+      expect(host.kernel.get('reserved-owner')).toBeUndefined()
+    } finally {
+      store.close()
+    }
+  },
+)

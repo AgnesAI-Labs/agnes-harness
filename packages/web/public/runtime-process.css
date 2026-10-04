@@ -1,0 +1,105 @@
+/* Runtime observations sit with the ordinary work process, never as a second final answer. */
+.runtime-process-card {
+  border-bottom: 1px solid var(--agnes-line-emphasis);
+  font-size: 12px;
+}
+.runtime-process-card > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.runtime-process-card > summary::-webkit-details-marker {
+  display: none;
+}
+.runtime-process-card > summary::after {
+  content: "›";
+  flex: none;
+  margin-left: auto;
+  color: var(--agnes-text-tertiary);
+}
+.runtime-process-card[open] > summary::after {
+  transform: rotate(90deg);
+}
+.runtime-process-icon {
+  flex: none;
+  color: var(--agnes-text-emphasis);
+}
+.runtime-process-card > summary strong {
+  flex: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+.runtime-process-state {
+  flex: none;
+  color: var(--agnes-text-secondary);
+  font-size: 11px;
+}
+.runtime-process-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agnes-text-secondary);
+}
+.runtime-process-card[data-state="failed"] .runtime-process-state {
+  color: var(--agnes-status-danger-text);
+}
+.runtime-process-card[data-state="unknown"] .runtime-process-state {
+  color: var(--agnes-status-warning-text);
+}
+.runtime-process-body {
+  padding: 0 0 12px 22px;
+}
+.runtime-process-body dl {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 7px;
+  margin: 4px 0 12px;
+}
+.runtime-process-body dt {
+  color: var(--agnes-text-secondary);
+}
+.runtime-process-body dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.runtime-process-evidence > summary {
+  color: var(--agnes-text-secondary);
+  cursor: pointer;
+}
+.runtime-process-evidence pre {
+  max-height: 360px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--agnes-bg-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    11px / 1.6 ui-monospace,
+    monospace;
+}
+.runtime-process-card summary:focus-visible {
+  outline: 2px solid var(--agnes-brand-primary);
+  outline-offset: 2px;
+}
+.trace-gantt-bar.lane-runtime {
+  background: var(--agnes-text-emphasis);
+}
+@media (max-width: 640px) {
+  .runtime-process-card > summary {
+    flex-wrap: wrap;
+  }
+  .runtime-process-card > summary strong {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .runtime-process-preview {
+    order: 1;
+    flex-basis: 100%;
+    padding-left: 22px;
+  }
+}

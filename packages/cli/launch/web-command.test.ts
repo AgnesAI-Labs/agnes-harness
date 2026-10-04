@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ensureLocalBackend as ensureSharedLocalBackend } from '../src/boot/backend.js'
 import type { EnsureLocalBackendOptions, LocalBackend } from './backend.js'
 import { parseWebCommand, runWebCommand, type WebCommandIO } from './web-command.js'
+
+vi.mock('../src/boot/backend.js', () => ({ ensureLocalBackend: vi.fn() }))
 
 // M5: proves the Surface mount poller's `close()` is on runWebCommand's shutdown ladder, not just
 // constructed and forgotten -- a leaked `setInterval` would otherwise keep polling (and, in a real
@@ -67,12 +70,59 @@ describe('Web command launch contract', () => {
     })
   })
 
+  it.each(['SIGINT', 'SIGTERM'])(
+    'cancels bootstrap on early %s and retains handlers through repeated signals',
+    async (firstSignal) => {
+      const signals = new EventEmitter()
+      const cancelled = new Error('bootstrap cancelled')
+      const createServer = vi.fn<NonNullable<WebCommandIO['createServer']>>()
+      vi.mocked(ensureSharedLocalBackend).mockImplementationOnce(async (options) => {
+        const { signal } = options as NonNullable<typeof options>
+        expect(signal).toBeInstanceOf(AbortSignal)
+        expect(signal?.aborted).toBe(false)
+        const stopped = new Promise<never>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(cancelled), { once: true })
+        })
+        signals.emit(firstSignal)
+        signals.emit(firstSignal)
+        signals.emit(firstSignal === 'SIGINT' ? 'SIGTERM' : 'SIGINT')
+        expect(signal?.aborted).toBe(true)
+        expect(signals.listenerCount('SIGINT')).toBe(1)
+        expect(signals.listenerCount('SIGTERM')).toBe(1)
+        return stopped
+      })
+
+      await expect(runWebCommand([], { resources, signals, createServer })).rejects.toBe(cancelled)
+      expect(createServer).not.toHaveBeenCalled()
+      expect(signals.listenerCount('SIGINT')).toBe(0)
+      expect(signals.listenerCount('SIGTERM')).toBe(0)
+    },
+  )
+
+  it('removes signal handlers after a bootstrap failure', async () => {
+    const signals = new EventEmitter()
+    const failure = new Error('bootstrap failed')
+    await expect(
+      runWebCommand([], {
+        resources,
+        signals,
+        ensureBackend: async () => {
+          throw failure
+        },
+      }),
+    ).rejects.toBe(failure)
+    expect(signals.listenerCount('SIGINT')).toBe(0)
+    expect(signals.listenerCount('SIGTERM')).toBe(0)
+  })
+
   it('forwards environment and cwd to the shared backend and closes only Web resources', async () => {
     const signals = new EventEmitter()
     let received: Record<string, unknown> | undefined
     let webClosed = false
     let clientClosed = false
+    let cleanupListeners: number[] | undefined
     let output = ''
+    const closeBackend = vi.fn(async () => undefined)
     const ensureBackend = async (options: EnsureLocalBackendOptions): Promise<LocalBackend> => {
       received = options
       return {
@@ -87,7 +137,7 @@ describe('Web command launch contract', () => {
         closeClient: async () => {
           clientClosed = true
         },
-        close: async () => undefined,
+        close: closeBackend,
       }
     }
     const createServer: NonNullable<WebCommandIO['createServer']> = async (options) => {
@@ -112,6 +162,9 @@ describe('Web command launch contract', () => {
         url: 'http://127.0.0.1:4181',
         close: async () => {
           webClosed = true
+          signals.emit('SIGTERM')
+          signals.emit('SIGINT')
+          cleanupListeners = [signals.listenerCount('SIGINT'), signals.listenerCount('SIGTERM')]
         },
       }
     }
@@ -143,6 +196,12 @@ describe('Web command launch contract', () => {
     expect(output).not.toContain('test-token-with-enough-entropy')
     expect(webClosed).toBe(true)
     expect(clientClosed).toBe(true)
+    expect(cleanupListeners).toEqual([1, 1])
+    expect(closeBackend).not.toHaveBeenCalled()
+    expect(received?.signal).toBeInstanceOf(AbortSignal)
+    expect(received?.signal).toMatchObject({ aborted: true })
+    expect(signals.listenerCount('SIGINT')).toBe(0)
+    expect(signals.listenerCount('SIGTERM')).toBe(0)
   })
 
   it('treats an unreachable daemon as an unavailable skin asset, not a launcher failure', async () => {

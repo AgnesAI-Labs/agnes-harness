@@ -71,7 +71,7 @@ export type WebView = {
   status: string
 }
 
-export function webView(timeline: UITimeline, receipt?: RunReceipt): WebView {
+export function webView(timeline: Omit<UITimeline, 'generation'>, receipt?: RunReceipt): WebView {
   const approval = timeline.nodes.find(
     (node): node is ApprovalNode =>
       node.kind === 'approval' && node.state === 'pending' && typeof node.ticket === 'string',
@@ -109,5 +109,6 @@ export function nodeText(node: UINode): string {
   if (node.kind === 'cost') return node.credits === undefined ? node.source : `${node.credits} credits`
   if (node.kind === 'artifact') return node.name
   if (node.kind === 'compaction') return node.summary ?? `Compacted ${node.range.join('–')}`
+  if (node.kind === 'runtime') return [node.title, node.summary, node.detail].filter(Boolean).join('\n\n')
   return ''
 }

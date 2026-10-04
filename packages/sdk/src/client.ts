@@ -11,6 +11,30 @@ import {
   type ClientModuleReadResult,
   type ClientModuleRosterRow,
   type ClientModuleServiceCallParams,
+  type ComparisonCancelParams,
+  type ComparisonCreateParams,
+  type ComparisonEventsParams,
+  type ComparisonEventsResult,
+  type ComparisonJournalParams,
+  type ComparisonJournalResult,
+  type ComparisonListParams,
+  type ComparisonListResult,
+  type ComparisonMetricsParams,
+  type ComparisonMetricsResult,
+  type ComparisonPriceDetailsParams,
+  type ComparisonPriceDetailsResult,
+  type ComparisonProjectUIParams,
+  type ComparisonProjectUIResult,
+  type ComparisonPruneParams,
+  type ComparisonPruneResult,
+  type ComparisonReadToolDetailParams,
+  type ComparisonReadToolDetailResult,
+  type ComparisonReleaseResult,
+  type ComparisonRemovedResult,
+  type ComparisonRetirementParams,
+  type ComparisonRound,
+  type ComparisonSnapshot,
+  type ComparisonSubmitParams,
   type ConfigAccountInput,
   type ConfigOAuthInput,
   type ConfigOAuthResult,
@@ -27,6 +51,11 @@ import {
   type MethodSpec,
   type PageSessionMeta,
   projectClientModuleRows,
+  type QuestionAnswerParams,
+  type QuestionCancelParams,
+  type QuestionPendingResult,
+  type QuestionResolution,
+  type RuntimeListResult,
   rpcError,
   type SessionListParams,
   type SessionPreferences,
@@ -52,9 +81,10 @@ import { type JournalStore, memoryJournal } from './journal.js'
 import { type PermissionHandler, type PermissionRequest, rejectPermission } from './permission.js'
 import { type ReconnectOptions, Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
-import { Session } from './session.js'
+import { Session, type ToolDetail } from './session.js'
 import { resendPending, submitForkCommand } from './submit.js'
 import { textFor } from './text.js'
+import { readToolDetailPages } from './tool-detail.js'
 import { inprocTransport, type RpcEndpoint } from './transport/inproc.js'
 import type { CloseInfo, TransportFactory } from './transport/types.js'
 
@@ -97,6 +127,8 @@ export type GenerationChangedEvent = { sessionId: string; generation: number }
 export type GapEvent = { sessionId: string; earliestSeq: number }
 
 export type CreateClientOptions = {
+  /** Opt in only when this client can render and answer live questions. */
+  questions?: boolean
   transport: TransportOption
   auth?: AuthOption
   clientId?: string
@@ -143,6 +175,7 @@ const UNLISTED: Record<string, { params?: Schema; result?: Schema }> = {}
 
 export class Client {
   // Connection/options stay private so consumers cannot bypass client bookkeeping or expose auth.
+  private readonly questionsEnabled: boolean
   private readonly conn: RpcConnection
   readonly journal: JournalStore
   readonly timeouts: { request: number; initialize: number; claim: number }
@@ -170,6 +203,7 @@ export class Client {
   shuttingDown = false
 
   constructor(opts: CreateClientOptions) {
+    this.questionsEnabled = opts.questions === true
     const providers = {
       local: () => localAuth(),
       jwt: (o: AuthOption) => {
@@ -343,11 +377,101 @@ export class Client {
       this.call('_agnes/v1/clientModules.callEffect', input),
   }
 
+  /** Comparison commands are coordinated by the backend; never fan out prompt RPCs here. */
+  readonly questions = {
+    pending: (sessionId: string): Promise<QuestionPendingResult> =>
+      this.call('_agnes/v1/questions.pending', { sessionId }),
+    answer: (input: QuestionAnswerParams): Promise<QuestionResolution> =>
+      this.call('_agnes/v1/questions.answer', input),
+    cancel: (input: QuestionCancelParams): Promise<QuestionResolution> =>
+      this.call('_agnes/v1/questions.cancel', input),
+  }
+
+  readonly comparison = {
+    release: (input: ComparisonRetirementParams): Promise<ComparisonReleaseResult> =>
+      this.call('_agnes/v1/comparison.release', input),
+    remove: (input: ComparisonRetirementParams): Promise<ComparisonRemovedResult> =>
+      this.call('_agnes/v1/comparison.remove', input),
+    prune: (input: ComparisonPruneParams): Promise<ComparisonPruneResult> =>
+      this.call('_agnes/v1/comparison.prune', input),
+    events: (input: ComparisonEventsParams): Promise<ComparisonEventsResult> =>
+      this.call('_agnes/v1/comparison.events', input),
+    projectUI: (input: ComparisonProjectUIParams): Promise<ComparisonProjectUIResult> =>
+      this.call('_agnes/v1/comparison.projectUI', input),
+    readToolDetail: (input: ComparisonReadToolDetailParams): Promise<ComparisonReadToolDetailResult> =>
+      this.call('_agnes/v1/comparison.readToolDetail', input),
+    toolDetail: (
+      input: Omit<ComparisonReadToolDetailParams, 'offset' | 'maxBytes'>,
+      opts: { signal?: AbortSignal; expectedSource?: { sessionId: string; throughSeq: number } } = {},
+    ): Promise<ToolDetail> => {
+      const request = { ...input }
+      let pinned = opts.expectedSource ? { ...opts.expectedSource } : undefined
+      return readToolDetailPages(
+        request.callSeq,
+        request.resultSeq,
+        async (offset) => {
+          const result = await this.comparison.readToolDetail({ ...request, offset })
+          if (
+            result.id !== request.id ||
+            result.side !== request.side ||
+            result.atSeq !== request.atSeq ||
+            (pinned !== undefined &&
+              (result.sessionId !== pinned.sessionId || result.throughSeq !== pinned.throughSeq)) ||
+            request.callSeq > result.throughSeq ||
+            (request.resultSeq !== undefined && request.resultSeq > result.throughSeq)
+          )
+            throw new ProtocolViolation('invalid comparison tool detail response: coordinates mismatch')
+          pinned ??= { sessionId: result.sessionId, throughSeq: result.throughSeq }
+          if (!result.ok) throw new ProtocolViolation(`comparison tool detail unavailable: ${result.reason}`)
+          return result.page
+        },
+        opts,
+      )
+    },
+    /** Saved metadata only; never opens or resumes either lane. */
+    list: (input: ComparisonListParams = {}): Promise<ComparisonListResult> =>
+      this.call('_agnes/v1/comparison.list', input),
+    create: (input: ComparisonCreateParams): Promise<ComparisonSnapshot> =>
+      this.call('_agnes/v1/comparison.create', input),
+    get: (id: string): Promise<ComparisonSnapshot> => this.call('_agnes/v1/comparison.get', { id }),
+    journal: (input: ComparisonJournalParams): Promise<ComparisonJournalResult> =>
+      this.call('_agnes/v1/comparison.journal', input),
+    metrics: (input: ComparisonMetricsParams): Promise<ComparisonMetricsResult> =>
+      this.call('_agnes/v1/comparison.metrics', input),
+    /** Fixed-cut, sanitized quote details with explicit historical/current estimate provenance. No session execution. */
+    priceDetails: (input: ComparisonPriceDetailsParams): Promise<ComparisonPriceDetailsResult> =>
+      this.call('_agnes/v1/comparison.priceDetails', input),
+    /** Explicit durable-receipt reconciliation; never opens or executes a session. */
+    reconcile: (id: string): Promise<ComparisonSnapshot> =>
+      this.call('_agnes/v1/comparison.reconcile', { id }),
+    submit: (input: ComparisonSubmitParams): Promise<ComparisonRound> =>
+      this.call('_agnes/v1/comparison.submit', input),
+    cancel: (input: ComparisonCancelParams): Promise<ComparisonSnapshot> =>
+      this.call('_agnes/v1/comparison.cancel', input),
+  }
+
+  readonly runtime = {
+    list: (): Promise<RuntimeListResult> => this.call('_agnes/v1/runtime.list', {}),
+  }
+
   readonly session = {
-    new: async (o: { cwd: string; preset?: string; sessionKey?: string }): Promise<Session> => {
+    new: async (o: {
+      cwd: string
+      preset?: string
+      sessionKey?: string
+      runtime?: string
+    }): Promise<Session> => {
+      // Old daemons can ignore unknown ACP metadata. An explicit selection first requires
+      // the runtime catalog, so it cannot silently create a session using their default loop.
+      if (o.runtime !== undefined) {
+        const descriptor = (await this.runtime.list()).items.find((item) => item.id === o.runtime)
+        if (!descriptor?.available)
+          throw new Unsupported(descriptor?.unavailableReason ?? `runtime unavailable: ${o.runtime}`)
+      }
       const meta: Record<string, unknown> = {}
       if (o.preset) meta.preset = o.preset
       if (o.sessionKey) meta.sessionKey = o.sessionKey
+      if (o.runtime !== undefined) meta.runtime = o.runtime
       const r = await this.call<{ sessionId: string }>('session/new', {
         cwd: o.cwd,
         mcpServers: [],
@@ -519,7 +643,11 @@ export class Client {
         protocolVersion: 1,
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
-          _meta: { [META_KEY]: { capabilities: { permission: true } } },
+          _meta: {
+            [META_KEY]: {
+              capabilities: { permission: true, ...(this.questionsEnabled ? { questions: true } : {}) },
+            },
+          },
         },
       }
       const metadata: Record<string, unknown> = { clientId }

@@ -60,3 +60,5 @@ Every page under `docs/` has English and Simplified Chinese editions. Use the la
 ## Maintenance and licensing
 
 [Documentation maintenance](maintainers/maintenance.md) · [Release checks](maintainers/release.md) · [Versioning](maintainers/versioning.md) · [Verification](maintainers/verification.md) · [Licensing](maintainers/provenance.md) · [Apache-2.0](../LICENSE) · [NOTICE](../NOTICE)
+
+- [Runtime loops and comparison](guide/runtime-loops.md)

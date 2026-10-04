@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
   applyBeforeRequestPatches,
+  beginModelCall,
   type ChildControlStore,
   type CostLedger,
   capToMicrocredits,
@@ -10,6 +11,7 @@ import {
   deriveRequest,
   type Event,
   hasChildControl,
+  type ModelCallHandle,
   toProviderRequest,
 } from '@agnes/core'
 import {
@@ -193,16 +195,30 @@ export async function startSessionTitle(
     }
     let sent = false
     const abort = new AbortController()
-    const cancel = () => abort.abort()
+    let cancelledByOwner = false
+    const cancel = () => {
+      cancelledByOwner = true
+      abort.abort()
+    }
     stopped.signal.addEventListener('abort', cancel, { once: true })
     const timer = setTimeout(cancel, options.timeoutMs ?? 30_000)
     let usage: Extract<InferenceEvent, { type: 'usage' }> | undefined
     let text = ''
     let reason = 'incomplete'
+    let providerCancelled = false
+    let modelCall: ModelCallHandle | undefined
     try {
       if (stopped.signal.aborted) return
       await save({ ...seed, status: 'requested' })
       if (stopped.signal.aborted || !record || !['requested'].includes(record.status)) return
+      modelCall = await beginModelCall(session, {
+        purpose: 'title',
+        parentEffectId: effectId,
+        route: seed.route,
+        model: seed.model,
+        sourceTurn: seed.turn,
+        sourceStep: 0,
+      })
       sent = true
       const iterator = session.d.provider
         .infer(wire, { signal: abort.signal, toolNames: [], retry: false })
@@ -218,6 +234,7 @@ export async function startSessionTitle(
           const next = await Promise.race([iterator.next(), cancelled])
           if (!next || next.done) break
           const event = next.value
+          modelCall.observe(event)
           if (event.type === 'text_delta') {
             text += event.delta
             if (text.length > 4096) {
@@ -229,6 +246,7 @@ export async function startSessionTitle(
             reason = event.reason === 'stop' ? 'completed' : 'invalid-title'
             break
           } else if (event.type === 'error') {
+            providerCancelled = event.reason === 'aborted'
             reason = event.code
             break
           } else if (event.type === 'toolcall_end' || event.type === 'deviation') {
@@ -248,6 +266,15 @@ export async function startSessionTitle(
       stopped.signal.removeEventListener('abort', cancel)
       abort.abort()
       if (!sent && permit) await permit.store.releaseReservation(permit.id)
+      await modelCall?.settle(
+        stopped.signal.aborted || cancelledByOwner || providerCancelled
+          ? 'cancelled'
+          : reason === 'completed'
+            ? 'completed'
+            : reason === 'incomplete'
+              ? 'unknown'
+              : 'failed',
+      )
     }
     if (!sent) return
     const title = reason === 'completed' ? normalizeSessionTitle(text) : undefined

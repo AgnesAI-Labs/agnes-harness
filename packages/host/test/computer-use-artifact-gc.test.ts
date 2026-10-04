@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { deletePrivateArtifactSync, privateArtifactDeleteAvailable } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DDL } from '../src/adapters/ddl.js'
+import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
 import { ARTIFACT_RECLAIMED_FAILURE, createLocalArtifactReadStore } from '../src/artifact-read-store.js'
 import {
   ARTIFACT_REF_INDEX_FILE,
@@ -20,6 +21,7 @@ import { planRetentionProtection } from '../src/artifact-retention-protection.js
 import { createComputerUseArtifactGcRuntime } from '../src/computer-use-artifact-gc.js'
 import { computerUseMarkerPath } from '../src/computer-use-marker.js'
 import { createPrivateArtifactStore, withComputerUseArtifactMutation } from '../src/private-artifact-store.js'
+import { createComparisonStore } from '../src/runtime/comparison-store.js'
 import { fullScanRefIndex, indexTables } from './support/full-scan-roots-oracle.js'
 
 vi.mock('../src/artifact-ref-index.js', async (importOriginal) => {
@@ -171,29 +173,89 @@ describe.skipIf(!privateArtifactDeleteAvailable())('Computer Use artifact GC pro
     }
   })
 
-  it('keeps an expired screenshot referenced by the durable ledger', async () => {
-    const fixture = await screenshotFixture()
-    const database = new DatabaseSync(join(fixture.dataDir, 'sessions.db'))
-    for (const ddl of DDL) database.exec(ddl)
-    database
-      .prepare(
-        "INSERT INTO events (session_key, seq, ts, id, type, actor, origin, trust, data) VALUES (?, ?, '2026-09-24T00:00:00.000Z', ?, ?, '{}', 'user', 'trusted', ?)",
-      )
-      .run('one', 1, 'one-1', 'tool/result', JSON.stringify({ uri: `artifact://${fixture.sha256}` }))
-    database.close()
-    const runtime = createComputerUseArtifactGcRuntime({
-      dataDir: fixture.dataDir,
-      retention,
-      clock: () => 120_000,
-    })
-    try {
-      const result = await runtime.trigger()
-      expect(result.deleted).toBe(0)
-      expect(existsSync(fixture.artifact)).toBe(true)
-    } finally {
-      await runtime.close()
-    }
-  })
+  it.each(['ledger', 'archive', 'corrupt archive'] as const)(
+    'keeps an expired screenshot referenced by the durable %s',
+    async (source) => {
+      const fixture = await screenshotFixture()
+      const database = new DatabaseSync(join(fixture.dataDir, 'sessions.db'))
+      for (const ddl of DDL) database.exec(ddl)
+      database
+        .prepare(
+          "INSERT INTO events (session_key, seq, ts, id, type, actor, origin, trust, data) VALUES (?, ?, '2026-09-24T00:00:00.000Z', ?, ?, '{}', 'user', 'trusted', ?)",
+        )
+        .run('one', 1, 'one-1', 'tool/result', JSON.stringify({ uri: `artifact://${fixture.sha256}` }))
+      database.close()
+      if (source !== 'ledger') {
+        const storage = createSqliteStorage({
+          file: join(fixture.dataDir, 'sessions.db'),
+          tablesDir: join(fixture.dataDir, 'tables'),
+        })
+        const archives = createComparisonStore(join(fixture.dataDir, 'comparisons', 'index.sqlite'))
+        try {
+          const record = {
+            id: 'retained',
+            revision: 0,
+            createPayload: '{}',
+            creation: 'ready' as const,
+            rounds: [],
+            cancellation: {},
+            cleanup: { exited: [], released: false },
+            lanes: {
+              left: {
+                side: 'left' as const,
+                sessionId: 'one',
+                runtime: { id: 'native', version: '1' },
+                workspaceLabel: 'left',
+                phase: 'idle' as const,
+                lastSeq: 1,
+              },
+            },
+          }
+          const scoped = archives.scoped('owner')
+          await scoped.compareAndSwap(record.id, null, record)
+          await scoped.compareAndSwap(record.id, 0, {
+            ...record,
+            revision: 1,
+            retirement: { state: 'releasing', epoch: 1 },
+          })
+          scoped.archive.write(record.id, 'left', {
+            sessionId: 'one',
+            epoch: 1,
+            throughSeq: 1,
+            rows: await storage.scanIntegrity('one', { fromSeq: 1, toSeq: 1, limit: 1 }),
+          })
+        } finally {
+          archives.close()
+          await storage.close()
+        }
+        const raw = new DatabaseSync(join(fixture.dataDir, 'sessions.db'))
+        raw.exec('DELETE FROM events')
+        raw.close()
+        if (source === 'corrupt archive') {
+          const corrupt = new DatabaseSync(join(fixture.dataDir, 'comparisons', 'index.sqlite'))
+          corrupt.exec("UPDATE comparison_archives SET roots='[]'")
+          corrupt.close()
+        }
+      }
+      const runtime = createComputerUseArtifactGcRuntime({
+        dataDir: fixture.dataDir,
+        retention,
+        clock: () => 120_000,
+      })
+      try {
+        if (source === 'corrupt archive') {
+          await expect(runtime.trigger()).rejects.toThrow(/archive root receipt/)
+          expect(existsSync(fixture.artifact)).toBe(true)
+          return
+        }
+        const result = await runtime.trigger()
+        expect(result.deleted).toBe(0)
+        expect(existsSync(fixture.artifact)).toBe(true)
+      } finally {
+        await runtime.close()
+      }
+    },
+  )
 
   it('keeps a reused digest while its refreshed capture age is inside the retention window', async () => {
     vi.useFakeTimers().setSystemTime(120_000)

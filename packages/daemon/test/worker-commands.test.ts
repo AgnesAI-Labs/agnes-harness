@@ -1,15 +1,200 @@
 import type { Host, HostSession } from '@agnes/host'
+import { comparisonPayloadDigest } from '@agnes/host'
 import type { Actor } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { WorkerHello } from '../src/supervisor/frames.js'
 import { encodeFrame, FrameTooLarge, InvalidFrame, JsonlDecoder } from '../src/supervisor/framing.js'
-import { handleCommand } from '../src/worker/commands.js'
+import { handleCommand, handleServiceCommand } from '../src/worker/commands.js'
 import { openTestHost, say } from './host.js'
 
 const actor: Actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 type CommandFrame = Parameters<typeof handleCommand>[1]
 
 describe('worker command dispatch against a real host+session', () => {
+  it('retains an exact-owner idle gate without granting enqueue/run authority', async () => {
+    const t = await openTestHost()
+    try {
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      const storage = session.d.log.storage as import('@agnes/host').SqliteStorage
+      const owner = storage.readSessionOwnerEvidence(session.key)?.owner
+      if (!owner) throw new Error('Missing actual owner')
+      const options = { host: t.host, aborts: new Map() }
+      const command = (params: Record<string, unknown>) =>
+        handleCommand(
+          session,
+          { kind: 'command', requestId: 'idle', method: 'sessionIdleGate', params },
+          options,
+        )
+      await expect(
+        command({ action: 'acquire', input: { members: [{ ...owner, ownerEpoch: owner.ownerEpoch + 1 }] } }),
+      ).rejects.toMatchObject({ code: 'E_RELATION' })
+      const held = (await command({ action: 'acquire', input: { members: [owner] } })) as { token: string }
+      await expect(
+        session.enqueue('next-turn', {
+          commandId: 'forbidden',
+          content: [{ type: 'text', text: 'no' }],
+          actor,
+        }),
+      ).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+      await expect(
+        session.run({ until: 'turn-end', signal: new AbortController().signal }),
+      ).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+      await expect(session.setYolo(true, actor)).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
+      await command({ action: 'check', token: held.token })
+      await command({ action: 'release', token: held.token })
+      await command({ action: 'release', token: held.token })
+      expect(session.idleGateReserved).toBe(false)
+      const lost = (await command({
+        action: 'acquire',
+        input: { members: [owner], acquisitionId: 'lost-reply' },
+      })) as { token: string }
+      await command({ action: 'cancelAcquire', acquisitionId: 'lost-reply' })
+      expect(session.idleGateReserved).toBe(false)
+      await expect(command({ action: 'check', token: lost.token })).rejects.toMatchObject({
+        code: 'E_RELATION',
+      })
+      await command({ action: 'cancelAcquire', acquisitionId: 'cleanup-before-acquire' })
+      await expect(
+        command({ action: 'acquire', input: { members: [owner], acquisitionId: 'cleanup-before-acquire' } }),
+      ).rejects.toMatchObject({ code: 'E_RELATION' })
+      const pending = t.host.sessionIdleGates.acquire({ members: [owner], acquisitionId: 'pending-cleanup' })
+      const cleanup = t.host.sessionIdleGates.cancelAcquire('pending-cleanup')
+      await expect(pending).rejects.toMatchObject({ code: 'E_CLOSED' })
+      await cleanup
+      expect(session.idleGateReserved).toBe(false)
+      await session.enqueue('next-turn', {
+        commandId: 'accepted',
+        content: [{ type: 'text', text: 'yes' }],
+        actor,
+      })
+      await expect(command({ action: 'acquire', input: { members: [owner] } })).rejects.toMatchObject({
+        code: 'E_LANE_BUSY',
+      })
+      await session.cancelQueuedInput('accepted')
+      const closing = (await command({ action: 'acquire', input: { members: [owner] } })) as { token: string }
+      await session.close()
+      await expect(t.host.sessionIdleGates.check(closing.token)).rejects.toMatchObject({ code: 'E_RELATION' })
+      await t.host.sessionIdleGates.release(closing.token)
+    } finally {
+      await t.close()
+    }
+  })
+  it('retains exact configuration and worker resource admission across enqueue until explicit maintenance cancellation', async () => {
+    const t = await openTestHost()
+    try {
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      const prepared = await t.host.prepareSessionConfiguration(session.key)
+      const content = [{ type: 'text' as const, text: 'Worker-held prompt' }]
+      const options = { host: t.host, aborts: new Map() }
+      const command = (params: Record<string, unknown>) =>
+        handleCommand(
+          session,
+          { kind: 'command', requestId: 'admission', method: 'configurationAdmission', params },
+          options,
+        )
+      const receipt = (await command({
+        action: 'acquire',
+        input: {
+          sessionId: session.key,
+          inputId: 'input',
+          payloadDigest: comparisonPayloadDigest(content),
+          prepared,
+        },
+      })) as { token: string }
+      expect(await command({ action: 'probe' })).toMatchObject({
+        sessionId: session.key,
+        writerRunId: session.writerRunId,
+        held: true,
+      })
+      await command({
+        action: 'enqueue',
+        token: receipt.token,
+        message: { content, actor, commandId: 'input' },
+      })
+      await expect(command({ action: 'run', token: receipt.token, runId: 'unsealed' })).rejects.toMatchObject(
+        { code: 'E_RELATION' },
+      )
+      await expect(command({ action: 'release', token: receipt.token })).rejects.toMatchObject({
+        code: 'E_LANE_BUSY',
+      })
+      expect(await command({ action: 'cancel', inputId: 'unrelated', actor, onlyMatching: true })).toEqual({
+        inputId: 'unrelated',
+      })
+      expect(await command({ action: 'probe' })).toMatchObject({ held: true })
+      expect(session.latest('inbox')).toMatchObject({ items: [{ commandId: 'input' }] })
+      await command({ action: 'cancel', inputId: 'input', actor })
+      expect(await command({ action: 'probe' })).toMatchObject({ held: false })
+      await expect(
+        session.enqueue('next-turn', { commandId: 'unrelated', content, actor }),
+      ).rejects.toMatchObject({ code: 'E_RELATION' })
+      expect(await session.scan({ type: 'turn/start', limit: 10 })).toEqual([])
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('reads the runtime catalog and frozen selection without creating a session', async () => {
+    const t = await openTestHost({
+      provider: (profile) => ({
+        models: () => profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+        infer() {
+          throw new Error('Runtime metadata must not infer')
+        },
+      }),
+    })
+    try {
+      const before = [...t.host.kernel.sessions.keys()]
+      const result = await handleServiceCommand(
+        t.host,
+        { kind: 'command', requestId: 'catalog', method: 'runtime.catalog', params: {} },
+        new Map(),
+      )
+      expect(result).toEqual({ items: t.host.runtimeCatalog() })
+      const selection = await handleServiceCommand(
+        t.host,
+        { kind: 'command', requestId: 'selection', method: 'runtime.resolveSelection', params: {} },
+        new Map(),
+      )
+      expect(selection).toMatchObject({
+        preset: t.host.profile.presets.default,
+        model: { route: expect.any(String), model: expect.any(String), contextWindow: expect.any(Number) },
+      })
+      expect([...t.host.kernel.sessions.keys()]).toEqual(before)
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('cancels only the correlated queued input before a turn claims it', async () => {
+    const t = await openTestHost()
+    try {
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      for (const commandId of ['cancel-me', 'keep-me'])
+        await session.enqueue('next-turn', { commandId, actor, content: [{ type: 'text', text: commandId }] })
+      const before = session.lastSeq
+      const seq = await handleCommand(
+        session,
+        {
+          kind: 'command',
+          requestId: 'cancel',
+          method: 'cancelQueuedInput',
+          params: { commandId: 'cancel-me' },
+        },
+        { host: t.host, aborts: new Map() },
+      )
+      expect(seq).toBeGreaterThan(before)
+      expect(session.latest('inbox')).toMatchObject({ items: [{ commandId: 'keep-me' }] })
+      const idleAbort = await handleCommand(
+        session,
+        { kind: 'command', requestId: 'abort-session', method: 'abortSession', params: { by: actor } },
+        { host: t.host, aborts: new Map() },
+      )
+      expect(idleAbort).toBeDefined()
+    } finally {
+      await t.close()
+    }
+  })
+
   it('reads tool detail through the worker command boundary in bounded pages', async () => {
     const t = await openTestHost()
     try {

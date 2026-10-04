@@ -9,6 +9,11 @@ import { validateArgv, validateClosedNetworkOptions } from './shared.js'
 export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConfineOptions): string[] {
   const command = validateArgv(argv)
   const policy = validateClosedNetworkOptions(options)
+  const soft = new Set(policy.denyExceptions.map((entry) => entry.path))
+  const mounts = [
+    ...policy.allowPaths.map((path) => ({ path, argv: ['--bind', path, path] })),
+    ...policy.denyExceptions.map(({ path }) => ({ path, argv: ['--tmpfs', path] })),
+  ].sort((a, b) => a.path.split('/').length - b.path.split('/').length)
   return [
     'bwrap',
     '--ro-bind',
@@ -23,9 +28,9 @@ export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConf
     '--unshare-uts',
     '--unshare-net',
     '--die-with-parent',
-    ...policy.allowPaths.flatMap((path) => ['--bind', path, path]),
+    ...mounts.flatMap((mount) => mount.argv),
     // These mounts occur after writable binds, so a deny below an allow remains masked.
-    ...policy.denyPaths.flatMap((path) => ['--tmpfs', path]),
+    ...policy.denyPaths.filter((path) => !soft.has(path)).flatMap((path) => ['--tmpfs', path]),
     '--chdir',
     policy.cwd,
     '--',

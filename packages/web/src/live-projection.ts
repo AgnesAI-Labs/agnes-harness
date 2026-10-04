@@ -41,11 +41,25 @@ export type LiveProjection = {
  * session's previews, merged locally and laid over every timeline the daemon installs.
  */
 export function createLiveProjection(
-  session: Pick<Session, 'events' | 'onPreview' | 'projectUIOpening' | 'projectUIHistory' | 'projectUIPatch'>,
+  session: Pick<
+    Session,
+    'events' | 'onPreview' | 'projectUIOpening' | 'projectUIHistory' | 'projectUIPatch'
+  > &
+    Partial<Pick<Session, 'id'>>,
   connection: Pick<Client, 'connectionState' | 'on'>,
   sink: LiveProjectionSink,
 ): LiveProjection {
   const merger = new PreviewMerger()
+  let epoch = 0
+  let started = false
+  let stopped = false
+  let opening: Promise<void> | undefined
+  let advanceGeneration: () => void = () => undefined
+  const generationSignal = () =>
+    new Promise<void>((resolve) => {
+      advanceGeneration = resolve
+    })
+  let generationChanged = generationSignal()
   let authoritative: UITimeline | undefined
   let shown: UITimeline | undefined
   let window: UIProjectionWindow | undefined
@@ -79,35 +93,45 @@ export function createLiveProjection(
     return shown
   }
 
-  const sync = new UIProjectionSync(
-    session,
-    {
-      timeline(value, at) {
-        window = at
-        authoritative = value
-        sink.timeline(display(value), at)
+  const createSync = () => {
+    const observedEpoch = epoch
+    const active = () => !stopped && observedEpoch === epoch
+    return new UIProjectionSync(
+      session,
+      {
+        timeline(value, at) {
+          if (!active()) return
+          window = at
+          authoritative = value
+          sink.timeline(display(value), at)
+        },
+        preview(p) {
+          if (!active() || !merger.add(p) || !authoritative) return
+          continuity.delete(p.effectId)
+          // Only a node already on screen repaints; one still on its way gets the text when it lands.
+          if (!authoritative.nodes.some((node) => node.kind === 'assistant' && node.effectId === p.effectId))
+            return
+          sink.stream(display(authoritative))
+        },
+        event: (event) => {
+          if (active()) sink.event(event)
+        },
+        error: (error) => {
+          if (active()) sink.error(error)
+        },
       },
-      preview(p) {
-        if (!merger.add(p) || !authoritative) return
-        continuity.delete(p.effectId)
-        // Only a node already on screen repaints; one still on its way gets the text when it lands.
-        if (!authoritative.nodes.some((node) => node.kind === 'assistant' && node.effectId === p.effectId))
-          return
-        sink.stream(display(authoritative))
+      {
+        surface: 'web',
+        opening: WEB_OPENING,
+        historyLimit: WEB_HISTORY_LIMIT,
+        isolate: 'share',
+        openingFailure: 'reject',
+        connection,
       },
-      event: (event) => sink.event(event),
-      error: (error) => sink.error(error),
-    },
-    {
-      surface: 'web',
-      opening: WEB_OPENING,
-      historyLimit: WEB_HISTORY_LIMIT,
-      isolate: 'share',
-      openingFailure: 'reject',
-      connection,
-    },
-  )
-  // A new connection or worker generation may have ended any stream this client was following.
+    )
+  }
+  let sync = createSync()
+  // A new connection may have ended any stream this client was following.
   const offReconnected = connection.on('reconnected', () => {
     continuity.clear()
     for (const node of shown?.nodes ?? []) {
@@ -121,9 +145,51 @@ export function createLiveProjection(
     merger.reset()
   })
 
+  const offGeneration = connection.on('generationChanged', (payload) => {
+    if (!payload || typeof payload !== 'object') return
+    const changed = payload as { sessionId?: unknown }
+    const sessionId = session.id ?? authoritative?.sessionId
+    if (stopped || !sessionId || changed.sessionId !== sessionId) return
+    const retiredEpoch = epoch
+    epoch += 1
+    advanceGeneration()
+    generationChanged = generationSignal()
+    // A generation boundary cannot retain a preview, even when effect ids are reused. Stop the
+    // old observer synchronously; its RPCs have no abort signal, so their late results are fenced.
+    void sync.stop().catch((error) => {
+      if (!stopped && retiredEpoch === epoch) sink.error(error)
+    })
+    merger.reset()
+    continuity.clear()
+    shown = authoritative
+    if (authoritative && window) sink.timeline(authoritative, window)
+    window = undefined
+    sync = createSync()
+    if (started) {
+      const observedEpoch = epoch
+      opening = sync.start()
+      void opening.catch((error) => {
+        if (!stopped && observedEpoch === epoch) sink.error(error)
+      })
+    }
+  })
+
   return {
-    start: () => sync.start(),
+    start: async () => {
+      started = true
+      opening = sync.start()
+      // If the generation changes during the first read, opening belongs to its replacement.
+      for (;;) {
+        const pending: Promise<void> | undefined = opening
+        await Promise.race([pending, generationChanged])
+        if (pending === opening || stopped) return
+      }
+    },
     stop: () => {
+      stopped = true
+      advanceGeneration()
+      epoch += 1
+      offGeneration()
       offReconnected()
       continuity.clear()
       shown = undefined

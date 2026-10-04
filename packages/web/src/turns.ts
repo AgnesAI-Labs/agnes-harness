@@ -180,6 +180,7 @@ export function createTurnProjector(options: {
         let pendingApproval = false
         let awaitingToolApproval = false
         let runningTool = false
+        let runtimeWork: Extract<UINode, { kind: 'runtime' }> | undefined
         let latestStreaming: Extract<UINode, { kind: 'assistant' }> | undefined
         for (const id of turn.nodeIds) {
           const node = nodeMap.get(id)
@@ -187,6 +188,12 @@ export function createTurnProjector(options: {
           if (!node || !rendered) continue
           const { element, thinking } = rendered
           if (node.kind === 'approval' && node.state === 'pending') pendingApproval = true
+          if (
+            node.kind === 'runtime' &&
+            (node.status === 'running' || node.status === 'waiting') &&
+            (!runtimeWork || node.lastSeq >= runtimeWork.lastSeq)
+          )
+            runtimeWork = node
           if (node.kind === 'tool') {
             if (node.status === 'awaiting_approval') awaitingToolApproval = true
             if (node.status === 'running') runningTool = true
@@ -197,7 +204,7 @@ export function createTurnProjector(options: {
             (!latestStreaming || node.seq >= latestStreaming.seq)
           )
             latestStreaming = node
-          if (node.kind === 'user') userNodes.push(element)
+          if (node.kind === 'user' || (node.kind === 'context' && node.messageSource)) userNodes.push(element)
           else if (id === turn.finalAssistantId) {
             if (node.kind === 'assistant' && node.thinking?.trim() && thinking) {
               processNodes.push(thinking)
@@ -229,6 +236,7 @@ export function createTurnProjector(options: {
           else if (runningTool) status = '正在执行工具'
           else if (latestStreaming?.text.trim()) status = '正在回复'
           else if (latestStreaming?.thinking?.trim()) status = '正在思考'
+          else if (runtimeWork) status = runtimeWork.title
           else status = '正在准备回复'
         }
         const entry = shell

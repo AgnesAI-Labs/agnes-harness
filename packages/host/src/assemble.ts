@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
+  CoreError,
   type CurrentSessionRuntime,
   type Enforcement,
   type HookPort,
@@ -137,6 +138,7 @@ import { serviceInvoker } from './ext-host/service-invocation.js'
 import { ServiceRegistry } from './ext-host/services.js'
 import { ExtensionSessions } from './ext-host/session-bindings.js'
 import { Rollback } from './lifecycle.js'
+import { mountedConfigurationSource } from './mounted-attestation.js'
 import { resolvePreset } from './presets/resolve.js'
 import type { PresetDoc } from './presets/types.js'
 import { createPrivateArtifactStore } from './private-artifact-store.js'
@@ -150,6 +152,7 @@ import {
 } from './profile-policy.js'
 import { PublicationDispatch } from './publication-dispatch.js'
 import { PublicationGate } from './publication-gate.js'
+import { HostQuestions } from './questions.js'
 import { HostQuietState } from './quiet-state.js'
 import { createProductionImageInputTokenFallback } from './request-media-runtime.js'
 import { bindSkillRuntimeToWorkspace, createSkillPromptPreloader } from './resources/skill-preload.js'
@@ -251,6 +254,7 @@ export type OrdinaryReconciliationLifecycle = Readonly<{
 /** Where this host lives on disk. Every one is required: none of them has a safe default. */
 export type { AssembleDeps, HostPaths } from './assembly-deps.js'
 export type Assembled = {
+  questions: HostQuestions
   activationBarrier: ReturnType<typeof createExtensionActivationBarrier>
   approvalGrants: ApprovalGrantManagement
   callService: ReturnType<typeof serviceInvoker>['call']
@@ -263,6 +267,7 @@ export type Assembled = {
   provider: Awaited<ReturnType<typeof buildProvider>>['provider']
   providerFingerprint: string | null
   applyModelProfile(next: ResolvedProfile): Promise<void>
+  retainSessionConfiguration(): { release(): void; run<T>(operation: () => Promise<T>): Promise<T> }
   routes: RouteTable | undefined
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
@@ -745,15 +750,13 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const generationViews = new Map<string, GenerationRegistries>()
     const sessionRuntimeView = (
       sessionKey: string,
-      runtimeRegistryRevision?: string,
+      preset: string,
+      published: { runtimeRegistryRevision: string; ordinary: { pluginTree: HostPluginTreeBase } },
     ): CurrentSessionRuntime => {
       const session = kernel.get(sessionKey)
-      const revision =
-        runtimeRegistryRevision ??
-        runtimeTargetPublisher.current().value.current?.runtimeRegistryRevision ??
-        'unspecified'
       return publishedSessionRuntime({
-        runtimeRegistryRevision: revision,
+        runtimeRegistryRevision: published.runtimeRegistryRevision,
+        mountedConfiguration: mountedConfigurationSource(published.ordinary.pluginTree, preset),
         cache: generationViews,
         hooks: session?.hooks ?? noopHooks,
         ...(kernel ? { seed: { tools: kernel.tools, resources: kernel.resources } } : {}),
@@ -902,7 +905,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         return Object.freeze({
           desired: { preset: overlay.preset },
           overlay,
-          runtime: sessionRuntimeView(sessionKey, candidate.runtimeRegistryRevision),
+          runtime: sessionRuntimeView(sessionKey, overlay.preset, candidate),
           close: () => undefined,
         })
       },
@@ -1039,17 +1042,16 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
     }
     const bindRuntimeSession = async (sessionKey: string, preset: string): Promise<void> => {
-      const published = runtimeTargetPublisher.current().value.current
-      if (!published) return
-      const overlay = isolateSessionOverlay(published.ordinary.pluginTree.root, sessionKey, preset)
-      await runtimeTargetPublisher.setSessionScope(sessionKey, { preset: overlay.preset }, async () =>
-        Object.freeze({
+      if (!runtimeTargetPublisher.current().value.current) return
+      await runtimeTargetPublisher.setSessionScope(sessionKey, { preset }, async (current) => {
+        const overlay = isolateSessionOverlay(current.ordinary.pluginTree.root, sessionKey, preset)
+        return Object.freeze({
           desired: { preset: overlay.preset },
           overlay,
-          runtime: sessionRuntimeView(sessionKey, published.runtimeRegistryRevision),
+          runtime: sessionRuntimeView(sessionKey, overlay.preset, current),
           close: () => undefined,
-        }),
-      )
+        })
+      })
     }
     const unbindRuntimeSession = async (sessionKey: string): Promise<void> => {
       await runtimeTargetPublisher.closeSessionScope(sessionKey)
@@ -1617,13 +1619,15 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         built.provider.registry?.models() ?? built.provider.models(),
         built.contractStore,
       )
-      // No await after candidate validation: all readers move to the same verified catalogue.
-      models.publish({ provider: built.provider, contractForModel: nextContracts })
-      provider = built.provider
-      preconfiguredRoutes = built.preconfiguredRoutes
-      routes = nextRoutes
-      providerFingerprint = built.provider.registry?.fingerprint() ?? null
-      profile = next
+      // Publish the complete image while admission readers remain excluded.
+      await runtimeMutationGate.mutate(() => {
+        models.publish({ provider: built.provider, contractForModel: nextContracts })
+        provider = built.provider
+        preconfiguredRoutes = built.preconfiguredRoutes
+        routes = nextRoutes
+        providerFingerprint = built.provider.registry?.fingerprint() ?? null
+        profile = next
+      })
     }
     const named = routes ? Object.entries(routes).map(([k, v]) => [k, `${v.route}/${v.model}`]) : []
     // The credit rate goes on the audit row, null included. An assembly that priced nothing is the
@@ -1673,7 +1677,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
     const extensionSessions = new ExtensionSessions<HookPort>()
     const compaction = assembleCompaction(modules.get('@agnes/base')?.buildCompactionPlan)
+    const questions = new HostQuestions((key) => kernel.sessions.get(key), deps.questionProvider)
     kernel = Kernel.create({
+      toolQuestions: (session, invocation) => questions.ask(session, invocation),
+      toolQuestionsDrain: (session) => questions.drain(session),
       storage: adapters.storage,
       seams,
       provider: models.provider,
@@ -1709,6 +1716,21 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       // A spawned child's run is its own turn: activation waits for it, and one started while an
       // activation holds the gate queues behind it.
       detachedChildRun: async (run) => (await activationBarrier.enqueue('turn').start()).run(run),
+      childParentWake: async (session) => {
+        await (await activationBarrier.enqueue('turn').start()).run(() =>
+          models.run(async () => {
+            if (kernel.get(session.key) !== session || session.closingOrClosed)
+              throw new CoreError('E_CLOSED', 'parent execution owner is unavailable')
+            if (session.ac.signal.aborted) throw new CoreError('E_RELATION', 'parent wake was cancelled')
+            if (session.executionActive) throw new CoreError('E_LANE_BUSY', 'parent execution is active')
+            await session.run({ until: 'idle', signal: new AbortController().signal })
+          }),
+        )
+      },
+      ...(deps.childSessionOpen ? { childSessionOpen: deps.childSessionOpen } : {}),
+      ...(deps.childSessionSupportsRuntime
+        ? { childSessionSupportsRuntime: deps.childSessionSupportsRuntime }
+        : {}),
       hooksFactory: extensionSessions.factory(
         (session) =>
           Object.freeze({
@@ -2005,15 +2027,16 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const dynamicExtensionIds = new Set<string>()
     // Copies one owner's current Kernel registrations into the published generation sessions are
     // bound to, which otherwise keeps the copy it took when it was created.
-    const mirrorGenerationOwner = (id: string) => {
-      const current = runtimeTargetPublisher.current().value.current
-      if (!current) return
-      const seed = { tools: kernel.tools, resources: kernel.resources }
-      const generation = generationRegistries(generationViews, current.runtimeRegistryRevision, seed)
-      const replacement = prepareGenerationOwnerReplacement(generation, id, seed)
-      replacement.commit()
-      replacement.finalize()
-    }
+    const mirrorGenerationOwner = (id: string) =>
+      runtimeMutationGate.mutate(() => {
+        const current = runtimeTargetPublisher.current().value.current
+        if (!current) return
+        const seed = { tools: kernel.tools, resources: kernel.resources }
+        const generation = generationRegistries(generationViews, current.runtimeRegistryRevision, seed)
+        const replacement = prepareGenerationOwnerReplacement(generation, id, seed)
+        replacement.commit()
+        replacement.finalize()
+      })
     const extRowLoader: ExtRowLoader = Object.freeze({
       load: async (extensionId: string) => ({
         id: extensionId,
@@ -2063,7 +2086,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         embedded: dynamic.manifest,
         factory: () => dynamic.factory(ecosystemContext(dynamic.spec.package, extensionId)),
         registration: 'lifetime',
-        onLateRegistration: () => mirrorGenerationOwner(extensionId),
+        onLateRegistration: () => {
+          void mirrorGenerationOwner(extensionId).catch(() =>
+            say('extension.registration.deferred-failed', { id: extensionId }),
+          )
+        },
       })
     }
     const prepareExtensionRow = (
@@ -2324,6 +2351,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     })
     return {
       activationBarrier,
+      questions,
       approvalGrants: approvalGrantControl.management,
       callService: servicesInvocation.call,
       inspectService: servicesInvocation.inspect,
@@ -2345,6 +2373,18 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         return preconfiguredRoutes
       },
       applyModelProfile,
+      retainSessionConfiguration() {
+        const lease = runtimeMutationGate.tryEnterRead()
+        if (!lease)
+          throw new CoreError('E_LANE_BUSY', 'Runtime publication is pending', {
+            reason: 'runtime-publication-pending',
+          })
+        const snapshot = models.retain()
+        return {
+          release: () => lease.release(),
+          run: (operation) => lease.run(() => snapshot.run(operation)),
+        }
+      },
       presets,
       runtimes,
       adapters,

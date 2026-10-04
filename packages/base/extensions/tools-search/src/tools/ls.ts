@@ -1,6 +1,7 @@
 import { defineTool, type FsEntry, type ToolResult } from '@agnes/extension-api'
-import { guardedResult } from '../../../tools-core/src/guards/output.js'
+import { guardOutput, refBlock } from '../../../tools-core/src/guards/output.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
+import { HOST_TOOL_FACT_CODEC, hostPathFact } from '../../../tools-core/src/tools/facts.js'
 import { LsParams } from '../../../tools-core/src/tools/schemas.js'
 import { allowed, SEARCH_META, searchPathError, toolError } from './walk.js'
 
@@ -32,11 +33,35 @@ export const lsTool = defineTool({
       .filter((e) => allowed(ctx, `${abs}/${e.name}`))
       // Code points, not the machine's collation, so the same directory always lists the same way.
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    const lines = kept.slice(0, args.limit ?? DEFAULT_LIMIT).map((e) => `${e.name}${MARK[e.kind]}`)
+    const limit = args.limit ?? DEFAULT_LIMIT
+    const visible = kept.slice(0, limit)
+    const lines = visible.map((e) => `${e.name}${MARK[e.kind]}`)
     if (kept.length > lines.length) lines.push(`[${kept.length - lines.length} more]`)
     const hidden = entries.length - kept.length
     if (hidden > 0) lines.push(`[${hidden} entries not listed: denied by policy]`)
     // An empty answer is indistinguishable from a broken tool, so an empty directory says so.
-    return guardedResult(ctx, lines.length > 0 ? lines.join('\n') : '(no entries)')
+    const guarded = await guardOutput(ctx, lines.length > 0 ? lines.join('\n') : '(no entries)')
+    const block = { type: 'text' as const, text: guarded.text }
+    const resultLimitReached = kept.length > visible.length
+    return {
+      content: guarded.ref ? [block, refBlock(guarded.ref)] : [block],
+      structured: {
+        codec: HOST_TOOL_FACT_CODEC,
+        tool: 'ls',
+        root: hostPathFact(dir, ctx.cwd),
+        query: { limit },
+        entries: visible.map((entry) => ({
+          name: entry.name,
+          kind: entry.kind,
+          path: hostPathFact(`${abs}/${entry.name}`, ctx.cwd).path,
+        })),
+        coverage: {
+          complete: !resultLimitReached && hidden === 0 && !guarded.truncated,
+          resultLimitReached,
+          outputTruncated: guarded.truncated,
+          deniedEntries: hidden,
+        },
+      },
+    }
   },
 })

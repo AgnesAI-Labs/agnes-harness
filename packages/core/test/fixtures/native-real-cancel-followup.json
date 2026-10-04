@@ -1,0 +1,1366 @@
+{
+  "sessionId": "agnes:native-cancel-context-fixture",
+  "first": {
+    "stopReason": "cancelled",
+    "reason": "aborted",
+    "lastSeq": 22
+  },
+  "second": {
+    "stopReason": "end_turn",
+    "reason": "completed",
+    "lastSeq": 41,
+    "credits": {
+      "used": 0.000281,
+      "source": "estimated"
+    }
+  },
+  "previews": [
+    {
+      "sessionId": "agnes:native-cancel-context-fixture",
+      "lane": "main",
+      "effectId": "e-f8c86b6fcf565895d170d8afbd909298",
+      "stream": "thinking",
+      "offset": 0,
+      "delta": "The"
+    },
+    {
+      "sessionId": "agnes:native-cancel-context-fixture",
+      "lane": "main",
+      "effectId": "e-f8c86b6fcf565895d170d8afbd909298",
+      "stream": "thinking",
+      "offset": 3,
+      "delta": " user asks me not to call any tools, and to"
+    }
+  ],
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-10-02T17:14:44.012Z",
+      "id": "01M3YSRWXC8DQJ53RW9DXHTGH6",
+      "type": "session/start",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "key": "agnes:native-cancel-context-fixture",
+        "resolvedProfileHash": "sha256-635e9d98fd9faf41fdcfc6b735a74280c384b0a35540e8b2014db9fa0a8adae3",
+        "preset": "standard-no-credit-cap",
+        "agnesVersion": "0.0.0",
+        "runtime": {
+          "id": "native",
+          "version": "1"
+        },
+        "modelSettings": [
+          {
+            "slot": "primary",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "settings": {
+              "contextWindow": 1000000
+            }
+          },
+          {
+            "slot": "escalation",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "settings": {
+              "contextWindow": 1000000
+            }
+          },
+          {
+            "slot": "fast",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "settings": {
+              "contextWindow": 1000000
+            }
+          },
+          {
+            "slot": "compaction",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "settings": {
+              "contextWindow": 1000000
+            }
+          },
+          {
+            "slot": "verifier",
+            "route": "deepseek",
+            "model": "deepseek-v4-flash",
+            "settings": {
+              "contextWindow": 1000000
+            }
+          }
+        ]
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-10-02T17:14:44.013Z",
+      "id": "01M3YSRWXD4805PCZGY3848DAN",
+      "type": "x/agnes/code-mode/kernel",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "system",
+        "deptPath": [],
+        "attrs": {}
+      },
+      "origin": "ext:agnes/code-mode",
+      "trust": "untrusted",
+      "data": {
+        "alive": false
+      },
+      "ignorable": true
+    },
+    {
+      "seq": 3,
+      "ts": "2026-10-02T17:14:44.018Z",
+      "id": "01M3YSRWXJE25Q18ZEEX5NK9M9",
+      "type": "inbox",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "items": [
+          {
+            "itemId": "r-7df688cd136c63cb92f0d1608d3baa95",
+            "target": "next-turn",
+            "content": [
+              {
+                "type": "text",
+                "text": "不要调用任何工具。请用约1500字中文，连续解释事件溯源系统中提交记录、重复请求和取消状态的区别，给出两个具体示例。这是一项文本流式响应验证。"
+              }
+            ],
+            "actor": {
+              "id": "local",
+              "org": "local",
+              "role": "owner",
+              "deptPath": [],
+              "attrs": {}
+            },
+            "enqueuedAt": "2026-10-02T17:14:44.018Z",
+            "kind": "prompt",
+            "trust": "trusted"
+          }
+        ]
+      },
+      "register": "inbox"
+    },
+    {
+      "seq": 4,
+      "ts": "2026-10-02T17:14:44.141Z",
+      "id": "01M3YSRX1DCY4QYX311SJA6YAT",
+      "type": "inbox",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "items": []
+      },
+      "register": "inbox"
+    },
+    {
+      "seq": 5,
+      "ts": "2026-10-02T17:14:44.141Z",
+      "id": "01M3YSRX1DCY4QYX311SJA6YAV",
+      "type": "user/message",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {}
+      },
+      "origin": "principal",
+      "trust": "trusted",
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "不要调用任何工具。请用约1500字中文，连续解释事件溯源系统中提交记录、重复请求和取消状态的区别，给出两个具体示例。这是一项文本流式响应验证。"
+          }
+        ],
+        "kind": "prompt"
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-10-02T17:14:44.141Z",
+      "id": "01M3YSRX1DCY4QYX311SJA6YAW",
+      "type": "turn/start",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "turn": 1,
+        "trigger": "prompt"
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-10-02T17:14:44.142Z",
+      "id": "01M3YSRX1E1PDP8EZPC7YCXQZC",
+      "type": "x/host/session-title",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "status": "pending",
+        "turn": 1,
+        "startSeq": 6,
+        "route": "deepseek",
+        "model": "deepseek-v4-flash",
+        "prompt": "不要调用任何工具。请用约1500字中文，连续解释事件溯源系统中提交记录、重复请求和取消状态的区别，给出两个具体示例。这是一项文本流式响应验证。",
+        "budgetCap": null,
+        "treeBudgetCap": null
+      },
+      "ignorable": true
+    },
+    {
+      "seq": 8,
+      "ts": "2026-10-02T17:14:44.143Z",
+      "id": "01M3YSRX1FBZS22C5PJFMH3JRT",
+      "type": "budget.state",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "slot": "primary",
+        "escalate": false,
+        "creditsUsed": 0,
+        "creditsCap": null,
+        "lastPreflight": {
+          "tokens": 41,
+          "source": "estimate"
+        }
+      },
+      "register": "budget.state"
+    },
+    {
+      "seq": 9,
+      "ts": "2026-10-02T17:14:44.144Z",
+      "id": "01M3YSRX1GT1XYZGM26XCPWK5A",
+      "type": "x/core/op-mark",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "phase": "inference"
+      },
+      "ignorable": true
+    },
+    {
+      "seq": 10,
+      "ts": "2026-10-02T17:14:44.267Z",
+      "id": "01M3YSRX5BHZMG7G7ZNF0ZHV5P",
+      "type": "x/core/context-breakdown",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "sections": [
+          {
+            "id": "core:untrusted-envelope",
+            "order": 0,
+            "source": "core",
+            "tokens": 380
+          },
+          {
+            "id": "persona",
+            "order": 100,
+            "source": "@agnes/code",
+            "tokens": 266
+          },
+          {
+            "id": "environment",
+            "order": 110,
+            "source": "@agnes/code",
+            "tokens": 213
+          },
+          {
+            "id": "core:computer-use-model",
+            "order": 111,
+            "source": "core",
+            "tokens": 74
+          },
+          {
+            "id": "coding-doctrine",
+            "order": 130,
+            "source": "@agnes/code",
+            "tokens": 302
+          },
+          {
+            "id": "skills",
+            "order": 160,
+            "source": "agnes/skills",
+            "tokens": 2607
+          }
+        ]
+      },
+      "ignorable": true
+    },
+    {
+      "seq": 11,
+      "ts": "2026-10-02T17:14:44.270Z",
+      "id": "01M3YSRX5EFVSVN7FQC4E3480W",
+      "type": "step/start",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "turn": 1,
+        "step": 1
+      }
+    },
+    {
+      "seq": 12,
+      "ts": "2026-10-02T17:14:44.270Z",
+      "id": "01M3YSRX5EFVSVN7FQC4E3480X",
+      "type": "user/message",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "system",
+        "deptPath": [],
+        "attrs": {}
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "[runtime context]\n[omitted from fixture]"
+          }
+        ],
+        "kind": "runtime_context"
+      }
+    },
+    {
+      "seq": 13,
+      "ts": "2026-10-02T17:14:44.270Z",
+      "id": "01M3YSRX5EFVSVN7FQC4E3480Y",
+      "type": "request/header",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "derived_hash": "055b9a3aa09d4fe6567efff3b1bc3cb3e3a8917e1b6419e2e34943e6635d57b2",
+        "prompt_prefix_hash": "bc380895c7c6080f9015b3f85243dbb9863fb6200f9b56aba9f63b9280f2ee7e",
+        "tool_schema_hash": "237bd95b931a4fe54373c10a46a50d056f6da65fd3a7d2a89b094423d9ba1696",
+        "parser_version": "2",
+        "contract_id": null,
+        "model": "deepseek-v4-flash",
+        "envelopeNonce": "864a0cead59283f1f257ab810de7e874",
+        "media": {
+          "version": 1,
+          "route": "text-only",
+          "selectionOrder": [],
+          "manifest": []
+        }
+      }
+    },
+    {
+      "seq": 14,
+      "ts": "2026-10-02T17:14:44.270Z",
+      "id": "01M3YSRX5EFVSVN7FQC4E3480Z",
+      "type": "effect/intent",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "effectId": "e-f8c86b6fcf565895d170d8afbd909298",
+        "kind": "inference",
+        "replay": "never",
+        "slot": "primary"
+      }
+    },
+    {
+      "seq": 15,
+      "ts": "2026-10-02T17:14:46.059Z",
+      "id": "01M3YSRYXBC17KBRF63J660707",
+      "type": "request/sent",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "prompt_prefix_hash": null,
+        "tool_schema_hash": "237bd95b931a4fe54373c10a46a50d056f6da65fd3a7d2a89b094423d9ba1696",
+        "parser_version": "2",
+        "contract_id": null,
+        "model": {
+          "route": "deepseek",
+          "id": "deepseek-v4-flash"
+        },
+        "derived_hash": "055b9a3aa09d4fe6567efff3b1bc3cb3e3a8917e1b6419e2e34943e6635d57b2",
+        "sent_hash": "1229e5df504b7c92b1e308fd15727e8a5d8cf3f50e07969b1e27394fcc5e53d5",
+        "transforms": [
+          {
+            "event": "compat",
+            "ext": "pi"
+          }
+        ]
+      },
+      "sourceEventSeqs": [13, 14]
+    },
+    {
+      "seq": 16,
+      "ts": "2026-10-02T17:14:46.062Z",
+      "id": "01M3YSRYXEK76NW679FC4D1H36",
+      "type": "assistant/output",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "model",
+      "trust": "trusted",
+      "data": {
+        "state": "started",
+        "effectId": "e-f8c86b6fcf565895d170d8afbd909298",
+        "chars": {
+          "text": 0,
+          "thinking": 3
+        },
+        "estimatedTokens": 1
+      }
+    },
+    {
+      "seq": 17,
+      "ts": "2026-10-02T17:14:46.065Z",
+      "id": "01M3YSRYXH5354AY5BQFD3ST89",
+      "type": "x/core/op-mark",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "phase": "inference",
+        "control": "cancel_requested",
+        "by": {
+          "id": "luchong",
+          "org": "local",
+          "role": "owner",
+          "deptPath": [],
+          "attrs": {
+            "surface": "session"
+          }
+        },
+        "requestedAt": "2026-10-02T17:14:46.065Z"
+      },
+      "ignorable": true
+    },
+    {
+      "seq": 18,
+      "ts": "2026-10-02T17:14:46.066Z",
+      "id": "01M3YSRYXJTEDAMM814E9ZMCXT",
+      "type": "assistant/output",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "model",
+      "trust": "trusted",
+      "data": {
+        "state": "interrupted",
+        "effectId": "e-f8c86b6fcf565895d170d8afbd909298",
+        "chars": {
+          "text": 0,
+          "thinking": 46
+        },
+        "estimatedTokens": 12,
+        "content": [
+          {
+            "type": "thinking",
+            "text": "The user asks me not to call any tools, and to"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 19,
+      "ts": "2026-10-02T17:14:46.072Z",
+      "id": "01M3YSRYXRMP6ZPGPYANH9CJHD",
+      "type": "cost/ledger",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "purpose": "inference",
+        "effectId": "e-f8c86b6fcf565895d170d8afbd909298",
+        "tokens": {
+          "input": 0,
+          "output": 12,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "creditSource": "estimated",
+        "model": "deepseek-v4-flash",
+        "interrupted": true
+      }
+    },
+    {
+      "seq": 20,
+      "ts": "2026-10-02T17:14:46.072Z",
+      "id": "01M3YSRYXRMP6ZPGPYANH9CJHE",
+      "type": "effect/settled",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "effectId": "e-f8c86b6fcf565895d170d8afbd909298",
+        "outcome": "aborted",
+        "durationMs": 1802
+      }
+    },
+    {
+      "seq": 21,
+      "ts": "2026-10-02T17:14:46.072Z",
+      "id": "01M3YSRYXRMP6ZPGPYANH9CJHF",
+      "type": "step/end",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "turn": 1,
+        "step": 1
+      }
+    },
+    {
+      "seq": 22,
+      "ts": "2026-10-02T17:14:46.073Z",
+      "id": "01M3YSRYXSW2S29TSTQ6MB2MXC",
+      "type": "turn/end",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "reason": "aborted",
+        "lastAssistantSeq": null,
+        "error": {
+          "code": "ABORTED",
+          "message": "This operation was aborted"
+        }
+      }
+    },
+    {
+      "seq": 23,
+      "ts": "2026-10-02T17:14:46.074Z",
+      "id": "01M3YSRYXT357YR17FVBQCYW7N",
+      "type": "x/host/session-title",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "status": "failed",
+        "turn": 1,
+        "startSeq": 6,
+        "route": "deepseek",
+        "model": "deepseek-v4-flash",
+        "prompt": "不要调用任何工具。请用约1500字中文，连续解释事件溯源系统中提交记录、重复请求和取消状态的区别，给出两个具体示例。这是一项文本流式响应验证。",
+        "budgetCap": null,
+        "treeBudgetCap": null,
+        "reason": "aborted"
+      },
+      "ignorable": true
+    },
+    {
+      "seq": 24,
+      "ts": "2026-10-02T17:14:46.076Z",
+      "id": "01M3YSRYXW7T33HMM3Y209QZX8",
+      "type": "inbox",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "items": [
+          {
+            "itemId": "r-5a5c8b85cac3e2ed2ab5c427d531c900",
+            "target": "next-turn",
+            "content": [
+              {
+                "type": "text",
+                "text": "不要调用任何工具。请用一句中文说明：为什么取消操作不能证明外部副作用没有发生。"
+              }
+            ],
+            "actor": {
+              "id": "local",
+              "org": "local",
+              "role": "owner",
+              "deptPath": [],
+              "attrs": {}
+            },
+            "enqueuedAt": "2026-10-02T17:14:46.076Z",
+            "kind": "prompt",
+            "trust": "trusted"
+          }
+        ]
+      },
+      "register": "inbox"
+    },
+    {
+      "seq": 25,
+      "ts": "2026-10-02T17:14:46.077Z",
+      "id": "01M3YSRYXXXE0VK523TGKMS5E0",
+      "type": "inbox",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "items": []
+      },
+      "register": "inbox"
+    },
+    {
+      "seq": 26,
+      "ts": "2026-10-02T17:14:46.077Z",
+      "id": "01M3YSRYXXXE0VK523TGKMS5E1",
+      "type": "user/message",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {}
+      },
+      "origin": "principal",
+      "trust": "trusted",
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "不要调用任何工具。请用一句中文说明：为什么取消操作不能证明外部副作用没有发生。"
+          }
+        ],
+        "kind": "prompt"
+      }
+    },
+    {
+      "seq": 27,
+      "ts": "2026-10-02T17:14:46.077Z",
+      "id": "01M3YSRYXXXE0VK523TGKMS5E2",
+      "type": "turn/start",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "turn": 2,
+        "trigger": "prompt"
+      }
+    },
+    {
+      "seq": 28,
+      "ts": "2026-10-02T17:14:46.079Z",
+      "id": "01M3YSRYXZEVQD374MM4S9ZWWY",
+      "type": "budget.state",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "slot": "primary",
+        "escalate": false,
+        "creditsUsed": 0,
+        "creditsCap": null,
+        "lastPreflight": {
+          "tokens": 252,
+          "source": "estimate"
+        }
+      },
+      "register": "budget.state"
+    },
+    {
+      "seq": 29,
+      "ts": "2026-10-02T17:14:46.079Z",
+      "id": "01M3YSRYXZEVQD374MM4S9ZWWZ",
+      "type": "x/core/op-mark",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "phase": "inference"
+      },
+      "ignorable": true
+    },
+    {
+      "seq": 30,
+      "ts": "2026-10-02T17:14:46.101Z",
+      "id": "01M3YSRYYNY9GGCVQZXA6QN897",
+      "type": "x/core/context-breakdown",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "sections": [
+          {
+            "id": "core:untrusted-envelope",
+            "order": 0,
+            "source": "core",
+            "tokens": 380
+          },
+          {
+            "id": "persona",
+            "order": 100,
+            "source": "@agnes/code",
+            "tokens": 266
+          },
+          {
+            "id": "environment",
+            "order": 110,
+            "source": "@agnes/code",
+            "tokens": 213
+          },
+          {
+            "id": "core:computer-use-model",
+            "order": 111,
+            "source": "core",
+            "tokens": 74
+          },
+          {
+            "id": "coding-doctrine",
+            "order": 130,
+            "source": "@agnes/code",
+            "tokens": 302
+          },
+          {
+            "id": "skills",
+            "order": 160,
+            "source": "agnes/skills",
+            "tokens": 2607
+          }
+        ]
+      },
+      "ignorable": true
+    },
+    {
+      "seq": 31,
+      "ts": "2026-10-02T17:14:46.102Z",
+      "id": "01M3YSRYYPRCJ2PR5FJRPFR3MR",
+      "type": "step/start",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "turn": 2,
+        "step": 1
+      }
+    },
+    {
+      "seq": 32,
+      "ts": "2026-10-02T17:14:46.102Z",
+      "id": "01M3YSRYYPRCJ2PR5FJRPFR3MS",
+      "type": "request/header",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "derived_hash": "06b1f0e4c1d6ebc23a208dd2a6ca57be032310efcf3fa95c4553b237a4667628",
+        "prompt_prefix_hash": "bc380895c7c6080f9015b3f85243dbb9863fb6200f9b56aba9f63b9280f2ee7e",
+        "tool_schema_hash": "237bd95b931a4fe54373c10a46a50d056f6da65fd3a7d2a89b094423d9ba1696",
+        "parser_version": "2",
+        "contract_id": null,
+        "model": "deepseek-v4-flash",
+        "envelopeNonce": "51d6a1373913928fa880819e35d8d9c4",
+        "media": {
+          "version": 1,
+          "route": "text-only",
+          "selectionOrder": [],
+          "manifest": []
+        }
+      }
+    },
+    {
+      "seq": 33,
+      "ts": "2026-10-02T17:14:46.102Z",
+      "id": "01M3YSRYYPRCJ2PR5FJRPFR3MT",
+      "type": "effect/intent",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "effectId": "e-c97017955cdfadecb9a9fb8382a12bea",
+        "kind": "inference",
+        "replay": "never",
+        "slot": "primary"
+      }
+    },
+    {
+      "seq": 34,
+      "ts": "2026-10-02T17:14:48.971Z",
+      "id": "01M3YSS1RBCMAGTNX4SR2G7T2M",
+      "type": "request/sent",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "prompt_prefix_hash": null,
+        "tool_schema_hash": "237bd95b931a4fe54373c10a46a50d056f6da65fd3a7d2a89b094423d9ba1696",
+        "parser_version": "2",
+        "contract_id": null,
+        "model": {
+          "route": "deepseek",
+          "id": "deepseek-v4-flash"
+        },
+        "derived_hash": "06b1f0e4c1d6ebc23a208dd2a6ca57be032310efcf3fa95c4553b237a4667628",
+        "sent_hash": "2a28725ab29ee6b2f22b9019834b3d955df8f263ae1c62e7f3ba2ad60640f7ff",
+        "transforms": [
+          {
+            "event": "compat",
+            "ext": "pi"
+          }
+        ]
+      },
+      "sourceEventSeqs": [32, 33]
+    },
+    {
+      "seq": 35,
+      "ts": "2026-10-02T17:14:48.973Z",
+      "id": "01M3YSS1RD9W1KKPE2H38WMNC5",
+      "type": "assistant/output",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "model",
+      "trust": "trusted",
+      "data": {
+        "state": "started",
+        "effectId": "e-c97017955cdfadecb9a9fb8382a12bea",
+        "chars": {
+          "text": 0,
+          "thinking": 3
+        },
+        "estimatedTokens": 1
+      }
+    },
+    {
+      "seq": 36,
+      "ts": "2026-10-02T17:14:53.634Z",
+      "id": "01M3YSS6A2YTES4RES4JV09TZQ",
+      "type": "assistant/message",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "model",
+      "trust": "trusted",
+      "data": {
+        "content": [
+          {
+            "type": "thinking",
+            "text": "The user asks two things:\n1. Earlier: explain differences between commit records, duplicate requests, and cancellation status in an event sourcing system, about 1500 Chinese characters, with two concrete examples. No tools.\n2. Now: answer in one Chinese sentence why cancellation cannot prove external side effects didn't happen.\n\nThe current message is the second request. The runtime context says the complete set of tools offered this turn — but user says don't call tools. I should just answer.\n\nThe instruction: \"请用一句中文说明：为什么取消操作不能证明外部副作用没有发生。\" — Answer in one Chinese sentence explaining why a cancel operation cannot prove external side effects did not occur.\n\nSo I need to give a single Chinese sentence. Let me craft it.\n\nWhy: cancellation is an instruction/state change issued at some point in time; between the original request being dispatched and the cancellation being processed, the external system may already have executed the side effect (e.g., payment charged, email sent), and the event sourcing record only reflects intent/state, not the actual external outcome. Also external systems are not atomic with our transaction, and the cancel may fail, arrive late, or the side effect may have already happened before the cancel takes effect.\n\nOne sentence: 取消操作只是在某个时间点发出\"不要执行/回滚\"的指令并记录状态，但外部副作用可能在取消到达之前就已真实发生（或外部系统无法原子回滚），而事件溯源记录只能反映我们的意图与最终状态，无法回溯或证明外部世界的实际执行结果。\n\nLet me make it one sentence, concise."
+          },
+          {
+            "type": "text",
+            "text": "取消操作只是在某个时刻发出并记录下“中止/回滚”这一意图和状态，但它无法证明外部副作用没有发生，因为在取消到达外部系统之前，该副作用（如扣款、发邮件）可能早已真实执行，而外部系统并不与我们的记录原子同步，也无法被追溯性地证实“从未发生”。"
+          }
+        ],
+        "stopReason": "end_turn",
+        "requestSeq": 35
+      }
+    },
+    {
+      "seq": 37,
+      "ts": "2026-10-02T17:14:53.634Z",
+      "id": "01M3YSS6A2YTES4RES4JV09TZR",
+      "type": "cost/ledger",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "purpose": "inference",
+        "effectId": "e-c97017955cdfadecb9a9fb8382a12bea",
+        "tokens": {
+          "input": 117,
+          "output": 394,
+          "cacheRead": 8960,
+          "cacheWrite": 0,
+          "reasoning": 324
+        },
+        "credits": 0.000281,
+        "creditSource": "estimated",
+        "model": "deepseek-v4-flash",
+        "billing": {
+          "usdMicros": 281,
+          "source": "estimated",
+          "subscription": false
+        },
+        "timing": {
+          "ttftMs": 2870,
+          "durationMs": 7530
+        },
+        "response": {
+          "status": 200,
+          "headerNames": [
+            "cache-control",
+            "content-security-policy",
+            "content-type",
+            "date",
+            "llm_provider-access-control-allow-headers",
+            "llm_provider-access-control-allow-methods",
+            "llm_provider-access-control-allow-origin",
+            "llm_provider-cache-control",
+            "llm_provider-connection",
+            "llm_provider-content-type",
+            "llm_provider-date",
+            "llm_provider-transfer-encoding",
+            "llm_provider-x-request-id",
+            "llm_provider-x-trace-id",
+            "transfer-encoding",
+            "x-accel-buffering",
+            "x-content-type-options",
+            "x-frame-options",
+            "x-litellm-attempted-fallbacks",
+            "x-litellm-attempted-retries",
+            "x-litellm-call-id",
+            "x-litellm-callback-duration-ms",
+            "x-litellm-key-spend",
+            "x-litellm-model-api-base",
+            "x-litellm-model-group",
+            "x-litellm-model-id",
+            "x-litellm-model-name",
+            "x-litellm-overhead-duration-ms",
+            "x-litellm-response-cost-discount-amount",
+            "x-litellm-response-cost-input",
+            "x-litellm-response-cost-margin-amount",
+            "x-litellm-response-cost-margin-percent",
+            "x-litellm-response-cost-original",
+            "x-litellm-response-cost-output",
+            "x-litellm-response-cost-tool-usage",
+            "x-litellm-response-duration-ms",
+            "x-litellm-version"
+          ],
+          "id": "8533f43d-714d-4923-945f-fa2dd3c6f62c"
+        }
+      }
+    },
+    {
+      "seq": 38,
+      "ts": "2026-10-02T17:14:53.635Z",
+      "id": "01M3YSS6A3DDZ3C33YQ145Z8MT",
+      "type": "effect/settled",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "effectId": "e-c97017955cdfadecb9a9fb8382a12bea",
+        "outcome": "ok",
+        "durationMs": 7532
+      }
+    },
+    {
+      "seq": 39,
+      "ts": "2026-10-02T17:14:53.635Z",
+      "id": "01M3YSS6A3DDZ3C33YQ145Z8MV",
+      "type": "step/end",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "turn": 2,
+        "step": 1
+      }
+    },
+    {
+      "seq": 40,
+      "ts": "2026-10-02T17:14:53.644Z",
+      "id": "01M3YSS6ACT8CY5SPTE8TYC93R",
+      "type": "verifier/signal",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "scope": "turn",
+        "tier": 0,
+        "verdict": "pass",
+        "reasons": []
+      }
+    },
+    {
+      "seq": 41,
+      "ts": "2026-10-02T17:14:53.645Z",
+      "id": "01M3YSS6ADABM96NM1GJXK11YY",
+      "type": "turn/end",
+      "lane": "main",
+      "v": 1,
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {
+          "surface": "session"
+        }
+      },
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "reason": "completed",
+        "lastAssistantSeq": 36
+      }
+    }
+  ],
+  "provenance": {
+    "kind": "sanitized-real-native-cancellation-followup",
+    "capturedAt": "2026-10-03",
+    "sourceSha256": "0981a5bc3e7936989ce94c49a9602d11a78b821dee6ae7b96a0941250a68f80d",
+    "observation": "first request cancelled during thinking; second request completed with one short answer to the new prompt",
+    "omitted": ["machine runtime context"],
+    "normalized": ["session identity", "principal identity", "local paths", "private gateway"],
+    "runtimeReplay": false
+  }
+}

@@ -1,4 +1,20 @@
 export const DDL = [
+  `CREATE TABLE IF NOT EXISTS session_comparison_roots (session_key TEXT PRIMARY KEY)`,
+  `CREATE TABLE IF NOT EXISTS session_retirement_idle (root_session_key TEXT PRIMARY KEY)`,
+  `CREATE TABLE IF NOT EXISTS session_tree_retained_budgets (
+     root_session_key TEXT NOT NULL, retirement_id TEXT NOT NULL, epoch INTEGER NOT NULL,
+     root_task_id TEXT NOT NULL, evidence TEXT NOT NULL, PRIMARY KEY(root_session_key,root_task_id))`,
+  `CREATE TABLE IF NOT EXISTS session_owner_evidence (
+     session_key TEXT PRIMARY KEY, writer_run_id TEXT NOT NULL, owner_epoch INTEGER NOT NULL, closed_final_seq INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS session_tree_purges (
+     root_session_key TEXT PRIMARY KEY, retirement_id TEXT NOT NULL, epoch INTEGER NOT NULL, final_heads TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS session_retirements (
+     root_session_key TEXT PRIMARY KEY, retirement_id TEXT NOT NULL, epoch INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS session_retirement_members (
+     session_key TEXT PRIMARY KEY, root_session_key TEXT NOT NULL, parent_key TEXT, kind TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS session_retirement_root ON session_retirement_members(root_session_key)`,
+  `CREATE TABLE IF NOT EXISTS session_budget_origins (
+     root_task_id TEXT NOT NULL, session_key TEXT NOT NULL, PRIMARY KEY(root_task_id,session_key))`,
   // `lane` is a BLOB for the same reason `key` below is, and it is the same value: a lane is the
   // register key for every register except harness/entry and artifact/job. Read back through a TEXT
   // column a lane stops at its first NUL, so the durable event and the register it keys disagreed -
@@ -36,13 +52,14 @@ export const DDL = [
      ancestor_scope_ids TEXT NOT NULL, workspace_id TEXT, isolation TEXT NOT NULL,
      state TEXT NOT NULL, state_revision INTEGER NOT NULL, control_format INTEGER NOT NULL,
      attempt_id TEXT NOT NULL, creation_phase TEXT NOT NULL, creation_revision INTEGER NOT NULL,
-     attempt_started_at INTEGER NOT NULL, deferred_fact TEXT, cancelled_fact TEXT)`,
+     attempt_started_at INTEGER NOT NULL, deferred_fact TEXT, cancelled_fact TEXT,
+     runtime_identity TEXT, seed_mode TEXT, model_target TEXT, creation_cwd TEXT)`,
   `CREATE TABLE IF NOT EXISTS budget_scopes (
      scope_id TEXT PRIMARY KEY, root_task_id TEXT NOT NULL, child_key TEXT, parent_scope_id TEXT,
-     cap_micro TEXT NOT NULL, settled_micro TEXT NOT NULL, held_micro TEXT NOT NULL)`,
+     cap_micro TEXT, settled_micro TEXT NOT NULL, held_micro TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS budget_reservations (
      permit_id TEXT PRIMARY KEY, root_task_id TEXT NOT NULL, scope_ids TEXT NOT NULL,
-     q_micro TEXT NOT NULL, effect_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+     q_micro TEXT, effect_id TEXT NOT NULL, request_hash TEXT NOT NULL,
      writer_generation INTEGER NOT NULL, status TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS cost_origins (
      origin_key TEXT PRIMARY KEY, micro TEXT NOT NULL, scope_ids TEXT NOT NULL)`,

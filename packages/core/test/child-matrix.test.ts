@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import type { ModelRecord } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
@@ -128,11 +126,6 @@ describe('tree budget on the live inference path', () => {
     expect(provider.requests.some((req) => req.sampling?.maxTokens === 128)).toBe(true)
     expect(childError).toBeInstanceOf(CoreError)
     await k.close()
-  })
-
-  it('shares reserveTreeBudget with compaction', () => {
-    const src = readFileSync(fileURLToPath(new URL('../src/step/compaction.ts', import.meta.url)), 'utf8')
-    expect(src.includes('reserveTreeBudget(')).toBe(true)
   })
 
   it('maps maxTokens onto the provider wire body', () => {
@@ -427,7 +420,7 @@ describe('old backend capability', () => {
 })
 
 describe('parent close reasons and late approval', () => {
-  it('does not cancel spawn on parent turn complete or parent close, and marks kernel close as recovery', async () => {
+  it('preserves spawn on parent turn completion and cancels it when its live owner closes', async () => {
     const storage = new MemoryStorage()
     const k = kernel({ storage })
     const parent = await k.session('parent', sessionOpts)
@@ -441,9 +434,9 @@ describe('parent close reasons and late approval', () => {
     await parent.run({ until: 'turn-end', signal: new AbortController().signal })
     expect((await storage.lookupByKey(child.key))?.state).toBe('ready')
     await parent.close()
-    expect((await storage.lookupByKey(child.key))?.state).toBe('ready')
+    expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
     await k.close()
-    expect((await storage.lookupByKey(child.key))?.state).toBe('failed')
+    expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
   })
 
   it('does not execute a tool when approval arrives after cancel', async () => {

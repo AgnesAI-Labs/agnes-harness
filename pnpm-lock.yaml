@@ -282,6 +282,9 @@ importers:
       '@agnes/protocol-validation':
         specifier: workspace:*
         version: link:../protocol-validation
+      '@agnes/runtime-api':
+        specifier: workspace:*
+        version: link:../runtime-api
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
@@ -290,6 +293,9 @@ importers:
 
   packages/daemon:
     dependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
       '@agnes/error-sanitization':
         specifier: workspace:*
         version: link:../error-sanitization
@@ -317,6 +323,9 @@ importers:
       '@agnes/resource-control-worker':
         specifier: workspace:*
         version: link:../resource-control-worker
+      '@agnes/runtime-comparison':
+        specifier: workspace:*
+        version: link:../runtime-comparison
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
@@ -378,6 +387,12 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/jev-runtime':
+        specifier: workspace:*
+        version: link:../jev-runtime
+      '@agnes/jev-trace':
+        specifier: workspace:*
+        version: link:../jev-trace
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager
@@ -393,6 +408,15 @@ importers:
       '@agnes/resource-control-runtime':
         specifier: workspace:*
         version: link:../resource-control-runtime
+      '@agnes/runtime-api':
+        specifier: workspace:*
+        version: link:../runtime-api
+      '@agnes/runtime-comparison':
+        specifier: workspace:*
+        version: link:../runtime-comparison
+      '@agnes/runtime-jev':
+        specifier: workspace:*
+        version: link:../runtime-jev
       '@agnes/sandbox-remote':
         specifier: workspace:*
         version: link:../sandbox-remote
@@ -424,6 +448,14 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
+
+  packages/jev-runtime: {}
+
+  packages/jev-trace:
+    dependencies:
+      '@agnes/jev-runtime':
+        specifier: workspace:*
+        version: link:../jev-runtime
 
   packages/mcp-transport-health: {}
 
@@ -594,6 +626,23 @@ importers:
         specifier: workspace:*
         version: link:../system-node
 
+  packages/runtime-api: {}
+
+  packages/runtime-comparison:
+    dependencies:
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
+  packages/runtime-jev:
+    dependencies:
+      '@agnes/jev-runtime':
+        specifier: workspace:*
+        version: link:../jev-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/runtime-python:
     dependencies:
       '@agnes/code':
@@ -644,6 +693,12 @@ importers:
       '@agnes/cordis':
         specifier: workspace:*
         version: link:../cordis
+      '@agnes/jev-runtime':
+        specifier: workspace:*
+        version: link:../jev-runtime
+      '@agnes/jev-trace':
+        specifier: workspace:*
+        version: link:../jev-trace
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol

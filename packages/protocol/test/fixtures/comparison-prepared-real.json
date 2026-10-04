@@ -1,0 +1,221 @@
+{
+  "provenance": "Actual completed Native/Jev comparison 808968dd-a46b-4fad-8f1d-539f9ab1058d; source events read from the checkpointed SQLite database with mode=ro&immutable=1 after confirming no WAL/SHM. Sanitized wire samples, not integrity-chain evidence. No request text or model output included.",
+  "redactions": [
+    "actor identity, organization, department and attributes replaced with fixture values",
+    "data.sessionId replaced with per-runtime fixture identifier"
+  ],
+  "events": [
+    {
+      "seq": 4,
+      "ts": "2026-10-03T01:03:58.917Z",
+      "id": "01M3ZMM3Y5D0G6ST842ZTWMD7W",
+      "type": "x/host/session-prepared",
+      "origin": "system",
+      "trust": "trusted",
+      "v": 1,
+      "lane": "main",
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {}
+      },
+      "ignorable": true,
+      "data": {
+        "version": 1,
+        "sessionId": "native-archive",
+        "configuration": {
+          "runtime": {
+            "id": "native",
+            "version": "1"
+          },
+          "effective": {
+            "preset": {
+              "name": "standard-no-credit-cap",
+              "definitionDigest": "aff6b6876b1ea4870a0d98118e0749fa84d6866a219c2b57c995d3e86efd0bd9",
+              "scope": "resolved-preset-view"
+            },
+            "models": [
+              {
+                "slot": "compaction",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              },
+              {
+                "slot": "escalation",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              },
+              {
+                "slot": "fast",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              },
+              {
+                "slot": "primary",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              },
+              {
+                "slot": "verifier",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              }
+            ],
+            "tools": {
+              "count": 32,
+              "digest": "8580898ad0596b2d4991385d9794fbc3187b6782e935ebd79f32b5b0f6bc7b46",
+              "scope": "registered-tool-definitions"
+            },
+            "permission": {
+              "approvalMode": "manual",
+              "yolo": false,
+              "enforcement": {
+                "level": "partial",
+                "scope": ["file"]
+              },
+              "policyDigest": "32bc5578574297a21cdde33e42c51770f9799aaca22ef060707d8c10d5fca598",
+              "digest": "7633224207c570a128f55f46679e4fa0a6cec071dddc3f3626949b9f976ccf6a"
+            }
+          },
+          "runtimeConfig": null,
+          "fingerprints": {
+            "tools": "8580898ad0596b2d4991385d9794fbc3187b6782e935ebd79f32b5b0f6bc7b46",
+            "model": "dd350b41db98a2953f7b2b0e84731f11e8ba5751677fa9eaa15836a6a24c46af",
+            "preset": "aff6b6876b1ea4870a0d98118e0749fa84d6866a219c2b57c995d3e86efd0bd9",
+            "permission": "7633224207c570a128f55f46679e4fa0a6cec071dddc3f3626949b9f976ccf6a"
+          }
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-10-03T01:03:58.911Z",
+      "id": "01M3ZMM3XZKYK3DRYAVX38RGHS",
+      "type": "x/host/session-prepared",
+      "origin": "system",
+      "trust": "trusted",
+      "v": 1,
+      "lane": "main",
+      "actor": {
+        "id": "fixture-owner",
+        "org": "local",
+        "role": "owner",
+        "deptPath": [],
+        "attrs": {}
+      },
+      "ignorable": true,
+      "data": {
+        "version": 1,
+        "sessionId": "jev-archive",
+        "configuration": {
+          "runtime": {
+            "id": "jevloop",
+            "version": "1"
+          },
+          "effective": {
+            "preset": {
+              "name": "standard-no-credit-cap",
+              "definitionDigest": "aff6b6876b1ea4870a0d98118e0749fa84d6866a219c2b57c995d3e86efd0bd9",
+              "scope": "resolved-preset-view"
+            },
+            "models": [
+              {
+                "slot": "compaction",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              },
+              {
+                "slot": "escalation",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              },
+              {
+                "slot": "fast",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              },
+              {
+                "slot": "primary",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              },
+              {
+                "slot": "verifier",
+                "route": "deepseek",
+                "model": "deepseek-v4-flash",
+                "thinking": null,
+                "contextWindow": 1000000
+              }
+            ],
+            "tools": {
+              "count": 32,
+              "digest": "8580898ad0596b2d4991385d9794fbc3187b6782e935ebd79f32b5b0f6bc7b46",
+              "scope": "registered-tool-definitions"
+            },
+            "permission": {
+              "approvalMode": "manual",
+              "yolo": false,
+              "enforcement": {
+                "level": "partial",
+                "scope": ["file"]
+              },
+              "policyDigest": "872da9884b4d63b2162f181a1638917b2a2a6a3b7260b4c1925e67fe18e12c38",
+              "digest": "7633224207c570a128f55f46679e4fa0a6cec071dddc3f3626949b9f976ccf6a"
+            }
+          },
+          "runtimeConfig": {
+            "decision": {
+              "backend": "jev",
+              "endpoint": "https://api.typesafe.ai/v1/systemone",
+              "model": "jev-latest"
+            },
+            "config": {
+              "maxSteps": 64,
+              "maxModelAttempts": 256,
+              "maxNoProgress": 3,
+              "maxRepeatedFailures": 3,
+              "maxCandidates": 64,
+              "maxHistory": 4096,
+              "maxQuestionBytes": 524288,
+              "maxOutputBytes": 4194304,
+              "escalateBelow": 0.75,
+              "equivalentSupportThreshold": 0.75,
+              "bindingBelow": 0.75,
+              "mutationEscalateBelow": 0.9,
+              "ambiguityGate": null,
+              "responseReviewMode": "diagnostic",
+              "answerProgressFloor": null,
+              "maxResponseReviewAttempts": 2
+            }
+          },
+          "fingerprints": {
+            "tools": "8580898ad0596b2d4991385d9794fbc3187b6782e935ebd79f32b5b0f6bc7b46",
+            "model": "dd350b41db98a2953f7b2b0e84731f11e8ba5751677fa9eaa15836a6a24c46af",
+            "preset": "aff6b6876b1ea4870a0d98118e0749fa84d6866a219c2b57c995d3e86efd0bd9",
+            "permission": "7633224207c570a128f55f46679e4fa0a6cec071dddc3f3626949b9f976ccf6a"
+          }
+        }
+      }
+    }
+  ]
+}

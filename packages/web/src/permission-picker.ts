@@ -32,6 +32,7 @@ export type PermissionPickerState = {
   disabled: boolean
   pending: boolean
   selected: PermissionMode | null
+  options?: readonly PermissionOption[]
 }
 
 export type PermissionPicker = {
@@ -76,7 +77,7 @@ function permissionOptions(
   activeIndex: number,
   onSelect: (index: number) => void,
 ): ReactNode[] {
-  return PERMISSION_OPTIONS.map((option, index) =>
+  return (state.options ?? PERMISSION_OPTIONS).map((option, index) =>
     permissionOption(option, index, state, activeIndex, onSelect),
   )
 }
@@ -96,7 +97,7 @@ export function createPermissionPicker(options: {
   let listbox: HTMLElement | undefined
 
   function selectedIndex(): number {
-    const index = PERMISSION_OPTIONS.findIndex((option) => option.id === state.selected)
+    const index = (state.options ?? PERMISSION_OPTIONS).findIndex((option) => option.id === state.selected)
     return index >= 0 ? index : 1
   }
 
@@ -104,9 +105,11 @@ export function createPermissionPicker(options: {
     trigger.disabled = state.disabled || state.pending || selecting
     trigger.setAttribute('aria-expanded', String(popover !== undefined))
     trigger.setAttribute('aria-busy', String(state.pending || selecting))
-    trigger.title = permissionLabel(state.selected)
+    const text =
+      state.options?.find((option) => option.id === state.selected)?.label ?? permissionLabel(state.selected)
+    trigger.title = text
     const label = trigger.querySelector<HTMLElement>('[data-permission-label]')
-    if (label) label.textContent = permissionLabel(state.selected)
+    if (label) label.textContent = text
   }
 
   function renderOptions(): void {
@@ -145,14 +148,15 @@ export function createPermissionPicker(options: {
 
   function setActive(index: number): void {
     if (!listbox) return
-    activeIndex = (index + PERMISSION_OPTIONS.length) % PERMISSION_OPTIONS.length
+    const count = (state.options ?? PERMISSION_OPTIONS).length
+    activeIndex = (index + count) % count
     listbox.setAttribute('aria-activedescendant', `permission-picker-option-${activeIndex}`)
     renderOptions()
   }
 
   async function select(index: number): Promise<void> {
     if (state.disabled || state.pending || selecting) return
-    const option = PERMISSION_OPTIONS[index]
+    const option = (state.options ?? PERMISSION_OPTIONS)[index]
     if (!option) return
     const request = ++interaction
     selecting = true
@@ -188,7 +192,7 @@ export function createPermissionPicker(options: {
     webUi.bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)
       else if (intent.kind === 'first') setActive(0)
-      else if (intent.kind === 'last') setActive(PERMISSION_OPTIONS.length - 1)
+      else if (intent.kind === 'last') setActive((state.options ?? PERMISSION_OPTIONS).length - 1)
       else if (intent.kind === 'activate') void select(activeIndex)
       else close({ returnFocus: intent.returnFocus })
     })

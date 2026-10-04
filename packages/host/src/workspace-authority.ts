@@ -91,6 +91,22 @@ export function inheritWorkspaceBinding(parent: WorkspaceBinding, childSessionKe
   })
 }
 
+/** Host-internal only: the caller must validate the persisted child and Git registration first. */
+export function delegatedWorktreeBinding(
+  parent: WorkspaceBinding,
+  childSessionKey: string,
+  canonicalRoot: string,
+): WorkspaceBinding {
+  assertWorkspaceBinding(parent)
+  const root = checkedRoot(canonicalRoot)
+  return issue({
+    sessionKey: checkedSessionKey(childSessionKey),
+    workspaceId: createHash('sha256').update(`${parent.workspaceId}\0${root}`).digest('hex'),
+    authorityRevision: parent.authorityRevision,
+    canonicalRoot: root,
+  })
+}
+
 /** CLI in-process authority is permanently restricted to the one canonical startup root. */
 export class CliWorkspaceAuthority {
   readonly canonicalRoot: string

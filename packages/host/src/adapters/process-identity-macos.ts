@@ -22,7 +22,8 @@ const unknown = (reason: string): ProcessIdentity => ({ state: 'unknown', reason
 
 // A single alive line, bounded in both digit count and fractional precision so a compromised or
 // mismatched-version binary cannot smuggle an oversized or ambiguous value through as a startId.
-const ALIVE = /^alive ([0-9]{1,20}\.[0-9]{1,6}) ([0-9]{1,20}\.[0-9]{1,6})$/
+const ALIVE = /^alive ([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}) ([0-9]{1,20}\.[0-9]{6})$/
+const NIL_UUID = '00000000-0000-0000-0000-000000000000'
 
 function defaultSpawn(bin: string, args: string[]): Promise<{ stdout: string; code: number }> {
   return new Promise((resolve, reject) => {
@@ -60,12 +61,12 @@ export async function macosProcessIdentity(
     return unknown('helper unavailable')
   }
   if (result.stdout.length > 256) return unknown('helper output too large')
-  // Only the first line is trusted; anything the helper prints after that (it shouldn't print
-  // anything else, but a future/mismatched binary version might) is ignored rather than parsed.
-  const line = (result.stdout.split('\n', 1)[0] ?? '').trim()
+  // Exactly one line: a mismatched helper version must not certify an ambiguous identity.
+  const line = result.stdout.endsWith('\n') ? result.stdout.slice(0, -1) : result.stdout
+  if (line.includes('\n') || line.includes('\r')) return unknown('malformed helper output')
   if (result.code === 0) {
     const match = ALIVE.exec(line)
-    if (!match) return unknown('malformed alive output')
+    if (!match || match[1] === NIL_UUID) return unknown('malformed alive output')
     return { state: 'alive', startId: `darwin:${match[1]}:${pid}:${match[2]}` }
   }
   if (result.code === 1) return line === 'dead' ? { state: 'dead' } : unknown('malformed dead output')

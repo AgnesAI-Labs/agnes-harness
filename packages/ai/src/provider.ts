@@ -7,6 +7,7 @@ import { PARSER_VERSION } from './decode/rules/index.js'
 import type { DecodeContext } from './decode/types.js'
 import { AiSetupError } from './errors.js'
 import { checkedResponse, guardSequence } from './guard.js'
+import { prepareInference } from './prepared.js'
 import { buildRegistry, type Registry } from './registry.js'
 import { resolveSelection, SlotUnresolved } from './route.js'
 import { buildStamp, renderPrefixedPrompt, type SentReport } from './stamp.js'
@@ -278,6 +279,7 @@ export function createProvider(opts: {
   const anyCounts = opts.adapters.some((a) => typeof a.count === 'function')
   const provider: Provider & { registry: Registry } = {
     registry,
+    prepare: (request, options) => prepareInference(deps, request, options),
     // Guarded on the way out, not inside runInference: the guard is a property of what this facade
     // promises a caller, and tests that build the deps by hand still reach the unguarded stream.
     infer: (req, o) => guardSequence(runInference(deps, req, o)),

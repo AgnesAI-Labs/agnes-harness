@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MemorySessionWorkspaces } from '../src/storage/lister.js'
 import {
   assertWorkspaceBindingEnvelope,
   MemoryWorkspaceBindings,
   MemoryWorkspaceStore,
+  WorkspaceBindingIndex,
   WorkspaceCatalog,
   type WorkspaceDirectoryResolver,
   WorkspaceIndex,
@@ -150,6 +154,65 @@ describe('WorkspaceCatalog', () => {
       ],
     })
     await tables.close()
+  })
+
+  it('keeps comparison registration private and restores legacy authority across reopen', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-workspace-discovery-'))
+    const database = join(root, 'workspaces.sqlite')
+    let tables = sqliteTables(database)
+    // Exercise the pre-provenance catalog schema, as an existing daemon database would.
+    tables.table('workspace_registry').exec(`CREATE TABLE workspace_registry (
+      path TEXT PRIMARY KEY, name TEXT NOT NULL, workspace_id TEXT NOT NULL,
+      revision INTEGER NOT NULL, registered_at TEXT NOT NULL, last_used_at TEXT)`)
+    const sessions = new MemorySessionWorkspaces()
+    const available = new Set(['/repo/left', '/repo/right', '/isolated/left', '/isolated/right'])
+    const store = new WorkspaceIndex(tables.table('workspace_registry'))
+    const makeCatalog = () =>
+      new WorkspaceCatalog(
+        new WorkspaceIndex(tables.table('workspace_registry')),
+        sessions,
+        resolver(available),
+        () => 0,
+        new WorkspaceBindingIndex(tables.table('workspace_bindings')),
+      )
+    try {
+      const catalog = makeCatalog()
+      await catalog.add('/repo/left')
+      await catalog.add('/repo/right')
+      await catalog.authorizeAndBind('normal-left', '/repo/left')
+      // Before this change, comparison registration used the ordinary add path.
+      await catalog.add('/isolated/left')
+      const original = await catalog.authorizeAndBind('lane-left', '/isolated/left')
+      await catalog.authorizeAndBind('lane-child', '/isolated/left')
+      catalog.markComparisonSessions(['lane-left', 'reserved-without-binding'])
+      const entry = await catalog.addComparison('/isolated/right')
+      expect(entry).not.toHaveProperty('comparisonOwned')
+      await catalog.authorizeAndBind('lane-right', '/isolated/right')
+      // A normal store upsert cannot clear comparison provenance.
+      store.put({ path: '/isolated/left', name: 'left' }, 'ignored')
+      await expect(catalog.add('/isolated/left')).rejects.toMatchObject({
+        data: { code: 'WORKSPACE_NOT_FOUND' },
+      })
+      await tables.close()
+      tables = sqliteTables(database)
+      const reopened = makeCatalog()
+      expect((await reopened.list()).items.map((item) => item.path)).toEqual(['/repo/left', '/repo/right'])
+      expect((await reopened.list()).items.every((item) => !('comparisonOwned' in item))).toBe(true)
+      expect(reopened.ordinarySessionIds(['normal-left', 'lane-left', 'lane-right', 'lane-child'])).toEqual([
+        'normal-left',
+      ])
+      await expect(reopened.restoreBinding('lane-left')).resolves.toEqual(original)
+      await expect(reopened.bind(original.workspaceId, '/isolated/left')).resolves.toEqual({
+        workspaceId: original.workspaceId,
+        path: '/isolated/left',
+      })
+      available.delete('/isolated/left')
+      available.delete('/isolated/right')
+      expect((await reopened.list()).items.map((item) => item.path)).toEqual(['/repo/left', '/repo/right'])
+    } finally {
+      await tables.close()
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('binds resource-control workspace ids from the catalog and rejects unknown or unavailable ids', async () => {

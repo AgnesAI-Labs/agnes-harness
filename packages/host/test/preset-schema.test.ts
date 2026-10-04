@@ -18,13 +18,14 @@ const docs = Object.fromEntries(
 )
 
 describe('delivered preset schema conformance', () => {
-  it('includes all six delivered recipes and validates exact YAML and merged documents', () => {
+  it('includes all seven delivered recipes and validates exact YAML and merged documents', () => {
     expect(Object.keys(docs).sort()).toEqual([
       'base',
       'channel',
       'claw',
       'minimal-rl',
       'standard',
+      'standard-no-credit-cap',
       'standard-windows',
     ])
     for (const [name, doc] of Object.entries(docs)) {
@@ -67,6 +68,10 @@ describe('shipped presets through host assembly and session creation', () => {
         const resolved = resolvePreset(name, docs).view
         expect(session.preset.compaction).toEqual(resolved.compaction)
         expect(session.preset.budget).toEqual(resolved.budget)
+        expect(session.preset.treeBudgetCredits).toBe(resolved.treeBudgetCredits)
+        expect(session.preset.treeBudgetMode).toBe(
+          name === 'standard-no-credit-cap' ? 'unlimited' : 'default',
+        )
       } finally {
         await host.close()
         rmSync(dataDir, { recursive: true, force: true })

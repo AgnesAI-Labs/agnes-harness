@@ -3,6 +3,8 @@
 // it along with the product code; change it only when the ledger format itself changes, so it keeps
 // describing the fold the product must still produce. (Changed once for that reason: the program
 // counter left the ledger rows and the fold.)
+// Explicit assistant/output source links add a presentation lifecycle; its derived state is
+// represented here with plain Maps independently of the product's persistent ChunkedMap.
 import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
 import { isRegisterTombstone, registerKey } from '../../src/log/storage.js'
 import type {
@@ -39,6 +41,8 @@ export type LedgerState = {
   lastTurn: Map<string, number>
   lastStep: Map<string, number>
   pendingEffects: Map<string, Omit<EffectNode, 'children'>>
+  assistantOutputs: Map<number, { effectId: string; lane: string; turn: number; closed: boolean }>
+  lastRuntimeRecord: Map<string, { seq: Seq; turn: number | undefined }>
   pendingApprovals: Map<string, ApprovalAsked & { seq: Seq; lane: string }>
   decisions: Map<string, ApprovalDecided & { seq: Seq; lane: string; askedSeq?: Seq }>
   resumedRequests: Set<string>
@@ -73,6 +77,8 @@ function cloneMaps(s: LedgerState): LedgerState {
     lastTurn: new Map(s.lastTurn),
     lastStep: new Map(s.lastStep),
     pendingEffects: new Map(s.pendingEffects),
+    assistantOutputs: new Map(s.assistantOutputs),
+    lastRuntimeRecord: new Map(s.lastRuntimeRecord),
     pendingApprovals: new Map(s.pendingApprovals),
     decisions: new Map(s.decisions),
     resumedRequests: new Set(s.resumedRequests),
@@ -172,6 +178,8 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         s.openStep.clear()
         s.lastStep.clear()
         s.pendingEffects.clear()
+        s.assistantOutputs.clear()
+        s.lastRuntimeRecord.clear()
         s.pendingApprovals.clear()
         s.decisions.clear()
         s.resumedRequests.clear()
@@ -244,7 +252,24 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       s.pendingEffects.set(pending.effectId, { ...pending, receiptSeq: e.seq })
       break
     }
+    case 'runtime/record': {
+      s.lastRuntimeRecord.set(lane, { seq: e.seq, turn: s.openTurn.get(lane)?.turn })
+      break
+    }
     case 'assistant/output': {
+      const sources = e.sourceEventSeqs ?? []
+      if (d?.state === 'started' && sources.length === 1 && typeof d.effectId === 'string')
+        s.assistantOutputs.set(e.seq, {
+          effectId: d.effectId,
+          lane,
+          turn: s.openTurn.get(lane)?.turn ?? 0,
+          closed: false,
+        })
+      if (d?.state === 'interrupted' && sources[0] !== undefined) {
+        const output = s.assistantOutputs.get(sources[0])
+        if (output && output.lane === lane && output.effectId === d.effectId)
+          s.assistantOutputs.set(sources[0], { ...output, closed: true })
+      }
       const effectId = typeof d?.effectId === 'string' ? d.effectId : undefined
       const pending = effectId === undefined ? undefined : s.pendingEffects.get(effectId)
       if (pending?.kind !== 'inference' || pending.lane !== lane) break
@@ -259,6 +284,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       break
     }
     case 'assistant/message': {
+      for (const source of e.sourceEventSeqs ?? []) {
+        const output = s.assistantOutputs.get(source)
+        if (output && !output.closed && output.lane === lane && output.turn === s.openTurn.get(lane)?.turn)
+          s.assistantOutputs.set(source, { ...output, closed: true })
+      }
       const pending = [...s.pendingEffects.values()].find(
         (effect) =>
           effect.kind === 'inference' && effect.lane === lane && effect.firstOutputSeq === undefined,
@@ -379,6 +409,8 @@ export function initialState(): LedgerState {
     lastTurn: new Map(),
     lastStep: new Map(),
     pendingEffects: new Map(),
+    assistantOutputs: new Map(),
+    lastRuntimeRecord: new Map(),
     pendingApprovals: new Map(),
     decisions: new Map(),
     resumedRequests: new Set(),

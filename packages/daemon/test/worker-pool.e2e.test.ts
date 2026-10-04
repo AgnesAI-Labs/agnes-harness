@@ -546,11 +546,36 @@ describe('WorkerPool', () => {
       ])
       expect(pool.links().filter(({ sessionKey }) => sessionKey === '@shared')).toHaveLength(1)
       expect(await a.command('ping', {})).toEqual({ ok: true })
-      await a.closeSession()
+      const owner = await a.hello
+      await expect(a.closeAndConfirm()).resolves.toEqual({
+        exited: true,
+        owner: {
+          sessionKey: a.sessionKey,
+          writerRunId: owner.writerRunId,
+          generation: owner.generation,
+          workerGeneration: pool.businessWorker()?.generation,
+        },
+      })
+      expect(pool.businessWorker()?.link.alive).toBe(true)
+      expect(await b.command('ping', {})).toEqual({ ok: true })
+      const uncertainKey = 'agnes:t:a:x:dm:legacy-close'
+      const uncertain = await acquire(pool, uncertainKey, { cwd: dir })
+      await expect(uncertain.closeAndConfirm()).resolves.toMatchObject({
+        exited: false,
+        reason: 'owner-unknown',
+      })
+      await expect(acquire(pool, uncertainKey, { cwd: dir, resume: true })).rejects.toThrow(
+        'close is unconfirmed',
+      )
+      await expect(pool.closeAndConfirmSession(uncertainKey)).resolves.toMatchObject({
+        exited: false,
+        reason: 'owner-unknown',
+      })
       expect(pool.businessWorker()?.link.alive).toBe(true)
       expect(await b.command('ping', {})).toEqual({ ok: true })
       const reopened = await acquire(pool, 'agnes:t:a:x:dm:shared-a', { cwd: dir, resume: true })
       expect(reopened).not.toBe(a)
+      expect((await reopened.hello).writerRunId).not.toBe(owner.writerRunId)
       expect(await reopened.command('ping', {})).toEqual({ ok: true })
       expect(pool.links().filter(({ sessionKey }) => sessionKey === '@shared')).toHaveLength(1)
     } finally {

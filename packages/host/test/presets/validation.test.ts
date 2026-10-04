@@ -64,6 +64,32 @@ describe('merged preset production validation', () => {
     expect(r.doc).toEqual({ name: 'custom' })
   })
   it.each([
+    [undefined, 'capped', 12],
+    ['default', 'default', null],
+    ['unlimited', 'unlimited', null],
+    [7, 'capped', 7],
+  ])('inherits or overrides the tree-credit policy with %s', (value, mode, credits) => {
+    const leaf = {
+      name: 'custom',
+      extends: 'base',
+      ...(value === undefined ? {} : { subagent: { tree_budget_credits: value } }),
+    }
+    const result = resolvePreset('custom', {
+      base: { name: 'base', subagent: { tree_budget_credits: 12, max_fan_out: 3 } },
+      custom: leaf,
+    })
+    expect(result.view.treeBudgetMode).toBe(mode)
+    expect(result.view.treeBudgetCredits).toBe(credits)
+    expect(result.view.maxFanOut).toBe(3)
+    expect(result.doc.subagent).toEqual({ tree_budget_credits: value ?? 12, max_fan_out: 3 })
+    expect(result.hash).toBe(`sha256-${sha256hex(canonicalJson(result.doc))}`)
+  })
+  it('rejects a raw null tree-credit policy instead of interpreting it as unlimited', () => {
+    expect(() => resolve({ name: 'custom', subagent: { tree_budget_credits: null } })).toThrow(
+      /E_PRESET_UNSUPPORTED/,
+    )
+  })
+  it.each([
     { tools: { unknown: true } },
     { model: { retry: { unknown: true } } },
     { deferred: { unknown: true } },

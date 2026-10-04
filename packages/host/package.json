@@ -32,7 +32,12 @@
     "ipaddr.js": "2.5.0",
     "jiti": "2.7.0",
     "undici": "8.10.2",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@agnes/jev-runtime": "workspace:*",
+    "@agnes/jev-trace": "workspace:*",
+    "@agnes/runtime-api": "workspace:*",
+    "@agnes/runtime-jev": "workspace:*",
+    "@agnes/runtime-comparison": "workspace:*"
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",

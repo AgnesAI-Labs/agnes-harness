@@ -1,5 +1,5 @@
 import type { HookPayloadMap } from '@agnes/extension-api'
-import type { ModelRecord, ThinkingLevel } from '@agnes/protocol'
+import { MODEL_CALL_EVENT, type ModelRecord, readModelCall, type ThinkingLevel } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { HookBlockedError } from '../src/hooks/block.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
@@ -332,6 +332,7 @@ describe('production compaction phase', () => {
     const reservations: bigint[] = []
     const reserve = storage.reserve.bind(storage)
     storage.reserve = async (request) => {
+      if (request.qMicro === null) throw new Error('Expected known compaction reservation')
       reservations.push(request.qMicro)
       return reserve(request)
     }
@@ -582,10 +583,9 @@ describe('production compaction phase', () => {
     })
     expect(replacements[0]?.sourceEventSeqs).toHaveLength(4)
     const replaceIndex = rows.findIndex((row) => row.seq === replacements[0]?.seq)
-    expect(rows.slice(replaceIndex - 1, replaceIndex + 4).map((row) => row.type)).toEqual([
+    expect(rows.slice(replaceIndex - 1, replaceIndex + 3).map((row) => row.type)).toEqual([
       'x/core/compaction-begin',
       'assistant/message',
-      'cost/ledger',
       'effect/settled',
       'x/core/compaction-end',
     ])
@@ -733,14 +733,29 @@ describe('production compaction phase', () => {
       textTurn('PREFIX'),
       textTurn('final'),
     ])
-    provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
-    const { session, log } = await openSession({ provider })
+    const summaryModel = {
+      ...model('summary-model', 'compaction', 1000),
+      pricePolicy: {
+        currency: 'CNY',
+        unit: 'per-million-tokens' as const,
+        perMillion: { output: 2 },
+      },
+    }
+    provider.models = () => [model('answer-model', 'primary'), summaryModel]
+    const { session, log, storage } = await openSession({ provider })
     session.preset.model.id.compaction = 'summary-model'
     session.preset.compaction.reserveTokens = 80
     for (const prompt of ['one', 'two']) {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
       await session.run({ until: 'turn-end', signal: signal() })
     }
+    const origins: Array<Parameters<typeof storage.settleOrigin>[0]> = []
+    const settleOrigin = storage.settleOrigin.bind(storage)
+    storage.settleOrigin = async (request) => {
+      await settleOrigin(request)
+      origins.push(request)
+    }
+    session.preset.treeBudgetCredits = 100
     let spanSeqs: number[] = []
     session.compaction = new CompactionRunner({
       plan: async (payload) => {
@@ -768,6 +783,46 @@ describe('production compaction phase', () => {
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'x'.repeat(40) }], actor })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(provider.requests.slice(2, 4).map((request) => request.kind)).toEqual(['summary', 'summary'])
+    const summaryCalls = (await log.scan({ type: MODEL_CALL_EVENT, limit: 100 }))
+      .map(readModelCall)
+      .filter((call) => call?.purpose === 'compaction' && call.stage === 'settled')
+    expect(summaryCalls).toHaveLength(2)
+    summaryModel.pricePolicy.perMillion.output = 999
+    for (const call of summaryCalls) {
+      expect(call?.pricing).toMatchObject({
+        basis: 'configured',
+        route: 'default',
+        model: 'summary-model',
+        policy: { currency: 'CNY', perMillion: { output: 2 } },
+      })
+      const original = (await log.scan({ type: MODEL_CALL_EVENT, limit: 100 }))
+        .map(readModelCall)
+        .find((record) => record?.stage === 'started' && record.id === call?.id)
+      expect(call?.pricing).toEqual(original?.pricing)
+    }
+    expect(new Set(summaryCalls.map((call) => call?.id)).size).toBe(2)
+    expect(new Set(summaryCalls.map((call) => call?.parentEffectId)).size).toBe(1)
+    const costs = (await log.scan({ type: 'cost/ledger', limit: 100 })).filter(
+      (row) => (row.data as { purpose?: string }).purpose === 'compaction',
+    )
+    expect(costs).toHaveLength(2)
+    expect(costs.reduce((sum, row) => sum + (row.data as { credits: number }).credits, 0)).toBe(2)
+    expect(new Set(costs.map((row) => (row.data as { effectId: string }).effectId))).toEqual(
+      new Set(summaryCalls.map((call) => call?.id)),
+    )
+    for (const cost of costs) {
+      const origin = origins.find((value) => value.originCostSeq === cost.seq)
+      expect(origin).toMatchObject({
+        originSessionKey: session.key,
+        actualMicro: 1_000_000n,
+        complete: true,
+        creditSource: 'estimated',
+      })
+      if (!origin) throw new Error('missing exact cost origin')
+      const binding = await storage.peekReservation(origin.permitId)
+      expect(binding?.effectId).toBe((cost.data as { effectId: string }).effectId)
+      expect(binding?.status).toBe('settled')
+    }
     const prefixMessages = provider.requests[3]?.messages ?? []
     expect(prefixMessages[0]?.content[0]).toEqual({ type: 'text', text: 'two' })
     // The prefix segment reuses the same envelope cache as the main segment: 'old-two' is the same
@@ -1310,10 +1365,11 @@ describe('summary stopped at the token cap', () => {
     expect(ends).toHaveLength(1)
     expect(begins[0]?.data).toMatchObject({ mode: 'elided', cause: expect.stringMatching(/max_tokens/) })
     expect(replaced[0]?.origin).toBe('system')
-    // The failed call's spend, its error settlement and the replace land in one transaction.
+    // Per-call spend is already durable; the parent error settlement and replace are atomic.
     expect(
       commits.find((types) => types.includes('assistant/message') && types.includes('x/core/compaction-end')),
-    ).toEqual(expect.arrayContaining(['cost/ledger', 'effect/settled', 'x/core/compaction-begin']))
+    ).toEqual(expect.arrayContaining(['effect/settled', 'x/core/compaction-begin']))
+    expect(commits.some((types) => types.length === 1 && types[0] === 'cost/ledger')).toBe(true)
   })
 
   it('does not commit a summary that was truncated at the cap', async () => {
@@ -1353,6 +1409,13 @@ describe('length-cap retry', () => {
       expect((await opened.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     }
     if (configuredThinking !== undefined) opened.session.preset.model.thinking.compaction = configuredThinking
+    opened.session.preset.treeBudgetCredits = 100
+    const origins: Array<Parameters<typeof opened.storage.settleOrigin>[0]> = []
+    const settleOrigin = opened.storage.settleOrigin.bind(opened.storage)
+    opened.storage.settleOrigin = async (request) => {
+      await settleOrigin(request)
+      origins.push(request)
+    }
     opened.session.compaction = new CompactionRunner({
       plan: async (payload: HookPayloadMap['before_compact']) => {
         const surface = payload.getSurface()
@@ -1380,13 +1443,47 @@ describe('length-cap retry', () => {
       replaced: rows.filter((row) => row.surfaceOp),
       begins: rows.filter((row) => row.type === 'x/core/compaction-begin'),
       provider,
+      storage: opened.storage,
+      sessionKey: opened.session.key,
+      origins,
+      costs: rows.filter(
+        (row) => row.type === 'cost/ledger' && (row.data as { purpose?: string }).purpose === 'compaction',
+      ),
+      modelCalls: rows
+        .filter((row) => row.type === MODEL_CALL_EVENT)
+        .map(readModelCall)
+        .filter((call) => call?.purpose === 'compaction'),
     }
   }
 
   it('retries once with thinking forced to low, then falls back to an elided compaction', async () => {
-    const { reasons, replaced, begins, provider } = await compactWithScripts([capped(''), capped('')])
+    const { reasons, replaced, begins, provider, modelCalls, costs, origins, storage, sessionKey } =
+      await compactWithScripts([capped(''), capped('')])
     // old-one, old-two, first summary attempt, retry attempt — no third attempt.
     expect(provider.calls).toBe(4)
+    expect(modelCalls.filter((call) => call?.stage === 'settled')).toMatchObject([
+      { outcome: 'failed', usage: { tokens: { input: 500, output: 2048 } } },
+      { outcome: 'failed', usage: { tokens: { input: 500, output: 2048 } } },
+    ])
+    expect(new Set(modelCalls.map((call) => call?.id)).size).toBe(2)
+    expect(costs).toHaveLength(2)
+    expect(costs.reduce((sum, row) => sum + (row.data as { credits: number }).credits, 0)).toBe(2)
+    expect(new Set(costs.map((row) => (row.data as { effectId: string }).effectId))).toEqual(
+      new Set(modelCalls.map((call) => call?.id)),
+    )
+    for (const cost of costs) {
+      const origin = origins.find((value) => value.originCostSeq === cost.seq)
+      expect(origin).toMatchObject({
+        originSessionKey: sessionKey,
+        actualMicro: 1_000_000n,
+        complete: true,
+        creditSource: 'estimated',
+      })
+      if (!origin) throw new Error('missing exact retry cost origin')
+      const binding = await storage.peekReservation(origin.permitId)
+      expect(binding?.effectId).toBe((cost.data as { effectId: string }).effectId)
+      expect(binding?.status).toBe('settled')
+    }
     expect(provider.requests.at(-1)?.sampling?.thinking).toBe('low')
     expect(reasons).toEqual([])
     expect(replaced).toHaveLength(1)
@@ -1503,7 +1600,7 @@ describe('routing a summary that is unavailable', () => {
     return { ...opened, provider, commits, seams, runner, sizes, enter, outcome, planned: () => planned }
   }
 
-  /** The elided replace was written, as one transaction with the failed call's spend when there was one. */
+  /** The elided replace and parent settlement remain atomic after per-call costs are durable. */
   async function expectElided(
     h: Awaited<ReturnType<typeof toolHistory>>,
     cause: RegExp,
@@ -1519,13 +1616,10 @@ describe('routing a summary that is unavailable', () => {
     const tx = h.commits.find((types) => types.includes('x/core/compaction-end')) ?? []
     if (withCall) {
       expect(tx).toEqual(
-        expect.arrayContaining([
-          'cost/ledger',
-          'effect/settled',
-          'x/core/compaction-begin',
-          'assistant/message',
-        ]),
+        expect.arrayContaining(['effect/settled', 'x/core/compaction-begin', 'assistant/message']),
       )
+      expect(o.spends.length).toBeGreaterThan(0)
+      expect(Math.max(...o.spends.map((row) => row.seq))).toBeLessThan(o.begins[0]?.seq ?? 0)
       expect((o.begins[0]?.data as { effectId?: string } | undefined)?.effectId).toBeDefined()
     } else {
       expect(o.spends).toEqual([])
@@ -1736,17 +1830,34 @@ describe('routing a summary that is unavailable', () => {
     },
   )
 
-  it('never elides a cancelled summary', async () => {
+  it.each([false, true])('never elides a cancelled summary (reported usage: %s)', async (reportedUsage) => {
     const h = await toolHistory([])
     const infer = h.provider.infer.bind(h.provider)
     h.provider.infer = (req, options) => {
-      if (req.kind === 'summary') h.session.ac.abort()
+      if (req.kind === 'summary') {
+        h.session.ac.abort()
+        if (!reportedUsage)
+          return (async function* () {
+            yield {
+              type: 'error' as const,
+              reason: 'aborted' as const,
+              code: 'ABORTED' as const,
+              message: 'cancelled',
+              retryable: false,
+            }
+          })()
+      }
       return infer(req, options)
     }
     await h.enter('threshold')
     const o = await h.outcome()
     expect(o.replaces).toEqual([])
     expect((o.failed[0]?.data as { reason?: string } | undefined)?.reason).toBe('compaction cancelled')
+    expect(
+      (await h.log.scan({ type: MODEL_CALL_EVENT, limit: 100 }))
+        .map(readModelCall)
+        .filter((call) => call?.purpose === 'compaction' && call.stage === 'settled'),
+    ).toMatchObject([{ outcome: 'cancelled', usage: reportedUsage ? { type: 'usage' } : null }])
   })
 
   it('does not check the threshold again before the next request refreshes the context count', async () => {

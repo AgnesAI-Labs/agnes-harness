@@ -1,5 +1,7 @@
 import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
 import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
+import { HOST_TOOL_FACT_CODEC, type HostPathFact, hostPathFact } from './facts.js'
+import { readImageMime, validateReadImage } from './read-image.js'
 import { ReadParams } from './schemas.js'
 
 // Ceiling on how much of a file is pulled into memory for one call. Without it a single read of a
@@ -110,6 +112,14 @@ export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<
   return { ok: true, lines, logical, starts, notes }
 }
 
+type LinePage = {
+  text: string
+  firstLine: number | null
+  lastLine: number | null
+  nextOffset?: number
+  outputTruncated: boolean
+}
+
 // One page of numbered lines: from `offset`, at most `limit` of them, and no more than fit the
 // output limit. When the limit of bytes ends the page early, the hint says where to continue. This
 // is the whole of what `read` hands back, for a file as for a stored output, so a result is never
@@ -120,11 +130,16 @@ function pageOfLines(
   offset: number,
   limit: number | undefined,
   what: 'file' | 'artifact',
-): string {
+): LinePage {
   const { lines, notes } = spilled
   const start = offset - 1
   if (start >= lines.length)
-    return `${notes}[no lines at offset ${offset}; the ${what} has ${lines.length} lines]`
+    return {
+      text: `${notes}[no lines at offset ${offset}; the ${what} has ${lines.length} lines]`,
+      firstLine: null,
+      lastLine: null,
+      outputTruncated: false,
+    }
   const end = limit === undefined ? lines.length : Math.min(lines.length, start + limit)
   const budget = maxBytes - HINT_RESERVE - byteLength(notes)
   const rows: string[] = []
@@ -139,17 +154,62 @@ function pageOfLines(
     rows.push(row)
     used += cost
   }
-  const hint =
-    at < end
-      ? `\n[lines ${start + 1}-${at} of ${lines.length}; call read again with offset=${at + 1} to continue]`
-      : ''
-  return notes + rows.join('\n') + hint
+  const outputTruncated = at < end
+  const hint = outputTruncated
+    ? `\n[lines ${start + 1}-${at} of ${lines.length}; call read again with offset=${at + 1} to continue]`
+    : ''
+  return {
+    text: notes + rows.join('\n') + hint,
+    firstLine: rows.length === 0 ? null : start + 1,
+    lastLine: rows.length === 0 ? null : at,
+    ...(at < lines.length ? { nextOffset: at + 1 } : {}),
+    outputTruncated,
+  }
+}
+
+function readFact(
+  target: ({ kind: 'file' } & HostPathFact) | { kind: 'artifact'; path: string },
+  offset: number,
+  limit: number | undefined,
+  page: LinePage,
+  availableLines: number,
+  sourceTruncated: boolean,
+  truncatedLineCount: number,
+): unknown {
+  const pageLimited = page.nextOffset !== undefined
+  return {
+    codec: HOST_TOOL_FACT_CODEC,
+    tool: 'read',
+    target,
+    request: { offset, ...(limit === undefined ? {} : { limit }) },
+    page: {
+      firstLine: page.firstLine,
+      lastLine: page.lastLine,
+      availableLines,
+      ...(!sourceTruncated ? { totalLines: availableLines } : {}),
+      ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+    },
+    coverage: {
+      complete:
+        !sourceTruncated &&
+        !pageLimited &&
+        page.firstLine === 1 &&
+        page.lastLine === availableLines &&
+        truncatedLineCount === 0,
+      sourceTruncated,
+      pageLimited,
+      continuationSafe: !sourceTruncated && truncatedLineCount === 0,
+      outputTruncated: page.outputTruncated,
+      lineContentTruncated: truncatedLineCount > 0,
+      truncatedLineCount,
+    },
+  }
 }
 
 export const readTool = defineTool({
   name: 'read',
   description:
-    'Read a text file. Returns lines prefixed with their 1-based line number. Use offset (first line) and limit (number of lines) to page through large files. Also takes the artifact:// path from a truncated output note, to read the rest of that output the same way.',
+    'Read a text file or a local PNG/JPEG image. Images return immutable artifact evidence and must fit the 4 MiB and 16 megapixel read limits; GIF/WebP are not supported. Image reads do not accept offset or limit. Text returns lines prefixed with their 1-based line number. Use offset (first line) and limit (number of lines) to page through large text files. Also takes the artifact:// path from a truncated text output note, to read the rest of that output the same way.',
   parameters: ReadParams,
   meta: {
     isReadOnly: true,
@@ -166,15 +226,21 @@ export const readTool = defineTool({
       const spilled = await loadSpilledLines(ctx, args.path)
       if (!spilled.ok)
         return { content: [{ type: 'text', text: `read failed: ${spilled.message}` }], isError: true }
+      const offset = args.offset ?? 1
+      const page = pageOfLines(ctx.outputMaxBytes, spilled, offset, args.limit, 'artifact')
       // A page is already within the output limit, and it is not put back into the store: the text
       // it came from is what the model reads on from, by offset.
       return {
-        content: [
-          {
-            type: 'text',
-            text: pageOfLines(ctx.outputMaxBytes, spilled, args.offset ?? 1, args.limit, 'artifact'),
-          },
-        ],
+        content: [{ type: 'text', text: page.text }],
+        structured: readFact(
+          { kind: 'artifact', path: args.path },
+          offset,
+          args.limit,
+          page,
+          spilled.lines.length,
+          spilled.notes !== '',
+          0,
+        ),
       }
     }
     let bytes: Uint8Array
@@ -183,9 +249,48 @@ export const readTool = defineTool({
       // the same string that gets opened, or the check and the open are about different files.
       // One byte over the ceiling is requested so a file sitting exactly on it is not misreported
       // as truncated.
-      bytes = await ctx.fs.read(args.path, { offset: 0, limit: MAX_READ_BYTES + 1 })
+      bytes = await ctx.fs.read(args.path, { unit: 'bytes', offset: 0, limit: MAX_READ_BYTES + 1 })
     } catch (e) {
       return { content: [{ type: 'text', text: `read failed: ${(e as Error).message}` }], isError: true }
+    }
+    const mime = readImageMime(bytes)
+    if (mime) {
+      if (bytes.length > MAX_READ_BYTES || args.offset !== undefined || args.limit !== undefined)
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                bytes.length > MAX_READ_BYTES
+                  ? 'image exceeds the 4 MiB read limit; no truncated image was stored'
+                  : 'image reads do not support line offset or limit',
+            },
+          ],
+          isError: true,
+        }
+      ctx.signal.throwIfAborted()
+      try {
+        validateReadImage(bytes, mime, MAX_READ_BYTES)
+        const ref = await ctx.artifacts.put(bytes, { mime })
+        ctx.signal.throwIfAborted()
+        return {
+          content: [{ type: 'image', ref, mime }],
+          structured: {
+            codec: HOST_TOOL_FACT_CODEC,
+            tool: 'read',
+            target: { kind: 'file', ...hostPathFact(args.path, ctx.cwd) },
+            image: { mime, size: bytes.byteLength },
+          },
+        }
+      } catch (error) {
+        ctx.signal.throwIfAborted()
+        return {
+          content: [
+            { type: 'text', text: `image could not be validated or stored: ${describeFailure(error)}` },
+          ],
+          isError: true,
+        }
+      }
     }
     if (isBinary(bytes))
       return {
@@ -208,14 +313,25 @@ export const readTool = defineTool({
     if (notes !== '') text = text.slice(0, Math.max(text.lastIndexOf('\n') + 1, 0)) || text
     // A file keeps its real line numbers, so a line too long for a page is cut and says so rather
     // than wrapped into extra numbers; a shell command reaches the rest of it.
-    const lines = toLines(text).map(clipLine)
+    let truncatedLineCount = 0
+    const lines = toLines(text).map((line) => {
+      const clipped = clipLine(line)
+      if (clipped !== line) truncatedLineCount++
+      return clipped
+    })
+    const offset = args.offset ?? 1
+    const page = pageOfLines(ctx.outputMaxBytes, { lines, notes }, offset, args.limit, 'file')
     return {
-      content: [
-        {
-          type: 'text',
-          text: pageOfLines(ctx.outputMaxBytes, { lines, notes }, args.offset ?? 1, args.limit, 'file'),
-        },
-      ],
+      content: [{ type: 'text', text: page.text }],
+      structured: readFact(
+        { kind: 'file', ...hostPathFact(args.path, ctx.cwd) },
+        offset,
+        args.limit,
+        page,
+        lines.length,
+        notes !== '',
+        truncatedLineCount,
+      ),
     }
   },
 })

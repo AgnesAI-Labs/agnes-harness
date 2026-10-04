@@ -1,0 +1,9 @@
+{
+  "source": "Real Flash Jev media request; only request metadata retained, no prompts, reasoning, identities, paths or image bytes.",
+  "seq": 58,
+  "purpose": "arbitration",
+  "requestedModel": "deepseek-v4-flash",
+  "imageMime": "image/png",
+  "preparedImage": true,
+  "capturedImageData": "[OMITTED:image:base64]"
+}

@@ -44,6 +44,16 @@ describe('throwSessionOpenRpcError', () => {
     expect(caught(error)).toBe(error)
   })
 
+  it.each(['E_RUNTIME_OWNER', 'E_RUNTIME_UNAVAILABLE', 'E_RUNTIME_API_VERSION'])(
+    'maps %s without leaking worker error messages',
+    (code) => {
+      expect(caught({ code, message: 'private worker detail' })).toMatchObject({
+        code: -32011,
+        data: { code: code.slice(2) },
+      })
+    },
+  )
+
   it('leaves other preset refusals and workspace errors to their existing mapping', () => {
     const other = new HostError('E_PRESET_UNRESOLVED', 'model contract is not loaded')
     expect(caught(other)).toBe(other)

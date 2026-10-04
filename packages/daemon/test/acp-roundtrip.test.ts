@@ -1,3 +1,5 @@
+import type { KernelChildren } from '@agnes/core'
+import { getHarnessMeta, type JsonValue } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { noticeParams } from '../src/local/attached.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
@@ -50,6 +52,97 @@ type N = {
 }
 
 describe('local endpoint: ACP round trip', () => {
+  it.each(['native', 'jevloop'] as const)(
+    '%s executes the exact new prompt after a cancelled child report instead of returning the report turn',
+    async (runtime) => {
+      const h = await openTestHost({
+        script: [say('OLD_REPORT_REPLY'), say('EXPLICIT_USER_REPLY')],
+        ...(runtime === 'jevloop'
+          ? {
+              jev: {
+                config: { responseReviewMode: 'diagnostic', answerProgressFloor: null },
+                decision: {
+                  backend: 'jev',
+                  endpoint: 'https://jev.invalid/v1',
+                  model: 'jev-test',
+                  transport: {
+                    async invoke({ questions }) {
+                      const answers: Record<string, JsonValue> = {}
+                      for (const [name, q] of Object.entries(questions)) {
+                        const criteria = (q as { criteria?: Record<string, unknown> }).criteria
+                        if (criteria) {
+                          const choice =
+                            name === 'purpose'
+                              ? 'RESPOND'
+                              : name.startsWith('operation_')
+                                ? 'RESPOND'
+                                : undefined
+                          if (choice)
+                            answers[name] = {
+                              type: 'choice',
+                              choice,
+                              confidence: 1,
+                              probabilities: Object.fromEntries(
+                                Object.keys(criteria).map((key) => [key, key === choice ? 1 : 0]),
+                              ),
+                            }
+                        }
+                      }
+                      return { output: { answers }, observedModel: 'jev-test' }
+                    },
+                  },
+                },
+              },
+            }
+          : {}),
+      })
+      const ep = h.endpoint({ pollMs: 5 })
+      try {
+        await ep.handle(init)
+        await addWorkspace(ep, h.dataDir)
+        const created = (await ep.handle({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'session/new',
+          params: { cwd: h.dataDir, mcpServers: [], _meta: { 'ai.agnes.harness': { runtime } } },
+        })) as { result: { sessionId: string } }
+        const parent = h.host.kernel.get(created.result.sessionId)
+        if (!parent) throw new Error('Missing parent')
+        const handle = await (parent.d.children as KernelChildren).createWithKind('spawn', {
+          parent: parent.key,
+          cwd: h.dataDir,
+          input: 'child',
+        })
+        const child = h.host.kernel.get(handle.key)
+        if (!child) throw new Error('Missing child')
+        await parent.abort(parent.d.actor)
+        await (child.d.children as KernelChildren).sendMessage(parent.key, 'OLD_CANONICAL_REPORT', {
+          deliveryId: 'pending-report',
+          parentEffectId: 'call',
+          signal: new AbortController().signal,
+        })
+        const reply = (await ep.handle({
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'session/prompt',
+          params: { sessionId: parent.key, prompt: [{ type: 'text', text: 'EXPLICIT_USER_PROMPT' }] },
+        })) as { result: { _meta?: Record<string, unknown> } }
+        expect(getHarnessMeta(reply.result)).toMatchObject({ turnEnd: { reason: 'completed' } })
+        expect(parent.latest('inbox')).toMatchObject({ items: [] })
+        expect(JSON.stringify(await parent.scan({ type: 'user/message', limit: 10 }))).toContain(
+          'EXPLICIT_USER_PROMPT',
+        )
+        const answers = await parent.scan({ type: 'assistant/message', limit: 10, order: 'asc' })
+        expect(JSON.stringify(answers.at(-1)?.data)).toContain('EXPLICIT_USER_REPLY')
+        const starts = await parent.scan({ type: 'turn/start', limit: 10, order: 'asc' })
+        expect(starts).toHaveLength(2)
+        expect(getHarnessMeta(reply.result)?.promptTurnId).toBe(String(starts[1]?.seq))
+      } finally {
+        await ep.close()
+        await h.close()
+      }
+    },
+  )
   it('requires explicit workspace.add before session/new and never grants authority from cwd', async () => {
     const h = await openTestHost()
     const ep = createLocalEndpoint(h.host, { clock: () => Date.now(), pollMs: 5 })
@@ -77,6 +170,50 @@ describe('local endpoint: ACP round trip', () => {
     await h.close()
   })
 
+  it('lists runtimes without opening a session, validates selection and exposes its immutable owner', async () => {
+    const h = await openTestHost()
+    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    try {
+      await ep.handle(init)
+      const catalog = await ep.handle({ jsonrpc: '2.0', id: 2, method: '_agnes/v1/runtime.list', params: {} })
+      expect(catalog).toMatchObject({
+        result: {
+          items: expect.arrayContaining([expect.objectContaining({ id: 'native', available: true })]),
+        },
+      })
+      await addWorkspace(ep, h.dataDir)
+      for (const runtime of ['missing', 42, '']) {
+        const denied = await ep.handle({
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'session/new',
+          params: { cwd: h.dataDir, mcpServers: [], _meta: { 'ai.agnes.harness': { runtime } } },
+        })
+        expect(denied).toHaveProperty('error')
+      }
+      const created = (await ep.handle({
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [], _meta: { 'ai.agnes.harness': { runtime: 'native' } } },
+      })) as { result: { sessionId: string } }
+      const sessionId = created.result.sessionId
+      expect(
+        await ep.handle({
+          jsonrpc: '2.0',
+          id: 5,
+          method: '_agnes/v1/session.runtime',
+          params: { sessionId },
+        }),
+      ).toMatchObject({ result: { runtime: { id: 'native', version: '1' }, phase: 'idle' } })
+      const rows = await h.host.kernel.get(sessionId)?.scan({ fromSeq: 1, toSeq: 1, limit: 1 })
+      expect(rows?.[0]?.data).toMatchObject({ runtime: { id: 'native', version: '1' } })
+    } finally {
+      await ep.close()
+      await h.close()
+    }
+  })
+
   it('initialize → session/new → session/prompt yields updates, quiescence, then the response', async () => {
     const h = await openTestHost({ script: [say('hello world')] })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
@@ -98,8 +235,12 @@ describe('local endpoint: ACP round trip', () => {
       id: 3,
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'hi' }] },
-    })) as { result: { stopReason: string } }
+    })) as { result: { stopReason: string; _meta?: Record<string, unknown> } }
     expect(res.result.stopReason).toBe('end_turn')
+    const replyMeta = getHarnessMeta(res.result)
+    expect(replyMeta).toMatchObject({ phase: 'terminalQuiescence', turnEnd: { reason: 'completed' } })
+    expect(Number(replyMeta?.promptTurnId)).toBeGreaterThan(0)
+    expect(replyMeta?.eventSequence).toBeGreaterThan(0)
     const seen = (await drain(ep)) as N[]
     const updates = seen.filter((n) => n.method === 'session/update')
     // Streamed text rides as previews, which are not rows and carry no harness _meta.

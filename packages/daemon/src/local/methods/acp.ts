@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { runInputToCompletion, scanAll } from '@agnes/core'
 import {
   ActivationInProgressError,
   sessionKey as canonicalSessionKey,
@@ -9,11 +11,15 @@ import {
   type EventEnvelope,
   type HarnessMeta,
   type RpcError,
+  type RuntimeDescriptor,
   rpcError,
+  type SessionRuntimeState,
   setHarnessMeta,
   type TurnEndReason,
   toAcpStopReason,
+  validateAgainst,
 } from '@agnes/protocol'
+import { NewSessionMeta } from '@agnes/protocol/gen/agnes-v1'
 import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../../registry.js'
 import { notify } from '../../rpc.js'
 import type { SessionPrincipalOwnership } from '../../storage/session-ownership.js'
@@ -36,6 +42,8 @@ import { throwWorkspaceRpcError } from './workspaces.js'
 
 export type LocalContext = {
   host: Host
+  runtimeCatalog?: () => Promise<RuntimeDescriptor[]>
+  readRuntimeState?: (sessionId: string) => Promise<SessionRuntimeState | undefined>
   registry: Registry<SessionEntry>
   prompter: PrompterRouter
   clock: () => number
@@ -347,6 +355,12 @@ export function throwSessionOpenRpcError(error: unknown): never {
   // A ledger holding a row type this build no longer knows was written by an older build; it fails
   // closed, and the caller is told so rather than handed an internal error.
   if (e?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+  if (
+    e?.code === 'E_RUNTIME_OWNER' ||
+    e?.code === 'E_RUNTIME_UNAVAILABLE' ||
+    e?.code === 'E_RUNTIME_API_VERSION'
+  )
+    throw rpcError('SEMANTIC_REJECTED', { code: e.code.slice(2) })
   if (e?.code === 'E_PRESET_UNRESOLVED' && (e.reason ?? e.detail?.reason) === 'no-routes')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'PROVIDER_UNCONFIGURED',
@@ -441,9 +455,10 @@ export function registerAcp(
     // is InitializeMeta { auth?, clientId? } with additionalProperties:false - it has no capabilities
     // key, and reading one from there leaves permission false for every client there is.
     const declared = pocket((params as { clientCapabilities?: unknown }).clientCapabilities).capabilities as
-      | { permission?: boolean }
+      | { permission?: boolean; questions?: boolean }
       | undefined
     c.conn.capabilities.permission = declared?.permission === true
+    c.conn.capabilities.questions = declared?.questions === true
     // A label, not an identity: it never becomes principalId, and nothing buckets on it. authGate
     // has already set it from this same pocket before this handler ever runs; setting it again here
     // is a no-op on the credentialed path and the only path that reaches it when there is no gate.
@@ -478,6 +493,14 @@ export function registerAcp(
         reason: 'remote session actor authority unavailable',
       })
     const h = pocket(params)
+    const checked = validateAgainst<NewSessionMeta>(NewSessionMeta, h)
+    if (!checked.ok) throw rpcError('INVALID_PARAMS', { reason: 'invalid new-session metadata' })
+    const runtime = checked.value.runtime
+    if (runtime !== undefined) {
+      const catalog = cx.runtimeCatalog ? await cx.runtimeCatalog() : cx.host.runtimeCatalog()
+      if (!catalog.some((item) => item.id === runtime && item.available))
+        throw rpcError('SEMANTIC_REJECTED', { code: 'RUNTIME_UNAVAILABLE', runtime })
+    }
     const preset = typeof h.preset === 'string' ? h.preset : undefined
     if (preset && !cx.host.profile.presets.allowed.includes(preset))
       throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed', preset })
@@ -524,9 +547,12 @@ export function registerAcp(
         cwd: binding.canonicalRoot,
         binding,
         ...(preset ? { preset } : {}),
+        ...(runtime === undefined ? {} : { runtime }),
         key: requestedKey,
         ...(c.conn.credential === undefined ? {} : { credential: c.conn.credential }),
       })
+      if (runtime !== undefined && (await entry.session.runtimeState()).runtime.id !== runtime)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: requestedKey })
       if (reservedNew && !ownership.activateNew(entry.key, c.conn.principalId))
         denyOwnership('session/new', requestedKey)
     } catch (error) {
@@ -596,22 +622,41 @@ export function registerAcp(
     cx.onPromptStart?.(p.sessionId)
     try {
       let running: ReturnType<typeof entry.session.run> | undefined
+      let enqueuedSeq: number | undefined
+      let itemId: string | undefined
       await runQueued(cx.commandQueue, p.sessionId, abort.signal, async () => {
         const invocation = await queued.start()
         try {
-          await entry.session.enqueue('next-turn', {
+          cx.commandQueue.assertAdmitted(p.sessionId)
+          enqueuedSeq = await entry.session.enqueue('next-turn', {
+            commandId: `acp:${randomUUID()}`,
             content: p.prompt as never,
             actor: connActor(c.conn),
             kind: 'prompt',
           })
-          running = invocation.run(() => entry.session.run({ until: 'turn-end', signal: abort.signal }))
+          const source = await entry.session.scan({ fromSeq: enqueuedSeq, toSeq: enqueuedSeq, limit: 1 })
+          const items = (source[0]?.data as { items?: Array<{ itemId?: string }> } | undefined)?.items
+          itemId = items?.at(-1)?.itemId
+          if (!itemId) throw rpcError('INTERNAL_ERROR', { code: 'PROMPT_INPUT_SOURCE_UNAVAILABLE' })
+          const boundItem = itemId
+          running = invocation.run(() =>
+            runInputToCompletion({
+              itemId: boundItem,
+              enqueuedSeq: enqueuedSeq!,
+              signal: abort.signal,
+              read: (query) => entry.session.scan(query),
+              run: () => entry.session.run({ until: 'turn-end', signal: abort.signal }),
+            }),
+          )
         } catch (error) {
           invocation.finish()
           throw error
         }
       })
-      if (!running) throw rpcError('INTERNAL_ERROR', { code: 'RUN_NOT_STARTED' })
+      if (!running || enqueuedSeq === undefined) throw rpcError('INTERNAL_ERROR', { code: 'RUN_NOT_STARTED' })
       const out = await running
+      if (!Number.isSafeInteger(out.lastSeq) || out.lastSeq < enqueuedSeq)
+        throw rpcError('INTERNAL_ERROR', { code: 'STALE_RUN_WATERMARK' })
       // Not before terminalQuiescence: the response is the turn's last word to this client.
       await feedFor(entry).pushed(out.lastSeq, { timeoutMs: cx.quiescenceWaitMs })
       if (out.reason === 'error')
@@ -620,10 +665,37 @@ export function registerAcp(
           turnEnd: { reason: 'error' },
           error: out.error,
         })
-      return {
-        stopReason: toAcpStopReason(out.reason as Exclude<TurnEndReason, 'error'>),
-        _meta: { [HARNESS]: { phase: 'terminalQuiescence', turnEnd: { reason: out.reason } } },
-      }
+      // The RPC result belongs to this invocation even when a parked runtime leaves its input
+      // pending and emits no new turn/end. Read only its fixed prefix; never borrow an older turn.
+      const claims = await scanAll((query) => entry.session.scan(query), {
+        type: 'user/message',
+        lane: 'main',
+        fromSeq: enqueuedSeq,
+        toSeq: out.lastSeq,
+      })
+      const claim = claims.find((row) => (row.data as { itemId?: string }).itemId === itemId)
+      const starts = claim
+        ? await entry.session.scan({
+            type: 'turn/start',
+            lane: 'main',
+            fromSeq: claim.seq + 1,
+            toSeq: out.lastSeq,
+            order: 'asc',
+            limit: 1,
+          })
+        : []
+      return setHarnessMeta(
+        { stopReason: toAcpStopReason(out.reason as Exclude<TurnEndReason, 'error'>) },
+        {
+          // '0' is the existing pre-turn marker: this invocation has not started a new turn.
+          promptTurnId: starts[0] ? String(starts[0].seq) : '0',
+          eventSequence: out.lastSeq,
+          generation: entry.generation,
+          lane: 'main',
+          phase: out.reason === 'blocked' || out.reason === 'parked' ? 'parked' : 'terminalQuiescence',
+          turnEnd: { reason: out.reason },
+        },
+      )
     } finally {
       queued.cancel()
       entry.inflight = null

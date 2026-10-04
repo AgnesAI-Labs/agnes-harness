@@ -29,9 +29,14 @@ function hostAllowed(url: string, declarations: readonly string[]): boolean {
 /** Projects the ambient core ToolContext down to the package manifest's runtime capabilities. */
 export function capabilityToolContext(manifest: ExtensionManifest, context: ToolContext): ToolContext {
   const { capabilities: caps, id } = manifest
+  const { questions, ...ambient } = context
+  const sendMessage = context.subagent?.sendMessage
+  const interrupt = context.subagent?.interrupt
   const hosts = caps.network && !Array.isArray(caps.network) ? [...caps.network.hosts] : []
   const projected: ToolContext = {
-    ...context,
+    ...ambient,
+    // Keep the original invocation closure: managed human wait binds its exact Core context.
+    ...(caps.questions === true && questions ? { questions } : {}),
     net: Object.freeze({
       fetchPublic(url: string, options?: { responseType: 'zip' }) {
         if (caps['network.publicRead'] !== true) refuse(id, 'network.publicRead')
@@ -96,6 +101,15 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
         if (caps.subagent !== true) refuse(id, 'subagent')
         return context.subagent.resume(childKey)
       },
+      ...(caps.subagent === true && sendMessage
+        ? {
+            sendMessage: (childKey: string, message: string) =>
+              sendMessage.call(context.subagent, childKey, message),
+          }
+        : {}),
+      ...(caps.subagent === true && interrupt
+        ? { interrupt: (childKey: string) => interrupt.call(context.subagent, childKey) }
+        : {}),
     }),
   }
   return Object.freeze(projected)

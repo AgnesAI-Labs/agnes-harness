@@ -13,10 +13,11 @@ export function workspaceIdFor(path: string): string {
 type WorkspaceRow = Omit<WorkspaceEntry, 'sessionCount' | 'available' | 'workspaceId' | 'revision'> & {
   workspaceId: string
   revision: number
+  comparisonOwned: boolean
 }
 
 export interface WorkspaceStore {
-  put(directory: WorkspaceDirectory, registeredAt: string): WorkspaceRow
+  put(directory: WorkspaceDirectory, registeredAt: string, comparisonOwned?: boolean): WorkspaceRow
   touch(path: string, usedAt: string): void
   rows(): WorkspaceRow[]
 }
@@ -31,7 +32,8 @@ export class WorkspaceIndex implements WorkspaceStore {
         workspace_id TEXT NOT NULL,
         revision INTEGER NOT NULL,
         registered_at TEXT NOT NULL,
-        last_used_at TEXT
+        last_used_at TEXT,
+        comparison_owned INTEGER NOT NULL DEFAULT 0
       )`,
     )
     // Existing daemon databases predate explicit authority revisions. Migrate in place, then derive
@@ -46,6 +48,11 @@ export class WorkspaceIndex implements WorkspaceStore {
     } catch {
       // Column already exists.
     }
+    try {
+      table.exec('ALTER TABLE workspace_registry ADD COLUMN comparison_owned INTEGER NOT NULL DEFAULT 0')
+    } catch {
+      // Column already exists.
+    }
     for (const row of table.all<{ path: string; workspace_id: string | null }>(
       'SELECT path, workspace_id FROM workspace_registry',
     ))
@@ -56,17 +63,18 @@ export class WorkspaceIndex implements WorkspaceStore {
         ])
   }
 
-  put(directory: WorkspaceDirectory, registeredAt: string): WorkspaceRow {
+  put(directory: WorkspaceDirectory, registeredAt: string, comparisonOwned = false): WorkspaceRow {
     const workspaceId = workspaceIdFor(directory.path)
     this.table.exec(
       `INSERT INTO workspace_registry
-         (path, name, workspace_id, revision, registered_at, last_used_at)
-       VALUES (?, ?, ?, 1, ?, NULL)
-       ON CONFLICT(path) DO UPDATE SET name = excluded.name`,
-      [directory.path, directory.name, workspaceId, registeredAt],
+         (path, name, workspace_id, revision, registered_at, last_used_at, comparison_owned)
+       VALUES (?, ?, ?, 1, ?, NULL, ?)
+       ON CONFLICT(path) DO UPDATE SET name = excluded.name,
+         comparison_owned = MAX(workspace_registry.comparison_owned, excluded.comparison_owned)`,
+      [directory.path, directory.name, workspaceId, registeredAt, comparisonOwned ? 1 : 0],
     )
     const row = this.table.get<SqlWorkspaceRow>(
-      'SELECT path, name, workspace_id, revision, last_used_at FROM workspace_registry WHERE path = ?',
+      'SELECT path, name, workspace_id, revision, last_used_at, comparison_owned FROM workspace_registry WHERE path = ?',
       [directory.path],
     )
     if (!row) throw new Error('workspace registration was not persisted')
@@ -80,7 +88,7 @@ export class WorkspaceIndex implements WorkspaceStore {
   rows(): WorkspaceRow[] {
     return this.table
       .all<SqlWorkspaceRow>(
-        'SELECT path, name, workspace_id, revision, last_used_at FROM workspace_registry ORDER BY path',
+        'SELECT path, name, workspace_id, revision, last_used_at, comparison_owned FROM workspace_registry ORDER BY path',
       )
       .map(fromSqlRow)
   }
@@ -92,6 +100,7 @@ type SqlWorkspaceRow = {
   workspace_id: string
   revision: number
   last_used_at: string | null
+  comparison_owned: number
 }
 
 function fromSqlRow(row: SqlWorkspaceRow): WorkspaceRow {
@@ -101,13 +110,14 @@ function fromSqlRow(row: SqlWorkspaceRow): WorkspaceRow {
     workspaceId: row.workspace_id,
     revision: row.revision,
     lastUsedAt: row.last_used_at,
+    comparisonOwned: row.comparison_owned !== 0,
   }
 }
 
 export class MemoryWorkspaceStore implements WorkspaceStore {
   private readonly entries = new Map<string, WorkspaceRow>()
 
-  put(directory: WorkspaceDirectory, _registeredAt: string): WorkspaceRow {
+  put(directory: WorkspaceDirectory, _registeredAt: string, comparisonOwned = false): WorkspaceRow {
     const existing = this.entries.get(directory.path)
     const entry: WorkspaceRow = {
       path: directory.path,
@@ -115,6 +125,7 @@ export class MemoryWorkspaceStore implements WorkspaceStore {
       workspaceId: workspaceIdFor(directory.path),
       revision: existing?.revision ?? 1,
       lastUsedAt: existing?.lastUsedAt ?? null,
+      comparisonOwned: existing?.comparisonOwned === true || comparisonOwned,
     }
     this.entries.set(directory.path, entry)
     return { ...entry }
@@ -290,8 +301,51 @@ export class WorkspaceCatalog {
 
   async add(path: string): Promise<WorkspaceEntry> {
     const directory = await this.resolve(path)
+    if (this.store.rows().some((row) => row.path === directory.path && row.comparisonOwned))
+      throw rpcError('SEMANTIC_REJECTED', {
+        code: 'WORKSPACE_NOT_FOUND',
+        reason: 'comparison workspace is unavailable for ordinary registration',
+      })
     const row = this.store.put(directory, new Date(this.clock()).toISOString())
     return this.entry(row, this.sessionAggregate(), true)
+  }
+
+  /** Comparison roots retain authority and recovery, but never enter ordinary navigation. */
+  async addComparison(path: string): Promise<WorkspaceEntry> {
+    const directory = await this.resolve(path)
+    const row = this.store.put(directory, new Date(this.clock()).toISOString(), true)
+    return this.entry(row, this.sessionAggregate(), true)
+  }
+
+  /** Upgrade legacy registrations from permanent admissions and exact authoritative bindings. */
+  markComparisonSessions(sessionKeys: readonly string[]): void {
+    const rows = new Map(this.store.rows().map((row) => [row.workspaceId, row]))
+    for (const key of sessionKeys) {
+      const binding = this.bindings.get(key)
+      const row = binding && rows.get(binding.workspaceId)
+      if (
+        row &&
+        !row.comparisonOwned &&
+        row.path === binding.canonicalRoot &&
+        row.revision === binding.revision
+      ) {
+        this.store.put(row, new Date(this.clock()).toISOString(), true)
+        row.comparisonOwned = true
+      }
+    }
+  }
+
+  ordinarySessionIds(sessionKeys: readonly string[]): string[] {
+    const hidden = new Set(
+      this.store
+        .rows()
+        .filter((row) => row.comparisonOwned)
+        .map((row) => row.workspaceId),
+    )
+    return sessionKeys.filter((key) => {
+      const binding = this.bindings.get(key)
+      return !binding || !hidden.has(binding.workspaceId)
+    })
   }
 
   async authorizeAndBind(sessionKey: string, path: string): Promise<WorkspaceBindingEnvelope> {
@@ -349,16 +403,19 @@ export class WorkspaceCatalog {
   async list(): Promise<{ items: WorkspaceEntry[] }> {
     const aggregate = this.sessionAggregate()
     const items = await Promise.all(
-      this.store.rows().map(async (row) => {
-        let available = false
-        try {
-          await this.assertFresh(row)
-          available = true
-        } catch {
-          available = false
-        }
-        return this.entry(row, aggregate, available)
-      }),
+      this.store
+        .rows()
+        .filter((row) => !row.comparisonOwned)
+        .map(async (row) => {
+          let available = false
+          try {
+            await this.assertFresh(row)
+            available = true
+          } catch {
+            available = false
+          }
+          return this.entry(row, aggregate, available)
+        }),
     )
     items.sort(
       (left, right) =>
@@ -389,7 +446,10 @@ export class WorkspaceCatalog {
   ): WorkspaceEntry {
     const fromSessions = aggregate.get(row.path)
     return {
-      ...row,
+      path: row.path,
+      name: row.name,
+      workspaceId: row.workspaceId,
+      revision: row.revision,
       lastUsedAt:
         [row.lastUsedAt, fromSessions?.lastUsedAt]
           .filter((value): value is string => value !== null && value !== undefined)

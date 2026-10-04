@@ -74,6 +74,12 @@ const LAYER: Record<string, number> = {
   '@agnes/web-server': -1,
   '@agnes/web-admin-frame': -1,
   '@agnes/protocol': 0,
+  // Portable loop contracts and core are leaves; adapters consume them and protocol only.
+  '@agnes/runtime-api': -1,
+  '@agnes/jev-runtime': -1,
+  '@agnes/jev-trace': 0,
+  '@agnes/runtime-jev': 1,
+  '@agnes/runtime-comparison': 1,
   '@agnes/resource-control-client-node': 2,
   '@agnes/package-admin-client-node': 2,
   '@agnes/cli-launch': 1,

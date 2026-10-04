@@ -141,7 +141,7 @@ describe('rendered approval region', () => {
     )
     await vi.waitFor(() => {
       expect(approval?.querySelector('#shadow-approval')?.textContent).toBe('替换审批')
-      expect(approval?.querySelector('#approval-content')).toBeNull()
+      expect(approval?.querySelector('[data-agnes-region-unit="approval"]')).toBeNull()
     }, committed)
     expect(document.querySelector('[data-slot="ui:conversation"] #transcript')).toBeTruthy()
     expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
@@ -149,7 +149,7 @@ describe('rendered approval region', () => {
     remove()
     await vi.waitFor(() => {
       expect(approval?.querySelector('[data-agnes-region-unit="approval"]')).toBeTruthy()
-      expect(approval?.querySelector('#approval-content')).toBeTruthy()
+      expect(approval?.querySelector('[data-agnes-region-unit="approval"]')).toBeTruthy()
       expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
       expect(approval?.querySelector('p')?.textContent).toBe('恢复当前审批')
     }, committed)

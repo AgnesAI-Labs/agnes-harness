@@ -137,8 +137,18 @@ export function createTools({ adapters = sourceAdapters } = {}) {
     ),
     tool(
       'skill_helper_install',
-      '提交、查询或取消已准备的 Skill 安装。running 不是成功，请结束调用后再查询；ready 表示后台可用，下一轮加载；拒绝后不要循环重试。',
-      object({ action: enumeration('commit', 'status', 'cancel'), proposalId: string(80) }),
+      '管理 import/create 返回 prepared 的 Skill 安装提案。commit 必须传 proposalId，请求宿主审批并安装；status 必须传同一 proposalId，查询实际状态；cancel 必须传 proposalId，请求取消。prepared 尚未安装；running 表示处理中，结束本轮并在后续轮次查 status；ready 表示后台可用，下一轮加载；installed 只确认安装，应查询是否可用。failed/interrupted/cancelled 或拒绝时按返回 code/message/nextAction 报告并停止，不自动重试或用 shell 绕过。此工具不准备内容、不加载 Skill 正文，也不自动提交其他提案。',
+      object({
+        action: {
+          ...enumeration('commit', 'status', 'cancel'),
+          description:
+            'commit requests approval and installation; status observes; cancel requests cancellation.',
+        },
+        proposalId: {
+          ...string(80),
+          description: 'Exact proposalId returned by skill_helper_import or skill_helper_create.',
+        },
+      }),
       false,
       async (args, ctx) => requireInstall(ctx).request(args),
     ),

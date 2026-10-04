@@ -1,0 +1,43 @@
+{
+  "provenance": {
+    "kind": "real-capture-excerpt",
+    "bodyOmitted": true,
+    "redaction": "Prompt, tool message body, reasoning, actors and machine paths omitted. Sequence, hashed session identities and diagnostic are unchanged."
+  },
+  "parentKey": "agnes:comparison:4b9d40ae1762ee8f91e56ae77dcdb3bfea58751eb81cd9eb666183e70522a861:right",
+  "childKey": "agnes:comparison:4b9d40ae1762ee8f91e56ae77dcdb3bfea58751eb81cd9eb666183e70522a861:right/01M4014K4ZYRP3BSQS284W7NNX",
+  "admission": {
+    "seq": 5,
+    "type": "x/core/configuration-admission",
+    "status": "held"
+  },
+  "call": {
+    "seq": 67,
+    "type": "tool/call",
+    "toolUseId": "intent:39",
+    "name": "subagent_send_message",
+    "childKey": "agnes:comparison:4b9d40ae1762ee8f91e56ae77dcdb3bfea58751eb81cd9eb666183e70522a861:right"
+  },
+  "outbox": {
+    "seq": 69,
+    "type": "x/core/child-outbox",
+    "origin": "system",
+    "trust": "trusted",
+    "data": {
+      "version": 1,
+      "senderKey": "agnes:comparison:4b9d40ae1762ee8f91e56ae77dcdb3bfea58751eb81cd9eb666183e70522a861:right/01M4014K4ZYRP3BSQS284W7NNX",
+      "parentKey": "agnes:comparison:4b9d40ae1762ee8f91e56ae77dcdb3bfea58751eb81cd9eb666183e70522a861:right",
+      "textHash": "f27418316ddda45d7dc754c186f209a2aa16c73d4600892f35c02af987168e00",
+      "deliveryId": "agent:agnes:comparison:4b9d40ae1762ee8f91e56ae77dcdb3bfea58751eb81cd9eb666183e70522a861:right/01M4014K4ZYRP3BSQS284W7NNX:main:intent:39",
+      "kind": "agent-message"
+    }
+  },
+  "result": {
+    "seq": 72,
+    "type": "tool/result",
+    "toolUseId": "intent:39",
+    "isError": true,
+    "code": "TOOL_OUTCOME_UNKNOWN",
+    "diagnostic": "CoreError: E_LANE_BUSY: Session configuration is reserved for admitted work"
+  }
+}

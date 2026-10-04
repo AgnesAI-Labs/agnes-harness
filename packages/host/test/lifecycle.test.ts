@@ -59,6 +59,60 @@ describe('Rollback', () => {
 })
 
 describe('closeHost', () => {
+  it.each([false, true])(
+    'retains an undrained writer before rollback (kernel-only: %s)',
+    async (kernelOnly) => {
+      const rollback = new Rollback()
+      const closed: string[] = []
+      rollback.push('storage', () => void closed.push('storage'))
+      const log = { isClosed: false }
+      let fail = true
+      const session = {
+        d: { log },
+        async close() {
+          if (fail) throw new Error('runtime drain failed')
+          log.isClosed = true
+        },
+      }
+      const assembled = {
+        rollback,
+        kernel: { sessions: new Map([['retained', session]]) },
+        ordinaryReconciliation: { close: async () => undefined },
+      } as unknown as Assembled
+      const sessions = new Set(kernelOnly ? [] : [session])
+      const audit = createMemoryAudit()
+      const options = { timeoutMs: 100, audit, beforeRollback: async () => void closed.push('workspace') }
+      await expect(closeHost(assembled, sessions, options)).rejects.toThrow('undrained session writers')
+      expect(log.isClosed).toBe(false)
+      expect(closed).toEqual([])
+      expect(audit.events.some((event) => event.kind === 'host.closed')).toBe(false)
+      fail = false
+      await closeHost(assembled, sessions, options)
+      expect(closed).toEqual(['workspace', 'storage'])
+    },
+  )
+
+  it('continues teardown after a sealed session reports a shutdown-hook error', async () => {
+    const rollback = new Rollback()
+    const closed: string[] = []
+    rollback.push('storage', () => void closed.push('storage'))
+    const session = {
+      d: { log: { isClosed: true } },
+      async close() {
+        throw new Error('hook failed after sealing')
+      },
+    }
+    const audit = createMemoryAudit()
+    await closeHost(
+      { rollback, ordinaryReconciliation: { close: async () => undefined } } as Assembled,
+      new Set([session]),
+      { timeoutMs: 100, audit },
+    )
+    expect(closed).toEqual(['storage'])
+    expect(audit.events.map((event) => event.kind)).toContain('session.close_failed')
+    expect(audit.events.at(-1)?.kind).toBe('host.closed')
+  })
+
   it('seals and drains ordinary reconciliation before unwinding the plugin tree', async () => {
     const events: string[] = []
     let releaseReconcile!: () => void

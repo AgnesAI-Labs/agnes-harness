@@ -38,6 +38,17 @@ describe('preset matrix through the host resolver', () => {
     expect(view.budget.maxSteps).toBeNull()
     expect(view.budget.perRequestCap).toBe(4000)
     expect(view.disclosure).toBe('standard')
+    const uncapped = resolvePreset('standard-no-credit-cap', docs)
+    expect(uncapped.doc).toEqual({
+      ...doc,
+      name: 'standard-no-credit-cap',
+      budget: { ...(doc.budget as object), per_request_cap: null },
+    })
+    expect(uncapped.view).toEqual({
+      ...view,
+      name: 'standard-no-credit-cap',
+      budget: { ...view.budget, perRequestCap: null },
+    })
   })
 
   // The real evidence that standard inherits from base: without base in the table it does not

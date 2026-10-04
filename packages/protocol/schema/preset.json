@@ -425,8 +425,8 @@
               "enum": ["own", "aggregate"]
             },
             "tree_budget_credits": {
-              "type": "number",
-              "minimum": 0
+              "description": "A numeric tree-credit cap, or an explicit policy. Omitted/default preserves the legacy delegated-tree default of 20 credits; unlimited opts out of a new tree-credit cap without removing finite ancestor or child caps. Null is not a document value.",
+              "anyOf": [{ "type": "number", "minimum": 0 }, { "enum": ["default", "unlimited"] }]
             }
           }
         },

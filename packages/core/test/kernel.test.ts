@@ -9,6 +9,7 @@ import { MemoryStorage } from '../src/log/memory-storage.js'
 import { HookRegistry } from '../src/registry/hooks.js'
 import { ResourceRegistry } from '../src/registry/resources.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import type { SessionLoop } from '../src/runtime/loop.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { contextTokens } from '../src/step/gate.js'
 import { presetDefaults } from '../src/step/preset.js'
@@ -75,6 +76,191 @@ const modelRecord = (route: string, id: string, slot?: NonNullable<ModelRecord['
 })
 
 describe('Kernel (I1 assembly)', () => {
+  it('pins a non-native execution owner across reopening and drains it before releasing the session', async () => {
+    let sealed = false
+    const storage = Object.assign(new MemoryStorage(), {
+      assertSessionAdmitted: () => {
+        if (sealed) throw new CoreError('E_CLOSED', 'tree sealed')
+      },
+    })
+    const owner = { id: 'test-loop', version: '1' }
+    const calls: string[] = []
+    const factory = async (session: Awaited<ReturnType<Kernel['session']>>): Promise<SessionLoop> => ({
+      identity: owner,
+      state: () => ({ runtime: owner, phase: 'idle', revision: session.lastSeq }),
+      resume: async () => {
+        calls.push('resume')
+        return { state: 'idle', actions: [] }
+      },
+      run: async () => {
+        calls.push('run')
+        return { reason: 'completed', lastSeq: session.lastSeq }
+      },
+      step: async () => {
+        calls.push('step')
+        return { phase: 'idle' }
+      },
+      abort: async () => {
+        calls.push('abort')
+        return { seq: null, alreadyTerminal: true }
+      },
+      close: async () => {
+        // The writer is still valid while the execution owner drains.
+        await session.d.log.claimLease()
+        calls.push('drained')
+      },
+    })
+    const k = base({ storage })
+    const session = await k.session('owned', { ...sessionOpts, runtime: owner, loopFactory: factory })
+    expect(session.state.session?.runtime).toEqual(owner)
+    await session.resume()
+    await session.run({ until: 'idle', signal: new AbortController().signal })
+    await session.step()
+    sealed = true
+    const beforeSeal = session.lastSeq
+    for (const execute of [
+      () => session.resume(),
+      () => session.run({ until: 'idle', signal: new AbortController().signal }),
+      () => session.step(),
+      () => session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'late input' }] }),
+    ])
+      await expect(execute()).rejects.toThrow('tree sealed')
+    expect(session.lastSeq).toBe(beforeSeal)
+    await session.abort()
+    expect(session.op()).toBeNull()
+    expect(session.runtimeState()).toMatchObject({ runtime: owner, phase: 'idle' })
+    await session.close()
+    sealed = false
+    expect(calls).toEqual(['resume', 'run', 'step', 'abort', 'drained'])
+    const next = base({ storage })
+    await expect(next.session('owned', { ...sessionOpts, writerRunId: 'r2' })).rejects.toMatchObject({
+      code: 'E_RUNTIME_OWNER',
+    })
+    const reopened = await next.session('owned', {
+      ...sessionOpts,
+      writerRunId: 'r2',
+      runtime: owner,
+      loopFactory: factory,
+    })
+    expect(reopened.lastSeq).toBe(1)
+    await reopened.close()
+    await k.close()
+    await next.close()
+  })
+
+  it('refuses every execution entry while the asynchronous non-native factory is assembling', async () => {
+    const k = base()
+    const owner = { id: 'delayed-loop', version: '1' }
+    const session = await k.session('unattached', {
+      ...sessionOpts,
+      runtime: owner,
+      loopFactory: async (assembling) => {
+        const before = assembling.lastSeq
+        for (const execute of [
+          () => assembling.step(),
+          () => assembling.run({ until: 'idle', signal: new AbortController().signal }),
+          () => assembling.resume(),
+          () => assembling.abort(),
+        ])
+          await expect(execute()).rejects.toThrow('runtime execution owner is not attached')
+        expect(assembling.lastSeq).toBe(before)
+        expect(assembling.op()).toBeNull()
+        return {
+          identity: owner,
+          state: () => ({ runtime: owner, phase: 'idle' }),
+          step: async () => ({ phase: 'idle' }),
+          resume: async () => ({ state: 'idle', actions: [] }),
+          run: async ({ signal }) => {
+            expect(signal).toBeInstanceOf(AbortSignal)
+            return { reason: 'completed', lastSeq: assembling.lastSeq }
+          },
+          abort: async () => ({ seq: null, alreadyTerminal: true }),
+          close: async () => {},
+        }
+      },
+    })
+    await session.run({ until: 'idle' } as never)
+    await k.close()
+  })
+
+  it.each(['published', 'initialization'] as const)(
+    'keeps the writer and workspace fenced after failed %s runtime drain and retries close',
+    async (kind) => {
+      const storage = new MemoryStorage()
+      const k = base({
+        storage,
+        ...(kind === 'initialization'
+          ? {
+              hooksFactory: () => ({
+                ...noopHooks,
+                sessionStart: async () => {
+                  throw new Error('initialization failed')
+                },
+              }),
+            }
+          : {}),
+      })
+      const next = base({ storage })
+      const owner = { id: 'draining-loop', version: '1' }
+      let drainFailed = true
+      const factory = async (session: Awaited<ReturnType<Kernel['session']>>): Promise<SessionLoop> => ({
+        identity: owner,
+        state: () => ({ runtime: owner, phase: 'idle' }),
+        step: async () => ({ phase: 'idle' }),
+        resume: async () => ({ state: 'idle', actions: [] }),
+        run: async () => ({ reason: 'completed', lastSeq: session.lastSeq }),
+        abort: async () => ({ seq: null, alreadyTerminal: true }),
+        close: async () => {
+          if (drainFailed) throw new Error('drain incomplete')
+        },
+      })
+      let session: Awaited<ReturnType<Kernel['session']>>
+      if (kind === 'initialization') {
+        await expect(
+          k.session('drain-fence', { ...sessionOpts, runtime: owner, loopFactory: factory }),
+        ).rejects.toThrow('session initialization and cleanup failed')
+        const retained = k.get('drain-fence')
+        if (!retained) throw new Error('Missing failed initializer owner')
+        session = retained
+      } else
+        session = await k.session('drain-fence', { ...sessionOpts, runtime: owner, loopFactory: factory })
+      let workspaceClosed = false
+      session.d.workspaceLease = {
+        close: async () => {
+          workspaceClosed = true
+        },
+      } as never
+      await expect(session.close()).rejects.toThrow('drain incomplete')
+      expect(session.d.log.isClosed).toBe(false)
+      expect(workspaceClosed).toBe(false)
+      const storageClose = vi.spyOn(storage, 'close')
+      await expect(k.close()).rejects.toThrow('drain incomplete')
+      expect(k.get(session.key)).toBe(session)
+      expect(storageClose).not.toHaveBeenCalled()
+      await expect(
+        next.session('drain-fence', {
+          ...sessionOpts,
+          writerRunId: 'r2',
+          runtime: owner,
+          loopFactory: factory,
+        }),
+      ).rejects.toMatchObject({ code: 'E_WRITER_LEASE' })
+      drainFailed = false
+      await session.close()
+      expect(workspaceClosed).toBe(true)
+      const reopened = await next.session('drain-fence', {
+        ...sessionOpts,
+        writerRunId: 'r2',
+        runtime: owner,
+        loopFactory: factory,
+      })
+      expect(reopened.writerRunId).toBe('r2')
+      await reopened.close()
+      await k.close()
+      await next.close()
+    },
+  )
+
   it('refuses to create without every seam, and names the one that is missing', () => {
     for (const name of ['repair', 'ledger', 'principals'] as const) {
       const seams = fakeSeams()
@@ -312,7 +498,8 @@ describe('Kernel default children', () => {
     await expect(child.run('what?')).resolves.toMatchObject({ text: 'child says hi' })
     expect(await child.status()).toMatchObject({ state: 'done', text: 'child says hi' })
     const types = (await storage.scan(child.key, { fromSeq: 1, limit: 100 })).map((event) => event.type)
-    expect(types?.slice(0, 2)).toEqual(['session/start', 'session/start'])
+    // No completed parent turn exists: delegated fork has a fresh transcript.
+    expect(types.filter((type) => type === 'session/start')).toHaveLength(1)
     expect(types).toContain('assistant/message')
     expect(types).toContain('turn/end')
     expect(parent.surface()).toEqual([])
@@ -437,7 +624,7 @@ describe('Kernel (fix round 1)', () => {
     expect(s.d.actor.id).toBe(actor.id)
   })
 
-  it('close() closes every session and the storage even when one of them throws', async () => {
+  it('close() attempts every session and retains storage until an unsealed writer closes on retry', async () => {
     const storage = new MemoryStorage()
     let storageClosed = false
     const realClose = storage.close.bind(storage)
@@ -447,6 +634,7 @@ describe('Kernel (fix round 1)', () => {
     }
     const k = base({ storage })
     const a = await k.session('a', sessionOpts)
+    const realA = a.close.bind(a)
     const b = await k.session('b', { ...sessionOpts, writerRunId: 'r1' })
     let bClosed = false
     a.close = async () => {
@@ -459,6 +647,11 @@ describe('Kernel (fix round 1)', () => {
     }
     await expect(k.close()).rejects.toThrow('log refused to close')
     expect(bClosed).toBe(true)
+    expect(storageClosed).toBe(false)
+    expect(k.get('a')).toBe(a)
+    expect(a.d.log.isClosed).toBe(false)
+    a.close = realA
+    await k.close()
     expect(storageClosed).toBe(true)
     expect(k.sessions.size).toBe(0)
   })

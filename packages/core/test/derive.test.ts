@@ -1,7 +1,8 @@
+import { readFileSync } from 'node:fs'
 import type { ToolDef } from '@agnes/extension-api'
 import { validateEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { computeSurface } from '../src/project/surface.js'
+import { computeSurface, SurfaceCache } from '../src/project/surface.js'
 import type { DeriveOutput, RequestHeaderData } from '../src/request/derive.js'
 import {
   assertKind,
@@ -95,6 +96,51 @@ const textAt = (out: DeriveOutput, i: number, j = 0): string => {
 }
 
 describe('deriveRequest', () => {
+  it.each(['comparison-real-cancel', 'native-real-cancel-followup'])(
+    'retains the real cancelled Native prefix before the next prompt after replay: %s',
+    (fixture) => {
+      const capture = JSON.parse(
+        readFileSync(new URL(`./fixtures/${fixture}.json`, import.meta.url), 'utf8'),
+      ) as { reports?: { events: Event[] }[]; events?: Event[] }
+      const events = capture.events ?? capture.reports![0]!.events
+      const interrupted = events.find(
+        (event) =>
+          event.type === 'assistant/output' && (event.data as { state: string }).state === 'interrupted',
+      )!
+      const content = (interrupted.data as { content: { type: string; text: string }[] }).content
+      expect(content.length).toBeGreaterThan(0)
+      expect(
+        computeSurface(events, { upto: interrupted.seq - 1 }).some((node) => node.kind === 'assistant'),
+      ).toBe(false)
+      seq = events.at(-1)!.seq
+      const next =
+        events.find(
+          (event) =>
+            event.seq > interrupted.seq &&
+            event.type === 'user/message' &&
+            (event.data as { kind: string }).kind === 'prompt',
+        ) ?? ev('user/message', { content: [{ type: 'text', text: 'Answer only the new task.' }] })
+      const history = [...events.filter((event) => event.seq < next.seq), next]
+      const surface = computeSurface(history)
+      const cache = new SurfaceCache('main', new Set())
+      for (const event of history) cache.push([event])
+      expect(cache.nodes()).toEqual(surface)
+      expect(cache.eventsById().get(interrupted.seq)).toEqual(interrupted)
+      const out = deriveRequest({ ...base(), ...NO_RC, surface })
+      expect(out.request.messages.slice(-2)).toEqual([
+        { role: 'assistant', seq: interrupted.seq, content },
+        { role: 'user', seq: next.seq, content: (next.data as { content: unknown }).content },
+      ])
+      // Empty unadopted runtime answers and progress counters remain presentation-only.
+      expect(
+        computeSurface([
+          ev('assistant/output', { state: 'interrupted', content: [] }),
+          ev('assistant/output', { state: 'progress', content }),
+        ]),
+      ).toEqual([])
+    },
+  )
+
   it('forwards an explicitly validated thinking level as sampling parameters', () => {
     const out = deriveRequest({ ...base(), model: { ...base().model, thinking: 'high' }, surface: [] })
     expect(out.request.samplingParams).toEqual({ thinking: 'high' })

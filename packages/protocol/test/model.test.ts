@@ -98,7 +98,7 @@ describe('model.json', () => {
       $defs: Record<string, unknown>
     }
     const names = Object.keys(m.$defs)
-    expect(names).toHaveLength(26)
+    expect(names).toHaveLength(32)
     for (const shipped of [
       'JsonValue',
       'ContentBlock',
@@ -128,6 +128,15 @@ describe('model.json', () => {
     ])
       expect(names, shipped).toContain(shipped)
     expect(names).toContain('ContractManifest')
+    for (const price of [
+      'ModelPriceRates',
+      'ModelPriceSource',
+      'ModelPriceWindow',
+      'ModelPriceOffPeak',
+      'ModelPricePolicy',
+      'ModelPriceQuote',
+    ])
+      expect(names, price).toContain(price)
   })
   it('the checked-in model fixtures agree with the validators', () => {
     const lines = readFileSync(new URL('../fixtures/model/model.jsonl', import.meta.url), 'utf8')

@@ -120,6 +120,15 @@
           "marker": "Agnes account sign-in is not available in this build yet"
         }
       ]
+    },
+    {
+      "id": "runtime.comparison.worktree",
+      "evidence": [
+        {
+          "path": "packages/runtime-comparison/src/create.ts",
+          "marker": "Worktree isolation is not implemented"
+        }
+      ]
     }
   ]
 }

@@ -28,6 +28,11 @@ export const DATA_DEFS: Record<string, TSchema> = Object.fromEntries(
 export function validateEvent(x: unknown): ValidationResult<S.EventEnvelope> {
   const env = validateAgainst<S.EventEnvelope>(S.EventEnvelope, x)
   if (!env.ok) return env
+  if ((env.value.type === 'runtime/record' || env.value.type === 'runtime/cancel') && env.value.ignorable)
+    return {
+      ok: false,
+      errors: [{ path: '/ignorable', message: 'runtime execution facts cannot be ignored', code: 'OTHER' }],
+    }
   const def = DATA_DEFS[env.value.type]
   if (!def) {
     // Every name in the closed event set has a data schema, so reaching here means the type is an

@@ -26,6 +26,7 @@ import {
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
   type SessionReadToolDetailParams,
+  type SessionRuntimeControlParams,
   type ThinkingLevel,
   UI_HISTORY_DEFAULT_LIMIT,
   UI_HISTORY_MAX_LIMIT,
@@ -65,11 +66,13 @@ import type {
   SessionLister,
 } from '../ports.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
+import { type QuestionControl, registerQuestions } from './questions.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
 export type CredentialKind = 'local' | 'jwt' | 'portal-identity' | 'sso' | 'channel'
 
 export type AgnesContext = LocalContext & {
+  questionControl?: QuestionControl
   configuration?: boolean
   profileHashForSession?: (key: string) => Promise<string | null>
   limits: Limits
@@ -78,6 +81,7 @@ export type AgnesContext = LocalContext & {
   jobs?: JobsPort
   directory?: DirectoryPort
   lister?: SessionLister
+  ordinarySessionIds?: (sessionIds: readonly string[]) => readonly string[]
   authKind: AuthKind
   credentialKind: CredentialKind
   artifactRead?: boolean
@@ -379,6 +383,13 @@ async function serializeSessionMutation<T>(session: object, key: string, work: (
 
 const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
   {
+    name: 'questions',
+    methods: ['_agnes/v1/questions.pending', '_agnes/v1/questions.answer', '_agnes/v1/questions.cancel'],
+    guidance:
+      'Live owner-bound questions; answers acknowledge durable settlement and never grant tool permissions.',
+    when: (cx) => !!(cx.questionControl ?? cx.host.questions),
+  },
+  {
     name: 'computer-use',
     methods: ['_agnes/v1/computerUse.status'],
     guidance: 'read-only admission status; blocked reports never start or repair a driver',
@@ -419,6 +430,8 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.steer',
       'session.followUp',
       'session.budget',
+      'session.runtime',
+      'session.runtimeControl',
       'session.projectUI',
       'session.projectUIPatch',
       'session.projectUIOpening',
@@ -433,6 +446,11 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.setYolo',
     ].map((m) => `_agnes/v1/${m}`),
     guidance: 'attach before reading events; steer while a turn runs, followUp to queue',
+  },
+  {
+    name: 'runtime',
+    methods: ['_agnes/v1/runtime.list'],
+    guidance: 'Discover available execution loops; existing sessions retain their persisted runtime identity',
   },
   {
     name: 'workspace',
@@ -594,6 +612,7 @@ export function registerAgnes(
   _feeds: Map<string, Feed>,
   attached: Map<string, AttachedFeed>,
 ): void {
+  registerQuestions(ep, cx)
   const requireOwner = requireSessionOwner(cx)
   const computerUseControl = createBlockedComputerUseControlPlane(cx.lockedPackageMutations, cx.computerUse)
   type GrantBindingParams = {
@@ -773,6 +792,7 @@ export function registerAgnes(
       })
     const match = matches[0] as (typeof matches)[number]
     const approver = await cx.resolveActor(p.approverCredential, 'approval', match.sessionId)
+    cx.commandQueue.assertAdmitted(match.sessionId)
     const session = match.session
     try {
       if (session.resumeApproval) return session.resumeApproval(p.ticket, p.verdict, approver)
@@ -785,6 +805,44 @@ export function registerAgnes(
         throw rpcError('APPROVAL_REJECTED', {
           reason: typeof e.message === 'string' ? e.message : 'approval rejected',
         })
+      throw error
+    }
+  })
+  ep.register('_agnes/v1/runtime.list', async () => ({
+    items: cx.runtimeCatalog ? await cx.runtimeCatalog() : cx.host.runtimeCatalog(),
+  }))
+  ep.register('_agnes/v1/session.runtime', async (params, c) => {
+    const { sessionId } = params as { sessionId: string }
+    requireOwner('session.runtime', sessionId, c)
+    const state = cx.readRuntimeState
+      ? await cx.readRuntimeState(sessionId)
+      : await cx.registry.get(sessionId)?.session.runtimeState()
+    if (!state) throw rpcError('SESSION_NOT_FOUND', { sessionId })
+    return state
+  })
+  ep.register('_agnes/v1/session.runtimeControl', async (params, c) => {
+    const p = params as SessionRuntimeControlParams
+    requireOwner('session.runtimeControl', p.sessionId, c)
+    cx.commandQueue.assertAdmitted(p.sessionId)
+    try {
+      const input = {
+        expectedRuntime: p.expectedRuntime,
+        operation: p.operation,
+        payload: p.payload,
+        actor: connActor(c.conn),
+      }
+      return await (cx.host.configurationAdmissions?.control?.(p.sessionId, input) ??
+        cx.registry.require(p.sessionId).session.controlRuntime(input))
+    } catch (error) {
+      const code = (error as { code?: string }).code
+      if (code === 'E_FORMAT') throw rpcError('INVALID_PARAMS', { code: 'RUNTIME_CONTROL_INVALID' })
+      const reasons: Record<string, string> = {
+        E_LANE_BUSY: 'RUNTIME_BUSY',
+        E_RELATION: 'RUNTIME_IDENTITY_MISMATCH',
+        E_UNSUPPORTED: 'RUNTIME_CONTROL_UNSUPPORTED',
+        E_CLOSED: 'RUNTIME_CLOSED',
+      }
+      if (code && reasons[code]) throw rpcError('SEMANTIC_REJECTED', { code: reasons[code] })
       throw error
     }
   })
@@ -1083,6 +1141,7 @@ export function registerAgnes(
     let sessionIds: readonly string[]
     try {
       sessionIds = cx.sessionOwnership?.activeSessionIds(c.conn.principalId) ?? []
+      sessionIds = cx.ordinarySessionIds?.(sessionIds) ?? cx.workspaces.ordinarySessionIds(sessionIds)
     } catch {
       throw rpcError('CAPABILITY_DENIED', {
         method: 'session.list',
@@ -1478,6 +1537,7 @@ export function registerAgnes(
         try {
           const invocation = await queued.start()
           return await invocation.run(async () => {
+            cx.commandQueue.assertAdmitted(sessionId)
             const seq = await entry.session.enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
               content: payload.content as never,
               actor: connActor(c.conn),
@@ -1508,6 +1568,7 @@ export function registerAgnes(
         try {
           const invocation = await queued.start()
           return await invocation.run(async () => {
+            cx.commandQueue.assertAdmitted(sessionId)
             const markerSeq = await entry.session.requestCompaction({
               actor: connActor(c.conn),
               admissionId,
@@ -1576,6 +1637,7 @@ export function registerAgnes(
       )
       if (!event) return undefined
       requireOwner('submit.compact', String(payload.sessionId), c)
+      cx.commandQueue.assertAdmitted(String(payload.sessionId))
       const outcome = await entry.session.run({
         until: 'turn-end',
         signal: new AbortController().signal,
@@ -1631,6 +1693,7 @@ export function registerAgnes(
       requireOwner(`submit.${kind}`, sessionId, c)
     const guard = () => {
       requireOwner(`submit.${kind}`, sessionId, c)
+      cx.commandQueue.assertAdmitted(sessionId)
       generationGuard(sessionId, generation)()
     }
     guard()

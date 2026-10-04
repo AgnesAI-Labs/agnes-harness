@@ -35,6 +35,7 @@ import {
   type PackageLoader,
   type Prompter,
   packageDirs,
+  QuestionServiceError,
   REQUEST_MEDIA_ARTIFACT_RECLAIMED,
   type ResolvedProfile,
   readLock,
@@ -80,6 +81,7 @@ import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
 /** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
 export type WorkerHostSkillResources = Readonly<{
+  questionProvider?: NonNullable<HostOptions['questionProvider']>
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>
@@ -219,6 +221,12 @@ export async function runWorker(
   }
 
   const sharedChannel = new SharedSessionChannel(send)
+  const questionProvider: NonNullable<HostOptions['questionProvider']> = async (identity, signal) => {
+    if (identity.sessionKey !== sharedChannel.currentSessionKey()) throw new Error('CALLER_NOT_LIVE')
+    return (await sharedChannel.request('question-provider', identity, signal)) as Awaited<
+      ReturnType<NonNullable<HostOptions['questionProvider']>>
+    >
+  }
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('Skill install session mismatch')
@@ -393,6 +401,7 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          questionProvider,
           skillInstall,
           mcpManage,
           pluginManage,
@@ -423,6 +432,7 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
+            questionProvider,
             skillInstall,
             mcpManage,
             pluginManage,
@@ -606,8 +616,7 @@ export async function runWorker(
         }
         if (frame.kind === 'session.close') {
           if (!hostedSessions) throw new Error('session.close is unavailable in this worker')
-          await hostedSessions.close(frame.sessionKey)
-          return {}
+          return hostedSessions.closeAndConfirm(frame.sessionKey, frame.owner)
         }
         if ('sessionKey' in frame) {
           if (!hostedSessions) throw new Error('session command is unavailable in this worker')
@@ -728,7 +737,9 @@ export async function runWorker(
                 code: typeof err.code === 'string' ? err.code : 'INTERNAL_ERROR',
                 _servicePhase: 'pre-dispatch',
               })
-            : domainFailureFromUnknown(e)
+            : e instanceof QuestionServiceError
+              ? rpcError('SEMANTIC_REJECTED', { code: e.code })
+              : domainFailureFromUnknown(e)
       const reply = {
         kind: 'reply' as const,
         requestId: frame.requestId,

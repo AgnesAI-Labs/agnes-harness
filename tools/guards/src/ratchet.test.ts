@@ -1,3 +1,36 @@
+// COMPARISON-NAVIGATION: reviewed private workspace provenance and pre-query session discovery filtering;
+// local and supervisor authority/wire shapes unchanged. Exact daemon +66 / Host +8; no exclusions or headroom.
+// JEV-VERSION-SEMANTICS: +2 counted lines for new-request-only freshness guidance; old prefixes stay intact.
+// JEV-TOOL-CONTRACTS: reviewed revision-bound operation profiles, objective skill/child candidates,
+// stale-read invalidation and structured receipts; exact affected source counts, no exclusions or headroom.
+// COMPARISON-APPROVAL: reviewed per-round admission-scoped approval, source receipts and manual
+// request retirement; exact measured counts, no exclusions or headroom. Includes verified dev signal cleanup.
+// NEW-SESSION-COMPARISON: draft mode selection and direct dual creation/first submission; exact counts, no headroom.
+// COMPARISON-RESULTS: reviewed fixed-cut summary, terminal fences, monotonic timing, archive transition retry,
+// Jev aggregate input and two-column quick results. Exact measured counts; no headroom.
+// DSH-REQUEST-RECOVERY: reviewed single-use provider binding, durable effective request snapshot,
+// stream/output admission and ordered native history, plus producer-scoped Jev projection. Exact counts; no headroom.
+// DSH-PARITY-FOLLOWUP: reviewed frozen descendant accounting, exact input cancellation fences,
+// generation invalidation and ordered system/Host-action histories; exact counts, no headroom.
+// DSH-RETIREMENT-ADMISSION: reviewed exact input completion, configuration and idle gates,
+// parent/child archive APIs and Web history; exact measured caps without exclusions or headroom.
+// DSH-PARENT-REPORT: reviewed durable parent delivery/wake, mounted configuration evidence,
+// strict legacy budget origins and monotonic worktree/retirement receipts; exact measured caps.
+// DSH-PARENT-SOURCE: reviewed receipt-bound message provenance, private owner-close evidence,
+// Host refusal trust and original storage-failure causes; exact source counts without headroom.
+// DSH-CALL-ACCOUNTING: reviewed per-provider-call facts, independent compaction cost origins,
+// conservative Host binding and public purpose/outcome/billing projections; exact measured caps, no spare.
+// DSH-CANCEL: durable nonempty interrupted output remains in model history; exact 13-line projection delta.
+// DSH-GLOBAL-UI: reviewed fixed global cursor, atomic two-lane projection/metrics and honest legacy fallback; exact source counts.
+// DSH-JOURNAL: reviewed atomic comparison journal, shared generation-fenced capture and bounded readonly APIs; exact source counts.
+// JEV-STREAM: reviewed generic output lifecycle with explicit source adoption and orphan cleanup; real provider and browser verified.
+// DSH-REPLAY: reviewed shared durable-prefix replay, complete paging, guarded live preview and reused native conversation renderer; exact measured Web total.
+// DSH-CAPABILITIES: reviewed Host mechanism admission, cold phase restoration and real-ledger accounting adapter; exact count, no headroom.
+// DSH-ALIGNMENT: reviewed runtime control, trusted workspace/profile facts, replay controls and lane terminal causes; exact measured counts, no spare budget.
+// JEV-UI: reviewed runtime work projection, conversation/trace cards and responsive workspace.
+// Exact measured source totals after formatting; no exclusions or spare allocation.
+// JEV-RUNTIME: reviewed static runtime registry, shared effects, isolated comparison and Web panes.
+// Exact countLines totals after formatting; portable packages receive their own caps, with no exclusions or spare.
 // FULL-FILE-ACCESS: measured session-scoped file access, external checkpoints and authoritative UI permission
 // projection/synchronization. Exact countLines() caps after review; no exclusions or spare allocation.
 // PERMISSION-RECONNECT: measured Web +48 lines for fresh permission gating and interrupted submission guards.
@@ -177,6 +210,11 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // 2026-09-18 Computer Use PR integration: values touched by the two diverged histories were
 // remeasured against the resolved tree with this guard's own countLines() implementation.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/jev-trace/src': 734,
+  'packages/jev-runtime/src': 4845,
+  'packages/runtime-comparison/src': 1574,
+  'packages/runtime-jev/src': 1176,
+  'packages/runtime-api/src': 203,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
   // No source exclusions or spare budget were added.
@@ -222,10 +260,10 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 1714,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
-  'packages/web-ui/src': 4891,
+  'packages/web-ui/src': 4997,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 4646,
-  'packages/base/extensions/tools-core': 800,
+  'packages/web-units/src': 5117,
+  'packages/base/extensions/tools-core': 1010,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
@@ -239,7 +277,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-19 secure physical-delete executor and attested-plan lease. Measured 624; exact cap.
   'packages/base/extensions/artifacts-local': 624,
   'packages/base/extensions/approval-policy': 300,
-  'packages/base/extensions/tools-search': 400,
+  'packages/base/extensions/tools-search': 427,
   // WEBFETCH-01: new component, exact measured allocation.
   // SKILL-GITHUB-RATE-LIMIT: explicit ZIP byte response; measured 380, no spare.
   'packages/host/src/adapters/public-fetch': 380,
@@ -388,11 +426,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1825, exact (+1).
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
-  'packages/web/src/app': 1990,
+  // 2026-10-03: connect complete Jev ledger evidence to the shared direct-call reading.
+  'packages/web/src/app': 2173,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
-  'packages/web/src/permission-picker': 219,
+  'packages/web/src/permission-picker': 223,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -418,7 +457,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 748,
+  'packages/web/src/timeline': 789,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -439,7 +478,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/turns': 407,
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
   // rebased onto main after C0-C2: merged tree re-measured with countLines(): 99, exact.
-  'packages/web/src/view': 99,
+  'packages/web/src/view': 100,
   // Approval ownership handoff and Host expiry share existing services; no protocol fork.
   'packages/web/src/session-binding': 31,
   // 2026-09-24 SHARED-SESSION-IDLE-CLOSE C2-C5 and review fixes (user-approved raise for the perf
@@ -550,7 +589,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // so the packaged worker resolves its home the same way the daemon does. Re-measured on the tree
   // rebased onto 9a3d70ed (which itself reached 936): 937, exact cap.
   // 2026-09-22 Web Plugins parity: package asset and service BFF launcher integration. Exact.
-  'packages/cli/launch': 1113, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
+  'packages/cli/launch': 1119, // Reviewed abort-aware Web bootstrap and signal cleanup.
   // 2026-09-14: whole-branch review fix wave (Finding 1), same as above. Measured 90, exact --
   // unaffected by the workspace-picker change (different file, same aggregate prefix).
   // 2026-09-14: Task 4 profile-command-plan wires packages.trustWorkspace into invoke()'s switch --
@@ -581,7 +620,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // SEA reuses that exact directory. Measured build-local total: 203; exact cap.
   // W5a merges pinned XMarkdown CSS and ships its MIT license with the local Web assets.
   // Measured with countLines(): 287, exact cap.
-  'packages/cli/tools/build-local': 287,
+  'packages/cli/tools/build-local': 292,
   // The PM5 bootstrap fallback retains the existing scoped owner/data-dir contract when a selected
   // Profile has not yet been materialized. The final recovery retry admits only an explicit
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility
@@ -942,7 +981,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // tool as `ctx.outputMaxBytes`. Measured 25723 (+8), exact cap without spare allocation.
   // A mutating tool cut short by its deadline or a cancel names that cause in its unknown-outcome result
   // text instead of reading as a lost transport. Measured 25741 (+18), exact cap.
-  'packages/core/src': 25741,
+  // DSH-ALIGNMENT: durable child continuation, interrupt delivery and retirement admission; exact measured allocation.
+  'packages/core/src': 29460,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -957,7 +997,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 3892,
+  'packages/ai/src': 4126,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1172,7 +1212,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // descriptor guards. Exact merged countLines() total; no spare allocation.
   // PLUGIN-HELPER: measured 4191 -> 4192; approved feature scope, no spare allocation.
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
-  'packages/host/src/assemble': 4193,
+  'packages/host/src/assemble': 4243,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1249,7 +1289,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  'packages/protocol/src': 2204,
+  'packages/protocol/src': 2623,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1331,7 +1371,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C3: projection.ts is now a re-export of the SDK engine.
   // measured 4238 (-534), exact, lowered to the measured value.
   // CHUNK-LEDGER-SLIM final tree: the TUI live line reads merged previews. Measured 4232, exact, no spare (-6).
-  'packages/cli-tui/src': 4232,
+  'packages/cli-tui/src': 4234,
   // Initial ceilings for the remaining packages, registered all at once so that each parallel lane
   // does not have to edit these two files separately. The sdk ceiling of 2500 was newly set by
   // estimate: 404 lines today, plus roughly 360 for the three transports, plus roughly 1650 for the
@@ -1365,7 +1405,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported. Measured 978, exact, no spare (+41).
   // `ToolContext.outputMaxBytes` and the three bounds of the Preset key `tools.output_max_bytes`,
   // exported as constants. Measured 981 (+3), exact, no spare.
-  'packages/extension-api/src': 981, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 989, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1436,7 +1476,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
-  'packages/sdk/src': 5130,
+  'packages/sdk/src': 5387,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1795,7 +1835,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
-  'packages/daemon/src': 26505,
+  'packages/daemon/src': 30123,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2041,7 +2081,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the three UI lines moved most of this scope into packages/web-ui/src,
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
-  'packages/web/src': 13411,
+  // Jev repair: pure-projection SVG circuit and bounded historical ledger reader (+496), exact.
+  // Jev visual polish: candidate group disclosure, measured ports and bounded evidence pulses (+66).
+  'packages/web/src': 19743,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2123,7 +2165,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5250 with countLines(); the guard still rejects any further growth.
   // Durable WAL checkpoints on darwin: the outbound ref store sets checkpoint_fullfsync.
   // Measured 5252, exact, no spare (+2).
-  'packages/channels/src': 5252,
+  'packages/channels/src': 5254,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
@@ -2142,7 +2184,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // removed catalog-dependent search helper. Measured 1008, exact; see clean-rewrite execution record.
   // Skill description bounds: a per-entry catalog description cap and a count-only log when the
   // catalog budget shortens or drops entries. Paged Skill/text reads measure 1121, exact.
-  'packages/base/extensions/skills': 1121,
+  'packages/base/extensions/skills': 1122,
   // T6.3 injects the Host-owned HTTP executor. CORDIS-C1b Task 6 adds workspace snapshot loading,
   // synchronous registration and descendant-drained command execution; exact measured total.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line, the AGH_DIR import for the
@@ -2513,13 +2555,18 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38084, exact, no spare (+3).
   // Import provenance marker: createSession forwards the in-process imported option.
   // Measured 38101 (+2).
-  'packages/host/src': 38297,
+  // Jev repair: credential validation and bounded single-attempt HTTP transport (+77), exact.
+  // Stable macOS boot-session UUID identity validation adds two lines, exact.
+  // DSH-ALIGNMENT: prepared receipts, cold child workspace proof, retirement archive/purge and GC roots; exact allocation.
+  // 2026-10-04: comparison snapshot links/dependency revalidation and durable sandbox floor; exact measured cap.
+  'packages/host/src': 50594,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
   // 2026-09-15: project resume onto the capability fence. Measured 90.
   // WEBFETCH-01: +8 counted lines for approved public retrieval; excludes concurrent work.
-  'packages/host/src/ext-host/tool-context-capabilities': 98,
+  // DSH-ALIGNMENT: explicit existing subagent grant projects sendMessage and interrupt; exact allocation.
+  'packages/host/src/ext-host/tool-context-capabilities': 111,
   // T6.3 adds child-failure notification, startup/cancel deadlines and invocation-bound capability
   // attribution. Exact 390.
   // R1 extracts transport, narrows the fixed wrapper, and adds generic entry/lease codecs.
@@ -2677,7 +2724,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+11).
   // Cancelling a child's creation also settles its execution state in the same statement. Measured
   // 5017, exact, no spare (+3).
-  'packages/host/src/adapters': 5025,
+  // Stable macOS boot-session UUID identity validation adds two lines, exact.
+  // Jev child runtime/seed identity and v5 unlimited budget migration, reviewed SQLite recovery
+  // and finite-cap refusal coverage. Exact measured code lines; no spare allowance.
+  'packages/host/src/adapters': 6608,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2698,7 +2748,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // open. Measured on this tree: 632, exact, no spare (-48).
   // Durable WAL checkpoints on darwin: the ledger and table-store connections call the checkpoint
   // sync helper. Measured 635, exact, no spare (+3).
-  'packages/host/src/adapters/storage-sqlite': 635,
+  // DSH-ALIGNMENT: permanent tree admission and private transactional purge wiring; exact allocation.
+  'packages/host/src/adapters/storage-sqlite': 694,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,
@@ -2729,6 +2780,10 @@ const extensionDirs = existsSync(extensionsDir)
 
 // User-approved allocations; no general increase for other or future extensions.
 const EXTENSION_CEILING_EXCEPTIONS = new Map([
+  // Jev candidates consume trusted full-read facts, shared with Native; exact reviewed allocation.
+  // DSH-ALIGNMENT: write/edit publish acknowledged submitted-byte facts for subsequent verification.
+  // DSH-ALIGNMENT: bounded PNG/JPEG artifact reads and structural image validation; exact allocation.
+  ['tools-core', 1010],
   // CORDIS-C1b Task 6 adds invocation-scoped workspace hook snapshots and descendant draining.
   // 2026-09-21 AGH namespace rename, +1 approved by the user: the AGH_DIR import for the workspace
   // `.agh/hooks.json` fallback path. Context-first prompt denial and scoped memo; measured 1007.
@@ -2736,8 +2791,8 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   ['computer-use', 1786],
   // 2026-09-23 user-approved: dsh-compatible Skill discovery. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
-  // Skill description bounds and paged reads. Measured 1121, exact.
-  ['skills', 1121],
+  // Skill description bounds, paged reads and recorded continuation key. Measured 1122, exact.
+  ['skills', 1122],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {
@@ -2786,3 +2841,5 @@ describe('ratchet counts code under a directory named `test` (regression: exclud
     }
   })
 })
+// JEV-CONFORMANCE-REVIEW: exact measured totals for persistent comparison navigation,
+// committed-cut interactions, cancellation/release evidence and Host turn configuration; no spare.

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { checkToolDef, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
@@ -29,6 +30,19 @@ describe('write', () => {
     // Bytes, not characters: the UI and the slots read `details`, and a two-byte character makes
     // the two numbers differ, which is the only way to tell which one was recorded.
     expect(r.details).toEqual({ path: 'n.txt', bytes: 6 })
+    expect(r.structured).toEqual({
+      codec: 'agnes-host-tool-fact-v1',
+      tool: 'write',
+      target: { kind: 'file', path: '/work/proj/n.txt' },
+      write: {
+        acknowledged: true,
+        versionSource: 'submitted-utf8-bytes-sha256',
+        size: 6,
+        digest: createHash('sha256')
+          .update(ctx.mem.files.get('/work/proj/n.txt') ?? new Uint8Array())
+          .digest('hex'),
+      },
+    })
   })
 
   it.each(['', 'x'.repeat(10)])('overwrites existing content %j and says overwrote', async (old) => {
@@ -43,6 +57,7 @@ describe('write', () => {
     const r = await writeTool.execute({ path: 'big.ts', content: 'y'.repeat(10) }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('truncation guard')
+    expect(r.structured).toBeUndefined()
     expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('x'.repeat(100))
   })
 
@@ -103,6 +118,19 @@ describe('edit', () => {
     )
     expect(textOf(r)).toBe('applied 2 edit(s) to a.ts (+1 lines)')
     expect(r.details).toEqual({ path: 'a.ts', bytes: 39 })
+    expect(r.structured).toMatchObject({
+      codec: 'agnes-host-tool-fact-v1',
+      tool: 'edit',
+      target: { kind: 'file', path: '/work/proj/a.ts' },
+      write: {
+        acknowledged: true,
+        versionSource: 'submitted-utf8-bytes-sha256',
+        size: 39,
+        digest: createHash('sha256')
+          .update(ctx.mem.files.get('/work/proj/a.ts') ?? new Uint8Array())
+          .digest('hex'),
+      },
+    })
   })
 
   it.each([
@@ -112,6 +140,7 @@ describe('edit', () => {
     const ctx = fakeToolContext({ files: { 'a.ts': original } })
     const missing = await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'zzz', newText: '' }] }, ctx)
     expect(missing.isError).toBe(true)
+    expect(missing.structured).toBeUndefined()
     expect(textOf(missing)).toContain('not found')
     const ambiguous = await editTool.execute({ path: 'a.ts', edits: [{ oldText, newText: 'y' }] }, ctx)
     expect(ambiguous.isError).toBe(true)

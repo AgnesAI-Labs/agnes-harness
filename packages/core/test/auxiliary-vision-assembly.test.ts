@@ -1,4 +1,11 @@
-import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
+import {
+  type InferenceEvent,
+  MODEL_CALL_EVENT,
+  type ModelRecord,
+  type Provider,
+  type RequestBody,
+  readModelCall,
+} from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
@@ -233,6 +240,49 @@ function delayedProvider(
 }
 
 describe('auxiliary vision production assembly', () => {
+  it('admits cancelled call accounting before a direct close seals the writer', async () => {
+    let reached!: () => void
+    const paused = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const provider: Provider = {
+      models: () => [model()],
+      count: async (request) => ({ tokens: 32, source: 'provider', boundHash: request.derivedHash }),
+      infer(request) {
+        let first = true
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next() {
+                if (first) {
+                  first = false
+                  return Promise.resolve({ done: false as const, value: sentFor(request, sent('vision')) })
+                }
+                reached()
+                return new Promise<IteratorResult<InferenceEvent>>(() => undefined)
+              },
+              return: async () => ({ done: true as const, value: undefined }),
+            }
+          },
+        }
+      },
+    }
+    const { kernel, session: pending } = setup(provider, 'assembly-direct-close')
+    const session = await pending
+    const running = run(session, 'aux:close').catch(() => undefined)
+    await paused
+    await session.close()
+    await running
+    expect(
+      (await session.d.log.storage.scan(session.key, { type: MODEL_CALL_EVENT, toSeq: session.lastSeq })).map(
+        readModelCall,
+      ),
+    ).toMatchObject([
+      { stage: 'started', purpose: 'media' },
+      { stage: 'settled', outcome: 'cancelled', usage: null },
+    ])
+    await kernel.close()
+  })
   it('uses the catalogue image slot, persists replay-never media cost, and never redispatches', async () => {
     const provider = fakeProvider([
       [
@@ -265,6 +315,10 @@ describe('auxiliary vision production assembly', () => {
     ])
 
     const rows = await session.scan({ toSeq: session.lastSeq, lane: session.lane })
+    expect(rows.filter((row) => row.type === MODEL_CALL_EVENT).map(readModelCall)).toMatchObject([
+      { stage: 'started', purpose: 'media', parentEffectId: 'aux:turn-1' },
+      { stage: 'settled', outcome: 'completed', usage: { type: 'usage', credits: 1 }, observedModel: null },
+    ])
     expect(rows.find((row) => row.type === 'effect/intent')?.data).toMatchObject({
       effectId: 'aux:turn-1',
       kind: 'media',
@@ -280,6 +334,9 @@ describe('auxiliary vision production assembly', () => {
       text: 'Save is visible',
     })
     expect(provider.calls).toBe(1)
+    expect(
+      (await session.scan({ type: MODEL_CALL_EVENT, toSeq: session.lastSeq })).map(readModelCall),
+    ).toHaveLength(2)
     await kernel.close()
   })
 
@@ -309,6 +366,12 @@ describe('auxiliary vision production assembly', () => {
     })
     const rows = await session.scan({ toSeq: session.lastSeq, lane: session.lane })
     expect(JSON.stringify(rows)).not.toContain('sk-secret-value')
+    expect(
+      rows
+        .filter((row) => row.type === MODEL_CALL_EVENT)
+        .map(readModelCall)
+        .at(-1),
+    ).toMatchObject({ stage: 'settled', outcome: 'unknown', usage: null })
     expect(rows.find((row) => row.type === 'effect/settled')?.data).toMatchObject({
       effectId: 'aux:unknown',
       outcome: 'unknown',

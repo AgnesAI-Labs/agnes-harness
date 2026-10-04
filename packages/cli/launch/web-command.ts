@@ -85,24 +85,33 @@ function exactOrigin(port: number): string {
   return `http://127.0.0.1:${port}`
 }
 
-function waitForSignal(signals: NodeJS.EventEmitter): Promise<NodeJS.Signals> {
-  return new Promise((resolve) => {
-    const onSignal = (signal: NodeJS.Signals): void => {
-      signals.removeListener('SIGINT', onSigint)
-      signals.removeListener('SIGTERM', onSigterm)
-      resolve(signal)
-    }
-    const onSigint = (): void => onSignal('SIGINT')
-    const onSigterm = (): void => onSignal('SIGTERM')
-    signals.once('SIGINT', onSigint)
-    signals.once('SIGTERM', onSigterm)
+function listenForSignals(signals: NodeJS.EventEmitter) {
+  const controller = new AbortController()
+  let resolveStopped: () => void = () => undefined
+  const stopped = new Promise<void>((resolve) => {
+    resolveStopped = resolve
   })
+  const onSignal = (): void => {
+    controller.abort()
+    resolveStopped()
+  }
+  signals.on('SIGINT', onSignal)
+  signals.on('SIGTERM', onSignal)
+  return {
+    signal: controller.signal,
+    stopped,
+    dispose() {
+      signals.removeListener('SIGINT', onSignal)
+      signals.removeListener('SIGTERM', onSignal)
+    },
+  }
 }
 
 /**
  * Run the local Web command using the CLI-owned shared daemon bootstrap.
  *
  * This function owns the static HTTP server and the SDK-side client returned by the bootstrap.
+ * Signals cancel an in-flight bootstrap and remain handled until local cleanup completes.
  * Closing either resource leaves the shared daemon and its other clients running; an operator can
  * stop that daemon explicitly through the normal daemon control command.
  */
@@ -123,8 +132,10 @@ export async function runWebCommand(
   let resourceAdmin: ReturnType<typeof localResourceAdmin> | undefined
   let oauthAdmin: ReturnType<typeof localOAuthAdmin> | undefined
   let mounts: Awaited<ReturnType<typeof fetchSurfaceMountProxy>> | undefined
+  const lifetime = listenForSignals(io.signals ?? process)
   try {
     backend = await ensure({
+      signal: lifetime.signal,
       ...(io.env ? { env: io.env } : {}),
       cwd,
       ...(parsed.home ? { home: parsed.home } : {}),
@@ -135,6 +146,7 @@ export async function runWebCommand(
       webPort: port,
       resources,
     })
+    lifetime.signal.throwIfAborted()
     if (!backend.web)
       throw new Error('local daemon Web credential is unavailable; stop/restart the local daemon')
     const adminHandler = localPackageAdmin(backend, origin)
@@ -152,6 +164,7 @@ export async function runWebCommand(
     // process's boot is picked up within a bounded window instead of never -- see
     // packages/cli/launch/surface-mounts.ts.
     mounts = await fetchSurfaceMountProxy(backend)
+    lifetime.signal.throwIfAborted()
     web = await makeServer({
       root: resources.webRoot,
       wsUrl: backend.web.url,
@@ -183,14 +196,19 @@ export async function runWebCommand(
         oauthAdminHandler.handle(request, response),
       mountProxy: mounts.proxy,
     })
+    lifetime.signal.throwIfAborted()
     ;(io.write ?? ((text: string) => process.stdout.write(text)))(`${web.url}/\n`)
-    await waitForSignal(io.signals ?? process)
+    await lifetime.stopped
   } finally {
-    await web?.close().catch(() => undefined)
-    await admin?.close().catch(() => undefined)
-    await resourceAdmin?.close().catch(() => undefined)
-    await oauthAdmin?.close().catch(() => undefined)
-    await mounts?.close().catch(() => undefined)
-    await backend?.closeClient().catch(() => undefined)
+    try {
+      await web?.close().catch(() => undefined)
+      await admin?.close().catch(() => undefined)
+      await resourceAdmin?.close().catch(() => undefined)
+      await oauthAdmin?.close().catch(() => undefined)
+      await mounts?.close().catch(() => undefined)
+      await backend?.closeClient().catch(() => undefined)
+    } finally {
+      lifetime.dispose()
+    }
   }
 }

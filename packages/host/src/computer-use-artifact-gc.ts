@@ -36,6 +36,10 @@ import {
 } from './artifact-retention-protection.js'
 import { withComputerUseArtifactMutation, writeComputerUseTombstoneLocked } from './private-artifact-store.js'
 import type { ResolvedComputerUseProfile } from './profile/types.js'
+import {
+  readComparisonArchiveRoots,
+  withComparisonArchiveRootsLock,
+} from './runtime/comparison-archive-roots.js'
 
 export type ComputerUseArtifactGcRun = Readonly<{
   batches: number
@@ -119,6 +123,7 @@ export function createComputerUseArtifactGcRuntime(
         : undefined
       const roots = await computerUseArtifactRootSnapshot({
         candidateDigests,
+        archives: readComparisonArchiveRoots(input.dataDir, candidateDigests),
         ...(indexed ? { roots: indexed, retention: protection?.digests ?? new Set() } : {}),
       })
       const selected = planRetainedArtifactGc({
@@ -217,16 +222,26 @@ export function createComputerUseArtifactGcRuntime(
             const retention = [...now.digests].some((digest) => deleting.has(digest))
               ? now.digests
               : protection.digests
-            const current = await computerUseArtifactRootSnapshot({
+            // The comparison lock covers the final roots read through physical deletion. The
+            // sessions lock alone cannot exclude archive publication in this separate database.
+            const result = await withComparisonArchiveRootsLock(
+              input.dataDir,
               candidateDigests,
-              roots: verified,
-              retention,
-            })
-            if (!sameSnapshot(expected, current.identity))
-              throw new Error('Computer Use artifact GC reachability snapshot changed')
-            if (performance.now() - locked > LOCKED_PROOF_LIMIT_MS)
-              throw new Error('Computer Use artifact GC proof under lock took too long')
-            const result = await run()
+              Math.max(0, locked + LOCKED_PROOF_LIMIT_MS - performance.now()),
+              async (archives) => {
+                const current = await computerUseArtifactRootSnapshot({
+                  candidateDigests,
+                  archives,
+                  roots: verified,
+                  retention,
+                })
+                if (!sameSnapshot(expected, current.identity))
+                  throw new Error('Computer Use artifact GC reachability snapshot changed')
+                if (performance.now() - locked > LOCKED_PROOF_LIMIT_MS)
+                  throw new Error('Computer Use artifact GC proof under lock took too long')
+                return run()
+              },
+            )
             database.exec('COMMIT')
             return result
           } catch (error) {

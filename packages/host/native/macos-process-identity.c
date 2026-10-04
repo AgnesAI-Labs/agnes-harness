@@ -4,23 +4,17 @@
  *
  * Why a compiled helper at all: unlike Linux, macOS has no readable pseudo-filesystem exposing
  * a process's start time or a stable per-boot identifier. The supported way to ask the kernel
- * is libproc's proc_pidinfo() plus sysctl's kern.boottime, both plain C APIs with no Node
+ * is libproc's proc_pidinfo() plus sysctl's kern.bootsessionuuid, both plain C APIs with no Node
  * built-in binding. This helper is deliberately tiny (read-only, no writes, no network, no
  * environment access beyond argv) so it can be trusted as a leaf dependency of the daemon's
  * crash-recovery lock path (see packages/daemon/src/supervisor/owner-lock.ts).
  *
- * Why boottime + start time together, mirroring what Linux's boot_id + /proc/PID/stat's
- * ticks-since-boot field jointly provide: proc_bsdinfo's pbi_start_tvsec/pbi_start_tvusec is
- * the process's wall-clock start time. On its own it already distinguishes an old process from
- * a PID that got reused by a new one *within one uptime*, since two processes essentially never
- * start in the same microsecond. Folding in kern.boottime additionally invalidates any startId
- * captured before a reboot: without it, a stale startId recorded before a reboot could in
- * principle collide with a post-reboot process that happens to start at the same wall-clock
- * instant (the system clock is not guaranteed monotonic across a reboot). This is the same role
- * Linux's /proc/sys/kernel/random/boot_id plays there.
+ * The boot-session UUID distinguishes reboots, while proc_bsdinfo's process start time
+ * distinguishes PID reuse within a boot. Do not substitute kern.boottime: clock corrections
+ * can change that timestamp while the same process is still alive.
  *
  * Output contract (stdout, exactly one line, well under 256 bytes, ASCII only):
- *   "alive <boottime_sec>.<boottime_usec> <start_sec>.<start_usec>\n"   exit 0
+ *   "alive <lowercase-boot-session-uuid> <start_sec>.<start_usec>\n"    exit 0
  *   "dead\n"                                                             exit 1
  *   "unknown <single-word-reason>\n"                                     exit 2
  * The TS wrapper (process-identity-macos.ts) treats any exit code other than 0/1/2, or any
@@ -33,7 +27,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/sysctl.h>
-#include <sys/time.h>
 
 /* Reason tokens are fixed, single words (no spaces/newlines) so the TS side can split on
  * whitespace without worrying about embedded delimiters or needing to escape anything. */
@@ -75,15 +68,33 @@ int main(int argc, char **argv) {
      * be worse than refusing to answer. */
     return report_unknown("short-read");
 
-  struct timeval boottime;
-  size_t size = sizeof(boottime);
-  if (sysctlbyname("kern.boottime", &boottime, &size, NULL, 0) != 0 || size != sizeof(boottime))
-    return report_unknown("boottime-unavailable");
+  char boot_uuid[37];
+  memset(boot_uuid, 0, sizeof(boot_uuid));
+  size_t size = sizeof(boot_uuid);
+  if (sysctlbyname("kern.bootsessionuuid", boot_uuid, &size, NULL, 0) != 0)
+    return report_unknown("boot-session-unavailable");
+  if (size != sizeof(boot_uuid) || boot_uuid[36] != '\0')
+    return report_unknown("boot-session-malformed");
+  int nonzero = 0;
+  for (size_t i = 0; i < 36; ++i) {
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (boot_uuid[i] != '-') return report_unknown("boot-session-malformed");
+      continue;
+    }
+    char c = boot_uuid[i];
+    if (c >= 'A' && c <= 'F') c = (char)(c + ('a' - 'A'));
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+      return report_unknown("boot-session-malformed");
+    if (c != '0') nonzero = 1;
+    boot_uuid[i] = c;
+  }
+  if (!nonzero) return report_unknown("boot-session-malformed");
+  if (info.pbi_start_tvusec >= 1000000)
+    return report_unknown("start-time-malformed");
 
   printf(
-      "alive %ld.%06d %llu.%06llu\n",
-      (long)boottime.tv_sec,
-      (int)boottime.tv_usec,
+      "alive %s %llu.%06llu\n",
+      boot_uuid,
       (unsigned long long)info.pbi_start_tvsec,
       (unsigned long long)info.pbi_start_tvusec);
   return 0;

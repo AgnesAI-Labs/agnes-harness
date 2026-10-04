@@ -130,130 +130,159 @@ function recordingRows(options: { events?: string[]; gate?: Promise<void>; rejec
 }
 
 describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn hot-swap)', () => {
-  it('reloads worker resources at the next run, never on resource.stale itself', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'wrr-'))
-    cleanup.push(() => rm(root, { recursive: true, force: true }))
-    const urlA = await mcpFixture('toolA')
-    const snapshotPath = join(root, 'snapshot.json')
-    await writeFile(
-      snapshotPath,
-      JSON.stringify(snapshotDoc([{ serverId: 'a', url: urlA, toolName: 'toolA' }])),
-    )
+  it.each([false, true])(
+    'reloads before run or configuration preparation (%s), never on stale notification',
+    async (prepare) => {
+      const root = await mkdtemp(join(tmpdir(), 'wrr-'))
+      cleanup.push(() => rm(root, { recursive: true, force: true }))
+      const urlA = await mcpFixture('toolA')
+      const snapshotPath = join(root, 'snapshot.json')
+      await writeFile(
+        snapshotPath,
+        JSON.stringify(snapshotDoc([{ serverId: 'a', url: urlA, toolName: 'toolA' }])),
+      )
 
-    const input: WorkerResourceBootstrapInput = {
-      env: {
-        AGNES_RESOURCE_SNAPSHOT: snapshotPath,
-        AGNES_RESOURCE_MCP_POLICY: JSON.stringify({
-          allowedExecutables: [],
-          allowLoopbackHttp: true,
-          localDaemon: true,
-        }),
-        HOME: root,
-      },
-      cwd: root,
-      agnesHomeDir: root,
-      profile: { name: 'local', dataDir: root, adapters: { secrets: { kind: 'env' } } },
-      createBarrier: () => ({ quiesce: async (_operation, publish) => publish({} as never) }),
-      createSecrets: () => {
-        throw new Error('createSecrets should never run: every fixture server uses secretBinding: none')
-      },
-      mcpRows: true,
-    }
+      const input: WorkerResourceBootstrapInput = {
+        env: {
+          AGNES_RESOURCE_SNAPSHOT: snapshotPath,
+          AGNES_RESOURCE_MCP_POLICY: JSON.stringify({
+            allowedExecutables: [],
+            allowLoopbackHttp: true,
+            localDaemon: true,
+          }),
+          HOME: root,
+        },
+        cwd: root,
+        agnesHomeDir: root,
+        profile: { name: 'local', dataDir: root, adapters: { secrets: { kind: 'env' } } },
+        createBarrier: () => ({ quiesce: async (_operation, publish) => publish({} as never) }),
+        createSecrets: () => {
+          throw new Error('createSecrets should never run: every fixture server uses secretBinding: none')
+        },
+        mcpRows: true,
+      }
 
-    // 1. Bootstrap once, exactly as main.ts's runWorker() does at startup - a real fixture MCP server
-    // and a real snapshot file, not a scripted double, per this task's brief.
-    const state1 = await bootstrapWorkerResources(input)
-    if (!state1) throw new Error('expected a resource generation for a snapshot naming a real server')
-    cleanup.push(() => state1.runtime.mcp.close())
-    // A session worker's generation connects nothing: MCP servers are Host rows (stage 2b step 3).
-    expect(state1.mcp).toEqual([])
-    expect(state1.mcpEntries.map((entry) => entry.definition.serverId)).toEqual(['a'])
-    const rows = recordingRows()
+      // 1. Bootstrap once, exactly as main.ts's runWorker() does at startup - a real fixture MCP server
+      // and a real snapshot file, not a scripted double, per this task's brief.
+      const state1 = await bootstrapWorkerResources(input)
+      if (!state1) throw new Error('expected a resource generation for a snapshot naming a real server')
+      cleanup.push(() => state1.runtime.mcp.close())
+      // A session worker's generation connects nothing: MCP servers are Host rows (stage 2b step 3).
+      expect(state1.mcp).toEqual([])
+      expect(state1.mcpEntries.map((entry) => entry.definition.serverId)).toEqual(['a'])
+      const rows = recordingRows()
 
-    // 2. Build the minimal handleCommand context: a real, mutated-in-place `o` object (mirroring
-    // main.ts's dispatch(), which passes the same object reference through one handleCommand call and
-    // reads back whatever it mutated), a fake HostSession whose only used member is `run`, and a Host
-    // fixture whose `reloadEcosystemExtension` is now genuinely exercised by the 'run' reload path
-    // (Task 4 wires the real call) - see packages/daemon/test/worker-commands.test.ts for the same
-    // "tiny fake proves the call shape" pattern already established for handleCommand tests in this
-    // repo. The fake records every call so this test can assert the real extension ids/field names are
-    // used, not just that *some* reload happened.
-    const runCalls: Array<{ until?: string }> = []
-    const session = {
-      run: async (opts: { until?: string }) => {
-        runCalls.push(opts)
-        return { reason: 'completed' }
-      },
-    } as unknown as HostSession
-    const reloadCalls: Array<{ id: string; freshInit: unknown }> = []
-    const host = {
-      reloadEcosystemExtension: async (id: string, freshInit: unknown) => {
-        reloadCalls.push({ id, freshInit })
-        return { id, package: '@agnes/base', version: '0.0.0', trust: 'builtin' as const, loaded: true }
-      },
-    } as unknown as Host
-    const ctx: Parameters<typeof handleCommand>[2] = {
-      host,
-      aborts: new Map(),
-      resources: { generation: state1, staleMarks: 0, reloadedMarks: 0, mcpRows: rows.runtime },
-      workerResourcesInput: input,
-    }
+      // 2. Build the minimal handleCommand context: a real, mutated-in-place `o` object (mirroring
+      // main.ts's dispatch(), which passes the same object reference through one handleCommand call and
+      // reads back whatever it mutated), a fake HostSession whose only used member is `run`, and a Host
+      // fixture whose `reloadEcosystemExtension` is now genuinely exercised by the 'run' reload path
+      // (Task 4 wires the real call) - see packages/daemon/test/worker-commands.test.ts for the same
+      // "tiny fake proves the call shape" pattern already established for handleCommand tests in this
+      // repo. The fake records every call so this test can assert the real extension ids/field names are
+      // used, not just that *some* reload happened.
+      const runCalls: Array<{ until?: string }> = []
+      const session = {
+        run: async (opts: { until?: string }) => {
+          runCalls.push(opts)
+          return { reason: 'completed' }
+        },
+      } as unknown as HostSession
+      const reloadCalls: Array<{ id: string; freshInit: unknown }> = []
+      const host = {
+        prepareSessionConfiguration: async () =>
+          ctx.resources?.generation?.mcpEntries.map((entry) => entry.definition.serverId),
+        reloadEcosystemExtension: async (id: string, freshInit: unknown) => {
+          reloadCalls.push({ id, freshInit })
+          return { id, package: '@agnes/base', version: '0.0.0', trust: 'builtin' as const, loaded: true }
+        },
+      } as unknown as Host
+      const ctx: Parameters<typeof handleCommand>[2] = {
+        host,
+        aborts: new Map(),
+        resources: { generation: state1, staleMarks: 0, reloadedMarks: 0, mcpRows: rows.runtime },
+        workerResourcesInput: input,
+      }
 
-    // 3. 'resource.stale' only marks the flag. This is the assertion Step 6's reverse mutation targets:
-    // temporarily make the 'resource.stale' case call reloadWorkerResources immediately and this must
-    // go red, because an immediate reload would already have swapped the slot's generation away from
-    // state1 by the time this line runs.
-    const staleResult = await handleCommand(
-      session,
-      { kind: 'command', requestId: 's1', method: 'resource.stale', params: {} },
-      ctx,
-    )
-    expect(staleResult).toEqual({ ok: true })
-    expect(ctx.resources?.generation).toBe(state1)
-    // One notice received, none consumed yet: that inequality IS "a reload is owed before the next turn".
-    expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
+      // 3. 'resource.stale' only marks the flag. This is the assertion Step 6's reverse mutation targets:
+      // temporarily make the 'resource.stale' case call reloadWorkerResources immediately and this must
+      // go red, because an immediate reload would already have swapped the slot's generation away from
+      // state1 by the time this line runs.
+      const staleResult = await handleCommand(
+        session,
+        { kind: 'command', requestId: 's1', method: 'resource.stale', params: {} },
+        ctx,
+      )
+      expect(staleResult).toEqual({ ok: true })
+      expect(ctx.resources?.generation).toBe(state1)
+      // One notice received, none consumed yet: that inequality IS "a reload is owed before the next turn".
+      expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
 
-    // 4. The daemon's side of a real enable: server B joins the snapshot file in place, server A stays.
-    const urlB = await mcpFixture('toolB')
-    await writeFile(
-      snapshotPath,
-      JSON.stringify(
-        snapshotDoc([
-          { serverId: 'a', url: urlA, toolName: 'toolA' },
-          { serverId: 'b', url: urlB, toolName: 'toolB' },
-        ]),
-      ),
-    )
+      // 4. The daemon's side of a real enable: server B joins the snapshot file in place, server A stays.
+      const urlB = await mcpFixture('toolB')
+      await writeFile(
+        snapshotPath,
+        JSON.stringify(
+          snapshotDoc([
+            { serverId: 'a', url: urlA, toolName: 'toolA' },
+            { serverId: 'b', url: urlB, toolName: 'toolB' },
+          ]),
+        ),
+      )
 
-    // 5. The next 'run' reloads before session.run() is ever called, and the turn still completes on
-    // the refreshed resource set.
-    const runResult = await handleCommand(
-      session,
-      { kind: 'command', requestId: 'r1', method: 'run', params: { runId: 'run-1', until: 'turn-end' } },
-      ctx,
-    )
-    expect(runResult).toEqual({ reason: 'completed' })
-    expect(runCalls).toMatchObject([{ until: 'turn-end' }])
-    // The reload consumed exactly the one mark it observed, so nothing is owed any more.
-    expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 1 })
-    expect(ctx.resources?.generation).not.toBe(state1)
-    cleanup.push(() => ctx.resources?.generation?.runtime.mcp.close() ?? Promise.resolve())
-    expect(ctx.resources?.generation?.mcpEntries.map((entry) => entry.definition.serverId)).toEqual([
-      'a',
-      'b',
-    ])
-    expect(ctx.resources?.generation?.mcp).toEqual([])
-    // The Host-level wiring itself: the snapshot's servers are applied as MCP rows (A unchanged, B
-    // new -- the row runtime swaps only what changed), then agnes/skills is reloaded with the *new*
-    // generation's skill resources. Nothing else: tool_search (agnes/mcp-search) reads whatever
-    // generation agnes/skills serves (design §3.9, D123).
-    expect(rows.applied).toEqual([['a', 'b']])
-    expect(reloadCalls.map((c) => c.id)).toEqual(['agnes/skills'])
-    type FreshInit = { mcpResources?: unknown; skillResources?: unknown }
-    const skillFreshInit = reloadCalls[0]?.freshInit as FreshInit | undefined
-    expect(skillFreshInit?.skillResources).toBe(ctx.resources?.generation?.skillResources)
-    expect(skillFreshInit?.mcpResources).toBeUndefined()
-  })
+      if (prepare) {
+        expect(
+          await Promise.all(
+            ['left', 'right'].map((side) =>
+              handleCommand(
+                session,
+                {
+                  kind: 'command',
+                  requestId: `prepare-${side}`,
+                  method: 'prepareSessionConfiguration',
+                  params: {},
+                },
+                ctx,
+              ),
+            ),
+          ),
+        ).toEqual([
+          ['a', 'b'],
+          ['a', 'b'],
+        ])
+        expect(runCalls).toEqual([])
+        expect(ctx.resources?.runAdmissions?.active).toBe(0)
+      }
+
+      // 5. The next 'run' reloads before session.run() is ever called, and the turn still completes on
+      // the refreshed resource set.
+      const runResult = await handleCommand(
+        session,
+        { kind: 'command', requestId: 'r1', method: 'run', params: { runId: 'run-1', until: 'turn-end' } },
+        ctx,
+      )
+      expect(runResult).toEqual({ reason: 'completed' })
+      expect(runCalls).toMatchObject([{ until: 'turn-end' }])
+      // The reload consumed exactly the one mark it observed, so nothing is owed any more.
+      expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 1 })
+      expect(ctx.resources?.generation).not.toBe(state1)
+      cleanup.push(() => ctx.resources?.generation?.runtime.mcp.close() ?? Promise.resolve())
+      expect(ctx.resources?.generation?.mcpEntries.map((entry) => entry.definition.serverId)).toEqual([
+        'a',
+        'b',
+      ])
+      expect(ctx.resources?.generation?.mcp).toEqual([])
+      // The Host-level wiring itself: the snapshot's servers are applied as MCP rows (A unchanged, B
+      // new -- the row runtime swaps only what changed), then agnes/skills is reloaded with the *new*
+      // generation's skill resources. Nothing else: tool_search (agnes/mcp-search) reads whatever
+      // generation agnes/skills serves (design §3.9, D123).
+      expect(rows.applied).toEqual([['a', 'b']])
+      expect(reloadCalls.map((c) => c.id)).toEqual(['agnes/skills'])
+      type FreshInit = { mcpResources?: unknown; skillResources?: unknown }
+      const skillFreshInit = reloadCalls[0]?.freshInit as FreshInit | undefined
+      expect(skillFreshInit?.skillResources).toBe(ctx.resources?.generation?.skillResources)
+      expect(skillFreshInit?.mcpResources).toBeUndefined()
+    },
+  )
 
   it('a run that arrives before any resource.stale never reloads', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wrr-'))
@@ -525,6 +554,20 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
     expect(ctx.resources?.generation?.mcpEntries.map((entry) => entry.definition.serverId)).toEqual(['a'])
     // Staleness is not cleared, so the next `run` retries the reload instead of silently giving up.
     expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
+    // Comparison preparation cannot freeze a generation that admission must replace.
+    await expect(
+      handleCommand(
+        session,
+        {
+          kind: 'command',
+          requestId: 'prepare-failed',
+          method: 'prepareSessionConfiguration',
+          params: {},
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ reason: 'runtime-publication-pending' })
+    expect(ctx.resources?.runAdmissions?.active).toBe(0)
   })
 
   it.each([false, true])(
@@ -580,7 +623,7 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
           { kind: 'command', requestId: 'r1', method: 'run', params: { runId: 'run-1', until: 'turn-end' } },
           ctx,
         )
-      if (failRollback) await expect(run()).rejects.toThrow(/recovery required/)
+      if (failRollback) await expect(run()).rejects.toMatchObject({ reason: 'resource-recovery-required' })
       else await expect(run()).resolves.toEqual({ reason: 'completed' })
       expect(rows.applied).toEqual([['a', 'b'], ['a']])
       expect(reloadCalls).toEqual([])

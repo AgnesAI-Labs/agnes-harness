@@ -1,6 +1,7 @@
 import type {
   CountResult,
   InferenceEvent,
+  JsonValue,
   ModelRecord,
   ProbeReport,
   RequestBody,
@@ -39,6 +40,16 @@ export abstract class WireAdapter {
   abstract routes(): RouteDecl[]
   abstract models(route: string): ModelRecord[]
   abstract stream(route: string, req: RequestBody, opts: AdapterStreamOptions): AsyncIterable<WireEvent>
+  /** Optional durable preparation; credentials remain confined to the returned live adapter. */
+  prepare?(
+    route: string,
+    req: RequestBody,
+    opts: { signal: AbortSignal },
+  ): Promise<{
+    adapter: WireAdapter
+    snapshot: JsonValue
+    endpoint: string
+  }>
   count?(route: string, req: RequestBody, opts: { signal: AbortSignal }): Promise<CountResult>
   refresh?(route: string, signal: AbortSignal): Promise<void>
   probe?(route: string, signal: AbortSignal): Promise<ProbeReport>

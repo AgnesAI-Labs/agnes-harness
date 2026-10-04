@@ -1,11 +1,49 @@
 import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import type { CommitTx } from '../src/log/storage.js'
+import { runInputToCompletion } from '../src/step/input-completion.js'
 import { CoreError } from '../src/types.js'
-import { fakeProvider } from './helpers/fake-provider.js'
+import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
 describe('Inbox segment', () => {
+  it.each(['different-terminal', 'no-progress', 'pending-forever'] as const)(
+    'refuses %s as completion of a bound input',
+    async (mode) => {
+      const { session } = await openSession({ provider: fakeProvider([textTurn('OWN'), textTurn('OTHER')]) })
+      try {
+        if (mode === 'pending-forever')
+          await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'predecessor' }] })
+        const seq = await session.enqueue('next-turn', {
+          actor,
+          commandId: 'own',
+          content: [{ type: 'text', text: 'own' }],
+        })
+        const itemId = (session.latest('inbox') as { items: Array<{ itemId: string }> }).items.at(-1)!.itemId
+        const running = runInputToCompletion({
+          itemId,
+          enqueuedSeq: seq,
+          signal: new AbortController().signal,
+          read: (q) => session.scan(q),
+          run: async () => {
+            if (mode === 'no-progress') return { reason: 'completed', lastSeq: seq }
+            if (mode === 'pending-forever') {
+              await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'later-tail' }] })
+              return { reason: 'completed', lastSeq: session.lastSeq }
+            }
+            await session.run({ until: 'turn-end', signal: new AbortController().signal })
+            await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'other' }] })
+            return session.run({ until: 'turn-end', signal: new AbortController().signal })
+          },
+        })
+        await expect(running).rejects.toMatchObject({ code: 'E_RELATION' })
+        if (mode === 'pending-forever')
+          expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(4)
+      } finally {
+        await session.close()
+      }
+    },
+  )
   it('start() writes session/start once; enqueue replaces the inbox register whole', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     expect((await log.scan({ fromSeq: 1, limit: 5 })).map((e) => e.type)).toEqual(['session/start'])

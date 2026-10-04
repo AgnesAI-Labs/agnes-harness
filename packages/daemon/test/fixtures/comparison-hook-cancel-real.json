@@ -1,0 +1,34 @@
+{
+  "provenance": {
+    "kind": "actual-isolated-comparison-cancellation",
+    "bodyOmitted": true,
+    "omitted": ["prompt", "actor", "workspace paths", "configuration", "admission identity and digests"]
+  },
+  "comparisonId": "206d61bf-233c-42ec-8507-e9a0b1a09195",
+  "side": "left",
+  "evidence": {
+    "admissionHeldSeq": 5,
+    "inferenceEntered": {
+      "seq": 12,
+      "phase": "inference"
+    },
+    "cancelRequested": {
+      "seq": 13,
+      "phase": "inference",
+      "control": "cancel_requested"
+    },
+    "turnEnd": {
+      "seq": 14,
+      "data": {
+        "reason": "blocked",
+        "lastAssistantSeq": null,
+        "error": {
+          "code": "HOOK_BLOCKED",
+          "message": "hook execution failed"
+        }
+      }
+    },
+    "admissionReleasedSeq": 16,
+    "dispatchEvents": []
+  }
+}

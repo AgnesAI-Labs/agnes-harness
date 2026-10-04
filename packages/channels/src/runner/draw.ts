@@ -83,6 +83,9 @@ export function whatToDraw(
   context: { costLine: boolean; artifactsUrl?: string; caps: ChannelCapabilities },
 ): ChannelMessage | null {
   switch (node.kind) {
+    case 'runtime':
+      // Internal runtime decisions belong in the workbench, not outbound channel messages.
+      return null
     case 'user':
     case 'compaction':
       return null

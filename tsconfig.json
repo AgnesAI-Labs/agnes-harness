@@ -135,6 +135,21 @@
     },
     {
       "path": "packages/sandbox-remote"
+    },
+    {
+      "path": "packages/runtime-api"
+    },
+    {
+      "path": "packages/jev-runtime"
+    },
+    {
+      "path": "packages/jev-trace"
+    },
+    {
+      "path": "packages/runtime-jev"
+    },
+    {
+      "path": "packages/runtime-comparison"
     }
   ]
 }

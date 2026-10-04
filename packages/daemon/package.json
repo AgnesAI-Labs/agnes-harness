@@ -19,6 +19,7 @@
     "build:runtime": "tsx ../base/tools/package-isolation-runtime.ts --output dist/agnes-runtime"
   },
   "dependencies": {
+    "@agnes/core": "workspace:*",
     "@agnes/host": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
@@ -31,7 +32,8 @@
     "@agnes/error-sanitization": "workspace:*",
     "@agnes/system-node": "workspace:*",
     "es-module-lexer": "2.3.2",
-    "ws": "8.21.3"
+    "ws": "8.21.3",
+    "@agnes/runtime-comparison": "workspace:*"
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",

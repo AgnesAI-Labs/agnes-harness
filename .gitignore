@@ -34,3 +34,10 @@ learn/
 outputs/
 spikes/
 docs/task-records/
+
+# Local JevLoop implementation notes and runtime credentials.
+/jevloop-runtime-plan.md
+.env
+.env.*
+!.env.example
+dev.env

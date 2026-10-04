@@ -25,6 +25,8 @@ it('ships private conversation styles in the existing three-page style asset', a
   ])
   expect(built.startsWith(base)).toBe(true)
   expect(built).toContain(conversation.trim())
+  for (const sheet of ['jev-workspace.css', 'jev-graph.css', 'runtime-process.css'])
+    expect(built).toContain((await readFile(resolve(web, 'public', sheet), 'utf8')).trim())
   expect(built).toContain('.x-markdown')
   expect(built).toContain('.x-markdown-light')
   expect(built).toContain('.x-markdown-dark')

@@ -520,6 +520,37 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     return true
   }
 
+  async beginContinuation(input: {
+    childKey: SessionKey
+    expectedRevision: number
+  }): Promise<ChildTaskRecord | null> {
+    this.assertWritableFormat()
+    const row = this.childTasks.get(input.childKey)
+    if (
+      row?.creationPhase !== 'committed' ||
+      row.stateRevision !== input.expectedRevision ||
+      !['completed', 'failed', 'interrupted'].includes(row.state)
+    )
+      return null
+    row.state = 'ready'
+    row.stateRevision += 1
+    return { ...row, ancestorScopeIds: [...row.ancestorScopeIds] }
+  }
+
+  async cancelContinuation(input: { childKey: SessionKey; expectedRevision: number }): Promise<boolean> {
+    this.assertWritableFormat()
+    const row = this.childTasks.get(input.childKey)
+    if (
+      row?.creationPhase !== 'committed' ||
+      row.stateRevision !== input.expectedRevision ||
+      !['completed', 'failed', 'interrupted'].includes(row.state)
+    )
+      return false
+    row.state = 'cancelled'
+    row.stateRevision += 1
+    return true
+  }
+
   async nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number> {
     const key = `${parentKey}\0${effectId}`
     const n = (this.ordinals.get(key) ?? 0) + 1
@@ -531,12 +562,17 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     return this.workspaces.get(workspaceId) ?? null
   }
 
-  async ensureRootScope(rootTaskId: string, capMicro: bigint): Promise<BudgetScopeRecord> {
+  async ensureRootScope(rootTaskId: string, capMicro: bigint | null): Promise<BudgetScopeRecord> {
     this.assertWritableFormat()
     const scopeId = `root:${rootTaskId}`
     const existing = this.scopes.get(scopeId)
-    if (existing) return existing
-    if (capMicro <= 0n) throw new CoreError('E_BUDGET', 'root tree budget cap must be positive')
+    if (existing) {
+      if (capMicro !== null && (existing.capMicro === null || capMicro < existing.capMicro))
+        throw new CoreError('E_BUDGET', 'existing root budget cannot satisfy a tighter requested cap')
+      return existing
+    }
+    if (capMicro !== null && capMicro <= 0n)
+      throw new CoreError('E_BUDGET', 'root tree budget cap must be positive')
     const created: BudgetScopeRecord = {
       scopeId,
       rootTaskId,
@@ -563,7 +599,18 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     if (existingKey) {
       const record = this.childTasks.get(existingKey)
       if (!record) throw new CoreError('E_STORAGE_FAULT', 'creation index missing task', { existingKey })
-      return { status: record.inputHash === input.inputHash ? 'existing' : 'conflict', record }
+      const same =
+        record.inputHash === input.inputHash &&
+        record.kind === input.kind &&
+        record.boundarySeq === input.boundarySeq &&
+        record.isolation === input.isolation &&
+        (record.creationCwd ?? record.cwd) === (input.creationCwd ?? input.cwd) &&
+        record.runtime?.id === input.runtime?.id &&
+        record.runtime?.version === input.runtime?.version &&
+        record.seedMode === input.seedMode &&
+        record.model?.route === input.model?.route &&
+        record.model?.model === input.model?.model
+      return { status: same ? 'existing' : 'conflict', record }
     }
     const parentActive = [...this.childTasks.values()].filter(
       (row) => row.parentKey === input.parentKey && isActiveChildState(row.state),
@@ -583,6 +630,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       if (!scope) return { status: 'refused', reason: 'budget', message: `unknown ancestor scope ${id}` }
       if (
         input.childCapMicro !== null &&
+        scope.capMicro !== null &&
         input.childCapMicro > scope.capMicro - scope.settledMicro - scope.heldMicro
       )
         return { status: 'refused', reason: 'budget', message: 'child budget exceeds remaining ancestor cap' }
@@ -596,7 +644,9 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       events: [],
       integrity: new Map(),
       registers: new RegisterMap(),
-      parent: { key: input.parentKey, boundarySeq: input.boundarySeq },
+      ...(input.seedMode === 'fresh'
+        ? {}
+        : { parent: { key: input.parentKey, boundarySeq: input.boundarySeq } }),
     })
 
     let budgetScopeId = parentTask?.budgetScopeId ?? root.scopeId
@@ -625,6 +675,10 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       rootTaskId: input.rootTaskId,
       runtimeOwnerSessionKey: parentTask?.runtimeOwnerSessionKey ?? input.runtimeOwnerSessionKey,
       kind: input.kind,
+      ...(input.runtime ? { runtime: { ...input.runtime } } : {}),
+      ...(input.seedMode ? { seedMode: input.seedMode } : {}),
+      ...(input.model ? { model: { ...input.model } } : {}),
+      creationCwd: input.creationCwd ?? input.cwd,
       generationDepth: input.generationDepth,
       generationLimit: input.generationLimit,
       boundarySeq: input.boundarySeq,
@@ -654,6 +708,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
   }
 
   async bumpWriterGeneration(key: SessionKey): Promise<number> {
+    this.assertWritableFormat()
     const next = (this.writerGens.get(key) ?? 1) + 1
     this.writerGens.set(key, next)
     return next
@@ -664,6 +719,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
   }
 
   async takeoverReservation(permitId: string, expectedWriterGeneration: number): Promise<ReservationRecord> {
+    this.assertWritableFormat()
     const reservation = this.reservations.get(permitId)
     if (reservation?.status !== 'held')
       throw new CoreError('E_BUDGET', 'only a held reservation can be taken over', { permitId })
@@ -724,7 +780,8 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
 
   async reserve(req: ReserveRequest): Promise<ReserveResult> {
     this.assertWritableFormat()
-    if (req.qMicro < 0n) return { ok: false, reason: 'invalid', message: 'reservation is negative' }
+    if (req.qMicro !== null && req.qMicro < 0n)
+      return { ok: false, reason: 'invalid', message: 'reservation is negative' }
     const currentGen = this.writerGens.get(req.rootTaskId) ?? 1
     if (req.writerGeneration !== currentGen)
       return { ok: false, reason: 'invalid', message: 'writer generation is not current' }
@@ -748,17 +805,27 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
         }
       return { ok: true, permitId: prior.permitId, status: prior.status, existing: true }
     }
+    if (
+      !req.scopeIds.includes(`root:${req.rootTaskId}`) ||
+      new Set(req.scopeIds).size !== req.scopeIds.length
+    )
+      return { ok: false, reason: 'invalid', message: 'reservation must include its root scope exactly once' }
     const scopes: BudgetScopeRecord[] = []
     for (const id of req.scopeIds) {
       const scope = this.scopes.get(id)
       if (!scope) return { ok: false, reason: 'invalid', message: `unknown budget scope ${id}` }
+      if (scope.rootTaskId !== req.rootTaskId)
+        return { ok: false, reason: 'invalid', message: 'budget scope belongs to another tree' }
       scopes.push(scope)
     }
     for (const scope of scopes) {
+      if (req.qMicro === null && scope.capMicro !== null)
+        return { ok: false, reason: 'unknown_bound', message: 'finite scope requires a known quotation' }
       if (!fitsCap(scope.settledMicro, scope.heldMicro, req.qMicro, scope.capMicro))
         return { ok: false, reason: 'cap', message: `reservation exceeds cap on ${scope.scopeId}` }
     }
-    for (const scope of scopes) scope.heldMicro = addMicro(scope.heldMicro, req.qMicro)
+    if (req.qMicro !== null)
+      for (const scope of scopes) scope.heldMicro = addMicro(scope.heldMicro, req.qMicro)
     const permitId = `p${++this.permitSeq}`
     this.reservations.set(permitId, {
       permitId,
@@ -774,6 +841,9 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
   }
 
   async settleOrigin(req: SettleRequest): Promise<void> {
+    this.assertWritableFormat()
+    if (req.actualMicro !== null && req.actualMicro < 0n)
+      throw new CoreError('E_BUDGET', 'negative actual cost')
     const reservation = this.reservations.get(req.permitId)
     if (!reservation) throw new CoreError('E_BUDGET', 'unknown reservation', { permitId: req.permitId })
     const currentGen = this.writerGens.get(reservation.rootTaskId) ?? 1
@@ -821,7 +891,8 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       })
       return
     }
-    if (actual > reservation.qMicro) {
+    const finiteScope = reservation.scopeIds.some((id) => this.scopes.get(id)?.capMicro !== null)
+    if (finiteScope && reservation.qMicro !== null && actual > reservation.qMicro) {
       for (const id of reservation.scopeIds) {
         const scope = this.scopes.get(id)
         if (!scope) continue
@@ -846,9 +917,9 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     for (const id of reservation.scopeIds) {
       const scope = this.scopes.get(id)
       if (!scope) continue
-      if (scope.heldMicro < reservation.qMicro)
+      if (reservation.qMicro !== null && scope.heldMicro < reservation.qMicro)
         throw new CoreError('E_BUDGET', 'held balance would go negative', { scopeId: id })
-      scope.heldMicro -= reservation.qMicro
+      if (reservation.qMicro !== null) scope.heldMicro -= reservation.qMicro
       scope.settledMicro = addMicro(scope.settledMicro, actual)
     }
     reservation.status = 'settled'
@@ -863,6 +934,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
   }
 
   async releaseReservation(request: string | { permitId: string; writerGeneration: number }): Promise<void> {
+    this.assertWritableFormat()
     const permitId = typeof request === 'string' ? request : request.permitId
     const reservation = this.reservations.get(permitId)
     if (typeof request !== 'string' && reservation) {
@@ -876,7 +948,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     if (reservation?.status !== 'held') return
     for (const id of reservation.scopeIds) {
       const scope = this.scopes.get(id)
-      if (scope) scope.heldMicro -= reservation.qMicro
+      if (scope && reservation.qMicro !== null) scope.heldMicro -= reservation.qMicro
     }
     reservation.status = 'released'
   }
@@ -889,7 +961,9 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       heldMicro: root.heldMicro,
       capMicro: root.capMicro,
       unknownHeld: [...this.reservations.values()].some(
-        (row) => row.rootTaskId === rootTaskId && row.status === 'unknown',
+        (row) =>
+          row.rootTaskId === rootTaskId &&
+          (row.status === 'unknown' || (row.status === 'held' && row.qMicro === null)),
       ),
     }
   }

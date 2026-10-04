@@ -100,6 +100,27 @@ describe('grep', () => {
       .split('\n')
       .filter((l) => !l.startsWith('['))
     expect(hits).toEqual(['src/a.ts:1:foo', 'src/a.ts:2:bar foo'])
+    expect(r.structured).toMatchObject({
+      codec: 'agnes-host-tool-fact-v1',
+      tool: 'grep',
+      root: { kind: 'directory', path: '/work/proj', workspaceRelativePath: '.' },
+      query: { pattern: 'foo', limit: 100, context: 0 },
+      matches: [
+        { path: '/work/proj/src/a.ts', lineNumber: 1 },
+        { path: '/work/proj/src/a.ts', lineNumber: 2 },
+      ],
+      coverage: {
+        complete: false,
+        matchLimitReached: false,
+        walkLimitReached: false,
+        outputTruncated: false,
+        skippedDirectories: ['node_modules'],
+        deniedPaths: 0,
+        unreadablePaths: 0,
+        oversizeFiles: 0,
+        binaryFiles: 1,
+      },
+    })
     const ci = await grepTool.execute({ pattern: 'foo', ignoreCase: true, glob: '**/*.ts' }, ctx)
     expect(textOf(ci)).toContain('src/sub/b.ts:1:Foo here')
     expect(textOf(ci)).not.toContain('README.md')
@@ -141,6 +162,13 @@ describe('grep', () => {
     const lines = textOf(r).split('\n')
     expect(lines.filter((l) => l.startsWith('many.ts:'))).toHaveLength(2)
     expect(textOf(r)).toContain('[limit 2 reached')
+    expect(r.structured).toMatchObject({
+      matches: [
+        { path: '/work/proj/many.ts', lineNumber: 1 },
+        { path: '/work/proj/many.ts', lineNumber: 2 },
+      ],
+      coverage: { complete: false, matchLimitReached: true },
+    })
   })
 
   it('defaults the match limit to 100 and says so when it is reached', async () => {
@@ -204,6 +232,7 @@ describe('grep', () => {
     for (const tool of [grepTool, findTool]) {
       const denied = await tool.execute({ pattern: 'hit', path: 'secrets' }, selected)
       expect(denied.isError, tool.name).toBe(true)
+      expect(denied.structured, tool.name).toBeUndefined()
       expect(textOf(denied), tool.name).toContain('denied by policy')
       expect(textOf(denied), tool.name).not.toContain('完全权限')
     }
@@ -256,6 +285,7 @@ describe('a guarded result', () => {
     expect(textOf(r)).toContain('[truncated:')
     expect(r.content).toHaveLength(2)
     expect(r.content[1]).toMatchObject({ type: 'ref', ref: { size: expect.any(Number) } })
+    expect(r.structured).toMatchObject({ coverage: { complete: false, outputTruncated: true } })
   })
 })
 
@@ -264,12 +294,32 @@ describe('find', () => {
     const ctx = ctxOf({ files })
     const r = await findTool.execute({ pattern: '**/*.ts' }, ctx)
     expect(textOf(r).split('\n')).toEqual(['src/a.ts', 'src/sub/b.ts', '[not searched: node_modules]'])
+    expect(r.structured).toEqual({
+      codec: 'agnes-host-tool-fact-v1',
+      tool: 'find',
+      root: { path: '/work/proj', workspaceRelativePath: '.' },
+      query: { pattern: '**/*.ts', limit: 1000 },
+      paths: ['/work/proj/src/a.ts', '/work/proj/src/sub/b.ts'],
+      coverage: {
+        complete: false,
+        resultLimitReached: false,
+        walkLimitReached: false,
+        outputTruncated: false,
+        skippedDirectories: ['node_modules'],
+        deniedPaths: 0,
+        unreadablePaths: 0,
+      },
+    })
   })
 
   it('says when it stopped at the result limit', async () => {
     const ctx = ctxOf({ files: { 'a.ts': '', 'b.ts': '', 'c.ts': '' } })
     const r = await findTool.execute({ pattern: '**/*.ts', limit: 2 }, ctx)
     expect(textOf(r).split('\n')).toEqual(['a.ts', 'b.ts', '[limit 2 reached; there may be more]'])
+    expect(r.structured).toMatchObject({
+      paths: ['/work/proj/a.ts', '/work/proj/b.ts'],
+      coverage: { complete: false, resultLimitReached: true },
+    })
   })
 
   it('defaults the result limit to 1000', async () => {
@@ -282,6 +332,9 @@ describe('find', () => {
     // A thousand paths is over the output guard's ceiling, so the listing itself arrives head and
     // tail with the whole of it stored; the note that says where it stopped is what pins the value.
     expect(textOf(r)).toContain('[limit 1000 reached')
+    expect(r.structured).toMatchObject({
+      coverage: { complete: false, resultLimitReached: true, outputTruncated: true },
+    })
   })
 })
 
@@ -327,6 +380,7 @@ describe('search access scope', () => {
     for (const selected of [ctx, { ...ctx, session: { ...ctx.session, fullAccess: false } }]) {
       const denied = await tool.execute(args, selected)
       expect.soft(denied.isError).toBe(true)
+      expect.soft(denied.structured).toBeUndefined()
       expect.soft(textOf(denied)).toContain('outside the workspace')
       expect.soft(textOf(denied)).toContain('完全权限')
       expect.soft(textOf(denied)).toContain('选择目标目录作为工作区')
@@ -347,6 +401,24 @@ describe('ls', () => {
     })
     const r = await lsTool.execute({ path: '/work/proj' }, ctx)
     expect(textOf(r).split('\n')).toEqual(['link@', 'pipe?', 'src/', 'top.txt'])
+    expect(r.structured).toEqual({
+      codec: 'agnes-host-tool-fact-v1',
+      tool: 'ls',
+      root: { path: '/work/proj', workspaceRelativePath: '.' },
+      query: { limit: 500 },
+      entries: [
+        { name: 'link', kind: 'symlink', path: '/work/proj/link' },
+        { name: 'pipe', kind: 'other', path: '/work/proj/pipe' },
+        { name: 'src', kind: 'dir', path: '/work/proj/src' },
+        { name: 'top.txt', kind: 'file', path: '/work/proj/top.txt' },
+      ],
+      coverage: {
+        complete: true,
+        resultLimitReached: false,
+        outputTruncated: false,
+        deniedEntries: 0,
+      },
+    })
   })
 
   it('lists the working directory when no path is given', async () => {
@@ -362,6 +434,13 @@ describe('ls', () => {
     })
     const r = await lsTool.execute({ limit: 2 }, ctx)
     expect(textOf(r).split('\n')).toEqual(['f0.txt', 'f1.txt', '[3 more]'])
+    expect(r.structured).toMatchObject({
+      entries: [
+        { name: 'f0.txt', path: '/work/proj/f0.txt' },
+        { name: 'f1.txt', path: '/work/proj/f1.txt' },
+      ],
+      coverage: { complete: false, resultLimitReached: true },
+    })
   })
 
   it('shows at most 500 entries when no limit is given', async () => {
@@ -389,6 +468,7 @@ describe('ls', () => {
     const selected = { ...ctx, session: { ...ctx.session, fullAccess } }
     const denied = await lsTool.execute({ path: 'secrets' }, selected)
     expect(denied.isError).toBe(true)
+    expect(denied.structured).toBeUndefined()
     expect(textOf(denied)).toContain('denied by policy')
     expect(textOf(denied)).not.toContain('完全权限')
     const root = await lsTool.execute({}, selected)
@@ -396,6 +476,12 @@ describe('ls', () => {
     expect(textOf(root)).not.toContain('secrets')
     expect(textOf(root)).not.toContain('sessions.db')
     expect(textOf(root)).toContain('2 entries not listed')
+    expect(root.structured).toMatchObject({
+      entries: [{ name: 'src', kind: 'dir', path: '/work/proj/src' }],
+      coverage: { complete: false, deniedEntries: 2 },
+    })
+    expect(JSON.stringify(root.structured)).not.toContain('secrets')
+    expect(JSON.stringify(root.structured)).not.toContain('sessions.db')
   })
 
   it('reports a listing failure rather than throwing', async () => {

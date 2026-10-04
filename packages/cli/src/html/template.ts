@@ -47,6 +47,8 @@ function renderNode(node: UINode): string {
       const body = [node.summary, ...previews].map(escapeHtml).join('\n')
       return `<details class="node tool"><summary>${escapeHtml(node.name)} · ${escapeHtml(node.status)}</summary><div class="content">${body}</div></details>`
     }
+    case 'runtime':
+      return `<details class="node tool"><summary>${escapeHtml(node.title)} · ${escapeHtml(node.status)}</summary><div class="content">${escapeHtml(node.summary)}\n${escapeHtml(node.detail ?? '')}</div></details>`
     case 'approval': {
       const outcome = node.decision?.verdict ?? node.state
       return `<section class="node approval"><span class="label">Approval · ${escapeHtml(outcome)}</span><div class="content">${escapeHtml(node.summary)}</div></section>`

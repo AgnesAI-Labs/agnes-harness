@@ -40,6 +40,7 @@ type SessionWorkerAcquireOptions = Readonly<{
   cwd?: string
   binding?: WorkspaceBindingEnvelope
   preset?: string
+  runtime?: string
   parent?: { key: string; boundarySeq: number }
 }>
 
@@ -217,12 +218,18 @@ export class WorkerPool {
     if (!slot) throw new Error('shared worker slot disappeared')
     const existing = slot.channels.get(sessionKey)
     if (existing?.alive) return existing
+    if (existing) {
+      const proof = await existing.closeAndConfirm('session replacement')
+      if (!proof.exited) throw new Error(`session ${sessionKey} close is unconfirmed`)
+      return this.acquire(sessionKey, opts)
+    }
     let channel: WorkerSessionChannel
     channel = link.session(
       sessionKey,
       {
         binding: opts.binding,
         ...(opts.preset ? { preset: opts.preset } : {}),
+        ...(opts.runtime === undefined ? {} : { runtime: opts.runtime }),
         ...(opts.resume ? { resume: true } : {}),
         ...(opts.parent ? { parent: opts.parent } : {}),
       },
@@ -233,14 +240,23 @@ export class WorkerPool {
       },
     )
     slot.channels.set(sessionKey, channel)
+    // An unanswered open may already own a session in the worker. Retain its membership until a
+    // confirmed close or actual child-process exit, including when the open reply is lost.
+    slot.sessions.add(sessionKey)
     try {
       await channel.hello
       slot.sessions.add(sessionKey)
       return channel
     } catch (error) {
-      if (slot.channels.get(sessionKey) === channel) slot.channels.delete(sessionKey)
+      void channel.closeSession('session open failed').catch(() => undefined)
       throw error
     }
+  }
+
+  /** Close an already-owned session without acquiring a worker or inferring exit from absence. */
+  closeAndConfirmSession(sessionKey: string): Promise<import('./frames.js').SessionCloseConfirmation> {
+    const channel = this.slots.get('@shared')?.channels.get(sessionKey)
+    return channel?.closeAndConfirm() ?? Promise.resolve({ exited: false, reason: 'owner-unknown' })
   }
 
   private async acquireWorker(workerKey: string, opts: WorkerAcquireOptions): Promise<WorkerLink> {
@@ -760,8 +776,6 @@ export class WorkerPool {
       const slot = this.slots.get('@shared')
       const channel = slot?.channels.get(key)
       if (!slot || !channel) continue
-      slot.channels.delete(key)
-      slot.sessions.delete(key)
       void channel.closeSession(reason).catch(() => undefined)
     }
   }

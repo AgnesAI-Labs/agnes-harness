@@ -8,6 +8,8 @@ import {
   subagentCancelTool,
   subagentCollectTool,
   subagentForkTool,
+  subagentInterruptTool,
+  subagentSendMessageTool,
   subagentSpawnTool,
 } from '../src/tools.js'
 import type { WorktreeCreateResult, WorktreeFinishResult, WorktreeManager } from '../src/worktree.js'
@@ -145,10 +147,17 @@ describe('subagent tool definitions', () => {
       },
     } as never)
 
-    expect(names).toEqual(['subagent_fork', 'subagent_spawn', 'subagent_collect', 'subagent_cancel'])
+    expect(names).toEqual([
+      'subagent_fork',
+      'subagent_spawn',
+      'subagent_collect',
+      'subagent_cancel',
+      'subagent_send_message',
+      'subagent_interrupt',
+    ])
     expect(dispose).toBeTypeOf('function')
     ;(dispose as () => void)()
-    expect(disposed).toEqual(['subagent_cancel', 'subagent_collect', 'subagent_spawn', 'subagent_fork'])
+    expect(disposed).toEqual([...names].reverse())
   })
 })
 
@@ -160,7 +169,24 @@ describe('subagent_fork', () => {
       content: [{ type: 'text', text: 'answer:review this' }],
     })
     expect(calls.fork).toEqual([['review this', { model: 'fast' }]])
+    await subagentForkTool.execute({ question: 'inherit parent' }, ctx)
+    expect(calls.fork[1]).toEqual(['inherit parent', undefined])
+    expect(subagentForkTool.parameters.required).toEqual(['question'])
   })
+})
+
+it('gives a spawned child its exact parent message target without claiming a shared workspace', async () => {
+  const { ctx, calls } = context()
+  ;(ctx.subagent as { sendMessage: NonNullable<ToolContext['subagent']['sendMessage']> }).sendMessage =
+    async () => ({ childKey: ctx.session.key, messageId: 'm', acceptedSeq: 1 })
+  await subagentSpawnTool(deps({ isolation: 'shared' })).execute(
+    { task: 'REPORT_TASK', isolation: 'shared' },
+    ctx,
+  )
+  expect(calls.spawn[0]?.[0]).toContain(`Your direct parent session id is ${JSON.stringify(ctx.session.key)}`)
+  expect(calls.spawn[0]?.[0]).toContain('subagent_send_message')
+  expect(calls.spawn[0]?.[0]).toContain('REPORT_TASK')
+  expect(calls.spawn[0]?.[0]).not.toContain('same workspace')
 })
 
 describe('subagent_spawn', () => {
@@ -192,6 +218,7 @@ describe('subagent_spawn', () => {
       isolation: 'worktree',
       worktree: '/work/proj/.worktrees/agnes-1234abcd',
     })
+    expect(result.structured).toEqual(result.details)
   })
 
   it('honours explicit shared isolation and a fail-closed worktree fallback', async () => {
@@ -309,6 +336,7 @@ describe('subagent_collect', () => {
     const running = await subagentCollectTool(d).execute({ childKey: 'c1', wait: false }, c.ctx)
     expect(c.calls.collect[0]).toEqual(['c1', { wait: false }])
     expect(running.details).toEqual({ childKey: 'c1', status: 'running' })
+    expect(running.structured).toEqual(running.details)
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'blocked' }, c.ctx)).isError).toBe(true)
 
@@ -321,6 +349,7 @@ describe('subagent_collect', () => {
       status: 'completed',
       credits: 3,
     })
+    expect(done.structured).toEqual(done.details)
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'now allowed' }, c.ctx)).isError).toBeUndefined()
   })
@@ -339,4 +368,36 @@ describe('subagent_collect', () => {
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'two' }, c.ctx)).isError).toBeUndefined()
   })
+})
+
+it('child control tools expose delivery and interruption receipts without claiming task completion', async () => {
+  const { ctx } = context()
+  const calls: string[] = []
+  const bound = {
+    ...ctx,
+    subagent: {
+      ...ctx.subagent,
+      sendMessage: async (key: string, message: string) => {
+        calls.push(`${key}:${message}`)
+        return { childKey: key, messageId: 'message-1', acceptedSeq: 42 }
+      },
+      interrupt: async (key: string) => {
+        calls.push(`interrupt:${key}`)
+        return { accepted: true as const }
+      },
+    },
+  }
+  expect(checkToolDef(subagentSendMessageTool)).toEqual({ ok: true })
+  expect(checkToolDef(subagentInterruptTool)).toEqual({ ok: true })
+  expect(
+    await subagentSendMessageTool.execute({ childKey: 'child', message: '下一条消息' }, bound),
+  ).toMatchObject({ details: { childKey: 'child', messageId: 'message-1', acceptedSeq: 42 } })
+  expect(await subagentInterruptTool.execute({ childKey: 'child' }, bound)).toMatchObject({
+    details: { childKey: 'child', accepted: true },
+  })
+  expect(calls).toEqual(['child:下一条消息', 'interrupt:child'])
+  expect(await subagentSendMessageTool.execute({ childKey: 'child', message: 'hello' }, ctx)).toMatchObject({
+    isError: true,
+  })
+  expect(await subagentInterruptTool.execute({ childKey: 'child' }, ctx)).toMatchObject({ isError: true })
 })

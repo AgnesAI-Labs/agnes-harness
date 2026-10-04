@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs'
 import type { ApprovalVerdict, UINode } from '@agnes/protocol'
 import { validateAgainst, validateSlotPayload } from '@agnes/protocol'
 import { UITimeline } from '@agnes/protocol/gen/agnes-v1'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ParentMessageSources } from '../src/project/parent-message-source.js'
 import { projectUI, type SlotFillRunner, UIProjectionCell } from '../src/project/ui.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import type { SessionImpl } from '../src/step/session.js'
@@ -23,7 +25,10 @@ async function open(
 }
 async function input(session: SessionImpl) {
   await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'question' }] })
+  const itemId = (session.latest('inbox') as { items: Array<{ itemId: string }> }).items[0]?.itemId
   await session.acceptInput()
+  const messages = await session.scan({ type: 'user/message', order: 'desc', limit: 1 })
+  expect((messages[0]?.data as { itemId?: string } | undefined)?.itemId).toBe(itemId)
 }
 const run = (session: SessionImpl) => session.run({ until: 'turn-end', signal: new AbortController().signal })
 const kind = <K extends UINode['kind']>(nodes: UINode[], target: K) =>
@@ -575,7 +580,19 @@ it('wakes a paused provider when a bounded stream flush fails', async () => {
   await input(session)
   const pending = session.runInference()
   try {
-    await expect(pending).rejects.toThrow('output disk unavailable')
+    const error: unknown = await pending.catch((failure: unknown) => failure)
+    expect(error).toMatchObject({ code: 'E_STORAGE_FAULT' })
+    const messages: string[] = []
+    const seen = new Set<unknown>()
+    let cause = error
+    while (cause instanceof Error && !seen.has(cause)) {
+      seen.add(cause)
+      messages.push(cause.message)
+      cause =
+        (cause as Error & { detail?: { cause?: unknown }; cause?: unknown }).detail?.cause ??
+        (cause as Error & { cause?: unknown }).cause
+    }
+    expect(messages).toContain('output disk unavailable')
   } finally {
     release()
   }
@@ -1208,4 +1225,446 @@ describe('runtime-context user/message projection', () => {
     })
     expect(kind(nodes, 'context')).toHaveLength(0)
   })
+})
+
+it('replays the observed Jev and Flash read/write/read run without promoting its answer to verification', async () => {
+  const capture = JSON.parse(readFileSync(new URL('./fixtures/jev-real-trace.json', import.meta.url), 'utf8'))
+  const events = capture.events as Event[]
+  const options = { sessionKey: 'agnes:jev-real-fixture' }
+  const replay = await projectUI(events, options)
+  const cell = new UIProjectionCell(options.sessionKey)
+  cell.sealReplay()
+  for (const event of events) cell.apply([event])
+  expect(await cell.view()).toEqual(replay)
+  const work = kind(replay.nodes, 'runtime')
+  expect(work.filter((node) => node.purpose === 'decision')).toHaveLength(4)
+  expect(work.filter((node) => node.purpose === 'parameters')).toHaveLength(3)
+  expect(work.find((node) => node.purpose === 'answer')?.model).toBe('deepseek-v4-flash')
+  expect(work.filter((node) => node.category === 'action').map((node) => node.status)).toEqual([
+    'completed',
+    'completed',
+    'completed',
+  ])
+  const tools = kind(replay.nodes, 'tool')
+  expect(tools.map((node) => node.name)).toEqual(['read', 'write', 'read'])
+  expect(kind(replay.nodes, 'assistant')).toHaveLength(1)
+  expect(work.every((node) => replay.turns[0]?.nodeIds.includes(node.id))).toBe(true)
+  // The model claimed equality, but the captured bytes disagree. A completed turn is not a verifier.
+  expect(capture.observedFiles.exactCopy).toBe(false)
+  expect(capture.observedFiles.copy).toBe(capture.observedFiles.source.slice(0, -1))
+  const write = events.find(
+    (event) => event.type === 'tool/call' && (event.data as { name?: string } | null)?.name === 'write',
+  )!
+  expect((write.data as { args: { content: string } }).args.content).toBe(capture.observedFiles.copy)
+  const prefix = await projectUI(events, { ...options, upto: write.seq - 1 })
+  expect(kind(prefix.nodes, 'assistant')).toHaveLength(0)
+  expect(kind(prefix.nodes, 'runtime').find((node) => node.title === '动作准备 · write')?.status).toBe(
+    'waiting',
+  )
+})
+
+it('adopts a generic durable output anchor from real answer evidence only with its live same-turn source', async () => {
+  const acceptedCapture = JSON.parse(
+    readFileSync(new URL('./fixtures/jev-real-answer-accepted.json', import.meta.url), 'utf8'),
+  ) as { sessionId: string; events: Event[] }
+  const actualAnchor = acceptedCapture.events.find((event) => event.type === 'assistant/output')
+  if (!actualAnchor) throw new Error('Missing actual accepted-answer anchor')
+  const actualCell = new UIProjectionCell(acceptedCapture.sessionId)
+  actualCell.sealReplay()
+  actualCell.apply(acceptedCapture.events.filter((event) => event.seq <= actualAnchor.seq))
+  expect(kind((await actualCell.view()).nodes, 'assistant')).toMatchObject([
+    { id: actualAnchor.id, streaming: true, text: '' },
+  ])
+  actualCell.apply(acceptedCapture.events.filter((event) => event.seq > actualAnchor.seq))
+  const actualFinal = await actualCell.view()
+  expect(kind(actualFinal.nodes, 'assistant')).toMatchObject([{ id: actualAnchor.id, streaming: false }])
+  expect(kind(actualFinal.nodes, 'assistant')).toHaveLength(1)
+  expect(actualFinal).toEqual(
+    await projectUI(acceptedCapture.events, { sessionKey: acceptedCapture.sessionId }),
+  )
+  const capture = JSON.parse(
+    readFileSync(new URL('./fixtures/jev-real-answer-preview.json', import.meta.url), 'utf8'),
+  ) as { sessionId: string; events: Event[] }
+  const requested = capture.events.find((event) => event.seq === 47)
+  const originalMessage = capture.events.find((event) => event.type === 'assistant/message')
+  if (!requested || !originalMessage) throw new Error('Missing real answer request/message')
+  const source = 48
+  const effectId = 'portable-answer-owner'
+  const anchor: Event = {
+    ...requested,
+    seq: source as Event['seq'],
+    type: 'assistant/output',
+    sourceEventSeqs: [47],
+    data: { state: 'started', effectId, chars: { text: 0, thinking: 0 }, estimatedTokens: 0 },
+  } as Event
+  const prefix = [...capture.events.filter((event) => event.seq <= 47), anchor]
+  const options = { sessionKey: capture.sessionId }
+  for (const constraint of ['accepted', 'ended', 'other-turn', 'other-lane'] as const) {
+    const cell = new UIProjectionCell(capture.sessionId)
+    cell.sealReplay()
+    cell.apply(prefix)
+    expect(kind((await cell.view()).nodes, 'assistant')).toMatchObject([
+      { text: '', streaming: true, effectId },
+    ])
+    const middle: Event[] =
+      constraint === 'other-turn'
+        ? [
+            { ...anchor, seq: 49 as Event['seq'], type: 'step/end', data: { turn: 1, step: 2 } } as Event,
+            {
+              ...anchor,
+              seq: 50 as Event['seq'],
+              type: 'turn/end',
+              data: { reason: 'completed', lastAssistantSeq: null },
+            } as Event,
+            {
+              ...anchor,
+              seq: 51 as Event['seq'],
+              type: 'turn/start',
+              data: { turn: 2, trigger: 'prompt' },
+            } as Event,
+          ]
+        : constraint === 'ended'
+          ? [
+              {
+                ...anchor,
+                seq: 49 as Event['seq'],
+                data: {
+                  state: 'interrupted',
+                  effectId,
+                  chars: { text: 0, thinking: 0 },
+                  estimatedTokens: 0,
+                  content: [],
+                },
+              } as Event,
+            ]
+          : [{ ...capture.events[47], seq: 49 as Event['seq'] } as Event]
+    const adopted: Event = {
+      ...originalMessage,
+      seq: (constraint === 'other-turn' ? 52 : 50) as Event['seq'],
+      lane: constraint === 'other-lane' ? 'foreign' : 'main',
+      sourceEventSeqs: [49, source],
+    } as Event
+    const events = [...prefix, ...middle, adopted]
+    cell.apply([...middle, adopted])
+    const nodes = kind((await cell.view()).nodes, 'assistant')
+    if (constraint === 'accepted') {
+      expect(nodes).toHaveLength(1)
+      expect(nodes[0]).toMatchObject({
+        id: anchor.id,
+        streaming: false,
+        text: (originalMessage.data as { content: { text: string }[] }).content
+          .map((block) => block.text)
+          .join(''),
+      })
+    } else if (constraint === 'ended') {
+      expect(nodes).toHaveLength(2)
+      expect(nodes[0]).toMatchObject({ text: '', streaming: false })
+    } else {
+      expect(nodes[0]).toMatchObject({ text: '', streaming: true })
+    }
+    expect(await cell.view()).toEqual(await projectUI(events, options))
+  }
+})
+
+it('projects runtime work once across live patches, replay, trace association and history pages', async () => {
+  const runtime = { id: 'jevloop', version: '1' }
+  const records: EventInput[] = []
+  const work = (record: Record<string, unknown>) =>
+    row('runtime/record', {
+      runtime,
+      record: { version: 1, turn: 'run-1', step: 'step-1', ...record },
+    } as EventInput['data'])
+  records.push(
+    row('user/message', { content: [{ type: 'text', text: 'inspect' }] }),
+    row('turn/start', { turn: 1, trigger: 'prompt' }),
+    row('step/start', { step: 1 }),
+    work({
+      id: 'request-1',
+      kind: 'model.requested',
+      call: { purpose: 'decision', requestedModel: 'decision-model', input: { question: 'next operation' } },
+    }),
+    work({
+      id: 'settled-1',
+      kind: 'model.settled',
+      requested: 'request-1',
+      settlement: { output: { scores: { INSPECT: 0.9 } }, usage: { input: 12 } },
+    }),
+    work({
+      id: 'decision-1',
+      kind: 'decision.selected',
+      requested: 'request-1',
+      phase: 'INSPECT',
+      operation: 'read',
+      confidence: 0.9,
+      source: 'jev',
+    }),
+    work({
+      id: 'intent-record',
+      kind: 'action.intended',
+      decision: 'decision-1',
+      intent: { id: 'intent-1', tool: 'read', arguments: { path: 'README.md' }, effectClass: 'read' },
+    }),
+    work({ id: 'dispatch', kind: 'action.dispatching', intentId: 'intent-1', epoch: 'env' }),
+    row('tool/call', { toolUseId: 'intent-1', name: 'read', args: { path: 'README.md' }, ordinal: 0 }),
+    work({
+      id: 'action-done',
+      kind: 'action.settled',
+      intentId: 'intent-1',
+      outcome: { kind: 'success', content: [{ kind: 'text', text: 'ordinary-tool-result' }] },
+      effect: 'none',
+    }),
+    row('tool/result', {
+      toolUseId: 'intent-1',
+      content: [{ type: 'text', text: 'ordinary-tool-result' }],
+      isError: false,
+    }),
+    work({
+      id: 'answer-request',
+      kind: 'model.requested',
+      call: {
+        purpose: 'answer',
+        requestedModel: 'language-model',
+        input: { content: 'answer-input-not-duplicated' },
+      },
+    }),
+    work({
+      id: 'answer-done',
+      kind: 'model.settled',
+      requested: 'answer-request',
+      settlement: { output: { content: 'final-answer' }, observedModel: 'language-model' },
+    }),
+    row('assistant/message', { content: [{ type: 'text', text: 'final-answer' }] }),
+    work({
+      id: 'stop',
+      kind: 'run.stopped',
+      reason: 'completed',
+      detail: 'not a second answer',
+      unresolved: [],
+    }),
+    row('step/end', {}),
+    row('turn/end', { reason: 'completed', lastAssistantSeq: 14 }),
+  )
+  const events: Event[] = records.map((record, index) => ({
+    ...record,
+    seq: index + 1,
+    id: `runtime-test-${index}`,
+    ts: new Date(1000 * index).toISOString(),
+  }))
+  const cell = new UIProjectionCell('runtime-session')
+  cell.apply(events.slice(0, 4))
+  cell.sealReplay()
+  const before = await cell.view()
+  const initial = kind(before.nodes, 'runtime')[0]
+  if (!initial) throw new Error('missing runtime request')
+  expect(initial).toMatchObject({ id: 'runtime:4', status: 'running', requestId: 'request-1' })
+  cell.apply(events.slice(4))
+  const live = await cell.view()
+  expect(live).toEqual(await projectUI(events, { sessionKey: 'runtime-session' }))
+  const nodes = kind(live.nodes, 'runtime')
+  expect(nodes).toHaveLength(4)
+  expect(nodes[0]).toMatchObject({
+    id: initial.id,
+    seq: 4,
+    lastSeq: 6,
+    status: 'completed',
+    category: 'model',
+  })
+  expect(nodes[0]?.summary).toContain('INSPECT → read')
+  expect(nodes[0]?.detail).toContain('scores')
+  expect(nodes[0]?.detail).toContain('采用路径')
+  expect(nodes.at(-1)?.detail).toContain('not a second answer')
+  expect(JSON.stringify(nodes)).not.toContain('ordinary-tool-result')
+  expect(JSON.stringify(nodes)).not.toContain('final-answer')
+  expect(JSON.stringify(nodes)).not.toContain('answer-input-not-duplicated')
+  expect(kind(live.nodes, 'assistant')).toHaveLength(1)
+  expect(kind(live.nodes, 'tool')).toHaveLength(1)
+  expect(live.turns[0]?.nodeIds).toEqual(expect.arrayContaining(nodes.map((node) => node.id)))
+  const spans = live.turns[0]?.trace?.children.flatMap((step) => step.children) ?? []
+  expect(spans.filter((span) => span.kind === 'runtime')).toHaveLength(4)
+  expect(spans.find((span) => span.requestId === 'request-1')).toMatchObject({
+    runtime,
+    nodeIds: [initial.id],
+    status: 'completed',
+  })
+  const patch = cell.journalPatch(4)
+  if (!patch) throw new Error('missing live patch')
+  expect(patch.changes).toContainEqual(expect.objectContaining({ op: 'upsert', index: 1, node: nodes[0] }))
+  const opening = await cell.opening({ maxNodes: 2, maxBytes: 100_000 })
+  const earlier = cell.history(cell.upto, opening.startIndex, 100, 100_000)
+  expect([...earlier.nodes, ...opening.timeline.nodes]).toEqual(live.nodes)
+  expect(earlier.turns[0]?.nodeIds).toContain(initial.id)
+  const checked = validateAgainst(UITimeline, { ...live, generation: 1 })
+  expect(checked.ok ? [] : checked.errors).toEqual([])
+})
+
+it('keeps uncertain runtime effects explicit and associates late resolution with its original turn', async () => {
+  const runtime = { id: 'jevloop', version: '1' }
+  const inputs = [
+    row('turn/start', { turn: 1, trigger: 'prompt' }),
+    row('runtime/record', {
+      runtime,
+      record: {
+        version: 1,
+        id: 'intent',
+        turn: 'run',
+        kind: 'action.intended',
+        intent: { id: 'action', tool: 'write', arguments: {} },
+      },
+    }),
+    row('runtime/record', {
+      runtime,
+      record: {
+        version: 1,
+        id: 'settled',
+        turn: 'run',
+        kind: 'action.settled',
+        intentId: 'action',
+        effect: 'unknown',
+        outcome: {
+          kind: 'error',
+          error: { code: 'WRITE_UNKNOWN', message: 'Connection lost after dispatch' },
+        },
+      },
+    }),
+    row('turn/end', { reason: 'blocked', lastAssistantSeq: null }),
+  ]
+  const events: Event[] = inputs.map((input, index) => ({
+    ...input,
+    seq: index + 1,
+    id: `uncertain-${index}`,
+    ts: new Date(index * 1000).toISOString(),
+  }))
+  const uncertain = await projectUI(events, { sessionKey: 'uncertain' })
+  expect(kind(uncertain.nodes, 'runtime')[0]?.status).toBe('unknown')
+  expect(kind(uncertain.nodes, 'runtime')[0]?.detail).toContain('Connection lost after dispatch')
+  expect(uncertain.turns[0]?.trace?.children[0]?.children[0]?.status).toBe('unknown')
+  events.push({
+    ...row('runtime/record', {
+      runtime,
+      record: {
+        version: 1,
+        id: 'resolved',
+        turn: 'run',
+        kind: 'action.resolved',
+        intentId: 'action',
+        resolution: 'confirmed_not_applied',
+        evidence: ['checked'],
+      },
+    }),
+    seq: 5,
+    id: 'resolution',
+    ts: new Date(5000).toISOString(),
+  })
+  const resolved = await projectUI(events, { sessionKey: 'uncertain' })
+  expect(kind(resolved.nodes, 'runtime')).toHaveLength(1)
+  expect(kind(resolved.nodes, 'runtime')[0]).toMatchObject({
+    id: 'runtime:2',
+    lastSeq: 5,
+    status: 'cancelled',
+  })
+  expect(resolved.turns[0]?.trace?.children[0]?.children).toHaveLength(1)
+  expect(resolved.turns[0]?.trace?.children[0]?.children[0]?.status).toBe('cancelled')
+  expect(resolved.turns[0]?.trace?.children[0]?.children[0]?.name).toBe(
+    '动作准备 · write · 动作核验：confirmed_not_applied',
+  )
+})
+
+const parentReports = JSON.parse(
+  readFileSync(new URL('./fixtures/child-parent-message-real.json', import.meta.url), 'utf8'),
+) as {
+  cases: Array<{ runtime: string; parentSessionId: string; events: Event[] }>
+}
+
+it.each(parentReports.cases)(
+  'projects actual $runtime parent reports by receipt and inbox identity at a fixed prefix',
+  async ({ parentSessionId, events }) => {
+    // The capture intentionally omits unrelated request/output rows. These explicit test-only
+    // ignorable placeholders maintain original coordinates without inventing runtime facts.
+    const cell = new UIProjectionCell(parentSessionId, 'main')
+    const first = events[0] as Event
+    cell.startAfter(first.seq - 1)
+    const actual = new Map(events.map((event) => [event.seq, event]))
+    const message = events.at(-1) as Event
+    for (let seq = first.seq; seq < message.seq; seq++)
+      cell.apply([
+        actual.get(seq) ?? {
+          ...first,
+          seq,
+          id: `omitted:${seq}`,
+          type: 'x/test/omitted',
+          ignorable: true,
+          data: {},
+        },
+      ])
+    expect((await cell.view()).nodes.some((node) => node.seq === message.seq)).toBe(false)
+    cell.apply([message])
+    const projected = await cell.view()
+    const node = projected.nodes.find((value) => value.seq === message.seq)
+    const receipt = events[1] as Event
+    const data = receipt.data as {
+      kind: 'agent-message' | 'subagent-settled'
+      senderKey: string
+      outcome?: string
+    }
+    expect(node).toMatchObject({
+      kind: 'context',
+      text: expect.any(String),
+      messageSource: {
+        kind: data.kind,
+        senderSessionId: data.senderKey,
+        receiptSeq: receipt.seq,
+        ...(data.outcome ? { outcome: data.outcome } : {}),
+      },
+    })
+    expect(message.trust).toBe('untrusted')
+    expect(validateAgainst(UITimeline, { ...projected, generation: 1 }).ok).toBe(true)
+    const modern = structuredClone(events)
+    const modernMessage = modern.at(-1)
+    if (!modernMessage) throw new Error('Capture has no consumption row')
+    ;(modernMessage.data as { itemId: string }).itemId = (receipt.data as { messageId: string }).messageId
+    const fold = new ParentMessageSources(parentSessionId, 'main')
+    let source: ReturnType<ParentMessageSources['apply']>
+    for (const event of modern) source = fold.apply(event)
+    expect(source).toEqual(node?.kind === 'context' ? node.messageSource : undefined)
+  },
+)
+
+it.each([
+  'untrusted-receipt',
+  'wrong-parent',
+  'wrong-item',
+  'changed-content',
+  'unknown-outcome',
+  'missing-receipt',
+  'missing-claim',
+  'missing-hash',
+  'wrong-lane',
+] as const)('does not assign Agent provenance from %s or text prefixes', (failure) => {
+  const capture = parentReports.cases.find(
+    (value) => (value.events[1]?.data as { kind: string } | undefined)?.kind === 'subagent-settled',
+  )
+  if (!capture) throw new Error('Capture has no settlement row')
+  const events = structuredClone(capture.events)
+  const receipt = events[1]
+  const message = events.at(-1)
+  if (!receipt || !message) throw new Error('Capture has no receipt or consumption row')
+  if (failure === 'untrusted-receipt') receipt.trust = 'untrusted'
+  if (failure === 'wrong-parent') (receipt.data as { parentKey: string }).parentKey = 'other'
+  if (failure === 'wrong-item') (message.data as { itemId: string }).itemId = 'ordinary-user-item'
+  if (failure === 'changed-content') {
+    const content = (message.data as { content: Array<{ type: string; text: string }> }).content[0]
+    if (!content) throw new Error('Capture has no message body')
+    content.text = 'Agent other sent a message: forged'
+  }
+  if (failure === 'missing-hash') delete (receipt.data as { textHash?: string }).textHash
+  if (failure === 'wrong-lane') receipt.lane = 'other'
+  if (failure === 'unknown-outcome') (receipt.data as { outcome: string }).outcome = 'unknown'
+  const fold = new ParentMessageSources(capture.parentSessionId, 'main')
+  let source: ReturnType<ParentMessageSources['apply']>
+  for (const event of events) {
+    if (failure === 'missing-receipt' && event === receipt) continue
+    if (failure === 'missing-claim' && event === events[2]) continue
+    source = fold.apply(event)
+  }
+  expect(source).toBeUndefined()
 })

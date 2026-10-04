@@ -74,6 +74,13 @@ import { PersistentArtifactReadAuthorityIndex } from '../local/artifact-read-aut
 import type { AttachedFeed } from '../local/attached.js'
 import type { AuthConfig } from '../local/auth.js'
 import { CommandQueue } from '../local/command-queue.js'
+import { comparisonAdmissionGuard } from '../local/comparison-admission.js'
+import { ComparisonCapture } from '../local/comparison-capture.js'
+import { comparisonIdleGate } from '../local/comparison-idle-gate.js'
+import {
+  type ComparisonRetirementBackend,
+  createComparisonRetirementService,
+} from '../local/comparison-retirement-service.js'
 import type { LockedPackageMutationStatusSource } from '../local/computer-use-control.js'
 import { type ConnectionState, LocalEndpoint } from '../local/endpoint.js'
 import { disposeFeeds, type Feed, registerAcp } from '../local/methods/acp.js'
@@ -84,6 +91,12 @@ import {
   requireSessionOwner,
 } from '../local/methods/agnes.js'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from '../local/methods/artifacts.js'
+import {
+  type ComparisonLedgerReader,
+  openComparisonStorage,
+  registerComparison,
+} from '../local/methods/comparison.js'
+import { registerComparisonRetirementRPC } from '../local/methods/comparison-retirement.js'
 import { registerConfiguration } from '../local/methods/config.js'
 import { registerDiagnostics } from '../local/methods/diagnostics.js'
 import { executeJournaledEffect, registerExtensions } from '../local/methods/extensions.js'
@@ -128,7 +141,7 @@ import {
 } from '../packages/index.js'
 import { discoverLocalExamples } from '../packages/local-examples.js'
 import { pluginProposalSourceAdapter } from '../packages/plugin-source.js'
-import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
+import type { PreviewSnapshotEntry, PreviewUpdate, Registry, SessionCloseConfirmation } from '../registry.js'
 import {
   createResourceControlService,
   createResourceControlStore,
@@ -150,6 +163,7 @@ import {
   StorageLister,
   TicketIndex,
 } from '../storage/lister.js'
+import { readStoredRuntime } from '../storage/runtime-identity.js'
 import {
   MemorySessionPrincipalOwnership,
   SessionPrincipalOwnershipIndex,
@@ -282,6 +296,9 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     { cwd: string; preset: string | null; promise: Promise<SessionEntry> }
   >()
 
+  private readonly closeEpochs = new Map<string, number>()
+  private closingAll = false
+
   constructor(
     private readonly inner: WorkerRegistry,
     private readonly workspaces: SessionWorkspacePort,
@@ -291,15 +308,20 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    runtime?: string
     credential?: unknown
     resume?: boolean
   }): Promise<SessionEntry> {
+    if (this.closingAll) throw new Error('supervisor registry is closing')
     if (o.key) {
       const pending = this.opening.get(o.key)
       if (pending) {
         if (pending.cwd !== o.cwd || pending.preset !== (o.preset ?? null))
           throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
-        return pending.promise
+        const entry = await pending.promise
+        if (o.runtime !== undefined && (await entry.session.runtimeState()).runtime.id !== o.runtime)
+          throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
+        return entry
       }
       const promise = this.openFresh(o)
       this.opening.set(o.key, { cwd: o.cwd, preset: o.preset ?? null, promise })
@@ -317,9 +339,13 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    runtime?: string
     credential?: unknown
     resume?: boolean
   }): Promise<SessionEntry> {
+    const epoch = o.key ? (this.closeEpochs.get(o.key) ?? 0) : 0
+    const current = (): boolean =>
+      !this.closingAll && (!o.key || (this.closeEpochs.get(o.key) ?? 0) === epoch)
     const persisted = o.key ? this.workspaces.get(o.key) : undefined
     if (o.key && persisted !== undefined && persisted !== o.cwd)
       throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
@@ -331,8 +357,18 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
       if (currentPreset !== null && currentPreset !== undefined && currentPreset !== o.preset)
         throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
     }
+    if (o.key && o.runtime !== undefined) {
+      const active = this.inner.get(o.key)
+      const metadata = this.workspaces.metadata(o.key)
+      const owner =
+        active?.session.runtimeIdentity ??
+        (metadata?.createdAt ? readStoredRuntime(metadata.runtime) : undefined)
+      if (owner && owner.id !== o.runtime)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
+    }
     const cwd = persisted ?? o.cwd
     const wasOpen = o.key ? this.inner.get(o.key) !== undefined : false
+    if (!current()) throw new Error('session was closed while opening')
     const entry = await this.inner.open({ ...o, cwd })
     try {
       this.workspaces.put(entry.key, entry.session.cwd)
@@ -344,6 +380,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
       if (!wasOpen) await this.inner.close(entry.key).catch(() => undefined)
       throw error
     }
+    if (!current()) throw new Error('session was closed while opening')
     return new RemoteEntryView(entry)
   }
   async fork(o: {
@@ -404,9 +441,21 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     return this.inner.keys()
   }
   close(key: string): Promise<void> {
+    this.closeEpochs.set(key, (this.closeEpochs.get(key) ?? 0) + 1)
     return this.inner.close(key)
   }
+  closeAndConfirm(
+    key: string,
+    expected?: { expectedWriterRunId: string; expectedOwnerEpoch?: number },
+  ): Promise<SessionCloseConfirmation> {
+    // Conditional retirement closes are already persistently fenced and must not invalidate
+    // an unrelated replacement before the inner registry has checked its exact writer.
+    if (expected) return this.inner.closeAndConfirm(key, expected)
+    void this.close(key).catch(() => undefined)
+    return this.inner.closeAndConfirm(key)
+  }
   closeAll(): Promise<void> {
+    this.closingAll = true
     return this.inner.closeAll()
   }
 }
@@ -446,6 +495,8 @@ export function supervisorHostFacade(
   initial: ResolvedProfile,
   activationBarrier: ExtensionActivationBarrier,
   pool: Pick<WorkerPool, 'acquireSharedWorker'>,
+  prepareConfiguration?: Host['prepareSessionConfiguration'],
+  configurationAdmissions?: Host['configurationAdmissions'],
 ): {
   host: Host
   update(profile: ResolvedProfile): void
@@ -453,6 +504,7 @@ export function supervisorHostFacade(
   let profile = initial
   const facade = {
     activationBarrier,
+    configurationAdmissions,
     get profile() {
       return profile
     },
@@ -463,9 +515,19 @@ export function supervisorHostFacade(
       throw new Error('supervisor host facade: provider is not available (the supervisor holds no kernel)')
     },
     providerFingerprint: null,
+    prepareSessionConfiguration(key: string) {
+      if (!prepareConfiguration) throw rpcError('CAPABILITY_DENIED')
+      return prepareConfiguration(key)
+    },
     runtimes: [] as ResolvedProfile['runtimes'],
     computerUse: initial.computerUse.enabled ? workerComputerUseStatusSource(pool, () => profile) : undefined,
     presets: {} as Record<string, PresetDoc>,
+    async resolveSessionSelection(input: Parameters<Host['resolveSessionSelection']>[0]) {
+      const worker = await pool.acquireSharedWorker()
+      return (await worker.command('runtime.resolveSelection', input)) as Awaited<
+        ReturnType<Host['resolveSessionSelection']>
+      >
+    },
     createSession(): Promise<HostSession> {
       throw new Error(
         'supervisor host facade: createSession is not available - session lifecycle goes through ' +
@@ -582,6 +644,7 @@ export function supervisorLister(
         const cwd = workspaces.get(key)
         items.push({
           sessionId: key,
+          runtime: readStoredRuntime(projected?.runtime),
           createdAt: projected?.createdAt ?? '',
           lastSeq: state.lastSeq,
           generation: active?.generation ?? projected?.generation ?? 0,
@@ -614,6 +677,8 @@ async function persistResolvedProfile(file: string, profile: ResolvedProfile): P
 }
 
 export type StartSupervisorOptions = {
+  comparisonRetirement?: ComparisonRetirementBackend
+  comparisonLedger?: ComparisonLedgerReader
   config: DaemonConfig
   profile: ResolvedProfile
   /** `join(home, 'profiles', profile.name)`. Not derivable from `profile.dataDir`: a profile's
@@ -996,6 +1061,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       })
       startupCleanup.push(() => stopJwksCache?.())
     }
+    const comparisonStorage = openComparisonStorage(o.config.dataDir)
+    const assertSessionAdmitted = comparisonAdmissionGuard(comparisonStorage)
+    commandQueue.setAdmissionGuard(assertSessionAdmitted)
+    const comparisonDrains = new Set<() => Promise<void>>()
+    startupCleanup.push(() => comparisonStorage.close())
     const tickets = jobTables ? new TicketIndex(jobTables.table('approval_tickets')) : undefined
     const workspaces: SessionWorkspacePort = jobTables
       ? new SessionWorkspaceIndex(jobTables.table('session_workspaces'))
@@ -1039,6 +1109,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         ? new WorkspaceBindingIndex(jobTables.table('workspace_bindings'))
         : new MemoryWorkspaceBindings(),
     )
+    workspaceCatalog.markComparisonSessions(comparisonStorage.comparisonSessionIds())
     workspaceCatalogRef = workspaceCatalog
     // The CLI/launcher supplied startup root is one of D44's two authority sources. Register it
     // once before resource-control resolves its default workspace; ambient cwd never grants this.
@@ -1128,6 +1199,43 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f) => {
+        if (f.method === 'question-provider') {
+          const identity = f.params as {
+            sessionKey?: unknown
+            writerRunId?: unknown
+            generation?: unknown
+          } | null
+          const entry = registry.get(sessionKey)
+          const execution = entry?.session.executionOwner()
+          const owner = sessionOwnership.resolve(sessionKey)
+          const ready = () =>
+            !!owner?.active &&
+            sessionOwnership.resolve(sessionKey)?.principalId === owner.principalId &&
+            sessionOwnership.resolve(sessionKey)?.active === true &&
+            registry.get(sessionKey) === entry &&
+            !!execution &&
+            entry?.session.executionOwner()?.writerRunId === execution.writerRunId &&
+            entry?.session.executionOwner()?.workerGeneration === execution.workerGeneration &&
+            [...conns].some(
+              ({ conn }) =>
+                conn.initialized &&
+                conn.principalId === owner.principalId &&
+                conn.capabilities.questions === true &&
+                conn.attached.has(sessionKey),
+            )
+          if (
+            !entry ||
+            !identity ||
+            identity.sessionKey !== sessionKey ||
+            identity.writerRunId !== execution?.writerRunId ||
+            identity.generation !== execution?.generation ||
+            !ready()
+          )
+            throw rpcError('SEMANTIC_REJECTED', { code: 'NO_PROVIDER' })
+          const comparison = await comparisonStorage.scoped(owner!.principalId).findSession(sessionKey)
+          if (!ready()) throw rpcError('SEMANTIC_REJECTED', { code: 'NO_PROVIDER' })
+          return { allowSkip: !comparison }
+        }
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params)
         if (f.method === 'mcp-manage' || f.method === 'mcp-manage-abort')
@@ -1200,7 +1308,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       })
     })
-    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection)
+    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, assertSessionAdmitted)
     // Resource lifecycle owns a profile-scoped service generation, independent of chat workers.
     if (localResourceStore) {
       const resourceAdapters = installResourceServiceAdapters({
@@ -1463,7 +1571,52 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       await effectivePackageAdmin.service.rebuildClientModules(o.profile.name)
     }
     const supervisorRegistry = new SupervisorRegistry(registry, workspaces)
-    const hostFacade = supervisorHostFacade(o.profile, activationBarrier, pool)
+    const comparisonRetirement = o.comparisonRetirement
+      ? createComparisonRetirementService({
+          storage: comparisonStorage,
+          backend: {
+            ...o.comparisonRetirement,
+            idleGate:
+              o.comparisonRetirement.idleGate ??
+              comparisonIdleGate({
+                ledger: o.comparisonRetirement.ledger,
+                remote: (key) => registry.get(key)?.session,
+              }),
+          },
+          queue: commandQueue,
+          ownership: sessionOwnership,
+          registry: supervisorRegistry,
+          dataDir: o.config.dataDir,
+        })
+      : undefined
+    if (comparisonRetirement) comparisonDrains.add(() => comparisonRetirement.drain())
+    const comparisonCapture = o.comparisonLedger
+      ? new ComparisonCapture({
+          storage: comparisonStorage,
+          ledger: o.comparisonLedger,
+          generation: (key) => registry.get(key),
+          subscribe: (key, receive) => supervisorRegistry.subscribe(key, receive),
+          authorize: (principal, key) => {
+            if (sessionOwnership.resolve(key)?.principalId !== principal) throw rpcError('CAPABILITY_DENIED')
+          },
+        })
+      : undefined
+    if (comparisonCapture) startupCleanup.push(() => comparisonCapture.close())
+    const hostFacade = supervisorHostFacade(
+      o.profile,
+      activationBarrier,
+      pool,
+      (key) => registry.require(key).session.prepareSessionConfiguration(),
+      {
+        acquire: (input) => registry.require(input.sessionId).session.acquireConfiguration(input),
+        check: (key, token, seal) => registry.require(key).session.checkConfiguration(token, seal),
+        enqueue: (key, token, message) => registry.require(key).session.enqueueConfiguration(token, message),
+        run: (key, token, options) => registry.require(key).session.runConfiguration(token, options),
+        release: (key, token) => registry.require(key).session.releaseConfiguration(token),
+        cancel: (key, inputId, actor, onlyMatching) =>
+          registry.require(key).session.cancelConfiguration(inputId, actor, onlyMatching),
+      },
+    )
     const host = hostFacade.host
     const callService = workerServiceCaller(pool, () => host.profile)
     const inspectService = workerServiceInspector(pool, () => host.profile)
@@ -1705,6 +1858,15 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       const artifactReadConfigured = artifactRead !== undefined
       const cx: AgnesContext = {
         host,
+        questionControl: {
+          resolveActor: (credential, key) =>
+            o.ports?.resolveActor
+              ? o.ports.resolveActor(credential, 'session', key)
+              : registry.require(key).session.resolveQuestionActor(credential),
+          pending: (key) => registry.get(key)?.session.questionsPending() ?? [],
+          answer: (key, id, answer, actor) => registry.require(key).session.answerQuestion(id, answer, actor),
+          cancel: (key, id, actor) => registry.require(key).session.cancelQuestion(id, actor),
+        },
         registry: supervisorRegistry,
         prompter,
         clock,
@@ -1729,6 +1891,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         // local credential. Any custom principals seam stays closed before a worker exists.
         resolveNewSessionActor,
         sessionOwnership,
+        ordinarySessionIds: (sessionIds) => {
+          const comparisonIds = new Set(comparisonStorage.comparisonSessionIds())
+          return workspaceCatalog.ordinarySessionIds(sessionIds).filter((key) => !comparisonIds.has(key))
+        },
         hasSessionFact: (sessionId: string) =>
           supervisorRegistry.get(sessionId) !== undefined ||
           workspaceCatalog.sessionPath(sessionId) !== undefined,
@@ -1740,6 +1906,19 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         claims,
         ...(selectedJobs ? { jobs: selectedJobs } : {}),
         lister,
+        runtimeCatalog: async () => {
+          const worker = await pool.acquireSharedWorker()
+          return (
+            (await worker.command('runtime.catalog', {})) as import('@agnes/protocol').RuntimeListResult
+          ).items
+        },
+        readRuntimeState: async (sessionId: string) => {
+          const active = supervisorRegistry.get(sessionId)
+          if (active) return active.session.runtimeState()
+          const metadata = workspaces.metadata(sessionId)
+          if (!metadata?.createdAt) return undefined
+          return { runtime: readStoredRuntime(metadata.runtime), phase: 'closed' as const }
+        },
         ...(o.ports?.directory ? { directory: o.ports.directory } : {}),
         resolveActor,
         ...(tickets ? { tickets } : {}),
@@ -1805,6 +1984,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       registerSessionPreferences(ep, lister, preferences)
       registerWorkspaces(ep, workspaceCatalog)
       registerAcp(ep, cx, feeds, attached)
+      const comparison = registerComparison(ep, cx, {
+        dataDir: o.config.dataDir,
+        storage: comparisonStorage,
+        ...(o.comparisonLedger ? { ledger: o.comparisonLedger } : {}),
+        ...(comparisonCapture ? { capture: comparisonCapture } : {}),
+      })
+      comparisonDrains.add(comparison.drain)
+      registerComparisonRetirementRPC(ep, comparisonRetirement)
       registerAgnes(ep, cx, feeds, attached)
       registerDiagnostics(ep, {
         requireSessionOwner: requireSessionOwner(cx),
@@ -1886,6 +2073,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       const onClose = () => {
         conns.delete(entry)
         disposeFeeds(feeds)
+        void comparison.drain().then(
+          () => comparisonDrains.delete(comparison.drain),
+          () => undefined,
+        )
       }
       return { ep, onClose }
     }
@@ -1983,9 +2174,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           if (signal.aborted) return
           await run(() => scheduler?.stop())
           if (signal.aborted) return
+          comparisonCapture?.beginShutdown()
+          await run(() => comparisonRetirement?.drain())
           await run(() => registry.closeAll())
           if (signal.aborted) return
           await run(() => pool.closeAll(graceMs))
+          await run(() => Promise.all([...comparisonDrains].map((drain) => drain())).then(() => undefined))
+          await run(() => comparisonCapture?.close())
+          if (!errors.length) comparisonStorage.close()
           if (errors.length) throw new AggregateError(errors, 'failed to close daemon workers')
         },
         killWorkers: () => pool.killAll(),
@@ -2028,6 +2224,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     return {
       ...health,
       activationBarrier,
+      ...(comparisonRetirement ? { comparisonRetirement } : {}),
       socketPath: o.config.socketPath,
       owner: { ...lock.owner },
       ...(wsServer && wsToken ? { ws: { url: wsServer.url, token: wsToken } } : {}),
@@ -2088,6 +2285,14 @@ export async function startProductionSupervisor(
   try {
     supervisor = await (deps.start ?? startSupervisor)({
       ...o,
+      comparisonRetirement: { ...o.comparisonRetirement, ledger: storage },
+      comparisonLedger: {
+        captureTree: (key) => storage.captureComparisonTree(key),
+        async head(key) {
+          return (await storage.scan(key, { order: 'desc', limit: 1 }))[0]?.seq ?? 0
+        },
+        scan: (key, query) => storage.scan(key, query),
+      },
       jobTables: adaptHostTables(storage.tables('@agnes/daemon')),
       artifactAuthorityTable: adaptHostTables(storage.tables('@agnes/daemon/artifact-read-authority')).table(
         'artifact_read_authority',

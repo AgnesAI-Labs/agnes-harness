@@ -30,6 +30,11 @@ const durableSeq = new Map<string, number>(
 const saveDurableSeq = (): void => {
   if (durableFile) writeFileSync(durableFile, JSON.stringify(Object.fromEntries(durableSeq)))
 }
+const owners = new Map<
+  string,
+  { sessionKey: string; writerRunId: string; generation: number; workerGeneration: number }
+>()
+let ownerSequence = 0
 let delayedExit = false
 if (!socketPath || !token || !workerKey || !Number.isSafeInteger(generation) || generation < 1)
   throw new Error('fake-worker missing required AGNES_* env vars')
@@ -86,6 +91,13 @@ socket.once('connect', () => {
         continue
       }
       if (f.kind === 'session.open') {
+        const owner = owners.get(f.sessionKey) ?? {
+          sessionKey: f.sessionKey,
+          writerRunId: `r:${f.sessionKey}:${++ownerSequence}`,
+          generation: 1,
+          workerGeneration: generation,
+        }
+        owners.set(f.sessionKey, owner)
         if (f.sessionKey.endsWith(':delayed-exit')) delayedExit = true
         socket.write(
           encodeFrame({
@@ -94,7 +106,7 @@ socket.once('connect', () => {
             sessionKey: f.sessionKey,
             result: {
               sessionKey: f.sessionKey,
-              writerRunId: `r:${f.sessionKey}`,
+              writerRunId: owner.writerRunId,
               generation: 1,
               lastSeq: durableSeq.get(f.sessionKey) ?? 0,
             },
@@ -102,7 +114,22 @@ socket.once('connect', () => {
         )
         continue
       }
-      if (f.kind === 'session.tail' || f.kind === 'session.close') {
+      if (f.kind === 'session.close') {
+        const owner = owners.get(f.sessionKey)
+        const matched =
+          owner &&
+          f.owner &&
+          Object.entries(owner).every(([key, value]) => f.owner?.[key as keyof typeof owner] === value)
+        const result = matched
+          ? f.sessionKey.endsWith(':legacy-close')
+            ? {}
+            : { exited: true, owner }
+          : { exited: false, reason: 'owner-unknown' }
+        if (matched) owners.delete(f.sessionKey)
+        socket.write(encodeFrame({ kind: 'reply', requestId: f.requestId, sessionKey: f.sessionKey, result }))
+        continue
+      }
+      if (f.kind === 'session.tail') {
         socket.write(
           encodeFrame({ kind: 'reply', requestId: f.requestId, sessionKey: f.sessionKey, result: {} }),
         )

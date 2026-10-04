@@ -7,12 +7,14 @@
 // the ledger back off disk instead.
 import {
   type EventEnvelope,
+  type RuntimeIdentity,
   readSessionTitle,
   SESSION_TITLE_EVENT,
   SessionTitleRecord,
   validateAgainst,
 } from '@agnes/protocol'
 import type { SessionLister, SessionMetaRow } from '../local/ports.js'
+import { readStoredRuntime } from './runtime-identity.js'
 import { ensure, type TableHandle } from './table.js'
 
 type EventGroupRow = { session_key: string; first_ts: number; last_seq: number }
@@ -131,6 +133,9 @@ export class StorageLister implements SessionLister {
         : undefined)
     return {
       sessionId: r.session_key,
+      runtime: readStoredRuntime(
+        start ? (JSON.parse(start.data) as { runtime?: unknown }).runtime : undefined,
+      ),
       createdAt: new Date(r.first_ts).toISOString(),
       lastSeq: r.last_seq,
       generation,
@@ -257,6 +262,7 @@ export interface SessionWorkspacePort {
 }
 
 export type SessionWorkspaceMeta = {
+  runtime?: RuntimeIdentity
   title?: string
   /** `ts` of the latest `user/message`; absent until someone chats in the session. */
   lastActiveAt?: string
@@ -311,6 +317,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
         profile_hash TEXT
       )`,
     )
+    ensureColumn(t, 'runtime', 'TEXT')
     ensureColumn(t, 'title', 'TEXT')
     ensureColumn(t, 'last_active_at', 'TEXT')
     // The workspace table shipped before the listing projection. Migrate by direct column probes;
@@ -365,8 +372,8 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
   }
 
   metadata(sessionKey: string): SessionWorkspaceMeta | undefined {
-    const row = this.t.get<SessionWorkspaceMeta>(
-      'SELECT created_at AS createdAt, last_seq AS lastSeq, generation, preset, profile_hash AS profileHash, title, last_active_at AS lastActiveAt FROM session_workspaces WHERE session_key = ?',
+    const row = this.t.get<Omit<SessionWorkspaceMeta, 'runtime'> & { runtime: string | null }>(
+      'SELECT created_at AS createdAt, last_seq AS lastSeq, generation, preset, profile_hash AS profileHash, title, last_active_at AS lastActiveAt, runtime FROM session_workspaces WHERE session_key = ?',
       [sessionKey],
     )
     if (!row) return undefined
@@ -376,6 +383,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
       generation: row.generation ?? 0,
       preset: row.preset ?? null,
       profileHash: row.profileHash ?? null,
+      ...(row.runtime ? { runtime: readStoredRuntime(JSON.parse(row.runtime)) } : {}),
       ...(row.title ? { title: row.title } : {}),
       ...(row.lastActiveAt ? { lastActiveAt: row.lastActiveAt } : {}),
     }
@@ -387,6 +395,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
     let createdAt = current.createdAt
     let preset = current.preset
     let profileHash = current.profileHash
+    let runtime = current.runtime
     let title = current.title
     let lastActiveAt = current.lastActiveAt
     if (event.seq > current.lastSeq) {
@@ -396,8 +405,14 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
         title = undefined
       if (event.type === 'user/message') lastActiveAt = event.ts
     }
-    const data = event.data as { preset?: unknown; resolvedProfileHash?: unknown; to?: unknown } | null
+    const data = event.data as {
+      preset?: unknown
+      resolvedProfileHash?: unknown
+      to?: unknown
+      runtime?: unknown
+    } | null
     if (event.type === 'session/start') {
+      runtime = readStoredRuntime(data?.runtime)
       if (!createdAt) createdAt = event.ts
       preset = typeof data?.preset === 'string' ? data.preset : null
       profileHash = typeof data?.resolvedProfileHash === 'string' ? data.resolvedProfileHash : null
@@ -408,7 +423,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
       `UPDATE session_workspaces
        SET created_at = ?, last_seq = CASE WHEN last_seq < ? THEN ? ELSE last_seq END,
            generation = CASE WHEN generation < ? THEN ? ELSE generation END,
-           preset = ?, profile_hash = ?, title = ?, last_active_at = ?
+           preset = ?, profile_hash = ?, title = ?, last_active_at = ?, runtime = ?
        WHERE session_key = ?`,
       [
         createdAt || null,
@@ -420,6 +435,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
         profileHash,
         title ?? null,
         lastActiveAt ?? null,
+        runtime ? JSON.stringify(runtime) : null,
         sessionKey,
       ],
     )
@@ -504,10 +520,16 @@ export class MemorySessionWorkspaces implements SessionWorkspacePort {
         delete row.metadata.title
       if (event.type === 'user/message') row.metadata.lastActiveAt = event.ts
     }
-    const data = event.data as { preset?: unknown; resolvedProfileHash?: unknown; to?: unknown } | null
+    const data = event.data as {
+      preset?: unknown
+      resolvedProfileHash?: unknown
+      to?: unknown
+      runtime?: unknown
+    } | null
     if (event.seq > row.metadata.lastSeq) row.metadata.lastSeq = event.seq
     if (generation > row.metadata.generation) row.metadata.generation = generation
     if (event.type === 'session/start') {
+      row.metadata.runtime = readStoredRuntime(data?.runtime)
       if (!row.metadata.createdAt) row.metadata.createdAt = event.ts
       row.metadata.preset = typeof data?.preset === 'string' ? data.preset : null
       row.metadata.profileHash =

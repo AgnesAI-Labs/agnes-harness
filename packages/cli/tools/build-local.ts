@@ -255,6 +255,11 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   ])
   const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
   await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)
+  for (const sheet of ['jev-workspace.css', 'jev-graph.css', 'runtime-process.css'])
+    await appendFile(
+      join(webOut, 'style.css'),
+      `\n${await readFile(join(repoPackages, 'web', 'public', sheet), 'utf8')}`,
+    )
   const markdownCss = join(webOut, 'vendor', 'assistant-ui.css')
   const [core, light, dark, overrides] = await Promise.all([
     readFile(markdownCss, 'utf8'),

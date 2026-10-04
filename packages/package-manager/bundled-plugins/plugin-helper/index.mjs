@@ -132,8 +132,18 @@ export const pluginHelper = {
     api.registerTool({
       name: 'plugin_helper_install',
       description:
-        'Request native confirmation to install, trust and enable the exact prepared AGH plugin, or query/cancel its proposal. Creating a plugin does not authorize installation. submitted means pending activation: end this turn, then status checks actual running state; new tools appear on later turns. Denial/cancellation must not be retried or bypassed automatically.',
-      parameters: object({ action: enumeration('commit', 'status', 'cancel'), proposalId: string(80) }),
+        'Manage a prepared AGH plugin proposal. commit requires proposalId returned by plugin_helper_create and requests native confirmation to install, trust and enable that exact plugin; creating it does not authorize installation. status requires the same proposalId and reports actual package state; cancel requires proposalId and requests cancellation. prepared is only an inspected preview; installing/submitted are pending: end this turn, then query status on a later turn. ready confirms the exact backend package is running; check the actual tool catalog and test its contribution, and verify UI effects separately. changed/interrupted/failed require inspection of AGH Settings and the reported error; cancelling is pending cancellation. Denial/cancelled must be reported without automatic retry or bypass. This tool does not create files or commit another proposal.',
+      parameters: object({
+        action: {
+          ...enumeration('commit', 'status', 'cancel'),
+          description:
+            'commit requests native approval and installation; status observes; cancel requests cancellation.',
+        },
+        proposalId: {
+          ...string(80),
+          description: 'Exact proposalId returned by plugin_helper_create after reviewing its preview.',
+        },
+      }),
       meta: meta(false),
       async execute(input, ctx) {
         return result(await port(ctx).request(input))

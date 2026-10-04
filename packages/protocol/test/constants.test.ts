@@ -18,9 +18,9 @@ import {
 } from '../src/index.js'
 
 describe('constants', () => {
-  it('freezes 31 event types', () => {
-    expect(EVENT_TYPES).toHaveLength(31)
-    expect(new Set(EVENT_TYPES).size).toBe(31)
+  it('freezes 35 event types', () => {
+    expect(EVENT_TYPES).toHaveLength(35)
+    expect(new Set(EVENT_TYPES).size).toBe(35)
     // The program counter is a register cell, not a row.
     expect(EVENT_TYPES).not.toContain('op.state')
     for (const t of [
@@ -30,11 +30,23 @@ describe('constants', () => {
       'tool/result',
       'request/sent',
       'subagent/cost',
+      'runtime/record',
+      'runtime/cancel',
+      'question/requested',
+      'question/settled',
     ])
       expect(EVENT_TYPES).toContain(t)
   })
   it('accepts extension namespace shapes and rejects others', () => {
     expect(isEventType('x/core/invariant')).toBe(true)
+    expect(isEventType('x/core/child-descriptor')).toBe(true)
+    expect(isEventType('x/core/child-delivery')).toBe(true)
+    expect(isEventType('x/host/session-prepared')).toBe(true)
+    expect(isEventType('x/host/comparison-round-prepared')).toBe(true)
+    expect(isEventType('x/host/session-title')).toBe(true)
+    expect(isEventType('x/host/jev-nested')).toBe(true)
+    expect(isEventType('x/host/jev-other')).toBe(false)
+    expect(isEventType('x/host/other')).toBe(false)
     expect(isEventType('x/agnes/subagent/worktree-skipped')).toBe(true)
     expect(isEventType('x/xinwei/sales-analysis/foo')).toBe(true)
     expect(isEventType('x/xinwei/foo')).toBe(false) // the three-segment form is reserved for core / agnes

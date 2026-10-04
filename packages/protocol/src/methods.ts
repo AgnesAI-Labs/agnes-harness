@@ -62,6 +62,27 @@ export type MethodName =
   | '_agnes/v1/approvalGrants.list'
   | '_agnes/v1/approvalGrants.revoke'
   | '_agnes/v1/artifact.read'
+  | '_agnes/v1/comparison.create'
+  | '_agnes/v1/comparison.list'
+  | '_agnes/v1/comparison.get'
+  | '_agnes/v1/comparison.journal'
+  | '_agnes/v1/comparison.metrics'
+  | '_agnes/v1/comparison.priceDetails'
+  | '_agnes/v1/comparison.events'
+  | '_agnes/v1/comparison.projectUI'
+  | '_agnes/v1/comparison.readToolDetail'
+  | '_agnes/v1/comparison.reconcile'
+  | '_agnes/v1/comparison.submit'
+  | '_agnes/v1/comparison.cancel'
+  | '_agnes/v1/comparison.release'
+  | '_agnes/v1/comparison.remove'
+  | '_agnes/v1/comparison.prune'
+  | '_agnes/v1/questions.pending'
+  | '_agnes/v1/questions.answer'
+  | '_agnes/v1/questions.cancel'
+  | '_agnes/v1/runtime.list'
+  | '_agnes/v1/session.runtime'
+  | '_agnes/v1/session.runtimeControl'
   | 'initialize'
   | 'session/new'
   | 'session/prompt'
@@ -141,6 +162,36 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/approvalGrants.list': clientRequest(A.ApprovalGrantListParams, A.ApprovalGrantListResult),
   '_agnes/v1/approvalGrants.revoke': clientRequest(A.ApprovalGrantRevokeParams, A.ApprovalGrantRecord),
   '_agnes/v1/artifact.read': clientRequest(A.ArtifactReadParams, A.ArtifactReadResult),
+  '_agnes/v1/comparison.create': clientRequest(A.ComparisonCreateParams, A.ComparisonSnapshot),
+  '_agnes/v1/comparison.list': clientRequest(A.ComparisonListParams, A.ComparisonListResult),
+  '_agnes/v1/comparison.get': clientRequest(A.ComparisonIdParams, A.ComparisonSnapshot),
+  '_agnes/v1/comparison.journal': clientRequest(A.ComparisonJournalParams, A.ComparisonJournalResult),
+  '_agnes/v1/comparison.metrics': clientRequest(A.ComparisonMetricsParams, A.ComparisonMetricsResult),
+  '_agnes/v1/comparison.priceDetails': clientRequest(
+    A.ComparisonPriceDetailsParams,
+    A.ComparisonPriceDetailsResult,
+  ),
+  '_agnes/v1/comparison.events': clientRequest(A.ComparisonEventsParams, A.ComparisonEventsResult),
+  '_agnes/v1/comparison.projectUI': clientRequest(A.ComparisonProjectUIParams, A.ComparisonProjectUIResult),
+  '_agnes/v1/comparison.readToolDetail': clientRequest(
+    A.ComparisonReadToolDetailParams,
+    A.ComparisonReadToolDetailResult,
+  ),
+  '_agnes/v1/comparison.reconcile': clientRequest(A.ComparisonIdParams, A.ComparisonSnapshot),
+  '_agnes/v1/comparison.submit': clientRequest(A.ComparisonSubmitParams, A.ComparisonRound),
+  '_agnes/v1/comparison.cancel': clientRequest(A.ComparisonCancelParams, A.ComparisonSnapshot),
+  '_agnes/v1/comparison.release': clientRequest(A.ComparisonRetirementParams, A.ComparisonReleaseResult),
+  '_agnes/v1/comparison.remove': clientRequest(A.ComparisonRetirementParams, A.ComparisonRemovedResult),
+  '_agnes/v1/comparison.prune': clientRequest(A.ComparisonPruneParams, A.ComparisonPruneResult),
+  '_agnes/v1/questions.pending': clientRequest(A.QuestionPendingParams, A.QuestionPendingResult),
+  '_agnes/v1/questions.answer': clientRequest(A.QuestionAnswerParams, A.QuestionResolution),
+  '_agnes/v1/questions.cancel': clientRequest(A.QuestionCancelParams, A.QuestionResolution),
+  '_agnes/v1/runtime.list': clientRequest(A.Empty, A.RuntimeListResult),
+  '_agnes/v1/session.runtime': clientRequest(A.SessionIdParams, A.SessionRuntimeState),
+  '_agnes/v1/session.runtimeControl': clientRequest(
+    A.SessionRuntimeControlParams,
+    A.SessionRuntimeControlResult,
+  ),
   initialize: {
     kind: 'request',
     direction: 'c2s',

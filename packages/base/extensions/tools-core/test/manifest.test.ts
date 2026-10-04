@@ -18,15 +18,23 @@ const manifest = JSON.parse(
     events: boolean
     resources: string[]
     network: string[]
+    questions: boolean
     artifacts: boolean
   }
 }
 
 describe('tools-core manifest', () => {
-  it('declares the five core tool names with no prefix', () => {
+  it('declares the core tool names with no prefix', () => {
     expect(manifest.id).toBe('agnes/tools-core')
     expect(manifest.capabilities.tools.prefix).toBe('')
-    expect(manifest.capabilities.tools.names).toEqual(['read', 'write', 'edit', 'shell', 'todo'])
+    expect(manifest.capabilities.tools.names).toEqual([
+      'read',
+      'write',
+      'edit',
+      'shell',
+      'todo',
+      'ask_user_question',
+    ])
   })
 
   it('claims only the capabilities these tools use', () => {
@@ -41,6 +49,7 @@ describe('tools-core manifest', () => {
     // submitted as jobs; both need the artifacts capability.
     expect(manifest.capabilities.artifacts).toBe(true)
     expect(manifest.capabilities.events).toBe(true)
+    expect(manifest.capabilities.questions).toBe(true)
   })
 
   it('points at an entry file that exists, and an api range', () => {

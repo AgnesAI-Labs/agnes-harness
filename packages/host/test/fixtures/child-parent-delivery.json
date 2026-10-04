@@ -1,0 +1,10 @@
+{
+  "source": "Authorized real Native parent-report capture, 2026-10-03; only opaque delivery identity and outcome metadata retained",
+  "parentKey": "agnes:parent-report:native:2363c986-625d-4841-991f-2d9104f59436",
+  "deliveryId": "agent:agnes:parent-report:native:2363c986-625d-4841-991f-2d9104f59436/01M3ZQVJNDNJRPG90QZYP5G3FJ:main:t0-0b948efe492da1a6d84ab53bdc3d53ab",
+  "deliveryIdLength": 137,
+  "inboxCommandIdMaxLength": 128,
+  "toolResult": { "isError": true, "code": "TOOL_OUTCOME_UNKNOWN" },
+  "childOutboxKinds": ["agent-message", "subagent-settled"],
+  "parentReceiptKinds": ["subagent-settled"]
+}

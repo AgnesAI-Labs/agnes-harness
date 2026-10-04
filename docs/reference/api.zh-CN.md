@@ -59,6 +59,10 @@ async function listSessions(options: CreateClientOptions) {
 
 读取完整工具记录时，使用 `_agnes/v1/session.readToolDetail` 按需读取工具调用及其匹配的结果。传入 `sessionId`，并把工具节点的 `seq` 作为 `callSeq`；有 `resultSeq` 时一并传入。可选的 `offset` 和 `maxBytes` 按 UTF-8 字节分页，单次响应最多 262,144 字节。响应包含 base64 编码的 `data`、`totalBytes` 和 `nextOffset`（最后一块为 `null`）。先解码并拼接各块，再解析 `{call, result?}` JSON。daemon 读取事件前会校验会话访问权限。RPC 和 SDK 的 `Session.readToolDetail(callSeq, resultSeq?)` 都将完整序列化记录限制在 64 MiB；分页不能读取更大的记录。超限时 RPC 返回 `INVALID_PARAMS`，原因是 `detail-too-large`。常规 UI 投影仍使用长度受限的预览，工具节点新增可选 `resultSeq`。
 
+Comparison 读取接口是 `client.comparison.journal({ id, afterSeq?, throughSeq?, limit?, maxBytes? })` 和 `client.comparison.metrics({ id, atSeq })`。Journal 分页保留固定且包含上界的 `throughSeq`、排除起点的 `afterSeq`、累计 lane cuts，以及 coordinator/lane/checkpoint 类型化事实。Metrics 按 cuts 选择前缀，会计基线由后端决定，不接受客户端自定窗口。缺失 tokens 或历史 pricing 保留 null 和 unknown/partial 状态；costs 按货币分别记录。这些读取不会执行会话或 reconcile。`client.comparison.priceDetails({ id, side, atSeq, afterSeq?, limit?, maxBytes? })` 提供固定 cut 的安全逐请求历史报价详情；分页完成与源证据完整分别标记，缺价不使用当前配置补全。新的快照和 journal coordinator 事实包含从会话实际状态冻结的准备回执；固定 cut 的 metrics 仅在发布与源事件都可见时返回它，旧比较仍为未知。当前预设指纹仅证明已解析执行设置，mounted plugin generation 配置明确尚未验证。字段、限制和证据语义见[运行时协议合同](../../packages/protocol/docs/runtime.md)。
+
+`client.comparison.list({ cursor?, limit? })` 只列出当前认证身份保存的摘要，不打开会话。分页固定创建顺序边界，状态仍反映当前已提交记录。准备未完成的比较也会列出；摘要不包含私有提示词和路径，缺失的历史时间保留为 null。
+
 写操作通常通过 clientId/commandId、expected revision/integrity 返回持久化 operation receipt，再查询最终状态。不要收到 receipt 就记录效果成功；不要未知结果后换 commandId 重做外部效果。
 
 ## Skills 写接口

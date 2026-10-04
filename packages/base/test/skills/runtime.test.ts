@@ -307,6 +307,7 @@ describe('skill runtime extension', () => {
     expect(put).not.toHaveBeenCalled()
 
     const nextCall = JSON.parse(first.content[0]?.text?.match(/call skill_read with (\{.*\})\]$/u)?.[1] ?? '')
+    expect(first.structured).toMatchObject({ pageKey: nextCall.pageKey, nextOffset: nextCall.offset })
     revision = 'c'.repeat(64)
     await expect(call(nextCall)).resolves.toMatchObject({ isError: true, structured: { code: 'CHANGED' } })
     revision = 'b'.repeat(64)

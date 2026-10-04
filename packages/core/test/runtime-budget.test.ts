@@ -36,7 +36,11 @@ const model = (): ModelRecord => ({
   contract_id: null,
 })
 
-function setup(storage = new MemoryStorage(), treeBudgetCredits: number | null = 10) {
+function setup(
+  storage = new MemoryStorage(),
+  treeBudgetCredits: number | null = 10,
+  treeBudgetMode: 'default' | 'capped' | 'unlimited' = 'default',
+) {
   const provider = fakeProvider([])
   Object.assign(provider, { models: () => [model()] })
   const kernel = Kernel.create({
@@ -44,7 +48,7 @@ function setup(storage = new MemoryStorage(), treeBudgetCredits: number | null =
     seams: fakeSeams(),
     provider,
     contract: { contract_id: null, parser_version: '1' },
-    preset: { ...presetDefaults(), treeBudgetCredits },
+    preset: { ...presetDefaults(), treeBudgetCredits, treeBudgetMode },
     fsOps: testFsOps(),
     netFetch: async () => new Response(''),
     logger: { debug() {}, info() {}, warn() {}, error() {} },
@@ -474,5 +478,77 @@ describe('explicit tree budget reservation handles', () => {
     expect(recoveredSibling.handle.writerGeneration).toBe(2)
     await releaseTreeReservationHandle(recoveredSession, recoveredSibling.handle)
     await recoveredKernel.close()
+  })
+
+  it('reserves and recovers explicitly unlimited unknown quotes without changing default-null behavior', async () => {
+    const storage = new MemoryStorage()
+    const { kernel } = setup(storage, null, 'unlimited')
+    const session = await kernel.session('unlimited', sessionOpts)
+    const identity = { effectId: 'unknown-quote', requestHash: 'a'.repeat(64) }
+    const held = await reserveTreeBudgetHandle(session, undefined, target, identity)
+    if (held.status !== 'reserved') throw new Error('Expected unlimited reservation')
+    expect(await storage.peekReservation(held.handle.permitId)).toMatchObject({ qMicro: null })
+    expect(await storage.projectTree(held.handle.rootTaskId)).toMatchObject({
+      capMicro: null,
+      unknownHeld: true,
+    })
+    await kernel.close()
+    const recovered = setup(storage, null, 'unlimited').kernel
+    const next = await recovered.session('unlimited', sessionOpts)
+    const reopened = await reserveTreeBudgetHandle(next, undefined, target, identity)
+    if (reopened.status !== 'reserved') throw new Error('Expected recovered unlimited reservation')
+    expect(reopened.handle.permitId).toBe(held.handle.permitId)
+    await settleTreeSpendHandle(next, reopened.handle, undefined, 10 as Seq)
+    expect(await storage.peekReservation(held.handle.permitId)).toMatchObject({
+      status: 'unknown',
+      qMicro: null,
+    })
+    await recovered.close()
+    const defaultKernel = setup(new MemoryStorage(), null).kernel
+    const defaultSession = await defaultKernel.session('default', sessionOpts)
+    expect(await reserveTreeBudgetHandle(defaultSession, undefined, target, identity)).toEqual({
+      status: 'unreserved',
+    })
+    await defaultKernel.close()
+  })
+
+  it('requires a quote for finite overrides and rejects invalid unlimited configurations', async () => {
+    const { kernel } = setup(new MemoryStorage(), 100)
+    const session = await kernel.session('finite', sessionOpts)
+    const identity = { effectId: 'unknown-quote', requestHash: 'a'.repeat(64) }
+    expect(await reserveTreeBudgetHandle(session, undefined, target, identity)).toMatchObject({
+      status: 'blocked',
+      reason: 'budget',
+    })
+    await kernel.close()
+    const unlimited = setup(new MemoryStorage(), null, 'unlimited').kernel
+    const u = await unlimited.session('unlimited', sessionOpts)
+    for (const quote of [-1, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(await reserveTreeBudgetHandle(u, quote, target, identity)).toMatchObject({
+        status: 'blocked',
+        reason: 'budget',
+      })
+    await unlimited.close()
+    const conflicting = setup(new MemoryStorage(), 100, 'unlimited').kernel
+    const bad = await conflicting.session('conflicting', sessionOpts)
+    await expect(reserveTreeBudgetHandle(bad, undefined, target, identity)).rejects.toThrow('conflicts')
+    await conflicting.close()
+  })
+
+  it('does not turn a zero Native estimate into a monetary ceiling on an unlimited tree', async () => {
+    const { kernel, storage } = setup(new MemoryStorage(), null, 'unlimited')
+    const session = await kernel.session('native-unlimited', sessionOpts)
+    expect(await reserveTreeBudget(session, 0, target)).toBe('ok')
+    const permit = treePermitOf(session)
+    if (!permit?.rootTaskId) throw new Error('Expected durable Native reservation')
+    await settleTreeSpend(session, 12, 10 as Seq)
+    expect(await storage.peekReservation(permit.permitId)).toMatchObject({ status: 'settled' })
+    expect(await storage.projectTree(permit.rootTaskId)).toEqual({
+      capMicro: null,
+      settledMicro: 12_000_000n,
+      heldMicro: 0n,
+      unknownHeld: false,
+    })
+    await kernel.close()
   })
 })

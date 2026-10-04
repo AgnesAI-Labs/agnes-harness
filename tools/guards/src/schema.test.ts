@@ -75,15 +75,20 @@ function isExempt(file: string): boolean {
 // correct fix was to relax the guard, not to keep working around it.)
 //
 // `additionalProperties === true` — a genuinely open object — is let through only when registered on
-// this exemption list. The one entry is `ErrorData` in `agnes-v1.json`: the extra fields on
-// `error.data` vary with the error code and cannot be enumerated as `properties`.
+// this exemption list. `ErrorData`'s extra fields vary with the error code. The four Question request
+// definitions preserve DSH-compatible extension fields; those fields are carried as JSON and do not
+// grant authority. Answers, policy and the owner/event/RPC envelopes remain closed. Free text retains
+// its exact content; closing request extensions or imposing content limits would change that contract.
 // Key format is `${relative file path}${RFC 6901 JSON pointer}`, e.g.
 // `packages/protocol/schema/agnes-v1.json#/$defs/ErrorData`. `walk()` retains path segments until
 // `schemaNodeKey()` escapes them, so a property containing `.` or `/` cannot collide with a nested
-// definition. `session-v1.json` has zero exemptions across the whole file, and nothing
-// beyond `ErrorData` may be added.
+// definition. Only these reviewed definitions are exempt, never a document or a name prefix.
 const ADDITIONAL_PROPERTIES_TRUE_EXEMPT = new Set<string>([
   'packages/protocol/schema/agnes-v1.json#/$defs/ErrorData',
+  'packages/protocol/schema/session-v1.json#/$defs/QuestionOption',
+  'packages/protocol/schema/session-v1.json#/$defs/QuestionIntent',
+  'packages/protocol/schema/session-v1.json#/$defs/Question',
+  'packages/protocol/schema/session-v1.json#/$defs/QuestionRequest',
 ])
 
 // MCP servers own their tool input schemas, so this one catalog DTO intentionally combines a small
@@ -267,6 +272,36 @@ describe('checkObjectCloses (dictionary-type exception)', () => {
   it('properties present but additionalProperties missing is flagged', () => {
     const openWithProps = { type: 'object', properties: { a: { type: 'string' } } }
     expect(checkObjectCloses(openWithProps, 'unit-test#/props-open')).not.toBeNull()
+  })
+
+  it('permits only the four reviewed Question request definitions to preserve extension fields', () => {
+    const open = { type: 'object', properties: {}, additionalProperties: true }
+    const file = 'packages/protocol/schema/session-v1.json'
+    for (const name of ['QuestionOption', 'QuestionIntent', 'Question', 'QuestionRequest']) {
+      const key = schemaNodeKey(file, ['$defs', name])
+      expect(checkObjectCloses(open, key)).toBeNull()
+      for (const nearby of [
+        `${key}Copy`,
+        `${key}/properties/nested`,
+        key.replace('session-v1.json', 'session-v1-copy.json'),
+        key.replace('session-v1.json', 'agnes-v1.json'),
+        schemaNodeKey(file, [`$defs.${name}`]),
+        schemaNodeKey(file, [`$defs/${name}`]),
+      ])
+        expect(checkObjectCloses(open, nearby)).not.toBeNull()
+      expect(checkObjectCloses({ ...open, additionalProperties: undefined }, key)).not.toBeNull()
+      expect(checkObjectCloses({ ...open, patternProperties: {} }, key)).toMatch(/patternProperties/)
+    }
+    for (const name of [
+      'QuestionAnswerItem',
+      'QuestionAnswer',
+      'QuestionAnswerPolicy',
+      'QuestionInteraction',
+      'QuestionRequestedData',
+      'QuestionSettledData',
+      'QuestionResolution',
+    ])
+      expect(checkObjectCloses(open, schemaNodeKey(file, ['$defs', name]))).not.toBeNull()
   })
 
   // Before the fix this case was **green** — the guard endorsed the shape — while the generator

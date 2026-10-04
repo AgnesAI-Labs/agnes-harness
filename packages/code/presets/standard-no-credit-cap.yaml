@@ -1,0 +1,6 @@
+# Explicit opt-in without a request-credit cap or a new delegated-tree credit cap.
+# Usage is still recorded; tools, approvals and all non-monetary limits inherit standard.
+name: standard-no-credit-cap
+extends: standard
+budget: { per_request_cap: null }
+subagent: { tree_budget_credits: unlimited }

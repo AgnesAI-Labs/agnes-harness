@@ -219,6 +219,74 @@ function markdownState(node: UINode, turnStatus?: UITurn['status']): Conversatio
   }
 }
 
+function RuntimeMessage({ node }: { node: Extract<UINode, { kind: 'runtime' }> }) {
+  const [expanded, setExpanded] = useState(false)
+  const [evidenceOpen, setEvidenceOpen] = useState(false)
+  const labels = {
+    running: '进行中',
+    waiting: '等待中',
+    completed: '已记录',
+    failed: '失败',
+    cancelled: '已取消',
+    unknown: '结果未知',
+  }
+  const state = labels[node.status]
+  return (
+    <details
+      className="runtime-process-card"
+      data-category={node.category}
+      data-state={node.status}
+      aria-label={`${node.title}：${state}`}
+      onToggle={(event) => {
+        setExpanded(event.currentTarget.open)
+        if (!event.currentTarget.open) setEvidenceOpen(false)
+      }}
+    >
+      <summary>
+        <span className="runtime-process-icon" aria-hidden="true">
+          ◇
+        </span>
+        <strong>{node.title}</strong>
+        <span className="runtime-process-state">{state}</span>
+        <span className="runtime-process-preview">{node.summary}</span>
+      </summary>
+      {expanded && (
+        <div className="runtime-process-body">
+          <dl>
+            {[
+              ['运行循环', `${node.runtime.id}@${node.runtime.version}`],
+              ['用途', node.purpose],
+              ['模型', node.model],
+              ['记录范围', `#${node.seq}–${node.lastSeq}`],
+              ['请求', node.requestId],
+              ['动作意图', node.intentId],
+            ].flatMap(([label, value]) =>
+              value === undefined
+                ? []
+                : [<dt key={`${label}:label`}>{label}</dt>, <dd key={label}>{value}</dd>],
+            )}
+          </dl>
+          {node.detail !== undefined && (
+            <details
+              className="runtime-process-evidence"
+              onToggle={(event) => setEvidenceOpen(event.currentTarget.open)}
+            >
+              <summary>
+                {node.category === 'action'
+                  ? '动作证据'
+                  : node.category === 'stop'
+                    ? '停止详情'
+                    : '决策与调用详情'}
+              </summary>
+              {evidenceOpen && <pre>{node.detail}</pre>}
+            </details>
+          )}
+        </div>
+      )}
+    </details>
+  )
+}
+
 function nativeContent(
   node: UINode,
   props: ConversationMessagesProps,
@@ -227,6 +295,8 @@ function nativeContent(
   thinkingHost?: RefObject<HTMLDivElement>,
 ): ReactNode {
   switch (node.kind) {
+    case 'runtime':
+      return <RuntimeMessage node={node} />
     case 'user':
       return <UserMessage node={node} />
     case 'assistant':
@@ -278,7 +348,28 @@ function nativeContent(
           </div>
         </>
       )
-    case 'context':
+    case 'context': {
+      const source = node.messageSource
+      if (!source) return null
+      const label = source.kind === 'agent-message' ? 'Agent 报告' : '子任务结束通知'
+      const outcome =
+        source.outcome === 'completed'
+          ? '已完成'
+          : source.outcome === 'failed'
+            ? '失败'
+            : source.outcome === 'cancelled'
+              ? '已取消'
+              : undefined
+      return (
+        <details className="runtime-process" open={source.kind === 'agent-message'}>
+          <summary>
+            {label} · {source.senderSessionId}
+            {outcome ? ` · ${outcome}` : ''}
+          </summary>
+          <div className="node-body">{node.text}</div>
+        </details>
+      )
+    }
     case 'context-sections':
       return null
   }
@@ -380,13 +471,21 @@ function Turn({
     const node = nodes.get(id)
     return node && ownerByNodeId.get(id) === turn.id ? [node] : []
   })
-  const users = members.filter((node) => node.kind === 'user')
-  const others = members.filter((node) => node.kind !== 'user')
+  const isInput = (node: UINode) =>
+    node.kind === 'user' || (node.kind === 'context' && node.messageSource !== undefined)
+  const users = members.filter(isInput)
+  const others = members.filter((node) => !isInput(node))
   const pendingApproval = others.some((node) => node.kind === 'approval' && node.state === 'pending')
   const awaitingToolApproval = others.some(
     (node) => node.kind === 'tool' && node.status === 'awaiting_approval',
   )
   const runningTool = others.some((node) => node.kind === 'tool' && node.status === 'running')
+  const runtimeWork = others
+    .filter(
+      (node): node is Extract<UINode, { kind: 'runtime' }> =>
+        node.kind === 'runtime' && (node.status === 'running' || node.status === 'waiting'),
+    )
+    .sort((a, b) => b.lastSeq - a.lastSeq)[0]
   const latestStreaming = others
     .filter((node): node is AssistantNode => node.kind === 'assistant' && node.streaming === true)
     .sort((a, b) => b.seq - a.seq)[0]
@@ -397,6 +496,7 @@ function Turn({
     else if (runningTool) status = '正在执行工具'
     else if (latestStreaming?.text.trim()) status = '正在回复'
     else if (latestStreaming?.thinking?.trim()) status = '正在思考'
+    else if (runtimeWork) status = runtimeWork.title
     else status = '正在准备回复'
   }
   const startedAt = Date.parse(turn.startedAt)
@@ -533,7 +633,7 @@ export function ConversationMessages(props: ConversationMessagesProps) {
     if (
       node &&
       (!visible || visible.has(message.id)) &&
-      node.kind !== 'context' &&
+      (node.kind !== 'context' || node.messageSource !== undefined) &&
       node.kind !== 'context-sections'
     )
       nodes.set(message.id, node)
@@ -564,7 +664,9 @@ export function ConversationMessages(props: ConversationMessagesProps) {
         if (visible && !visible.has(message.id)) return null
         const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
         const node = custom?.node
-        return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
+        return node &&
+          (node.kind !== 'context' || node.messageSource !== undefined) &&
+          node.kind !== 'context-sections' ? (
           <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
         ) : null
       })}

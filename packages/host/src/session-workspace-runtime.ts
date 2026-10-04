@@ -426,7 +426,17 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
     return published
   }
 
-  async reserve(parentKey: string, childKey: string): Promise<ChildWorkspaceLifecycle> {
+  async reserve(
+    parentKey: string,
+    childKey: string,
+    replacement?: (parent: SessionWorkspaceRuntime) => Promise<
+      | {
+          binding: WorkspaceBinding
+          create(invocation: WorkspaceInvocationPort): Promise<SessionWorkspaceRuntime>
+        }
+      | undefined
+    >,
+  ): Promise<ChildWorkspaceLifecycle> {
     if (this.tableClosing) throw fault('E_WORKSPACE_CLOSED', 'workspace table is closing')
     const parent = this.entries.get(parentKey)
     if (parent?.state !== 'ready') throw fault('E_WORKSPACE_REQUIRED', 'parent workspace is unavailable')
@@ -437,6 +447,56 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
       this.reservations.has(childKey)
     )
       throw fault('E_WORKSPACE_UNTRUSTED', 'child workspace key already exists')
+    if (replacement) {
+      const target = await replacement(parent.runtime)
+      if (this.entries.get(parentKey) !== parent || parent.state !== 'ready' || this.tableClosing)
+        throw fault('E_WORKSPACE_CLOSED', 'parent closed during child workspace verification')
+      if (
+        this.entries.has(childKey) ||
+        this.opening.has(childKey) ||
+        this.closing.has(childKey) ||
+        this.reservations.has(childKey)
+      )
+        throw fault('E_WORKSPACE_UNTRUSTED', 'child workspace key changed during verification')
+      if (target) {
+        if (target.binding.sessionKey !== childKey)
+          throw fault('E_WORKSPACE_UNTRUSTED', 'child workspace authority names another child')
+        const runtime = await this.open(target.binding, target.create)
+        if (this.entries.get(parentKey) !== parent || parent.state !== 'ready' || this.tableClosing) {
+          await this.close(childKey)
+          throw fault('E_WORKSPACE_CLOSED', 'parent closed during child workspace construction')
+        }
+        let state: 'pending' | 'committed' | 'closed' = 'pending'
+        const lifecycle: ChildWorkspaceLifecycle = Object.freeze({
+          runtime,
+          invocation: this.invocation(childKey),
+          commit: () => {
+            if (
+              state !== 'pending' ||
+              this.tableClosing ||
+              this.entries.get(parentKey) !== parent ||
+              parent.state !== 'ready' ||
+              this.entries.get(childKey)?.state !== 'ready'
+            )
+              return false
+            state = 'committed'
+            this.reservations.delete(childKey)
+            return true
+          },
+          close: async () => {
+            if (state === 'closed') return
+            await this.close(childKey)
+            state = 'closed'
+            this.children.delete(lifecycle)
+            this.reservations.delete(childKey)
+          },
+        })
+        this.children.add(lifecycle)
+        this.reservations.set(childKey, lifecycle)
+        return lifecycle
+      }
+    }
+    this.closedResults.delete(childKey)
     // Validate and construct every fallible child value before consuming an owner reference. An
     // invalid key must not strand a ref that no lifecycle token exists to release.
     const childBinding = inheritWorkspaceBinding(parent.runtime.binding, childKey)

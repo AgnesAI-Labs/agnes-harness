@@ -63,8 +63,12 @@ function userText(node: Extract<UINode, { kind: 'user' }>): string {
     .join('\n')
 }
 
-function displayText(node: Exclude<UINode, { kind: 'context' | 'context-sections' }>): string {
+function displayText(node: Exclude<UINode, { kind: 'context-sections' }>): string {
   switch (node.kind) {
+    case 'context':
+      return node.text
+    case 'runtime':
+      return `${node.title}: ${node.summary}`
     case 'user':
       return userText(node)
     case 'assistant':
@@ -86,8 +90,9 @@ function displayText(node: Exclude<UINode, { kind: 'context' | 'context-sections
   }
 }
 
-function isConversationNode(node: UINode): node is Exclude<UINode, { kind: 'context' | 'context-sections' }> {
-  if (node.kind === 'context' || node.kind === 'context-sections') return false
+function isConversationNode(node: UINode): node is Exclude<UINode, { kind: 'context-sections' }> {
+  if (node.kind === 'context') return node.messageSource !== undefined
+  if (node.kind === 'context-sections') return false
   if (node.kind === 'assistant')
     return Boolean(
       node.streaming || node.text.trim() || node.thinking?.trim() || node.lostChars !== undefined,

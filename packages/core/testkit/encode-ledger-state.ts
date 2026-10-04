@@ -9,6 +9,8 @@ export type EncodedLedgerState = Omit<
   | 'lastTurn'
   | 'lastStep'
   | 'pendingEffects'
+  | 'assistantOutputs'
+  | 'lastRuntimeRecord'
   | 'pendingApprovals'
   | 'decisions'
   | 'resumedRequests'
@@ -26,6 +28,12 @@ export type EncodedLedgerState = Omit<
   lastStep: Array<[string, number]>
   pendingEffects: Array<
     [string, LedgerState['pendingEffects'] extends ReadonlyMap<string, infer V> ? V : never]
+  >
+  assistantOutputs: Array<
+    [number, LedgerState['assistantOutputs'] extends ReadonlyMap<number, infer V> ? V : never]
+  >
+  lastRuntimeRecord: Array<
+    [string, LedgerState['lastRuntimeRecord'] extends ReadonlyMap<string, infer V> ? V : never]
   >
   pendingApprovals: Array<
     [string, LedgerState['pendingApprovals'] extends ReadonlyMap<string, infer V> ? V : never]
@@ -52,6 +60,8 @@ export function encodeLedgerState(state: LedgerState): EncodedLedgerState {
     lastTurn: [...state.lastTurn],
     lastStep: [...state.lastStep],
     pendingEffects: [...state.pendingEffects],
+    assistantOutputs: [...state.assistantOutputs],
+    lastRuntimeRecord: [...state.lastRuntimeRecord],
     pendingApprovals: [...state.pendingApprovals],
     decisions: [...state.decisions],
     resumedRequests: [...state.resumedRequests],

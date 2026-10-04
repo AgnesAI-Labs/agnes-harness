@@ -48,3 +48,5 @@
 ## 维护与许可
 
 [文档维护](maintainers/maintenance.zh-CN.md) · [发布检查](maintainers/release.zh-CN.md) · [版本管理](maintainers/versioning.zh-CN.md) · [验证记录](maintainers/verification.zh-CN.md) · [许可说明](maintainers/provenance.zh-CN.md) · [Apache-2.0](../LICENSE) · [NOTICE](../NOTICE)
+
+- [Runtime 运行循环与双线对比](guide/runtime-loops.zh-CN.md)

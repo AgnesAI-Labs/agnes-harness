@@ -1143,6 +1143,24 @@
           }
         }
       ]
+    },
+    "ModelPriceRates": {
+      "$ref": "model.json#/$defs/ModelPriceRates"
+    },
+    "ModelPriceSource": {
+      "$ref": "model.json#/$defs/ModelPriceSource"
+    },
+    "ModelPriceWindow": {
+      "$ref": "model.json#/$defs/ModelPriceWindow"
+    },
+    "ModelPriceOffPeak": {
+      "$ref": "model.json#/$defs/ModelPriceOffPeak"
+    },
+    "ModelPricePolicy": {
+      "$ref": "model.json#/$defs/ModelPricePolicy"
+    },
+    "ModelPriceQuote": {
+      "$ref": "model.json#/$defs/ModelPriceQuote"
     }
   }
 }

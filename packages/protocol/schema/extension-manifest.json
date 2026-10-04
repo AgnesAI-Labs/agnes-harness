@@ -44,6 +44,10 @@
         "events": {
           "type": "boolean"
         },
+        "questions": {
+          "type": "boolean",
+          "description": "May request structured human input through the Host-bound questions capability; answers never grant execution permission."
+        },
         "ui": {
           "type": "array",
           "uniqueItems": true,

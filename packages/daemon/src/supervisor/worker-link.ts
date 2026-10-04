@@ -10,7 +10,13 @@ import type {
   WorkerToSupervisor,
   WorkspaceBindingFrame,
 } from './frames.js'
-import { parseWorkerHello } from './frames.js'
+import {
+  parseWorkerHello,
+  readSessionCloseConfirmation,
+  type SessionCloseConfirmation,
+  type SessionCloseOwner,
+  sameSessionCloseOwner,
+} from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
 import { skillInstallReplyError } from './skill-install-error.js'
 
@@ -20,6 +26,11 @@ export type WorkerCommandOptions = { timeoutMs?: number }
 export class WorkerSessionChannel {
   readonly hello: Promise<SessionOpenResult>
   private closed = false
+  private owner: SessionOpenResult | undefined
+  private closePromise: Promise<void> | undefined
+  private confirmation: Promise<SessionCloseConfirmation> | undefined
+  private closeSettled = false
+  private retryableClose = false
 
   constructor(
     readonly sessionKey: string,
@@ -27,12 +38,16 @@ export class WorkerSessionChannel {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      runtime?: string
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,
     private readonly onClosed?: () => void,
   ) {
-    this.hello = worker.openSession(sessionKey, open)
+    this.hello = worker.openSession(sessionKey, open).then((owner) => {
+      this.owner = owner
+      return owner
+    })
   }
 
   get alive(): boolean {
@@ -57,14 +72,88 @@ export class WorkerSessionChannel {
     return this.worker.tailSession(this.sessionKey, fromSeq)
   }
 
-  async closeSession(reason = 'session closed'): Promise<void> {
-    if (this.closed) return
+  closeSession(reason = 'session closed'): Promise<void> {
+    if (this.closePromise && !this.retryableClose) return this.closePromise
+    if (this.closePromise && !this.worker.alive) return this.closePromise
+    this.retryableClose = false
+    this.closeSettled = false
     this.closed = true
-    try {
-      await this.worker.closeSession(this.sessionKey, reason)
-    } finally {
-      this.onClosed?.()
+    const owner = this.closeOwner()
+    let proof: SessionCloseConfirmation | undefined
+    this.closePromise = this.worker.closeSession(this.sessionKey, reason, {}, owner).then((reply) => {
+      proof = readSessionCloseConfirmation(reply, this.closeOwner())
+      if (proof.exited) this.onClosed?.()
+      else if (
+        reply &&
+        typeof reply === 'object' &&
+        (reply as { exited?: unknown }).exited === false &&
+        proof.reason !== 'owner-unknown'
+      )
+        throw new Error(`session close unconfirmed: ${proof.reason}`)
+    })
+    this.confirmation = this.closePromise.then(
+      () => proof ?? { exited: false, reason: 'owner-unknown', ...(owner ? { owner } : {}) },
+      () =>
+        proof ?? {
+          exited: false,
+          reason: this.worker.alive ? 'close-failed' : 'transport-lost',
+          ...(owner ? { owner } : {}),
+        },
+    )
+    void this.confirmation.then((proof) => {
+      this.closeSettled = true
+      this.retryableClose = !proof.exited && proof.reason === 'close-failed' && this.worker.alive && !!owner
+    })
+    return this.closePromise
+  }
+
+  /** Current live owner, refreshed only by an authenticated predecessor-to-successor frame. */
+  executionOwner(): SessionCloseOwner | undefined {
+    return this.alive ? this.closeOwner() : undefined
+  }
+
+  /** The channel's authenticated acquisition, retained during a failed close; never proves exit. */
+  retirementOwner(): SessionCloseOwner | undefined {
+    return this.closeOwner()
+  }
+
+  private closeOwner(): SessionCloseOwner | undefined {
+    return this.owner && this.worker.generation !== undefined
+      ? {
+          sessionKey: this.sessionKey,
+          writerRunId: this.owner.writerRunId,
+          generation: this.owner.generation,
+          workerGeneration: this.worker.generation,
+        }
+      : undefined
+  }
+
+  /** Accept only this channel's verified hibernation successor, including while its close drains. */
+  refreshOwner(previous: SessionCloseOwner, owner: SessionCloseOwner): void {
+    if (this.closeSettled) return
+    const current = this.closeOwner()
+    if (!current || !readSessionCloseConfirmation({ exited: true, owner: previous }, current).exited) return
+    if (
+      !readSessionCloseConfirmation({ exited: true, owner }, owner).exited ||
+      owner.sessionKey !== current.sessionKey ||
+      owner.generation !== current.generation ||
+      owner.workerGeneration !== current.workerGeneration ||
+      sameSessionCloseOwner(owner, current)
+    )
+      return
+    this.owner = {
+      ...this.owner,
+      sessionKey: owner.sessionKey,
+      writerRunId: owner.writerRunId,
+      generation: owner.generation,
+      lastSeq: this.owner?.lastSeq ?? 0,
     }
+  }
+
+  closeAndConfirm(reason = 'session closed'): Promise<SessionCloseConfirmation> {
+    // Reading a failed receipt is not another close dispatch. Explicit closeSession retries it.
+    if (!this.closePromise) void this.closeSession(reason).catch(() => undefined)
+    return this.confirmation ?? Promise.resolve({ exited: false, reason: 'owner-unknown' })
   }
 
   onExit(handler: () => void): void {
@@ -87,6 +176,8 @@ export class WorkerLink {
   >()
   private nextId = 1
   alive = true
+  generation: number | undefined
+  private readonly channels = new Map<string, WorkerSessionChannel>()
   private readonly exitHandlers: Array<() => void> = []
   private readonly frameChains = new Map<string, Promise<void>>()
   private readonly failedSessions = new Set<string>()
@@ -141,7 +232,14 @@ export class WorkerLink {
       this.close('invalid worker frame')
       return
     }
-    const sessionKinds = new Set(['event', 'preview', 'request', 'session.interrupted', 'log'])
+    const sessionKinds = new Set([
+      'event',
+      'preview',
+      'request',
+      'session.interrupted',
+      'session.owner',
+      'log',
+    ])
     const candidate = frame as WorkerToSupervisor & { sessionKey?: unknown }
     if (
       sessionKinds.has(frame.kind) &&
@@ -158,6 +256,7 @@ export class WorkerLink {
       'reply',
       'request',
       'session.interrupted',
+      'session.owner',
       'log',
     ])
     if (!knownKinds.has(frame.kind)) {
@@ -185,7 +284,15 @@ export class WorkerLink {
 
   private processFrame(frame: WorkerToSupervisor): void | Promise<void> {
     if (frame.kind === 'hello') {
-      this.resolveHello(parseWorkerHello(frame))
+      const hello = parseWorkerHello(frame)
+      if (this.generation !== undefined && this.generation !== hello.workerGeneration)
+        throw new Error('worker hello changed generation')
+      this.generation = hello.workerGeneration
+      this.resolveHello(hello)
+      return
+    }
+    if (frame.kind === 'session.owner') {
+      this.channels.get(frame.sessionKey)?.refreshOwner(frame.previous, frame.owner)
       return
     }
     if (frame.kind === 'event') {
@@ -308,6 +415,7 @@ export class WorkerLink {
     params: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      runtime?: string
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,
@@ -337,9 +445,19 @@ export class WorkerLink {
     return this.sendSessionLifecycle('session.tail', sessionKey, { fromSeq }, options) as Promise<void>
   }
 
-  async closeSession(sessionKey: string, reason: string, options: WorkerCommandOptions = {}): Promise<void> {
+  async closeSession(
+    sessionKey: string,
+    reason: string,
+    options: WorkerCommandOptions = {},
+    owner?: SessionCloseOwner,
+  ): Promise<unknown> {
     try {
-      await this.sendSessionLifecycle('session.close', sessionKey, { reason }, options)
+      return await this.sendSessionLifecycle(
+        'session.close',
+        sessionKey,
+        { reason, ...(owner ? { owner } : {}) },
+        options,
+      )
     } finally {
       this.failedSessions.delete(sessionKey)
       this.frameChains.delete(sessionKey)
@@ -349,7 +467,7 @@ export class WorkerLink {
   private sendSessionLifecycle(
     kind: 'session.tail' | 'session.close',
     sessionKey: string,
-    payload: { fromSeq?: number; reason?: string },
+    payload: { fromSeq?: number; reason?: string; owner?: SessionCloseOwner },
     options: WorkerCommandOptions,
   ): Promise<unknown> {
     if (!this.alive) return Promise.reject(new Error('worker link closed'))
@@ -377,12 +495,18 @@ export class WorkerLink {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      runtime?: string
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,
     onClosed?: () => void,
   ): WorkerSessionChannel {
-    return new WorkerSessionChannel(sessionKey, this, open, onClosed)
+    const channel = new WorkerSessionChannel(sessionKey, this, open, () => {
+      if (this.channels.get(sessionKey) === channel) this.channels.delete(sessionKey)
+      onClosed?.()
+    })
+    this.channels.set(sessionKey, channel)
+    return channel
   }
 
   private sendCommand(

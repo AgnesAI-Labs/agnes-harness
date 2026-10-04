@@ -161,6 +161,10 @@ export interface CodeRuntime {
 }
 
 export interface ToolContext {
+  /** Structured human input. The Host binds lifetime and authority; an answer never grants permission. */
+  readonly questions?: Readonly<{
+    ask(input: import('@agnes/protocol').QuestionRequest): Promise<import('@agnes/protocol').QuestionAnswer>
+  }>
   /** Active main-conversation request only; Host owns validation and native approval. */
   readonly mcpManage?: Readonly<{ request(input: unknown): Promise<unknown> }>
   readonly pluginManage?: Readonly<{ request(input: unknown): Promise<unknown> }>
@@ -179,7 +183,8 @@ export interface ToolContext {
     opts?: { cwd?: string; env?: Record<string, string>; stdin?: string; timeoutMs?: number },
   ): Promise<ExecResult>
   readonly fs: {
-    read(path: string, opts?: { offset?: number; limit?: number }): Promise<Bytes>
+    /** Explicit bytes use zero-based offset/byte limit; omitted unit retains the Host line window. */
+    read(path: string, opts?: { offset?: number; limit?: number; unit?: 'bytes' }): Promise<Bytes>
     write(path: string, data: Bytes | string): Promise<void>
     list(path: string): Promise<FsEntry[]>
     stat(path: string): Promise<FsStat>
@@ -225,6 +230,13 @@ export interface ToolContext {
     collect(childKey: string, opts?: { wait?: boolean }): Promise<ChildStatus>
     cancel(childKey: string): Promise<ChildStatus>
     resume(childKey: string): Promise<{ childKey: string }>
+    /** Delivery confirmation only; the child's answer remains available through collect. */
+    sendMessage?(
+      childKey: string,
+      message: string,
+    ): Promise<{ childKey: string; messageId: string; acceptedSeq: number }>
+    /** Stop the current turn while preserving the continuable conversation and its descendants. */
+    interrupt?(childKey: string): Promise<{ accepted: true }>
   }
   readonly plan: { set(items: PlanItem[]): Promise<Seq> }
   requestCompaction(instructions?: string): void

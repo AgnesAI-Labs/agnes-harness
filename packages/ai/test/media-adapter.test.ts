@@ -227,3 +227,44 @@ describe('MediaAdapter video', () => {
     expect(events.map((e) => e.type)).toEqual(['media', 'media', 'media', 'usage', 'done'])
   })
 })
+
+it.each(['host_action', 'system'] as const)(
+  'refuses %s history without silently flattening it to the last user prompt',
+  async (role) => {
+    let dispatched = false
+    const adapter = new MediaAdapter({
+      imageRoute: { baseUrl: 'https://media.invalid', models: [imgModel] },
+      imagesImpl: async () => {
+        dispatched = true
+        return { images: [] }
+      },
+    })
+    const events = await collect(
+      adapter.stream(
+        'agnes-media-image',
+        fakeRequest({
+          route: 'agnes-media-image',
+          model: 'img-1',
+          messages:
+            role === 'system'
+              ? [
+                  { role: 'system', content: [{ type: 'text', text: 'Historical policy' }] },
+                  { role: 'user', content: [] },
+                ]
+              : [
+                  {
+                    role: 'host_action',
+                    content: [],
+                    toolCalls: [{ toolUseId: 'host-call', name: 'read', args: {}, ordinal: 0 }],
+                  },
+                  { role: 'tool_result', toolUseId: 'host-call', content: [], isError: false },
+                  { role: 'user', content: [{ type: 'text', text: 'a cat' }] },
+                ],
+        }),
+        opts(),
+      ),
+    )
+    expect(events).toMatchObject([{ type: 'error', code: 'FORMAT', retryable: false }])
+    expect(dispatched).toBe(false)
+  },
+)

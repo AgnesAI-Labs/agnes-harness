@@ -54,6 +54,35 @@ describe('model.json', () => {
       tools: [],
     }
     expect(Value.Check(M.RequestBody, body)).toBe(true)
+    expect(
+      Value.Check(M.RequestMessage, { role: 'system', content: [{ type: 'text', text: 'New policy' }] }),
+    ).toBe(true)
+    expect(
+      Value.Check(M.RequestMessage, {
+        role: 'system',
+        content: [{ type: 'image', data: 'x', mimeType: 'image/png' }],
+      }),
+    ).toBe(false)
+    expect(
+      Value.Check(M.RequestMessage, { role: 'system', content: [{ type: 'thinking', text: 'hidden' }] }),
+    ).toBe(false)
+    const action = {
+      role: 'host_action',
+      content: [],
+      toolCalls: [{ toolUseId: 'host-call', name: 'read', args: { path: 'a' }, ordinal: 0 }],
+    }
+    expect(
+      Value.Check(M.RequestBody, {
+        ...body,
+        messages: [action, { role: 'tool_result', toolUseId: 'host-call', content: [], isError: false }],
+      }),
+    ).toBe(true)
+    expect(Value.Check(M.RequestMessage, { ...action, toolCalls: [] })).toBe(false)
+    expect(
+      Value.Check(M.RequestMessage, { ...action, content: [{ type: 'text', text: 'pretend reasoning' }] }),
+    ).toBe(false)
+    expect(Value.Check(M.RequestMessage, { ...action, intentId: 'private-runtime-id' })).toBe(false)
+
     const r = validateAgainst(M.RequestBody, { ...body, seams: {} })
     expect(r.ok).toBe(false)
     if (r.ok) throw new Error('unreachable')

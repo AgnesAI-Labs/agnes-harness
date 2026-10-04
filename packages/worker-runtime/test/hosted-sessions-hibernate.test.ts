@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
-import type { Host, HostSession } from '@agnes/host'
+import { DatabaseSync } from 'node:sqlite'
+import type { Host, HostSession, SqliteStorage } from '@agnes/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   SESSION_SCOPED_WORKER_METHODS,
@@ -60,6 +61,50 @@ async function setup() {
 }
 
 describe('HostedSessions hibernates idle sessions and wakes them on demand', () => {
+  it('retries an actual SQLite owner-close receipt failure without opening or closing a replacement', async () => {
+    const t = await setup()
+    const session = await t.open('receipt-retry')
+    const storage = session.d.log.storage as SqliteStorage
+    const before = storage.readSessionOwnerEvidence(session.key)
+    const db = new DatabaseSync(storage.file)
+    const owner = {
+      sessionKey: session.key,
+      writerRunId: session.writerRunId,
+      generation: 1,
+      workerGeneration: 1,
+    }
+    try {
+      db.exec(
+        "CREATE TRIGGER reject_owner_receipt BEFORE UPDATE ON session_owner_evidence BEGIN SELECT RAISE(ABORT,'receipt failed'); END",
+      )
+      await expect(t.hosted.closeAndConfirm(session.key, owner)).resolves.toMatchObject({
+        exited: false,
+        reason: 'close-failed',
+      })
+      expect(session.d.log.isClosed).toBe(true)
+      expect(storage.readSessionOwnerEvidence(session.key)?.closed).toBeUndefined()
+      expect(t.host.kernel.get(session.key)).toBe(session)
+      await expect(t.hosted.dispatch(t.command(session.key, 'ping'))).rejects.toThrow(/closing/)
+      db.exec('DROP TRIGGER reject_owner_receipt')
+      await expect(t.hosted.closeAndConfirm(session.key, owner)).resolves.toEqual({ exited: true, owner })
+      expect(storage.readSessionOwnerEvidence(session.key)).toEqual({
+        owner: before?.owner,
+        closed: { finalSeq: session.lastSeq },
+      })
+      expect(t.creates()).toBe(1)
+      const replacement = await t.open(session.key)
+      await expect(t.hosted.closeAndConfirm(session.key, owner)).resolves.toMatchObject({
+        exited: false,
+        reason: 'generation-mismatch',
+      })
+      expect(t.host.kernel.get(session.key)).toBe(replacement)
+      expect(replacement.d.log.isClosed).toBe(false)
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS reject_owner_receipt')
+      db.close()
+    }
+  })
+
   it('hibernates a session idle for T and releases its writer lease', async () => {
     const t = await setup()
     const session = await t.open('idle')
@@ -69,6 +114,46 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(t.hibernated('idle')).toBe(true)
     expect(await t.leaseFree(session)).toBe(true)
     expect(t.sent.filter((f) => f.kind === 'log')).not.toHaveLength(0)
+    await t.hosted.dispatch(t.command(session.key, 'latest', { register: 'op.state' }))
+    const woken = t.live(session.key)
+    expect(woken.writerRunId).not.toBe(session.writerRunId)
+    await expect(
+      t.hosted.closeAndConfirm(session.key, {
+        sessionKey: session.key,
+        writerRunId: woken.writerRunId,
+        generation: 1,
+        workerGeneration: 1,
+      }),
+    ).resolves.toMatchObject({ exited: true, owner: { writerRunId: woken.writerRunId } })
+    expect(await t.leaseFree(woken)).toBe(true)
+  })
+
+  it('retains a failed hibernation owner instead of treating it as a wakeable stub', async () => {
+    const t = await setup()
+    const session = await t.open('failed-idle')
+    const close = session.close.bind(session)
+    session.close = async () => {
+      throw new Error('hibernate drain failed')
+    }
+    try {
+      await t.idle()
+      expect(t.hosted.keys()).toEqual([])
+      expect(t.host.kernel.get(session.key)).toBe(session)
+      expect(await t.leaseFree(session)).toBe(false)
+      await expect(t.hosted.open(t.openFrame(session.key))).rejects.toThrow('hibernate drain failed')
+      await expect(
+        t.hosted.closeAndConfirm(session.key, {
+          sessionKey: session.key,
+          writerRunId: session.writerRunId,
+          generation: 1,
+          workerGeneration: 1,
+        }),
+      ).resolves.toMatchObject({ exited: false, reason: 'close-failed' })
+      await expect(t.ping(session.key)).rejects.toThrow(/closing/)
+    } finally {
+      session.close = close
+      await close()
+    }
   })
 
   it('does nothing when T is zero', async () => {
@@ -82,6 +167,11 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
   it('answers ping and a run-less abort from the stub without waking, and wakes for anything else', async () => {
     const t = await setup()
     const session = await t.open('stub')
+    const prepared = await t.hosted.dispatch(t.command('stub', 'prepareSessionConfiguration'))
+    expect(prepared).toMatchObject({
+      sessionId: 'stub',
+      configuration: { runtime: session.runtimeState().runtime },
+    })
     const lastSeq = session.lastSeq
     await t.idle()
     const created = t.creates()
@@ -91,6 +181,25 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
       preset: session.preset.name,
       parent: null,
     })
+    await expect(t.hosted.dispatch(t.command('stub', 'runtimeState'))).resolves.toEqual({
+      runtime: { id: 'native', version: '1' },
+      phase: 'closed',
+    })
+    await expect(t.hosted.dispatch(t.command('stub', 'prepareSessionConfiguration'))).rejects.toMatchObject({
+      data: { code: 'RUNTIME_CLOSED' },
+    })
+    await expect(
+      t.hosted.dispatch(
+        t.command('stub', 'controlRuntime', {
+          expectedRuntime: { id: 'native', version: '1' },
+          operation: 'jev.resolveUnknown',
+          payload: {},
+        }),
+      ),
+    ).rejects.toMatchObject({ data: { code: 'RUNTIME_CLOSED' } })
+    const conflicting = t.openFrame('stub')
+    conflicting.params.runtime = 'jevloop'
+    await expect(t.hosted.open(conflicting)).rejects.toThrow(/runtime/)
     await expect(t.hosted.dispatch(t.command('stub', 'abort', { runId: 'none' }))).resolves.toEqual({})
     expect(t.creates()).toBe(created)
     expect(t.hibernated('stub')).toBe(true)
@@ -132,6 +241,14 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
       await t.ping('pinged')
     }
     await t.idle(0)
+    expect(t.hibernated('pinged')).toBe(true)
+    const created = t.creates()
+    await expect(t.hosted.dispatch(t.command('pinged', 'questionsPending'))).resolves.toEqual([])
+    for (const method of ['answerQuestion', 'cancelQuestion', 'resolveQuestionActor'] as const)
+      await expect(
+        t.hosted.dispatch(t.command('pinged', method, { interactionId: 'old' })),
+      ).rejects.toMatchObject({ data: { code: 'QUESTION_NOT_LIVE' } })
+    expect(t.creates()).toBe(created)
     expect(t.hibernated('pinged')).toBe(true)
   })
 
@@ -261,6 +378,34 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(woken.yolo).toBe(true)
   })
 
+  it('keeps a fresh owned child running before hibernating its parent', async () => {
+    const t = await setup()
+    const parent = await t.open('fresh-parent')
+    const child = await t.open('fresh-child')
+    // Fresh descendants carry runtime ownership without inheriting the parent's ledger.
+    child.d.runtimeOwnerSessionKey = parent.key
+    expect(child.d.log.parent).toBeUndefined()
+    const release = t.hold()
+    await t.prompt(child.key, 'keep working')
+    const running = t.run(child.key)
+    try {
+      await vi.waitFor(() => expect(child.op()).not.toBeNull())
+      await t.idle(10 * T)
+      expect(t.hibernated(parent.key)).toBe(false)
+      expect(t.hibernated(child.key)).toBe(false)
+      expect(await t.leaseFree(parent)).toBe(false)
+    } finally {
+      release()
+      await running
+    }
+    await t.idle()
+    expect(t.hibernated(child.key)).toBe(true)
+    expect(t.hibernated(parent.key)).toBe(false)
+    await t.idle()
+    expect(t.hibernated(parent.key)).toBe(true)
+    expect(await t.leaseFree(parent)).toBe(true)
+  })
+
   it('hibernates a fork child before its parent, and wakes the child on its own', async () => {
     const t = await setup()
     const parent = await t.open('parent')
@@ -322,9 +467,11 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     await Promise.all([hibernating, closing])
     expect(t.hibernated('a')).toBe(true)
     await expect(t.ping('a')).rejects.toThrow(/not open/)
-    const waking = t.hosted.dispatch(t.command('b', 'latest', { register: 'op.state' }))
+    const waking = t.hosted
+      .dispatch(t.command('b', 'latest', { register: 'op.state' }))
+      .catch(() => undefined)
     await t.hosted.closeAll()
-    await waking.catch(() => undefined)
+    await waking
     expect(t.host.kernel.get('b')).toBeUndefined()
     await expect(t.ping('b')).rejects.toThrow()
   })
@@ -341,15 +488,51 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     await expect(t.ping('closing')).rejects.toThrow(/not open/)
   })
 
-  it('closes a session that a command was waking when close began', async () => {
+  it('confirms the current owner when close overtakes an already-started wake', async () => {
     const t = await setup()
-    await t.open('waking')
+    const initial = await t.open('waking')
+    const previous = {
+      sessionKey: initial.key,
+      writerRunId: initial.writerRunId,
+      generation: 1,
+      workerGeneration: 1,
+    }
     await t.idle()
     const command = t.hosted.dispatch(t.command('waking', 'latest', { register: 'op.state' }))
-    const closing = t.hosted.close('waking')
+    const closing = t.hosted.closeAndConfirm('waking', previous)
     await Promise.allSettled([command, closing])
+    const transferred = t.sent.find((frame) => frame.kind === 'session.owner') as unknown as {
+      previous: typeof previous
+      owner: typeof previous
+    }
+    expect(transferred.previous).toEqual(previous)
+    expect(transferred.owner.writerRunId).not.toBe(previous.writerRunId)
+    await expect(closing).resolves.toEqual({ exited: true, owner: transferred.owner })
+    await expect(t.hosted.closeAndConfirm('waking', previous)).resolves.toEqual({
+      exited: true,
+      owner: transferred.owner,
+    })
     expect(t.hibernated('waking')).toBe(true)
     await expect(t.ping('waking')).rejects.toThrow(/not open/)
+    const replacement = await t.hosted.open(t.openFrame('waking'))
+    await expect(t.hosted.closeAndConfirm('waking', previous)).resolves.toMatchObject({
+      exited: false,
+      reason: 'generation-mismatch',
+    })
+    expect(t.live('waking').writerRunId).toBe(replacement.writerRunId)
+  })
+
+  it('refuses a session-scoped worker command that finishes acquiring after close begins', async () => {
+    const t = await setup()
+    await t.open('service-wake')
+    await t.idle()
+    const operation = vi.fn(() => 'late operation')
+    const work = t.hosted.withSession('service-wake', 'callService', operation)
+    const rejected = expect(work).rejects.toThrow(/not open/)
+    await t.hosted.close('service-wake')
+    await rejected
+    expect(operation).not.toHaveBeenCalled()
+    expect(t.hibernated('service-wake')).toBe(true)
   })
 
   it('fails a command whose wake is refused, keeps the stub, and wakes on the next command', async () => {

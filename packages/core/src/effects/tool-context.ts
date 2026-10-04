@@ -11,19 +11,20 @@ import type {
   ToolResult,
 } from '@agnes/extension-api'
 import { unavailableProjections } from '@agnes/extension-api'
-import type { Actor } from '@agnes/protocol'
+import type { Actor, QuestionAnswer, QuestionRequest } from '@agnes/protocol'
 import type { ArtifactJob, PlanItem } from '../reduce/shapes.js'
 import type { PresetView } from '../step/preset.js'
 import { CoreError, type Seq } from '../types.js'
 import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../workspace/runtime.js'
 import { assertNotDenied } from './fs-guard.js'
+import { type HumanWaitScope, humanWaitParent, managedHumanWaitSignal } from './managed-human-wait.js'
 import type { SeamRuntime } from './wrap.js'
 
-export type ChildStatus = { state: 'running' | 'done' | 'error'; lastSeq: Seq; text?: string }
+export type ChildStatus = { state: 'running' | 'done' | 'error' | 'cancelled'; lastSeq: Seq; text?: string }
 export type ChildHandle = {
   key: string
   worktree?: string
-  run(input: string): Promise<{ text: string; lastSeq: Seq }>
+  run(input: string, options?: { signal?: AbortSignal }): Promise<{ text: string; lastSeq: Seq }>
   status(): Promise<ChildStatus>
   close(): Promise<void>
   cancel?(): Promise<void>
@@ -40,6 +41,8 @@ export type ChildrenFactory = {
     input?: string
     parentEffectId?: string
     start?: boolean
+    /** Trusted call lifetime; not an extension-controlled subagent option. */
+    signal?: AbortSignal
   }): Promise<ChildHandle>
   /** Optional richer entry used by the built-in factory without changing third-party create args. */
   createWithKind?(
@@ -49,6 +52,12 @@ export type ChildrenFactory = {
   get?(childKey: string): ChildHandle | undefined
   inspect?(childKey: string): Promise<ChildStatus | null>
   resume?(childKey: string): Promise<ChildHandle>
+  sendMessage?(
+    childKey: string,
+    input: string,
+    options: { deliveryId: string; parentEffectId: string; signal: AbortSignal },
+  ): Promise<{ childKey: string; messageId: string; acceptedSeq: Seq }>
+  interrupt?(childKey: string): Promise<void>
   cancel?(childKey: string): Promise<void>
 }
 
@@ -60,10 +69,20 @@ export type ChildrenFactory = {
  * message carries it. Core checks that before a session opens and refuses to open one otherwise.
  */
 export type FsOps = {
-  read(path: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
+  read(path: string, opts?: { offset?: number; limit?: number; unit?: 'bytes' }): Promise<Uint8Array>
   write(path: string, data: Uint8Array | string): Promise<void>
   list(path: string): Promise<FsEntry[]>
   stat(path: string): Promise<FsStat>
+}
+
+/** Host-private binding. Extensions receive only the current call's questions.ask closure. */
+export type ToolQuestionsInvocation = {
+  request: QuestionRequest
+  context: ToolContext
+  toolUseId: string
+  turn: number
+  step: number
+  signal: AbortSignal
 }
 
 export type ToolContextDeps = {
@@ -88,11 +107,12 @@ export type ToolContextDeps = {
   }>
   netFetch(url: string, init?: FetchInit): Promise<Response>
   publicFetch?: PublicFetch
+  toolQuestions?: (invocation: ToolQuestionsInvocation) => Promise<QuestionAnswer>
   log: Logger
   invoke(
     name: string,
     args: unknown,
-    opts: { signal?: AbortSignal; depth: number; parentEffectId?: string },
+    opts: { signal?: AbortSignal; depth: number; parentEffectId?: string; humanWaitParent?: HumanWaitScope },
   ): Promise<ToolResult>
   listTools(): ToolDef[]
   appendPlan(items: PlanItem[]): Promise<Seq>
@@ -120,7 +140,23 @@ export function buildToolContext(
 ): ToolContext {
   const stepId = `${d.turn}/${d.step}`
   const publicFetch = d.publicFetch
-  return {
+  const toolQuestions = d.toolQuestions
+  const context: ToolContext = {
+    ...(toolQuestions
+      ? {
+          questions: {
+            ask: (request: QuestionRequest) =>
+              toolQuestions({
+                request,
+                context,
+                toolUseId: call.toolUseId,
+                turn: d.turn,
+                step: d.step,
+                signal: context.signal,
+              }),
+          },
+        }
+      : {}),
     session: {
       key: d.sessionKey,
       lane: d.lane,
@@ -206,7 +242,12 @@ export function buildToolContext(
         if (d.depth + 1 > d.preset.depthLimit)
           throw new CoreError('E_DEPTH_EXCEEDED', `depth ${d.depth + 1} exceeds ${d.preset.depthLimit}`)
         const signal = opts?.signal ? AbortSignal.any([call.signal, opts.signal]) : call.signal
-        return d.invoke(name, args, { signal, depth: d.depth + 1 })
+        const parent = humanWaitParent(context)
+        return d.invoke(name, args, {
+          signal,
+          depth: d.depth + 1,
+          ...(parent ? { humanWaitParent: parent } : {}),
+        })
       },
       list: () => d.listTools(),
     },
@@ -234,13 +275,14 @@ export function buildToolContext(
           cwd: d.cwd,
           input: question,
           parentEffectId: call.toolUseId,
+          signal: managedHumanWaitSignal(context) ?? call.signal,
           ...(opts?.model !== undefined ? { model: opts.model } : {}),
         }
         const child = d.children.createWithKind
           ? await d.children.createWithKind('fork', childOpts)
           : await d.children.create(childOpts)
         try {
-          return (await child.run(question)).text
+          return (await child.run(question, { signal: managedHumanWaitSignal(context) ?? call.signal })).text
         } finally {
           await child.close()
         }
@@ -251,6 +293,7 @@ export function buildToolContext(
           cwd: opts?.cwd ?? d.cwd,
           input: task,
           parentEffectId: call.toolUseId,
+          signal: managedHumanWaitSignal(context) ?? call.signal,
           ...(opts?.model !== undefined ? { model: opts.model } : {}),
           ...(opts?.budget !== undefined ? { budget: opts.budget } : {}),
           ...(opts?.isolation !== undefined ? { isolation: opts.isolation } : {}),
@@ -267,6 +310,19 @@ export function buildToolContext(
         if (!child) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
         return { childKey: child.key, ...(child.worktree ? { worktree: child.worktree } : {}) }
       },
+      sendMessage: async (childKey, input) => {
+        if (!d.children.sendMessage) throw new CoreError('E_UNSUPPORTED', 'child continuation is unavailable')
+        return d.children.sendMessage(childKey, input, {
+          deliveryId: `${d.sessionKey}:${d.lane}:${call.toolUseId}`,
+          parentEffectId: call.toolUseId,
+          signal: managedHumanWaitSignal(context) ?? call.signal,
+        })
+      },
+      interrupt: async (childKey) => {
+        if (!d.children.interrupt) throw new CoreError('E_UNSUPPORTED', 'child interruption is unavailable')
+        await d.children.interrupt(childKey)
+        return { accepted: true as const }
+      },
       collect: async (childKey, opts) => {
         const snapshot = async () => {
           const child = d.children.get?.(childKey)
@@ -278,7 +334,9 @@ export function buildToolContext(
                 ? 'completed'
                 : status.state === 'error'
                   ? 'failed'
-                  : 'running') as 'running' | 'completed' | 'failed' | 'cancelled',
+                  : status.state === 'cancelled'
+                    ? 'cancelled'
+                    : 'running') as 'running' | 'completed' | 'failed' | 'cancelled',
               ...(status.text !== undefined ? { text: status.text } : {}),
             }
           }
@@ -286,21 +344,39 @@ export function buildToolContext(
           if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
           return {
             childKey,
-            status: (snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'running') as
-              | 'running'
-              | 'completed'
-              | 'failed'
-              | 'cancelled',
+            status: (snap.state === 'done'
+              ? 'completed'
+              : snap.state === 'error'
+                ? 'failed'
+                : snap.state === 'cancelled'
+                  ? 'cancelled'
+                  : 'running') as 'running' | 'completed' | 'failed' | 'cancelled',
             ...(snap.text !== undefined ? { text: snap.text } : {}),
           }
         }
         if (opts?.wait !== true) return snapshot()
         const deadline = Date.now() + Math.max(1, d.lease.remainingMs())
+        const signal = managedHumanWaitSignal(context) ?? call.signal
         while (Date.now() < deadline) {
+          signal.throwIfAborted()
           const current = await snapshot()
+          signal.throwIfAborted()
           if (current.status !== 'running') return current
-          await new Promise((resolve) => setTimeout(resolve, 20))
+          await new Promise<void>((resolve, reject) => {
+            const abort = () => {
+              clearTimeout(timer)
+              signal.removeEventListener('abort', abort)
+              reject(signal.reason)
+            }
+            const timer = setTimeout(() => {
+              signal.removeEventListener('abort', abort)
+              resolve()
+            }, 20)
+            signal.addEventListener('abort', abort, { once: true })
+            if (signal.aborted) abort()
+          })
         }
+        signal.throwIfAborted()
         return { ...(await snapshot()), waitTimedOut: true }
       },
       cancel: async (childKey) => {
@@ -332,4 +408,5 @@ export function buildToolContext(
     },
     log: d.log,
   }
+  return context
 }

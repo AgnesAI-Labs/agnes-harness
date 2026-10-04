@@ -1,3 +1,4 @@
+import type { RequestBody, RequestMessage } from '@agnes/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ManualRoute } from '../src/adapters/pi/index.js'
 import type { WireEvent } from '../src/index.js'
@@ -28,6 +29,58 @@ beforeEach(() => {
     calls.push({ url: req.url, authorization: req.headers.get('authorization') })
     throw new Error('the test blocked this request')
   }) as typeof globalThis.fetch
+})
+
+it('preserves MCP action validation branches inside an object-root tool schema on the actual wire', async () => {
+  const helper = (await import(
+    new URL('../../package-manager/bundled-plugins/mcp-helper/index.mjs', import.meta.url).href
+  )) as {
+    mcpHelper: {
+      apply(ctx: { extension(): { registerTool(tool: RequestBody['tools'][number]): void } }): void
+    }
+  }
+  let tool: RequestBody['tools'][number] | undefined
+  helper.mcpHelper.apply({
+    extension: () => ({
+      registerTool: (definition) => {
+        tool = definition
+      },
+    }),
+  })
+  if (!tool) throw new Error('Missing mcp_manage definition')
+  const bodies: Array<{ tools: Array<{ function: { parameters: Record<string, unknown> } }> }> = []
+  globalThis.fetch = async (input, init) => {
+    bodies.push(JSON.parse(await new Request(input, init).text()))
+    throw new Error('Synthetic schema capture blocked network')
+  }
+  const adapter = new PiAdapter({
+    manualRoutes: [routeDecl({ route: 'gw' })],
+    maxRetries: 0,
+    sleep: async () => {},
+  })
+  adapter.bindCredential('gw', 'synthetic-test-key')
+  for await (const _event of adapter.stream(
+    'gw',
+    fakeRequest({ route: 'gw', model: modelId, tools: [tool] }),
+    {
+      signal: new AbortController().signal,
+      toolNames: ['mcp_manage'],
+      sessionKey: 'agnes:t:a:cli:dm:x',
+      timeoutMs: { firstToken: 1000, total: 5000 },
+    },
+  )) {
+    /* The real serializer reaches intercepted fetch without contacting a provider. */
+  }
+  expect(bodies).toHaveLength(1)
+  const parameters = bodies[0]?.tools[0]?.function.parameters
+  expect(parameters).toMatchObject({
+    type: 'object',
+    properties: { action: { anyOf: expect.any(Array) } },
+    required: ['action'],
+    additionalProperties: false,
+    anyOf: expect.any(Array),
+  })
+  expect(parameters?.anyOf).toHaveLength(5)
 })
 
 afterEach(() => {
@@ -271,4 +324,158 @@ describe('a route has to declare where it points', () => {
     expect(() => new PiAdapter({ manualRoutes: [withBaseUrl('https://gw.invalid/v1')] })).not.toThrow()
     expect(() => new PiAdapter({ manualRoutes: [withBaseUrl('http://127.0.0.1:8080')] })).not.toThrow()
   })
+})
+
+it('serializes a Host action as an OpenAI tool pair while preserving the authored request and recording the transform', async () => {
+  const flashModelId = 'deepseek-v4-flash'
+  const decl = routeDecl({
+    route: 'gw',
+    credentialRef: 'secret://agnes/test',
+    models: [
+      fakeModel({
+        id: flashModelId,
+        route: 'gw',
+        api: 'openai-completions',
+        baseUrl: 'https://gw.invalid/v1',
+      }),
+    ],
+  })
+  const adapter = new PiAdapter({ manualRoutes: [decl], maxRetries: 0, sleep: async () => {} })
+  adapter.bindCredential('gw', 'synthetic-test-key')
+  const request = fakeRequest({
+    route: 'gw',
+    model: flashModelId,
+    messages: [
+      {
+        role: 'host_action',
+        content: [],
+        toolCalls: [{ toolUseId: 'call_host_001', name: 'read', args: { path: 'source.txt' }, ordinal: 0 }],
+      },
+      {
+        role: 'tool_result',
+        toolUseId: 'call_host_001',
+        content: [{ type: 'text', text: 'Recorded file evidence' }],
+        isError: false,
+      },
+      { role: 'user', content: [{ type: 'text', text: 'Answer from recorded evidence.' }] },
+    ],
+  })
+  const original = structuredClone(request)
+  let body: { messages?: unknown[] } | undefined
+  const reports: unknown[] = []
+  globalThis.fetch = async (input, init) => {
+    body = (await new Request(input, init).json()) as { messages?: unknown[] }
+    throw new Error('test intercepted serialized request; no network')
+  }
+  for await (const _event of adapter.stream('gw', request, {
+    signal: new AbortController().signal,
+    toolNames: ['read'],
+    sessionKey: 's',
+    timeoutMs: { firstToken: 1000, total: 5000 },
+    reportSent: (report) => {
+      reports.push(report)
+    },
+  })) {
+    /* Consume the deliberate transport refusal after serialization. */
+  }
+  expect(body?.messages).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        role: 'assistant',
+        tool_calls: [
+          {
+            id: 'call_host_001',
+            type: 'function',
+            function: { name: 'read', arguments: '{"path":"source.txt"}' },
+          },
+        ],
+      }),
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'call_host_001',
+        content: 'Recorded file evidence',
+      }),
+    ]),
+  )
+  expect(JSON.stringify(body)).not.toContain('host_action')
+  expect(reports).toEqual([expect.objectContaining({ transforms: [{ event: 'host_action', ext: 'pi' }] })])
+  expect(request).toEqual(original)
+})
+
+it('keeps ordered system updates at their wire positions without changing the earlier prefix, and does not revive cleared instructions', async () => {
+  const flashModelId = 'deepseek-v4-flash'
+  const decl = routeDecl({
+    route: 'gw',
+    credentialRef: 'secret://agnes/test',
+    models: [
+      fakeModel({
+        id: flashModelId,
+        route: 'gw',
+        api: 'openai-completions',
+        baseUrl: 'https://gw.invalid/v1',
+        reasoning: true,
+        compat: { supportsMidConvoSystemMessages: true, supportsDeveloperRole: false },
+      }),
+    ],
+  })
+  const adapter = new PiAdapter({ manualRoutes: [decl], maxRetries: 0, sleep: async () => {} })
+  adapter.bindCredential('gw', 'synthetic-test-key')
+  const base = fakeRequest({ route: 'gw', model: flashModelId, system: 'Fixed Host policy' })
+  const first: RequestMessage[] = [
+    { role: 'system', content: [{ type: 'text', text: 'Policy A' }] },
+    { role: 'user', content: [{ type: 'text', text: 'Task at A' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'Observed response at A' }] },
+  ]
+  const update: RequestMessage = { role: 'system', content: [{ type: 'text', text: 'Policy B' }] }
+  const tail: RequestMessage = {
+    role: 'user',
+    content: [{ type: 'text', text: 'Stable answer instruction' }],
+  }
+  const current = [...first, update]
+  const cleared = current.filter((message) => message.role !== 'system')
+  const bodies: Array<{ messages: Array<{ role: string; content: unknown }> }> = []
+  globalThis.fetch = async (input, init) => {
+    bodies.push((await new Request(input, init).json()) as (typeof bodies)[number])
+    throw new Error('test intercepted serialized request; no network')
+  }
+  for (const messages of [
+    [...first, tail],
+    [...current, tail],
+    [...cleared, tail],
+    [...cleared, update, tail],
+  ]) {
+    for await (const _event of adapter.stream(
+      'gw',
+      { ...base, messages },
+      {
+        signal: new AbortController().signal,
+        toolNames: [],
+        sessionKey: 's',
+        timeoutMs: { firstToken: 1000, total: 5000 },
+      },
+    )) {
+      /* The real serializer reaches the intercepted fetch and stops. */
+    }
+  }
+  expect(bodies).toHaveLength(4)
+  const [before, after, empty, restored] = bodies.map((body) => body.messages)
+  if (!before || !after || !empty || !restored) throw new Error('Missing serialized prefix')
+  expect(before.map((message) => message.role)).toEqual(['system', 'system', 'user', 'assistant', 'user'])
+  expect(after.map((message) => message.role)).toEqual([
+    'system',
+    'system',
+    'user',
+    'assistant',
+    'system',
+    'user',
+  ])
+  expect(after.slice(0, before.length - 1)).toEqual(before.slice(0, -1))
+  expect(JSON.stringify(before)).not.toContain('Policy B')
+  expect(empty).toEqual(
+    after.filter((message) => message.role !== 'system' || message.content === 'Fixed Host policy'),
+  )
+  expect(restored.slice(0, -2)).toEqual(empty.slice(0, -1))
+  expect(restored.at(-2)).toEqual({ role: 'system', content: 'Policy B' })
+  expect(JSON.stringify(empty)).not.toContain('Policy A')
+  expect(JSON.stringify(empty)).not.toContain('Policy B')
 })

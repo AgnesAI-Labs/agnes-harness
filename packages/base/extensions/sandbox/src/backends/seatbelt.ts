@@ -12,5 +12,6 @@ export function seatbeltConfine(argv: readonly string[], options: ClosedNetworkC
   return seatbeltDenyNetworkArgv(command, {
     allowPaths: policy.allowPaths,
     denyPaths: policy.denyPaths,
+    denyExceptions: policy.denyExceptions,
   })
 }

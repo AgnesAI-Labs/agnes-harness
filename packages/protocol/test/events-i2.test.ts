@@ -25,6 +25,17 @@ describe('session-v1 I2: every closed-set type has a data schema', () => {
   it('the program counter is no longer a row type', () => {
     expect(validateEvent({ ...env('op.state', null), register: 'op.state' }).ok).toBe(false)
   })
+  it.each(['runtime/record', 'runtime/cancel'])('keeps %s non-ignorable', (type) => {
+    const runtime = { id: 'jevloop', version: '1' }
+    const data =
+      type === 'runtime/record'
+        ? { runtime, record: { version: 1, kind: 'example' } }
+        : { runtime, turnId: 't1', by: env('user/message', {}).actor }
+    expect(validateEvent(env(type, data)).ok).toBe(true)
+    const result = validateEvent({ ...env(type, data), ignorable: true })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors[0]?.path).toBe('/ignorable')
+  })
   it('register tombstones are valid', () => {
     for (const reg of ['plan.items', 'budget.state', 'artifact/job', 'inbox'])
       expect(validateEvent({ ...env(reg, null), register: reg }).ok, reg).toBe(true)
@@ -176,7 +187,7 @@ describe('session-v1 I2: every closed-set type has a data schema', () => {
       .filter(Boolean)
     // Exact, not a lower bound: a loose lower bound would let half the fixtures be deleted without
     // going red.
-    expect(lines.length).toBe(39) // prior 37 plus subagent/cost valid+invalid
+    expect(lines.length).toBe(43) // includes runtime record/cancel valid and missing-owner cases
     for (const line of lines) {
       const f = JSON.parse(line) as { id: string; kind: 'valid' | 'invalid'; payload: unknown }
       expect(validateEvent(f.payload).ok, f.id).toBe(f.kind === 'valid')

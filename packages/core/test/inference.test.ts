@@ -1,5 +1,13 @@
+import { readFileSync } from 'node:fs'
 import type { ToolDef } from '@agnes/extension-api'
-import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
+import {
+  type InferenceEvent,
+  MODEL_CALL_EVENT,
+  type ModelRecord,
+  type Provider,
+  type RequestBody,
+  readModelCall,
+} from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
 import type { HostToolDispatchPort } from '../src/effects/tool-dispatch.js'
@@ -41,6 +49,95 @@ const readRegistry = () => {
   r.add(readTool(), { source: 'agnes/tools-core', trust: 'builtin' })
   return r
 }
+
+it('records captured provider usage without response metadata, and fails closed before an unrecordable dispatch', async () => {
+  const captured = JSON.parse(
+    readFileSync(new URL('./fixtures/jev-real-trace.json', import.meta.url), 'utf8'),
+  )
+  const reported = captured.events
+    .map(
+      (event: { data?: { record?: { settlement?: { usage?: InferenceEvent } } } }) =>
+        event.data?.record?.settlement?.usage,
+    )
+    .find((event: InferenceEvent | undefined) => event?.type === 'usage') as Extract<
+    InferenceEvent,
+    { type: 'usage' }
+  >
+  expect(reported?.type).toBe('usage')
+  const frame = { ...reported, response: { ...reported.response, model: 'observed-model' } }
+  const { session, log, provider } = await primed([
+    [sent(), frame, { type: 'text_delta', delta: 'ok' }, { type: 'done', reason: 'stop' }],
+  ])
+  await session.runInference()
+  const rows = await log.scan({ type: MODEL_CALL_EVENT, limit: 10 })
+  expect(rows).toHaveLength(2)
+  if (!rows[0] || !rows[1]) throw new Error('missing durable provider call')
+  const started = readModelCall(rows[0])
+  const settled = readModelCall(rows[1])
+  expect(settled).toMatchObject({
+    ...started,
+    stage: 'settled',
+    startedSeq: rows[0]?.seq,
+    outcome: 'completed',
+    observedModel: 'observed-model',
+    usage: { tokens: reported.tokens, creditSource: reported.creditSource },
+  })
+  expect(settled).not.toHaveProperty('usage.response')
+  expect(provider.calls).toBe(1)
+  expect(await log.scan({ type: 'cost/ledger', limit: 10 })).toHaveLength(1)
+
+  const refused = await primed([textTurn('must not dispatch')])
+  const append = refused.log.append.bind(refused.log)
+  refused.log.append = async (events, options) => {
+    if (events.some((event) => event.type === MODEL_CALL_EVENT)) throw new Error('accounting unavailable')
+    return append(events, options)
+  }
+  await refused.session.runInference()
+  expect(refused.provider.calls).toBe(0)
+  expect(refused.session.turn?.ledgerFailed).toBe(true)
+})
+
+it.each([
+  { sentModel: 'other', usageModel: undefined, errorModel: undefined, expected: 'other' },
+  { sentModel: 'other', usageModel: 'requested', errorModel: undefined, expected: 'other' },
+  { sentModel: 'requested', usageModel: 'other', errorModel: undefined, expected: 'other' },
+  { sentModel: 'other', usageModel: 'second-observed', errorModel: undefined, expected: 'other' },
+  { sentModel: 'requested', usageModel: 'requested', errorModel: undefined, expected: 'requested' },
+  { sentModel: 'other', usageModel: 'requested', errorModel: 'requested', expected: 'other' },
+])(
+  'persists actual model mismatch evidence through Native sent/usage/error frames %j',
+  async ({ sentModel, usageModel, errorModel, expected }) => {
+    const sentFrame = sent()
+    sentFrame.stamp.model.responseModel = sentModel
+    const usageFrame = {
+      ...usage(),
+      ...(usageModel === undefined ? {} : { response: { model: usageModel } }),
+    }
+    const terminal: InferenceEvent =
+      errorModel === undefined
+        ? { type: 'done', reason: 'stop' }
+        : {
+            type: 'error',
+            reason: 'error',
+            code: 'AUTH',
+            message: 'refused',
+            retryable: false,
+            response: { model: errorModel },
+          }
+    const { session, log } = await primed([
+      [sentFrame, usageFrame, { type: 'text_delta', delta: 'ok' }, terminal],
+    ])
+    session.preset.model.id.primary = 'requested'
+    await session.runInference()
+    const settled = (await log.scan({ type: MODEL_CALL_EVENT, limit: 10 }))
+      .map(readModelCall)
+      .find((record) => record?.stage === 'settled')
+    expect(settled).toMatchObject({
+      observedModel: expected,
+      usage: { tokens: { output: 5 }, creditSource: 'estimated' },
+    })
+  },
+)
 
 it('reuses context hooks within a turn and moves changed context to a tail note', async () => {
   const { session, provider } = await primed(
@@ -762,16 +859,18 @@ describe('Inference segment', () => {
       // explain. A replaying consumer therefore never reads an effect before either cause.
       'request/header',
       'effect/intent',
+      MODEL_CALL_EVENT,
       'request/sent',
       'assistant/output',
+      MODEL_CALL_EVENT,
       'assistant/message',
       'cost/ledger',
       'effect/settled',
       'step/end',
     ])
     expect(session.op()).toMatchObject({ step: 1, phase: { kind: 'checkpoint', continuation: 'may_finish' } })
-    expect(session.op()?.latestAssistantSeq).toBe(12)
     const msg = (await log.scan({ type: 'assistant/message', limit: 5 }))[0]
+    expect(session.op()?.latestAssistantSeq).toBe(msg?.seq)
     expect(msg?.data).toMatchObject({
       content: [{ type: 'text', text: 'hello world' }],
       stopReason: 'end_turn',
@@ -1207,6 +1306,11 @@ describe('Inference segment', () => {
     expect(await s.log.scan({ type: 'step/start', limit: 5 })).toHaveLength(1)
     now += 5000
     expect(await s.session.runInference()).toEqual({ phase: 'checkpoint' })
+    const modelCalls = (await s.log.scan({ type: MODEL_CALL_EVENT, limit: 10 })).map(readModelCall)
+    expect(modelCalls.filter((call) => call?.stage === 'settled')).toMatchObject([
+      { outcome: 'failed', usage: null },
+      { outcome: 'completed', usage: { type: 'usage' } },
+    ])
     expect(
       (await s.log.scan({ type: 'step/start', limit: 5 })).map((e) => (e.data as { step: number }).step),
     ).toEqual([1, 2])
@@ -1265,16 +1369,32 @@ describe('Inference segment', () => {
     expect(await disabled.session.runInference()).toEqual({ phase: 'failure_drain' })
   })
 
-  it('a blocking beforeStep hook ends the turn without spending an inference', async () => {
-    const { session, provider, log } = await primed([textTurn('a')])
-    session.hooks = { ...session.hooks, beforeStep: async () => ({ block: true, reason: 'nope' }) }
-    expect(await session.runInference()).toEqual({ phase: 'terminal', reason: 'blocked' })
-    expect(provider.calls).toBe(0)
-    expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({
-      reason: 'blocked',
-      error: { code: 'HOOK_BLOCKED', message: 'nope' },
-    })
-  })
+  it.each([false, true])(
+    'a blocking beforeStep hook with concurrent cancel=%s ends without spending an inference',
+    async (cancel) => {
+      const { session, provider, log } = await primed([textTurn('a')])
+      session.hooks = {
+        ...session.hooks,
+        beforeStep: async () => {
+          if (cancel) await session.abort(actor)
+          return { block: true, reason: 'nope' }
+        },
+      }
+      expect(await session.runInference()).toEqual({
+        phase: 'terminal',
+        reason: cancel ? 'aborted' : 'blocked',
+      })
+      expect(provider.calls).toBe(0)
+      expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject(
+        cancel
+          ? { reason: 'aborted' }
+          : {
+              reason: 'blocked',
+              error: { code: 'HOOK_BLOCKED', message: 'nope' },
+            },
+      )
+    },
+  )
 
   it('ledger failure marks the turn and the next inference ends the turn with error', async () => {
     const seams = fakeSeams({

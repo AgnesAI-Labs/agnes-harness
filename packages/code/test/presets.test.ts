@@ -308,9 +308,23 @@ describe('standard.yaml', () => {
   })
 
   it('is reachable through the named export the host reads', () => {
-    expect(PRESET_NAMES).toEqual(['standard', 'claw', 'channel', 'minimal-rl', 'standard-windows'])
+    expect(PRESET_NAMES).toEqual([
+      'standard',
+      'claw',
+      'channel',
+      'minimal-rl',
+      'standard-windows',
+      'standard-no-credit-cap',
+    ])
     expect(presets.standard).toEqual(doc)
     expect(Object.keys(presets)).toEqual([...PRESET_NAMES])
+  })
+  it('explicitly opts the no-credit-cap recipe out of both request and new tree caps', () => {
+    const unlimited = loadPreset('standard-no-credit-cap')
+    expect(unlimited.extends).toBe('standard')
+    expect(unlimited.budget).toEqual({ per_request_cap: null })
+    expect(unlimited.subagent).toEqual({ tree_budget_credits: 'unlimited' })
+    expect(doc.subagent).not.toHaveProperty('tree_budget_credits')
   })
 
   it('ships a file for every registered name, each declaring its own name', () => {

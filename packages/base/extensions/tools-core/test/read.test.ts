@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { checkToolDef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-context.js'
@@ -32,12 +33,68 @@ describe('read', () => {
     })
   })
 
+  it('reads a real repository PNG through the filesystem and immutable artifact port', async () => {
+    const bytes = readFileSync(new URL('../../../../../docs/assets/readme/banner.png', import.meta.url))
+    const ctx = ctxOf({ files: { 'picture.png': bytes } })
+    const result = await readTool.execute({ path: 'picture.png' }, ctx)
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0]).toMatchObject({ type: 'image', mime: 'image/png' })
+    expect(ctx.calls.read[0]?.path).toBe('picture.png')
+    expect(ctx.calls.artifacts).toHaveLength(1)
+    expect(result.structured).toMatchObject({ image: { mime: 'image/png', size: bytes.length } })
+  })
+
+  it.each(['truncated', 'oversize', 'offset', 'gif'] as const)(
+    'refuses %s images before storing any artifact',
+    async (kind) => {
+      const original = readFileSync(new URL('../../../../../docs/assets/readme/banner.png', import.meta.url))
+      const bytes =
+        kind === 'truncated'
+          ? original.subarray(0, 30)
+          : kind === 'oversize'
+            ? new Uint8Array(MAX_READ_BYTES + 1)
+            : kind === 'gif'
+              ? new Uint8Array(Buffer.from(`GIF89a${'x'.repeat(20)}`))
+              : original
+      if (kind === 'oversize') bytes.set(original.subarray(0, 30))
+      const ctx = ctxOf({ files: { picture: bytes } })
+      const result = await readTool.execute(
+        { path: 'picture', ...(kind === 'offset' ? { offset: 1 } : {}) },
+        ctx,
+      )
+      expect(result.isError).toBe(true)
+      expect(result.content[0]?.type).toBe('text')
+      expect(ctx.calls.artifacts).toHaveLength(0)
+    },
+  )
+
   it('returns numbered lines and honours offset/limit', async () => {
     const ctx = ctxOf({ files: { 'a.txt': 'l1\nl2\nl3\nl4' } })
     const all = await readTool.execute({ path: 'a.txt' }, ctx)
     expect(all.content[0]).toEqual({ type: 'text', text: '1\tl1\n2\tl2\n3\tl3\n4\tl4' })
+    expect(all.structured).toEqual({
+      codec: 'agnes-host-tool-fact-v1',
+      tool: 'read',
+      target: { kind: 'file', path: '/work/proj/a.txt', workspaceRelativePath: 'a.txt' },
+      request: { offset: 1 },
+      page: { firstLine: 1, lastLine: 4, availableLines: 4, totalLines: 4 },
+      coverage: {
+        complete: true,
+        sourceTruncated: false,
+        pageLimited: false,
+        continuationSafe: true,
+        outputTruncated: false,
+        lineContentTruncated: false,
+        truncatedLineCount: 0,
+      },
+    })
     const part = await readTool.execute({ path: 'a.txt', offset: 2, limit: 2 }, ctx)
     expect(part.content[0]).toEqual({ type: 'text', text: '2\tl2\n3\tl3' })
+    expect(part.structured).toMatchObject({
+      request: { offset: 2, limit: 2 },
+      page: { firstLine: 2, lastLine: 3, totalLines: 4, nextOffset: 4 },
+      coverage: { complete: false, pageLimited: true, continuationSafe: true },
+    })
   })
 
   it('treats a trailing newline as ending the last line, not starting an empty one', async () => {
@@ -63,9 +120,11 @@ describe('read', () => {
     const ctx = ctxOf({ files: { 'b.bin': 'ab\u0000cd' } })
     const missing = await readTool.execute({ path: 'nope' }, ctx)
     expect(missing.isError).toBe(true)
+    expect(missing.structured).toBeUndefined()
     expect(textOf(missing)).toContain('ENOENT')
     const bin = await readTool.execute({ path: 'b.bin' }, ctx)
     expect(bin.isError).toBe(true)
+    expect(bin.structured).toBeUndefined()
     expect(bin.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('binary') })
     expect(textOf(bin)).toContain('5 bytes')
   })
@@ -94,6 +153,10 @@ describe('read', () => {
     // The read itself is capped, so the process never holds the whole file.
     expect(ctx.calls.read[0]?.opts?.limit).toBe(MAX_READ_BYTES + 1)
     expect(textOf(r)).toContain(`only the first ${MAX_READ_BYTES} bytes`)
+    expect(r.structured).toMatchObject({
+      coverage: { complete: false, sourceTruncated: true, continuationSafe: false },
+    })
+    expect((r.structured as { page: Record<string, unknown> }).page).not.toHaveProperty('totalLines')
     expect(byteLength(textOf(r))).toBeLessThanOrEqual(outputLimits(8192).maxBytes)
   })
 
@@ -137,6 +200,15 @@ describe('read', () => {
     expect(page).toContain('2\tzzz')
     expect(page).toContain('[line cut at 2048 of 5000 bytes]')
     expect(page.endsWith('3\tc')).toBe(true)
+    const result = await readTool.execute({ path: 'min.js' }, ctx)
+    expect(result.structured).toMatchObject({
+      coverage: {
+        complete: false,
+        lineContentTruncated: true,
+        truncatedLineCount: 1,
+        continuationSafe: false,
+      },
+    })
   })
 
   it('does not attach a ref when the output fits', async () => {
@@ -197,7 +269,16 @@ describe('read of an artifact the output guard stored', () => {
   it('honours offset and limit and reports a range past the end', async () => {
     const ctx = ctxOf()
     const path = await store(ctx, 'a\nb\nc\nd')
-    expect(textOf(await readTool.execute({ path, offset: 2, limit: 2 }, ctx))).toBe('2\tb\n3\tc')
+    const result = await readTool.execute({ path, offset: 2, limit: 2 }, ctx)
+    expect(textOf(result)).toBe('2\tb\n3\tc')
+    expect(result.structured).toMatchObject({
+      codec: 'agnes-host-tool-fact-v1',
+      tool: 'read',
+      target: { kind: 'artifact', path },
+      request: { offset: 2, limit: 2 },
+      page: { firstLine: 2, lastLine: 3, availableLines: 4, totalLines: 4, nextOffset: 4 },
+      coverage: { complete: false, sourceTruncated: false, continuationSafe: true },
+    })
     expect(textOf(await readTool.execute({ path, offset: 9 }, ctx))).toBe(
       '[no lines at offset 9; the artifact has 4 lines]',
     )

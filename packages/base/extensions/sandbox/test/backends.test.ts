@@ -45,6 +45,21 @@ describe('closed-network backend compilers', () => {
     )
     expect(confined.indexOf('--tmpfs')).toBeGreaterThan(confined.lastIndexOf('--bind'))
     expect(confined.slice(-3)).toEqual(['--hostile-looking-executable', '-c', 'literal $HOME; touch /x'])
+    const nested = bwrapConfine(['true'], {
+      ...options,
+      denyPaths: ['/work', '/work/proj/secret'],
+      denyExceptions: [{ path: '/work', except: ['/work/proj'] }],
+    })
+    expect(nested.indexOf('--tmpfs')).toBeLessThan(nested.indexOf('--bind'))
+    expect(nested.lastIndexOf('--tmpfs')).toBeGreaterThan(nested.lastIndexOf('--bind'))
+    const overlapping = bwrapConfine(['true'], {
+      cwd: '/work',
+      allowPaths: ['/work', '/work/private/public'],
+      denyPaths: ['/work/private'],
+      denyExceptions: [{ path: '/work/private', except: ['/work/private/public'] }],
+    })
+    expect(overlapping.indexOf('--bind')).toBeLessThan(overlapping.indexOf('--tmpfs'))
+    expect(overlapping.indexOf('--tmpfs')).toBeLessThan(overlapping.lastIndexOf('--bind'))
   })
 
   it('rejects lexical aliases, controls, NUL argv and unsafe writable kernel trees', () => {
@@ -59,6 +74,12 @@ describe('closed-network backend compilers', () => {
       )
     }
     expect(() => bwrapConfine(['bad\0command'], options)).toThrow(/E_SANDBOX_BACKEND_POLICY/)
+    expect(() =>
+      bwrapConfine(['true'], {
+        ...options,
+        denyExceptions: [{ path: '/work/proj/secret', except: ['/ungranted'] }],
+      }),
+    ).toThrow(/E_SANDBOX_BACKEND_POLICY/)
   })
 
   it.each([bwrapConfine, seatbeltConfine])(
@@ -119,7 +140,8 @@ seatbelt('blocks real files, a descendant process and a symlink target', async (
     seatbeltConfine(['/bin/sh', '-c', source, 'probe', ...args], {
       cwd: allowed,
       allowPaths: [allowed],
-      denyPaths: [denied],
+      denyPaths: [root, denied],
+      denyExceptions: [{ path: root, except: [allowed] }],
       networkAllow: [],
     })
   try {

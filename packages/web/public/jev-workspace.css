@@ -1,0 +1,223 @@
+/* DSH's Jev workspace structure: circuit and the original conversation side by side. */
+main {
+  container-type: inline-size;
+}
+.session-workspace {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+.session-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.jev-stats-dock:has(.jev-direct-stats[hidden]) {
+  display: none;
+}
+.jev-stats-dock {
+  flex: none;
+  padding: 0.25rem 1rem;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+}
+.jev-workspace-views,
+#jev-workspace-split {
+  display: none;
+}
+.session-workspace:has(#runtime-records:not([hidden])) {
+  display: grid;
+  grid-template-columns: minmax(320px, min(var(--jev-graph-width, 55%), calc(100% - 369px))) 9px minmax(
+      0,
+      1fr
+    );
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+#runtime-records {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--agnes-bg-page);
+}
+.session-workspace:has(#runtime-records:not([hidden])) #jev-workspace-split {
+  display: block;
+  position: relative;
+  border: 0;
+  margin: 0;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--agnes-bg-app-content);
+}
+#jev-workspace-split::after {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  background: var(--agnes-line-primary);
+}
+#jev-workspace-split:hover::after,
+#jev-workspace-split:focus-visible::after,
+#jev-workspace-split[data-dragging]::after {
+  background: var(--agnes-text-emphasis);
+}
+.session-chat .session-tabs-bar {
+  gap: 1rem;
+  padding-inline: 1rem;
+}
+.session-chat #open-comparison {
+  min-height: 1.75rem;
+  padding: 0.125rem 0.5rem;
+  border: 0;
+  font-size: 0.75rem;
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+}
+.runtime-trace-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  padding: 0.5rem 0.75rem;
+  color: var(--agnes-text-tertiary);
+  font-size: 11px;
+  max-height: 35%;
+  overflow: auto;
+}
+#runtime-records > .jev-decision-graph {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+#runtime-records .jev-graph-workspace {
+  min-height: 0;
+}
+.session-workspace:has(#runtime-records:not([hidden])) .composer-controls {
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.session-workspace:has(#runtime-records:not([hidden])) .composer-runtime {
+  flex: none;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+.session-workspace:has(#runtime-records:not([hidden])) .composer-workspace,
+.session-workspace:has(#runtime-records:not([hidden])) .composer-permission {
+  flex: 0 1 auto;
+  max-width: 34%;
+}
+.session-workspace:has(#runtime-records:not([hidden])) .model-field {
+  flex: 1 0 140px;
+  margin-left: 0;
+}
+.session-workspace:has(#runtime-records:not([hidden])) #model {
+  max-width: 100%;
+}
+.session-chat #composer-model-settings {
+  color: var(--agnes-text-secondary);
+  font-size: 0.75rem;
+}
+.runtime-trace-footer .runtime-trace-coverage {
+  margin: 0;
+  font-size: inherit;
+}
+.runtime-trace-footer details {
+  min-width: 0;
+  margin-left: auto;
+}
+.runtime-trace-footer details[open] {
+  width: 100%;
+}
+.runtime-trace-footer summary {
+  cursor: pointer;
+}
+.runtime-trace-footer .runtime-record-rows {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+.session-workspace:has(#runtime-records:not([hidden])) .session-chat #composer {
+  width: calc(100% - 1.5rem);
+  margin: 0.5rem auto 0.75rem;
+}
+body:has(#runtime-records:not([hidden])) main {
+  padding-bottom: 0;
+}
+body:has(#runtime-records:not([hidden])) .conversation-shell {
+  margin-top: 0;
+}
+@container (max-width: 780px) {
+  .session-workspace:has(#runtime-records:not([hidden])) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .session-workspace > #runtime-records,
+  .session-workspace > .session-chat {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .session-workspace:has(#runtime-records:not([hidden])) > .jev-workspace-views {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .jev-workspace-views button {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8125rem;
+    border: 0;
+    background: transparent;
+  }
+  .jev-workspace-views button[aria-pressed="true"] {
+    background: var(--agnes-bg-selected);
+    color: var(--agnes-text-emphasis);
+  }
+  .session-workspace:has(#runtime-records:not([hidden])) #jev-workspace-split {
+    display: none;
+  }
+  .session-workspace:not([data-view="graph"]) > #runtime-records {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .session-workspace[data-view="graph"]:has(#runtime-records:not([hidden])) > .session-chat {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+.comparison-child-history {
+  width: min(1100px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-page);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 12px;
+  padding: 20px;
+}
+.comparison-child-history > header,
+.comparison-child-history > nav,
+.comparison-child-history-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.comparison-child-history > header {
+  justify-content: space-between;
+}
+.comparison-child-history > .transcript {
+  min-height: 160px;
+}

@@ -88,6 +88,10 @@ describe('HostedSessions', () => {
     expect(closes).toEqual(['a'])
     await expect(hosted.dispatch(command('b', 'ping'))).resolves.toMatchObject({ ok: true })
     expect(hosted.keys()).toEqual(['b'])
+    const sessionScoped = vi.fn(() => 'called')
+    await expect(hosted.withSession('a', 'callService', sessionScoped)).rejects.toThrow(/closing/)
+    expect(sessionScoped).not.toHaveBeenCalled()
+    await expect(hosted.withSession('never-owned', 'callService', sessionScoped)).resolves.toBe('called')
   })
 
   it('rejects a binding for another session before creating a session', async () => {
@@ -132,13 +136,13 @@ describe('HostedSessions', () => {
       close,
     } as unknown as HostSession)
 
-    await opening
+    await expect(opening).rejects.toThrow('closed while opening')
     await closing
     expect(close).toHaveBeenCalledOnce()
     expect(hosted.keys()).toEqual([])
   })
 
-  it('releases the kernel key after a failed close so the same key can reopen', async () => {
+  it('retains the failed owner and refuses reopening after close fails', async () => {
     const kernelSessions = new Map<string, unknown>()
     let attempt = 0
     const createSession = vi.fn(async ({ key }: { key: string }) => {
@@ -169,8 +173,81 @@ describe('HostedSessions', () => {
 
     await hosted.open(open('a'))
     await expect(hosted.close('a')).rejects.toThrow('close failed')
+    expect(kernelSessions.has('a')).toBe(true)
+    const owner = { sessionKey: 'a', writerRunId: 'writer:1', generation: 1, workerGeneration: 1 }
+    await expect(hosted.closeAndConfirm('a', owner)).resolves.toEqual({
+      exited: false,
+      reason: 'close-failed',
+      owner,
+    })
+    await expect(hosted.close('a')).rejects.toThrow('close failed')
+    await expect(hosted.open(open('a'))).rejects.toThrow('close failed')
+    expect(hosted.keys()).toEqual([])
+    expect(createSession).toHaveBeenCalledOnce()
+    const retained = kernelSessions.get('a') as HostSession
+    const retry = vi.fn(async () => undefined)
+    retained.close = retry
+    await expect(
+      hosted.closeAndConfirm('a', { ...owner, writerRunId: 'replacement' }),
+    ).resolves.toMatchObject({ exited: false, reason: 'generation-mismatch' })
+    expect(retry).not.toHaveBeenCalled()
+    await expect(hosted.closeAndConfirm('a', owner)).resolves.toEqual({ exited: true, owner })
+    expect(retry).toHaveBeenCalledOnce()
     expect(kernelSessions.has('a')).toBe(false)
-    await expect(hosted.open(open('a'))).resolves.toMatchObject({ sessionKey: 'a', writerRunId: 'writer:2' })
+    expect(createSession).toHaveBeenCalledOnce()
+    await hosted.open(open('a'))
+    await expect(hosted.closeAndConfirm('a', owner)).resolves.toMatchObject({
+      exited: false,
+      reason: 'generation-mismatch',
+    })
     expect(hosted.keys()).toEqual(['a'])
+    await hosted.closeAll()
+  })
+  it('confirms only the exact owner after its running command has drained', async () => {
+    let finishRun: (() => void) | undefined
+    const session = {
+      key: 'a',
+      writerRunId: 'writer:a',
+      lastSeq: 0,
+      latest: () => null,
+      close: vi.fn(async () => undefined),
+      run: async () =>
+        new Promise((resolve) => {
+          finishRun = () => resolve({ reason: 'aborted', lastSeq: 0 })
+        }),
+    } as unknown as HostSession
+    const hosted = new HostedSessions({
+      host: {
+        acceptWorkspaceBinding,
+        createSession: async () => session,
+        kernel: { sessions: new Map([['a', session]]) },
+      } as unknown as Host,
+      channel: new SharedSessionChannel(() => undefined),
+      send: () => undefined,
+      workerGeneration: 2,
+      workspaceRoot: '/workspace',
+    })
+    await hosted.open(open('a'))
+    const owner = { sessionKey: 'a', writerRunId: 'writer:a', generation: 1, workerGeneration: 2 }
+    await expect(hosted.closeAndConfirm('a', { ...owner, workerGeneration: 1 })).resolves.toMatchObject({
+      exited: false,
+      reason: 'generation-mismatch',
+    })
+    expect(hosted.keys()).toEqual(['a'])
+    const running = hosted.dispatch(command('a', 'run', { runId: 'run' }))
+    await vi.waitFor(() => expect(finishRun).toBeDefined())
+    const confirmation = hosted.closeAndConfirm('a', owner)
+    let confirmed = false
+    void confirmation.then(() => {
+      confirmed = true
+    })
+    await vi.waitFor(() => expect(session.close).toHaveBeenCalledOnce())
+    expect(confirmed).toBe(false)
+    expect(hosted.keys()).toEqual([])
+    finishRun?.()
+    await running
+    await expect(confirmation).resolves.toEqual({ exited: true, owner })
+    await expect(hosted.closeAndConfirm('a', owner)).resolves.toEqual({ exited: true, owner })
+    await expect(hosted.closeAndConfirm('missing', owner)).resolves.toMatchObject({ exited: false })
   })
 })

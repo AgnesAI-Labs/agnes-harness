@@ -41,6 +41,9 @@ import {
   initialCacheHealthState,
 } from './cache-health.js'
 import { clipUtf16 as clip } from './clip.js'
+import { NestedToolSources } from './nested-tool-source.js'
+import { ParentMessageSources } from './parent-message-source.js'
+import { RuntimeWorkProjection } from './runtime-work.js'
 import { SurfaceCache } from './surface.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
 
@@ -210,12 +213,17 @@ export class UIProjectionCell {
   }
   private state: LedgerState = initialState()
   private readonly nodes: UINode[] = []
+  private readonly runtimeWork = new RuntimeWorkProjection()
+  private readonly parentMessageSources: ParentMessageSources
+  private readonly nestedToolSources: NestedToolSources
   private readonly nodeIndexes = new Map<string, number>()
   private readonly tools = new Map<string, ToolNode>()
   private readonly approvals = new Map<string, ApprovalNode>()
   private readonly approvalTools = new Map<string, string>()
   private readonly effectTools = new Map<string, string>()
   private readonly assistantEffects = new Map<string, AssistantNode>()
+  /** Explicit output-anchor sources allow any runtime to adopt a stream without a native inference effect. */
+  private readonly assistantOutputSources = new Map<number, { node: AssistantNode; turn: number }>()
   // What each running inference has said so far by count, and which ones kept their text when cut.
   // The text itself never reaches this cell while streaming; only a cut stream records it.
   private readonly outputChars = new Map<string, number>()
@@ -244,7 +252,7 @@ export class UIProjectionCell {
   private readonly contextSurface: SurfaceCache
   private contextBase: { seq: Seq; total: number } | undefined
   private contextTokensValue = 0
-  private readonly turnsProjection = new TurnProjection()
+  private readonly turnsProjection: TurnProjection
   private cacheHealth: CacheHealthState = initialCacheHealthState()
 
   private recording = false
@@ -261,6 +269,9 @@ export class UIProjectionCell {
     limits: { maxEvents?: number; maxBytes?: number } = {},
   ) {
     this.contextSurface = new SurfaceCache(lane)
+    this.turnsProjection = new TurnProjection(sessionKey)
+    this.parentMessageSources = new ParentMessageSources(sessionKey, lane)
+    this.nestedToolSources = new NestedToolSources(sessionKey)
     this.maxJournalEvents = limits.maxEvents ?? DEFAULT_JOURNAL_EVENTS
     this.maxJournalBytes = limits.maxBytes ?? DEFAULT_JOURNAL_BYTES
   }
@@ -530,7 +541,8 @@ export class UIProjectionCell {
       isForkBoundary || (event.lane ?? 'main') === this.lane
         ? this.turnsProjection.apply(event)
         : { changed: new Set<string>(), owner: undefined }
-    const changed = this.applyNode(event)
+    const messageSource = this.parentMessageSources.apply(event)
+    const changed = this.applyNode(event, messageSource)
     for (const id of this.turnsProjection.associate(event, changed, turnUpdate.owner))
       turnUpdate.changed.add(id)
     this.state = nextState
@@ -614,11 +626,27 @@ export class UIProjectionCell {
     }
   }
 
-  private applyNode(event: Event): Set<string> {
+  private applyNode(
+    event: Event,
+    messageSource?: Extract<UINode, { kind: 'context' }>['messageSource'],
+  ): Set<string> {
     const changed = new Set<string>()
     if ((event.lane ?? 'main') !== this.lane) return changed
     const { id, seq } = event
     const data = event.data
+    const nested = this.nestedToolSources.apply(event)
+    if (nested) {
+      const tool = this.tools.get(nested.toolUseId)
+      const parent = this.tools.get(nested.parentToolUseId)
+      if (tool && parent) {
+        tool.depth = nested.depth
+        if (nested.running && tool.status === 'planned') tool.status = 'running'
+        parent.children ??= []
+        if (!parent.children.includes(tool.id)) parent.children.push(tool.id)
+        changed.add(tool.id)
+        changed.add(parent.id)
+      }
+    }
     if (typeof event.surfaceOp === 'object') {
       const value = data as {
         content?: Array<{ type: string; text?: string }>
@@ -640,9 +668,19 @@ export class UIProjectionCell {
       return changed
     }
     switch (event.type) {
+      case 'runtime/record': {
+        const node = this.runtimeWork.apply(event)
+        if (node) {
+          if (!this.nodeIndexes.has(node.id)) this.pushNode(node)
+          changed.add(node.id)
+        }
+        break
+      }
       case 'user/message': {
         const message = data as UserMessage
-        if (message.kind === 'runtime_context') {
+        if (messageSource) {
+          this.pushNode({ kind: 'context', id, seq, text: text(message.content), messageSource })
+        } else if (message.kind === 'runtime_context') {
           // Hook notices and per-request fact snapshots ride the user/message
           // channel for ordering, but were never typed by the operator — keep
           // them out of the 'user' node kind so renderers don't disguise them
@@ -691,6 +729,8 @@ export class UIProjectionCell {
           this.pushNode(node)
           changed.add(node.id)
         }
+        if (output.state === 'started' && event.sourceEventSeqs?.length === 1)
+          this.assistantOutputSources.set(seq, { node, turn: this.turn })
         this.outputChars.set(output.effectId, output.chars.text + output.chars.thinking)
         if (output.state === 'interrupted') {
           node.text = text(output.content)
@@ -705,7 +745,23 @@ export class UIProjectionCell {
       }
       case 'assistant/message': {
         const message = data as AssistantMessage
-        const node = this.activeInference ? this.assistantEffects.get(this.activeInference) : undefined
+        const anchors = new Set(
+          (event.sourceEventSeqs ?? []).flatMap((source) => {
+            const anchor = this.assistantOutputSources.get(source)
+            return anchor && source < seq && anchor.turn === this.turn && anchor.node.streaming
+              ? [anchor.node]
+              : []
+          }),
+        )
+        const hasAnchorSource = (event.sourceEventSeqs ?? []).some((source) =>
+          this.assistantOutputSources.has(source),
+        )
+        const node =
+          anchors.size === 1
+            ? [...anchors][0]
+            : !hasAnchorSource && this.activeInference
+              ? this.assistantEffects.get(this.activeInference)
+              : undefined
         const final: AssistantNode = {
           kind: 'assistant',
           id,
@@ -895,6 +951,15 @@ export class UIProjectionCell {
         changed.add(id)
         break
       }
+      case 'session/start':
+        for (const { node } of this.assistantOutputSources.values()) {
+          if (node.streaming) {
+            node.streaming = false
+            changed.add(node.id)
+          }
+        }
+        this.assistantOutputSources.clear()
+        break
       case 'turn/start':
         this.turn = (data as { turn: number }).turn
         this.step = 0

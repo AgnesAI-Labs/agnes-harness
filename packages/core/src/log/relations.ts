@@ -1,3 +1,4 @@
+import { assertRuntimeOwner, readRuntimeIdentity } from '@agnes/runtime-api'
 import { type SurfaceCache, validateReplace } from '../project/surface.js'
 import { reduce } from '../reduce/reducer.js'
 import type { LedgerState } from '../reduce/state.js'
@@ -54,9 +55,33 @@ export function checkRelations(
     // simulation and the rejection detail name a row the caller can find in the batch it handed in.
     const seq = e.seq ?? s.lastSeq + 1
     const turn = s.openTurn.get(lane)
+    if (e.type === 'runtime/record' || e.type === 'runtime/cancel') {
+      const owner = readRuntimeIdentity(s.session?.runtime)
+      if (
+        owner.id === 'native' ||
+        !s.session ||
+        e.origin !== 'system' ||
+        e.trust !== 'trusted' ||
+        e.ignorable
+      )
+        throw new CoreError('E_RELATION', 'runtime control records require a non-native trusted owner', {
+          lane,
+          seq,
+        })
+      assertRuntimeOwner(d?.runtime, owner)
+    }
     if (e.type === 'turn/start' && turn)
       throw new CoreError('E_LANE_BUSY', 'turn already open', { lane, seq })
-    if (IN_TURN.has(e.type) && !turn)
+    const outputSource = e.sourceEventSeqs?.[0]
+    const closingOutput = outputSource === undefined ? undefined : s.assistantOutputs.get(outputSource)
+    const orphanClose =
+      e.type === 'assistant/output' &&
+      d?.state === 'interrupted' &&
+      closingOutput &&
+      !closingOutput.closed &&
+      closingOutput.lane === lane &&
+      closingOutput.effectId === d.effectId
+    if (IN_TURN.has(e.type) && !turn && !orphanClose)
       throw new CoreError('E_RELATION', `${e.type} outside an open turn`, { lane, seq })
     if (e.type === 'step/start') {
       if (s.openStep.has(lane)) throw new CoreError('E_RELATION', 'step already open', { lane, seq })
@@ -113,23 +138,84 @@ export function checkRelations(
     if (e.type === 'assistant/output') {
       const effectId = typeof d?.effectId === 'string' ? d.effectId : ''
       const pending = s.pendingEffects.get(effectId)
-      if (pending?.kind !== 'inference' || pending.lane !== lane)
-        throw new CoreError('E_RELATION', 'assistant/output without pending inference on its lane', {
-          lane,
-          seq,
-        })
-      // Checked against committed state, so a started row still queued behind an earlier commit is
-      // not required here: the writer admits started, progress and interrupted in that order.
+      if (pending?.kind !== 'inference' || pending.lane !== lane) {
+        const sources = e.sourceEventSeqs ?? []
+        const latest = s.lastRuntimeRecord.get(lane)
+        const opening =
+          d?.state === 'started' &&
+          readRuntimeIdentity(s.session?.runtime).id !== 'native' &&
+          turn &&
+          s.openStep.has(lane) &&
+          sources.length === 1 &&
+          latest !== undefined &&
+          latest.seq === sources[0] &&
+          latest.turn === turn.turn &&
+          latest.seq < seq &&
+          ![...s.assistantOutputs.values()].some((output) => output.effectId === effectId)
+        const continuing =
+          d?.state !== 'started' &&
+          sources.length === 1 &&
+          closingOutput &&
+          !closingOutput.closed &&
+          closingOutput.lane === lane &&
+          closingOutput.effectId === effectId &&
+          (d?.state === 'interrupted'
+            ? Array.isArray(d.content) && d.content.length === 0
+            : closingOutput.turn === turn?.turn)
+        if (e.origin !== 'model' || e.trust !== 'trusted' || e.ignorable || (!opening && !continuing))
+          throw new CoreError(
+            'E_RELATION',
+            readRuntimeIdentity(s.session?.runtime).id === 'native'
+              ? 'assistant/output without pending inference on its lane'
+              : 'assistant/output lacks a live same-lane presentation source',
+            {
+              lane,
+              seq,
+            },
+          )
+      } else {
+        // Checked against committed state, so a started row still queued behind an earlier commit is
+        // not required here: the writer admits started, progress and interrupted in that order.
+        if (
+          d?.state === 'started' &&
+          (pending.receiptSeq === undefined || pending.firstOutputSeq !== undefined)
+        )
+          throw new CoreError('E_RELATION', 'assistant/output started before the receipt or twice', {
+            lane,
+            seq,
+          })
+        if (d?.state !== 'started' && pending.interruptedSeq !== undefined)
+          throw new CoreError('E_RELATION', 'assistant/output after the stream was recorded as cut', {
+            lane,
+            seq,
+          })
+      }
+    }
+    if (e.type === 'assistant/message') {
+      const outputs = (e.sourceEventSeqs ?? []).flatMap((source) => {
+        const output = s.assistantOutputs.get(source)
+        return output ? [{ ...output, seq: source }] : []
+      })
+      const latest = s.lastRuntimeRecord.get(lane)
       if (
-        d?.state === 'started' &&
-        (pending.receiptSeq === undefined || pending.firstOutputSeq !== undefined)
+        outputs.length &&
+        (outputs.length !== 1 ||
+          outputs.some(
+            (output) =>
+              output.closed ||
+              output.lane !== lane ||
+              output.turn !== turn?.turn ||
+              !latest ||
+              latest.turn !== output.turn ||
+              latest.seq <= output.seq,
+          ) ||
+          !latest ||
+          !e.sourceEventSeqs?.includes(latest.seq) ||
+          e.origin !== 'model' ||
+          e.trust !== 'trusted' ||
+          e.ignorable)
       )
-        throw new CoreError('E_RELATION', 'assistant/output started before the receipt or twice', {
-          lane,
-          seq,
-        })
-      if (d?.state !== 'started' && pending.interruptedSeq !== undefined)
-        throw new CoreError('E_RELATION', 'assistant/output after the stream was recorded as cut', {
+        throw new CoreError('E_RELATION', 'assistant/message must adopt one live same-lane/turn output', {
           lane,
           seq,
         })
@@ -178,7 +264,13 @@ export function opLanesAfter(log: SessionLogImpl, op: OpWrite | undefined): Set<
 export function makeRelationCheck(
   tracker: StateTracker,
   surfaces?: Map<string, SurfaceCache>,
+  options: { nativeCounter?: boolean } = {},
 ): (events: readonly CheckedEvent[], log?: SessionLogImpl, op?: OpWrite) => void {
   return (events, log, op) =>
-    checkRelations(events, tracker.state, surfaces, log ? opLanesAfter(log, op) : undefined)
+    checkRelations(
+      events,
+      tracker.state,
+      surfaces,
+      log && options.nativeCounter !== false ? opLanesAfter(log, op) : undefined,
+    )
 }

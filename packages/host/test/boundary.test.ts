@@ -49,6 +49,11 @@ describe('host boundaries', () => {
             '@agnes/resource-control-runtime',
             '@agnes/sandbox-remote',
             '@agnes/system-node',
+            '@agnes/runtime-api',
+            '@agnes/jev-runtime',
+            '@agnes/jev-trace',
+            '@agnes/runtime-jev',
+            '@agnes/runtime-comparison',
           ],
           `${f}: ${pkg}`,
         ).toContain(pkg)

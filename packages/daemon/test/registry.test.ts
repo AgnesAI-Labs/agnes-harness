@@ -21,6 +21,59 @@ async function open(
 // `tsc` accepts these assignments at all, not any particular runtime behavior. Each `it` still calls
 // one shared method so the assertion is not entirely inert.
 describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/registry.ts WorkerRegistry)', () => {
+  it('blocks existing handles and automatic crash reopen after durable admission is sealed', async () => {
+    let blocked = false
+    let exited: (() => void) | undefined
+    const link = {
+      alive: true,
+      hello: Promise.resolve({ kind: 'hello', sessionKey: 'fenced', writerRunId: 'old', generation: 1 }),
+      onExit: (fn: () => void) => {
+        exited = fn
+      },
+      command: vi.fn(),
+    }
+    const acquire = vi.fn(async () => link)
+    const registry = new WorkerRegistry({ acquire } as unknown as WorkerPool, undefined, () => {
+      if (blocked) throw new Error('retired')
+    })
+    const entry = await open(registry, { key: 'fenced', cwd: '/workspace' })
+    registry.subscribe('fenced', () => undefined)
+    blocked = true
+    await expect(open(registry, { key: 'fenced', cwd: '/workspace' })).rejects.toThrow('retired')
+    expect(registry.require('fenced')).toBe(entry)
+    exited?.()
+    await Promise.resolve()
+    await expect(open(registry, { key: 'fenced', cwd: '/workspace', resume: true })).rejects.toThrow(
+      'retired',
+    )
+    expect(registry.get('fenced')).toBeUndefined()
+    expect(acquire).toHaveBeenCalledOnce()
+  })
+
+  it('closes a newly acquired owner when admission is sealed during worker acquisition', async () => {
+    let blocked = false
+    let release!: (value: unknown) => void
+    const pending = new Promise((resolve) => {
+      release = resolve
+    })
+    const proof = {
+      exited: true,
+      owner: { sessionKey: 'fenced-opening', writerRunId: 'new', generation: 1, workerGeneration: 1 },
+    }
+    const link = { closeAndConfirm: vi.fn(async () => proof) }
+    const acquire = vi.fn(() => pending)
+    const registry = new WorkerRegistry({ acquire } as unknown as WorkerPool, undefined, () => {
+      if (blocked) throw new Error('retired')
+    })
+    const opening = open(registry, { key: 'fenced-opening', cwd: '/workspace' })
+    await vi.waitFor(() => expect(acquire).toHaveBeenCalledOnce())
+    blocked = true
+    release(link)
+    await expect(opening).rejects.toThrow('closed while opening')
+    expect(registry.get('fenced-opening')).toBeUndefined()
+    expect(link.closeAndConfirm).toHaveBeenCalledOnce()
+  })
+
   it('lets the live tool-result projection satisfy an overtaking same-turn media read', async () => {
     const artifactEvent = {
       seq: 7,
@@ -839,6 +892,10 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       closeSession: vi.fn(async () => {
         throw new Error('recovery channel close failed')
       }),
+      closeAndConfirm: vi.fn(async () => {
+        await recovered.closeSession().catch(() => undefined)
+        return { exited: false, reason: 'close-failed' }
+      }),
       onExit: vi.fn(),
       command: vi.fn(),
     }
@@ -855,10 +912,17 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(2))
     const closing = registry.close('close-during-recovery')
     releaseRecovery?.(recovered)
-    await closing
+    await expect(closing).rejects.toThrow('close is unconfirmed')
 
     await vi.waitFor(() => expect(recovered.closeSession).toHaveBeenCalledOnce())
     expect(registry.get('close-during-recovery')).toBeUndefined()
+    await expect(registry.closeAndConfirm('close-during-recovery')).resolves.toMatchObject({
+      exited: false,
+      reason: 'close-failed',
+    })
+    await expect(open(registry, { key: 'close-during-recovery', cwd: '/workspace' })).rejects.toThrow(
+      'close is unconfirmed',
+    )
     expect(acquire).toHaveBeenCalledTimes(2)
   })
 
@@ -906,6 +970,45 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     await vi.waitFor(() => expect(registry.get(key)?.session.writerRunId).toBe('recovered'))
     expect(acquire).toHaveBeenCalledTimes(3)
     await registry.closeAll()
+  })
+
+  it('retries only the retained failed writer without exposing it or closing a replacement', async () => {
+    let failed = true
+    const owner = { sessionKey: 'retry', writerRunId: 'owner', generation: 1, workerGeneration: 1 }
+    const link = {
+      alive: true,
+      hello: Promise.resolve({ kind: 'hello', sessionKey: 'retry', writerRunId: 'owner', generation: 1 }),
+      onExit: vi.fn(),
+      command: vi.fn(),
+      closeSession: vi.fn(async () => {
+        if (failed) throw new Error('receipt failed')
+      }),
+      closeAndConfirm: vi.fn(async () =>
+        failed ? { exited: false, reason: 'close-failed', owner } : { exited: true, owner },
+      ),
+    }
+    const registry = new WorkerRegistry({ acquire: vi.fn(async () => link) } as unknown as WorkerPool)
+    await open(registry, { key: 'retry', cwd: '/workspace' })
+    await expect(registry.closeAndConfirm('retry', { expectedWriterRunId: 'other' })).resolves.toEqual({
+      exited: false,
+      reason: 'owner-unknown',
+    })
+    expect(link.closeSession).not.toHaveBeenCalled()
+    await expect(registry.closeAndConfirm('retry', { expectedWriterRunId: 'owner' })).resolves.toMatchObject({
+      exited: false,
+      reason: 'close-failed',
+    })
+    expect(registry.get('retry')).toBeUndefined()
+    failed = false
+    await expect(registry.closeAndConfirm('retry', { expectedWriterRunId: 'other' })).resolves.toEqual({
+      exited: false,
+      reason: 'owner-unknown',
+    })
+    await expect(registry.closeAndConfirm('retry', { expectedWriterRunId: 'owner' })).resolves.toEqual({
+      exited: true,
+      owner,
+    })
+    expect(link.closeSession).toHaveBeenCalledTimes(2)
   })
 
   it('finishes pending and map cleanup after the first session close fails', async () => {

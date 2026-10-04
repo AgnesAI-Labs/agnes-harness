@@ -1,17 +1,28 @@
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
+import {
+  canonicalJson,
+  DEFAULT_COMPUTER_USE,
+  hashInput,
+  type ResolvedProfile,
+  resolveWorkspaceDirectory,
+  sha256hex,
+} from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { afterEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
+import { comparisonSessionKeys } from '../src/local/comparison-identity.js'
+import { openComparisonStorage } from '../src/local/methods/comparison.js'
+import { SessionWorkspaceIndex } from '../src/storage/lister.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
 import { ensure } from '../src/storage/table.js'
+import { WorkspaceBindingIndex, WorkspaceCatalog, WorkspaceIndex } from '../src/storage/workspaces.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import { DaemonMutationLockError } from '../src/supervisor/mutation-lock.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
@@ -34,6 +45,153 @@ const processIdentity = async (pid: number) =>
     ? ({ state: 'alive', startId: 'supervisor-e2e' } as const)
     : ({ state: 'dead' } as const)
 const SOURCE_AUTH_KEY = ['source', 'auth', 'fixture', 'key'].join('-')
+
+it('hides legacy comparison authority and permanent reservations through production supervisor discovery across restart', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-supervisor-navigation-'))
+  const database = join(dir, 'daemon.sqlite')
+  const profile = buildProfile(dir)
+  const profileFile = join(dir, 'profile.json')
+  writeFileSync(profileFile, JSON.stringify(profile))
+  let tables = sqliteTables(database)
+  const keys = comparisonSessionKeys('local', 'legacy-navigation')
+  const unbound = comparisonSessionKeys('local', 'unbound-navigation').left
+  const ordinaryPaths = [dir, join(dir, 'projects', 'left'), join(dir, 'projects', 'right')]
+  try {
+    const sessions = new SessionWorkspaceIndex(tables.table('session_workspaces'))
+    const ownership = new SessionPrincipalOwnershipIndex(tables.table('session_principal_ownership'))
+    const catalog = new WorkspaceCatalog(
+      new WorkspaceIndex(tables.table('workspace_registry')),
+      sessions,
+      resolveWorkspaceDirectory,
+      () => 0,
+      new WorkspaceBindingIndex(tables.table('workspace_bindings')),
+    )
+    for (const path of ordinaryPaths) {
+      mkdirSync(path, { recursive: true })
+      await catalog.add(path)
+    }
+    for (const [key, path] of [
+      ['normal-left', ordinaryPaths[1]],
+      ['normal-right', ordinaryPaths[2]],
+      [keys.left, join(dir, 'isolated', 'left')],
+      [keys.right, join(dir, 'isolated', 'right')],
+      ['lane-child', join(dir, 'isolated', 'left')],
+    ] as const) {
+      if (!path) throw new Error('Missing fixture path')
+      mkdirSync(path, { recursive: true })
+      await catalog.add(path)
+      await catalog.authorizeAndBind(key, path)
+      sessions.observe(
+        key,
+        {
+          seq: 1,
+          ts: '2026-10-04T00:00:00.000Z',
+          type: 'session/start',
+          data: { preset: 'standard' },
+        } as never,
+        1,
+      )
+      expect(ownership.bindNew(key, 'local')).toBe(true)
+      expect(ownership.activateNew(key, 'local')).toBe(true)
+    }
+    const comparison = openComparisonStorage(dir)
+    try {
+      for (const id of ['legacy-navigation', 'unbound-navigation'])
+        await comparison.scoped('local').compareAndSwap(id, null, {
+          id,
+          revision: 0,
+          createPayload: JSON.stringify({
+            requestId: id,
+            cwd: dir,
+            left: { runtime: 'native' },
+            right: { runtime: 'native' },
+          }),
+          creation: 'failed',
+          lanes: {},
+          rounds: [],
+          cancellation: {},
+          error: { code: 'PREPARATION_FAILED', message: 'Synthetic preparation failure' },
+          cleanup: { exited: [], released: false },
+        })
+    } finally {
+      comparison.close()
+    }
+    // A projected historical reservation without authority must still be hidden by its admission.
+    sessions.put(unbound, dir)
+    sessions.observe(
+      unbound,
+      {
+        seq: 1,
+        ts: '2026-10-04T00:00:00.000Z',
+        type: 'session/start',
+        data: { preset: 'standard' },
+      } as never,
+      1,
+    )
+    expect(ownership.bindNew(unbound, 'local')).toBe(true)
+    expect(ownership.activateNew(unbound, 'local')).toBe(true)
+    for (let round = 0; round < 2; round++) {
+      const supervisor = await startSupervisor({
+        config: buildConfigFor(dir),
+        profile,
+        profileDir: join(dir, 'profiles', 'local-dev'),
+        profileFile,
+        workspaceRoot: dir,
+        jobTables: tables,
+        processIdentity,
+        ...workerSpawnOpts,
+      })
+      const sdk = createClient({
+        transport: localSdkTransport(supervisor.socketPath),
+        journal: memoryJournal(),
+      })
+      try {
+        await sdk.initialize()
+        const workspaces = await sdk.workspace.list()
+        expect(workspaces.items.map((row) => row.path).sort()).toEqual(
+          (
+            await Promise.all(ordinaryPaths.map(async (path) => (await resolveWorkspaceDirectory(path)).path))
+          ).sort(),
+        )
+        const first = await sdk.session.list({ limit: 1 }).catch((cause) => {
+          throw new Error('first session page failed', { cause })
+        })
+        expect(first.items.map((row) => row.sessionId)).toEqual(['normal-left'])
+        if (!first.next) throw new Error('Missing ordinary pagination cursor')
+        const second = await sdk.session.list({ limit: 1, cursor: first.next }).catch((cause) => {
+          throw new Error('second session page failed', { cause })
+        })
+        expect(second.items.map((row) => row.sessionId)).toEqual(['normal-right'])
+        expect(second.next).toBeUndefined()
+        for (const key of [keys.left, keys.right, 'lane-child', unbound])
+          expect(
+            (
+              await sdk.session.list({ q: { prefix: key } }).catch((cause) => {
+                throw new Error(`session prefix failed: ${key}`, { cause })
+              })
+            ).items,
+          ).toEqual([])
+        expect(
+          (
+            await sdk.comparison.list().catch((cause) => {
+              throw new Error('comparison list failed', { cause })
+            })
+          ).items
+            .map((row) => row.id)
+            .sort(),
+        ).toEqual(['legacy-navigation', 'unbound-navigation'])
+      } finally {
+        await sdk.close()
+        await supervisor.close()
+      }
+      await tables.close()
+      tables = sqliteTables(database)
+    }
+  } finally {
+    await tables.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
 
 type Rpc = { id?: number; method?: string; result?: unknown; error?: unknown }
 

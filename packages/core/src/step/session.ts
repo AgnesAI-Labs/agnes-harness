@@ -16,6 +16,9 @@ import type {
   RequestBody,
   RequestMediaHeader,
   ResolvedToolCallPolicy,
+  RuntimeIdentity,
+  SessionRuntimeControlResult,
+  SessionRuntimeState,
   SessionStart,
   ThinkingLevel,
   UISpan,
@@ -31,6 +34,7 @@ import {
 import { hasChildControl } from '../child/store.js'
 import { EffectRuntime } from '../effects/effect.js'
 import { type ExecuteAttempt, ExecutePermitRegistry } from '../effects/execute-permits.js'
+import type { HumanWaitScope } from '../effects/managed-human-wait.js'
 import { type NestedToolLease, NestedToolScheduler } from '../effects/scheduler.js'
 import type { ApprovalRequest, Pending, Verdict, VerifierVerdict } from '../effects/seams.js'
 import type { ChildrenFactory, ToolContextDeps } from '../effects/tool-context.js'
@@ -94,10 +98,23 @@ import type {
   RuntimePromptPreload,
   RuntimePromptPreloader,
 } from '../runtime/current.js'
+import { NATIVE_RUNTIME, type RuntimeControl, type SessionLoop } from '../runtime/loop.js'
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
+import {
+  assertConfigurationExecution,
+  assertConfigurationInputAvailable,
+  assertConfigurationMutable,
+  configurationAdmissionHeld,
+  configurationAdmissionInputId,
+  finishConfigurationOwner,
+  persistCancelledInput,
+  releaseCancelledConfiguration,
+  type SessionConfigurationAdmission,
+  verifyConfigurationAdmission,
+} from './configuration-admission.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { deferredEffectId } from './deferred.js'
 import { sysEvent } from './events.js'
@@ -122,6 +139,7 @@ import type { PresetView } from './preset.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
+import { assertSessionIdleGateMutable, sessionIdleGateHeld } from './session-idle-gate.js'
 import { runToolsPhase } from './tools.js'
 import { stepVerifyInput } from './verify-input.js'
 
@@ -337,6 +355,14 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  /** Current live ownership only; durable fork lineage never grants or denies human interaction. */
+  runtimeOwnerSessionKey?: string
+  toolQuestions?: ToolContextDeps['toolQuestions']
+  toolQuestionsDrain?: () => Promise<void>
+  /** Abort and drain live owned descendants before sealing the parent writer. */
+  childrenDrain?: () => Promise<void>
+  /** Immutable execution owner, recorded before any runtime is allowed to run. */
+  loopIdentity?: RuntimeIdentity
   log: SessionLogImpl
   tracker: StateTracker
   surface: SurfaceCache
@@ -397,6 +423,7 @@ export type SessionDeps = {
   resolvedProfileHash: string | null
   /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
   imported?: SessionStart['imported']
+  delegation?: SessionStart['delegation']
   cwd: string
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
@@ -487,6 +514,73 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
 
 export class SessionImpl {
   readonly d: SessionDeps
+  private loop: SessionLoop | undefined
+
+  /** Assembly-only attachment. An execution owner cannot be replaced on a live session. */
+  attachLoop(loop: SessionLoop): void {
+    const owner = this.runtimeIdentity
+    if (
+      this.loop ||
+      this.activeOps > 0 ||
+      loop.identity.id !== owner.id ||
+      loop.identity.version !== owner.version
+    )
+      throw new CoreError('E_RELATION', 'runtime owner cannot be replaced')
+    this.loop = loop
+  }
+
+  get runtimeIdentity(): RuntimeIdentity {
+    return this.d.loopIdentity ?? NATIVE_RUNTIME
+  }
+
+  private executionOwnerError(admit = true): CoreError | undefined {
+    if (admit) {
+      try {
+        this.d.log.storage.assertSessionAdmitted?.(this.key)
+      } catch (error) {
+        return error instanceof CoreError
+          ? error
+          : new CoreError('E_STORAGE_FAULT', 'Session admission unavailable')
+      }
+    }
+    const owner = this.runtimeIdentity
+    if (!this.loop && (owner.id !== NATIVE_RUNTIME.id || owner.version !== NATIVE_RUNTIME.version))
+      return new CoreError('E_RELATION', 'runtime execution owner is not attached')
+    return undefined
+  }
+
+  runtimeState(): SessionRuntimeState {
+    if (this.loop) return this.loop.state()
+    return {
+      runtime: this.runtimeIdentity,
+      phase: this.closing ? 'closed' : this.op() ? 'running' : 'idle',
+      revision: this.lastSeq,
+    }
+  }
+  /** Route a control operation to this session's owner without scheduling execution or changing tools. */
+  controlRuntime(
+    input: RuntimeControl,
+    admission?: SessionConfigurationAdmission,
+  ): Promise<SessionRuntimeControlResult> {
+    try {
+      if (admission) assertConfigurationExecution(this, admission)
+      else assertConfigurationMutable(this)
+    } catch (error) {
+      return Promise.reject(error)
+    }
+    if (this.closing) return Promise.reject(new CoreError('E_CLOSED', 'session is closed'))
+    const owner = this.runtimeIdentity
+    if (input.expectedRuntime.id !== owner.id || input.expectedRuntime.version !== owner.version)
+      return Promise.reject(new CoreError('E_RELATION', 'runtime identity does not match this session'))
+    const ownerError = this.executionOwnerError()
+    if (ownerError) return Promise.reject(ownerError)
+    const loop = this.loop
+    const control = loop?.control
+    if (!control) return Promise.reject(new CoreError('E_UNSUPPORTED', 'runtime control is unsupported'))
+    if (this.activeOps > 0)
+      return Promise.reject(new CoreError('E_LANE_BUSY', 'runtime control requires an idle session'))
+    return this.active(async () => ({ runtime: owner, ...(await control.call(loop, input)) }), false)
+  }
   private fallbackHooks: HookPort
   private readonly fallbackResources: ResourceRegistry
   compaction: CompactionPort
@@ -496,6 +590,24 @@ export class SessionImpl {
   // run/step/resume calls in progress, and the resume they wait behind. `turn` and `op()` cannot say
   // this: both are set while a crashed turn waits to be continued, with nothing running.
   private activeOps = 0
+  private readonly executionIdleListeners = new Set<() => void>()
+  private readonly closingListeners = new Set<() => void>()
+  /** Includes work dispatched by the Host without an RPC inflight entry. */
+  get executionActive(): boolean {
+    return this.activeOps > 0
+  }
+  onExecutionIdle(listener: () => void): () => void {
+    this.executionIdleListeners.add(listener)
+    return () => this.executionIdleListeners.delete(listener)
+  }
+  onClosing(listener: () => void): () => void {
+    if (this.closingOrClosed) {
+      listener()
+      return () => undefined
+    }
+    this.closingListeners.add(listener)
+    return () => this.closingListeners.delete(listener)
+  }
   private resuming: Promise<unknown> | undefined
   // The error the last turn/end row carried, for run() to hand back with its outcome. Phases report
   // only a reason; the row is the one place the failure is written, so this repeats it verbatim.
@@ -552,6 +664,29 @@ export class SessionImpl {
     this.grantsRestored = true
   }
   private lock: Promise<void> = Promise.resolve()
+  private pendingLocks = 0
+  get configurationReserved(): boolean {
+    return configurationAdmissionHeld(this)
+  }
+  get idleGateReserved(): boolean {
+    return sessionIdleGateHeld(this)
+  }
+  /** Validated data coordinate for explicit maintenance, never an execution capability. */
+  get configurationAdmissionInputId(): string | undefined {
+    return configurationAdmissionInputId(this)
+  }
+  configurationAdmissionIdle(): void {
+    if (this.activeOps === 0 && !this.configurationReserved && !this.idleGateReserved)
+      for (const listener of [...this.executionIdleListeners]) {
+        try {
+          listener()
+        } catch {}
+      }
+  }
+  tryLocked<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.pendingLocks > 0) return Promise.reject(new CoreError('E_LANE_BUSY', 'Session writer is busy'))
+    return this.locked(fn)
+  }
   /**
    * The cancellation scope of the work in flight, which is the scope of one `run()`. `run()`
    * replaces it, because "stop this turn" and "this session is over" are different statements and
@@ -653,6 +788,7 @@ export class SessionImpl {
 
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
+    await verifyConfigurationAdmission(this)
     if (this.state.session) {
       if (!this.initialModelSettingsRestored)
         this.restoreInitialModelSettings(this.state.session.modelSettings)
@@ -695,8 +831,10 @@ export class SessionImpl {
           resolvedProfileHash: this.d.resolvedProfileHash,
           preset: this.preset.name,
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
+          runtime: this.runtimeIdentity,
           ...(modelSettings.length ? { modelSettings } : {}),
           ...(this.d.imported ? { imported: this.d.imported } : {}),
+          ...(this.d.delegation ? { delegation: this.d.delegation } : {}),
         },
       },
     ])
@@ -800,12 +938,16 @@ export class SessionImpl {
    * outside the class body. Still excluded from `index.ts`'s public export surface.
    */
   locked<T>(fn: () => Promise<T>): Promise<T> {
+    this.pendingLocks++
     const p = this.lock.then(fn, fn)
-    this.lock = p.then(
+    const done = p.finally(() => {
+      this.pendingLocks--
+    })
+    this.lock = done.then(
       () => undefined,
       () => undefined,
     )
-    return p
+    return done
   }
 
   /**
@@ -935,8 +1077,34 @@ export class SessionImpl {
    * enqueues drop one item, and one landing mid-transition shifts the sequence numbers the turn's
    * anchor and its tool arguments are addressed by.
    */
-  enqueue(target: 'next-turn' | 'next-step', msg: EnqueueMsg): Promise<Seq> {
+  /** Cancel only queued input; an already claimed turn is stopped through abort(). */
+  cancelQueuedInput(commandId: string): Promise<Seq> {
     return this.locked(async () => {
+      if (!commandId) throw new CoreError('E_ENVELOPE', 'commandId is required')
+      assertSessionIdleGateMutable(this)
+      this.d.log.storage.assertSessionAdmitted?.(this.key)
+      await persistCancelledInput(this, commandId)
+      const current = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
+      const items = current.items.filter((item) => item.commandId !== commandId)
+      if (items.length === current.items.length) {
+        await releaseCancelledConfiguration(this, commandId)
+        return this.lastSeq
+      }
+      const receipt = await this.d.log.append([inboxEvent(this.lane, this.d.actor, { ...current, items })])
+      await releaseCancelledConfiguration(this, commandId)
+      return receipt.seqs.at(-1) as Seq
+    })
+  }
+
+  enqueue(
+    target: 'next-turn' | 'next-step',
+    msg: EnqueueMsg,
+    admission?: SessionConfigurationAdmission,
+  ): Promise<Seq> {
+    return this.locked(async () => {
+      assertConfigurationExecution(this, admission)
+      this.d.log.storage.assertSessionAdmitted?.(this.key)
+      if (msg.commandId !== undefined) await assertConfigurationInputAvailable(this, msg.commandId)
       if (msg.budget !== undefined) {
         if (target !== 'next-turn')
           throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
@@ -979,7 +1147,8 @@ export class SessionImpl {
    * program counter are one transaction: any subset of them on the ledger is a state the resume
    * path cannot read.
    */
-  async acceptInput(): Promise<boolean> {
+  async acceptInput(admission?: SessionConfigurationAdmission): Promise<boolean> {
+    assertConfigurationExecution(this, admission)
     if (this.op()) return false
     await this.restoreGrants()
     const claimed = claimFrom(this.latest('inbox') as Inbox | undefined, 'next-turn')
@@ -998,7 +1167,7 @@ export class SessionImpl {
           trust: item.trust ?? 'trusted',
           actor: item.actor,
           lane: this.lane,
-          data: { content: item.content, kind: item.kind ?? 'prompt' },
+          data: { itemId: item.itemId, content: item.content, kind: item.kind ?? 'prompt' },
         },
         {
           type: 'turn/start',
@@ -1022,6 +1191,7 @@ export class SessionImpl {
       // Computed under the lock rather than from `lastSeq` outside it: an enqueue landing in
       // between would shift the row this number is supposed to name.
       (_cur, nextSeq) => {
+        assertConfigurationExecution(this, admission)
         const triggerSeq = (nextSeq + 1) as Seq
         return newOpState(
           {
@@ -1049,6 +1219,8 @@ export class SessionImpl {
    * CompactionRunner path used by requested Tool calls, threshold checks and overflow recovery.
    */
   async requestCompaction(input: { actor: Actor; admissionId: string; instructions?: string }): Promise<Seq> {
+    assertConfigurationMutable(this)
+    if (this.loop) throw new CoreError('E_UNSUPPORTED', 'runtime does not support Native compaction')
     if (this.op()) throw new CoreError('E_RELATION', 'manual compaction requires an idle session')
     if (!input.admissionId) throw new CoreError('E_ENVELOPE', 'manual compaction admissionId is required')
     if (input.instructions !== undefined && input.instructions.length > 4096)
@@ -1077,6 +1249,7 @@ export class SessionImpl {
         ),
       ],
       (_cur, nextSeq) => {
+        assertConfigurationMutable(this)
         const checkpoint = {
           kind: 'checkpoint' as const,
           continuation: 'may_finish' as const,
@@ -1109,7 +1282,7 @@ export class SessionImpl {
     return seqs[2] as Seq
   }
 
-  private async inboxBudget(itemId: string): Promise<number | undefined> {
+  async inboxBudget(itemId: string): Promise<number | undefined> {
     let found: number | undefined
     let toSeq: Seq | undefined
     for (;;) {
@@ -1189,7 +1362,10 @@ export class SessionImpl {
    * turn marker; using an open turn before that recovery is refused instead of losing its cap. */
   turnBudgetCap(): number | null {
     const op = this.op()
-    if (!op) return this.preset.budget.perRequestCap
+    if (!op)
+      return this.runtimeIdentity.id === 'native'
+        ? this.preset.budget.perRequestCap
+        : (this.turn?.budgetCap ?? this.preset.budget.perRequestCap)
     if (!this.turn) throw new CoreError('E_RELATION', 'open turn budget has not been rehydrated')
     return this.turn.budgetCap ?? this.preset.budget.perRequestCap
   }
@@ -1232,6 +1408,7 @@ export class SessionImpl {
     builtin: () => Promise<ToolResult>,
     dispatch: { executionDomain: ExecutionDomain; attempt: ExecuteAttempt },
   ): Promise<HostDispatchObservation> {
+    this.d.log.storage.assertSessionAdmitted?.(this.key)
     // This method is the sole external tool-dispatch choke point. The caller can only reach it with
     // the sequence returned by the append that durably wrote effect/intent; authority itself stays
     // process-local and is consumed before either the built-in or a replacement is entered.
@@ -1247,6 +1424,7 @@ export class SessionImpl {
       attempt: dispatch.attempt,
       ...(this.d.hostToolDispatch ? { hostPort: this.d.hostToolDispatch } : {}),
       invoke: () => {
+        this.d.log.storage.assertSessionAdmitted?.(this.key)
         if (!this.d.segments?.ToolExecution) return builtin()
         return runCoreReplacement(
           this,
@@ -1270,6 +1448,7 @@ export class SessionImpl {
   }
 
   runInference(): Promise<StepOutcome> {
+    this.d.log.storage.assertSessionAdmitted?.(this.key)
     return runInference(this)
   }
 
@@ -1312,6 +1491,20 @@ export class SessionImpl {
    * `step()` advances a turn whose state is sound, and this is what makes it sound again.
    */
   resume(o: { mode?: ResumeMode } = {}): Promise<ResumeReport> {
+    try {
+      assertSessionIdleGateMutable(this)
+    } catch (error) {
+      return Promise.reject(error)
+    }
+    // Opening an orphaned owner is read-only recovery, never authority to execute its pending input.
+    if (o.mode !== 'close' && configurationAdmissionHeld(this))
+      return Promise.resolve({
+        state: this.op() ? 'resumed' : 'idle',
+        phase: 'configuration-admission-held',
+        actions: [],
+      })
+    const ownerError = this.executionOwnerError(o.mode !== 'close')
+    if (ownerError) return Promise.reject(ownerError)
     if (this.activeOps > 0)
       return Promise.reject(
         new CoreError('E_LANE_BUSY', 'the session is running; there is nothing to resume'),
@@ -1320,7 +1513,7 @@ export class SessionImpl {
     // Already restored and not running: restoring it again would replace the live turn.
     if (o.mode !== 'close' && op && this.turn)
       return Promise.resolve({ state: 'resumed', phase: op.phase.kind, actions: [] })
-    const resuming = this.active(() => resumeSession(this, o), false)
+    const resuming = this.active(() => (this.loop ? this.loop.resume(o) : resumeSession(this, o)), false)
     const settled = resuming.then(
       () => undefined,
       () => undefined,
@@ -1343,19 +1536,32 @@ export class SessionImpl {
       return await fn()
     } finally {
       this.activeOps--
+      if (this.activeOps === 0)
+        for (const listener of [...this.executionIdleListeners]) {
+          try {
+            listener()
+          } catch {
+            /* Observers cannot prevent execution release. */
+          }
+        }
     }
   }
 
   /** Dispatches on the phase the ledger says the lane is in, and advances it by exactly one edge. */
-  async step(): Promise<StepOutcome> {
+  async step(admission?: SessionConfigurationAdmission): Promise<StepOutcome> {
+    assertConfigurationExecution(this, admission)
+    const ownerError = this.executionOwnerError()
+    if (ownerError) return Promise.reject(ownerError)
+    const loop = this.loop
+    if (loop) return this.active(() => loop.step())
     return this.active(() =>
       this.d.withModelSnapshot
-        ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())
-        : this.stepWithModelSnapshot(),
+        ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot(admission))
+        : this.stepWithModelSnapshot(admission),
     )
   }
 
-  private async stepWithModelSnapshot(): Promise<StepOutcome> {
+  private async stepWithModelSnapshot(admission?: SessionConfigurationAdmission): Promise<StepOutcome> {
     const op = this.op()
     if (!op) {
       const continued = await continueParked(this)
@@ -1365,7 +1571,7 @@ export class SessionImpl {
       // A decided parked continuation is ledger work already owed by this session. It is checked
       // before the queue so a newly enqueued prompt cannot open a different turn and starve it. An
       // undecided ask still yields false above and retains the existing next-turn input policy.
-      if (await this.acceptInput()) return { phase: 'checkpoint' }
+      if (await this.acceptInput(admission)) return { phase: 'checkpoint' }
       return { phase: 'idle' }
     }
     if (!this.turn) await this.rehydrateTurn(op)
@@ -1395,7 +1601,11 @@ export class SessionImpl {
               inboxEvent(this.lane, this.d.actor, claimed.rest),
               this.ev(
                 'user/message',
-                { content: claimed.item.content, kind: claimed.item.kind ?? 'steer' },
+                {
+                  itemId: claimed.item.itemId,
+                  content: claimed.item.content,
+                  kind: claimed.item.kind ?? 'steer',
+                },
                 {
                   origin: 'principal',
                   trust: claimed.item.trust ?? 'trusted',
@@ -1575,14 +1785,28 @@ export class SessionImpl {
    * that a cancellation outlives the controller that delivered it.
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
-    return abortSession(this, by)
+    const ownerError = this.executionOwnerError(false)
+    if (ownerError) return Promise.reject(ownerError)
+    return this.loop ? this.loop.abort(by) : abortSession(this, by)
   }
 
-  async run(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
-    return this.active(() => this.runTurns(opts))
+  async run(
+    opts: { until: 'turn-end' | 'idle'; signal: AbortSignal },
+    admission?: SessionConfigurationAdmission,
+  ): Promise<TurnOutcome> {
+    assertConfigurationExecution(this, admission)
+    const ownerError = this.executionOwnerError()
+    if (ownerError) return Promise.reject(ownerError)
+    if (this.executionActive)
+      return Promise.reject(new CoreError('E_LANE_BUSY', 'session execution is active'))
+    const normalized = { ...opts, signal: opts.signal ?? new AbortController().signal }
+    return this.active(() => (this.loop ? this.loop.run(normalized) : this.runTurns(normalized, admission)))
   }
 
-  private async runTurns(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
+  private async runTurns(
+    opts: { until: 'turn-end' | 'idle'; signal: AbortSignal },
+    admission?: SessionConfigurationAdmission,
+  ): Promise<TurnOutcome> {
     // Fresh work gets a fresh scope, unless the session is closed, in which case there is no work.
     if (!this.closing) this.ac = new AbortController()
     this.turnEndError = undefined
@@ -1617,7 +1841,7 @@ export class SessionImpl {
         const quietEntry = this.d.quiet?.enter(this.d.quietGroup ?? this.key)
         if (quietEntry) await quietEntry
         try {
-          out = await this.step()
+          out = await this.step(admission)
         } catch (err) {
           // `run()` promises an outcome. An exception out of a phase — an extension hook that throws
           // is the reachable case — would otherwise reject and leave the turn and its step open, a
@@ -1725,6 +1949,7 @@ export class SessionImpl {
       signal?: AbortSignal
       depth: number
       parentEffectId?: string
+      humanWaitParent?: HumanWaitScope
       nestedLease?: NestedToolLease
       onPark?: (event: EventInput) => void
     },
@@ -1742,6 +1967,8 @@ export class SessionImpl {
   }
 
   setPreset(view: PresetView): Promise<Seq> {
+    if (this.loop && this.activeOps > 0)
+      return Promise.reject(new CoreError('E_LANE_BUSY', 'runtime is active'))
     return setPreset(this, view)
   }
 
@@ -1752,6 +1979,8 @@ export class SessionImpl {
     thinking?: ThinkingLevel | null
     contextWindow?: number | null
   }): Promise<Seq> {
+    if (this.loop && this.activeOps > 0)
+      return Promise.reject(new CoreError('E_LANE_BUSY', 'runtime is active'))
     return setModel(this, sel)
   }
 
@@ -1763,26 +1992,29 @@ export class SessionImpl {
     if (!checked.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
     const actor = checked.value
     // A projection triggered by the committed event must wait for the matching live flag.
-    return this.exclusively(async () => {
-      const r = await this.d.log.append([
-        sysEvent(
-          { actor, lane: this.lane },
-          'x/core/yolo-switch',
-          {
-            version: 1,
-            to: enabled,
-            operatorId: actor.id,
-            sessionKey: this.key,
-            lane: this.lane,
-            profileHash: this.d.resolvedProfileHash,
-            sessionOwner: { id: this.d.actor.id, org: this.d.actor.org },
-          },
-          { ignorable: true },
-        ),
-      ])
-      this.yolo = enabled
-      return r.firstSeq
-    })
+    return this.exclusively(async () =>
+      this.locked(async () => {
+        assertConfigurationMutable(this)
+        const r = await this.d.log.append([
+          sysEvent(
+            { actor, lane: this.lane },
+            'x/core/yolo-switch',
+            {
+              version: 1,
+              to: enabled,
+              operatorId: actor.id,
+              sessionKey: this.key,
+              lane: this.lane,
+              profileHash: this.d.resolvedProfileHash,
+              sessionOwner: { id: this.d.actor.id, org: this.d.actor.org },
+            },
+            { ignorable: true },
+          ),
+        ])
+        this.yolo = enabled
+        return r.firstSeq
+      }),
+    )
   }
 
   append(tx: EventInput[]) {
@@ -2163,15 +2395,35 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    for (const listener of this.closingListeners) {
+      try {
+        listener()
+      } catch {
+        /* Observers cannot prevent close. */
+      }
+    }
+    this.closingListeners.clear()
+    this.executionIdleListeners.clear()
     this.executePermits.close()
     this.ac.abort()
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
+      // A failed drain leaves execution in flight. Keep renewing the writer and workspace leases
+      // so a second owner cannot overlap it; a later close retries the same runtime's drain.
+      try {
+        await this.d.childrenDrain?.()
+        await this.loop?.close()
+      } catch (error) {
+        this.closePromise = undefined
+        throw error
+      }
       await this.hooks.shutdown?.().catch((error: unknown) => failures.push(error))
+      await this.d.toolQuestionsDrain?.().catch((error: unknown) => failures.push(error))
       await this.d.log.close().catch((error: unknown) => failures.push(error))
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')
+      finishConfigurationOwner(this)
     })
     return this.closePromise
   }

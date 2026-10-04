@@ -16,7 +16,8 @@
     "@agnes/protocol": "workspace:*",
     "@agnes/protocol-validation": "workspace:*",
     "@agnes/extension-api": "workspace:*",
-    "@sinclair/typebox": "0.34.33"
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/runtime-api": "workspace:*"
   },
   "license": "Apache-2.0"
 }

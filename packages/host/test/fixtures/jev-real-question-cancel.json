@@ -1,0 +1,135 @@
+{
+  "basis": "Real pre-fix Jev single-line user cancellation; five relevant persisted rows. Personal actor, session identity and unrelated model context omitted; writer/interaction IDs replaced.",
+  "events": [
+    {
+      "seq": 30,
+      "type": "tool/call",
+      "lane": "main",
+      "origin": "system",
+      "trust": "trusted",
+      "sourceEventSeqs": [29],
+      "data": {
+        "toolUseId": "intent:19",
+        "name": "ask_user_question",
+        "args": {
+          "questions": [
+            {
+              "id": "confirm",
+              "question": "是否继续取消验收？",
+              "options": [
+                {
+                  "label": "Continue"
+                },
+                {
+                  "label": "Stop"
+                }
+              ]
+            }
+          ]
+        },
+        "depth": 0,
+        "ordinal": 0,
+        "resolvedPolicy": {
+          "isReadOnly": false,
+          "isDestructive": false,
+          "isConcurrencySafe": false,
+          "isOpenWorld": true,
+          "replay": "never",
+          "requiresApproval": "never",
+          "approvalScopes": [],
+          "policyVersion": "static-v1"
+        },
+        "policyHash": "38334de4b1dafbeca8aed6128c26fdd8786bdbf0f74a4a91d457ae1c477263c5",
+        "definitionFingerprint": "242a9389a8ec32322979aa790962251e1ca327c0fe868415ec71c5bb0c8cb4ff",
+        "executionDomain": "workspace"
+      }
+    },
+    {
+      "seq": 32,
+      "type": "question/requested",
+      "lane": "main",
+      "origin": "system",
+      "trust": "trusted",
+      "sourceEventSeqs": [30],
+      "data": {
+        "writerRunId": "captured-writer",
+        "generation": 1,
+        "toolUseId": "intent:19",
+        "turn": 1,
+        "callSeq": 30,
+        "interactionId": "captured-question",
+        "request": {
+          "questions": [
+            {
+              "id": "confirm",
+              "question": "是否继续取消验收？",
+              "options": [
+                {
+                  "label": "Continue"
+                },
+                {
+                  "label": "Stop"
+                }
+              ]
+            }
+          ]
+        },
+        "policy": {
+          "allowSkip": true
+        }
+      }
+    },
+    {
+      "seq": 33,
+      "type": "question/settled",
+      "lane": "main",
+      "origin": "system",
+      "trust": "trusted",
+      "sourceEventSeqs": [30, 32],
+      "data": {
+        "interactionId": "captured-question",
+        "requestedSeq": 32,
+        "callSeq": 30,
+        "toolUseId": "intent:19",
+        "status": "cancelled"
+      }
+    },
+    {
+      "seq": 36,
+      "type": "tool/result",
+      "lane": "main",
+      "origin": "system",
+      "trust": "untrusted",
+      "sourceEventSeqs": [30],
+      "data": {
+        "toolUseId": "intent:19",
+        "content": [
+          {
+            "type": "text",
+            "text": "QuestionServiceError: ASK_CANCELLED"
+          }
+        ],
+        "isError": true,
+        "code": "TOOL_OUTCOME_UNKNOWN",
+        "enforcement": {
+          "level": "partial",
+          "scope": ["file"]
+        },
+        "authz": {
+          "decisionId": "n/a"
+        }
+      }
+    },
+    {
+      "seq": 39,
+      "type": "turn/end",
+      "lane": "main",
+      "origin": "system",
+      "trust": "trusted",
+      "data": {
+        "reason": "blocked",
+        "lastAssistantSeq": null
+      }
+    }
+  ]
+}

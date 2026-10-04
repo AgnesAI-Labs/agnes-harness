@@ -19,3 +19,8 @@ upgrading a direct dependency requires updating the relevant provenance record i
 
 This inventory is evidence of dependency origin, not a vulnerability audit, legal advice, a
 project-license decision or approval to redistribute a package.
+
+The calendar selector in `packages/runtime-comparison/src/pricing.ts` is adapted from
+DeepSeek Harness under MIT; its package-local `UPSTREAM.json` records source bytes,
+and `DEEPSEEK-LICENSE.txt` retains the upstream license. This source adaptation does
+not add a registry dependency.

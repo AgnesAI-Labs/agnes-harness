@@ -31,7 +31,11 @@ describe('report-problem button placement', () => {
     const bar = button.parentElement
     expect(bar?.classList.contains('session-tabs-bar')).toBe(true)
     const tablist = bar?.querySelector(':scope > .session-tabs[role="tablist"]')
-    expect(tablist?.nextElementSibling).toBe(button)
+    expect(tablist).not.toBeNull()
+    const comparison = bar?.querySelector<HTMLButtonElement>(':scope > #open-comparison')
+    expect(comparison).toBeInstanceOf(HTMLButtonElement)
+    expect(comparison?.closest('[role="tablist"]')).toBeNull()
+    expect(comparison?.type).toBe('button')
     expect(bar?.lastElementChild).toBe(button)
 
     expect(button.type).toBe('button')

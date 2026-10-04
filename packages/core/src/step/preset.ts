@@ -53,6 +53,8 @@ export type PresetView = {
   maxFanOut: number
   budgetInherit: 'own' | 'aggregate'
   treeBudgetCredits: number | null
+  /** Legacy views may omit this; null alone retains default delegation limits, not unlimited. */
+  treeBudgetMode?: 'default' | 'capped' | 'unlimited'
   isolation: 'worktree' | 'shared'
   ext: { eventsPerTurn: number }
 }
@@ -86,6 +88,7 @@ export function presetDefaults(): PresetView {
     maxFanOut: 4,
     budgetInherit: 'aggregate',
     treeBudgetCredits: null,
+    treeBudgetMode: 'default',
     isolation: 'shared',
     ext: { eventsPerTurn: 200 },
   }
@@ -109,6 +112,7 @@ const pick = <T>(raw: unknown, path: string, fallback: T): T => {
  */
 export function readPreset(raw: Record<string, unknown>, name: string): PresetView {
   const d = presetDefaults()
+  const treeBudget = get(raw, 'subagent.tree_budget_credits')
   return {
     name,
     disclosure: pick(raw, 'disclosure', d.disclosure),
@@ -171,7 +175,9 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     generationLimit: pick<number>(raw, 'subagent.max_depth', d.generationLimit),
     maxFanOut: pick<number>(raw, 'subagent.max_fan_out', d.maxFanOut),
     budgetInherit: pick<'own' | 'aggregate'>(raw, 'subagent.budget_inherit', d.budgetInherit),
-    treeBudgetCredits: pick<number | null>(raw, 'subagent.tree_budget_credits', d.treeBudgetCredits),
+    treeBudgetCredits: typeof treeBudget === 'number' ? treeBudget : null,
+    treeBudgetMode:
+      typeof treeBudget === 'number' ? 'capped' : treeBudget === 'unlimited' ? 'unlimited' : 'default',
     isolation: pick<'worktree' | 'shared'>(raw, 'subagent.isolation', d.isolation),
     ext: { eventsPerTurn: pick(raw, 'ext.events_per_turn', d.ext.eventsPerTurn) },
   }

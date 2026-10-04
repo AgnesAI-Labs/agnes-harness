@@ -48,6 +48,7 @@ describe('StorageLister', () => {
     ins('agnes:t:a:cli:dm:2', 1, 'session/start', {
       key: 'agnes:t:a:cli:dm:2',
       preset: 'claw',
+      runtime: { id: 'jevloop', version: '1' },
       resolvedProfileHash: null,
       agnesVersion: '0',
     })
@@ -62,12 +63,18 @@ describe('StorageLister', () => {
         lastSeq: 2,
         generation: 5,
         preset: 'standard',
+        runtime: { id: 'native', version: '1' },
       },
     ])
     expect(page1.cursor).toBe('agnes:t:a:cli:dm:1')
 
     const page2 = await l.list({ limit: 1, cursor: page1.cursor as string })
-    expect(page2.items[0]).toMatchObject({ sessionId: 'agnes:t:a:cli:dm:2', generation: 0, preset: 'claw' })
+    expect(page2.items[0]).toMatchObject({
+      sessionId: 'agnes:t:a:cli:dm:2',
+      generation: 0,
+      preset: 'claw',
+      runtime: { id: 'jevloop', version: '1' },
+    })
     // No writer_claims row for dm:2 - generation must default to 0, not throw or come back undefined.
     expect(page2.cursor).toBeUndefined()
 
@@ -140,6 +147,7 @@ describe('StorageLister', () => {
         lastSeq: 1,
         generation: 0,
         preset: null,
+        runtime: { id: 'native', version: '1' },
       },
     ])
     await tables.close()
@@ -300,6 +308,7 @@ describe('SessionWorkspaceIndex', () => {
       generation: 1,
       preset: 'claw',
       profileHash: 'sha256-profile',
+      runtime: { id: 'native', version: '1' },
     })
     await tables.close()
   })

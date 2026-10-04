@@ -1,0 +1,38 @@
+{
+  "upstream": "https://github.com/deepseek-ai/deepseek-harness",
+  "revision": "90398671c30cb16b5dbee3ecb69fac254b3ad718",
+  "sourceState": "Working-tree bytes, including uncommitted and untracked files; revision alone does not identify this source.",
+  "license": "MIT",
+  "files": [
+    {
+      "source": "packages/jev/jev-trace/src/index.ts",
+      "sha256": "ca4871f4e71534ff0d7491469d1b305bb6bcce156d08bbf9935a9f38cd018d12",
+      "destination": "src/index.ts"
+    },
+    {
+      "source": "packages/jev/jev-trace/src/project.ts",
+      "sha256": "929b49a349768fa73cc20092b19779c1893bc215f6808f0b97528cfd036200f3",
+      "destination": "src/project.ts"
+    },
+    {
+      "source": "packages/jev/jev-trace/src/types.ts",
+      "sha256": "6e15e820936e4869bc89954c08bf924b3011ebf50efd1364935b0566482cb302",
+      "destination": "src/types.ts"
+    },
+    {
+      "source": "packages/jev/jev-trace/tests/project.spec.ts",
+      "sha256": "1b13ebd7b0449af9400198bf7f35299ec4f2823ccf196d81c86c83d2414dbbc0",
+      "destination": "tests/project.test.ts"
+    },
+    {
+      "source": "LICENSE",
+      "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+      "destination": "LICENSE"
+    }
+  ],
+  "adaptations": [
+    "Rename package imports to @agnes/jev-runtime.",
+    "Use .js ESM specifiers and .test.ts test names for Agnes.",
+    "Retain pure projection and historical protocol decoders."
+  ]
+}

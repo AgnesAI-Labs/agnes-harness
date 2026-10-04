@@ -724,3 +724,96 @@ describe('toPiModel', () => {
     })
   })
 })
+
+it('lowers Host action history only for the supported API and refuses missing, mismatched or duplicated pairs before dispatch', async () => {
+  const request = fakeRequest({
+    route: 'gw',
+    model: 'flash',
+    messages: [
+      {
+        role: 'host_action',
+        content: [],
+        toolCalls: [{ toolUseId: 'host-call', name: 'read', args: { path: 'a' }, ordinal: 0 }],
+      },
+      {
+        role: 'tool_result',
+        toolUseId: 'host-call',
+        content: [{ type: 'text', text: 'Recorded result' }],
+        isError: false,
+      },
+    ],
+  })
+  const original = structuredClone(request)
+  const { context } = toContext(request, { api: 'openai-completions' })
+  expect(context.messages).toMatchObject([
+    {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: 'host-call', name: 'read', arguments: { path: 'a' } }],
+    },
+    {
+      role: 'toolResult',
+      toolCallId: 'host-call',
+      toolName: 'read',
+      content: [{ type: 'text', text: 'Recorded result' }],
+    },
+  ])
+  expect(request).toEqual(original)
+  expect(() => toContext(request)).toThrow('unsupported')
+  const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+  const adapter = bound({ manualRoutes: [route], streamImpl: wire.impl })
+  const [action, result] = request.messages
+  if (!action || !result) throw new Error('Missing action fixture')
+  for (const messages of [
+    request.messages.slice(0, 1),
+    [action, { role: 'tool_result' as const, toolUseId: 'other', content: [], isError: false }],
+    [...request.messages, ...request.messages],
+    [...request.messages, result],
+    [result, ...request.messages],
+    [action, { role: 'user' as const, content: [] }, result],
+  ]) {
+    const events = await collect(adapter.stream('gw', { ...request, messages }, opts()))
+    expect(events).toMatchObject([{ type: 'error', code: 'FORMAT', retryable: false }])
+  }
+  expect(wire.seen).toHaveLength(0)
+  const unsupported = bound({
+    manualRoutes: [{ ...route, api: 'anthropic-messages' }],
+    streamImpl: wire.impl,
+  })
+  expect(await collect(unsupported.stream('gw', request, opts()))).toMatchObject([
+    { type: 'error', code: 'FORMAT', retryable: false },
+  ])
+  expect(wire.seen).toHaveLength(0)
+})
+
+it.each([
+  ['openai-completions', undefined],
+  ['openai-completions', false],
+  ['openai-completions', 'true'],
+  ['anthropic-messages', true],
+] as const)('refuses ordered system history for %s when model capability is %s', async (api, capability) => {
+  const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+  const adapter = bound({
+    manualRoutes: [
+      {
+        ...route,
+        api,
+        models: route.models.map((model) => ({
+          ...model,
+          ...(capability === undefined ? {} : { compat: { supportsMidConvoSystemMessages: capability } }),
+        })),
+      },
+    ],
+    streamImpl: wire.impl,
+  })
+  const request = fakeRequest({
+    route: 'gw',
+    model: 'flash',
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: 'Earlier user request' }] },
+      { role: 'system', content: [{ type: 'text', text: 'Later system instruction' }] },
+    ],
+  })
+  const events = await collect(adapter.stream('gw', request, opts()))
+  expect(events).toMatchObject([{ type: 'error', code: 'FORMAT', retryable: false }])
+  expect(wire.seen).toHaveLength(0)
+})

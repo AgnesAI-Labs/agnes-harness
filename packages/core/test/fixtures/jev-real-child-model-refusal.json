@@ -1,0 +1,31 @@
+{
+  "source": "Real Jev child smoke before the preflight-refusal fix; selected public rows only. Actor, session identity, paths, model reasoning and error stacks omitted.",
+  "events": [
+    {
+      "seq": 71,
+      "type": "tool/call",
+      "data": {
+        "toolUseId": "intent:35",
+        "name": "subagent_fork",
+        "args": {
+          "question": "上一轮父会话让我记住的标记是什么？只输出该标记，不调用工具。",
+          "model": "anthropic-default"
+        }
+      }
+    },
+    {
+      "seq": 75,
+      "type": "tool/result",
+      "data": {
+        "toolUseId": "intent:35",
+        "isError": true,
+        "code": "TOOL_OUTCOME_UNKNOWN"
+      }
+    },
+    {
+      "seq": 78,
+      "type": "turn/end",
+      "data": { "reason": "blocked" }
+    }
+  ]
+}

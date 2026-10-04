@@ -2,6 +2,7 @@ import { defineTool, type ToolResult } from '@agnes/extension-api'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { mutationFact } from './mutation-fact.js'
 import { WriteParams } from './schemas.js'
 
 const dec = new TextDecoder()
@@ -62,6 +63,7 @@ export const writeTool = defineTool({
           },
         ],
         details: { path: args.path, bytes: enc.encode(args.content).byteLength },
+        structured: mutationFact('write', ctx.cwd, args.path, args.content),
       }
     }),
 })

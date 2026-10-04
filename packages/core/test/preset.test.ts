@@ -54,6 +54,7 @@ describe('preset view', () => {
     expect(d.generationLimit).toBe(1)
     expect(d.maxFanOut).toBe(4)
     expect(d.treeBudgetCredits).toBeNull()
+    expect(d.treeBudgetMode).toBe('default')
     expect(d.ext).toEqual({ eventsPerTurn: 200 })
   })
 
@@ -159,9 +160,23 @@ describe('preset view', () => {
       maxFanOut: 4,
       budgetInherit: 'aggregate',
       treeBudgetCredits: null,
+      treeBudgetMode: 'default',
       isolation: 'shared',
       ext: { eventsPerTurn: 61 },
     })
+  })
+
+  it.each([
+    [undefined, 'default', null],
+    [null, 'default', null], // Legacy reader sentinel; the document schema still rejects null.
+    ['default', 'default', null],
+    ['unlimited', 'unlimited', null],
+    [0, 'capped', 0],
+    [50.25, 'capped', 50.25],
+  ])('distinguishes tree-credit policy %s from its nullable numeric view', (value, mode, credits) => {
+    const view = readPreset({ subagent: { tree_budget_credits: value } }, 'tree')
+    expect(view.treeBudgetMode).toBe(mode)
+    expect(view.treeBudgetCredits).toBe(credits)
   })
 
   it('reads an explicit null and an explicit false rather than treating them as absent', () => {

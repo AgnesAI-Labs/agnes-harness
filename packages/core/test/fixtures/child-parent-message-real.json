@@ -1,0 +1,468 @@
+{
+  "provenance": {
+    "source": "parent-report-read-gate-capture.json",
+    "description": "Actual Native/Jev parent-message inbox, receipt and consumption rows. Intervening unrelated rows omitted; original sequence coordinates retained. Session identities, actors and private report-file paths replaced consistently; text hashes recomputed after redaction. Not a complete ledger or integrity proof. No request, reasoning, credentials or private paths retained."
+  },
+  "cases": [
+    {
+      "runtime": "native",
+      "parentSessionId": "fixture-parent-native",
+      "events": [
+        {
+          "seq": 50,
+          "ts": "2026-10-03T02:23:44.456Z",
+          "id": "01M3ZS65A8VTYQTFZ5Y43FHBJE",
+          "type": "inbox",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "items": [
+              {
+                "itemId": "r-10b7694c6edee161555330135a0b2691",
+                "target": "next-turn",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Agent fixture-parent-native/01M3ZS5Z1772GKG2A1WYERXMQ3 sent a message: CHILD_REPORT_f3d54b90"
+                  }
+                ],
+                "actor": {
+                  "id": "fixture-actor",
+                  "org": "fixture-org",
+                  "role": "user"
+                },
+                "enqueuedAt": "2026-10-03T02:23:44.456Z",
+                "commandId": "child-message:30ed2ba7741464f72eff885d1d452da6b1db3bc5ecb7fad59e27dda2385e7622",
+                "kind": "follow_up",
+                "trust": "untrusted"
+              }
+            ]
+          },
+          "register": "inbox"
+        },
+        {
+          "seq": 51,
+          "ts": "2026-10-03T02:23:44.457Z",
+          "id": "01M3ZS65A97DEGKH03VB6ANDPW",
+          "type": "x/core/child-received",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "version": 1,
+            "deliveryId": "agent:fixture-parent-native/01M3ZS5Z1772GKG2A1WYERXMQ3:main:t1-2c07ad58b807dd1e49f44f2da6a86a17",
+            "senderKey": "fixture-parent-native/01M3ZS5Z1772GKG2A1WYERXMQ3",
+            "sourceSeq": 43,
+            "parentKey": "fixture-parent-native",
+            "messageId": "r-10b7694c6edee161555330135a0b2691",
+            "textHash": "63136c22353b7601d572828677af84d0e8ad470462b7bc6cede0fe146d73793c",
+            "kind": "agent-message"
+          },
+          "ignorable": true
+        },
+        {
+          "seq": 52,
+          "ts": "2026-10-03T02:23:44.457Z",
+          "id": "01M3ZS65A97DEGKH03VB6ANDPY",
+          "type": "inbox",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "items": []
+          },
+          "register": "inbox"
+        },
+        {
+          "seq": 53,
+          "ts": "2026-10-03T02:23:44.457Z",
+          "id": "01M3ZS65A97DEGKH03VB6ANDPZ",
+          "type": "user/message",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "principal",
+          "trust": "untrusted",
+          "data": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Agent fixture-parent-native/01M3ZS5Z1772GKG2A1WYERXMQ3 sent a message: CHILD_REPORT_f3d54b90"
+              }
+            ],
+            "kind": "follow_up"
+          }
+        }
+      ]
+    },
+    {
+      "runtime": "native",
+      "parentSessionId": "fixture-parent-native",
+      "events": [
+        {
+          "seq": 63,
+          "ts": "2026-10-03T02:23:46.010Z",
+          "id": "01M3ZS66TT4QHR549WHBGHBMNQ",
+          "type": "inbox",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "items": [
+              {
+                "itemId": "r-da8f48ccc09fb6dec91c94c67c59dc14",
+                "target": "next-step",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Background subagent fixture-parent-native/01M3ZS5Z1772GKG2A1WYERXMQ3 finished and will do no further work unless you send it more.\nIts closing message:\nCHILD_DONE"
+                  }
+                ],
+                "actor": {
+                  "id": "fixture-actor",
+                  "org": "fixture-org",
+                  "role": "user"
+                },
+                "enqueuedAt": "2026-10-03T02:23:46.010Z",
+                "commandId": "child-message:82071a616cf09c7190c4e842cabc3e2fbe740249141faeed37e0f56339fae02d",
+                "kind": "steer",
+                "trust": "untrusted"
+              }
+            ]
+          },
+          "register": "inbox"
+        },
+        {
+          "seq": 64,
+          "ts": "2026-10-03T02:23:46.010Z",
+          "id": "01M3ZS66TT4QHR549WHBGHBMNR",
+          "type": "x/core/child-received",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "version": 1,
+            "deliveryId": "settled:4",
+            "senderKey": "fixture-parent-native/01M3ZS5Z1772GKG2A1WYERXMQ3",
+            "sourceSeq": 66,
+            "parentKey": "fixture-parent-native",
+            "messageId": "r-da8f48ccc09fb6dec91c94c67c59dc14",
+            "textHash": "f3466fe63b30774fecd831da336dc6ed8060a30e6c4407ff446606a63457d532",
+            "kind": "subagent-settled",
+            "outcome": "completed"
+          },
+          "ignorable": true
+        },
+        {
+          "seq": 72,
+          "ts": "2026-10-03T02:23:47.299Z",
+          "id": "01M3ZS6833Z3A9XYFZW1HRP1C1",
+          "type": "inbox",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "items": []
+          },
+          "register": "inbox"
+        },
+        {
+          "seq": 73,
+          "ts": "2026-10-03T02:23:47.299Z",
+          "id": "01M3ZS6833Z3A9XYFZW1HRP1C2",
+          "type": "user/message",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "principal",
+          "trust": "untrusted",
+          "data": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Background subagent fixture-parent-native/01M3ZS5Z1772GKG2A1WYERXMQ3 finished and will do no further work unless you send it more.\nIts closing message:\nCHILD_DONE"
+              }
+            ],
+            "kind": "steer"
+          }
+        }
+      ]
+    },
+    {
+      "runtime": "jevloop",
+      "parentSessionId": "fixture-parent-jevloop",
+      "events": [
+        {
+          "seq": 76,
+          "ts": "2026-10-03T02:24:09.750Z",
+          "id": "01M3ZS6Y0PTAX1DBTEJTMMHG28",
+          "type": "inbox",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "items": [
+              {
+                "itemId": "r-febfcf3e3dc89b33c76b9c8bba40cb15",
+                "target": "next-turn",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Agent fixture-parent-jevloop/01M3ZS6HPZRVK10C00E6BQYJGV sent a message: CHILD_DONE. Read /fixture/report.txt on attempt 2 (first read failed with ENOENT as expected). File content (exact, 22 bytes): CHILD_REPORT_5cb2aff9"
+                  }
+                ],
+                "actor": {
+                  "id": "fixture-actor",
+                  "org": "fixture-org",
+                  "role": "user"
+                },
+                "enqueuedAt": "2026-10-03T02:24:09.750Z",
+                "commandId": "child-message:bb6106f54ef415a17e89897a404a07bbbe4419a7c29f4a3a0565581c09135dad",
+                "kind": "follow_up",
+                "trust": "untrusted"
+              }
+            ]
+          },
+          "register": "inbox"
+        },
+        {
+          "seq": 77,
+          "ts": "2026-10-03T02:24:09.750Z",
+          "id": "01M3ZS6Y0PTAX1DBTEJTMMHG29",
+          "type": "x/core/child-received",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "version": 1,
+            "deliveryId": "agent:fixture-parent-jevloop/01M3ZS6HPZRVK10C00E6BQYJGV:main:intent:57",
+            "senderKey": "fixture-parent-jevloop/01M3ZS6HPZRVK10C00E6BQYJGV",
+            "sourceSeq": 99,
+            "parentKey": "fixture-parent-jevloop",
+            "messageId": "r-febfcf3e3dc89b33c76b9c8bba40cb15",
+            "textHash": "ccdf01ddc54a3c057dc1489b2f56ed6bb7c6cbfcc32f80ad83fde91b9f55f174",
+            "kind": "agent-message"
+          },
+          "ignorable": true
+        },
+        {
+          "seq": 78,
+          "ts": "2026-10-03T02:24:09.752Z",
+          "id": "01M3ZS6Y0R3ZGZV3J3NTB8E7WQ",
+          "type": "inbox",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "items": []
+          },
+          "register": "inbox"
+        },
+        {
+          "seq": 79,
+          "ts": "2026-10-03T02:24:09.752Z",
+          "id": "01M3ZS6Y0R3ZGZV3J3NTB8E7WR",
+          "type": "user/message",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "principal",
+          "trust": "untrusted",
+          "data": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Agent fixture-parent-jevloop/01M3ZS6HPZRVK10C00E6BQYJGV sent a message: CHILD_DONE. Read /fixture/report.txt on attempt 2 (first read failed with ENOENT as expected). File content (exact, 22 bytes): CHILD_REPORT_5cb2aff9"
+              }
+            ],
+            "kind": "follow_up"
+          },
+          "surfaceOp": "append"
+        }
+      ]
+    },
+    {
+      "runtime": "jevloop",
+      "parentSessionId": "fixture-parent-jevloop",
+      "events": [
+        {
+          "seq": 102,
+          "ts": "2026-10-03T02:24:12.883Z",
+          "id": "01M3ZS712KTVXDH3YSVS1XV0YQ",
+          "type": "inbox",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "items": [
+              {
+                "itemId": "r-a85d7d0cca6e3f561584ecec743b7d4b",
+                "target": "next-step",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Background subagent fixture-parent-jevloop/01M3ZS6HPZRVK10C00E6BQYJGV finished and will do no further work unless you send it more.\nIts closing message:\nCHILD_DONE"
+                  }
+                ],
+                "actor": {
+                  "id": "fixture-actor",
+                  "org": "fixture-org",
+                  "role": "user"
+                },
+                "enqueuedAt": "2026-10-03T02:24:12.883Z",
+                "commandId": "child-message:d07541147a11c448a04f376999fad1750abcb044291cf5b386be082c0f8a712b",
+                "kind": "steer",
+                "trust": "untrusted"
+              }
+            ]
+          },
+          "register": "inbox"
+        },
+        {
+          "seq": 103,
+          "ts": "2026-10-03T02:24:12.883Z",
+          "id": "01M3ZS712KTVXDH3YSVS1XV0YR",
+          "type": "x/core/child-received",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "version": 1,
+            "deliveryId": "settled:4",
+            "senderKey": "fixture-parent-jevloop/01M3ZS6HPZRVK10C00E6BQYJGV",
+            "sourceSeq": 133,
+            "parentKey": "fixture-parent-jevloop",
+            "messageId": "r-a85d7d0cca6e3f561584ecec743b7d4b",
+            "textHash": "e5093170243cdf18e6368780b9b2a694af283e029d007295920db13b71b0e4c7",
+            "kind": "subagent-settled",
+            "outcome": "completed"
+          },
+          "ignorable": true
+        },
+        {
+          "seq": 112,
+          "ts": "2026-10-03T02:24:14.223Z",
+          "id": "01M3ZS72CFS6CXP2X8ZEJ2AS1J",
+          "type": "inbox",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "system",
+          "trust": "trusted",
+          "data": {
+            "items": []
+          },
+          "register": "inbox"
+        },
+        {
+          "seq": 113,
+          "ts": "2026-10-03T02:24:14.223Z",
+          "id": "01M3ZS72CFS6CXP2X8ZEJ2AS1K",
+          "type": "user/message",
+          "lane": "main",
+          "v": 1,
+          "actor": {
+            "id": "fixture-actor",
+            "org": "fixture-org",
+            "role": "user"
+          },
+          "origin": "principal",
+          "trust": "untrusted",
+          "data": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Background subagent fixture-parent-jevloop/01M3ZS6HPZRVK10C00E6BQYJGV finished and will do no further work unless you send it more.\nIts closing message:\nCHILD_DONE"
+              }
+            ],
+            "kind": "steer"
+          },
+          "surfaceOp": "append"
+        }
+      ]
+    }
+  ]
+}

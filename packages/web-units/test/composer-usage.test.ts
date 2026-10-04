@@ -25,6 +25,7 @@ it('uses component ownership and disposes compatible custom factories on replace
     isSubmitShortcut: () => false,
     resize: () => {},
   }
+  const selectedRuntime = vi.fn()
   const options = {
     onCancel() {},
     onDraftChange() {},
@@ -33,6 +34,7 @@ it('uses component ownership and disposes compatible custom factories on replace
     onWorkspace() {},
     onModelSelect: async () => false,
     onPermissionSelect: async () => false,
+    onRuntimeSelect: selectedRuntime,
   }
   const render = async (deps: ComposerDependencies) =>
     act(async () =>
@@ -56,6 +58,31 @@ it('uses component ownership and disposes compatible custom factories on replace
       input: { disabled: false, placeholder: 'task' },
       loading: false,
       model: { accessibleName: 'model', disabled: true, label: 'model', options: [], pending: false },
+      runtime: {
+        selected: 'native',
+        label: 'Native',
+        fixed: false,
+        disabled: false,
+        options: [
+          {
+            id: 'native',
+            version: '1',
+            label: 'Native',
+            apiVersion: 1,
+            available: true,
+            capabilities: { prompt: true, cancel: true, resume: true, compact: true, fork: true },
+          },
+          {
+            id: 'jevloop',
+            version: '1',
+            label: 'JevLoop',
+            apiVersion: 1,
+            available: false,
+            unavailableReason: '模型未就绪',
+            capabilities: { prompt: true, cancel: true, resume: true, compact: false, fork: false },
+          },
+        ],
+      },
       permission: { disabled: true, pending: false, selected: 'workspace' },
       sending: false,
       send: { disabled: true, label: 'send', mode: 'idle', title: 'send' },
@@ -69,6 +96,17 @@ it('uses component ownership and disposes compatible custom factories on replace
     }
     await act(async () => handle.current?.render(view))
     expect(host.querySelector('#session-usage')?.textContent).toContain('上次同步')
+    const runtimePicker = host.querySelector<HTMLSelectElement>('[aria-label="选择新会话运行循环"]')
+    expect(runtimePicker?.value).toBe('native')
+    expect(runtimePicker?.options[1]?.disabled).toBe(true)
+    expect(runtimePicker?.options[1]?.textContent).toContain('模型未就绪')
+    await act(async () => runtimePicker?.dispatchEvent(new Event('change', { bubbles: true })))
+    expect(selectedRuntime).toHaveBeenCalledWith('native')
+    const runtime = view.runtime
+    if (!runtime) throw new Error('runtime view missing')
+    await act(async () => handle.current?.render({ ...view, runtime: { ...runtime, fixed: true } }))
+    expect(host.querySelector('select.composer-runtime')).toBeNull()
+    expect(host.querySelector('[data-runtime-id="native"]')?.textContent).toBe('Native')
     await render(dependencies)
     expect(dependencies.createUsagePanel).toHaveBeenCalledTimes(1)
     expect(update).toHaveBeenLastCalledWith(view.usage, false)

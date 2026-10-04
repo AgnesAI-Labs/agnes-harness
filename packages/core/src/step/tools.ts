@@ -3,12 +3,14 @@ import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '
 import { hasChildControl, transitionChildState } from '../child/store.js'
 import { type EffectHandle, type EffectOutcome, effectOutcome } from '../effects/effect.js'
 import type { ExecuteAttempt } from '../effects/execute-permits.js'
+import type { HumanWaitScope } from '../effects/managed-human-wait.js'
 import type { NestedToolLease } from '../effects/scheduler.js'
 import { scheduleBatch } from '../effects/scheduler.js'
+import { authorizeToolCall } from '../effects/tool-approval.js'
 import { buildToolContext, type FsOps, type ToolContextDeps } from '../effects/tool-context.js'
 import type { HostDispatchObservation } from '../effects/tool-dispatch.js'
+import { dispatchToolAttempt } from '../effects/tool-execution.js'
 import { toLedgerContent } from '../effects/tool-result.js'
-import { withTimeout } from '../effects/wrap.js'
 import { scanAll } from '../log/scan-pages.js'
 import {
   hasAuthenticToolPolicyHash,
@@ -16,17 +18,8 @@ import {
   hasTrustedToolCallProvenance,
   toolPolicyBindingProblem,
 } from '../registry/tool-policy.js'
-import { canonicalJson } from '../request/hash.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
-import {
-  approvalBindingHash,
-  approvalScopesForCall,
-  newPermanentGrant,
-  permanentGrantId,
-  permanentGrantMatches,
-  persistedToolApproval,
-  sessionGrantKey,
-} from './approval-grants.js'
+import { persistedToolApproval } from './approval-grants.js'
 import { finishAborted } from './control.js'
 import { deferredEffectId } from './deferred.js'
 import { resolveModel } from './inference.js'
@@ -37,6 +30,7 @@ import { stepVerifyInput, toolVerifyInput } from './verify-input.js'
 
 export type ExecOpts = {
   depth: number
+  humanWaitParent?: HumanWaitScope
   parentEffectId?: string
   nestedLease?: NestedToolLease
   signal?: AbortSignal
@@ -62,20 +56,6 @@ export type CallOutcome = {
 }
 
 const errorResult = (text: string): ToolResult => ({ content: [{ type: 'text', text }], isError: true })
-const SUBAGENT_TOOLS = new Set(['subagent_fork', 'subagent_spawn', 'subagent_collect', 'subagent_cancel'])
-const unavailableFs = (): Promise<never> =>
-  Promise.reject(
-    new CoreError('E_WORKSPACE_CLOSED', 'filesystem is unavailable outside a workspace invocation'),
-  )
-const NO_WORKSPACE_FS: FsOps = Object.freeze({
-  read: unavailableFs,
-  write: unavailableFs,
-  list: unavailableFs,
-  stat: unavailableFs,
-})
-/** Conservative fixed reservation until the guardian seam publishes a countable request body. */
-const GUARDIAN_RESERVATION_TOKENS = 1024
-
 /** The harness itself, named as the canceller when a call is cut short by its own deadline. */
 const timeoutActor = (a: Actor): Actor => ({
   id: 'timeout',
@@ -331,515 +311,58 @@ export async function approveAndExecute(
     throw new CoreError('E_RELATION', 'recovered dispatch does not match its pending effect')
   let decisionId = 'n/a'
   if (!o.resumeDispatch) {
-    // Read from the fold, not from the counter: the counter's copy is a transaction behind the row
-    // that taints, so the first call after an untrusted result would be judged against a clean turn.
-    const taint = op.taint || s.laneTaint()
-    const gate = await s.hooks.toolCall({
-      toolUseId: call.toolUseId,
-      name: call.name,
-      args: call.args,
-      meta,
-      actor: s.d.actor,
-      taint,
-      resolvedPolicy: policy,
-      executionDomain: call.executionDomain,
-      definitionFingerprint: call.definitionFingerprint,
-      policyHash: call.policyHash,
-    })
-    // A hook denial is not an approval question: nobody is asked, because the answer is already no.
-    if (!gate.allow) return { result: await refuse(s, call.toolUseId, 'HOOK_DENIED', gate.reason) }
-    const stepId = `${op.meta.turn}/${op.step}`
-    const risk = policy.requiresApproval
-    // A delegated child and its manager run unattended, so taint cannot force an ask nobody answers.
-    const isSubagentManagement = SUBAGENT_TOOLS.has(call.name)
-    let needsAsk =
-      !isSubagentManagement &&
-      (risk === 'always' || (risk === 'destructive' && policy.isDestructive) || (taint && !policy.isReadOnly))
-    const decision = await s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name })
-    decisionId = decision.decisionId
-    if (decision.effect === 'deny')
-      return { result: await refuse(s, call.toolUseId, 'AUTHZ_DENIED', decision.reason, decisionId) }
-    if (decision.effect === 'require_approval') needsAsk = true
-    const approvalMode = s.d.approvalMode ?? 'manual'
-    if (s.yolo || approvalMode === 'off') needsAsk = false // never overrides the deny above
-    const scopes = approvalScopesForCall(call.name, policy.approvalScopes)
-    const guardianFailed = (
-      await scanAll((q) => s.d.log.scan(q), {
-        fromSeq: call.argsSeq,
-        toSeq: s.lastSeq,
-        type: 'x/core/approval-guardian-failed',
+    const approved = await authorizeToolCall(
+      {
+        sessionKey: s.key,
         lane: s.lane,
-      })
-    ).some((row) => {
-      const failedTool = (row.data as { toolUseId?: unknown } | null)?.toolUseId
-      return failedTool === undefined || failedTool === call.toolUseId
-    })
-    for (const scope of needsAsk ? scopes : []) {
-      const bindingHash = approvalBindingHash({
-        sessionKey: s.key,
-        stepId,
-        toolUseId: call.toolUseId,
-        args: call.args,
-        policyHash: call.policyHash,
-        scope,
-      })
-      const grantKey = sessionGrantKey({ actor: s.d.actor, sessionKey: s.key, toolId: call.name, scope })
-      const profileHash = s.d.resolvedProfileHash
-      const durableBinding =
-        profileHash !== null && /^sha256-[a-f0-9]{64}$/.test(profileHash)
-          ? {
-              actor: s.d.actor,
-              profileHash,
-              toolId: call.name,
-              scope,
-              policyVersion: policy.policyVersion,
-            }
-          : undefined
-      const durableGrants = durableBinding
-        ? (
-            await s.d.runtime.approvalGrants(
-              {
-                profileHash: durableBinding.profileHash,
-                actorId: durableBinding.actor.id,
-                actorOrg: durableBinding.actor.org,
-                toolId: durableBinding.toolId,
-                scope: durableBinding.scope,
-                policyVersion: durableBinding.policyVersion,
-              },
-              o.signal ?? s.ac.signal,
-            )
-          ).filter((grant) => permanentGrantMatches(grant, durableBinding))
-        : []
-      const recorded = await persistedToolApproval(s, {
-        toolUseId: call.toolUseId,
-        args: call.args,
-        scope,
-        policyHash: call.policyHash,
-        policyVersion: policy.policyVersion,
-      })
-      if (recorded?.verdict === 'allowed-session') s.sessionAllows.add(grantKey)
-      if (recorded?.verdict === 'allowed-permanent') {
-        if (!durableBinding || !recorded.grantId)
-          return {
-            result: await refuse(
-              s,
-              call.toolUseId,
-              'APPROVAL_GRANT_UNAVAILABLE',
-              'permanent approval requires a resolved profile hash',
-              decisionId,
-            ),
-          }
-        const alreadyStored = durableGrants.some((grant) => grant.grantId === recorded.grantId)
-        const stored =
-          alreadyStored ||
-          (await s.d.runtime.approvalPutGrant(
-            newPermanentGrant({
-              ...durableBinding,
-              grantId: recorded.grantId,
-              createdAt: recorded.decidedAt,
-            }),
-            o.signal ?? s.ac.signal,
-          ))
-        if (!stored) {
-          await s.transition(
-            [
-              s.ev(
-                'x/core/approval-grant-activation-failed',
-                {
-                  requestId: recorded.requestId,
-                  grantId: recorded.grantId,
-                  toolUseId: call.toolUseId,
-                  scope,
-                  reason: 'durable grant store unavailable',
-                },
-                { ignorable: true, sourceEventSeqs: [call.argsSeq] },
-              ),
-            ],
-            s.op() as OpStateObj,
-          )
-          return {
-            result: await refuse(
-              s,
-              call.toolUseId,
-              'APPROVAL_GRANT_UNAVAILABLE',
-              'permanent approval could not be stored',
-              decisionId,
-            ),
-          }
-        }
-        const activated = (
-          await scanAll((q) => s.d.log.scan(q), {
-            fromSeq: call.argsSeq,
-            toSeq: s.lastSeq,
-            type: 'x/core/approval-grant-activated',
-            lane: s.lane,
-          })
-        ).some((row) => {
-          const data = row.data as { requestId?: unknown; grantId?: unknown } | null
-          return data?.requestId === recorded.requestId && data.grantId === recorded.grantId
-        })
-        if (!activated)
-          await s.transition(
-            [
-              s.ev(
-                'x/core/approval-grant-activated',
-                {
-                  requestId: recorded.requestId,
-                  grantId: recorded.grantId,
-                  toolUseId: call.toolUseId,
-                  scope,
-                  recovered: alreadyStored,
-                },
-                { ignorable: true, sourceEventSeqs: [call.argsSeq] },
-              ),
-            ],
-            s.op() as OpStateObj,
-          )
-        continue
-      }
-      if (recorded?.verdict === 'allowed-once' || recorded?.verdict === 'allowed-session') continue
-      if (recorded) {
-        return {
-          result: await refuse(
-            s,
-            call.toolUseId,
-            'APPROVAL_REJECTED',
-            `approval ${recorded.verdict}`,
-            decisionId,
-          ),
-        }
-      }
-      if (s.sessionAllows.has(grantKey) || durableGrants.length > 0) continue
-      const priorGuardian = (
-        await scanAll((q) => s.d.log.scan(q), {
-          fromSeq: call.argsSeq,
-          toSeq: s.lastSeq,
-          type: 'approval/guardian-decided',
-          lane: s.lane,
-        })
-      ).find((row) => {
-        const data = row.data as {
-          toolUseId?: unknown
-          scope?: unknown
-          bindingHash?: unknown
-          policyHash?: unknown
-        } | null
-        return (
-          row.origin === 'system' &&
-          row.trust === 'trusted' &&
-          row.actor.id === s.d.actor.id &&
-          row.actor.org === s.d.actor.org &&
-          data?.toolUseId === call.toolUseId &&
-          data.scope === scope &&
-          data.bindingHash === bindingHash &&
-          data.policyHash === call.policyHash
-        )
-      })
-      const priorGuardianData = priorGuardian?.data as
-        | { requestId: string; decision: 'allow-once' | 'allow-session' | 'escalate' | 'reject' }
-        | undefined
-      // An allow/reject guardian row is committed atomically with its asked/decided rows. Seeing
-      // one without the matching persisted decision means the ledger is not a state we can safely
-      // reconstruct; never re-run the guardian or silently dispatch from it.
-      if (
-        priorGuardianData &&
-        (priorGuardianData.decision === 'allow-once' ||
-          priorGuardianData.decision === 'allow-session' ||
-          priorGuardianData.decision === 'reject')
-      )
-        return {
-          result: await refuse(
-            s,
-            call.toolUseId,
-            'APPROVAL_STATE_INVALID',
-            'guardian decision is missing its bound approval decision',
-            decisionId,
-          ),
-        }
-      const requestId = priorGuardianData?.requestId ?? s.d.ids.requestId()
-      const options = [
-        'allowed-once' as const,
-        'allowed-session' as const,
-        ...(durableBinding ? (['allowed-permanent'] as const) : []),
-        'rejected' as const,
-      ]
-      const asked = {
-        requestId,
-        kind: 'tool' as const,
-        toolUseId: call.toolUseId,
-        summary: `${call.name} ${canonicalJson(call.args).slice(0, 200)}`,
-        risk: risk === 'always' ? ('always' as const) : ('destructive' as const),
-        bindingHash,
-        scope,
-        policyVersion: policy.policyVersion,
-        ...(durableBinding ? { profileHash: durableBinding.profileHash } : {}),
-        options,
-        deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
-      }
-      // A transform hook: an extension may adjust risk/context/summary before the question reaches a
-      // human, the same waterfall shape `context`/`before_request` already use. `argv` is cast rather
-      // than re-validated here because the inference or nested-call entry validated `call.args`
-      // before persisting the exact args and resolved policy binding consumed by this dispatch.
-      const overridden = s.hooks.approvalRequest
-        ? (
-            await s.hooks.approvalRequest({
-              request: {
-                tool: call.name,
-                argv: call.args as JsonValue,
-                risk: asked.risk,
-                actor: s.d.actor,
-                summary: asked.summary,
-              },
-            })
-          ).request
-        : undefined
-      const finalAsked = overridden
-        ? {
-            ...asked,
-            risk: overridden.risk ?? asked.risk,
-            ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
-          }
-        : asked
-      const approvalRequest = {
-        ...finalAsked,
-        sessionKey: s.key,
-        stepId,
-        tool: { name: call.name, args: call.args, meta },
+        turn: op.meta.turn,
+        step: op.step,
         actor: s.d.actor,
-        taint,
-        scope,
+        // Read current folded taint; the native program counter can lag a committed result.
+        taint: op.taint || s.laneTaint(),
+        fullAccess: s.yolo,
+        approvalMode: s.d.approvalMode ?? 'manual',
+        approvalTimeoutMs: s.preset.approval.timeoutMs,
         profileHash: s.d.resolvedProfileHash,
-        policyVersion: policy.policyVersion,
-        options: [...options],
-        ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
-      }
-      if (approvalMode === 'smart' && !guardianFailed && !priorGuardianData) {
-        const guardianModel = resolveModel(s, 'primary').model
-        const projected = await s.d.runtime.ledgerProjected({
-          tokensEstimate: GUARDIAN_RESERVATION_TOKENS,
-          model: guardianModel,
-        })
-        const cap = s.turnBudgetCap()
-        const budgetApproved =
-          Number.isFinite(projected.credits) && (cap === null || projected.credits <= cap)
-        const guardian = s.effects.start({
-          kind: 'approval-guardian',
-          tool: { toolUseId: call.toolUseId, name: call.name },
-          replay: 'never',
-          argsSeq: call.argsSeq,
-        })
-        await s.transition([guardian.intent], s.op() as OpStateObj)
-        let guarded = budgetApproved
-          ? await s.d.runtime.approvalGuard(approvalRequest, o.signal ?? s.ac.signal)
-          : {
-              decision: 'escalate' as const,
-              ruleVersion: 'budget-v1',
-              reasons: ['guardian reservation exceeds the active budget'],
-            }
-        const costEvents: EventInput[] = []
-        if (budgetApproved && guarded.ruleVersion !== 'missing') {
-          const spend = {
-            purpose: 'approval-guardian' as const,
-            effectId: guardian.effectId,
-            tokens: {
-              input: GUARDIAN_RESERVATION_TOKENS,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-            },
-            credits: projected.credits,
-            creditSource: projected.creditSource,
-            model: guardianModel,
-          }
-          const recorded = await s.d.runtime.ledgerRecord({
-            ...spend,
-            sessionKey: s.key,
-            lane: s.lane,
-            turn: op.meta.turn,
-            step: op.step,
-          })
-          costEvents.push(s.ev('cost/ledger', spend))
-          if (!recorded) {
-            if (s.turn) s.turn.ledgerFailed = true
-            guarded = {
-              decision: 'escalate',
-              ruleVersion: 'failed',
-              reasons: ['guardian cost ledger unavailable'],
-            }
-          }
-        }
-        const guardianVerdict =
-          guarded.decision === 'allow-session'
-            ? ('allowed-session' as const)
-            : guarded.decision === 'allow-once'
-              ? ('allowed-once' as const)
-              : guarded.decision === 'reject'
-                ? ('rejected' as const)
-                : undefined
-        await s.transition(
-          [
-            s.ev('approval/guardian-decided', {
-              requestId,
-              effectId: guardian.effectId,
-              toolUseId: call.toolUseId,
-              scope,
-              bindingHash,
-              policyHash: call.policyHash,
-              decision: guarded.decision,
-              ruleVersion: guarded.ruleVersion,
-              reasons: guarded.reasons,
-              ...(guarded.model ? { model: guarded.model } : {}),
-              budget: {
-                tokensReserved: GUARDIAN_RESERVATION_TOKENS,
-                credits: Number.isFinite(projected.credits) ? projected.credits : Number.MAX_VALUE,
-                creditSource: projected.creditSource,
-                cap,
-                approved: budgetApproved,
-              },
-            }),
-            guardian.settle(
-              guarded.ruleVersion === 'failed' || guarded.ruleVersion === 'missing' || !budgetApproved
-                ? 'error'
-                : 'ok',
-            ),
-            ...costEvents,
-            ...(guardianVerdict
-              ? [
-                  s.ev('approval/asked', finalAsked),
-                  s.ev('approval/decided', {
-                    requestId,
-                    verdict: guardianVerdict,
-                    via: 'guardian',
-                    scope,
-                  }),
-                ]
-              : []),
-          ],
-          (cur) =>
-            updateCall(cur, call.toolUseId, {
-              // Keep the call recoverable until either refusal writes its result or execution
-              // crosses its own effect intent. A crash after the decision reconsumes the ledger.
-              status: 'planned',
-            }),
-        )
-        if (guardianVerdict === 'allowed-once' || guardianVerdict === 'allowed-session') {
-          if (guardianVerdict === 'allowed-session') s.sessionAllows.add(grantKey)
-          continue
-        }
-        if (guardianVerdict === 'rejected')
-          return {
-            result: await refuse(
-              s,
-              call.toolUseId,
-              'APPROVAL_REJECTED',
-              'smart guardian rejected the call',
-              decisionId,
-            ),
-          }
-      }
-      const storage = s.d.log.storage
-      if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'waiting_approval')
-      const verdict = await s.askApproval(approvalRequest, o.signal ?? s.ac.signal)
-      if (hasChildControl(storage) && (typeof verdict !== 'object' || verdict === null))
-        await transitionChildState(storage, s.key, 'running')
-      if (typeof verdict === 'object') {
-        // The ask is handed back rather than written here. Parking closes the turn, and a member of a
-        // concurrent batch that closes the turn under its siblings leaves the next one writing a
-        // `step/end` into a turn that is already over. One writer ends the batch, and it carries
-        // every unanswered question with it rather than dropping the ones that lost the race.
-        return {
-          result: errorResult('parked'),
-          park: s.ev('approval/asked', { ...finalAsked, pending: verdict }),
-        }
-      }
-      const grantId =
-        verdict === 'allowed-permanent'
-          ? permanentGrantId({ sessionKey: s.key, toolUseId: call.toolUseId, scope })
-          : undefined
-      await s.transition(
-        [
-          s.ev('approval/asked', finalAsked),
-          s.ev('approval/decided', {
-            requestId,
-            verdict,
-            via: 'sync',
-            scope,
-            ...(grantId ? { grantId } : {}),
-          }),
-        ],
-        (cur) => updateCall(cur, call.toolUseId, { status: 'planned' }),
-      )
-      if (verdict === 'allowed-permanent') {
-        const persisted = await persistedToolApproval(s, {
-          toolUseId: call.toolUseId,
-          args: call.args,
-          scope,
-          policyHash: call.policyHash,
-          policyVersion: policy.policyVersion,
-        })
-        if (!grantId || !durableBinding || !persisted || persisted.grantId !== grantId)
-          return {
-            result: await refuse(
-              s,
-              call.toolUseId,
-              'APPROVAL_STATE_INVALID',
-              'permanent approval ledger binding is missing',
-              decisionId,
-            ),
-          }
-        const stored = await s.d.runtime.approvalPutGrant(
-          newPermanentGrant({
-            ...durableBinding,
-            grantId,
-            createdAt: persisted.decidedAt,
-          }),
-          o.signal ?? s.ac.signal,
-        )
-        if (!stored) {
+        get lastSeq() {
+          return s.lastSeq
+        },
+        hooks: s.hooks,
+        seams: s.d.runtime,
+        effects: s.effects,
+        sessionAllows: s.sessionAllows,
+        clock: s.d.clock,
+        requestId: () => s.d.ids.requestId(),
+        guardianModel: () => resolveModel(s, 'primary').model,
+        budgetCap: () => s.turnBudgetCap(),
+        markLedgerFailed: () => {
+          if (s.turn) s.turn.ledgerFailed = true
+        },
+        scan: (query) => s.d.log.scan(query),
+        event: (type, data, extra) => s.ev(type, data, extra),
+        commit: async (events, callState) => {
           await s.transition(
-            [
-              s.ev(
-                'x/core/approval-grant-activation-failed',
-                {
-                  requestId,
-                  grantId,
-                  toolUseId: call.toolUseId,
-                  scope,
-                  reason: 'durable grant store unavailable',
-                },
-                { ignorable: true, sourceEventSeqs: [call.argsSeq] },
-              ),
-            ],
-            s.op() as OpStateObj,
+            events,
+            callState === 'planned'
+              ? (cur) => updateCall(cur, call.toolUseId, { status: 'planned' })
+              : (s.op() as OpStateObj),
           )
-          return {
-            result: await refuse(
-              s,
-              call.toolUseId,
-              'APPROVAL_GRANT_UNAVAILABLE',
-              'permanent approval could not be stored',
-              decisionId,
-            ),
-          }
-        }
-        await s.transition(
-          [
-            s.ev(
-              'x/core/approval-grant-activated',
-              { requestId, grantId, toolUseId: call.toolUseId, scope, recovered: false },
-              { ignorable: true, sourceEventSeqs: [call.argsSeq] },
-            ),
-          ],
-          s.op() as OpStateObj,
-        )
-        continue
-      }
-      if (verdict === 'allowed-session') s.sessionAllows.add(grantKey)
-      if (!verdict.startsWith('allowed'))
-        return {
-          result: await refuse(s, call.toolUseId, 'APPROVAL_REJECTED', `approval ${verdict}`, decisionId),
-        }
-    }
+        },
+        persistedApproval: (input) => persistedToolApproval(s, input),
+        refuse: (code, message, id) => refuse(s, call.toolUseId, code, message, id),
+        waitingApproval: async (waiting) => {
+          const storage = s.d.log.storage
+          if (hasChildControl(storage))
+            await transitionChildState(storage, s.key, waiting ? 'waiting_approval' : 'running')
+        },
+        askApproval: (request, signal) => s.askApproval(request, signal),
+      },
+      call,
+      meta,
+      o.signal ?? s.ac.signal,
+    )
+    if ('result' in approved) return approved
+    decisionId = approved.decisionId
   }
   if (call.executionDomain === 'workspace' && !policy.isReadOnly && !s.d.runtime.sandboxAllowed())
     return {
@@ -962,7 +485,7 @@ export async function approveAndExecute(
   if (parent.aborted) ac.abort()
   else parent.addEventListener('abort', onAbort, { once: true })
   try {
-    const invokeNested = (name: string, args: unknown, io: { signal?: AbortSignal; depth: number }) => {
+    const invokeNested: ToolContextDeps['invoke'] = (name, args, io) => {
       return s.invokeTool(name, args, {
         ...io,
         parentEffectId: effect.effectId,
@@ -991,6 +514,7 @@ export async function approveAndExecute(
           netFetch: s.d.netFetch,
           ...(s.d.publicFetch ? { publicFetch: s.d.publicFetch } : {}),
           log: s.d.logger,
+          ...(s.d.toolQuestions ? { toolQuestions: s.d.toolQuestions } : {}),
           invoke: invokeNested,
           listTools: () =>
             t.snapshot.defs.filter((definition) => definition.name !== 'computer_use' || computerUseAllowed),
@@ -1025,28 +549,6 @@ export async function approveAndExecute(
         () => def.execute(call.args as never, ctx),
         { executionDomain: call.executionDomain, attempt },
       )
-    const invokeAttempt = (attempt: ExecuteAttempt): Promise<HostDispatchObservation> => {
-      const workspaceInvocation = s.d.workspaceInvocation
-      if (workspaceInvocation) {
-        const handler = async (view: import('../workspace/runtime.js').WorkspaceInvocationView) => {
-          const confined = await view.ready(ac.signal)
-          const ctx = context(view.fs(), {
-            sandbox: view.hookSandbox(),
-            confine: (argv) => confined.confine(argv),
-            checkpoint: view.checkpointContext(),
-          })
-          return invoke(ctx, attempt)
-        }
-        return s.d.workspacePublication
-          ? s.d.workspacePublication.workspace(() => ({ port: workspaceInvocation, handler }))
-          : workspaceInvocation.run(handler)
-      }
-      if (call.executionDomain === 'workspace')
-        return Promise.reject(
-          new CoreError('E_WORKSPACE_CLOSED', 'workspace tool execution needs an invocation port'),
-        )
-      return invoke(context(NO_WORKSPACE_FS), attempt)
-    }
     let attempt: ExecuteAttempt = initialAttempt
     let observation: HostDispatchObservation
     let timedOut = false
@@ -1072,15 +574,20 @@ export async function approveAndExecute(
             dispatchPhase: 'may_have_sent',
           }),
         )
-      try {
-        // Deliberately not the injected timers: those drive the writer lease, and a test that freezes
-        // them to hold a lease still has to be able to watch a tool run out of time.
-        observation = await withTimeout(invokeAttempt(attempt), timeoutMs, call.name, ac.signal)
-      } catch (error) {
-        timedOut = error instanceof Error && error.message.startsWith('timeout:')
-        cancelled = !timedOut && ac.signal.aborted
-        observation = { phase: 'may_have_sent', error }
-      }
+      const dispatched = await dispatchToolAttempt({
+        name: call.name,
+        executionDomain: call.executionDomain,
+        timeoutMs,
+        signal: ac.signal,
+        ...(o.humanWaitParent ? { humanWaitParent: o.humanWaitParent } : {}),
+        ...(s.d.workspaceInvocation ? { workspaceInvocation: s.d.workspaceInvocation } : {}),
+        ...(s.d.workspacePublication ? { workspacePublication: s.d.workspacePublication } : {}),
+        createContext: context,
+        dispatch: (ctx) => invoke(ctx, attempt),
+      })
+      observation = dispatched.observation
+      timedOut = dispatched.timedOut
+      cancelled = dispatched.cancelled
       if (observation.phase !== 'not_sent') break
       await s.transition([], (cur) =>
         updateCall(cur, call.toolUseId, {

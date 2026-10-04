@@ -35,6 +35,14 @@ import {
 } from '../storage/workspaces.js'
 import { type AttachedFeed, DEFAULT_LIMITS, type Limits } from './attached.js'
 import { CommandQueue } from './command-queue.js'
+import { comparisonAdmissionGuard } from './comparison-admission.js'
+import { ComparisonCapture } from './comparison-capture.js'
+import { comparisonIdleGate } from './comparison-idle-gate.js'
+import {
+  type ComparisonRetirementBackend,
+  type ComparisonRetirementService,
+  createComparisonRetirementService,
+} from './comparison-retirement-service.js'
 import { LocalEndpoint } from './endpoint.js'
 import { disposeFeeds, type Feed, type LocalContext, registerAcp } from './methods/acp.js'
 import {
@@ -46,6 +54,12 @@ import {
   requireSessionOwner,
 } from './methods/agnes.js'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from './methods/artifacts.js'
+import {
+  type ComparisonLedgerReader,
+  openComparisonStorage,
+  registerComparison,
+} from './methods/comparison.js'
+import { registerComparisonRetirementRPC } from './methods/comparison-retirement.js'
 import { registerConfiguration } from './methods/config.js'
 import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
@@ -236,6 +250,8 @@ export { RegistryLister, SessionRegistry } from './sessions.js'
 export { type Disposer, tailSession } from './tail.js'
 
 export type LocalEndpointOptions = {
+  comparisonRetirement?: ComparisonRetirementBackend
+  comparisonLedger?: ComparisonLedgerReader
   configuration?: ConfigurationService
   prompter?: Prompter
   clock?: () => number
@@ -323,7 +339,7 @@ export function createPrompterBridge(): { prompter: Prompter; bind(target: Promp
 export function createLocalEndpoint(
   host: Host,
   opts: LocalEndpointOptions = {},
-): LocalEndpoint & { prompter: Prompter } {
+): LocalEndpoint & { prompter: Prompter; comparisonRetirement?: ComparisonRetirementService } {
   if (opts.activationBarrier && opts.activationBarrier !== host.activationBarrier)
     throw new TypeError('activationBarrier must be the Host activation barrier')
   const clock = opts.clock ?? (() => Date.now())
@@ -335,7 +351,13 @@ export function createLocalEndpoint(
   const workspaces =
     opts.workspaces ??
     new WorkspaceCatalogImpl(new MemoryWorkspaceStore(), sessionWorkspaces, resolveWorkspaceDirectory, clock)
+  const comparisonStorage = opts.dataDir ? openComparisonStorage(opts.dataDir) : undefined
+  workspaces.markComparisonSessions(comparisonStorage?.comparisonSessionIds() ?? [])
+  const assertSessionAdmitted = comparisonStorage
+    ? comparisonAdmissionGuard(comparisonStorage)
+    : () => undefined
   const registry = new SessionRegistry(host, {
+    assertSessionAdmitted,
     clock,
     ...(opts.pollMs !== undefined ? { pollMs: opts.pollMs } : {}),
     observe: (sessionKey, event, cwd) => indexApprovalTicket(tickets, sessionKey, event, cwd),
@@ -350,6 +372,7 @@ export function createLocalEndpoint(
   const feeds = new Map<string, Feed>()
   const attached = new Map<string, AttachedFeed>()
   const commandQueue = opts.commandQueue ?? new CommandQueue()
+  if (comparisonStorage) commandQueue.setAdmissionGuard(assertSessionAdmitted)
   let sessionOwnership = opts.sessionOwnership ?? embeddedSessionOwnership.get(host)
   if (!sessionOwnership) {
     const memoryOwnership = new MemorySessionPrincipalOwnership()
@@ -377,6 +400,10 @@ export function createLocalEndpoint(
     resolveNewSessionActor: host.resolveActor.bind(host),
     sessionCredentialAuthority: true,
     sessionOwnership,
+    ordinarySessionIds: (sessionIds: readonly string[]) => {
+      const comparisonIds = new Set(comparisonStorage?.comparisonSessionIds() ?? [])
+      return workspaces.ordinarySessionIds(sessionIds).filter((key) => !comparisonIds.has(key))
+    },
     hasSessionFact: (sessionId: string) => host.kernel.get(sessionId) !== undefined,
   }
   const preferences = new SessionPreferencesStore()
@@ -385,10 +412,62 @@ export function createLocalEndpoint(
   registerConfiguration(ep, opts.configuration)
   registerWorkspaces(ep, workspaces)
   registerAcp(ep, cx, feeds, attached)
+  const comparisonCapture =
+    comparisonStorage && opts.comparisonLedger
+      ? new ComparisonCapture({
+          storage: comparisonStorage,
+          ledger: opts.comparisonLedger,
+          generation: (key) => registry.get(key),
+          subscribe: (key, receive) => registry.subscribe(key, receive),
+          authorize: (principal, key) => {
+            if (sessionOwnership.resolve(key)?.principalId !== principal) throw rpcError('CAPABILITY_DENIED')
+          },
+        })
+      : undefined
+  const comparisonRetirement =
+    comparisonStorage && opts.dataDir && opts.comparisonRetirement
+      ? createComparisonRetirementService({
+          storage: comparisonStorage,
+          backend: {
+            ...opts.comparisonRetirement,
+            idleGate:
+              opts.comparisonRetirement.idleGate ??
+              comparisonIdleGate({
+                ledger: opts.comparisonRetirement.ledger,
+                local: host.sessionIdleGates,
+              }),
+          },
+          queue: commandQueue,
+          ownership: sessionOwnership,
+          registry,
+          dataDir: opts.dataDir,
+        })
+      : undefined
+  const comparison = registerComparison(
+    ep,
+    cx,
+    opts.dataDir && comparisonStorage
+      ? {
+          dataDir: opts.dataDir,
+          storage: comparisonStorage,
+          ...(opts.comparisonLedger ? { ledger: opts.comparisonLedger } : {}),
+          ...(comparisonCapture ? { capture: comparisonCapture } : {}),
+        }
+      : undefined,
+  )
+  registerComparisonRetirementRPC(ep, comparisonRetirement)
   registerAgnes(
     ep,
     {
       ...cx,
+      readRuntimeState: async (sessionId: string) => {
+        const active = registry.get(sessionId)
+        if (active) return active.session.runtimeState()
+        const page = await lister.list({ sessionIds: [sessionId], limit: 1 })
+        const stored = page.items.find((item) => item.sessionId === sessionId)
+        if (!stored) return undefined
+        return { runtime: stored.runtime ?? { id: 'native', version: '1' }, phase: 'closed' as const }
+      },
       configuration: opts.configuration !== undefined,
       profileHashForSession: async (key: string) => registry.require(key).session.d.resolvedProfileHash,
       limits: { ...DEFAULT_LIMITS, ...opts.limits },
@@ -493,6 +572,7 @@ export function createLocalEndpoint(
   const close = ep.close.bind(ep)
   return Object.assign(ep, {
     prompter,
+    ...(comparisonRetirement ? { comparisonRetirement } : {}),
     close: async () => {
       // Abort inbound handlers and server-to-client requests first. A disconnected permission
       // client otherwise leaves its approval request parked while registry.closeAll() waits for the
@@ -501,7 +581,20 @@ export function createLocalEndpoint(
       await close()
       disposeFeeds(feeds)
       if (ownsCommandQueue) await commandQueue.close()
+      comparisonCapture?.beginShutdown()
+      await comparisonRetirement?.drain()
       await registry.closeAll()
+      await comparison.drain()
+      await comparisonCapture?.close()
+      comparisonStorage?.close()
     },
   })
 }
+
+export {
+  type ComparisonRetirementBackend,
+  ComparisonRetirementError,
+  type ComparisonRetirementIdleGate,
+  type ComparisonRetirementService,
+  createComparisonRetirementService,
+} from './comparison-retirement-service.js'

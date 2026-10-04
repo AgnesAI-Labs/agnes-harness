@@ -4,6 +4,8 @@ export type ClosedNetworkConfineOptions = Readonly<{
   cwd: string
   allowPaths: readonly string[]
   denyPaths: readonly string[]
+  /** Only Host soft denials can be carved out by a more specific allow. */
+  denyExceptions?: readonly { path: string; except: readonly string[] }[]
   /** A non-empty list is deliberately unsupported until a real host-filtering proxy exists. */
   networkAllow?: readonly string[]
 }>
@@ -79,13 +81,28 @@ export function validateClosedNetworkOptions(options: ClosedNetworkConfineOption
   cwd: string
   allowPaths: string[]
   denyPaths: string[]
+  denyExceptions: { path: string; except: string[] }[]
 } {
   requireClosedNetwork(options.networkAllow)
   const cwd = validateAbsolutePaths([options.cwd], 'deny')[0]
   if (!cwd) throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'missing cwd')
+  const allowPaths = validateAbsolutePaths(options.allowPaths, 'allow')
+  const denyPaths = validateAbsolutePaths(options.denyPaths, 'deny')
+  const denyExceptions = (options.denyExceptions ?? []).map((entry) => {
+    const except = validateAbsolutePaths(entry.except, 'allow')
+    if (
+      !denyPaths.includes(entry.path) ||
+      !except.length ||
+      allowPaths.some((path) => path.startsWith(`${entry.path}/`) && !except.includes(path)) ||
+      except.some((path) => !allowPaths.includes(path) || !path.startsWith(`${entry.path}/`))
+    )
+      throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'invalid denial exception')
+    return { path: entry.path, except }
+  })
   return {
     cwd,
-    allowPaths: validateAbsolutePaths(options.allowPaths, 'allow'),
-    denyPaths: validateAbsolutePaths(options.denyPaths, 'deny'),
+    allowPaths,
+    denyPaths,
+    denyExceptions,
   }
 }

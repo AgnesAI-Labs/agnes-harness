@@ -89,6 +89,8 @@ export type CommitReceipt = { firstSeq: Seq; seqs: Seq[]; opState?: { seq: Seq }
 export type LeaseClaim = { ttlMs: number; expectedLastSeq: Seq }
 
 export type OpenResult = {
+  /** Optional durable acquisition identity; absence is not evidence of owner closure. */
+  ownerEpoch?: number
   lastSeq: Seq
   formatVersion: number
   created?: boolean
@@ -96,6 +98,8 @@ export type OpenResult = {
 }
 
 export interface StorageAdapter {
+  /** Optional durable admission policy; cleanup, cancellation and reads must remain available. */
+  assertSessionAdmitted?(key: SessionKey): void
   open(key: SessionKey, claim: { writerRunId: string; ttlMs: number }): Promise<OpenResult>
   commit(key: SessionKey, tx: CommitTx): Promise<CommitReceipt>
   /** With a claim, a lapsed or missing lease is taken back as a claimed commit would take it. */

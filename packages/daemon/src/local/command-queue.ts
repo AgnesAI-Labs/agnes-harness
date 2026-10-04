@@ -30,6 +30,7 @@ export class CommandQueue {
   private pending = 0
   private closed = false
   private closing?: Promise<void>
+  private admissionGuard: (sessionId: string) => void = () => undefined
   private finishClose: (() => void) | undefined
 
   constructor(
@@ -42,15 +43,29 @@ export class CommandQueue {
       throw new RangeError('command queue limits must be positive integers')
   }
 
+  /** Internal wiring only; the transport never controls mutation/maintenance classification. */
+  setAdmissionGuard(guard: (sessionId: string) => void): void {
+    this.admissionGuard = guard
+  }
+
+  assertAdmitted(sessionId: string): void {
+    this.admissionGuard(sessionId)
+  }
+
   run<T>(
     sessionId: string,
     signal: AbortSignal,
     action: (signal: AbortSignal) => Promise<T>,
     guard: () => void = () => undefined,
+    admission: 'mutation' | 'maintenance' = 'mutation',
   ): Promise<T> {
     if (this.closed) return Promise.reject(new CommandQueueError('CLOSED'))
     if (signal.aborted) return Promise.reject(abortReason(signal))
-    guard()
+    const check = () => {
+      if (admission === 'mutation') this.assertAdmitted(sessionId)
+      guard()
+    }
+    check()
     const current = this.sessions.get(sessionId)
     if (
       this.pending >= this.limits.maxPending ||
@@ -65,7 +80,7 @@ export class CommandQueue {
       entry = {
         signal,
         action,
-        guard,
+        guard: check,
         controller,
         resolve,
         reject,
@@ -154,13 +169,31 @@ export async function runQueued<T>(
   signal: AbortSignal,
   action: (signal: AbortSignal) => Promise<T>,
   guard?: () => void,
+  admission: 'mutation' | 'maintenance' = 'mutation',
 ): Promise<T> {
   try {
-    return await queue.run(sessionId, signal, action, guard)
+    return await queue.run(sessionId, signal, action, guard, admission)
   } catch (error) {
     if (!(error instanceof CommandQueueError)) throw error
     throw rpcError('OVERLOADED', {
       code: error.code === 'RESOURCE_EXHAUSTED' ? error.code : 'QUEUE_CLOSED',
     })
   }
+}
+
+/** Hold a fixed, globally ordered set while inspecting idle state and sealing admission. */
+export function withSessionQueues<T>(
+  queue: CommandQueue,
+  sessionIds: readonly string[],
+  signal: AbortSignal,
+  action: () => Promise<T>,
+): Promise<T> {
+  const keys = [...new Set(sessionIds)].sort()
+  const acquire = (index: number): Promise<T> => {
+    const key = keys[index]
+    return key === undefined
+      ? action()
+      : runQueued(queue, key, signal, () => acquire(index + 1), undefined, 'maintenance')
+  }
+  return acquire(0)
 }

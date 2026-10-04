@@ -2,6 +2,7 @@ import type {
   EventEnvelope,
   McpStatus,
   RpcError,
+  RuntimeIdentity,
   RuntimeStaleFrame,
   SkillDescriptor,
   WorkerGeneration,
@@ -9,9 +10,20 @@ import type {
 import { workerGeneration } from '@agnes/protocol'
 
 export type SessionMethod =
+  | 'resolveQuestionActor'
+  | 'questionsPending'
+  | 'answerQuestion'
+  | 'cancelQuestion'
+  | 'runtimeState'
+  | 'prepareSessionConfiguration'
+  | 'configurationAdmission'
+  | 'sessionIdleGate'
+  | 'controlRuntime'
+  | 'cancelQueuedInput'
   | 'enqueue'
   | 'run'
   | 'abort'
+  | 'abortSession'
   | 'scan'
   | 'latest'
   | 'projectUI'
@@ -34,6 +46,8 @@ export type SessionMethod =
 /** Process-wide methods available before C2 runtime-target delivery exists. */
 export type WorkerMethod =
   | 'ping'
+  | 'runtime.catalog'
+  | 'runtime.resolveSelection'
   | 'configuration.apply'
   | 'inspectService'
   | 'callService'
@@ -82,10 +96,73 @@ export function parseWorkerHello(value: unknown): WorkerHello {
 }
 
 export type SessionOpenResult = {
+  runtime?: RuntimeIdentity
   sessionKey: string
   writerRunId: string
   generation: number
   lastSeq: number
+}
+
+/** A single execution owner. Local registries have no worker process and use null. */
+export type SessionCloseOwner = {
+  sessionKey: string
+  writerRunId: string
+  generation: number
+  workerGeneration: number | null
+}
+export type SessionCloseConfirmation =
+  | { exited: true; owner: SessionCloseOwner }
+  | {
+      exited: false
+      reason: 'owner-unknown' | 'close-failed' | 'transport-lost' | 'generation-mismatch'
+      owner?: SessionCloseOwner
+    }
+
+export function sameSessionCloseOwner(a: SessionCloseOwner, b: SessionCloseOwner): boolean {
+  return (
+    a.sessionKey === b.sessionKey &&
+    a.writerRunId === b.writerRunId &&
+    a.generation === b.generation &&
+    a.workerGeneration === b.workerGeneration
+  )
+}
+
+/** Validate a private close receipt; empty legacy replies never establish exit. */
+export function readSessionCloseConfirmation(
+  value: unknown,
+  expected?: SessionCloseOwner,
+): SessionCloseConfirmation {
+  const unknown = (
+    reason: Extract<SessionCloseConfirmation, { exited: false }>['reason'],
+  ): SessionCloseConfirmation => ({ exited: false, reason, ...(expected ? { owner: expected } : {}) })
+  if (!value || typeof value !== 'object') return unknown('owner-unknown')
+  const receipt = value as Partial<SessionCloseConfirmation>
+  const owner = receipt.owner
+  const valid =
+    owner &&
+    Object.keys(owner).length === 4 &&
+    typeof owner.sessionKey === 'string' &&
+    owner.sessionKey.length > 0 &&
+    typeof owner.writerRunId === 'string' &&
+    owner.writerRunId.length > 0 &&
+    Number.isSafeInteger(owner.generation) &&
+    owner.generation > 0 &&
+    (owner.workerGeneration === null ||
+      (Number.isSafeInteger(owner.workerGeneration) && owner.workerGeneration > 0))
+  if (receipt.exited === true) {
+    if (!valid || !expected) return unknown('owner-unknown')
+    return sameSessionCloseOwner(owner, expected)
+      ? { exited: true, owner: { ...owner } }
+      : unknown('generation-mismatch')
+  }
+  if (
+    receipt.exited === false &&
+    ['owner-unknown', 'close-failed', 'transport-lost', 'generation-mismatch'].includes(
+      String(receipt.reason),
+    )
+  )
+    return unknown(receipt.reason ?? 'owner-unknown')
+  return unknown('owner-unknown')
 }
 
 /** Authenticated daemon-to-worker workspace authority. This type is never part of public RPC. */
@@ -149,6 +226,7 @@ export type RequestFrame = {
   sessionKey: string
   requestId: string
   method:
+    | 'question-provider'
     | 'permission'
     | 'notice'
     | 'artifact-media-read'
@@ -173,6 +251,7 @@ export type SessionOpenFrame = {
   params: {
     binding: WorkspaceBindingFrame
     preset?: string
+    runtime?: string
     resume?: boolean
     parent?: { key: string; boundarySeq: number }
   }
@@ -195,17 +274,26 @@ export type SessionCloseFrame = {
   requestId: string
   sessionKey: string
   reason: string
+  owner?: SessionCloseOwner
 }
 /** Compatibility name for callers that accept either strict command-frame variant. */
 export type CommandFrame = WorkerCommandFrame | SessionCommandFrame
 /** @deprecated Prefer WorkerReplyFrame or SessionReplyFrame at the wire boundary. */
 export type ReplyFrame = WorkerReplyFrame | SessionReplyFrame
 export type CloseFrame = { kind: 'close'; reason: string }
+/** A successful hibernation/wake retains its session epoch while transferring the writer owner. */
+export type SessionOwnerFrame = {
+  kind: 'session.owner'
+  sessionKey: string
+  previous: SessionCloseOwner
+  owner: SessionCloseOwner
+}
 export type WorkerToSupervisor =
   | WorkerHello
   | EventFrame
   | PreviewFrame
   | SessionInterruptedFrame
+  | SessionOwnerFrame
   | LogFrame
   | ResourceStatusFrame
   | WorkerReplyFrame

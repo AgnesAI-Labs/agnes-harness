@@ -128,6 +128,8 @@ function fakePlatform(caps: Record<string, CapabilityLevel['level']>): PlatformB
 }
 
 export type TestHostOptions = {
+  questionProvider?: HostOptions['questionProvider']
+  jev?: HostOptions['jev']
   /** Opt out of the production publisher view in tests that deliberately exercise raw Kernel ports. */
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
   serviceAuthority?: import('../src/ext-host/service-invocation.js').ServiceAuthority
@@ -373,6 +375,8 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.trajectoryFetch ? { trajectoryFetch: o.trajectoryFetch } : {}),
     ...(o.trajectoryResolver ? { trajectoryResolver: o.trajectoryResolver } : {}),
     ...(o.disableSessionTitle ? { disableSessionTitle: true } : {}),
+    ...(o.jev ? { jev: o.jev } : {}),
+    ...(o.questionProvider ? { questionProvider: o.questionProvider } : {}),
     ...(o.currentRuntime ? { currentRuntime: o.currentRuntime } : {}),
     // Omission exercises production buildProvider. A script explicitly requests the test model.
     ...(o.provider !== undefined || o.script !== undefined

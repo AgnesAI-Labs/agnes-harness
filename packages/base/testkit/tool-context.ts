@@ -26,7 +26,7 @@ export type ExecFn = (
 
 export type FakeCalls = {
   exec: string[][]
-  read: { path: string; opts: { offset?: number; limit?: number } | undefined }[]
+  read: { path: string; opts: { offset?: number; limit?: number; unit?: 'bytes' } | undefined }[]
   execOpts: ExecOpts[]
   artifacts: { bytes: Uint8Array; mime: string | undefined; name: string | undefined }[]
   /** Every ref `artifacts.get` was asked for, so a test can show a refused request never reached the store. */
@@ -121,7 +121,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       return { truncated: false, ...runExec(cmd, o) }
     },
     fs: {
-      async read(p: string, o?: { offset?: number; limit?: number }): Promise<Uint8Array> {
+      async read(p: string, o?: { offset?: number; limit?: number; unit?: 'bytes' }): Promise<Uint8Array> {
         calls.read.push({ path: p, opts: o })
         const fail = readErrors.get(abs(p))
         if (fail) throw Object.assign(new Error(fail.message ?? 'read failed'), { code: fail.code })
