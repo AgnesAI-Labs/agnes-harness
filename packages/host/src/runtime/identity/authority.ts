@@ -73,6 +73,36 @@ export type IdentityRoleCurrentChecks = Readonly<{
 
 const contextAuthorities = new WeakMap<CallContext, IdentityAuthority>()
 const nativeAbortGetter = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')?.get
+const nativeObjectKeys = Object.keys
+const nativeOwnKeys = Reflect.ownKeys
+const nativeGetPrototypeOf = Object.getPrototypeOf
+const nativeGetOwnPropertyDescriptors = Object.getOwnPropertyDescriptors
+const nativeApply = Reflect.apply
+const nativeIsFinite = Number.isFinite
+function sameOwnDataDescriptors(
+  expected: PropertyDescriptorMap,
+  actual: PropertyDescriptorMap,
+  keys: readonly (string | symbol)[],
+): boolean {
+  if (nativeOwnKeys(actual).length !== keys.length) return false
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index]
+    if (key === undefined) return false
+    const before = expected[key as keyof typeof expected]
+    const after = actual[key as keyof typeof actual]
+    if (
+      !before ||
+      !after ||
+      !('value' in after) ||
+      after.value !== before.value ||
+      after.writable !== before.writable ||
+      after.enumerable !== before.enumerable ||
+      after.configurable !== before.configurable
+    )
+      return false
+  }
+  return true
+}
 const commitFences = new WeakMap<
   IdentityAuthority,
   (context: CallContext, deadlineCeiling?: Timestamp) => IdentityCurrentFence | null
@@ -147,6 +177,8 @@ export function createIdentityAuthority(
   const readJointIdentityRow = jointIdentityStatement.get.bind(jointIdentityStatement)
   const contexts = new WeakMap<object, { authorizationRef: string; bindingId: string; scope: string }>()
   const verifiedRows = new WeakMap<CurrentIdentity, string>()
+  const getContext = contexts.get.bind(contexts)
+  const getContextAuthority = contextAuthorities.get.bind(contextAuthorities)
   let closed = false
   // The final gate reads durable state directly and never invokes a source or policy callback.
   function stillStored(instance: CurrentIdentity): boolean {
@@ -358,8 +390,8 @@ export function createIdentityAuthority(
       } catch {
         return null
       }
-      const signalDescriptors = Object.getOwnPropertyDescriptors(signal)
-      const signalKeys = Reflect.ownKeys(signalDescriptors)
+      const signalDescriptors = nativeGetOwnPropertyDescriptors(signal)
+      const signalKeys = nativeOwnKeys(signalDescriptors)
       if (
         Object.hasOwn(signalDescriptors, 'aborted') ||
         signalKeys.some((key) => {
@@ -375,12 +407,12 @@ export function createIdentityAuthority(
         instance,
         issued,
         row,
-        keys: Object.keys(row),
+        keys: nativeObjectKeys(row),
         scope: context.scope,
         signal,
         signalDescriptors,
         signalKeys,
-        signalPrototype: Object.getPrototypeOf(signal),
+        signalPrototype: nativeGetPrototypeOf(signal),
         deadline: context.deadline,
         deadlineAt: Date.parse(context.deadline),
         expiresAt: Date.parse(instance.identity.expiresAt),
@@ -394,48 +426,32 @@ export function createIdentityAuthority(
       // Any dynamic source or policy work must already have run before this gate.
       const at = now()
       staticCheck?.()
-      if (closed || !Number.isFinite(at) || at >= ceilingAt) return false
-      for (const entry of retained) {
+      if (closed || !nativeIsFinite(at) || at >= ceilingAt) return false
+      for (let retainedIndex = 0; retainedIndex < retained.length; retainedIndex++) {
+        const entry = retained[retainedIndex]
         if (!entry) return false
         const { context, instance, issued, row, keys } = entry
         if (
           context.signal !== entry.signal ||
-          Object.getPrototypeOf(entry.signal) !== entry.signalPrototype ||
+          nativeGetPrototypeOf(entry.signal) !== entry.signalPrototype ||
           context.scope !== entry.scope ||
           context.deadline !== entry.deadline ||
           !(at < entry.deadlineAt && at < entry.expiresAt) ||
-          contexts.get(context) !== issued ||
-          contextAuthorities.get(context) !== authority ||
+          getContext(context) !== issued ||
+          getContextAuthority(context) !== authority ||
           context.authorizationRef !== issued.authorizationRef ||
           context.principalRef !== instance.identity.principalRef ||
           context.bindingId !== issued.bindingId
         )
           return false
-        const actualSignal = Object.getOwnPropertyDescriptors(entry.signal)
-        if (
-          Reflect.ownKeys(actualSignal).length !== entry.signalKeys.length ||
-          entry.signalKeys.some((key) => {
-            const expected = entry.signalDescriptors[key as keyof typeof entry.signalDescriptors]
-            const actual = actualSignal[key as keyof typeof actualSignal]
-            return (
-              !expected ||
-              !actual ||
-              !('value' in actual) ||
-              actual.value !== expected.value ||
-              actual.writable !== expected.writable ||
-              actual.enumerable !== expected.enumerable ||
-              actual.configurable !== expected.configurable
-            )
-          })
-        )
-          return false
+        const actualSignal = nativeGetOwnPropertyDescriptors(entry.signal)
+        if (!sameOwnDataDescriptors(entry.signalDescriptors, actualSignal, entry.signalKeys)) return false
         const current = readJointIdentityRow(instance.authorizationRef)
-        if (
-          current?.revoked !== 0 ||
-          Object.keys(current).length !== keys.length ||
-          keys.some((key) => current[key] !== row[key])
-        )
-          return false
+        if (current?.revoked !== 0 || nativeObjectKeys(current).length !== keys.length) return false
+        for (let index = 0; index < keys.length; index++) {
+          const key = keys[index]
+          if (key === undefined || current[key] !== row[key]) return false
+        }
       }
       return true
     }
@@ -478,30 +494,14 @@ export function createIdentityAuthority(
         context.authorizationRef !== issued.authorizationRef ||
         context.principalRef !== instance.identity.principalRef ||
         context.bindingId !== issued.bindingId ||
-        Object.getPrototypeOf(signal) !== signalPrototype ||
+        nativeGetPrototypeOf(signal) !== signalPrototype ||
         !nativeAbortGetter ||
-        Reflect.apply(nativeAbortGetter, signal, []) !== false ||
+        nativeApply(nativeAbortGetter, signal, []) !== false ||
         !stillStored(instance)
       )
         throw new Error('Original role authorization changed')
-      const actual = Object.getOwnPropertyDescriptors(signal)
-      if (
-        Reflect.ownKeys(actual).length !== keys.length ||
-        keys.some((key) => {
-          const expected = descriptors[key as keyof typeof descriptors]
-          const current = actual[key as keyof typeof actual]
-          return (
-            !expected ||
-            !current ||
-            !('value' in current) ||
-            current.value !== expected.value ||
-            current.writable !== expected.writable ||
-            current.enumerable !== expected.enumerable ||
-            current.configurable !== expected.configurable
-          )
-        })
-      )
-        throw new Error('Original role signal changed')
+      const actual = nativeGetOwnPropertyDescriptors(signal)
+      if (!sameOwnDataDescriptors(descriptors, actual, keys)) throw new Error('Original role signal changed')
     }
     return {
       until: deadlineAt <= expiresAt ? deadline : instance.identity.expiresAt,
