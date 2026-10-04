@@ -139,7 +139,7 @@ export function createLocalDeploymentIdentity(
     const wrote = anchor.writeJournal(journalId, { phase: 'installing', config: safeConfig.value.json })
     if (!wrote.ok) throw new Error('Original local identity installation anchor cannot be retained')
     db.exec(`CREATE TABLE runtime_local_identity_installation (
-      id TEXT PRIMARY KEY,body_json TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,maintenance_json TEXT);
+      id TEXT PRIMARY KEY,body_json TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,maintenance_json TEXT,publication_json TEXT);
       CREATE TABLE runtime_local_identity_connections (
       id TEXT PRIMARY KEY,installation_id TEXT NOT NULL,generation TEXT UNIQUE NOT NULL,
       process_id INTEGER NOT NULL,closed INTEGER NOT NULL DEFAULT 0);
@@ -161,6 +161,11 @@ export function createLocalDeploymentIdentity(
     if (jcs(journal.value) !== jcs({ phase: 'installed', config: safeConfig.value.json, structures }))
       throw new Error('Original local identity installation structure changed')
   }
+  const publicationSlot = db
+    .prepare('SELECT publication_json FROM runtime_local_identity_installation WHERE id=?')
+    .get(configDigest)
+  if (!publicationSlot || !Object.hasOwn(publicationSlot, 'publication_json'))
+    throw new Error('Original publication installation slot is missing')
   if (journal.value !== null) {
     const missing = db
       .prepare(`SELECT 1 FROM runtime_identity_instances i
