@@ -34,7 +34,14 @@ export function createBillingFactory(deployment: BillingDeployment) {
   deployment = {
     ...deployment,
     priceVersions: [...deployment.priceVersions],
-    ...(deployment.accounting ? { accounting: { ...deployment.accounting } } : {}),
+    ...(deployment.accounting
+      ? {
+          accounting: {
+            ...deployment.accounting,
+            ...(deployment.accounting.pricing ? { pricing: { ...deployment.accounting.pricing } } : {}),
+          },
+        }
+      : {}),
     outbound: { ...deployment.outbound, target: structuredClone(deployment.outbound.target) },
   }
   const refs = RuntimeMethodSchemaRefs['agh.billing']

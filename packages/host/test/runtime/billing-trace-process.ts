@@ -54,7 +54,8 @@ export function billingTraceProcessDriver(
     level?: TelemetryConsent['level']
     crashAfterSend?: boolean
     accountingChain?: boolean
-    crashBoundary?: 'usage' | 'budget' | 'intent' | 'callback'
+    pricingRate?: string
+    crashBoundary?: 'usage' | 'quote' | 'budget' | 'intent' | 'callback'
   } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'billing-trace-')),
@@ -184,10 +185,11 @@ export function traceContractDriver(kind: 'default' | 'reference', scenario: str
     input: traceInput,
   }
 }
-export function billingContractDriver(kind: 'default' | 'reference', scenario: string) {
+export function billingContractDriver(kind: 'default' | 'reference', scenario: string, pricingRate = '317') {
   const driver = billingTraceProcessDriver('billing', kind, {
     accountingChain: true,
+    pricingRate,
     path: ['cancel', 'dispose'].includes(scenario) ? '/hang' : '/billing',
   })
-  return { ...driver, input: driver.input as typeof billingInput }
+  return { ...driver, expectedAmount: pricingRate, input: driver.input as typeof billingInput }
 }

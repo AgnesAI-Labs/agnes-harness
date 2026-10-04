@@ -28,6 +28,19 @@ export async function bindConformance(harness: ConformanceHarness, request: Conf
           contract,
           peer: 'synthetic-loopback',
           ports: 'restricted-effects',
+          ...(contract === 'agh.billing'
+            ? {
+                pricing: {
+                  provider: 'synthetic.replacement-catalog',
+                  implementation: 'reference-pricing',
+                  priceVersion: 'synthetic-price-v1',
+                  rate: '317',
+                  model: 'synthetic-model',
+                  region: null,
+                  currency: 'USD',
+                },
+              }
+            : {}),
         }),
         releaseSetDigest: build.buildDigest,
         build,

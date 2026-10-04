@@ -21,6 +21,14 @@ export interface ReferenceBillingDeployment {
   readonly configSchema: R.SchemaRef
   readonly priceVersions: readonly string[]
   readonly accounting?: {
+    pricing?: {
+      input(
+        request: R.BillingPostRequest,
+        facts: readonly R.UsageFact[],
+        call: CallContext,
+      ): Promise<Outcome<R.PricingQuoteInput>>
+      quote(input: R.PricingQuoteInput, call: CallContext): Promise<Outcome<R.DataRef>>
+    }
     readUsage(ref: R.UsageFactRef, call: CallContext): Promise<Outcome<R.UsageFact>>
     reservation(request: R.BillingPostRequest, call: CallContext): Promise<Outcome<R.DomainObjectRef>>
     settle(request: R.BudgetSettleRequest, call: CallContext): Promise<Outcome<R.BudgetSettleResult>>
@@ -48,7 +56,14 @@ export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
   d = {
     ...d,
     priceVersions: d.priceVersions.slice(),
-    ...(d.accounting ? { accounting: { ...d.accounting } } : {}),
+    ...(d.accounting
+      ? {
+          accounting: {
+            ...d.accounting,
+            ...(d.accounting.pricing ? { pricing: { ...d.accounting.pricing } } : {}),
+          },
+        }
+      : {}),
     outbound: { ...d.outbound, target: structuredClone(d.outbound.target) },
   }
   const schemas = RuntimeMethodSchemaRefs['agh.billing']
@@ -192,6 +207,41 @@ export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
             origins.push(identity)
             verifiedFacts.push(leaf)
           }
+          const uncertainUsage = verifiedFacts.some((leaf) => leaf.certainty === 'unknown')
+          if (!uncertainUsage) {
+            const pricing = d.accounting.pricing
+            if (!pricing) return rejection('denied', 'billing_pricing_absent')
+            const selection = await until(
+              pricing.input(command, structuredClone(verifiedFacts), ctx.call),
+              ctx.call,
+            )
+            if (!selection.ok) return selection
+            const selected = validateRuntime('PricingQuoteInput', selection.value)
+            if (!selected.ok) return rejection('conflict', 'billing_pricing_source')
+            const locked = selected.value
+            const quantities = quote.lineItems.map(({ unit, quantity }) => ({ unit, value: quantity }))
+            if (
+              locked.priceVersion !== quote.priceVersion ||
+              locked.currency !== quote.amount.currency ||
+              canonicalJsonDigest(locked) !== quote.inputDigest ||
+              jcs(quantities) !== jcs(locked.usageUnits)
+            )
+              return rejection('conflict', 'billing_pricing_source')
+            if (ctx.call.signal.aborted) return rejection('denied', 'permission_absent')
+            const computed = await until(pricing.quote(structuredClone(locked), ctx.call), ctx.call)
+            if (!computed.ok) return computed
+            try {
+              const actual = unserial<R.PriceQuote>(
+                computed.value,
+                RuntimeMethodSchemaRefs['agh.pricing'].quote.output,
+                'PriceQuote',
+              )
+              if (jcs(actual) !== jcs(quote)) return rejection('conflict', 'billing_pricing_source')
+            } catch {
+              return rejection('conflict', 'billing_pricing_source')
+            }
+            if (ctx.call.signal.aborted) return rejection('denied', 'permission_absent')
+          }
           const original = await until(d.accounting.reservation(command, ctx.call), ctx.call)
           if (!original.ok) return original
           if (ctx.call.signal.aborted) return rejection('denied', 'permission_absent')
@@ -206,8 +256,7 @@ export function createReferenceBillingFactory(d: ReferenceBillingDeployment) {
             ctx.call,
           )
           if (!settled.ok) return settled
-          if (verifiedFacts.some((f) => f.certainty === 'unknown'))
-            return rejection('unknown_effect', 'billing_usage_unknown')
+          if (uncertainUsage) return rejection('unknown_effect', 'billing_usage_unknown')
           const valid = validateRuntime('BudgetSettleResult', settled.value)
           if (!valid.ok) return rejection('conflict', 'billing_settlement_source')
           const budget = valid.value.reservation
