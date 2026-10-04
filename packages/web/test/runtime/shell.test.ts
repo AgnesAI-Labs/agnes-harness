@@ -262,6 +262,39 @@ describe('default chat shell', () => {
     expect(states(container)).toEqual(shown)
   })
 
+  it('keeps a selection in the conversation and in fallback text when an update rewrites around it', async () => {
+    const { shell, container } = await mount()
+    const answered = item(container, 'turn-running')?.lastElementChild?.firstChild as Node
+    const fallback = item(container, 'view-2')?.nextElementSibling?.firstChild as Node
+    const finalized = {
+      ...SNAPSHOT,
+      views: [view('view-1', 'finalized'), view('view-2', 'finalized', MARKUP)],
+    }
+    // A view turning final, then the turn around the selected answer settling.
+    const updates = [
+      finalized,
+      {
+        ...finalized,
+        ...snapshot([
+          turn('turn-running', 'completed', 'completed'),
+          turn('turn-blocked', 'completed', 'blocked'),
+        ]),
+        views: finalized.views,
+      },
+    ] as ShellSnapshot[]
+    for (const selected of [answered, fallback])
+      for (const next of updates) {
+        const range = document.createRange()
+        range.selectNodeContents(selected)
+        document.getSelection()?.removeAllRanges()
+        document.getSelection()?.addRange(range)
+        expect(await shell.update(next)).toEqual(OK)
+        expect([document.getSelection()?.anchorNode, selected.isConnected]).toEqual([selected, true])
+      }
+    expect(states(container)).toMatchObject({ 'turn-running': 'done', 'view-2': 'done' })
+    expect(item(container, 'turn-running')?.firstElementChild?.textContent).toBe('Turn 1: done')
+  })
+
   it.each<[string, Partial<MountInput>, string]>([
     ['an empty owner token', { ownerToken: '' }, 'invalid_input'],
     ['a container that is not an element', { container: {} as HTMLElement }, 'invalid_input'],
