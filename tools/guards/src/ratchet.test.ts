@@ -1019,7 +1019,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 5802,
+  'packages/ai/src': 5882,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -2735,7 +2735,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Same-database admission joint coverage. Measured 74907, exact, no spare.
   // Default artifacts transfer with its export held by the default blob service, and collection counts
   // of only collections with parts. Measured 74980 (+73), exact, no spare.
-  'packages/host/src': 74980,
+  // Download tickets sealed and opened through the Host ticket key broker. Measured 74977 (-3), exact.
+  'packages/host/src': 74977,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

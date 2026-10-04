@@ -40,10 +40,10 @@ export type {
 export const ARTIFACTS_CONTRACT = 'agh.artifacts'
 export const ARTIFACTS_MAJOR = 1
 
-type Offered = Pick<ArtifactsServiceOptions, 'ticketKey' | 'maintenance' | 'blobTransfer'>
+type Offered = Pick<ArtifactsServiceOptions, 'ticketKeys' | 'maintenance' | 'blobTransfer'>
 
 /**
- * Ticket downloads are refused without a ticket key, so only a configured key offers their feature.
+ * Ticket downloads are refused without a ticket key broker, so only a supplied one offers their feature.
  * A transfer needs the maintenance assembly and the selected default blob service's transfer entry,
  * which holds this store's export.
  */
@@ -51,7 +51,7 @@ export function artifactsFeatures(options: Offered): string[] {
   return [
     'artifact-publication.v1',
     'artifact-access.v1',
-    ...(options.ticketKey ? ['artifact-ticket.v1'] : []),
+    ...(options.ticketKeys ? ['artifact-ticket.v1'] : []),
     ...(options.maintenance && options.blobTransfer ? ['authority-transfer.v1'] : []),
   ]
 }

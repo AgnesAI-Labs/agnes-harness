@@ -70,14 +70,24 @@ const usage = defineGeneratedAuthorSchema<UsageMeasurement>({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $ref: '#/$defs/Measurement',
     $defs: {
-      Measurement: object({
-        kind: { enum: ['reported', 'estimated', 'corrected', 'unknown'] },
-        quantities: array(object({ unit: string(128), value: string(32) }), 16),
-        actualModel: { anyOf: [string(8192), { type: 'null' }] },
-        source: { enum: ['provider-receipt', 'adapter-counter', 'reported-target', 'estimator'] },
-        sourceReceipt: { anyOf: [receipt, { type: 'null' }] },
-        replacesFactIds: array(string(256), 16),
-      }),
+      Measurement: object(
+        {
+          kind: { enum: ['reported', 'estimated', 'corrected', 'unknown'] },
+          quantities: array(object({ unit: string(128), value: string(32) }), 16),
+          actualModel: { anyOf: [string(8192), { type: 'null' }] },
+          source: { enum: ['provider-receipt', 'adapter-counter', 'reported-target', 'estimator'] },
+          sourceReceipt: { anyOf: [receipt, { type: 'null' }] },
+          replacesFactIds: array(string(256), 16),
+          billing: object({
+            usdMicros: integer(),
+            source: { enum: ['gateway', 'estimated'] },
+            subscription: { type: 'boolean' },
+          }),
+          credits: { type: 'number', minimum: 0 },
+          creditSource: { enum: ['gateway', 'estimated'] },
+        },
+        ['kind', 'quantities', 'actualModel', 'source', 'sourceReceipt', 'replacesFactIds'],
+      ),
     },
   },
 })
