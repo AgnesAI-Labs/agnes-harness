@@ -392,7 +392,10 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
         },
         (index) => {
           if (isUnavailable() || openedIndex === index) return
-          openDetail(index, { focus: false })
+          // 与键盘路径（setActive）对齐：这一行没有详情可展开时把上一个模型的详情收掉，
+          // 否则旧面板会留在屏幕上、锚在别的行旁边。
+          if (canShowDetail(index)) openDetail(index, { focus: false })
+          else closeDetail()
         },
       ),
     )
@@ -554,8 +557,10 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
           renderLeaf()
         },
         onBlur: (event: FocusEvent<HTMLInputElement>) => {
-          // 焦点在菜单内的按钮之间移动时交给那个控件处理，别在这里抢先发一次。
-          if (leafPanel?.contains(event.relatedTarget as Node | null)) return
+          // 焦点在菜单内的控件之间移动时交给那个控件处理，别在这里抢先发一次。详情面板的行
+          // 也算菜单内（比如输完预算再点「思考强度」），漏判会把那次点击连人带面板一起吃掉。
+          const focusTarget = event.relatedTarget as Node | null
+          if (leafPanel?.contains(focusTarget) || detailPanel?.contains(focusTarget)) return
           void applyBudget(budgetDraft)
         },
       }),
@@ -786,10 +791,12 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   }
 
   function setLeafActive(index: number): void {
+    // 渲染列表取的是详情里那个模型的容量（renderLeaf 的 values.capacity），键盘的循环边界
+    // 必须来自同一个地方，否则悬停别的模型时末尾几档永远轮不到。
     const count =
       leafKind === 'thinking'
         ? levels().length
-        : 1 + webUi.contextBudgetPresets(state.settings?.capacity ?? 0).length
+        : 1 + webUi.contextBudgetPresets(detailValues()?.capacity ?? 0).length
     if (!count) return
     leafActive = (index + count) % count
     const list = leafPanel?.querySelector<HTMLElement>('[role="listbox"]')
@@ -844,7 +851,11 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
 
   // 预算非法时先让面板把错误显示出来，而不是悄悄按旧值提交。
   async function applyThinking(value: string): Promise<void> {
-    if (value === selectedThinking() && budgetDraft.trim() === committedBudget) {
+    if (
+      value === selectedThinking() &&
+      budgetDraft.trim() === committedBudget &&
+      detailValues()?.current === true
+    ) {
       close({ returnFocus: true })
       return
     }
@@ -857,7 +868,9 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   }
 
   async function applyBudget(raw: string): Promise<void> {
-    if (raw.trim() === committedBudget) {
+    // committedBudget 记的是提交给当前模型的值；预览别的模型时它只是那个模型的默认值，
+    // 相等并不表示用户没做改动——选中它就该先切过去，所以短路只对当前模型成立。
+    if (raw.trim() === committedBudget && detailValues()?.current === true) {
       close({ returnFocus: true })
       return
     }

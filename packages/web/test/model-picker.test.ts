@@ -314,6 +314,25 @@ describe('model picker', () => {
     picker.destroy()
   })
 
+  it('switches to a hovered model when the picked preset equals that model default', async () => {
+    const onSettingsChange = vi.fn(async () => true)
+    const { picker, trigger, onSelect } = mountPicker(undefined, onSettingsChange)
+    trigger.click()
+    hoverRow(1)
+    await vi.waitFor(() => expect(detail().textContent).toContain('local-model'))
+    detailRow('model-detail-budget').click()
+
+    // 32K 正是 local-model 自己的默认值。相等不代表用户没改动：选中它仍要先切过去。
+    expect(budget().value).toBe('32000')
+    leafOption('32K').click()
+
+    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(models[1]))
+    await vi.waitFor(() =>
+      expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'high', contextWindow: 32000 }),
+    )
+    picker.destroy()
+  })
+
   it('does not cascade for a model that reports no capacity', async () => {
     const { picker, trigger, onSelect } = mountPicker(
       undefined,
@@ -360,6 +379,24 @@ describe('model picker', () => {
     await vi.waitFor(() =>
       expect(onSettingsChange).toHaveBeenLastCalledWith({ thinking: 'low', contextWindow: 80000 }),
     )
+    picker.destroy()
+  })
+
+  it('leaves the menu alone when focus moves from the budget field to a detail row', async () => {
+    const onSettingsChange = vi.fn(async () => true)
+    const { picker, trigger } = mountPicker(undefined, onSettingsChange)
+    await hoverFirstModel(trigger)
+    detailRow('model-detail-budget').click()
+    typeBudget('96000')
+
+    // 焦点落到详情面板那一行，仍算在菜单里：不该提交，也不该把整条级联收掉。
+    const blur = new FocusEvent('focusout', { bubbles: true })
+    // happy-dom 的 FocusEvent 构造不接收 relatedTarget，手动挂上再派发。
+    Object.defineProperty(blur, 'relatedTarget', { value: detailRow('model-detail-thinking') })
+    budget().dispatchEvent(blur)
+
+    expect(onSettingsChange).not.toHaveBeenCalled()
+    expect(document.getElementById('model-settings-options-popover')).not.toBeNull()
     picker.destroy()
   })
 
