@@ -14,6 +14,7 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import type { PendingCommand } from '@agnes/sdk'
+import type { LocalRefusal } from '@agnes/sdk/runtime'
 import { describe, expect, it, vi } from 'vitest'
 import type { RuntimeCallResult } from '../../src/runtime/ports.js'
 import { QuestionController, type QuestionPorts } from '../../src/runtime/question-controller.js'
@@ -158,7 +159,7 @@ const failure =
   })
 const unknown: Reply = () => ({ state: 'unknown', reason: 'no reply' })
 const refused =
-  (reason: string): Reply =>
+  (reason: LocalRefusal): Reply =>
   () => ({ state: 'refused', reason })
 
 /** Reads return the records in turn, the last one from then on; replies are used in order. */

@@ -469,6 +469,7 @@ describe('bootstrap and the write gate', () => {
     expect(client.mode).toBe('incompatible')
     expect(client.refusal).not.toBeNull()
     expect(client.header()).toBeNull()
+    expect(client.capabilities).toBeNull()
     expect(await client.command('conversation.cancel', cancel('req-1'))).toEqual({
       state: 'refused',
       reason: 'incompatible',
@@ -513,6 +514,21 @@ describe('bootstrap and the write gate', () => {
     await again
     expect(p.count('clientCommand')).toBe(0)
     expect(await pendingIds(journal)).toEqual([])
+  })
+})
+
+describe('negotiated capabilities', () => {
+  it('exposes a copy of what the welcome negotiated', async () => {
+    const p = await peer()
+    p.state.adjust = (welcome) => ({
+      ...welcome,
+      capabilities: { ...(welcome.capabilities as object), features: ['acme.only'] },
+    })
+    const { client } = await connected(p)
+    const negotiated = client.capabilities
+    expect(negotiated?.features).toEqual(['acme.only'])
+    negotiated?.features.push('acme.added')
+    expect(client.capabilities?.features).toEqual(['acme.only'])
   })
 })
 

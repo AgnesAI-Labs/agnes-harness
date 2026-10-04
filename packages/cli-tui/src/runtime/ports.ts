@@ -1,15 +1,5 @@
-import type { RuntimeError } from '@agnes/protocol/runtime'
-
-/**
- * One call's result on the SDK runtime client transport, restated because the SDK keeps that client off
- * its public entry point; a port wired to the transport returns its result unchanged. `refused` never
- * left the client, and `unknown` was sent but has no verified reply.
- */
-export type RuntimeCallResult<T> =
-  | { state: 'ok'; value: T }
-  | { state: 'failed'; error: RuntimeError }
-  | { state: 'refused'; reason: string }
-  | { state: 'unknown'; reason: string }
+/** One call's result on the SDK runtime client transport; a port wired to it returns the result unchanged. */
+export type { CallResult as RuntimeCallResult } from '@agnes/sdk/runtime'
 
 /**
  * A link the server issued, as the user can open it: a route is joined to the deployment base the

@@ -13,21 +13,15 @@ import type {
   ArtifactClientOpenStreamRequest,
   ArtifactDescribeInput,
   ArtifactDownloadTicket,
-  ArtifactReadStreamEndResult,
   ArtifactViewRef,
-  ClientArtifactStreamMetadata,
 } from '@agnes/protocol/runtime'
+import type { ArtifactByteStream } from '@agnes/sdk/runtime'
 import { escapeServerText } from '../component.js'
 import { type LocaleKey, t } from '../locale.js'
 import { linkUrl, type RuntimeCallResult } from './ports.js'
 
-/** The SDK artifact reader's stream, restated like the call result; `ended` is the server's own summary. */
-export type ArtifactByteStream = Readonly<{
-  metadata: ClientArtifactStreamMetadata
-  chunks: AsyncIterable<Uint8Array>
-  ended: Promise<RuntimeCallResult<ArtifactReadStreamEndResult>>
-  cancel(reason: string): Promise<void>
-}>
+/** The SDK artifact reader's stream; `ended` is the server's own summary. */
+export type { ArtifactByteStream }
 export type ArtifactPorts = Readonly<{
   describe(input: ArtifactDescribeInput): Promise<RuntimeCallResult<ArtifactViewRef>>
   openDownload(input: ArtifactClientOpenDownloadRequest): Promise<RuntimeCallResult<ArtifactDownloadTicket>>

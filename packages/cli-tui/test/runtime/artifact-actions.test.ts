@@ -41,6 +41,7 @@ function stream(end: End = ok(summary)): ArtifactByteStream & { cancel: ReturnTy
     })(),
     ended: Promise.resolve(end),
     cancel: vi.fn(async () => undefined),
+    close: async () => undefined,
   }
 }
 
