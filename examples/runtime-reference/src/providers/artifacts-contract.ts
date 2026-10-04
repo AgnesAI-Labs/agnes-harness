@@ -34,7 +34,14 @@ import {
   streamFact,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/blob.js'
 import { inline } from '../../../../packages/extension-api/testkit/runtime/contracts/projection.js'
-import { ARTIFACTS_PROVIDER, type ArtifactsStore, BLOB_DEPENDENCY, openArtifactsStore } from './artifacts.js'
+import { createReferenceArtifactTicketKeyPort } from './artifact-ticket-key.js'
+import {
+  ARTIFACTS_PROVIDER,
+  type ArtifactsStore,
+  type ArtifactsStoreOptions,
+  BLOB_DEPENDENCY,
+  openArtifactsStore,
+} from './artifacts.js'
 import { BLOB_PROVIDER, type BlobStore, openBlobStore } from './blob.js'
 import {
   build,
@@ -48,11 +55,66 @@ import { referenceDescriptor } from './blob-transfer.js'
 
 /** A profile lifetime narrower than the contract's, so the suite sees the provider take the smaller one. */
 export const PROFILE_TICKET_TTL_MS = 120_000
-const TICKET_KEY = new Uint8Array(32).fill(9)
 const MEDIA_TYPE = 'application/octet-stream'
 
 const sha256 = (url: URL) => createHash('sha256').update(readFileSync(url)).digest('hex')
 const readable = (context: CallContext) => context.authorizationRef === ARTIFACT_READER.authorizationRef
+
+/**
+ * The reference ticket key broker over one synthetic key version, as a trusted assembly installs it for
+ * the artifacts store: the store gets the port and a delegation of each client call to the installed
+ * owner, never the material. The broker accepts only calls this assembly delegated.
+ */
+function referenceTicketKeys(
+  directory: string,
+  now: () => number,
+): NonNullable<ArtifactsStoreOptions['ticketKeys']> {
+  const delegated = new WeakSet<CallContext>()
+  const installation = {
+    binding: {
+      consumer: 'artifact-ticket',
+      secretId: 'reference-ticket-key',
+      accountRef: null,
+      serverRef: 'reference-artifacts',
+      audience: 'reference-download',
+      purpose: 'artifact-download-ticket-nonce-envelope',
+    },
+    ownerId: ARTIFACTS_PROVIDER.id,
+    principalRef: 'reference-artifacts-owner',
+    bindingId: 'reference-artifacts-tickets',
+    scope: ARTIFACT_READER.scope,
+    authorityId: BLOB_AUTHORITY,
+  } as const
+  const port = createReferenceArtifactTicketKeyPort({
+    installation,
+    diagnosticRetentionMs: 0,
+    directory,
+    tenantId: TENANT,
+    now,
+    current: () => ({ version: 'v1', revoked: false }),
+    identity: async (call) => delegated.has(call),
+    authorize: async (call) => delegated.has(call),
+    reference: (version) => (version === 'v1' ? 'secret://reference/ticket-v1' : undefined),
+    resolve: (pointer) => createHash('sha256').update(pointer).digest('hex'),
+  })
+  return {
+    port,
+    binding: installation.binding,
+    tenantId: TENANT,
+    authorityId: BLOB_AUTHORITY,
+    delegate(call) {
+      const owner: CallContext = {
+        ...call,
+        principalRef: installation.principalRef,
+        scope: installation.scope,
+        bindingId: installation.bindingId,
+        authorizationRef: 'reference-artifacts-owner',
+      }
+      delegated.add(owner)
+      return owner
+    },
+  }
+}
 
 /**
  * Drives the reference artifacts store, reading through the reference blob store selected in a test
@@ -89,11 +151,13 @@ export function referenceArtifactsPort(
     },
     blobRead: counted,
   })
+  // The broker outlives a reopened store, as the secrets service that holds it would.
+  const ticketKeys = referenceTicketKeys(join(directory, 'ticket-keys'), () => clock)
   const openArtifacts = () =>
     openArtifactsStore(artifactsPath, {
       dependencies: container.dependencies,
       authorize: readable,
-      ticketKey: TICKET_KEY,
+      ticketKeys,
       ticketTtlMs: PROFILE_TICKET_TTL_MS,
       now: () => clock,
     })
