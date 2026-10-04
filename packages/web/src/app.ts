@@ -657,7 +657,6 @@ function renderControls(): void {
     ...(knownSessionModel && selectedRecord?.contextWindow
       ? {
           modelSettings: {
-            key: current?.id ?? 'draft',
             settings: knownSessionModel.settings ?? modelDefaults(knownSessionModel).settings ?? {},
             contextWindow: selectedRecord.contextWindow,
             thinkingLevelMap: selectedRecord.thinkingLevelMap,

@@ -722,28 +722,47 @@ describe('web session selection', () => {
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
       })
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
-      const settingsButton = document.getElementById('composer-model-settings') as HTMLButtonElement
-      settingsButton.click()
-      await vi.waitFor(() =>
-        expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('64000'),
-      )
-      const thinking = document.getElementById('session-model-thinking') as HTMLSelectElement
-      expect(thinking.value).toBe('high')
-      thinking.value = 'low'
-      thinking.dispatchEvent(new Event('change', { bubbles: true }))
-      const windowInput = document.getElementById('session-model-window') as HTMLInputElement
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(windowInput, '32000')
-      windowInput.dispatchEvent(new Event('input', { bubbles: true }))
-      const dialogButton = (label: string) =>
-        [...document.querySelectorAll<HTMLButtonElement>('.agnes-ui-dialog button')].find(
-          (b) => b.textContent?.replace(/\s/g, '') === label,
+      // 会话参数在模型行展开的详情里：模型列表 → 详情 → 参数选项三级。
+      const row = (index: number) =>
+        document.querySelectorAll<HTMLElement>('#model-listbox [role="option"]')[index]
+      const detailRow = (id: string) => document.querySelector<HTMLElement>(`#model-settings-popover #${id}`)
+      const leafOption = (label: string) =>
+        [...document.querySelectorAll<HTMLElement>('#session-model-thinking [role="option"]')].find(
+          (option) => option.textContent?.startsWith(label),
         )
-      dialogButton('应用到本会话')?.click()
+      const budgetOption = (label: string) =>
+        [...document.querySelectorAll<HTMLElement>('#session-model-budget [role="option"]')].find(
+          (option) => option.textContent === label,
+        )
+      // 提交在飞行中时触发按钮与面板会一起禁用，每次开关前等它落定。
+      const openPanel = async () => {
+        await vi.waitFor(() => expect(model.disabled).toBe(false))
+        if (!document.getElementById('model-listbox')) model.click()
+        await vi.waitFor(() => expect(document.getElementById('model-listbox')).not.toBeNull())
+      }
+      const openDetail = async () => {
+        await openPanel()
+        if (!document.getElementById('model-settings-popover')) row(1)?.click()
+        await vi.waitFor(() => expect(document.getElementById('model-settings-popover')).not.toBeNull())
+      }
+      const closePanel = async () => {
+        await vi.waitFor(() => expect(model.disabled).toBe(false))
+        if (document.getElementById('model-listbox')) model.click()
+        await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
+      }
+      await openDetail()
+      expect(detailRow('model-detail-capacity')?.textContent).toContain('128K')
+      detailRow('model-detail-thinking')?.click()
+      expect(leafOption('高')?.getAttribute('aria-selected')).toBe('true')
+      leafOption('低')?.click()
       await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
+      // 选完一个参数整条菜单收起，改下一个要重新展开。
+      await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
+      await openDetail()
+      detailRow('model-detail-budget')?.click()
+      budgetOption('32K')?.click()
+      await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       draftModel.defaultSettings.contextWindow = 96000
-      model.click()
-      document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
-      await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
       await configurationCallback.saved?.({
         profile: 'local',
         revision: 1,
@@ -751,12 +770,10 @@ describe('web session selection', () => {
         provider: null,
         effect: 'new-sessions',
       })
-      settingsButton.click()
-      await vi.waitFor(() =>
-        expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('32000'),
-      )
-      expect((document.getElementById('session-model-thinking') as HTMLSelectElement).value).toBe('low')
-      dialogButton('取消')?.click()
+      await openDetail()
+      expect(detailRow('model-detail-thinking')?.textContent).toContain('低')
+      expect(detailRow('model-detail-budget')?.textContent).toContain('32K')
+      await closePanel()
       const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
       cwd.value = '/workspace/agnes'
       document
@@ -989,7 +1006,7 @@ describe('web session selection', () => {
       }),
     )
 
-    // The flat picker changes only the model; thinking controls stay in account settings.
+    // 模型列表仍是扁平的一段；档位与预算只是同面板的另外两段，模型那段不掺进二级菜单。
     await vi.waitFor(() => expect(control('model').disabled).toBe(false))
     control('model').click()
     expect(document.querySelector('.model-picker-entry, #model-submenu-listbox')).toBeNull()

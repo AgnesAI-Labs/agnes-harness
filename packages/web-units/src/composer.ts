@@ -1,5 +1,4 @@
-import type { ModelSettings, UsageView } from '@agnes/protocol'
-import { ModelSettingsDialog } from '@agnes/web-ui'
+import type { ModelSettings, ThinkingLevel, UsageView } from '@agnes/protocol'
 import {
   type ComponentType,
   createElement,
@@ -23,6 +22,14 @@ export type ModelPickerOption = {
   /** 模型声明的「档位 → provider 取值」映射；缺省表示任意合法档位都接受。 */
   thinkingLevelMap?: Record<string, string>
 }
+/** 面板里「思考强度」与「上下文预算」两段的会话现状；字段与宿主侧 ModelPickerSettings 对齐。 */
+export type ModelPickerSettings = {
+  thinking?: ThinkingLevel
+  contextWindow?: number
+  /** 模型目录容量，同时是预算校验的上界。 */
+  capacity: number
+  thinkingLevelMap?: Record<string, string>
+}
 export type ModelPickerState = {
   accessibleName: string
   disabled: boolean
@@ -30,6 +37,7 @@ export type ModelPickerState = {
   options: readonly ModelPickerOption[]
   pending: boolean
   selected?: ModelPickerOption
+  settings?: ModelPickerSettings
 }
 export type ModelPicker = {
   destroy(): void
@@ -50,6 +58,8 @@ export interface ComposerDependencies {
     trigger: HTMLButtonElement
     onError(error: unknown): void
     onSelect(option: ModelPickerOption): Promise<boolean>
+    /** 面板内改档位或预算时的提交口；缺省时面板只渲染模型列表。 */
+    onSettingsChange?(settings: ModelSettings): Promise<boolean>
   }): ModelPicker
   createPermissionPicker(options: {
     trigger: HTMLButtonElement
@@ -85,8 +95,8 @@ export interface ComposerView {
   loading: boolean
   model: ModelPickerState
   modelSettings?: {
-    key: string
     settings: ModelSettings
+    /** 模型目录容量，不是本会话已保存的预算。 */
     contextWindow: number
     thinkingLevelMap?: Record<string, string> | undefined
   }
@@ -127,6 +137,23 @@ export interface ComposerSlots {
   permission?: ReactNode
   plan?: ReactNode
   right?: ReactNode
+}
+
+/** 会话设置只在已知模型上有值；缺失时面板退化成纯模型列表。 */
+function pickerState(view: ComposerView): ModelPickerState {
+  const settings = view.modelSettings
+  if (!settings) return view.model
+  return {
+    ...view.model,
+    settings: {
+      ...(settings.settings.thinking ? { thinking: settings.settings.thinking } : {}),
+      ...(settings.settings.contextWindow === undefined
+        ? {}
+        : { contextWindow: settings.settings.contextWindow }),
+      capacity: settings.contextWindow,
+      ...(settings.thinkingLevelMap ? { thinkingLevelMap: settings.thinkingLevelMap } : {}),
+    },
+  }
 }
 
 const INITIAL_VIEW: ComposerView = {
@@ -215,6 +242,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       trigger: model.current,
       onError,
       onSelect: onModelSelect,
+      ...(onModelSettingsChange ? { onSettingsChange: onModelSettingsChange } : {}),
     })
     permissionPicker.current = dependencies.createPermissionPicker({
       trigger: permission.current,
@@ -231,11 +259,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       renderUsage.current?.dispose?.()
       renderUsage.current = undefined
     }
-  }, [dependencies, onError, onModelSelect, onPermissionSelect])
+  }, [dependencies, onError, onModelSelect, onModelSettingsChange, onPermissionSelect])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the preceding effect replaces handles when these inputs change.
   useLayoutEffect(() => {
-    modelPicker.current?.render(view.model)
+    modelPicker.current?.render(pickerState(view))
     permissionPicker.current?.render(view.permission)
     renderUsage.current?.(view.usage, view.connected)
   }, [view, dependencies, onError, onModelSelect, onPermissionSelect])
@@ -396,14 +424,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ),
         ),
       ),
-      view.modelSettings && onModelSettingsChange
-        ? createElement(ModelSettingsDialog, {
-            ...view.modelSettings,
-            disabled: view.model.disabled || view.model.pending,
-            onApply: onModelSettingsChange,
-            t: dependencies.translate,
-          })
-        : undefined,
       createElement(
         'section',
         {

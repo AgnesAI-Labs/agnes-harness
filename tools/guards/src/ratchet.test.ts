@@ -188,6 +188,16 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // origin/main merge dropped, and removed the destructive settings-shell re-render on locale change
 // (it replaced the pane hosts and left the content area blank). The model pane still re-renders because
 // it is a React component with no data-i18n nodes. web/src remeasured at 15977; the other keys are exact.
+// MODEL-PICKER-CASCADE-20261004: the composer's model picker now replaces the modal ModelSettingsDialog
+// (deleted with its web-ui test) with a three-level cascade: model list -> the hovered model's session
+// settings (capacity / reasoning level / context window) -> the options for one parameter. Hovering a row
+// opens its settings without switching the model; committing a value switches first, because
+// session.setModel writes to the current session model. The levels, the hover/close timing, their
+// keyboard routing and the shared submit guards live in one file because they share the popover state
+// machine; the pure label and budget helpers moved to packages/web-ui/src/model-settings.ts. Measured
+// with this guard's countLines(): web/src/model-picker 284 -> 968, web/src 15977 -> 16662,
+// web-units/src 5540 -> 5554 (composer forwards the session settings into the picker state).
+// Exact measured values, no exclusions or spare allocation.
 const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
@@ -237,7 +247,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   'packages/web-ui/src': 6629,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 5540,
+  'packages/web-units/src': 5554,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -415,7 +425,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
-  'packages/web/src/model-picker': 284,
+  'packages/web/src/model-picker': 968,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   'packages/web/src/settings': 900,
@@ -2070,7 +2080,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // The live approval card's wording, preview and session-choice rule (new file). Measured 13463 (+52), exact cap.
-  'packages/web/src': 15977,
+  'packages/web/src': 16662,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
