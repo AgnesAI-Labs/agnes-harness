@@ -160,7 +160,7 @@ export function readReleaseSnapshot(record: MaintenanceEnvelopeJsonValue): Relea
   return release
 }
 export function journalMutation(
-  ports: AssemblyMaintenancePorts,
+  ports: Pick<AssemblyMaintenancePorts, 'writerEpoch'>,
   recordId: string,
   kind: string,
   data: unknown,

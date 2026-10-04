@@ -3,6 +3,7 @@ import { simpleLoopCapabilities } from '@agnes/extension-api/runtime/authoring'
 import { AssemblyRefusal, assertCommunityContracts, detectDependencyCycle } from '@agnes/plugin-runtime/host'
 import type {
   CapabilityRequirement,
+  ConfigResolveRequest,
   DataRef,
   DispatchAtomicDomain,
   ReleaseSet,
@@ -14,9 +15,10 @@ import {
   RuntimeServiceCatalog,
   validateOwnedAuthorSchemaSource,
 } from '@agnes/protocol/runtime'
+import { readAppliedConfiguration } from './applied-configuration.js'
 import { verifyClientBundles } from './client-bundles.js'
 import { verifyClientLock } from './client-lock.js'
-import { type ReleaseSetInputs, readInputs, readLocatorRoute } from './inputs.js'
+import { type ReleaseSetInputs, type ResolvedReleaseInputs, readInputs, readLocatorRoute } from './inputs.js'
 import {
   array,
   attempt,
@@ -59,9 +61,9 @@ export function assemblyGraphDigest(graph: ReleaseSetInputs['graph']): string {
   return digest(content)
 }
 
-function verifyIdentities(input: ReleaseSetInputs): void {
-  const read = (ref: DataRef, path: string) => readContent(ref, path, input.fixture.contents)
-  const { plan, graph, configuration, resolution, fixture } = input
+function verifyIdentities(input: ResolvedReleaseInputs): void {
+  const read = (ref: DataRef, path: string) => readContent(ref, path, input.observations.contents)
+  const { plan, graph, configuration, resolution, observations: fixture } = input
   const release = plan.targetReleaseSet
   if (fixture.previousRelease)
     requireRelease(
@@ -219,9 +221,9 @@ function permissionSet(config: ReleaseSetInputs['configuration'] | null): Capabi
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([, row]) => row)
 }
-function verifyPermissions(input: ReleaseSetInputs): void {
-  const read = (ref: DataRef, path: string) => readContent(ref, path, input.fixture.contents)
-  const { plan, configuration, fixture } = input
+function verifyPermissions(input: ResolvedReleaseInputs): void {
+  const read = (ref: DataRef, path: string) => readContent(ref, path, input.observations.contents)
+  const { plan, configuration, observations: fixture } = input
   const delta = plan.permissionDifference
   if (fixture.previousConfiguration)
     requireRelease(
@@ -318,8 +320,8 @@ function verifyPermissions(input: ReleaseSetInputs): void {
   }
 }
 
-function verifyGraph(input: ReleaseSetInputs): void {
-  const read = (ref: DataRef, path: string) => readContent(ref, path, input.fixture.contents)
+function verifyGraph(input: ResolvedReleaseInputs, configurationRequest?: ConfigResolveRequest): void {
+  const read = (ref: DataRef, path: string) => readContent(ref, path, input.observations.contents)
   const { graph, plan } = input
   const bindings = graph.bindings
   const ids = bindings.map((row) => row.binding.bindingId)
@@ -341,10 +343,16 @@ function verifyGraph(input: ReleaseSetInputs): void {
   for (const id of graph.requiredContributions)
     requireRelease(ids.includes(id), 'required_contract_missing', '/graph/requiredContributions')
   const configuration = input.configuration
+  // The official resolver authorizes the leaf source digest; inheritance removes 'extends'
+  // from its effective result. Detached fixture inputs retain their original digest check.
   requireRelease(
     configuration.profile.presets.allowed.some(
       (allowed) =>
-        allowed.presetId === configuration.preset.id && allowed.digest === configuration.presetDigest,
+        allowed.presetId === configuration.preset.id &&
+        allowed.digest ===
+          (configurationRequest
+            ? digest((configurationRequest.presets.at(-1) ?? configurationRequest.defaults.preset).document)
+            : configuration.presetDigest),
     ) &&
       configuration.profile.presets.allowed.some(
         (allowed) => allowed.presetId === configuration.profile.presets.default,
@@ -509,21 +517,23 @@ function verifyGraph(input: ReleaseSetInputs): void {
   )
 }
 
-function verifyMaterials(input: ReleaseSetInputs): DispatchAtomicDomain[] {
-  const read = (ref: DataRef, path: string) => readContent(ref, path, input.fixture.contents)
+function verifyMaterials(input: ResolvedReleaseInputs, effectiveKind: string): DispatchAtomicDomain[] {
+  const read = (ref: DataRef, path: string) => readContent(ref, path, input.observations.contents)
   const release = input.plan.targetReleaseSet
   const config = fields(
-    read(release.configSnapshotRef, '/configSnapshotRef'),
+    effectiveKind === 'assembly-effective-fixture'
+      ? read(release.configSnapshotRef, '/configSnapshotRef')
+      : readAppliedConfiguration(release.configSnapshotRef, input.configuration),
     ['kind', 'configuration', 'features', 'bundles', 'jointDomains', 'directory', 'deployments'],
     '/configSnapshotRef/value',
   )
   requireRelease(
-    config.kind === 'assembly-effective-fixture' && equal(config.configuration, input.configuration),
+    config.kind === effectiveKind && equal(config.configuration, input.configuration),
     'config_digest_mismatch',
     '/configSnapshotRef/configuration',
   )
   requireRelease(
-    equal(readLocatorRoute(config.directory), input.fixture.directory),
+    equal(readLocatorRoute(config.directory), input.observations.directory),
     'locator_route_stale',
     '/configSnapshotRef/directory',
   )
@@ -664,8 +674,8 @@ function verifyMaterials(input: ReleaseSetInputs): DispatchAtomicDomain[] {
   )
 }
 
-function verifyJointAndMigrations(input: ReleaseSetInputs, domains: DispatchAtomicDomain[]): void {
-  const { fixture, plan } = input
+function verifyJointAndMigrations(input: ResolvedReleaseInputs, domains: DispatchAtomicDomain[]): void {
+  const { observations: fixture, plan } = input
   requireRelease(
     new Set(domains.map((domain) => domain.domainId)).size === domains.length,
     'joint_dispatch_incompatible',
@@ -728,16 +738,31 @@ function verifyJointAndMigrations(input: ReleaseSetInputs, domains: DispatchAtom
   }
 }
 
+/** Pure validation shared by detached fixtures and private publication issuers; grants no authority. */
+export function validateResolvedRelease(
+  input: ResolvedReleaseInputs,
+  effectiveKind: 'assembly-effective-fixture' | 'assembly-applied-awaiting-protocol-confirmation',
+  configurationRequest?: ConfigResolveRequest,
+): ReleaseSet {
+  requireRelease(
+    effectiveKind === 'assembly-effective-fixture' || configurationRequest,
+    'configuration_source_missing',
+    '/configuration',
+  )
+  verifyIdentities(input)
+  verifyGraph(input, effectiveKind === 'assembly-effective-fixture' ? undefined : configurationRequest)
+  const domains = verifyMaterials(input, effectiveKind)
+  verifyPermissions(input)
+  verifyJointAndMigrations(input, domains)
+  return freeze(input.plan.targetReleaseSet)
+}
+
 /** Construct a detached, deeply frozen lock. This function performs no I/O or migration. */
 export function constructReleaseSet(value: unknown): Outcome<ReleaseSet> {
   return attempt(() => {
     const input = readInputs(value)
-    verifyIdentities(input)
-    verifyGraph(input)
-    const domains = verifyMaterials(input)
-    verifyPermissions(input)
-    verifyJointAndMigrations(input, domains)
-    return freeze(input.plan.targetReleaseSet)
+    const { fixture, ...resolved } = input
+    return validateResolvedRelease({ ...resolved, observations: fixture }, 'assembly-effective-fixture')
   })
 }
 
